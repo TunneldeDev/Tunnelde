@@ -1,0 +1,62 @@
+# Local scratch: plans, QA, spikes, update-test artifacts, local signing keys.
+# Nothing under .tmp/ is ever tracked.
+.tmp/
+tmp/
+
+# Node / frontend dependencies and build output
+node_modules/
+dist/
+.vite/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo
+
+# Rust / Tauri build output and generated schemas
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.cargo/
+
+# Installers, bundles and updater metadata
+release/
+artifacts/
+*.blockmap
+dev-app-update.yml
+
+# Local env, keys and certificates
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+!*.pub
+
+# Logs, debug logs and OS noise
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors, AI tools and local overrides
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.claude/
+.cursor/
+.continue/
+.aider*
+*.code-workspace
+*.local
+*.bak
+*.orig
+*.rej
+*.swp
+*~
