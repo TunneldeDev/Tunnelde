@@ -74,8 +74,8 @@ jobs:
             args: ""
           - platform: macos-14
             args: "--target aarch64-apple-darwin"
-          # Intel runner; switch to macos-15-intel if this image is retired.
-          - platform: macos-13
+          # Intel image; macos-13 is no longer available.
+          - platform: macos-15-intel
             args: "--target x86_64-apple-darwin"
           - platform: ubuntu-22.04
             args: ""
