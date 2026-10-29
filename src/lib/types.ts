@@ -1,0 +1,168 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
+
+export type Language = "system" | "zh-CN" | "en-US";
+export type ThemeMode = "dark" | "light" | "system";
+export type Density = "comfortable" | "compact";
+export type Accent = "blue" | "cyan" | "green" | "orange" | "violet";
+
+export interface Settings {
+  language: Language;
+  theme: ThemeMode;
+  accent: Accent | string;
+  density: Density;
+  uiFontSize: number;
+  monoFontSize: number;
+  sidebarWidth: number;
+  rightPanel: boolean;
+  rightPanelWidth: number;
+  userCss: string;
+  autoCheckUpdates: boolean;
+  skippedVersion: string | null;
+  lastUpdateCheck: number | null;
+  closeToTray: boolean;
+}
+
+export type SettingsPatch = Partial<Settings>;
+
+export interface SettingsSchema {
+  languages: Language[];
+  themes: ThemeMode[];
+  accents: string[];
+  densities: Density[];
+}
+
+export interface AppInfo {
+  name: string;
+  version: string;
+  tauriVersion: string;
+  os: string;
+  arch: string;
+  debug: boolean;
+  dataDir: string;
+  logDir: string;
+  schema: SettingsSchema;
+}
+
+export interface Group {
+  id: string;
+  name: string;
+  parentId: string | null;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type AuthMethod = "password" | "key" | "agent" | "keyboardInteractive";
+
+export interface Host {
+  id: string;
+  groupId: string | null;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  authMethod: AuthMethod;
+  favorite: boolean;
+  color: string | null;
+  tags: string[];
+  note: string | null;
+  lastUsedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface HostInput {
+  name: string;
+  groupId?: string | null;
+  host: string;
+  port?: number;
+  username?: string;
+  authMethod?: AuthMethod;
+  favorite?: boolean;
+  color?: string | null;
+  tags?: string[];
+  note?: string | null;
+}
+
+export interface HostsSnapshot {
+  groups: Group[];
+  hosts: Host[];
+}
+
+export type TabKind = "welcome" | "host" | "settings" | "about" | "updates" | "terminal";
+
+export interface TabRecord {
+  id: string;
+  kind: TabKind;
+  title: string;
+  hostId: string | null;
+  sortOrder: number;
+  pinned: boolean;
+  state: string | null;
+}
+
+export interface DiskInfo {
+  mount: string;
+  total: number;
+  available: number;
+}
+
+export interface SystemStats {
+  cpuUsage: number;
+  memoryUsed: number;
+  memoryTotal: number;
+  swapUsed: number;
+  swapTotal: number;
+  diskUsed: number;
+  diskTotal: number;
+  uptime: number;
+  loadAverage: [number, number, number];
+  processCount: number;
+  appMemory: number;
+  appProcesses: number;
+  disks: DiskInfo[];
+  sampledAt: number;
+}
+
+export type UpdatePhase =
+  | "idle"
+  | "checking"
+  | "upToDate"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "unsupported"
+  | "error";
+
+export interface UpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  version: string | null;
+  notes: string | null;
+  publishedAt: number | null;
+  progress: number | null;
+  contentLength: number | null;
+  error: string | null;
+  lastChecked: number | null;
+  available: boolean;
+  autoInstall: boolean;
+  unsupportedReason: string | null;
+  downloadUrl: string | null;
+  skipped: boolean;
+}
+
+export interface IpcError {
+  code: string;
+  message: string;
+}
+
+export function isIpcError(value: unknown): value is IpcError {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    "message" in value &&
+    typeof (value as IpcError).message === "string"
+  );
+}
