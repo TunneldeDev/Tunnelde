@@ -104,15 +104,17 @@ mod tests {
 
     #[test]
     fn clamps_and_whitelists() {
-        let mut settings = Settings::default();
-        settings.language = "fr".into();
-        settings.theme = "neon".into();
-        settings.accent = "purple".into();
-        settings.density = "dense".into();
-        settings.ui_font_size = 99;
-        settings.mono_font_size = 1;
-        settings.sidebar_width = 10;
-        settings.right_panel_width = 9999;
+        let mut settings = Settings {
+            language: "fr".into(),
+            theme: "neon".into(),
+            accent: "purple".into(),
+            density: "dense".into(),
+            ui_font_size: 99,
+            mono_font_size: 1,
+            sidebar_width: 10,
+            right_panel_width: 9999,
+            ..Settings::default()
+        };
 
         settings.sanitize();
 
@@ -128,16 +130,20 @@ mod tests {
 
     #[test]
     fn keeps_custom_hex_accents() {
-        let mut settings = Settings::default();
-        settings.accent = "#a1B2c3".into();
+        let mut settings = Settings {
+            accent: "#a1B2c3".into(),
+            ..Settings::default()
+        };
         settings.sanitize();
         assert_eq!(settings.accent, "#a1B2c3");
     }
 
     #[test]
     fn drops_blank_skipped_versions() {
-        let mut settings = Settings::default();
-        settings.skipped_version = Some("   ".into());
+        let mut settings = Settings {
+            skipped_version: Some("   ".into()),
+            ..Settings::default()
+        };
         settings.sanitize();
         assert!(settings.skipped_version.is_none());
     }

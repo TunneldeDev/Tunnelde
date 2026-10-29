@@ -54,7 +54,7 @@ pub fn snapshot(system: &mut System, disks: &mut Disks) -> SystemStats {
             available: disk.available_space(),
         })
         .collect();
-    entries.sort_by(|left, right| right.total.cmp(&left.total));
+    entries.sort_by_key(|entry| std::cmp::Reverse(entry.total));
     entries.dedup_by(|left, right| left.mount == right.mount);
     for entry in &entries {
         disk_total += entry.total;
