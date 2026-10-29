@@ -32,7 +32,8 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 thiserror = "2.0.21"
 uuid = { version = "1.29.0", features = ["v4"] }
 chrono = { version = "0.4.45", features = ["serde"] }
-sysinfo = "0.38.4"
+# Pinned: 0.39+ requires a newer rustc than the supported toolchain.
+sysinfo = "=0.38.4"
 
 [profile.release]
 codegen-units = 1

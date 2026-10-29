@@ -1,4 +1,7 @@
 version: 2
+
+# Major upgrades are reviewed by hand: the frontend toolchain, Tauri plugins and
+# the bundled runtime move together, so an automatic major bump is rarely safe.
 updates:
   - package-ecosystem: npm
     directory: /
@@ -6,6 +9,9 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       react:
         patterns:
@@ -32,6 +38,12 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+      # sysinfo bumps its MSRV in minor releases; pinned until the toolchain moves.
+      - dependency-name: sysinfo
+        update-types: ["version-update:semver-minor"]
     groups:
       tauri:
         patterns:
@@ -50,3 +62,6 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
