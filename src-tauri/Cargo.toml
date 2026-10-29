@@ -1,0 +1,42 @@
+[package]
+name = "tunnelde"
+version = "0.1.0"
+description = "Desktop SSH and SFTP workstation with a plugin system"
+authors = ["quyansiyuanwang"]
+license = "GPL-3.0-only"
+repository = "https://github.com/TunneldeDev/Tunnelde"
+edition = "2021"
+rust-version = "1.82"
+
+[lib]
+name = "tunnelde_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.7.4", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.5", features = ["tray-icon", "image-png"] }
+tauri-plugin-dialog = "2.8.4"
+tauri-plugin-opener = "2.7.2"
+tauri-plugin-single-instance = "2.5.5"
+tauri-plugin-updater = "2.14.1"
+tauri-plugin-window-state = "2.5.0"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+rusqlite = { version = "0.41.1", features = ["bundled"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.5"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+thiserror = "2.0.21"
+uuid = { version = "1.29.0", features = ["v4"] }
+chrono = { version = "0.4.45", features = ["serde"] }
+sysinfo = "0.38.4"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
+panic = "abort"
