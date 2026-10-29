@@ -1,0 +1,36 @@
+frontend:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/**
+          - index.html
+          - vite.config.ts
+          - tsconfig.json
+
+rust:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src-tauri/**/*.rs
+          - src-tauri/Cargo.toml
+          - src-tauri/Cargo.lock
+          - src-tauri/tauri.conf.json
+          - src-tauri/capabilities/**
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**
+          - scripts/ci/**
+
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - "*.md"
+
+brand:
+  - changed-files:
+      - any-glob-to-any-file:
+          - assets/brand/**
+          - build/**
+          - public/brand/**
+          - resources/**
+          - scripts/brand/**

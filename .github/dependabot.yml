@@ -1,0 +1,52 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      react:
+        patterns:
+          - react
+          - react-dom
+          - "@types/react"
+          - "@types/react-dom"
+      tooling:
+        patterns:
+          - vite
+          - "@vitejs/*"
+          - typescript
+          - typescript-eslint
+          - eslint
+          - eslint-plugin-*
+          - prettier
+          - vitest
+          - "@testing-library/*"
+          - jsdom
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      tauri:
+        patterns:
+          - tauri
+          - tauri-*
+      rust-runtime:
+        patterns:
+          - tokio
+          - serde
+          - serde_json
+          - tracing
+          - tracing-*
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
