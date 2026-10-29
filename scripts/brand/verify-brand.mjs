@@ -5,9 +5,9 @@
  * Verify the committed brand assets without extra dependencies.
  * Checks PNG dimensions, ICO frame list and ICNS container integrity.
  */
-import { readFileSync, statSync } from 'node:fs';
+import { readFileSync } from "node:fs";
 
-const root = new URL('../../', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1');
+const root = new URL("../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const read = (path) => readFileSync(path);
 const fail = (message) => {
   console.error(`[brand:verify] FAIL ${message}`);
@@ -43,13 +43,13 @@ function icoInfo(path) {
 
 function icnsInfo(path) {
   const bytes = read(path);
-  if (bytes.subarray(0, 4).toString('ascii') !== 'icns') return fail(`${path}: not ICNS`);
+  if (bytes.subarray(0, 4).toString("ascii") !== "icns") return fail(`${path}: not ICNS`);
   const length = bytes.readUInt32BE(4);
   if (length !== bytes.length) fail(`${path}: length ${length} != file ${bytes.length}`);
   const types = [];
   let offset = 8;
   while (offset + 8 <= bytes.length) {
-    const type = bytes.subarray(offset, offset + 4).toString('ascii');
+    const type = bytes.subarray(offset, offset + 4).toString("ascii");
     const size = bytes.readUInt32BE(offset + 4);
     if (size < 8 || offset + size > bytes.length) {
       fail(`${path}: bad entry ${type} size ${size}`);
@@ -62,13 +62,13 @@ function icnsInfo(path) {
 }
 
 const expected = {
-  'assets/brand/tunnelde-mark-1024.png': { width: 1024, height: 1024 },
-  'src-tauri/icons/32x32.png': { width: 32, height: 32 },
-  'src-tauri/icons/128x128.png': { width: 128, height: 128 },
-  'src-tauri/icons/128x128@2x.png': { width: 256, height: 256 },
-  'public/brand/mark-256.png': { width: 256, height: 256 },
-  'resources/tray-32.png': { width: 32, height: 32 },
-  'resources/tray-16.png': { width: 16, height: 16 },
+  "assets/brand/tunnelde-mark-1024.png": { width: 1024, height: 1024 },
+  "src-tauri/icons/32x32.png": { width: 32, height: 32 },
+  "src-tauri/icons/128x128.png": { width: 128, height: 128 },
+  "src-tauri/icons/128x128@2x.png": { width: 256, height: 256 },
+  "public/brand/mark-256.png": { width: 256, height: 256 },
+  "resources/tray-32.png": { width: 32, height: 32 },
+  "resources/tray-16.png": { width: 16, height: 16 },
 };
 
 for (const [relative, size] of Object.entries(expected)) {
@@ -78,7 +78,8 @@ for (const [relative, size] of Object.entries(expected)) {
     if (info.width !== size.width || info.height !== size.height) {
       fail(`${relative}: ${info.width}x${info.height}, expected ${size.width}x${size.height}`);
     }
-    if (info.colorType !== 6) fail(`${relative}: expected RGBA (color type 6), got ${info.colorType}`);
+    if (info.colorType !== 6)
+      fail(`${relative}: expected RGBA (color type 6), got ${info.colorType}`);
     console.log(`[brand:verify] png ${relative} ${info.width}x${info.height} rgba`);
   } catch (error) {
     fail(`${relative}: ${error.message}`);
@@ -90,31 +91,33 @@ try {
   for (const required of [16, 32, 48, 256]) {
     if (!sizes.includes(required)) fail(`icon.ico missing ${required}px frame`);
   }
-  console.log(`[brand:verify] ico ${sizes.join('/')}`);
+  console.log(`[brand:verify] ico ${sizes.join("/")}`);
 } catch (error) {
   fail(`icon.ico: ${error.message}`);
 }
 
 try {
   const types = icnsInfo(`${root}src-tauri/icons/icon.icns`);
-  for (const required of ['ic07', 'ic08', 'ic10']) {
+  for (const required of ["ic07", "ic08", "ic10"]) {
     if (!types.includes(required)) fail(`icon.icns missing ${required}`);
   }
-  console.log(`[brand:verify] icns ${types.join('/')}`);
+  console.log(`[brand:verify] icns ${types.join("/")}`);
 } catch (error) {
   fail(`icon.icns: ${error.message}`);
 }
 
-for (const relative of ['build/installerSidebar.bmp', 'build/installerHeader.bmp']) {
+for (const relative of ["build/installerSidebar.bmp", "build/installerHeader.bmp"]) {
   try {
     const bytes = read(`${root}${relative}`);
-    if (bytes.subarray(0, 2).toString('ascii') !== 'BM') fail(`${relative}: not BMP`);
+    if (bytes.subarray(0, 2).toString("ascii") !== "BM") fail(`${relative}: not BMP`);
     const bits = bytes.readUInt16LE(28);
     if (bits !== 24) fail(`${relative}: expected 24-bit BMP, got ${bits}`);
-    console.log(`[brand:verify] bmp ${relative} 24-bit ${bytes.readInt32LE(18)}x${Math.abs(bytes.readInt32LE(22))}`);
+    console.log(
+      `[brand:verify] bmp ${relative} 24-bit ${bytes.readInt32LE(18)}x${Math.abs(bytes.readInt32LE(22))}`,
+    );
   } catch (error) {
     fail(`${relative}: ${error.message}`);
   }
 }
 
-console.log(`[brand:verify] ${process.exitCode ? 'completed with errors' : 'all checks passed'}`);
+console.log(`[brand:verify] ${process.exitCode ? "completed with errors" : "all checks passed"}`);
