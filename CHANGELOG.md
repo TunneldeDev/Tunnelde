@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-30
+
 ### Added
 
 - Tauri 2 desktop shell with a React 19 workspace: tab strip, host tree, system panel and status bar.
