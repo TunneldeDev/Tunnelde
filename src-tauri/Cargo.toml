@@ -32,7 +32,7 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
 thiserror = "2.0.21"
 uuid = { version = "1.29.0", features = ["v4"] }
 chrono = { version = "0.4.45", features = ["serde"] }
-sysinfo = "0.38.4"
+sysinfo = "0.39.6"
 
 [profile.release]
 codegen-units = 1
