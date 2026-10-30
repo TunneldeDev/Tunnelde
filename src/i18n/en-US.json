@@ -291,7 +291,9 @@
     "fileName": "File name",
     "openWith": "Open",
     "copyToServer": "Copy to server",
-    "copyToFolder": "Copy to folder"
+    "copyToFolder": "Copy to folder",
+    "deleteManyBody": "Delete {{count}} items and everything inside them?",
+    "selectedCount": "{{count}} selected"
   },
   "processes": {
     "title": "Processes",

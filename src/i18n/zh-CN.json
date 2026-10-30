@@ -291,7 +291,9 @@
     "fileName": "文件名",
     "openWith": "打开",
     "copyToServer": "复制到服务器",
-    "copyToFolder": "复制到文件夹"
+    "copyToFolder": "复制到文件夹",
+    "deleteManyBody": "删除 {{count}} 项及其中的全部内容？",
+    "selectedCount": "已选 {{count}} 项"
   },
   "processes": {
     "title": "进程",

@@ -20,10 +20,16 @@ File panes:
 | Keys | Action |
 | --- | --- |
 | `↑` / `↓` | Move the selection |
+| `Shift+↑` / `Shift+↓` | Extend the selection |
 | `Enter` | Open a folder, or edit/open the selected file |
 | `Backspace`, `Alt+←` | Go to the parent folder |
 | `F2` | Rename the selected entry in place |
-| `Delete` | Delete the selected entry |
+| `Delete` | Delete the selected entries |
+| `Ctrl+A` | Select every entry |
+| `Esc` | Clear the selection |
+
+With the mouse, `Ctrl/Cmd+click` adds or removes one row and `Shift+click` selects a range. Delete,
+transfer, cut, copy, paste and drag all act on the whole selection.
 
 Window gestures:
 

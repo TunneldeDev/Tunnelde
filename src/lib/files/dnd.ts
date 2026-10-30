@@ -5,32 +5,39 @@ import type { FsSource } from "@/lib/api/types";
 
 export const DRAG_MIME = "application/x-tunnelde-file";
 
-export interface DragPayload {
-  source: FsSource;
+export interface DragItem {
   path: string;
   name: string;
   isDir: boolean;
 }
 
+export interface DragPayload {
+  source: FsSource;
+  items: DragItem[];
+}
+
+/** One source/destination pair inside a batch operation. */
+export interface DropOp {
+  from: string;
+  to: string;
+}
+
 export type DropAction =
   | { kind: "noop" }
-  | { kind: "move"; source: FsSource; from: string; to: string }
-  | { kind: "copy"; source: FsSource; from: string; to: string }
+  | { kind: "move"; source: FsSource; ops: DropOp[] }
+  | { kind: "copy"; source: FsSource; ops: DropOp[] }
   | {
       kind: "transfer";
       from: FsSource;
       to: FsSource;
-      fromPath: string;
-      toPath: string;
+      ops: DropOp[];
       move: boolean;
     };
 
 export interface PasteClip {
   source: FsSource;
   action: "cut" | "copy";
-  path: string;
-  name: string;
-  isDir: boolean;
+  items: DragItem[];
 }
 
 export function sourceKey(source: FsSource): string {
@@ -67,7 +74,9 @@ export function isInside(parent: string, candidate: string): boolean {
   if (!base) {
     return false;
   }
-  return candidate === base || candidate.startsWith(`${base}/`) || candidate.startsWith(`${base}\\`);
+  return (
+    candidate === base || candidate.startsWith(`${base}/`) || candidate.startsWith(`${base}\\`)
+  );
 }
 
 function parsedSource(value: unknown): FsSource | null {
@@ -84,6 +93,28 @@ function parsedSource(value: unknown): FsSource | null {
   return null;
 }
 
+function parsedItems(value: unknown): DragItem[] | null {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+  const items: DragItem[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      return null;
+    }
+    const candidate = entry as { path?: unknown; name?: unknown; isDir?: unknown };
+    if (
+      typeof candidate.path !== "string" ||
+      typeof candidate.name !== "string" ||
+      typeof candidate.isDir !== "boolean"
+    ) {
+      return null;
+    }
+    items.push({ path: candidate.path, name: candidate.name, isDir: candidate.isDir });
+  }
+  return items;
+}
+
 export function setDragPayload(data: DataTransfer, payload: DragPayload): void {
   data.setData(DRAG_MIME, JSON.stringify(payload));
   data.effectAllowed = "copyMove";
@@ -95,78 +126,90 @@ export function readDragPayload(data: DataTransfer): DragPayload | null {
     return null;
   }
   try {
-    const parsed = JSON.parse(raw) as {
-      source?: unknown;
-      path?: unknown;
-      name?: unknown;
-      isDir?: unknown;
-    };
+    const parsed = JSON.parse(raw) as { source?: unknown; items?: unknown };
     const source = parsedSource(parsed.source);
-    if (
-      source &&
-      typeof parsed.path === "string" &&
-      typeof parsed.name === "string" &&
-      typeof parsed.isDir === "boolean"
-    ) {
-      return { source, path: parsed.path, name: parsed.name, isDir: parsed.isDir };
-    }
+    const items = parsedItems(parsed.items);
+    return source && items ? { source, items } : null;
   } catch {
     return null;
   }
-  return null;
 }
 
 /**
- * Decides what a drop means: a rename inside one panel, a copy between two
- * panels, or nothing when the target is where the entry already lives.
+ * Turns a dragged selection into the operations a drop performs: a rename inside
+ * one panel, a copy between panels, or nothing when every item would land where
+ * it already is.
  */
 export function resolveDrop(
   payload: DragPayload,
   target: FsSource,
   targetDirectory: string,
 ): DropAction {
-  const destination = joinPath(targetDirectory, payload.name, separatorFor(target));
+  const separator = separatorFor(target);
+  const ops: DropOp[] = [];
 
-  if (sameSource(payload.source, target)) {
-    if (destination === payload.path || isInside(payload.path, targetDirectory)) {
-      return { kind: "noop" };
+  for (const item of payload.items) {
+    const destination = joinPath(targetDirectory, item.name, separator);
+    if (sameSource(payload.source, target)) {
+      if (destination === item.path || isInside(item.path, targetDirectory)) {
+        continue;
+      }
     }
-    return { kind: "move", source: target, from: payload.path, to: destination };
+    ops.push({ from: item.path, to: destination });
   }
 
-  return {
-    kind: "transfer",
-    from: payload.source,
-    to: target,
-    fromPath: payload.path,
-    toPath: destination,
-    move: false,
-  };
+  if (ops.length === 0) {
+    return { kind: "noop" };
+  }
+  if (sameSource(payload.source, target)) {
+    return { kind: "move", source: target, ops };
+  }
+  return { kind: "transfer", from: payload.source, to: target, ops, move: false };
 }
 
-/** Turns a cut or copied entry into the operation a paste performs. */
+/** Turns a cut or copied selection into the operations a paste performs. */
 export function planPaste(
   clip: PasteClip,
   target: FsSource,
   targetDirectory: string,
 ): DropAction {
-  const destination = joinPath(targetDirectory, clip.name, separatorFor(target));
-
-  if (sameSource(clip.source, target)) {
-    if (destination === clip.path || isInside(clip.path, targetDirectory)) {
-      return { kind: "noop" };
-    }
-    return clip.action === "cut"
-      ? { kind: "move", source: target, from: clip.path, to: destination }
-      : { kind: "copy", source: target, from: clip.path, to: destination };
+  if (clip.items.length === 0) {
+    return { kind: "noop" };
   }
+  return sameSource(clip.source, target)
+    ? pasteWithin(clip, target, targetDirectory)
+    : pasteAcross(clip, target, targetDirectory);
+}
 
+function pasteWithin(clip: PasteClip, target: FsSource, directory: string): DropAction {
+  const separator = separatorFor(target);
+  const ops: DropOp[] = [];
+  for (const item of clip.items) {
+    const destination = joinPath(directory, item.name, separator);
+    if (destination === item.path || isInside(item.path, directory)) {
+      continue;
+    }
+    ops.push({ from: item.path, to: destination });
+  }
+  if (ops.length === 0) {
+    return { kind: "noop" };
+  }
+  return clip.action === "cut"
+    ? { kind: "move", source: target, ops }
+    : { kind: "copy", source: target, ops };
+}
+
+function pasteAcross(clip: PasteClip, target: FsSource, directory: string): DropAction {
+  const separator = separatorFor(target);
+  const ops = clip.items.map((item) => ({
+    from: item.path,
+    to: joinPath(directory, item.name, separator),
+  }));
   return {
     kind: "transfer",
     from: clip.source,
     to: target,
-    fromPath: clip.path,
-    toPath: destination,
+    ops,
     move: clip.action === "cut",
   };
 }

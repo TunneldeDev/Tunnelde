@@ -147,6 +147,37 @@ describe("SftpPage", () => {
     });
   });
 
+  it("transfers a whole selection", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    const notes = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;
+    const source = (await screen.findByText("src")).closest(".sftp-row") as HTMLElement;
+
+    fireEvent.click(notes);
+    fireEvent.click(source, { ctrlKey: true });
+    expect(screen.getByText("2 selected")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
+
+    await waitFor(() => {
+      expect(fsMock.transfer).toHaveBeenCalledTimes(2);
+    });
+    expect(fsMock.transfer).toHaveBeenCalledWith(
+      { kind: "local" },
+      "C:\\work\\src",
+      { kind: "remote", sessionId: "session-1" },
+      "/srv/app/src",
+      false,
+    );
+  });
+
+  it("selects everything with the keyboard", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0] as HTMLElement;
+    fireEvent.keyDown(local, { key: "a", ctrlKey: true });
+    expect(screen.getByText("2 selected")).toBeTruthy();
+  });
+
   it("opens local files with the system handler", async () => {
     render(<SftpPage sessionId="session-1" />);
     const row = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;
