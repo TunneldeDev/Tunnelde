@@ -5,12 +5,14 @@
 | Layer | Location | Responsibility |
 | --- | --- | --- |
 | UI | `src/features/*` | One folder per area: welcome, hosts, connect, terminal, sftp, editor, history, monitor, plugins, settings, about, updates, dialogs |
+| Components | `src/components/{layout,ui}/*` | Shell layout, and primitives grouped as `form`, `overlay` and `display` |
 | State | `src/store/*` | Zustand stores: workspace (tabs and panes), settings, hosts, ssh, transfers, editors, monitor, plugins, dialogs, toasts, updates |
-| Bridge | `src/lib/ipc.ts` | Typed wrappers over Tauri `invoke` and event listeners; no business logic |
+| Library | `src/lib/{api,files,text,prefs,session,plugins}/*` | IPC wrappers and types, file operations and drag rules, formatting, appearance, terminal input, clipboard |
+| Tests | `tests/*` | Mirrors the modules above and never sits next to the implementation |
 | Commands | `src-tauri/src/commands.rs` | Thin `#[tauri::command]` layer that validates input and calls a module |
-| Domain | `src-tauri/src/{ssh,sftp,monitor,plugins,vault,update}.rs` | SSH sessions, file transfers, remote sampling, plugin hosts, credential store, updater |
+| Domain | `src-tauri/src/ssh/{session,files,monitor}.rs`, `plugins/`, `vault.rs`, `update.rs` | SSH sessions, file transfers between any two endpoints, remote sampling, plugin hosts, credential store, updater |
 | Storage | `src-tauri/src/db/*` | SQLite with numbered migrations: hosts, groups, settings, tabs, audit, known hosts, command history |
-| Shell | `src-tauri/src/{lib,state,window,tray,logging,system}.rs` | App wiring, window and tray behaviour, logging, local system sampling |
+| Platform | `src-tauri/src/{lib,state,settings}.rs`, `platform/{window,tray,menu,logging,system}.rs` | App wiring, window, tray and menu behaviour, logging, local system sampling |
 
 ## Data
 
