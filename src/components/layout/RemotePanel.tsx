@@ -7,6 +7,7 @@ import {
   Gauge,
   HardDrive,
   List,
+  Maximize2,
   MemoryStick,
   Network,
   Timer,
@@ -19,6 +20,7 @@ import { IconButton } from "@/components/ui/Button";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { formatBytes, formatPercent, formatUptime } from "@/lib/format";
 import { useMonitor } from "@/store/monitor";
+import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
 
 function Meter({ value }: { value: number }) {
@@ -100,6 +102,7 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
   const entry = useMonitor((state) => state.entries[sessionId]);
   const [processesOpen, setProcessesOpen] = useState(false);
   const sample = useMonitor((state) => state.sample);
+  const openMonitor = useWorkspace((state) => state.openMonitor);
 
   useEffect(() => {
     void sample(sessionId);
@@ -124,6 +127,14 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
           {t("panel.remote")}
           {session ? <span className="panel__subject">{session.title}</span> : null}
         </span>
+        <IconButton
+          label={t("monitor.open")}
+          size="sm"
+          disabled={!session}
+          onClick={() => session && openMonitor(session)}
+        >
+          <Maximize2 size={12} />
+        </IconButton>
         <IconButton label={t("panel.hide")} size="sm" onClick={onHide}>
           <X size={13} />
         </IconButton>

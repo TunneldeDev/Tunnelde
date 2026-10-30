@@ -5,6 +5,7 @@ import {
   ArrowUpCircle,
   CircleDot,
   Download,
+  Activity,
   FileText,
   FolderTree,
   History,
@@ -35,6 +36,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   sftp: FolderTree,
   editor: FileText,
   history: History,
+  monitor: Activity,
 };
 
 const NAV_KEYS = {
@@ -129,7 +131,8 @@ export function TopBar() {
                 tab.kind === "terminal" ||
                 tab.kind === "sftp" ||
                 tab.kind === "editor" ||
-                tab.kind === "history"
+                tab.kind === "history" ||
+                tab.kind === "monitor"
                   ? tab.title
                   : t(NAV_KEYS[tab.kind])}
               </span>

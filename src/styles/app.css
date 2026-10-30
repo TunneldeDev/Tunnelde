@@ -2393,3 +2393,123 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---------- monitor ---------- */
+
+.monitor-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  background: var(--td-bg);
+}
+
+.monitor-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.monitor-head__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.monitor-head__meta {
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-faint);
+}
+
+.monitor-head__live {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-muted);
+}
+
+.monitor-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--td-green);
+  box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.14);
+}
+
+.monitor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.monitor-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--td-panel);
+}
+
+.monitor-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.monitor-card__label {
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--td-faint);
+}
+
+.monitor-card__value {
+  font-family: var(--td-mono);
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.monitor-card__caption {
+  margin: 0;
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-faint);
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: 76px;
+}
+
+.chart__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+
+.chart__area {
+  fill: currentColor;
+  opacity: 0.12;
+  stroke: none;
+}
+
+.chart--accent {
+  color: var(--td-accent);
+}
+
+.chart--green {
+  color: var(--td-green);
+}
+
+.chart--orange {
+  color: var(--td-orange);
+}

@@ -101,7 +101,8 @@ export type TabKind =
   | "terminal"
   | "sftp"
   | "editor"
-  | "history";
+  | "history"
+  | "monitor";
 
 export interface TabRecord {
   id: string;

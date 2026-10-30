@@ -7,6 +7,7 @@ import { EmptyState } from "@/components/ui/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
+import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -35,6 +36,8 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
       return <EditorPage tabId={tab.id} active={active} />;
     case "history":
       return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
+    case "monitor":
+      return <MonitorPage sessionId={tab.id.replace("monitor:", "")} />;
     default:
       return null;
   }

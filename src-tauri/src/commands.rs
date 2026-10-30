@@ -20,8 +20,9 @@ use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 9] = [
+const TAB_KINDS: [&str; 10] = [
     "welcome", "host", "settings", "about", "updates", "terminal", "sftp", "editor", "history",
+    "monitor",
 ];
 const MAX_TABS: usize = 40;
 const MAX_USER_CSS: usize = 200_000;

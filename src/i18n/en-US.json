@@ -290,6 +290,12 @@
     "clear": "Clear",
     "clearTitle": "Clear history",
     "clearBody": "Remove all commands recorded for “{{name}}”?"
+  },  "monitor": {
+    "title": "Monitor",
+    "open": "Open monitor",
+    "live": "{{count}} samples",
+    "average": "avg",
+    "peak": "peak"
   },  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",
