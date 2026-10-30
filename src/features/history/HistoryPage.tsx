@@ -144,7 +144,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
               >
                 <CornerDownLeft size={12} />
               </IconButton>
-              <IconButton label={t("history.delete")} size="sm" onClick={() => remove(entry)}>
+              <IconButton label={t("history.delete")} size="sm" danger onClick={() => remove(entry)}>
                 <Trash2 size={12} />
               </IconButton>
             </span>

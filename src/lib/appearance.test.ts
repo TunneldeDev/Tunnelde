@@ -32,6 +32,16 @@ describe("resolveLanguage", () => {
     expect(resolveLanguage("en-US", "zh-CN")).toBe("en-US");
     expect(resolveLanguage("zh-CN", "en-US")).toBe("zh-CN");
   });
+
+  it("reads the OS language list in order", () => {
+    expect(resolveLanguage("system", ["zh-CN", "en-US"])).toBe("zh-CN");
+    expect(resolveLanguage("system", ["en-US", "zh-CN"])).toBe("en-US");
+    expect(resolveLanguage("system", ["fr-FR", "zh-CN", "en-US"])).toBe("zh-CN");
+  });
+
+  it("defaults to English without a usable language", () => {
+    expect(resolveLanguage("system", [])).toBe("en-US");
+  });
 });
 
 describe("validateUserCss", () => {

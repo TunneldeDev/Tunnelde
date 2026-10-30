@@ -1,10 +1,23 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import type { Language, Settings, ThemeMode } from "./types";
+import type { Language, MonoFont, Settings, ThemeMode } from "./types";
 
 export type ResolvedTheme = "dark" | "light";
 export type ResolvedLanguage = "zh-CN" | "en-US";
+
+/** Font stacks offered for the terminal and every monospace surface. */
+export const MONO_STACKS: Record<MonoFont, string> = {
+  "fira-code": '"Fira Code", "Cascadia Mono", "JetBrains Mono", ui-monospace, monospace',
+  "jetbrains-mono": '"JetBrains Mono", "Fira Code", "Cascadia Mono", ui-monospace, monospace',
+  "plex-mono": '"IBM Plex Mono", "Cascadia Mono", "JetBrains Mono", ui-monospace, monospace',
+  system: "ui-monospace, SFMono-Regular, Consolas, monospace",
+};
+
+export function monoStack(font: MonoFont): string {
+  return MONO_STACKS[font] ?? MONO_STACKS["fira-code"];
+}
+
 
 export function resolveTheme(mode: ThemeMode, prefersLight = false): ResolvedTheme {
   if (mode === "system") {
@@ -13,11 +26,25 @@ export function resolveTheme(mode: ThemeMode, prefersLight = false): ResolvedThe
   return mode;
 }
 
-export function resolveLanguage(setting: Language, navigatorLanguage = "en-US"): ResolvedLanguage {
+export function resolveLanguage(
+  setting: Language,
+  navigatorLanguage: string | readonly string[] = "en-US",
+): ResolvedLanguage {
   if (setting !== "system") {
     return setting;
   }
-  return navigatorLanguage.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
+  const candidates =
+    typeof navigatorLanguage === "string" ? [navigatorLanguage] : navigatorLanguage;
+  for (const candidate of candidates) {
+    const value = candidate.toLowerCase();
+    if (value.startsWith("zh")) {
+      return "zh-CN";
+    }
+    if (value.startsWith("en")) {
+      return "en-US";
+    }
+  }
+  return "en-US";
 }
 
 export function prefersLightScheme(): boolean {
@@ -55,6 +82,7 @@ export function applyAppearance(settings: Settings, prefersLight = prefersLightS
   root.dataset.accent = settings.accent;
   root.style.setProperty("--td-font-size", `${settings.uiFontSize}px`);
   root.style.setProperty("--td-mono-size", `${settings.monoFontSize}px`);
+  root.style.setProperty("--td-mono", monoStack(settings.monoFont));
 
   const styleId = "td-user-css";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;

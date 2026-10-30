@@ -121,6 +121,7 @@
 
 .td-tab__label {
   font-size: 12.5px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -298,8 +299,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  height: var(--td-row-h);
-  padding: 0 4px 0 13px;
+  min-height: var(--td-row-h);
+  padding: 3px 4px 3px 13px;
   border-radius: var(--td-radius-sm);
   transition: background var(--td-ease);
 }
@@ -571,6 +572,7 @@
 
 .welcome__actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   margin-top: 8px;
 }
@@ -658,6 +660,7 @@
 
 .host-head__actions {
   display: flex;
+  align-items: center;
   gap: 4px;
 }
 
@@ -914,6 +917,7 @@
 .updates__actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-top: 12px;
 }
@@ -994,6 +998,15 @@
   color: var(--td-text);
 }
 
+.td-btn--ghost-danger {
+  color: var(--td-red);
+}
+
+.td-btn--ghost-danger:hover {
+  background: rgba(255, 93, 108, 0.12);
+  color: var(--td-red);
+}
+
 .td-btn--danger {
   background: var(--td-red);
   color: #fff;
@@ -1010,8 +1023,10 @@
 .td-icon-btn {
   width: 28px;
   height: 28px;
+  padding: 0;
   display: inline-grid;
   place-items: center;
+  line-height: 0;
   border: 1px solid transparent;
   border-radius: var(--td-radius-sm);
   background: transparent;
@@ -1019,6 +1034,10 @@
   transition:
     background var(--td-ease),
     color var(--td-ease);
+}
+
+.td-icon-btn > svg {
+  display: block;
 }
 
 .td-icon-btn:hover {
@@ -1029,6 +1048,15 @@
 .td-icon-btn.is-active {
   background: var(--td-accent-soft);
   color: var(--td-accent);
+}
+
+.td-icon-btn.is-danger {
+  color: var(--td-red);
+}
+
+.td-icon-btn.is-danger:hover {
+  background: rgba(255, 93, 108, 0.12);
+  color: var(--td-red);
 }
 
 .td-icon-btn--sm {
@@ -1083,8 +1111,23 @@
 }
 
 .td-select__control {
-  appearance: none;
-  padding-right: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 22px;
+  text-align: left;
+  cursor: default;
+}
+
+.td-select__control.is-open {
+  border-color: var(--td-accent);
+}
+
+.td-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .td-select__chevron {
@@ -1094,6 +1137,44 @@
   transform: translateY(-50%);
   color: var(--td-faint);
   pointer-events: none;
+}
+
+.td-select__popup {
+  position: fixed;
+  z-index: 70;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--td-border);
+  border-radius: 8px;
+  background: var(--td-elevated);
+  box-shadow: var(--td-shadow);
+  animation: td-fade-in 100ms ease;
+}
+
+.td-select__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--td-text);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.td-select__option.is-highlight {
+  background: var(--td-hover);
+}
+
+.td-select__option[aria-selected="true"] {
+  color: var(--td-accent);
 }
 
 .td-switch {
@@ -1282,6 +1363,7 @@
 
 .td-dialog__foot {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 14px;
@@ -1509,7 +1591,11 @@
 
 .switch-field {
   flex: 0 0 auto;
-  align-items: flex-start;
+}
+
+/* The switch is shorter than an input, so centre it on the control line. */
+.switch-field .td-switch {
+  margin-top: 5px;
 }
 
 @media (max-width: 1100px) {
@@ -2317,6 +2403,7 @@
 
 .history-row__actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 2px;
   opacity: 0;

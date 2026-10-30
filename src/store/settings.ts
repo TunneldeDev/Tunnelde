@@ -25,11 +25,20 @@ interface SettingsStore {
 
 export function applySettings(settings: Settings): void {
   applyAppearance(settings);
-  const language = resolveLanguage(settings.language);
+  const language = resolveLanguage(settings.language, navigatorLanguages());
   setLanguage(language);
   if (isTauri()) {
     void api.setLocale(language).catch(() => undefined);
   }
+}
+
+/** The OS UI language reported by the webview, best match first. */
+function navigatorLanguages(): readonly string[] {
+  if (typeof navigator === "undefined") {
+    return [];
+  }
+  const list = navigator.languages?.length ? navigator.languages : [navigator.language];
+  return list.filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
 export const useSettings = create<SettingsStore>((set) => ({

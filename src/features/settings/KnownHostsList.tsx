@@ -75,6 +75,7 @@ export function KnownHostsList() {
           <IconButton
             label={t("settings.knownHostsForget")}
             size="sm"
+            danger
             onClick={() => forget(entry)}
           >
             <Trash2 size={12} />

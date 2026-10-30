@@ -7,6 +7,7 @@ pub const LANGUAGES: [&str; 3] = ["system", "zh-CN", "en-US"];
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];
 pub const ACCENTS: [&str; 5] = ["blue", "cyan", "green", "orange", "violet"];
 pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
+pub const MONO_FONTS: [&str; 4] = ["fira-code", "jetbrains-mono", "plex-mono", "system"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -21,6 +22,8 @@ pub struct Settings {
     pub density: String,
     pub ui_font_size: u16,
     pub mono_font_size: u16,
+    /// Font stack id from [`MONO_FONTS`].
+    pub mono_font: String,
     pub sidebar_width: u16,
     pub right_panel: bool,
     pub right_panel_width: u16,
@@ -40,6 +43,7 @@ impl Default for Settings {
             density: "comfortable".into(),
             ui_font_size: 13,
             mono_font_size: 13,
+            mono_font: "fira-code".into(),
             sidebar_width: 272,
             right_panel: true,
             right_panel_width: 296,
@@ -75,6 +79,9 @@ impl Settings {
         }
         self.ui_font_size = self.ui_font_size.clamp(11, 16);
         self.mono_font_size = self.mono_font_size.clamp(11, 20);
+        if !MONO_FONTS.contains(&self.mono_font.as_str()) {
+            self.mono_font = "fira-code".into();
+        }
         self.sidebar_width = self.sidebar_width.clamp(220, 420);
         self.right_panel_width = self.right_panel_width.clamp(240, 460);
         if self.user_css.len() > 200_000 {
@@ -111,6 +118,7 @@ mod tests {
             density: "dense".into(),
             ui_font_size: 99,
             mono_font_size: 1,
+            mono_font: "comic".into(),
             sidebar_width: 10,
             right_panel_width: 9999,
             ..Settings::default()
@@ -124,6 +132,7 @@ mod tests {
         assert_eq!(settings.density, "comfortable");
         assert_eq!(settings.ui_font_size, 16);
         assert_eq!(settings.mono_font_size, 11);
+        assert_eq!(settings.mono_font, "fira-code");
         assert_eq!(settings.sidebar_width, 220);
         assert_eq!(settings.right_panel_width, 460);
     }

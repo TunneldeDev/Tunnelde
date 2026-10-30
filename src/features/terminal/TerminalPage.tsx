@@ -10,11 +10,11 @@ import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/Button";
 import { StatusDot } from "@/components/ui/Misc";
-import { resolveTheme } from "@/lib/appearance";
+import { resolveTheme, monoStack } from "@/lib/appearance";
 import { decodeBase64, encodeBase64 } from "@/lib/base64";
 import { consumeInput, type CommandCapture } from "@/lib/terminalInput";
 import { api, events, isTauri } from "@/lib/ipc";
-import { TERMINAL_FONT, terminalTheme } from "@/features/terminal/terminalTheme";
+import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
@@ -32,6 +32,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const openHistory = useWorkspace((state) => state.openHistory);
   const theme = useSettings((state) => state.settings.theme);
   const fontSize = useSettings((state) => state.settings.monoFontSize);
+  const monoFont = useSettings((state) => state.settings.monoFont);
   const resolvedTheme = resolveTheme(theme);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -64,7 +65,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     }
 
     const terminal = new Terminal({
-      fontFamily: TERMINAL_FONT,
+      fontFamily: monoStack(monoFont),
       fontSize,
       lineHeight: 1.2,
       cursorBlink: true,
@@ -153,6 +154,14 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       fit();
     }
   }, [fontSize, fit]);
+
+  useEffect(() => {
+    const terminal = terminalRef.current;
+    if (terminal) {
+      terminal.options.fontFamily = monoStack(monoFont);
+      fit();
+    }
+  }, [monoFont, fit]);
 
   useEffect(() => {
     if (active) {

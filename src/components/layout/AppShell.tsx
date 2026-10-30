@@ -55,6 +55,19 @@ export function AppShell() {
         openPage("settings");
         return;
       }
+      if (key === "=" || key === "+" || key === "-" || key === "0") {
+        const settings = useSettings.getState();
+        const delta = key === "-" ? -1 : 1;
+        const next =
+          key === "0"
+            ? 13
+            : Math.min(20, Math.max(11, settings.settings.monoFontSize + delta));
+        if (next !== settings.settings.monoFontSize) {
+          event.preventDefault();
+          void settings.update({ monoFontSize: next });
+        }
+        return;
+      }
 
       const workspace = useWorkspace.getState();
       if (key === "w") {

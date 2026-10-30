@@ -7,7 +7,8 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Input, Select, Switch, Textarea } from "@/components/ui/Field";
+import { Field, Input, Switch, Textarea } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/labels";
 import { parseTags } from "@/lib/format";
 import type { AuthMethod, Group, Host } from "@/lib/types";
@@ -191,15 +192,14 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
           <Field label={t("host.authMethod")} htmlFor="host-auth" className="grow">
             <Select
               id="host-auth"
+              label={t("host.authMethod")}
               value={form.authMethod}
-              onChange={(event) => set("authMethod", event.target.value as AuthMethod)}
-            >
-              {AUTH_METHODS.map((method) => (
-                <option key={method} value={method}>
-                  {t(AUTH_LABELS[method])}
-                </option>
-              ))}
-            </Select>
+              options={AUTH_METHODS.map((method) => ({
+                value: method,
+                label: t(AUTH_LABELS[method]),
+              }))}
+              onChange={(value) => set("authMethod", value as AuthMethod)}
+            />
           </Field>
         </div>
 
@@ -207,16 +207,14 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
           <Field label={t("host.group")} htmlFor="host-group" className="grow">
             <Select
               id="host-group"
+              label={t("host.group")}
               value={form.groupId}
-              onChange={(event) => set("groupId", event.target.value)}
-            >
-              <option value="">{t("common.none")}</option>
-              {groups.map((group: Group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
-              ))}
-            </Select>
+              options={[
+                { value: "", label: t("common.none") },
+                ...groups.map((group) => ({ value: group.id, label: group.name })),
+              ]}
+              onChange={(value) => set("groupId", value)}
+            />
           </Field>
           <Field label={t("host.favorite")} className="switch-field">
             <Switch

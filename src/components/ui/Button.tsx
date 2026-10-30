@@ -5,7 +5,7 @@ import type { ButtonHTMLAttributes, ReactNode, Ref } from "react";
 
 import { cn } from "@/lib/format";
 
-type Variant = "primary" | "secondary" | "ghost" | "danger";
+type Variant = "primary" | "secondary" | "ghost" | "ghost-danger" | "danger";
 type Size = "sm" | "md";
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -41,6 +41,7 @@ export function Button({
 export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   label: string;
   active?: boolean;
+  danger?: boolean;
   size?: "sm" | "md";
   ref?: Ref<HTMLButtonElement>;
 }
@@ -48,6 +49,7 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
 export function IconButton({
   label,
   active = false,
+  danger = false,
   size = "md",
   className,
   children,
@@ -62,7 +64,13 @@ export function IconButton({
       aria-label={label}
       title={label}
       aria-pressed={active || undefined}
-      className={cn("td-icon-btn", `td-icon-btn--${size}`, active && "is-active", className)}
+      className={cn(
+        "td-icon-btn",
+        `td-icon-btn--${size}`,
+        active && "is-active",
+        danger && "is-danger",
+        className,
+      )}
       {...rest}
     >
       {children}

@@ -142,7 +142,9 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
         <span className="host-row__name">{host.name}</span>
         <span className="host-row__meta">{hostSubtitle(host.username, host.host, host.port)}</span>
       </span>
-      {host.favorite ? <Star size={11} className="host-row__star" aria-hidden="true" /> : null}
+      {host.favorite ? (
+        <Star size={11} className="host-row__star" fill="currentColor" aria-hidden="true" />
+      ) : null}
       <span className="host-row__actions">
         <Menu
           label={t("common.more")}

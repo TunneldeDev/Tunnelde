@@ -118,6 +118,7 @@ export function PluginsSection() {
                 <IconButton
                   label={t("plugins.uninstall")}
                   size="sm"
+                  danger
                   onClick={() => uninstall(plugin)}
                 >
                   <Trash2 size={12} />

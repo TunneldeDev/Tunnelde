@@ -19,7 +19,7 @@
     "duplicate": "Duplicate",
     "add": "Add",
     "search": "Search",
-    "none": "None",
+    "none": "—",
     "never": "Never",
     "apply": "Apply",
     "import": "Import",
@@ -116,6 +116,7 @@
     "densityCompact": "Compact",
     "uiFontSize": "Text size",
     "monoFontSize": "Monospace size",
+    "monoFont": "Monospace font",
     "customCss": "Custom CSS",
     "customCssPlaceholder": "/* --td-accent: #35e0ff; */",
     "cssApplied": "Custom CSS applied",
@@ -218,7 +219,9 @@
     "remember": "Remember password",
     "saved": "Saved",
     "savedHint": "Loaded from the system keychain",
-    "forget": "Forget"
+    "forget": "Forget",
+    "forgetTitle": "Forget saved password",
+    "forgetBody": "Remove the saved password for {{name}}? The next connection asks for it again."
   },
   "terminal": {
     "connect": "Connect",

@@ -95,15 +95,22 @@ function HostDetails({ host }: { host: Host }) {
           <IconButton
             label={host.favorite ? t("menu.unfavorite") : t("menu.favorite")}
             active={host.favorite}
+            size="sm"
             onClick={() => void toggleFavorite(host)}
           >
-            <Star size={15} />
+            <Star size={15} fill={host.favorite ? "currentColor" : "none"} />
           </IconButton>
-          <IconButton label={t("common.edit")} onClick={() => openHostDialog(host)}>
+          <IconButton
+            label={t("common.edit")}
+            size="sm"
+            onClick={() => openHostDialog(host)}
+          >
             <Pencil size={15} />
           </IconButton>
           <IconButton
             label={t("common.delete")}
+            size="sm"
+            danger
             onClick={() =>
               confirm({
                 title: t("host.deleteTitle"),

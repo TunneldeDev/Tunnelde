@@ -5,6 +5,7 @@ export type Language = "system" | "zh-CN" | "en-US";
 export type ThemeMode = "dark" | "light" | "system";
 export type Density = "comfortable" | "compact";
 export type Accent = "blue" | "cyan" | "green" | "orange" | "violet";
+export type MonoFont = "fira-code" | "jetbrains-mono" | "plex-mono" | "system";
 
 export interface Settings {
   language: Language;
@@ -13,6 +14,7 @@ export interface Settings {
   density: Density;
   uiFontSize: number;
   monoFontSize: number;
+  monoFont: MonoFont;
   sidebarWidth: number;
   rightPanel: boolean;
   rightPanelWidth: number;

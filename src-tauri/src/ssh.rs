@@ -370,6 +370,15 @@ pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<Se
     authenticate(&mut handle, &host, &request).await?;
 
     let channel = handle.channel_open_session().await.map_err(map_ssh_error)?;
+    // Color-aware tools look at these first; servers that do not accept them
+    // simply ignore the request.
+    for (name, value) in [
+        ("LANG", "en_US.UTF-8"),
+        ("COLORTERM", "truecolor"),
+        ("TERM_PROGRAM", "Tunnelde"),
+    ] {
+        let _ = channel.set_env(false, name, value).await;
+    }
     channel
         .request_pty(true, TERM, request.cols, request.rows, 0, 0, &[])
         .await

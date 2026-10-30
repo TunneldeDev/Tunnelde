@@ -1,11 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { ChevronDown } from "lucide-react";
 import type {
   InputHTMLAttributes,
   ReactNode,
-  SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from "react";
 
@@ -48,17 +46,6 @@ export function Textarea({
   ...rest
 }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className={cn("td-input", "td-textarea", className)} rows={rows} {...rest} />;
-}
-
-export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
-  return (
-    <span className="td-select">
-      <select className={cn("td-input", "td-select__control", className)} {...rest}>
-        {children}
-      </select>
-      <ChevronDown size={13} aria-hidden="true" className="td-select__chevron" />
-    </span>
-  );
 }
 
 export interface SwitchProps {

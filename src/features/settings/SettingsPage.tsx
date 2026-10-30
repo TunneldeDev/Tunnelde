@@ -6,15 +6,17 @@ import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/Button";
-import { Select, Switch, Textarea } from "@/components/ui/Field";
+import { Switch, Textarea } from "@/components/ui/Field";
+import { Select } from "@/components/ui/Select";
 import { Segmented, Stepper, SwatchPicker } from "@/components/ui/Segmented";
 import { PluginsSection } from "@/features/plugins/PluginsSection";
 import { KnownHostsList } from "@/features/settings/KnownHostsList";
 import { validateUserCss } from "@/lib/appearance";
+import { MONO_FONT_OPTIONS } from "@/lib/defaults";
 import { translateError } from "@/lib/errors";
 import { api, isTauri } from "@/lib/ipc";
 import { formatDateTime } from "@/lib/format";
-import type { Density, Language, ThemeMode } from "@/lib/types";
+import type { Density, Language, MonoFont, ThemeMode } from "@/lib/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
@@ -67,14 +69,15 @@ function GeneralSection() {
         label={t("settings.language")}
         control={
           <Select
+            label={t("settings.language")}
             value={settings.language}
-            aria-label={t("settings.language")}
-            onChange={(event) => void update({ language: event.target.value as Language })}
-          >
-            <option value="system">{t("settings.languageSystem")}</option>
-            <option value="zh-CN">简体中文</option>
-            <option value="en-US">English</option>
-          </Select>
+            options={[
+              { value: "system", label: t("settings.languageSystem") },
+              { value: "zh-CN", label: "简体中文" },
+              { value: "en-US", label: "English" },
+            ]}
+            onChange={(value) => void update({ language: value as Language })}
+          />
         }
       />
       <Row
@@ -148,6 +151,17 @@ function AppearanceSection() {
             min={11}
             max={20}
             onChange={(monoFontSize) => void update({ monoFontSize })}
+          />
+        }
+      />
+      <Row
+        label={t("settings.monoFont")}
+        control={
+          <Select
+            label={t("settings.monoFont")}
+            value={settings.monoFont}
+            options={MONO_FONT_OPTIONS}
+            onChange={(value) => void update({ monoFont: value as MonoFont })}
           />
         }
       />
@@ -367,7 +381,7 @@ function AdvancedSection() {
       </div>
       <div className="settings-actions">
         <Button
-          variant="ghost"
+          variant="ghost-danger"
           leading={<RotateCcw size={14} />}
           onClick={() =>
             confirm({

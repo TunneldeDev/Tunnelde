@@ -56,5 +56,3 @@ const LIGHT: ITheme = {
 export function terminalTheme(theme: ResolvedTheme): ITheme {
   return theme === "light" ? LIGHT : DARK;
 }
-
-export const TERMINAL_FONT = '"IBM Plex Mono", "Cascadia Mono", "JetBrains Mono", monospace';

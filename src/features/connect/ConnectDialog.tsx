@@ -12,6 +12,7 @@ import { cn } from "@/lib/format";
 import { translateError } from "@/lib/errors";
 import { api } from "@/lib/ipc";
 import type { Host, HostKeyInfo } from "@/lib/types";
+import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
@@ -33,6 +34,7 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
   const connect = useSsh((state) => state.connect);
   const openTerminal = useWorkspace((state) => state.openTerminal);
   const openSftp = useWorkspace((state) => state.openSftp);
+  const confirm = useDialogs((state) => state.confirm);
 
   const [probe, setProbe] = useState<HostKeyInfo | null>(null);
   const [trusted, setTrusted] = useState(false);
@@ -134,14 +136,22 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
     onClose();
   };
 
-  const forget = async () => {
-    try {
-      await api.credentialForget(host.id);
-      setSaved(false);
-      setPassword("");
-    } catch (cause) {
-      toast(translateError(cause), "error");
-    }
+  const forget = () => {
+    confirm({
+      title: t("connect.forgetTitle"),
+      body: t("connect.forgetBody", { name: host.name }),
+      confirmLabel: t("connect.forget"),
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.credentialForget(host.id);
+          setSaved(false);
+          setPassword("");
+        } catch (cause) {
+          toast(translateError(cause), "error");
+        }
+      },
+    });
   };
 
   const status = probe?.status ?? null;
@@ -184,7 +194,7 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
             </span>
           </div>
           {probe ? <code className="key-box__fingerprint">{probe.fingerprint}</code> : null}
-          {probe?.knownFingerprint ? (
+          {probe?.knownFingerprint && probe.knownFingerprint !== probe.fingerprint ? (
             <code className="key-box__fingerprint key-box__fingerprint--old">
               {t("connect.previousKey")}: {probe.knownFingerprint}
             </code>
@@ -237,7 +247,7 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
               />
               <span className="connect__remember-label">{t("connect.remember")}</span>
               {saved ? (
-                <Button variant="ghost" size="sm" onClick={() => void forget()}>
+                <Button variant="ghost-danger" size="sm" onClick={forget}>
                   {t("connect.forget")}
                 </Button>
               ) : null}

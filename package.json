@@ -32,8 +32,10 @@
     "build:local": "node scripts/build-local.mjs"
   },
   "dependencies": {
+    "@fontsource/fira-code": "5.3.0",
     "@fontsource/ibm-plex-mono": "5.3.0",
     "@fontsource/ibm-plex-sans": "5.3.0",
+    "@fontsource/jetbrains-mono": "5.3.0",
     "@tauri-apps/api": "2.12.4",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",

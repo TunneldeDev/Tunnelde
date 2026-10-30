@@ -33,7 +33,7 @@
 
   --td-ui-font:
     "IBM Plex Sans", "Microsoft YaHei UI", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-  --td-mono: "IBM Plex Mono", "Cascadia Mono", "JetBrains Mono", ui-monospace, monospace;
+  --td-mono: "Fira Code", "Cascadia Mono", "JetBrains Mono", ui-monospace, monospace;
 
   --td-font-size: 13px;
   --td-mono-size: 13px;
