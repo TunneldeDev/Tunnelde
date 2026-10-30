@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-30
+
 ### Added
 
 - Monitor tab with live CPU, memory and network charts, plus average and peak values for the session.
+
 
 ## [0.5.2] - 2026-10-30
 
