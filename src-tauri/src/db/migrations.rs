@@ -3,7 +3,8 @@
 
 /// Ordered, append-only schema migrations. Never edit an entry that has
 /// shipped: add a new one and bump the array.
-pub const MIGRATIONS: &[&str] = &[r#"
+pub const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE settings (
     key        TEXT PRIMARY KEY NOT NULL,
     value      TEXT NOT NULL,
@@ -58,4 +59,18 @@ CREATE TABLE audit_log (
     detail TEXT
 );
 CREATE INDEX idx_audit_ts ON audit_log(ts DESC);
-"#];
+"#,
+    r#"
+ALTER TABLE hosts ADD COLUMN key_path TEXT;
+
+CREATE TABLE known_hosts (
+    host        TEXT NOT NULL,
+    port        INTEGER NOT NULL,
+    algorithm   TEXT NOT NULL,
+    fingerprint TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    updated_at  INTEGER NOT NULL,
+    PRIMARY KEY (host, port)
+);
+"#,
+];

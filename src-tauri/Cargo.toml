@@ -25,7 +25,7 @@ tauri-plugin-window-state = "2.5.0"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 rusqlite = { version = "0.41.1", features = ["bundled"] }
-tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "macros", "time", "sync", "io-util", "net", "fs"] }
 tracing = "0.1.44"
 tracing-appender = "0.2.5"
 tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
@@ -34,6 +34,8 @@ uuid = { version = "1.29.0", features = ["v4"] }
 chrono = { version = "0.4.45", features = ["serde"] }
 # Pinned: 0.39+ requires a newer rustc than the supported toolchain.
 sysinfo = "=0.38.4"
+russh = { version = "0.65.0", default-features = false, features = ["ring", "rsa", "flate2"] }
+base64 = "0.23.1"
 
 [profile.release]
 codegen-units = 1

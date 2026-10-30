@@ -11,6 +11,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput, TabRecord};
 use crate::settings::{Settings, ACCENTS, DENSITIES, LANGUAGES, THEMES};
+use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
 use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
@@ -303,6 +304,41 @@ pub async fn user_css_export(app: AppHandle, css: String) -> AppResult<Option<St
     let target = std::path::PathBuf::from(path.to_string());
     std::fs::write(&target, css)?;
     Ok(Some(target.to_string_lossy().into_owned()))
+}
+
+#[tauri::command]
+pub fn ssh_sessions(state: State<'_, AppState>) -> Vec<SessionInfo> {
+    state.ssh.list()
+}
+
+#[tauri::command]
+pub async fn ssh_probe(app: AppHandle, host_id: String) -> AppResult<HostKeyInfo> {
+    ssh::probe(&app, &host_id).await
+}
+
+#[tauri::command]
+pub async fn ssh_trust(app: AppHandle, host_id: String) -> AppResult<HostKeyInfo> {
+    ssh::trust(&app, &host_id).await
+}
+
+#[tauri::command]
+pub async fn ssh_connect(app: AppHandle, request: SshConnectRequest) -> AppResult<SessionInfo> {
+    ssh::connect(app, request).await
+}
+
+#[tauri::command]
+pub fn ssh_write(app: AppHandle, session_id: String, data: String) -> AppResult<()> {
+    ssh::write(&app, &session_id, &data)
+}
+
+#[tauri::command]
+pub fn ssh_resize(app: AppHandle, session_id: String, cols: u32, rows: u32) -> AppResult<()> {
+    ssh::resize(&app, &session_id, cols, rows)
+}
+
+#[tauri::command]
+pub fn ssh_disconnect(app: AppHandle, session_id: String) -> AppResult<()> {
+    ssh::disconnect(&app, &session_id)
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

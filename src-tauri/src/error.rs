@@ -20,6 +20,8 @@ pub enum AppError {
     Internal(String),
     #[error("{0}")]
     Update(String),
+    #[error("{0}")]
+    Ssh(String),
 }
 
 impl AppError {
@@ -39,6 +41,7 @@ impl AppError {
             Self::Io(_) => "io",
             Self::Internal(_) => "internal",
             Self::Update(_) => "update",
+            Self::Ssh(_) => "ssh",
         }
     }
 }

@@ -2,6 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 pub mod hosts;
+pub mod known_hosts;
 pub mod migrations;
 pub mod settings;
 pub mod tabs;

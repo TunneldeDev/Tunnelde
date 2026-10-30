@@ -7,6 +7,7 @@ mod error;
 mod logging;
 mod models;
 mod settings;
+mod ssh;
 mod state;
 mod system;
 mod tray;
@@ -64,6 +65,13 @@ pub fn run() {
             commands::open_external,
             commands::user_css_import,
             commands::user_css_export,
+            commands::ssh_probe,
+            commands::ssh_trust,
+            commands::ssh_connect,
+            commands::ssh_write,
+            commands::ssh_resize,
+            commands::ssh_disconnect,
+            commands::ssh_sessions,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");

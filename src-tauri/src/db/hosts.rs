@@ -18,6 +18,7 @@ fn map_host(row: &rusqlite::Row<'_>) -> rusqlite::Result<Host> {
         port: port.clamp(1, 65535) as u16,
         username: row.get("username")?,
         auth_method: row.get("auth_method")?,
+        key_path: row.get("key_path")?,
         favorite: favorite != 0,
         color: row.get("color")?,
         tags: serde_json::from_str(&tags).unwrap_or_default(),
@@ -52,9 +53,9 @@ pub fn create_host(conn: &Connection, draft: &HostDraft) -> AppResult<Host> {
     let ts = now_ms();
     conn.execute(
         "INSERT INTO hosts
-         (id, group_id, name, host, port, username, auth_method, favorite, color, tags, note,
-          last_used_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12, ?12)",
+         (id, group_id, name, host, port, username, auth_method, key_path, favorite, color, tags,
+          note, last_used_at, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13, ?13)",
         params![
             id,
             draft.group_id,
@@ -63,6 +64,7 @@ pub fn create_host(conn: &Connection, draft: &HostDraft) -> AppResult<Host> {
             draft.port as i64,
             draft.username,
             draft.auth_method,
+            draft.key_path,
             draft.favorite as i64,
             draft.color,
             serde_json::to_string(&draft.tags)?,
@@ -77,7 +79,7 @@ pub fn update_host(conn: &Connection, id: &str, draft: &HostDraft) -> AppResult<
     let changed = conn.execute(
         "UPDATE hosts SET
             group_id = ?2, name = ?3, host = ?4, port = ?5, username = ?6, auth_method = ?7,
-            favorite = ?8, color = ?9, tags = ?10, note = ?11, updated_at = ?12
+            key_path = ?8, favorite = ?9, color = ?10, tags = ?11, note = ?12, updated_at = ?13
          WHERE id = ?1",
         params![
             id,
@@ -87,6 +89,7 @@ pub fn update_host(conn: &Connection, id: &str, draft: &HostDraft) -> AppResult<
             draft.port as i64,
             draft.username,
             draft.auth_method,
+            draft.key_path,
             draft.favorite as i64,
             draft.color,
             serde_json::to_string(&draft.tags)?,
@@ -237,6 +240,7 @@ mod tests {
             port: Some(22),
             username: Some("root".into()),
             auth_method: Some("password".into()),
+            key_path: None,
             favorite: false,
             color: None,
             tags: Vec::new(),

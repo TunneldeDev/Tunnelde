@@ -32,6 +32,7 @@ pub struct Host {
     pub port: u16,
     pub username: String,
     pub auth_method: String,
+    pub key_path: Option<String>,
     pub favorite: bool,
     pub color: Option<String>,
     pub tags: Vec<String>,
@@ -55,6 +56,8 @@ pub struct HostInput {
     #[serde(default)]
     pub auth_method: Option<String>,
     #[serde(default)]
+    pub key_path: Option<String>,
+    #[serde(default)]
     pub favorite: bool,
     #[serde(default)]
     pub color: Option<String>,
@@ -73,6 +76,7 @@ pub struct HostDraft {
     pub port: u16,
     pub username: String,
     pub auth_method: String,
+    pub key_path: Option<String>,
     pub favorite: bool,
     pub color: Option<String>,
     pub tags: Vec<String>,
@@ -158,6 +162,7 @@ impl HostInput {
             port,
             username,
             auth_method,
+            key_path: clean_optional(self.key_path, 1024),
             favorite: self.favorite,
             color,
             tags,
@@ -213,6 +218,7 @@ mod tests {
             port: Some(2222),
             username: Some("  root  ".into()),
             auth_method: Some("key".into()),
+            key_path: None,
             favorite: false,
             color: None,
             tags: Vec::new(),
