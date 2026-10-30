@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-10-30
+
 ### Added
 
 - Settings → Advanced can open the data folder next to the existing logs shortcut.
+
 
 ## [0.10.0] - 2026-10-30
 
