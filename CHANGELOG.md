@@ -6,6 +6,14 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+### Added
+
+- Remote panel for the active SSH session with CPU, memory, disk, network rate, load and uptime.
+- CPU sparkline and the five busiest processes, refreshed every three seconds.
+- The panel falls back to the local machine view when no session is active.
+
 ## [0.3.0] - 2026-10-30
 
 ### Added

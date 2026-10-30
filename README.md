@@ -15,7 +15,7 @@ Early development, built in public milestone by milestone.
 - `v0.1.x` — workspace shell, host library, settings, GitHub Releases auto-update
 - `v0.2.x` — SSH terminal with host key trust, keychain passwords, command history
 - `v0.3.x` — SFTP dual-pane file manager with transfer progress
-- `v0.4.x` — remote monitoring and process tools
+- `v0.4.x` — remote monitoring of the active session
 - `v0.5.x` — plugin host, TypeScript plugins, MySQL plugin
 - `v1.0.0` — hardening, marketplace and full documentation
 
