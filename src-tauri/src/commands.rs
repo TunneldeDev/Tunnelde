@@ -456,6 +456,19 @@ pub async fn remote_stats(app: AppHandle, session_id: String) -> AppResult<monit
     monitor::sample(&app, &session_id).await
 }
 
+#[tauri::command]
+pub async fn remote_processes(
+    app: AppHandle,
+    session_id: String,
+) -> AppResult<Vec<monitor::RemoteProcess>> {
+    monitor::processes(&app, &session_id).await
+}
+
+#[tauri::command]
+pub async fn remote_kill(app: AppHandle, session_id: String, pid: u32) -> AppResult<()> {
+    monitor::kill(&app, &session_id, pid).await
+}
+
 fn merge_json(base: &mut Value, patch: Value) {
     match (base, patch) {
         (Value::Object(base_map), Value::Object(patch_map)) => {

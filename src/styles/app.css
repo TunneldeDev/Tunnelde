@@ -2005,3 +2005,64 @@
   font-size: 10.5px;
   color: var(--td-faint);
 }
+
+/* ---------- processes ---------- */
+
+.panel-card__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.proc-table {
+  display: flex;
+  flex-direction: column;
+  max-height: 420px;
+  overflow: hidden;
+}
+
+.proc-table__head,
+.proc-table__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 56px 64px 24px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+}
+
+.proc-table__head {
+  height: 24px;
+  border-bottom: 1px solid var(--td-border);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--td-faint);
+}
+
+.proc-table__body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+}
+
+.proc-table__row {
+  height: 26px;
+  font-size: 12px;
+}
+
+.proc-table__row:hover {
+  background: var(--td-hover);
+}
+
+.proc-table__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--td-mono);
+}
+
+.proc-table__num {
+  text-align: right;
+  font-family: var(--td-mono);
+  font-size: 11px;
+  color: var(--td-faint);
+}

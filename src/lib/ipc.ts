@@ -12,6 +12,7 @@ import type {
   HostKeyInfo,
   HostsSnapshot,
   Listing,
+  RemoteProcess,
   RemoteStats,
   Settings,
   SshConnectRequest,
@@ -70,6 +71,10 @@ export const api = {
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
+  remoteProcesses: (sessionId: string) =>
+    invoke<RemoteProcess[]>("remote_processes", { sessionId }),
+  remoteKill: (sessionId: string, pid: number) =>
+    invoke<void>("remote_kill", { sessionId, pid }),
 
   sftpList: (sessionId: string, path?: string | null) =>
     invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),

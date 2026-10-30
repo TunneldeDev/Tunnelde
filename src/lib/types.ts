@@ -236,6 +236,7 @@ export interface RemoteProcess {
   name: string;
   cpu: number;
   memory: number;
+  rss: number;
 }
 
 export interface RemoteStats {

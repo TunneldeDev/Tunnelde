@@ -22,7 +22,7 @@ echo '#disk'; df -kP / | tail -1
 echo '#net'; awk 'NR>2 {rx+=$2; tx+=$10} END {print rx+0, tx+0}' /proc/net/dev
 echo '#uptime'; cut -d' ' -f1 /proc/uptime
 echo '#load'; cat /proc/loadavg
-echo '#ps'; ps -eo pid=,pcpu=,pmem=,comm= --sort=-pcpu | head -5
+echo '#ps'; ps -eo pid=,pcpu=,pmem=,rss=,comm= --sort=-pcpu | head -5
 echo '#nproc'; nproc
 "#;
 
@@ -33,6 +33,7 @@ pub struct RemoteProcess {
     pub name: String,
     pub cpu: f32,
     pub memory: f32,
+    pub rss: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -206,20 +207,8 @@ pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats>
                 }
             }
             "ps" => {
-                let fields: Vec<&str> = line.split_whitespace().collect();
-                if fields.len() >= 4 {
-                    if let (Ok(pid), Ok(cpu), Ok(memory)) = (
-                        fields[0].parse::<u32>(),
-                        fields[1].parse::<f32>(),
-                        fields[2].parse::<f32>(),
-                    ) {
-                        stats.processes.push(RemoteProcess {
-                            pid,
-                            cpu,
-                            memory,
-                            name: fields[3..].join(" "),
-                        });
-                    }
+                if let Some(process) = parse_process(line) {
+                    stats.processes.push(process);
                 }
             }
             "nproc" => {
@@ -248,4 +237,73 @@ pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats>
 
     cache.store(session_id, counters);
     Ok(stats)
+}
+
+fn parse_process(line: &str) -> Option<RemoteProcess> {
+    let fields: Vec<&str> = line.split_whitespace().collect();
+    if fields.len() < 5 {
+        return None;
+    }
+    let pid = fields[0].parse::<u32>().ok()?;
+    let cpu = fields[1].parse::<f32>().ok()?;
+    let memory = fields[2].parse::<f32>().ok()?;
+    let rss = fields[3].parse::<u64>().unwrap_or(0) * 1024;
+    Some(RemoteProcess {
+        pid,
+        cpu,
+        memory,
+        rss,
+        name: fields[4..].join(" "),
+    })
+}
+
+const PROCESS_SCRIPT: &str = r#"LANG=C
+ps -eo pid=,pcpu=,pmem=,rss=,comm= --sort=-pcpu | head -40
+"#;
+
+pub async fn processes(app: &AppHandle, session_id: &str) -> AppResult<Vec<RemoteProcess>> {
+    let raw = exec(app, session_id, PROCESS_SCRIPT).await?;
+    Ok(raw.lines().filter_map(parse_process).collect())
+}
+
+pub async fn kill(app: &AppHandle, session_id: &str, pid: u32) -> AppResult<()> {
+    if pid <= 1 {
+        return Err(AppError::Ssh("monitor.killProtected".into()));
+    }
+    let output = exec(app, session_id, &format!("kill -TERM {pid} 2>&1")).await?;
+    if output.trim().is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Ssh(format!(
+            "monitor.killFailed: {}",
+            output.trim()
+        )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_ps_rows() {
+        let process = parse_process("  4242  12.5  3.1  65536  sshd").expect("process");
+        assert_eq!(process.pid, 4242);
+        assert!((process.cpu - 12.5).abs() < 0.01);
+        assert!((process.memory - 3.1).abs() < 0.01);
+        assert_eq!(process.rss, 65536 * 1024);
+        assert_eq!(process.name, "sshd");
+    }
+
+    #[test]
+    fn keeps_names_with_spaces() {
+        let process = parse_process("7 0.0 0.0 512 some worker").expect("process");
+        assert_eq!(process.name, "some worker");
+    }
+
+    #[test]
+    fn rejects_short_rows() {
+        assert!(parse_process("12 1.0").is_none());
+        assert!(parse_process("").is_none());
+    }
 }

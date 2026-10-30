@@ -246,6 +246,17 @@
     "done": "完成",
     "failed": "失败",
     "cancelled": "已取消"
+  },  "processes": {
+    "title": "进程",
+    "name": "名称",
+    "pid": "PID",
+    "cpu": "CPU",
+    "memory": "内存",
+    "kill": "终止",
+    "killTitle": "终止进程",
+    "killBody": "向 {{name}}（{{pid}}）发送 SIGTERM？",
+    "refresh": "刷新",
+    "empty": "没有进程"
   },  "menu": {
     "edit": "编辑",
     "duplicate": "复制",
@@ -276,6 +287,7 @@
     "topProcesses": "高占用进程",
     "waiting": "等待数据",
     "cores": "{{count}} 核",
+    "allProcesses": "全部进程",
     "show": "显示面板"
   },
   "welcome": {

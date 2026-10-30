@@ -91,6 +91,8 @@ pub fn run() {
             commands::local_home,
             commands::transfer_cancel,
             commands::remote_stats,
+            commands::remote_processes,
+            commands::remote_kill,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");

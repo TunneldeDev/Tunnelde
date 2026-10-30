@@ -6,15 +6,17 @@ import {
   Cpu,
   Gauge,
   HardDrive,
+  List,
   MemoryStick,
   Network,
   Timer,
   X,
 } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/Button";
+import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { formatBytes, formatPercent, formatUptime } from "@/lib/format";
 import { useMonitor } from "@/store/monitor";
 import { useSsh } from "@/store/ssh";
@@ -62,10 +64,11 @@ interface CardProps {
   value: string;
   detail?: string;
   meter?: number;
+  action?: React.ReactNode;
   children?: React.ReactNode;
 }
 
-function Card({ icon, label, value, detail, meter, children }: CardProps) {
+function Card({ icon, label, value, detail, meter, action, children }: CardProps) {
   return (
     <div className="panel-card">
       <div className="panel-card__head">
@@ -73,7 +76,10 @@ function Card({ icon, label, value, detail, meter, children }: CardProps) {
           {icon}
           {label}
         </span>
-        <span className="panel-card__value">{value}</span>
+        <span className="panel-card__right">
+          {action}
+          <span className="panel-card__value">{value}</span>
+        </span>
       </div>
       {meter === undefined ? null : <Meter value={meter} />}
       {detail ? <p className="panel-card__detail">{detail}</p> : null}
@@ -92,6 +98,7 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const entry = useMonitor((state) => state.entries[sessionId]);
+  const [processesOpen, setProcessesOpen] = useState(false);
   const sample = useMonitor((state) => state.sample);
 
   useEffect(() => {
@@ -181,6 +188,13 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
               <Activity size={12} />
               {t("panel.topProcesses")}
             </span>
+            <IconButton
+              label={t("processes.title")}
+              size="sm"
+              onClick={() => setProcessesOpen(true)}
+            >
+              <List size={12} />
+            </IconButton>
           </div>
           <div className="proc-list">
             {stats && stats.processes.length > 0 ? (
@@ -198,6 +212,10 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
           </div>
         </div>
       </div>
+
+      {processesOpen ? (
+        <ProcessesDialog sessionId={sessionId} onClose={() => setProcessesOpen(false)} />
+      ) : null}
     </aside>
   );
 }
