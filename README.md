@@ -35,6 +35,7 @@ Early development, built in public milestone by milestone.
 
 - [Shortcuts](docs/shortcuts.md): keyboard and mouse gestures.
 - [Plugins](docs/plugins.md): manifest, JSON-RPC protocol and views.
+- [Architecture](docs/architecture.md): module map, data locations, events and the release flow.
 ## Development
 
 Prerequisites: Rust 1.92+, Node.js 24+, pnpm 10+, and the platform WebView dependencies
