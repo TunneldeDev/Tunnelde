@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-10-30
+
 ### Added
 
 - `Ctrl+K` opens a command palette that searches pages, host actions, updates, panel and theme toggles and tab commands.
+
 
 ## [0.12.0] - 2026-10-30
 
