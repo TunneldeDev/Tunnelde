@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-30
+
 ### Added
 
 - Settings → Advanced lists the trusted host keys and can forget them.
@@ -13,6 +15,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Fixed
 
 - Deleting a host also removes its stored password from the OS credential store.
+
 
 ## [0.5.1] - 2026-10-30
 
