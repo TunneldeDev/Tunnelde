@@ -4,17 +4,19 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
+import { PaneView } from "@/components/layout/PaneView";
 import { RemotePanel } from "@/components/layout/RemotePanel";
 import { ContextMenuHost } from "@/components/ui/ContextMenu";
 import { Resizer } from "@/components/layout/Resizer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { SystemPanel } from "@/components/layout/SystemPanel";
-import { TabContent } from "@/components/layout/TabContent";
+
 import { TopBar } from "@/components/layout/TopBar";
 import { ToastHost } from "@/components/ui/Toast";
 import { DialogHost } from "@/features/dialogs/DialogHost";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
+import { cn } from "@/lib/format";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 
@@ -23,6 +25,9 @@ export function AppShell() {
   const updateSettings = useSettings((state) => state.update);
   const openPage = useWorkspace((state) => state.openPage);
   const tabs = useWorkspace((state) => state.tabs);
+  const panes = useWorkspace((state) => state.panes);
+  const activePaneId = useWorkspace((state) => state.activePaneId);
+  const split = useWorkspace((state) => state.split);
   const activeId = useWorkspace((state) => state.activeId);
   const sessions = useSsh((state) => state.sessions);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -125,7 +130,11 @@ export function AppShell() {
           }}
         />
         <main className="workspace">
-          <TabContent />
+          <div className={cn("panes", split && `is-${split}`)}>
+            {panes.map((item) => (
+              <PaneView key={item.id} pane={item} active={item.id === activePaneId} />
+            ))}
+          </div>
         </main>
         {settings.rightPanel ? (
           <>

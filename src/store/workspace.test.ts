@@ -6,6 +6,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { Host, SshSession, TabRecord } from "@/lib/types";
 import { useWorkspace } from "@/store/workspace";
 
+const state = () => useWorkspace.getState();
+
 const host = (id: string, name: string): Host => ({
   id,
   groupId: null,
@@ -44,7 +46,13 @@ const record = (id: string, kind: TabRecord["kind"], hostId: string | null = nul
 });
 
 beforeEach(() => {
-  useWorkspace.setState({ tabs: [], activeId: null });
+  useWorkspace.setState({
+    tabs: [],
+    panes: [{ id: "pane-1", tabIds: [], activeId: null }],
+    activePaneId: "pane-1",
+    activeId: null,
+    split: null,
+  });
 });
 
 describe("workspace tabs", () => {
@@ -71,11 +79,62 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().activeId).toBe("page:welcome");
   });
 
-  it("reorders tabs", () => {
+  it("reorders tabs inside the active pane", () => {
     useWorkspace.getState().openPage("welcome");
     useWorkspace.getState().openPage("settings");
     useWorkspace.getState().reorder(0, 1);
-    expect(useWorkspace.getState().tabs.map((tab) => tab.kind)).toEqual(["settings", "welcome"]);
+    const state = useWorkspace.getState();
+    const kinds = (state.panes[0]?.tabIds ?? []).map(
+      (id) => state.tabs.find((tab) => tab.id === id)?.kind,
+    );
+    expect(kinds).toEqual(["settings", "welcome"]);
+  });
+
+  it("splits a tab into a second pane", () => {
+    useWorkspace.getState().openPage("welcome");
+    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().splitTab("page:settings", "row");
+
+    const state = useWorkspace.getState();
+    expect(state.panes).toHaveLength(2);
+    expect(state.split).toBe("row");
+    expect(state.panes[1]?.tabIds).toEqual(["page:settings"]);
+    expect(state.activeId).toBe("page:settings");
+  });
+
+  it("moves a tab between panes", () => {
+    useWorkspace.getState().openPage("welcome");
+    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().splitTab("page:settings", "row");
+    useWorkspace.getState().moveTab("page:welcome", state().panes[1]?.id ?? "");
+
+    const next = useWorkspace.getState();
+    expect(next.panes).toHaveLength(1);
+    expect(next.panes[0]?.tabIds).toEqual(["page:settings", "page:welcome"]);
+    expect(next.split).toBeNull();
+  });
+
+  it("collapses a pane when its last tab closes", () => {
+    useWorkspace.getState().openPage("welcome");
+    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().splitTab("page:settings", "column");
+    useWorkspace.getState().close("page:settings");
+
+    const state = useWorkspace.getState();
+    expect(state.panes).toHaveLength(1);
+    expect(state.split).toBeNull();
+  });
+
+  it("merges panes when one is closed", () => {
+    useWorkspace.getState().openPage("welcome");
+    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().splitTab("page:settings", "row");
+    useWorkspace.getState().closePane(state().panes[0]?.id ?? "");
+
+    const next = useWorkspace.getState();
+    expect(next.panes).toHaveLength(1);
+    expect(next.panes[0]?.tabIds).toContain("page:settings");
+    expect(next.panes[0]?.tabIds).toContain("page:welcome");
   });
 
   it("drops unsupported kinds when hydrating", () => {

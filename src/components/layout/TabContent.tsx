@@ -51,12 +51,14 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
   }
 }
 
-export function TabContent() {
+export function TabContent({ paneId }: { paneId?: string }) {
   const { t } = useTranslation();
   const tabs = useWorkspace((state) => state.tabs);
-  const activeId = useWorkspace((state) => state.activeId);
+  const panes = useWorkspace((state) => state.panes);
+  const activePaneId = useWorkspace((state) => state.activePaneId);
+  const pane = panes.find((item) => item.id === (paneId ?? activePaneId));
 
-  if (tabs.length === 0) {
+  if (!pane || pane.tabIds.length === 0) {
     return (
       <div className="page">
         <EmptyState title={t("host.emptyTitle")} body={t("host.emptyBody")} />
@@ -66,11 +68,18 @@ export function TabContent() {
 
   return (
     <>
-      {tabs.map((tab) => (
-        <div key={tab.id} className="tab-panel" hidden={tab.id !== activeId}>
-          <TabBody tab={tab} active={tab.id === activeId} />
-        </div>
-      ))}
+      {pane.tabIds.map((tabId) => {
+        const tab = tabs.find((item) => item.id === tabId);
+        if (!tab) {
+          return null;
+        }
+        const active = tab.id === pane.activeId;
+        return (
+          <div key={tab.id} className="tab-panel" hidden={!active}>
+            <TabBody tab={tab} active={active} />
+          </div>
+        );
+      })}
     </>
   );
 }

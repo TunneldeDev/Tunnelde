@@ -6,6 +6,10 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Split view: drag a tab to the edge of the editor area to open it in a second pane, drag tabs between panes to move them and close a pane to merge its tabs back.
+
 ## [0.6.0] - 2026-10-30
 
 ### Added
@@ -21,7 +25,6 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Added
 
 - Plugins can declare views and answer `view.render` with JSON blocks (heading, text, key/value, table) that the host renders in a tab.
-
 
 ## [0.5.3] - 2026-10-30
 
