@@ -45,8 +45,9 @@ function matches(host: Host, query: string): boolean {
 
 function buildTree(groups: Group[], hosts: Host[], query: string): Filtered {
   const visible = hosts.filter((host) => matches(host, query));
+  const rest = visible.filter((host) => !host.favorite);
   const byGroup = new Map<string, Host[]>();
-  for (const host of visible) {
+  for (const host of rest) {
     if (!host.groupId) {
       continue;
     }
@@ -72,7 +73,7 @@ function buildTree(groups: Group[], hosts: Host[], query: string): Filtered {
 
   return {
     favorites: visible.filter((host) => host.favorite),
-    ungrouped: visible.filter((host) => !host.groupId),
+    ungrouped: rest.filter((host) => !host.groupId),
     groups: tree,
   };
 }
