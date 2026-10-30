@@ -93,7 +93,9 @@ export function setVersion(version) {
 }
 
 export function checkVersion(tag) {
-  const expected = String(tag ?? "").replace(/^v/, "");
+  const candidate = String(tag ?? "");
+  // Branch names such as "main" are not release tags and must be ignored.
+  const expected = /^v?\d+\.\d+\.\d+$/.test(candidate) ? candidate.replace(/^v/, "") : "";
   const pkg = currentVersion();
   const cargoMatch = /^version = "([^"]+)"$/m.exec(readFileSync(files.cargo, "utf8"));
   const config = JSON.parse(readFileSync(files.config, "utf8")).version;
