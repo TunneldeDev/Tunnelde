@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
 ### Added
 
 - Drag files between the local and remote panes to upload or download them, or inside a pane to move them into another folder.
@@ -19,6 +21,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Added
 
 - Plugins can declare views and answer `view.render` with JSON blocks (heading, text, key/value, table) that the host renders in a tab.
+
 
 ## [0.5.3] - 2026-10-30
 
