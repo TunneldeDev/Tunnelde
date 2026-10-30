@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { joinPath, parentOf, resolveDrop, type DragPayload } from "@/lib/dnd";
+import { joinPath, parentOf, planPaste, resolveDrop, type DragPayload, type PasteClip } from "@/lib/dnd";
 
 const payload = (overrides: Partial<DragPayload> = {}): DragPayload => ({
   side: "remote",
@@ -55,5 +55,52 @@ describe("dnd helpers", () => {
   it("does not drop a folder into itself", () => {
     const folder = payload({ isDir: true, path: "/home/user/docs", name: "docs" });
     expect(resolveDrop(folder, "remote", "/home/user/docs")).toEqual({ kind: "noop" });
+  });
+});
+
+describe("planPaste", () => {
+  const clip = (overrides: Partial<PasteClip> = {}): PasteClip => ({
+    side: "remote",
+    action: "copy",
+    path: "/home/user/a.txt",
+    name: "a.txt",
+    isDir: false,
+    ...overrides,
+  });
+
+  it("copies inside the same pane", () => {
+    expect(planPaste(clip(), "remote", "/home/user/docs")).toEqual({
+      kind: "copy",
+      from: "/home/user/a.txt",
+      to: "/home/user/docs/a.txt",
+    });
+  });
+
+  it("moves when the entry was cut", () => {
+    expect(planPaste(clip({ action: "cut" }), "remote", "/home/user/docs")).toEqual({
+      kind: "move",
+      from: "/home/user/a.txt",
+      to: "/home/user/docs/a.txt",
+    });
+  });
+
+  it("uploads and downloads across panes", () => {
+    expect(planPaste(clip({ side: "local", path: "C:\\tmp\\a.txt" }), "remote", "/home/user")).toEqual({
+      kind: "transfer",
+      direction: "upload",
+      from: "C:\\tmp\\a.txt",
+      to: "/home/user/a.txt",
+    });
+    expect(planPaste(clip(), "local", "C:\\work")).toEqual({
+      kind: "transfer",
+      direction: "download",
+      from: "/home/user/a.txt",
+      to: "C:\\work\\a.txt",
+    });
+  });
+
+  it("ignores pastes into the source folder and folders", () => {
+    expect(planPaste(clip(), "remote", "/home/user")).toEqual({ kind: "noop" });
+    expect(planPaste(clip({ isDir: true }), "remote", "/home/user/docs")).toEqual({ kind: "noop" });
   });
 });

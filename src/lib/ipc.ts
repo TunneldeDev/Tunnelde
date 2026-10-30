@@ -114,6 +114,10 @@ export const api = {
   localDelete: (path: string, isDir: boolean) => invoke<void>("local_delete", { path, isDir }),
   sftpDownload: (sessionId: string, remotePath: string, localPath: string) =>
     invoke<string>("sftp_download", { sessionId, remotePath, localPath }),
+  sftpCopy: (sessionId: string, from: string, to: string) =>
+    invoke<void>("sftp_copy", { sessionId, from, to }),
+  localCopy: (from: string, to: string) => invoke<void>("local_copy", { from, to }),
+
   sftpReadText: (sessionId: string, path: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path }),
   sftpWriteText: (sessionId: string, path: string, content: string) =>

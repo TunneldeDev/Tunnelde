@@ -590,6 +590,21 @@ pub async fn plugin_render_view(app: AppHandle, id: String, view: String) -> App
     state.plugins.render_view(&id, &view).await
 }
 
+#[tauri::command]
+pub async fn sftp_copy(
+    app: AppHandle,
+    session_id: String,
+    from: String,
+    to: String,
+) -> AppResult<()> {
+    sftp::remote_copy(&app, &session_id, from, to).await
+}
+
+#[tauri::command]
+pub fn local_copy(from: String, to: String) -> AppResult<()> {
+    sftp::local_copy(from, to)
+}
+
 fn merge_json(base: &mut Value, patch: Value) {
     match (base, patch) {
         (Value::Object(base_map), Value::Object(patch_map)) => {

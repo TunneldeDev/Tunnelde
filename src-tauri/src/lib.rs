@@ -88,6 +88,8 @@ pub fn run() {
             commands::sftp_upload,
             commands::sftp_read_text,
             commands::sftp_write_text,
+            commands::sftp_copy,
+            commands::local_copy,
             commands::local_list,
             commands::local_mkdir,
             commands::local_rename,

@@ -98,3 +98,48 @@ export function resolveDrop(
     to: destination,
   };
 }
+export interface PasteClip {
+  side: FileSide;
+  action: "cut" | "copy";
+  path: string;
+  name: string;
+  isDir: boolean;
+}
+
+export type PasteAction =
+  | { kind: "noop" }
+  | { kind: "move"; from: string; to: string }
+  | { kind: "copy"; from: string; to: string }
+  | { kind: "transfer"; direction: "upload" | "download"; from: string; to: string };
+
+/**
+ * Turns a cut or copied entry into the operation a paste performs. Folders are
+ * not pasted yet, and pasting into the folder that already holds the entry is
+ * a no-op.
+ */
+export function planPaste(
+  clip: PasteClip,
+  targetSide: FileSide,
+  targetDirectory: string,
+): PasteAction {
+  if (clip.isDir) {
+    return { kind: "noop" };
+  }
+
+  const destination = joinPath(targetDirectory, clip.name, separatorFor(targetSide));
+  if (clip.side === targetSide) {
+    if (destination === clip.path) {
+      return { kind: "noop" };
+    }
+    return clip.action === "cut"
+      ? { kind: "move", from: clip.path, to: destination }
+      : { kind: "copy", from: clip.path, to: destination };
+  }
+
+  return {
+    kind: "transfer",
+    direction: clip.side === "local" ? "upload" : "download",
+    from: clip.path,
+    to: destination,
+  };
+}

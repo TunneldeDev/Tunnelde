@@ -534,3 +534,28 @@ pub async fn write_text(
     let _ = sftp.close().await;
     Ok(())
 }
+pub async fn remote_copy(
+    app: &AppHandle,
+    session_id: &str,
+    from: String,
+    to: String,
+) -> AppResult<()> {
+    let sftp = session(app, session_id).await?;
+    let metadata = sftp.metadata(&from).await.map_err(map_sftp)?;
+    if metadata.is_dir() {
+        return Err(AppError::validation("sftp.copyDirectory"));
+    }
+    let bytes = sftp.read(&from).await.map_err(map_sftp)?;
+    sftp.write(&to, &bytes).await.map_err(map_sftp)?;
+    let _ = sftp.close().await;
+    Ok(())
+}
+
+pub fn local_copy(from: String, to: String) -> AppResult<()> {
+    let source = std::path::PathBuf::from(&from);
+    if source.is_dir() {
+        return Err(AppError::validation("sftp.copyDirectory"));
+    }
+    std::fs::copy(&source, &to)?;
+    Ok(())
+}

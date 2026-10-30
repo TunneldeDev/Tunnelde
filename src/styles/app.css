@@ -2786,3 +2786,7 @@
 .td-tab.is-drop-before {
   box-shadow: inset 2px 0 0 var(--td-accent);
 }
+
+.sftp-row.is-cut {
+  opacity: 0.55;
+}
