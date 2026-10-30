@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-10-30
+
 ### Added
 
 - Settings → Plugins lists a marketplace fed by `marketplace/index.json`; installing an entry downloads its archive, verifies the pinned SHA-256 in Rust and then unpacks it.
+
 
 ## [0.14.1] - 2026-10-30
 
