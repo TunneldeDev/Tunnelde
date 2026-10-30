@@ -378,7 +378,16 @@ pub fn spawn_transfer(
     let transfer_id = id.clone();
     tauri::async_runtime::spawn(async move {
         let app_handle = app.clone();
-        let outcome = run(&app_handle, &from, &to, &transfer_id, &name, &cancel, remove_source).await;
+        let outcome = run(
+            &app_handle,
+            &from,
+            &to,
+            &transfer_id,
+            &name,
+            &cancel,
+            remove_source,
+        )
+        .await;
         finish(&app_handle, &transfer_id, &name, outcome);
     });
 
@@ -417,7 +426,7 @@ impl<'a> Meter<'a> {
 
 enum Reader {
     Local(tokio::fs::File),
-    Remote(russh_sftp::client::fs::File),
+    Remote(Box<russh_sftp::client::fs::File>),
 }
 
 impl Reader {
@@ -431,7 +440,7 @@ impl Reader {
 
 enum Writer {
     Local(tokio::fs::File),
-    Remote(russh_sftp::client::fs::File),
+    Remote(Box<russh_sftp::client::fs::File>),
 }
 
 impl Writer {
@@ -518,14 +527,18 @@ async fn measure(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<u
 
 async fn open_reader(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Reader> {
     Ok(match sftp {
-        Some(handle) => Reader::Remote(handle.open(&endpoint.path).await.map_err(map_sftp)?),
+        Some(handle) => Reader::Remote(Box::new(
+            handle.open(&endpoint.path).await.map_err(map_sftp)?,
+        )),
         None => Reader::Local(tokio::fs::File::open(&endpoint.path).await?),
     })
 }
 
 async fn open_writer(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Writer> {
     Ok(match sftp {
-        Some(handle) => Writer::Remote(handle.create(&endpoint.path).await.map_err(map_sftp)?),
+        Some(handle) => Writer::Remote(Box::new(
+            handle.create(&endpoint.path).await.map_err(map_sftp)?,
+        )),
         None => Writer::Local(tokio::fs::File::create(&endpoint.path).await?),
     })
 }
@@ -549,7 +562,12 @@ async fn copy_entry(
             let child_to = to.join(&file_name_of(&child_from.path));
             let child_to = to.child(child_to);
             Box::pin(copy_entry(
-                &child_from, &child_to, from_sftp, to_sftp, meter, cancel,
+                &child_from,
+                &child_to,
+                from_sftp,
+                to_sftp,
+                meter,
+                cancel,
             ))
             .await?;
         }

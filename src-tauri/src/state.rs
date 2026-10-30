@@ -10,10 +10,10 @@ use tracing_appender::non_blocking::WorkerGuard;
 
 use crate::db::{self, Database};
 use crate::error::{AppError, AppResult};
-use crate::ssh::monitor::MonitorCache;
 use crate::plugins::PluginsManager;
 use crate::settings::Settings;
 use crate::ssh::files::TransferRegistry;
+use crate::ssh::monitor::MonitorCache;
 use crate::ssh::SshManager;
 use crate::update::UpdateService;
 

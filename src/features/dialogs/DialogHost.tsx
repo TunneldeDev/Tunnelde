@@ -277,7 +277,6 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
                 rows={3}
                 spellCheck={false}
                 value={form.keyContent}
-                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
                 onChange={(event) => set("keyContent", event.target.value)}
               />
             </Field>

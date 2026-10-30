@@ -79,12 +79,7 @@ pub fn apply(app: &AppHandle, enabled: bool, locale: &str) -> AppResult<()> {
         ],
     )?;
     let view = Submenu::with_items(app, text.view, true, &[&welcome, &updates])?;
-    let help = Submenu::with_items(
-        app,
-        text.help,
-        true,
-        &[&about, &repository, &license],
-    )?;
+    let help = Submenu::with_items(app, text.help, true, &[&about, &repository, &license])?;
 
     let menu = Menu::with_items(app, &[&file, &view, &help])?;
     app.set_menu(menu)?;

@@ -31,11 +31,7 @@ pub fn run() {
                 use tauri::Manager;
                 let state = handle.state::<state::AppState>();
                 let settings = state.settings();
-                (
-                    settings.theme,
-                    settings.native_menu,
-                    state.locale(),
-                )
+                (settings.theme, settings.native_menu, state.locale())
             };
             window::apply_theme(&handle, &theme);
             tray::setup(&handle)?;

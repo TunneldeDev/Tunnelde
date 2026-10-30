@@ -10,13 +10,13 @@ use tauri_plugin_opener::OpenerExt;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput, TabRecord};
-use crate::ssh::monitor;
+use crate::platform::system::{self, SystemStats};
 use crate::plugins;
 use crate::settings::{Settings, ACCENTS, DENSITIES, LANGUAGES, THEMES};
 use crate::ssh::files::{self as sftp, Listing};
+use crate::ssh::monitor;
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
-use crate::platform::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 

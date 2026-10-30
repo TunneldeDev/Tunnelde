@@ -6,6 +6,6 @@ pub mod monitor;
 pub mod session;
 
 pub use session::{
-    connect, disconnect, probe, resize, trust, write, HostKeyInfo, SessionInfo,
-    SshConnectRequest, SshManager,
+    connect, disconnect, probe, resize, trust, write, HostKeyInfo, SessionInfo, SshConnectRequest,
+    SshManager,
 };
