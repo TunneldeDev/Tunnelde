@@ -6,6 +6,10 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `Ctrl+Shift+W` closes the focused pane when the editor is split, and each pane's strip has a close button.
+
 ## [0.9.1] - 2026-10-30
 
 ### Added
@@ -19,7 +23,6 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Fixed
 
 - Re-dispatching a release now fails fast when the tag already exists instead of half-bumping the version.
-
 
 ## [0.9.0] - 2026-10-30
 

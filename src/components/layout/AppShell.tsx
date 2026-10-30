@@ -58,6 +58,11 @@ export function AppShell() {
 
       const workspace = useWorkspace.getState();
       if (key === "w") {
+        if (event.shiftKey && workspace.panes.length > 1) {
+          event.preventDefault();
+          workspace.closePane(workspace.activePaneId);
+          return;
+        }
         const tab = workspace.tabs.find((item) => item.id === workspace.activeId);
         if (tab) {
           event.preventDefault();
