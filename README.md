@@ -31,6 +31,10 @@ Early development, built in public milestone by milestone.
 | Plugins    | JSON-RPC 2.0 over stdio, Node and WASM runtimes    |
 | Updates    | Tauri updater, GitHub Releases                     |
 
+## Documentation
+
+- [Shortcuts](docs/shortcuts.md): keyboard and mouse gestures.
+- [Plugins](docs/plugins.md): manifest, JSON-RPC protocol and views.
 ## Development
 
 Prerequisites: Rust 1.92+, Node.js 24+, pnpm 10+, and the platform WebView dependencies
