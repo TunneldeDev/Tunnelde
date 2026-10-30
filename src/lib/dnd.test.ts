@@ -52,9 +52,10 @@ describe("dnd helpers", () => {
     });
   });
 
-  it("does not drop a folder into itself", () => {
+  it("does not drop a folder into itself or across panes", () => {
     const folder = payload({ isDir: true, path: "/home/user/docs", name: "docs" });
     expect(resolveDrop(folder, "remote", "/home/user/docs")).toEqual({ kind: "noop" });
+    expect(resolveDrop(folder, "local", "C:\\\\work")).toEqual({ kind: "noop" });
   });
 });
 
@@ -99,8 +100,13 @@ describe("planPaste", () => {
     });
   });
 
-  it("ignores pastes into the source folder and folders", () => {
+  it("copies folders inside a pane and ignores cross-pane folders", () => {
     expect(planPaste(clip(), "remote", "/home/user")).toEqual({ kind: "noop" });
-    expect(planPaste(clip({ isDir: true }), "remote", "/home/user/docs")).toEqual({ kind: "noop" });
+    expect(planPaste(clip({ isDir: true }), "remote", "/home/user/docs")).toEqual({
+      kind: "copy",
+      from: "/home/user/a.txt",
+      to: "/home/user/docs/a.txt",
+    });
+    expect(planPaste(clip({ isDir: true }), "local", "C:\\\\work")).toEqual({ kind: "noop" });
   });
 });

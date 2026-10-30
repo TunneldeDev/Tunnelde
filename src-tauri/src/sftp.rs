@@ -224,14 +224,10 @@ pub async fn remote_delete(
     app: &AppHandle,
     session_id: &str,
     path: String,
-    is_dir: bool,
+    _is_dir: bool,
 ) -> AppResult<()> {
     let sftp = session(app, session_id).await?;
-    if is_dir {
-        sftp.remove_dir(path).await.map_err(map_sftp)?;
-    } else {
-        sftp.remove_file(path).await.map_err(map_sftp)?;
-    }
+    remove_remote_entry(&sftp, &path).await?;
     let _ = sftp.close().await;
     Ok(())
 }
@@ -246,13 +242,8 @@ pub fn local_rename(from: String, to: String) -> AppResult<()> {
     Ok(())
 }
 
-pub fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
-    if is_dir {
-        std::fs::remove_dir(path)?;
-    } else {
-        std::fs::remove_file(path)?;
-    }
-    Ok(())
+pub fn local_delete(path: String, _is_dir: bool) -> AppResult<()> {
+    remove_local_entry(&PathBuf::from(path))
 }
 
 fn emit(app: &AppHandle, event: TransferEvent) {
@@ -541,21 +532,122 @@ pub async fn remote_copy(
     to: String,
 ) -> AppResult<()> {
     let sftp = session(app, session_id).await?;
-    let metadata = sftp.metadata(&from).await.map_err(map_sftp)?;
-    if metadata.is_dir() {
-        return Err(AppError::validation("sftp.copyDirectory"));
-    }
-    let bytes = sftp.read(&from).await.map_err(map_sftp)?;
-    sftp.write(&to, &bytes).await.map_err(map_sftp)?;
+    copy_remote_entry(&sftp, &from, &to).await?;
     let _ = sftp.close().await;
     Ok(())
 }
 
 pub fn local_copy(from: String, to: String) -> AppResult<()> {
-    let source = std::path::PathBuf::from(&from);
-    if source.is_dir() {
-        return Err(AppError::validation("sftp.copyDirectory"));
+    copy_local_entry(&PathBuf::from(from), &PathBuf::from(to))
+}
+fn join_remote(directory: &str, name: &str) -> String {
+    if directory.ends_with('/') {
+        format!("{directory}{name}")
+    } else {
+        format!("{directory}/{name}")
     }
-    std::fs::copy(&source, &to)?;
+}
+
+fn remove_local_entry(path: &Path) -> AppResult<()> {
+    if path.is_dir() {
+        std::fs::remove_dir_all(path)?;
+    } else {
+        std::fs::remove_file(path)?;
+    }
     Ok(())
+}
+
+fn copy_local_entry(from: &Path, to: &Path) -> AppResult<()> {
+    if from.is_dir() {
+        std::fs::create_dir_all(to)?;
+        for entry in std::fs::read_dir(from)? {
+            let entry = entry?;
+            copy_local_entry(&entry.path(), &to.join(entry.file_name()))?;
+        }
+        return Ok(());
+    }
+    std::fs::copy(from, to)?;
+    Ok(())
+}
+
+async fn copy_remote_entry(sftp: &SftpSession, from: &str, to: &str) -> AppResult<()> {
+    let metadata = sftp.metadata(from).await.map_err(map_sftp)?;
+    if metadata.is_dir() {
+        let _ = sftp.create_dir(to).await;
+        let children: Vec<String> = sftp
+            .read_dir(from)
+            .await
+            .map_err(map_sftp)?
+            .map(|entry| entry.file_name())
+            .collect();
+        for name in children {
+            let child_from = join_remote(from, &name);
+            let child_to = join_remote(to, &name);
+            Box::pin(copy_remote_entry(sftp, &child_from, &child_to)).await?;
+        }
+        return Ok(());
+    }
+
+    let bytes = sftp.read(from).await.map_err(map_sftp)?;
+    sftp.write(to, &bytes).await.map_err(map_sftp)?;
+    Ok(())
+}
+
+async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
+    let metadata = sftp.metadata(path).await.map_err(map_sftp)?;
+    if metadata.is_dir() {
+        let children: Vec<String> = sftp
+            .read_dir(path)
+            .await
+            .map_err(map_sftp)?
+            .map(|entry| entry.path())
+            .collect();
+        for child in children {
+            Box::pin(remove_remote_entry(sftp, &child)).await?;
+        }
+        sftp.remove_dir(path).await.map_err(map_sftp)?;
+    } else {
+        sftp.remove_file(path).await.map_err(map_sftp)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_root(name: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-sftp-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("root");
+        root
+    }
+
+    #[test]
+    fn copies_and_removes_folders_recursively() {
+        let root = temp_root("copy");
+        let source = root.join("source");
+        std::fs::create_dir_all(source.join("nested")).expect("nested");
+        std::fs::write(source.join("a.txt"), "a").expect("a");
+        std::fs::write(source.join("nested").join("b.txt"), "b").expect("b");
+
+        let target = root.join("target");
+        copy_local_entry(&source, &target).expect("copy");
+        assert_eq!(std::fs::read_to_string(target.join("a.txt")).unwrap(), "a");
+        assert_eq!(
+            std::fs::read_to_string(target.join("nested").join("b.txt")).unwrap(),
+            "b"
+        );
+
+        remove_local_entry(&target).expect("remove");
+        assert!(!target.exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn joins_remote_paths() {
+        assert_eq!(join_remote("/home/user", "a"), "/home/user/a");
+        assert_eq!(join_remote("/", "a"), "/a");
+    }
 }

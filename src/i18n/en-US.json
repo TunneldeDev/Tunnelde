@@ -66,7 +66,7 @@
     "editTitle": "Edit host",
     "open": "Open host",
     "deleteTitle": "Delete host",
-    "deleteBody": "Delete “{{name}}”? This cannot be undone.",
+    "deleteBody": "Delete “{{name}}” and everything inside it? This cannot be undone.",
     "details": "Details",
     "emptyTitle": "Nothing selected",
     "emptyBody": "Pick a host from the sidebar.",
@@ -89,7 +89,7 @@
     "namePlaceholder": "Production",
     "open": "Open host",
     "deleteTitle": "Delete group",
-    "deleteBody": "Delete “{{name}}”? Hosts inside stay and move to Ungrouped."
+    "deleteBody": "Delete “{{name}}” and everything inside it? Hosts inside stay and move to Ungrouped."
   },
   "settings": {
     "title": "Settings",
@@ -259,7 +259,7 @@
     "copyFailed": "Could not copy the path",
     "open": "Open host",
     "deleteTitle": "Delete",
-    "deleteBody": "Delete “{{name}}”?",
+    "deleteBody": "Delete “{{name}}” and everything inside it?",
     "upload": "Upload",
     "download": "Download",
     "empty": "Empty folder",

@@ -6,12 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Folders can be copied, moved and deleted: copying and pasting a folder now copies its whole tree, and deleting a folder removes everything inside it.
+
 ## [0.8.2] - 2026-10-30
 
 ### Added
 
 - Plugins can be installed from a local folder after the manifest is validated, uninstalled from the same list and reloaded when folders are added by hand.
-
 
 ## [0.8.1] - 2026-10-30
 

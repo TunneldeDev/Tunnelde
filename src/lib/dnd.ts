@@ -90,6 +90,10 @@ export function resolveDrop(
     return { kind: "move", from: payload.path, to: destination };
   }
 
+  if (payload.isDir) {
+    return { kind: "noop" };
+  }
+
   const destination = joinPath(targetDirectory, payload.name, separatorFor(targetSide));
   return {
     kind: "transfer",
@@ -122,10 +126,6 @@ export function planPaste(
   targetSide: FileSide,
   targetDirectory: string,
 ): PasteAction {
-  if (clip.isDir) {
-    return { kind: "noop" };
-  }
-
   const destination = joinPath(targetDirectory, clip.name, separatorFor(targetSide));
   if (clip.side === targetSide) {
     if (destination === clip.path) {
@@ -134,6 +134,10 @@ export function planPaste(
     return clip.action === "cut"
       ? { kind: "move", from: clip.path, to: destination }
       : { kind: "copy", from: clip.path, to: destination };
+  }
+
+  if (clip.isDir) {
+    return { kind: "noop" };
   }
 
   return {
