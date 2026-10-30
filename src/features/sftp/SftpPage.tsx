@@ -662,6 +662,11 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           tabIndex={0}
           role="listbox"
           aria-label={t("sftp.title")}
+          aria-activedescendant={
+            state.selected
+              ? `${id}-row-${entries.findIndex((item) => item.path === state.selected?.path)}`
+              : undefined
+          }
           onKeyDown={(event) => onKeyDown(event, id)}
           onContextMenu={(event) => {
             if (event.target === event.currentTarget) {
@@ -722,9 +727,10 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
             </div>
           ) : null}
 
-          {entries.map((entry) => (
+          {entries.map((entry, position) => (
             <div
               key={entry.path}
+              id={`${id}-row-${position}`}
               role="option"
               aria-selected={state.selected?.path === entry.path}
               className={cn(
