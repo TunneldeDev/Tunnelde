@@ -134,6 +134,18 @@ pub fn mark_used(conn: &Connection, id: &str) -> AppResult<()> {
     Ok(())
 }
 
+/// Points a host at the key Tunnelde installed for it.
+pub fn set_key_auth(conn: &Connection, id: &str, key_path: &str) -> AppResult<()> {
+    let changed = conn.execute(
+        "UPDATE hosts SET auth_method = 'key', key_path = ?2, updated_at = ?3 WHERE id = ?1",
+        params![id, key_path, now_ms()],
+    )?;
+    if changed == 0 {
+        return Err(AppError::NotFound("host.notFound".into()));
+    }
+    Ok(())
+}
+
 fn map_group(row: &rusqlite::Row<'_>) -> rusqlite::Result<Group> {
     Ok(Group {
         id: row.get("id")?,

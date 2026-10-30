@@ -193,6 +193,11 @@ export interface HostKeyInfo {
   knownFingerprint: string | null;
 }
 
+export interface InstalledKey {
+  publicKey: string;
+  keyPath: string;
+}
+
 export interface SshSession {
   id: string;
   hostId: string;

@@ -13,6 +13,7 @@ import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import type { Host, HostKeyInfo } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
+import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
@@ -154,6 +155,21 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
     });
   };
 
+  const installKey = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.sshInstallKey(host.id, password);
+      await useHosts.getState().load();
+      toast(t("connect.installKeyDone"), "success");
+      onClose();
+    } catch (cause) {
+      setError(translateError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const status = probe?.status ?? null;
   const keyStatus = status ? t(STATUS_KEYS[status]) : t("connect.probing");
 
@@ -251,6 +267,16 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
                   {t("connect.forget")}
                 </Button>
               ) : null}
+            </div>
+            <div className="connect__actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={busy || !trusted || password.length === 0}
+                onClick={() => void installKey()}
+              >
+                {t("connect.installKey")}
+              </Button>
             </div>
           </>
         ) : (

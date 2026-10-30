@@ -83,6 +83,7 @@ pub fn run() {
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
+            commands::ssh_install_key,
             commands::ssh_sessions,
             commands::credential_save,
             commands::credential_forget,

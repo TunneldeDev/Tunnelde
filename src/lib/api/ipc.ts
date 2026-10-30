@@ -12,6 +12,7 @@ import type {
   HostKeyInfo,
   HistoryEntry,
   HostsSnapshot,
+  InstalledKey,
   KnownHostEntry,
   Listing,
   RemoteProcess,
@@ -75,6 +76,8 @@ export const api = {
   sshResize: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
+  sshInstallKey: (hostId: string, password: string | null) =>
+    invoke<InstalledKey>("ssh_install_key", { hostId, password }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
   knownHostsList: () => invoke<KnownHostEntry[]>("known_hosts_list"),

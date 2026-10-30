@@ -416,6 +416,17 @@ pub fn ssh_disconnect(app: AppHandle, session_id: String) -> AppResult<()> {
     ssh::disconnect(&app, &session_id)
 }
 
+/// Installs Tunnelde's public key with the password the user just typed and
+/// switches the host to key authentication.
+#[tauri::command]
+pub async fn ssh_install_key(
+    app: AppHandle,
+    host_id: String,
+    password: Option<String>,
+) -> AppResult<ssh::InstalledKey> {
+    ssh::keys::install(&app, &host_id, password).await
+}
+
 #[tauri::command]
 pub fn credential_save(
     state: State<'_, AppState>,

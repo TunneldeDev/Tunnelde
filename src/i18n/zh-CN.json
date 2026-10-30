@@ -224,7 +224,9 @@
     "savedHint": "已从系统钥匙串读取",
     "forget": "忘记",
     "forgetTitle": "忘记已保存的密码",
-    "forgetBody": "移除 {{name}} 的已保存密码？下次连接需要重新输入。"
+    "forgetBody": "移除 {{name}} 的已保存密码？下次连接需要重新输入。",
+    "installKey": "配置免密登录",
+    "installKeyDone": "公钥已安装，下次连接将使用密钥。"
   },
   "terminal": {
     "connect": "连接",
