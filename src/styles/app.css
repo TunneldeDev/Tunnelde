@@ -2633,6 +2633,35 @@
   color: var(--td-faint);
 }
 
+.market-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--td-border);
+  font-size: 12px;
+}
+
+.market-row:first-of-type {
+  border-top: 0;
+}
+
+.market-row__name {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-row__version,
+.market-row__desc {
+  color: var(--td-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .known-hosts {
   display: flex;
   flex-direction: column;

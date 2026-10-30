@@ -3,6 +3,7 @@
 
 mod host;
 pub mod manifest;
+pub mod marketplace;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

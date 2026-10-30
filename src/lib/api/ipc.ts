@@ -104,6 +104,8 @@ export const api = {
   pluginRun: (id: string, command: string) =>
     invoke<unknown>("plugin_run", { id, command }),
   pluginOpenDir: () => invoke<void>("plugin_open_dir"),
+  marketplaceInstall: (id: string, sha256: string, data: string) =>
+    invoke<PluginInfo>("marketplace_install", { id, sha256, data }),
 
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>

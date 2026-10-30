@@ -332,7 +332,11 @@
     "uninstallTitle": "卸载插件",
     "uninstallBody": "删除 {{name}} 及其文件夹？",
     "dropHint": "可将插件文件夹或 .zip 拖到这里",
-    "browseArchive": "压缩包…"
+    "browseArchive": "压缩包…",
+    "marketplace": "插件市场",
+    "marketplaceEmpty": "暂无已发布插件",
+    "marketplaceUnavailable": "插件市场不可用",
+    "installed": "插件已安装"
   },
   "history": {
     "title": "历史",

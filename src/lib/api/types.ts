@@ -294,6 +294,15 @@ export interface PluginView {
   title: string;
 }
 
+export interface MarketEntry {
+  id: string;
+  name: string;
+  version: string;
+  description: string | null;
+  url: string;
+  sha256: string;
+}
+
 export interface PluginInfo {
   id: string;
   name: string;

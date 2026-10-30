@@ -117,6 +117,7 @@ pub fn run() {
             commands::plugin_pick_archive,
             commands::app_open_data_dir,
             commands::plugin_render_view,
+            commands::marketplace_install,
             commands::plugin_install,
             commands::plugin_uninstall,
             commands::plugin_reload,

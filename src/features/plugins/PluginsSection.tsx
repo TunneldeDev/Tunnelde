@@ -14,6 +14,8 @@ import { StatusDot } from "@/components/ui/display/Misc";
 import { translateError } from "@/lib/api/errors";
 import { cn } from "@/lib/text/format";
 import { api, isTauri } from "@/lib/api/ipc";
+import type { MarketEntry } from "@/lib/api/types";
+import { fetchMarketplace, installMarketplaceEntry } from "@/lib/plugins/marketplace";
 import { useDialogs } from "@/store/dialogs";
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";
@@ -40,11 +42,45 @@ export function PluginsSection() {
   const install = usePlugins((state) => state.install);
   const confirm = useDialogs((state) => state.confirm);
   const [path, setPath] = useState<string | null>(null);
+  const [market, setMarket] = useState<MarketEntry[] | null>(null);
+  const [marketError, setMarketError] = useState(false);
+  const [installing, setInstalling] = useState<string | null>(null);
   const openPluginView = useWorkspace((state) => state.openPluginView);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    let alive = true;
+    fetchMarketplace()
+      .then((entries) => {
+        if (alive) {
+          setMarket(entries);
+        }
+      })
+      .catch(() => {
+        if (alive) {
+          setMarketError(true);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const installFromMarket = async (entry: MarketEntry) => {
+    setInstalling(entry.id);
+    try {
+      await installMarketplaceEntry(entry);
+      await load();
+      toast(t("plugins.installed"), "success");
+    } catch (error) {
+      toast(translateError(error), "error");
+    } finally {
+      setInstalling(null);
+    }
+  };
 
   // A folder dropped on the window fills the install dialog.
   useEffect(() => {
@@ -286,6 +322,31 @@ export function PluginsSection() {
           <p className="settings-hint">{t("plugins.dropHint")}</p>
         </Dialog>
       ) : null}
+
+      <div className="settings-subsection">
+        <h3 className="settings-subtitle">{t("plugins.marketplace")}</h3>
+        {marketError ? (
+          <p className="settings-hint">{t("plugins.marketplaceUnavailable")}</p>
+        ) : null}
+        {market && market.length === 0 && !marketError ? (
+          <p className="settings-hint">{t("plugins.marketplaceEmpty")}</p>
+        ) : null}
+        {(market ?? []).map((entry) => (
+          <div className="market-row" key={entry.id}>
+            <span className="market-row__name">{entry.name}</span>
+            <span className="market-row__version">{entry.version}</span>
+            <span className="market-row__desc">{entry.description ?? ""}</span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={installing === entry.id}
+              onClick={() => void installFromMarket(entry)}
+            >
+              {t("plugins.install")}
+            </Button>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }

@@ -1,0 +1,12 @@
+{
+  "plugins": [
+    {
+      "id": "hello",
+      "name": "Hello",
+      "version": "0.1.0",
+      "description": "Example plugin that speaks the JSON-RPC protocol",
+      "url": "https://github.com/TunneldeDev/Tunnelde/releases/download/v0.14.1/hello-plugin.zip",
+      "sha256": "997c8382c9240692c6edaafbf4e2c34c4b1388d76a1b255ea97d6ba5bc6d5113"
+    }
+  ]
+}

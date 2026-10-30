@@ -68,6 +68,31 @@ Timeouts: 8 seconds for `initialize`, 20 seconds for everything else.
 Unknown block types are dropped, strings are capped at 4000 characters, tables at 12 columns and
 200 rows. The host never evaluates HTML from a plugin.
 
+## Marketplace
+
+`marketplace/index.json` in the repository is the catalogue. Every entry pins a download and its
+checksum:
+
+```json
+{
+  "plugins": [
+    {
+      "id": "hello",
+      "name": "Hello",
+      "version": "0.1.0",
+      "description": "Example plugin",
+      "url": "https://github.com/<owner>/<repo>/releases/download/<tag>/hello-plugin.zip",
+      "sha256": "<64 hex characters>"
+    }
+  ]
+}
+```
+
+Settings → Plugins lists the catalogue and installs an entry by downloading the archive in the
+webview and handing the bytes to Rust, which verifies the checksum before unpacking. The content
+security policy only allows the GitHub hosts that serve the catalogue and its release assets.
+Submitting a plugin is a pull request against that file.
+
 ## Installing
 
 - **Settings → Plugins → Install** copies a folder into the app data `plugins` directory after the

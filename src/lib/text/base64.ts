@@ -27,3 +27,13 @@ export function decodeBase64(value: string): Uint8Array {
 export function decodeBase64Text(value: string): string {
   return decoder.decode(decodeBase64(value));
 }
+
+/** Encodes a downloaded archive for the JSON IPC layer, in safe chunks. */
+export function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunk = 0x8000;
+  for (let index = 0; index < bytes.length; index += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + chunk));
+  }
+  return btoa(binary);
+}

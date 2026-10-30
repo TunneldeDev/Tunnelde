@@ -705,6 +705,18 @@ pub async fn plugin_render_view(app: AppHandle, id: String, view: String) -> App
     state.plugins.render_view(&id, &view).await
 }
 
+/// Installs a plugin archive the webview downloaded; the pinned checksum must
+/// match before anything is unpacked.
+#[tauri::command]
+pub async fn marketplace_install(
+    app: AppHandle,
+    id: String,
+    sha256: String,
+    data: String,
+) -> AppResult<plugins::PluginInfo> {
+    plugins::marketplace::install_archive(&app, &id, &sha256, &data).await
+}
+
 #[tauri::command]
 pub async fn sftp_copy(
     app: AppHandle,

@@ -332,7 +332,11 @@
     "uninstallTitle": "Uninstall plugin",
     "uninstallBody": "Remove {{name}} and its folder?",
     "dropHint": "Drop a plugin folder or .zip here",
-    "browseArchive": "Archive…"
+    "browseArchive": "Archive…",
+    "marketplace": "Marketplace",
+    "marketplaceEmpty": "No plugins published yet",
+    "marketplaceUnavailable": "Marketplace unavailable",
+    "installed": "Plugin installed"
   },
   "history": {
     "title": "History",
