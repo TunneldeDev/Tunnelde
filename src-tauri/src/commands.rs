@@ -10,13 +10,13 @@ use tauri_plugin_opener::OpenerExt;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput, TabRecord};
-use crate::monitor;
+use crate::ssh::monitor;
 use crate::plugins;
 use crate::settings::{Settings, ACCENTS, DENSITIES, LANGUAGES, THEMES};
-use crate::sftp::{self, Listing};
+use crate::ssh::files::{self as sftp, Listing};
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
-use crate::system::{self, SystemStats};
+use crate::platform::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
@@ -106,7 +106,7 @@ pub fn settings_update(
 
     state.db.with(|conn| db::settings::save(conn, &next))?;
     state.set_settings(next.clone());
-    crate::window::apply_theme(&app, &next.theme);
+    crate::platform::window::apply_theme(&app, &next.theme);
     let _ = app.emit("settings://changed", &next);
     Ok(next)
 }
@@ -117,7 +117,7 @@ pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<S
     next.sanitize();
     state.db.with(|conn| db::settings::save(conn, &next))?;
     state.set_settings(next.clone());
-    crate::window::apply_theme(&app, &next.theme);
+    crate::platform::window::apply_theme(&app, &next.theme);
     let _ = app.emit("settings://changed", &next);
     Ok(next)
 }
@@ -128,7 +128,7 @@ pub fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) ->
         return Err(AppError::validation("locale.invalid"));
     }
     state.set_locale(locale.clone());
-    crate::tray::set_language(&app, &locale)?;
+    crate::platform::tray::set_language(&app, &locale)?;
     Ok(())
 }
 
@@ -252,6 +252,18 @@ pub fn open_release_page(app: AppHandle) -> AppResult<()> {
 pub fn open_log_dir(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
     app.opener()
         .open_path(state.log_dir.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|error| AppError::Internal(error.to_string()))
+}
+
+/// Opens one existing local file or folder with the system default handler.
+#[tauri::command]
+pub fn open_local_path(app: AppHandle, path: String) -> AppResult<()> {
+    let target = std::path::PathBuf::from(&path);
+    if !target.exists() {
+        return Err(AppError::NotFound("path.notFound".into()));
+    }
+    app.opener()
+        .open_path(target.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
@@ -441,23 +453,36 @@ pub fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn sftp_download(
+pub fn fs_transfer(
     app: AppHandle,
-    session_id: String,
-    remote_path: String,
-    local_path: String,
+    from_session: Option<String>,
+    from_path: String,
+    to_session: Option<String>,
+    to_path: String,
+    remove_source: bool,
 ) -> AppResult<String> {
-    sftp::spawn_download(app, session_id, remote_path, local_path)
+    sftp::spawn_transfer(
+        app,
+        sftp::Endpoint {
+            session: from_session,
+            path: from_path,
+        },
+        sftp::Endpoint {
+            session: to_session,
+            path: to_path,
+        },
+        remove_source,
+    )
 }
 
 #[tauri::command]
-pub fn sftp_upload(
-    app: AppHandle,
-    session_id: String,
-    local_path: String,
-    remote_path: String,
-) -> AppResult<String> {
-    sftp::spawn_upload(app, session_id, local_path, remote_path)
+pub fn local_create_file(path: String) -> AppResult<()> {
+    sftp::local_create_file(path)
+}
+
+#[tauri::command]
+pub async fn sftp_create_file(app: AppHandle, session_id: String, path: String) -> AppResult<()> {
+    sftp::remote_create_file(&app, &session_id, path).await
 }
 
 #[tauri::command]

@@ -10,10 +10,10 @@ use tracing_appender::non_blocking::WorkerGuard;
 
 use crate::db::{self, Database};
 use crate::error::{AppError, AppResult};
-use crate::monitor::MonitorCache;
+use crate::ssh::monitor::MonitorCache;
 use crate::plugins::PluginsManager;
 use crate::settings::Settings;
-use crate::sftp::TransferRegistry;
+use crate::ssh::files::TransferRegistry;
 use crate::ssh::SshManager;
 use crate::update::UpdateService;
 
@@ -83,7 +83,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
             .app_log_dir()
             .map_err(|error| AppError::internal(error.to_string()))?,
     };
-    let guard = crate::logging::init(&log_dir)?;
+    let guard = crate::platform::logging::init(&log_dir)?;
 
     let db_path = data_dir.join("tunnelde.db");
     let database = match Database::open(&db_path) {

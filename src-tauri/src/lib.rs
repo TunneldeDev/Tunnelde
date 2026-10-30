@@ -4,21 +4,18 @@
 mod commands;
 mod db;
 mod error;
-mod logging;
 mod models;
-mod monitor;
+mod platform;
 mod plugins;
 mod settings;
-mod sftp;
 mod ssh;
 mod state;
-mod system;
-mod tray;
 mod update;
 mod vault;
-mod window;
 
 pub fn run() {
+    use platform::{tray, window};
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             window::show_main(app);
@@ -67,6 +64,7 @@ pub fn run() {
             commands::update_install,
             commands::open_release_page,
             commands::open_log_dir,
+            commands::open_local_path,
             commands::open_external,
             commands::user_css_import,
             commands::user_css_export,
@@ -84,8 +82,9 @@ pub fn run() {
             commands::sftp_mkdir,
             commands::sftp_rename,
             commands::sftp_delete,
-            commands::sftp_download,
-            commands::sftp_upload,
+            commands::fs_transfer,
+            commands::local_create_file,
+            commands::sftp_create_file,
             commands::sftp_read_text,
             commands::sftp_write_text,
             commands::sftp_copy,

@@ -18,6 +18,7 @@ pub const TRANSFER_EVENT: &str = "sftp://transfer";
 
 const CHUNK: usize = 64 * 1024;
 const PROGRESS_STEP: u64 = 256 * 1024;
+const CANCELLED: &str = "sftp.cancelled";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +86,30 @@ impl TransferRegistry {
     }
 }
 
+/// One side of a transfer: a local folder or a folder on an SSH session.
+#[derive(Debug, Clone)]
+pub struct Endpoint {
+    pub session: Option<String>,
+    pub path: String,
+}
+
+impl Endpoint {
+    fn child(&self, path: String) -> Self {
+        Self {
+            session: self.session.clone(),
+            path,
+        }
+    }
+
+    fn join(&self, name: &str) -> String {
+        if self.session.is_some() {
+            join_remote(&self.path, name)
+        } else {
+            display_path(&Path::new(&self.path).join(name))
+        }
+    }
+}
+
 fn millis(time: SystemTime) -> Option<i64> {
     time.duration_since(UNIX_EPOCH)
         .ok()
@@ -109,6 +134,15 @@ fn display_path(path: &Path) -> String {
     text.strip_prefix(r"\\?\")
         .map(str::to_string)
         .unwrap_or(text)
+}
+
+fn file_name_of(path: &str) -> String {
+    path.trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .filter(|value| !value.is_empty())
+        .unwrap_or(path)
+        .to_string()
 }
 
 pub fn home_dir() -> PathBuf {
@@ -237,6 +271,21 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
     Ok(())
 }
 
+pub fn local_create_file(path: String) -> AppResult<()> {
+    std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(Path::new(&path))?;
+    Ok(())
+}
+
+pub async fn remote_create_file(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
+    let sftp = session(app, session_id).await?;
+    sftp.write(&path, b"").await.map_err(map_sftp)?;
+    let _ = sftp.close().await;
+    Ok(())
+}
+
 pub fn local_rename(from: String, to: String) -> AppResult<()> {
     std::fs::rename(from, to)?;
     Ok(())
@@ -250,74 +299,19 @@ fn emit(app: &AppHandle, event: TransferEvent) {
     let _ = app.emit(TRANSFER_EVENT, event);
 }
 
-pub fn spawn_download(
-    app: AppHandle,
-    session_id: String,
-    remote_path: String,
-    local_path: String,
-) -> AppResult<String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let name = Path::new(&remote_path)
-        .file_name()
-        .map(|value| value.to_string_lossy().into_owned())
-        .unwrap_or_else(|| remote_path.clone());
-    let cancel = Arc::new(AtomicBool::new(false));
-    app.state::<AppState>()
-        .transfers
-        .register(&id, cancel.clone());
-
-    let transfer_id = id.clone();
-    tauri::async_runtime::spawn(async move {
-        let app_handle = app.clone();
-        let outcome = download(
-            &app_handle,
-            &session_id,
-            &remote_path,
-            &local_path,
-            &transfer_id,
-            &name,
-            &cancel,
-        )
-        .await;
-        finish(&app_handle, &transfer_id, "download", &name, outcome);
-    });
-
-    Ok(id)
-}
-
-pub fn spawn_upload(
-    app: AppHandle,
-    session_id: String,
-    local_path: String,
-    remote_path: String,
-) -> AppResult<String> {
-    let id = uuid::Uuid::new_v4().to_string();
-    let name = Path::new(&local_path)
-        .file_name()
-        .map(|value| value.to_string_lossy().into_owned())
-        .unwrap_or_else(|| local_path.clone());
-    let cancel = Arc::new(AtomicBool::new(false));
-    app.state::<AppState>()
-        .transfers
-        .register(&id, cancel.clone());
-
-    let transfer_id = id.clone();
-    tauri::async_runtime::spawn(async move {
-        let app_handle = app.clone();
-        let outcome = upload(
-            &app_handle,
-            &session_id,
-            &local_path,
-            &remote_path,
-            &transfer_id,
-            &name,
-            &cancel,
-        )
-        .await;
-        finish(&app_handle, &transfer_id, "upload", &name, outcome);
-    });
-
-    Ok(id)
+fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64) {
+    emit(
+        app,
+        TransferEvent {
+            id: id.into(),
+            direction: "transfer",
+            name: name.into(),
+            transferred,
+            total,
+            status: TransferStatus::Running,
+            error: None,
+        },
+    );
 }
 
 enum Outcome {
@@ -326,13 +320,13 @@ enum Outcome {
     Failed(u64, String),
 }
 
-fn finish(app: &AppHandle, id: &str, direction: &'static str, name: &str, outcome: Outcome) {
+fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let state = app.state::<AppState>();
     state.transfers.unregister(id);
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
-            direction,
+            direction: "transfer",
             name: name.into(),
             transferred: total,
             total,
@@ -341,7 +335,7 @@ fn finish(app: &AppHandle, id: &str, direction: &'static str, name: &str, outcom
         },
         Outcome::Cancelled(transferred) => TransferEvent {
             id: id.into(),
-            direction,
+            direction: "transfer",
             name: name.into(),
             transferred,
             total: 0,
@@ -350,7 +344,7 @@ fn finish(app: &AppHandle, id: &str, direction: &'static str, name: &str, outcom
         },
         Outcome::Failed(transferred, error) => TransferEvent {
             id: id.into(),
-            direction,
+            direction: "transfer",
             name: name.into(),
             transferred,
             total: 0,
@@ -361,122 +355,318 @@ fn finish(app: &AppHandle, id: &str, direction: &'static str, name: &str, outcom
     emit(app, event);
 }
 
-fn progress(
-    app: &AppHandle,
-    id: &str,
-    direction: &'static str,
-    name: &str,
+/// Copies one endpoint onto another, whatever the two sides are: disk to disk,
+/// disk to a server, server to disk or between two servers. Folders are walked
+/// recursively and any single failure aborts the whole operation.
+pub fn spawn_transfer(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    remove_source: bool,
+) -> AppResult<String> {
+    if from.session.is_some() && from.session == to.session && from.path == to.path {
+        return Err(AppError::validation("sftp.samePath"));
+    }
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let name = file_name_of(&from.path);
+    let cancel = Arc::new(AtomicBool::new(false));
+    app.state::<AppState>()
+        .transfers
+        .register(&id, cancel.clone());
+
+    let transfer_id = id.clone();
+    tauri::async_runtime::spawn(async move {
+        let app_handle = app.clone();
+        let outcome = run(&app_handle, &from, &to, &transfer_id, &name, &cancel, remove_source).await;
+        finish(&app_handle, &transfer_id, &name, outcome);
+    });
+
+    Ok(id)
+}
+
+struct Meter<'a> {
+    app: &'a AppHandle,
+    id: &'a str,
+    name: &'a str,
     transferred: u64,
     total: u64,
-) {
-    emit(
-        app,
-        TransferEvent {
-            id: id.into(),
-            direction,
-            name: name.into(),
-            transferred,
-            total,
-            status: TransferStatus::Running,
-            error: None,
-        },
-    );
+    last: u64,
 }
 
-async fn download(
-    app: &AppHandle,
-    session_id: &str,
-    remote_path: &str,
-    local_path: &str,
-    id: &str,
-    name: &str,
-    cancel: &Arc<AtomicBool>,
-) -> Outcome {
-    let mut transferred = 0_u64;
-    let result = async {
-        let sftp = session(app, session_id).await?;
-        let total = sftp
-            .metadata(remote_path)
+impl<'a> Meter<'a> {
+    fn new(app: &'a AppHandle, id: &'a str, name: &'a str, total: u64) -> Self {
+        Self {
+            app,
+            id,
+            name,
+            transferred: 0,
+            total,
+            last: 0,
+        }
+    }
+
+    fn add(&mut self, bytes: u64) {
+        self.transferred += bytes;
+        if self.transferred - self.last >= PROGRESS_STEP || self.transferred >= self.total {
+            self.last = self.transferred;
+            progress(self.app, self.id, self.name, self.transferred, self.total);
+        }
+    }
+}
+
+enum Reader {
+    Local(tokio::fs::File),
+    Remote(russh_sftp::client::fs::File),
+}
+
+impl Reader {
+    async fn read(&mut self, buffer: &mut [u8]) -> AppResult<usize> {
+        Ok(match self {
+            Reader::Local(file) => file.read(buffer).await?,
+            Reader::Remote(file) => file.read(buffer).await?,
+        })
+    }
+}
+
+enum Writer {
+    Local(tokio::fs::File),
+    Remote(russh_sftp::client::fs::File),
+}
+
+impl Writer {
+    async fn write_all(&mut self, buffer: &[u8]) -> AppResult<()> {
+        match self {
+            Writer::Local(file) => file.write_all(buffer).await?,
+            Writer::Remote(file) => file.write_all(buffer).await?,
+        }
+        Ok(())
+    }
+
+    async fn finish(mut self) -> AppResult<()> {
+        match &mut self {
+            Writer::Local(file) => file.flush().await?,
+            Writer::Remote(file) => file.flush().await?,
+        }
+        Ok(())
+    }
+}
+
+async fn is_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<bool> {
+    match sftp {
+        Some(handle) => Ok(handle
+            .metadata(&endpoint.path)
+            .await
+            .map_err(map_sftp)?
+            .is_dir()),
+        None => Ok(tokio::fs::metadata(&endpoint.path).await?.is_dir()),
+    }
+}
+
+async fn children(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Vec<String>> {
+    match sftp {
+        Some(handle) => Ok(handle
+            .read_dir(&endpoint.path)
+            .await
+            .map_err(map_sftp)?
+            .map(|entry| entry.path())
+            .collect()),
+        None => {
+            let mut paths = Vec::new();
+            let mut directory = tokio::fs::read_dir(&endpoint.path).await?;
+            while let Some(entry) = directory.next_entry().await? {
+                paths.push(display_path(&entry.path()));
+            }
+            Ok(paths)
+        }
+    }
+}
+
+async fn make_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+    match sftp {
+        Some(handle) => {
+            let _ = handle.create_dir(&endpoint.path).await;
+            Ok(())
+        }
+        None => {
+            tokio::fs::create_dir_all(&endpoint.path).await?;
+            Ok(())
+        }
+    }
+}
+
+async fn measure(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<u64> {
+    if is_dir(endpoint, sftp).await? {
+        let mut total = 0;
+        for path in children(endpoint, sftp).await? {
+            total += Box::pin(measure(&endpoint.child(path), sftp)).await?;
+        }
+        return Ok(total);
+    }
+    Ok(match sftp {
+        Some(handle) => handle
+            .metadata(&endpoint.path)
             .await
             .map(|metadata| metadata.len())
-            .unwrap_or(0);
-        let mut remote = sftp.open(remote_path).await.map_err(map_sftp)?;
-        let mut local = tokio::fs::File::create(local_path).await?;
-        let mut buffer = vec![0_u8; CHUNK];
-        let mut last_report = 0_u64;
+            .unwrap_or(0),
+        None => tokio::fs::metadata(&endpoint.path)
+            .await
+            .map(|metadata| metadata.len())
+            .unwrap_or(0),
+    })
+}
 
-        loop {
-            if cancel.load(Ordering::SeqCst) {
-                return Ok::<_, AppError>(Outcome::Cancelled(transferred));
-            }
-            let read = remote.read(&mut buffer).await?;
-            if read == 0 {
-                break;
-            }
-            local.write_all(&buffer[..read]).await?;
-            transferred += read as u64;
-            if transferred - last_report >= PROGRESS_STEP || transferred == total {
-                last_report = transferred;
-                progress(app, id, "download", name, transferred, total);
-            }
-        }
-        local.flush().await?;
-        let _ = sftp.close().await;
-        Ok(Outcome::Done(transferred))
+async fn open_reader(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Reader> {
+    Ok(match sftp {
+        Some(handle) => Reader::Remote(handle.open(&endpoint.path).await.map_err(map_sftp)?),
+        None => Reader::Local(tokio::fs::File::open(&endpoint.path).await?),
+    })
+}
+
+async fn open_writer(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Writer> {
+    Ok(match sftp {
+        Some(handle) => Writer::Remote(handle.create(&endpoint.path).await.map_err(map_sftp)?),
+        None => Writer::Local(tokio::fs::File::create(&endpoint.path).await?),
+    })
+}
+
+async fn copy_entry(
+    from: &Endpoint,
+    to: &Endpoint,
+    from_sftp: Option<&SftpSession>,
+    to_sftp: Option<&SftpSession>,
+    meter: &mut Meter<'_>,
+    cancel: &Arc<AtomicBool>,
+) -> AppResult<()> {
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
     }
-    .await;
 
-    match result {
-        Ok(outcome) => outcome,
-        Err(error) => {
-            let _ = tokio::fs::remove_file(local_path).await;
-            Outcome::Failed(transferred, error.to_string())
+    if is_dir(from, from_sftp).await? {
+        make_dir(to, to_sftp).await?;
+        for path in children(from, from_sftp).await? {
+            let child_from = from.child(path);
+            let child_to = to.join(&file_name_of(&child_from.path));
+            let child_to = to.child(child_to);
+            Box::pin(copy_entry(
+                &child_from, &child_to, from_sftp, to_sftp, meter, cancel,
+            ))
+            .await?;
         }
+        return Ok(());
+    }
+
+    let mut reader = open_reader(from, from_sftp).await?;
+    let mut writer = open_writer(to, to_sftp).await?;
+    let mut buffer = vec![0_u8; CHUNK];
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(AppError::Ssh(CANCELLED.into()));
+        }
+        let read = reader.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        writer.write_all(&buffer[..read]).await?;
+        meter.add(read as u64);
+    }
+    writer.finish().await?;
+    Ok(())
+}
+
+async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+    match sftp {
+        Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
+        None => remove_local_entry(&PathBuf::from(&endpoint.path)),
     }
 }
 
-async fn upload(
+async fn run(
     app: &AppHandle,
-    session_id: &str,
-    local_path: &str,
-    remote_path: &str,
+    from: &Endpoint,
+    to: &Endpoint,
     id: &str,
     name: &str,
     cancel: &Arc<AtomicBool>,
+    remove_source: bool,
 ) -> Outcome {
-    let mut transferred = 0_u64;
-    let result = async {
-        let total = tokio::fs::metadata(local_path).await?.len();
-        let mut local = tokio::fs::File::open(local_path).await?;
-        let sftp = session(app, session_id).await?;
-        let mut remote = sftp.create(remote_path).await.map_err(map_sftp)?;
-        let mut buffer = vec![0_u8; CHUNK];
-        let mut last_report = 0_u64;
-
-        loop {
-            if cancel.load(Ordering::SeqCst) {
-                return Ok::<_, AppError>(Outcome::Cancelled(transferred));
+    // Moving inside one server is a rename the server can do itself.
+    if let (Some(from_session), Some(to_session)) = (&from.session, &to.session) {
+        if from_session == to_session {
+            let sftp = match session(app, from_session).await {
+                Ok(value) => value,
+                Err(error) => return Outcome::Failed(0, error.to_string()),
+            };
+            let total = measure(from, Some(&sftp)).await.unwrap_or(0);
+            progress(app, id, name, 0, total);
+            let result = async {
+                copy_remote_entry(&sftp, &from.path, &to.path).await?;
+                if remove_source {
+                    remove_remote_entry(&sftp, &from.path).await?;
+                }
+                Ok::<(), AppError>(())
             }
-            let read = local.read(&mut buffer).await?;
-            if read == 0 {
-                break;
-            }
-            remote.write_all(&buffer[..read]).await?;
-            transferred += read as u64;
-            if transferred - last_report >= PROGRESS_STEP || transferred == total {
-                last_report = transferred;
-                progress(app, id, "upload", name, transferred, total);
-            }
+            .await;
+            let _ = sftp.close().await;
+            return match result {
+                Ok(()) => Outcome::Done(total),
+                Err(error) => Outcome::Failed(0, error.to_string()),
+            };
         }
-        remote.flush().await?;
-        let _ = sftp.close().await;
-        Ok(Outcome::Done(transferred))
+    }
+
+    let from_sftp = match &from.session {
+        Some(session_id) => match session(app, session_id).await {
+            Ok(value) => Some(value),
+            Err(error) => return Outcome::Failed(0, error.to_string()),
+        },
+        None => None,
+    };
+    let to_sftp = match &to.session {
+        Some(session_id) => match session(app, session_id).await {
+            Ok(value) => Some(value),
+            Err(error) => return Outcome::Failed(0, error.to_string()),
+        },
+        None => None,
+    };
+
+    let total = measure(from, from_sftp.as_ref()).await.unwrap_or(0);
+    progress(app, id, name, 0, total);
+
+    let mut meter = Meter::new(app, id, name, total);
+    let result = async {
+        copy_entry(
+            from,
+            to,
+            from_sftp.as_ref(),
+            to_sftp.as_ref(),
+            &mut meter,
+            cancel,
+        )
+        .await?;
+        if remove_source {
+            remove_endpoint(from, from_sftp.as_ref()).await?;
+        }
+        Ok::<(), AppError>(())
     }
     .await;
 
+    if let Some(sftp) = from_sftp {
+        let _ = sftp.close().await;
+    }
+    if let Some(sftp) = to_sftp {
+        let _ = sftp.close().await;
+    }
+
     match result {
-        Ok(outcome) => outcome,
-        Err(error) => Outcome::Failed(transferred, error.to_string()),
+        Ok(()) => Outcome::Done(meter.transferred),
+        Err(error) => {
+            if cancel.load(Ordering::SeqCst) {
+                Outcome::Cancelled(meter.transferred)
+            } else {
+                Outcome::Failed(meter.transferred, error.to_string())
+            }
+        }
     }
 }
 
@@ -525,6 +715,7 @@ pub async fn write_text(
     let _ = sftp.close().await;
     Ok(())
 }
+
 pub async fn remote_copy(
     app: &AppHandle,
     session_id: &str,
@@ -540,6 +731,7 @@ pub async fn remote_copy(
 pub fn local_copy(from: String, to: String) -> AppResult<()> {
     copy_local_entry(&PathBuf::from(from), &PathBuf::from(to))
 }
+
 fn join_remote(directory: &str, name: &str) -> String {
     if directory.ends_with('/') {
         format!("{directory}{name}")
@@ -646,8 +838,25 @@ mod tests {
     }
 
     #[test]
+    fn creates_empty_files() {
+        let root = temp_root("create");
+        let file = root.join("note.txt");
+        local_create_file(display_path(&file)).expect("create");
+        assert!(file.exists());
+        assert_eq!(std::fs::metadata(&file).unwrap().len(), 0);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn joins_remote_paths() {
         assert_eq!(join_remote("/home/user", "a"), "/home/user/a");
         assert_eq!(join_remote("/", "a"), "/a");
+    }
+
+    #[test]
+    fn reads_the_entry_name_from_both_separators() {
+        assert_eq!(file_name_of("/home/user/a.txt"), "a.txt");
+        assert_eq!(file_name_of(r"C:\work\a.txt"), "a.txt");
+        assert_eq!(file_name_of("/home/user/"), "user");
     }
 }

@@ -63,7 +63,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     #[cfg(target_os = "macos")]
     let icon_bytes: &[u8] = include_bytes!("../../resources/trayTemplate@2x.png");
     #[cfg(not(target_os = "macos"))]
-    let icon_bytes: &[u8] = include_bytes!("../../resources/tray-32.png");
+    let icon_bytes: &[u8] = include_bytes!("../../../resources/tray-32.png");
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(tauri::image::Image::from_bytes(icon_bytes)?)
@@ -79,7 +79,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
                 ..
             } = event
             {
-                crate::window::show_main(tray.app_handle());
+                crate::platform::window::show_main(tray.app_handle());
             }
         })
         .build(app)?;
@@ -97,17 +97,17 @@ pub fn set_language(app: &AppHandle, locale: &str) -> tauri::Result<()> {
 
 fn handle_menu(app: &AppHandle, id: &str) {
     match id {
-        "show" => crate::window::show_main(app),
+        "show" => crate::platform::window::show_main(app),
         "settings" => {
-            crate::window::show_main(app);
+            crate::platform::window::show_main(app);
             let _ = app.emit("ui://navigate", "settings");
         }
         "about" => {
-            crate::window::show_main(app);
+            crate::platform::window::show_main(app);
             let _ = app.emit("ui://navigate", "about");
         }
         "updates" => {
-            crate::window::show_main(app);
+            crate::platform::window::show_main(app);
             let _ = app.emit("ui://navigate", "updates");
             crate::update::spawn_check(app.clone());
         }
