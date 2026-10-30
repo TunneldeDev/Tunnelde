@@ -7,7 +7,7 @@
 // tauri-action hits when each job tries to replace the same manifest.
 
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 
 const rules = [
   {
