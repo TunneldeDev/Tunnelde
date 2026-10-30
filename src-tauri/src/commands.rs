@@ -174,6 +174,14 @@ pub fn host_mark_used(state: State<'_, AppState>, id: String) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub fn hosts_reorder(state: State<'_, AppState>, ids: Vec<String>) -> AppResult<()> {
+    if ids.len() > 500 {
+        return Err(AppError::validation("host.orderTooLarge"));
+    }
+    state.db.with(|conn| db::hosts::reorder_hosts(conn, &ids))
+}
+
+#[tauri::command]
 pub fn group_create(state: State<'_, AppState>, input: GroupInput) -> AppResult<Group> {
     let (name, parent_id) = input.validate()?;
     state

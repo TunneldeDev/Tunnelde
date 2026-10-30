@@ -82,4 +82,8 @@ CREATE TABLE command_history (
 );
 CREATE INDEX idx_history_host ON command_history(host_id, executed_at DESC);
 "#,
+    r#"
+ALTER TABLE hosts ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_hosts_order ON hosts(sort_order);
+"#,
 ];

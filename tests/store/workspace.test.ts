@@ -21,6 +21,7 @@ const host = (id: string, name: string): Host => ({
   color: null,
   tags: [],
   note: null,
+  sortOrder: 0,
   lastUsedAt: null,
   createdAt: 0,
   updatedAt: 0,

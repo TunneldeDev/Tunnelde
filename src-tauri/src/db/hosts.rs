@@ -23,6 +23,7 @@ fn map_host(row: &rusqlite::Row<'_>) -> rusqlite::Result<Host> {
         color: row.get("color")?,
         tags: serde_json::from_str(&tags).unwrap_or_default(),
         note: row.get("note")?,
+        sort_order: row.get("sort_order")?,
         last_used_at: row.get("last_used_at")?,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
@@ -32,7 +33,7 @@ fn map_host(row: &rusqlite::Row<'_>) -> rusqlite::Result<Host> {
 pub fn list_hosts(conn: &Connection) -> AppResult<Vec<Host>> {
     let mut stmt = conn.prepare(
         "SELECT * FROM hosts
-         ORDER BY favorite DESC, name COLLATE NOCASE ASC",
+         ORDER BY sort_order ASC, name COLLATE NOCASE ASC",
     )?;
     let rows = stmt.query_map([], map_host)?;
     let mut hosts = Vec::new();
@@ -40,6 +41,19 @@ pub fn list_hosts(conn: &Connection) -> AppResult<Vec<Host>> {
         hosts.push(row?);
     }
     Ok(hosts)
+}
+
+/// Applies the order the user dragged the sidebar into. Unknown ids are
+/// ignored so a stale window cannot corrupt the list.
+pub fn reorder_hosts(conn: &Connection, ids: &[String]) -> AppResult<()> {
+    let ts = now_ms();
+    for (index, id) in ids.iter().enumerate() {
+        conn.execute(
+            "UPDATE hosts SET sort_order = ?2, updated_at = ?3 WHERE id = ?1",
+            params![id, index as i64, ts],
+        )?;
+    }
+    Ok(())
 }
 
 pub fn find_host(conn: &Connection, id: &str) -> AppResult<Host> {
@@ -54,8 +68,9 @@ pub fn create_host(conn: &Connection, draft: &HostDraft) -> AppResult<Host> {
     conn.execute(
         "INSERT INTO hosts
          (id, group_id, name, host, port, username, auth_method, key_path, favorite, color, tags,
-          note, last_used_at, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13, ?13)",
+          note, last_used_at, created_at, updated_at, sort_order)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, NULL, ?13, ?13,
+                 (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM hosts))",
         params![
             id,
             draft.group_id,
@@ -320,5 +335,35 @@ mod tests {
             Ok(())
         })
         .expect("missing rows");
+    }
+
+    #[test]
+    fn keeps_the_dragged_order() {
+        let db = Database::in_memory().expect("database");
+        db.with(|conn| {
+            let first = create_host(conn, &draft("alpha", None))?;
+            let second = create_host(conn, &draft("beta", None))?;
+            let third = create_host(conn, &draft("gamma", None))?;
+            let names = |conn: &Connection| -> AppResult<Vec<String>> {
+                Ok(list_hosts(conn)?
+                    .into_iter()
+                    .map(|host| host.name)
+                    .collect())
+            };
+            assert_eq!(names(conn)?, vec!["alpha", "beta", "gamma"]);
+
+            reorder_hosts(
+                conn,
+                &[third.id.clone(), first.id.clone(), second.id.clone()],
+            )?;
+            assert_eq!(names(conn)?, vec!["gamma", "alpha", "beta"]);
+
+            // An id that no longer exists is ignored; equal positions fall back
+            // to the name so the list stays stable.
+            reorder_hosts(conn, &["missing".into(), second.id.clone()])?;
+            assert_eq!(names(conn)?, vec!["gamma", "alpha", "beta"]);
+            Ok(())
+        })
+        .expect("host order");
     }
 }

@@ -71,6 +71,7 @@ export interface Host {
   color: string | null;
   tags: string[];
   note: string | null;
+  sortOrder: number;
   lastUsedAt: number | null;
   createdAt: number;
   updatedAt: number;

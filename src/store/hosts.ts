@@ -18,6 +18,7 @@ interface HostsStore {
   createHost: (input: HostInput) => Promise<Host | null>;
   updateHost: (id: string, input: HostInput) => Promise<Host | null>;
   deleteHost: (id: string) => Promise<boolean>;
+  moveHost: (dragId: string, targetId: string) => void;
   toggleFavorite: (host: Host) => Promise<void>;
   createGroup: (name: string, parentId?: string | null) => Promise<Group | null>;
   renameGroup: (id: string, name: string) => Promise<boolean>;
@@ -75,6 +76,30 @@ export const useHosts = create<HostsStore>((set, get) => ({
       toast(translateError(error), "error");
       return false;
     }
+  },
+
+  moveHost: (dragId, targetId) => {
+    if (dragId === targetId) {
+      return;
+    }
+    const current = get().hosts;
+    const dragged = current.find((host) => host.id === dragId);
+    if (!dragged) {
+      return;
+    }
+    const rest = current.filter((host) => host.id !== dragId);
+    const index = rest.findIndex((host) => host.id === targetId);
+    if (index < 0) {
+      return;
+    }
+    const next = [...rest.slice(0, index), dragged, ...rest.slice(index)].map(
+      (host, position) => ({ ...host, sortOrder: position }),
+    );
+    set({ hosts: next });
+    void api.hostsReorder(next.map((host) => host.id)).catch((error: unknown) => {
+      toast(translateError(error), "error");
+      void get().load();
+    });
   },
 
   toggleFavorite: async (host) => {

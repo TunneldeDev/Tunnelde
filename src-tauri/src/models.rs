@@ -37,6 +37,7 @@ pub struct Host {
     pub color: Option<String>,
     pub tags: Vec<String>,
     pub note: Option<String>,
+    pub sort_order: i64,
     pub last_used_at: Option<i64>,
     pub created_at: i64,
     pub updated_at: i64,

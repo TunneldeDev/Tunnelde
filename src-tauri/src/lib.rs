@@ -59,6 +59,7 @@ pub fn run() {
             commands::host_update,
             commands::host_delete,
             commands::host_mark_used,
+            commands::hosts_reorder,
             commands::group_create,
             commands::group_update,
             commands::group_delete,

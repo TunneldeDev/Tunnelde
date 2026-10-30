@@ -45,6 +45,7 @@ export const api = {
   updateHost: (id: string, input: HostInput) => invoke<Host>("host_update", { id, input }),
   deleteHost: (id: string) => invoke<void>("host_delete", { id }),
   markHostUsed: (id: string) => invoke<void>("host_mark_used", { id }),
+  hostsReorder: (ids: string[]) => invoke<void>("hosts_reorder", { ids }),
 
   createGroup: (input: { name: string; parentId?: string | null }) =>
     invoke<Group>("group_create", { input }),

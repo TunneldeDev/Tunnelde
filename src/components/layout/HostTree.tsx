@@ -27,6 +27,8 @@ import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
 import type { Group, Host } from "@/lib/api/types";
 
+const HOST_MIME = "application/x-tunnelde-host";
+
 interface Filtered {
   favorites: Host[];
   ungrouped: Host[];
@@ -94,8 +96,10 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
   const confirm = useDialogs((state) => state.confirm);
   const toggleFavorite = useHosts((state) => state.toggleFavorite);
   const deleteHost = useHosts((state) => state.deleteHost);
+  const moveHost = useHosts((state) => state.moveHost);
   const removeHostTab = useWorkspace((state) => state.removeHost);
   const openMenu = useContextMenu((state) => state.open);
+  const [over, setOver] = useState(false);
 
   const removeHost = () =>
     confirm({
@@ -112,7 +116,30 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
 
   return (
     <div
-      className={cn("host-row", nested && "is-nested", active && "is-active")}
+      className={cn("host-row", nested && "is-nested", active && "is-active", over && "is-drop")}
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(HOST_MIME, host.id);
+        event.dataTransfer.effectAllowed = "move";
+      }}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes(HOST_MIME)) {
+          return;
+        }
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(event) => {
+        const dragged = event.dataTransfer.getData(HOST_MIME);
+        setOver(false);
+        if (!dragged || dragged === host.id) {
+          return;
+        }
+        event.preventDefault();
+        moveHost(dragged, host.id);
+      }}
       onClick={() => openHost(host)}
       onDoubleClick={() => openHostDialog(host)}
       onContextMenu={(event) => {
