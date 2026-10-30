@@ -104,7 +104,9 @@ jobs:
         include:
           - platform: windows-latest
             args: ""
-          - platform: macos-14
+          # macOS 14 is being retired, and its brownouts abort release runs;
+          # macos-15 is the current Apple Silicon image.
+          - platform: macos-15
             args: "--target aarch64-apple-darwin"
           # Intel image; macos-13 is no longer available.
           - platform: macos-15-intel
