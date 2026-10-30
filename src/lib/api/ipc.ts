@@ -96,6 +96,7 @@ export const api = {
   pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
   pluginInstall: (path: string) => invoke<PluginInfo>("plugin_install", { path }),
   pluginPickFolder: () => invoke<string | null>("plugin_pick_folder"),
+  pluginPickArchive: () => invoke<string | null>("plugin_pick_archive"),
   pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
   pluginRenderView: (id: string, view: string) =>

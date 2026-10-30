@@ -329,7 +329,8 @@
     "uninstall": "卸载",
     "uninstallTitle": "卸载插件",
     "uninstallBody": "删除 {{name}} 及其文件夹？",
-    "dropHint": "可将插件文件夹拖到这里"
+    "dropHint": "可将插件文件夹或 .zip 拖到这里",
+    "browseArchive": "压缩包…"
   },
   "history": {
     "title": "历史",

@@ -229,16 +229,107 @@ fn copy_dir(source: &Path, target: &Path) -> AppResult<()> {
     Ok(())
 }
 
+const MAX_ARCHIVE_ENTRIES: usize = 2000;
+const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
+
+fn is_archive(path: &Path) -> bool {
+    path.extension()
+        .map(|extension| extension.eq_ignore_ascii_case("zip"))
+        .unwrap_or(false)
+}
+
+/// Unpacks a plugin archive, refusing paths that escape the target folder and
+/// capping the total size so a hostile archive cannot fill the disk.
+fn extract_archive(archive: &Path, target: &Path) -> AppResult<()> {
+    let file = std::fs::File::open(archive)?;
+    let mut zip = zip::ZipArchive::new(file)
+        .map_err(|error| AppError::validation(format!("plugin.archive: {error}")))?;
+    if zip.len() > MAX_ARCHIVE_ENTRIES {
+        return Err(AppError::validation("plugin.archive.tooManyEntries"));
+    }
+    std::fs::create_dir_all(target)?;
+
+    let mut written = 0_u64;
+    for index in 0..zip.len() {
+        let mut entry = zip
+            .by_index(index)
+            .map_err(|error| AppError::validation(format!("plugin.archive: {error}")))?;
+        let Some(relative) = entry.enclosed_name() else {
+            continue;
+        };
+        let destination = target.join(relative);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&destination)?;
+            continue;
+        }
+        written += entry.size();
+        if written > MAX_ARCHIVE_BYTES {
+            return Err(AppError::validation("plugin.archive.tooLarge"));
+        }
+        if let Some(parent) = destination.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out = std::fs::File::create(&destination)?;
+        std::io::copy(&mut entry, &mut out)?;
+    }
+    Ok(())
+}
+
+/// Accepts both a bare plugin folder and an archive with a single top folder.
+fn locate_manifest_dir(root: &Path) -> AppResult<PathBuf> {
+    if root.join(manifest::MANIFEST_FILE).is_file() {
+        return Ok(root.to_path_buf());
+    }
+    let mut candidates = Vec::new();
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() && entry.path().join(manifest::MANIFEST_FILE).is_file() {
+            candidates.push(entry.path());
+        }
+    }
+    match candidates.len() {
+        1 => Ok(candidates.remove(0)),
+        _ => Err(AppError::validation("plugin.manifest.missing")),
+    }
+}
+
 impl PluginsManager {
     pub async fn install(&self, source: &str) -> AppResult<PluginInfo> {
         let source = PathBuf::from(source);
-        let manifest = manifest::load(&source)?;
+        let archive = is_archive(&source);
+        let extracted =
+            archive.then(|| self.dir.join(format!(".install-{}", uuid::Uuid::new_v4())));
+        let result = match &extracted {
+            Some(directory) => {
+                extract_archive(&source, directory).and_then(|()| locate_manifest_dir(directory))
+            }
+            None => Ok(source.clone()),
+        };
+        let root = match result {
+            Ok(root) => root,
+            Err(error) => {
+                if let Some(directory) = &extracted {
+                    let _ = std::fs::remove_dir_all(directory);
+                }
+                return Err(error);
+            }
+        };
+
+        let outcome = self.install_from(&root).await;
+        if let Some(directory) = extracted {
+            let _ = std::fs::remove_dir_all(directory);
+        }
+        outcome
+    }
+
+    async fn install_from(&self, root: &Path) -> AppResult<PluginInfo> {
+        let manifest = manifest::load(root)?;
         let target = self.dir.join(&manifest.id);
         if target.exists() {
             return Err(AppError::validation("plugin.exists"));
         }
 
-        copy_dir(&source, &target)?;
+        copy_dir(root, &target)?;
         let copied = match manifest::load(&target) {
             Ok(copied) => copied,
             Err(error) => {
@@ -295,11 +386,64 @@ mod tests {
     fn write_plugin(dir: &Path) {
         std::fs::create_dir_all(dir).expect("plugin dir");
         std::fs::write(dir.join("index.js"), "console.log('hello');\n").expect("entry");
-        std::fs::write(
-            dir.join(manifest::MANIFEST_FILE),
-            r#"{"id":"demo","name":"Demo","version":"0.1.0","apiVersion":1,"main":"index.js"}"#,
-        )
-        .expect("manifest");
+        std::fs::write(dir.join(manifest::MANIFEST_FILE), MANIFEST).expect("manifest");
+    }
+
+    const MANIFEST: &str =
+        r#"{"id":"demo","name":"Demo","version":"0.1.0","apiVersion":1,"main":"index.js"}"#;
+
+    fn write_archive(path: &Path, folder: &str) {
+        use std::io::Write;
+        let file = std::fs::File::create(path).expect("archive file");
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, body) in [
+            ("tunnelde-plugin.json", MANIFEST),
+            ("index.js", "console.log('hello');\n"),
+        ] {
+            zip.start_file(format!("{folder}/{name}"), options)
+                .expect("entry");
+            zip.write_all(body.as_bytes()).expect("body");
+        }
+        zip.finish().expect("finish");
+    }
+
+    #[tokio::test]
+    async fn installs_from_an_archive() {
+        let root = temp_root("archive");
+        let archive = root.join("demo.zip");
+        write_archive(&archive, "demo-0.1.0");
+        let manager = PluginsManager::load(root.join("installed"));
+
+        let installed = manager
+            .install(archive.to_str().unwrap())
+            .await
+            .expect("install");
+        assert_eq!(installed.id, "demo");
+        assert!(root
+            .join("installed")
+            .join("demo")
+            .join("index.js")
+            .exists());
+        // The temporary extraction folder must not survive.
+        let leftovers: Vec<_> = std::fs::read_dir(root.join("installed"))
+            .expect("dir")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with(".install-"))
+            .collect();
+        assert!(leftovers.is_empty());
+    }
+
+    #[test]
+    fn rejects_archives_without_a_single_plugin_folder() {
+        let root = temp_root("locate");
+        assert!(locate_manifest_dir(&root).is_err());
+        std::fs::create_dir_all(root.join("one")).expect("one");
+        std::fs::write(root.join("one").join(manifest::MANIFEST_FILE), MANIFEST).expect("manifest");
+        assert_eq!(locate_manifest_dir(&root).unwrap(), root.join("one"));
+        std::fs::create_dir_all(root.join("two")).expect("two");
+        std::fs::write(root.join("two").join(manifest::MANIFEST_FILE), MANIFEST).expect("manifest");
+        assert!(locate_manifest_dir(&root).is_err());
     }
 
     fn temp_root(name: &str) -> PathBuf {

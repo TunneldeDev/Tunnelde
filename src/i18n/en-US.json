@@ -329,7 +329,8 @@
     "uninstall": "Uninstall",
     "uninstallTitle": "Uninstall plugin",
     "uninstallBody": "Remove {{name}} and its folder?",
-    "dropHint": "Drop a plugin folder here"
+    "dropHint": "Drop a plugin folder or .zip here",
+    "browseArchive": "Archive…"
   },
   "history": {
     "title": "History",

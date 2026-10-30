@@ -72,6 +72,10 @@ Unknown block types are dropped, strings are capped at 4000 characters, tables a
 
 - **Settings → Plugins → Install** copies a folder into the app data `plugins` directory after the
   manifest validates, and refuses to overwrite an existing id.
+- A `.zip` archive works too: it is unpacked to a temporary folder, which must contain the manifest
+  either at its root or inside a single top-level folder. Extraction refuses paths outside the
+  target and caps the unpacked size.
+- Pick a folder, pick an archive, or drop either onto the window while the dialog is open.
 - **Reload** rescans the directory, stopping running hosts first.
 - **Uninstall** stops the host and deletes the folder.
 - `examples/plugins/hello` in the repository is a complete minimal plugin.

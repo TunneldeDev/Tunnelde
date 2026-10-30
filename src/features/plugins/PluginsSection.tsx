@@ -266,6 +266,22 @@ export function PluginsSection() {
             >
               {t("common.browse")}
             </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                void api
+                  .pluginPickArchive()
+                  .then((picked) => {
+                    if (picked) {
+                      setPath(picked);
+                    }
+                  })
+                  .catch((error: unknown) => toast(translateError(error), "error"));
+              }}
+            >
+              {t("plugins.browseArchive")}
+            </Button>
           </div>
           <p className="settings-hint">{t("plugins.dropHint")}</p>
         </Dialog>
