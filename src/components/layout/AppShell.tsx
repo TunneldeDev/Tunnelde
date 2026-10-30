@@ -11,7 +11,6 @@ import { Resizer } from "@/components/layout/Resizer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { SystemPanel } from "@/components/layout/SystemPanel";
 
-import { TopBar } from "@/components/layout/TopBar";
 import { ToastHost } from "@/components/ui/overlay/Toast";
 import { DialogHost } from "@/features/dialogs/DialogHost";
 import { useDialogs } from "@/store/dialogs";
@@ -170,7 +169,6 @@ export function AppShell() {
 
   return (
     <div className="app" style={style}>
-      <TopBar />
       <div className="app__body">
         <HostTree />
         <Resizer

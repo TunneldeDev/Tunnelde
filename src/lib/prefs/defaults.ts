@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   skippedVersion: null,
   lastUpdateCheck: null,
   closeToTray: false,
+  nativeMenu: false,
 };
 
 export type AccentLabelKey =

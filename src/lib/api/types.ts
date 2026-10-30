@@ -23,6 +23,7 @@ export interface Settings {
   skippedVersion: string | null;
   lastUpdateCheck: number | null;
   closeToTray: boolean;
+  nativeMenu: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;

@@ -32,6 +32,8 @@ pub struct Settings {
     pub skipped_version: Option<String>,
     pub last_update_check: Option<i64>,
     pub close_to_tray: bool,
+    /// Show the OS menu bar instead of relying on the in-app chrome only.
+    pub native_menu: bool,
 }
 
 impl Default for Settings {
@@ -52,6 +54,7 @@ impl Default for Settings {
             skipped_version: None,
             last_update_check: None,
             close_to_tray: false,
+            native_menu: cfg!(target_os = "macos"),
         }
     }
 }

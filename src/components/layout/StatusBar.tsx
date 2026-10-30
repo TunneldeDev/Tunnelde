@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
 import { StatusDot } from "@/components/ui/display/Misc";
+import { UpdatePill } from "@/components/layout/UpdatePill";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
@@ -30,6 +31,7 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
         <span className="statusbar__muted">{t("status.hosts", { count: hostCount })}</span>
       </div>
       <div className="statusbar__group">
+        <UpdatePill />
         <IconButton
           size="sm"
           active={panelOpen}

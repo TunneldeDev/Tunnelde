@@ -94,7 +94,7 @@ async function wireEvents(): Promise<void> {
   });
 
   await events.onNavigate((page) => {
-    if (page === "settings" || page === "about" || page === "updates") {
+    if (page === "welcome" || page === "settings" || page === "about" || page === "updates") {
       useWorkspace.getState().openPage(page);
     }
   });

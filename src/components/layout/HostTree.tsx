@@ -5,11 +5,12 @@ import {
   ChevronRight,
   FolderClosed,
   FolderPlus,
+  Pencil,
   Plus,
   Server,
+  Settings as SettingsIcon,
   Star,
   Trash2,
-  Pencil,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -237,6 +238,7 @@ export function HostTree() {
   const openGroupDialog = useDialogs((state) => state.openGroup);
   const confirm = useDialogs((state) => state.confirm);
   const deleteGroup = useHosts((state) => state.deleteGroup);
+  const openPage = useWorkspace((state) => state.openPage);
   const [query, setQuery] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
@@ -259,6 +261,11 @@ export function HostTree() {
 
   return (
     <div className="sidebar">
+      <div className="sidebar__head">
+        <img src="/brand/mark-64.png" alt="" width={16} height={16} draggable={false} />
+        <span className="sidebar__brand">Tunnelde</span>
+      </div>
+
       <div className="sidebar__search">
         <Input
           value={query}
@@ -398,6 +405,9 @@ export function HostTree() {
         </Button>
         <IconButton label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
           <FolderPlus size={15} />
+        </IconButton>
+        <IconButton label={t("nav.settings")} onClick={() => openPage("settings")}>
+          <SettingsIcon size={15} />
         </IconButton>
       </footer>
     </div>

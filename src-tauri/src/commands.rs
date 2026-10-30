@@ -107,6 +107,7 @@ pub fn settings_update(
     state.db.with(|conn| db::settings::save(conn, &next))?;
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
+    crate::platform::menu::apply(&app, next.native_menu, &state.locale())?;
     let _ = app.emit("settings://changed", &next);
     Ok(next)
 }
@@ -118,6 +119,7 @@ pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<S
     state.db.with(|conn| db::settings::save(conn, &next))?;
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
+    crate::platform::menu::apply(&app, next.native_menu, &state.locale())?;
     let _ = app.emit("settings://changed", &next);
     Ok(next)
 }
@@ -129,6 +131,8 @@ pub fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) ->
     }
     state.set_locale(locale.clone());
     crate::platform::tray::set_language(&app, &locale)?;
+    let native_menu = state.settings().native_menu;
+    crate::platform::menu::apply(&app, native_menu, &locale)?;
     Ok(())
 }
 

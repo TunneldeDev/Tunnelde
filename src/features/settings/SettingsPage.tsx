@@ -81,6 +81,16 @@ function GeneralSection() {
         }
       />
       <Row
+        label={t("settings.nativeMenu")}
+        control={
+          <Switch
+            label={t("settings.nativeMenu")}
+            checked={settings.nativeMenu}
+            onChange={(nativeMenu) => void update({ nativeMenu })}
+          />
+        }
+      />
+      <Row
         label={t("settings.version")}
         control={<span className="settings-value">{info?.version ?? "0.1.0"}</span>}
       />

@@ -14,7 +14,7 @@ mod update;
 mod vault;
 
 pub fn run() {
-    use platform::{tray, window};
+    use platform::{menu, tray, window};
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -27,12 +27,22 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
-            let theme = {
+            let (theme, native_menu, locale) = {
                 use tauri::Manager;
-                handle.state::<state::AppState>().settings().theme
+                let state = handle.state::<state::AppState>();
+                let settings = state.settings();
+                (
+                    settings.theme,
+                    settings.native_menu,
+                    state.locale(),
+                )
             };
             window::apply_theme(&handle, &theme);
             tray::setup(&handle)?;
+            menu::apply(&handle, native_menu, &locale)?;
+            app.on_menu_event(|app, event| {
+                platform::menu::handle_event(app, event.id().as_ref());
+            });
             window::install_close_handler(&handle);
             window::configure_webview(&handle);
             update::spawn_auto_check(&handle);
