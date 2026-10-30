@@ -61,6 +61,7 @@
     "created": "创建时间",
     "newTitle": "新建主机",
     "editTitle": "编辑主机",
+    "open": "打开主机",
     "deleteTitle": "删除主机",
     "deleteBody": "删除“{{name}}”？此操作不可撤销。",
     "details": "详情",
@@ -83,6 +84,7 @@
     "editTitle": "重命名分组",
     "name": "分组名称",
     "namePlaceholder": "生产环境",
+    "open": "打开主机",
     "deleteTitle": "删除分组",
     "deleteBody": "删除“{{name}}”？组内主机保留并移到未分组。"
   },
@@ -249,6 +251,7 @@
     "copyPath": "复制路径",
     "copied": "路径已复制",
     "copyFailed": "无法复制路径",
+    "open": "打开主机",
     "deleteTitle": "删除",
     "deleteBody": "删除“{{name}}”？",
     "upload": "上传",
@@ -326,6 +329,10 @@
     "newHost": "新建主机"
   },
   "tab": {
+    "splitRight": "向右分屏",
+    "splitDown": "向下分屏",
+    "closeOthers": "关闭其他",
+    "closePane": "关闭窗格",
     "close": "关闭标签页",
     "pin": "固定标签页",
     "unpin": "取消固定"

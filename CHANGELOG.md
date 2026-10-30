@@ -6,12 +6,17 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Tab context menu with close, close others, split right, split down and close pane.
+- Host context menu with open, edit, favorite and delete.
+- `Ctrl+\` splits the active tab to the right, `Ctrl+Shift+\` splits down; `Ctrl+W` now asks before discarding unsaved edits.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added
 
 - Split view: drag a tab to the edge of the editor area to open it in a second pane, drag tabs between panes to move them and close a pane to merge its tabs back.
-
 
 ## [0.6.0] - 2026-10-30
 

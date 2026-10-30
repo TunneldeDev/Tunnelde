@@ -61,6 +61,7 @@
     "created": "Created",
     "newTitle": "New host",
     "editTitle": "Edit host",
+    "open": "Open host",
     "deleteTitle": "Delete host",
     "deleteBody": "Delete “{{name}}”? This cannot be undone.",
     "details": "Details",
@@ -83,6 +84,7 @@
     "editTitle": "Rename group",
     "name": "Group name",
     "namePlaceholder": "Production",
+    "open": "Open host",
     "deleteTitle": "Delete group",
     "deleteBody": "Delete “{{name}}”? Hosts inside stay and move to Ungrouped."
   },
@@ -249,6 +251,7 @@
     "copyPath": "Copy path",
     "copied": "Path copied",
     "copyFailed": "Could not copy the path",
+    "open": "Open host",
     "deleteTitle": "Delete",
     "deleteBody": "Delete “{{name}}”?",
     "upload": "Upload",
@@ -326,6 +329,10 @@
     "newHost": "New host"
   },
   "tab": {
+    "splitRight": "Split right",
+    "splitDown": "Split down",
+    "closeOthers": "Close others",
+    "closePane": "Close pane",
     "close": "Close tab",
     "pin": "Pin tab",
     "unpin": "Unpin tab"

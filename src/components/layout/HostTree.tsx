@@ -20,6 +20,7 @@ import { Menu } from "@/components/ui/Menu";
 import { EmptyState } from "@/components/ui/Misc";
 import { cn, hostSubtitle } from "@/lib/format";
 import { useDialogs } from "@/store/dialogs";
+import { useContextMenu } from "@/store/contextMenu";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
 import type { Group, Host } from "@/lib/types";
@@ -92,12 +93,38 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
   const toggleFavorite = useHosts((state) => state.toggleFavorite);
   const deleteHost = useHosts((state) => state.deleteHost);
   const removeHostTab = useWorkspace((state) => state.removeHost);
+  const openMenu = useContextMenu((state) => state.open);
+
+  const removeHost = () =>
+    confirm({
+      title: t("host.deleteTitle"),
+      body: t("host.deleteBody", { name: host.name }),
+      confirmLabel: t("common.delete"),
+      danger: true,
+      onConfirm: async () => {
+        if (await deleteHost(host.id)) {
+          removeHostTab(host.id);
+        }
+      },
+    });
 
   return (
     <div
       className={cn("host-row", nested && "is-nested", active && "is-active")}
       onClick={() => openHost(host)}
       onDoubleClick={() => openHostDialog(host)}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        openMenu(event.clientX, event.clientY, [
+          { label: t("host.open"), onSelect: () => openHost(host) },
+          { label: t("menu.edit"), onSelect: () => openHostDialog(host) },
+          {
+            label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
+            onSelect: () => void toggleFavorite(host),
+          },
+          { label: t("menu.delete"), danger: true, onSelect: removeHost },
+        ]);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter") {
           openHost(host);
@@ -134,18 +161,7 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
               label: t("menu.delete"),
               icon: <Trash2 size={13} />,
               danger: true,
-              onSelect: () =>
-                confirm({
-                  title: t("host.deleteTitle"),
-                  body: t("host.deleteBody", { name: host.name }),
-                  confirmLabel: t("common.delete"),
-                  danger: true,
-                  onConfirm: async () => {
-                    if (await deleteHost(host.id)) {
-                      removeHostTab(host.id);
-                    }
-                  },
-                }),
+              onSelect: removeHost,
             },
           ]}
         />

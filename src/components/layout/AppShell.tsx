@@ -17,6 +17,7 @@ import { DialogHost } from "@/features/dialogs/DialogHost";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
 import { cn } from "@/lib/format";
+import { closeTab } from "@/lib/tabActions";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 
@@ -57,9 +58,17 @@ export function AppShell() {
 
       const workspace = useWorkspace.getState();
       if (key === "w") {
+        const tab = workspace.tabs.find((item) => item.id === workspace.activeId);
+        if (tab) {
+          event.preventDefault();
+          closeTab(tab);
+        }
+        return;
+      }
+      if (key === "\\" || key === "|") {
         if (workspace.activeId) {
           event.preventDefault();
-          workspace.close(workspace.activeId);
+          workspace.splitTab(workspace.activeId, key === "|" ? "column" : "row");
         }
         return;
       }

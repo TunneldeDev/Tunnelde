@@ -23,8 +23,8 @@ import { useTranslation } from "react-i18next";
 import { TabContent } from "@/components/layout/TabContent";
 import { EmptyState } from "@/components/ui/Misc";
 import { cn } from "@/lib/format";
-import { useDialogs } from "@/store/dialogs";
-import { useEditors } from "@/store/editors";
+import { closeTab } from "@/lib/tabActions";
+import { useContextMenu } from "@/store/contextMenu";
 import {
   useWorkspace,
   type SplitDirection,
@@ -77,36 +77,20 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const { t } = useTranslation();
   const tabs = useWorkspace((state) => state.tabs);
   const activate = useWorkspace((state) => state.activate);
-  const close = useWorkspace((state) => state.close);
   const togglePin = useWorkspace((state) => state.togglePin);
   const reorderTab = useWorkspace((state) => state.reorderTab);
   const moveTab = useWorkspace((state) => state.moveTab);
-  const confirm = useDialogs((state) => state.confirm);
+  const closeOthers = useWorkspace((state) => state.closeOthers);
+  const splitTab = useWorkspace((state) => state.splitTab);
+  const panes = useWorkspace((state) => state.panes);
+  const openMenu = useContextMenu((state) => state.open);
   const [before, setBefore] = useState<string | null>(null);
 
   const items = pane.tabIds
     .map((id) => tabs.find((tab) => tab.id === id))
     .filter((tab): tab is WorkspaceTab => Boolean(tab));
 
-  const requestClose = (tab: WorkspaceTab) => {
-    if (tab.kind === "editor" && useEditors.getState().isDirty(tab.id)) {
-      confirm({
-        title: t("editor.discardTitle"),
-        body: t("editor.discardBody", { name: tab.title }),
-        confirmLabel: t("editor.discard"),
-        danger: true,
-        onConfirm: () => {
-          useEditors.getState().discard(tab.id);
-          close(tab.id);
-        },
-      });
-      return;
-    }
-    if (tab.kind === "editor") {
-      useEditors.getState().discard(tab.id);
-    }
-    close(tab.id);
-  };
+  const requestClose = (tab: WorkspaceTab) => closeTab(tab);
 
   const dropIndex = (event: DragEvent<HTMLDivElement>): string | null => {
     const elements = Array.from(
@@ -177,6 +161,20 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               }
             }}
             onDoubleClick={() => togglePin(tab.id)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const items = [
+                { label: t("tab.close"), onSelect: () => requestClose(tab) },
+                { label: t("tab.closeOthers"), onSelect: () => closeOthers(tab.id) },
+                { label: t("tab.splitRight"), onSelect: () => splitTab(tab.id, "row") },
+                { label: t("tab.splitDown"), onSelect: () => splitTab(tab.id, "column") },
+              ];
+              if (panes.length > 1) {
+                items.push({ label: t("tab.closePane"), onSelect: () => useWorkspace.getState().closePane(pane.id) });
+              }
+              openMenu(event.clientX, event.clientY, items);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") {
                 event.preventDefault();
