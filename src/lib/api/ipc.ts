@@ -146,6 +146,9 @@ export const api = {
 
   importCss: () => invoke<string | null>("user_css_import"),
   exportCss: (css: string) => invoke<string | null>("user_css_export", { css }),
+
+  keyImport: (content: string) => invoke<string>("key_import", { content }),
+  keyPick: () => invoke<string | null>("key_pick"),
 };
 
 export const events = {

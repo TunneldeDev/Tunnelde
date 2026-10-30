@@ -288,6 +288,40 @@ pub fn open_external(app: AppHandle, url: String) -> AppResult<()> {
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
+/// Stores a pasted private key inside the app data folder and returns its path.
+#[tauri::command]
+pub fn key_import(state: State<'_, AppState>, content: String) -> AppResult<String> {
+    if content.len() > 64 * 1024 || !content.contains("PRIVATE KEY") {
+        return Err(AppError::validation("key.invalid"));
+    }
+    let directory = state.data_dir.join("keys");
+    std::fs::create_dir_all(&directory)?;
+    let path = directory.join(format!("{}.key", uuid::Uuid::new_v4()));
+    std::fs::write(&path, content.as_bytes())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
+/// Lets the user pick a private key file for a host.
+#[tauri::command]
+pub async fn key_pick(app: AppHandle) -> AppResult<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Private key")
+        .pick_file(move |path| {
+            let _ = tx.send(path);
+        });
+    let picked = rx
+        .await
+        .map_err(|_| AppError::internal("dialog.cancelled"))?;
+    Ok(picked.map(|path| path.to_string()))
+}
+
 #[tauri::command]
 pub async fn user_css_import(app: AppHandle) -> AppResult<Option<String>> {
     let (tx, rx) = tokio::sync::oneshot::channel();

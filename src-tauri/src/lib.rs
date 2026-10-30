@@ -78,6 +78,8 @@ pub fn run() {
             commands::open_external,
             commands::user_css_import,
             commands::user_css_export,
+            commands::key_import,
+            commands::key_pick,
             commands::ssh_probe,
             commands::ssh_trust,
             commands::ssh_connect,

@@ -28,7 +28,8 @@
     "retry": "重试",
     "loading": "加载中",
     "more": "更多",
-    "error": "错误"
+    "error": "错误",
+    "browse": "浏览…"
   },
   "nav": {
     "welcome": "欢迎",
@@ -79,7 +80,9 @@
       "key": "密钥",
       "agent": "Agent",
       "keyboardInteractive": "键盘交互"
-    }
+    },
+    "keyFile": "密钥文件",
+    "keyContent": "粘贴密钥"
   },
   "group": {
     "newTitle": "新建分组",
@@ -366,10 +369,12 @@
     "cut": "剪切",
     "copy": "复制",
     "paste": "粘贴",
-    "copied": "路径已复制",
-    "copyFailed": "无法复制路径",
+    "copied": "已复制到剪贴板",
+    "copyFailed": "复制失败",
     "rename": "重命名",
-    "newHost": "新建主机"
+    "newHost": "新建主机",
+    "copySsh": "复制 SSH 命令",
+    "copyAddress": "复制 user@host"
   },
   "tab": {
     "splitRight": "向右分屏",

@@ -28,7 +28,8 @@
     "retry": "Retry",
     "loading": "Loading",
     "more": "More",
-    "error": "Error"
+    "error": "Error",
+    "browse": "Browse…"
   },
   "nav": {
     "welcome": "Welcome",
@@ -79,7 +80,9 @@
       "key": "Key",
       "agent": "Agent",
       "keyboardInteractive": "Keyboard interactive"
-    }
+    },
+    "keyFile": "Key file",
+    "keyContent": "Paste the key"
   },
   "group": {
     "newTitle": "New group",
@@ -366,10 +369,12 @@
     "cut": "Cut",
     "copy": "Copy",
     "paste": "Paste",
-    "copied": "Path copied",
-    "copyFailed": "Could not copy the path",
+    "copied": "Copied to the clipboard",
+    "copyFailed": "Could not copy",
     "rename": "Rename",
-    "newHost": "New host"
+    "newHost": "New host",
+    "copySsh": "Copy SSH command",
+    "copyAddress": "Copy user@host"
   },
   "tab": {
     "splitRight": "Split right",

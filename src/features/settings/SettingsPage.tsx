@@ -23,14 +23,23 @@ import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
 
-type Section = "general" | "appearance" | "plugins" | "css" | "updates" | "advanced";
+type Section = "general" | "appearance" | "plugins" | "hosts" | "css" | "updates" | "advanced";
 
-const SECTIONS: Section[] = ["general", "appearance", "plugins", "css", "updates", "advanced"];
+const SECTIONS: Section[] = [
+  "general",
+  "appearance",
+  "plugins",
+  "hosts",
+  "css",
+  "updates",
+  "advanced",
+];
 
 const SECTION_KEYS = {
   general: "settings.general",
   appearance: "settings.appearance",
   plugins: "settings.plugins",
+  hosts: "settings.knownHosts",
   css: "settings.css",
   updates: "settings.updatesSection",
   advanced: "settings.advanced",
@@ -385,10 +394,6 @@ function AdvancedSection() {
           }
         />
       )}
-      <div className="settings-subsection">
-        <h3 className="settings-subtitle">{t("settings.knownHosts")}</h3>
-        <KnownHostsList />
-      </div>
       <div className="settings-actions">
         <Button
           variant="ghost-danger"
@@ -406,6 +411,16 @@ function AdvancedSection() {
           {t("settings.resetAll")}
         </Button>
       </div>
+    </Section>
+  );
+}
+
+function TrustedHostsSection() {
+  const { t } = useTranslation();
+
+  return (
+    <Section title={t("settings.knownHosts")}>
+      <KnownHostsList />
     </Section>
   );
 }
@@ -432,6 +447,7 @@ export function SettingsPage() {
         {section === "general" ? <GeneralSection /> : null}
         {section === "appearance" ? <AppearanceSection /> : null}
         {section === "plugins" ? <PluginsSection /> : null}
+        {section === "hosts" ? <TrustedHostsSection /> : null}
         {section === "css" ? <CssSection /> : null}
         {section === "updates" ? <UpdatesSection /> : null}
         {section === "advanced" ? <AdvancedSection /> : null}

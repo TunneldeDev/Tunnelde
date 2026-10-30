@@ -9,11 +9,14 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Field, Input, Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
+import { TagInput } from "@/components/ui/form/TagInput";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/prefs/labels";
-import { parseTags } from "@/lib/text/format";
+import { api } from "@/lib/api/ipc";
+import { translateError } from "@/lib/api/errors";
 import type { AuthMethod, Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
+import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 
 interface HostFormState {
@@ -24,8 +27,9 @@ interface HostFormState {
   authMethod: AuthMethod;
   groupId: string;
   keyPath: string;
+  keyContent: string;
   favorite: boolean;
-  tags: string;
+  tags: string[];
   note: string;
 }
 
@@ -37,8 +41,9 @@ const EMPTY: HostFormState = {
   authMethod: "password",
   groupId: "",
   keyPath: "",
+  keyContent: "",
   favorite: false,
-  tags: "",
+  tags: [],
   note: "",
 };
 
@@ -51,8 +56,9 @@ function fromHost(host: Host): HostFormState {
     authMethod: host.authMethod,
     groupId: host.groupId ?? "",
     keyPath: host.keyPath ?? "",
+    keyContent: "",
     favorite: host.favorite,
-    tags: host.tags.join(", "),
+    tags: host.tags,
     note: host.note ?? "",
   };
 }
@@ -89,6 +95,18 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
       return;
     }
 
+    setSaving(true);
+    let keyPath = form.authMethod === "key" ? form.keyPath.trim() || null : null;
+    if (form.authMethod === "key" && form.keyContent.trim()) {
+      try {
+        keyPath = await api.keyImport(form.keyContent);
+      } catch (error) {
+        toast(translateError(error), "error");
+        setSaving(false);
+        return;
+      }
+    }
+
     const input = {
       name: form.name.trim(),
       host: form.host.trim(),
@@ -96,13 +114,12 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
       username: form.username.trim(),
       authMethod: form.authMethod,
       groupId: form.groupId || null,
-      keyPath: form.authMethod === "key" ? form.keyPath.trim() || null : null,
+      keyPath,
       favorite: form.favorite,
-      tags: parseTags(form.tags),
+      tags: form.tags,
       note: form.note.trim() || null,
     };
 
-    setSaving(true);
     if (host) {
       const updated = await updateHost(host.id, input);
       if (updated) {
@@ -226,24 +243,53 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
         </div>
 
         {form.authMethod === "key" ? (
-          <Field label={t("host.keyPath")} htmlFor="host-key-path">
-            <Input
-              id="host-key-path"
-              value={form.keyPath}
-              placeholder="~/.ssh/id_ed25519"
-              spellCheck={false}
-              onChange={(event) => set("keyPath", event.target.value)}
-            />
-          </Field>
+          <>
+            <Field label={t("host.keyFile")} htmlFor="host-key-path">
+              <div className="field-row">
+                <Input
+                  id="host-key-path"
+                  value={form.keyPath}
+                  placeholder="~/.ssh/id_ed25519"
+                  spellCheck={false}
+                  onChange={(event) => set("keyPath", event.target.value)}
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    void api
+                      .keyPick()
+                      .then((path) => {
+                        if (path) {
+                          set("keyPath", path);
+                        }
+                      })
+                      .catch((error: unknown) => toast(translateError(error), "error"));
+                  }}
+                >
+                  {t("common.browse")}
+                </Button>
+              </div>
+            </Field>
+            <Field label={t("host.keyContent")} htmlFor="host-key-content">
+              <Textarea
+                id="host-key-content"
+                rows={3}
+                spellCheck={false}
+                value={form.keyContent}
+                placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"
+                onChange={(event) => set("keyContent", event.target.value)}
+              />
+            </Field>
+          </>
         ) : null}
 
-        <Field label={t("host.tags")} htmlFor="host-tags">
-          <Input
-            id="host-tags"
+        <Field label={t("host.tags")}>
+          <TagInput
+            label={t("host.tags")}
             value={form.tags}
             placeholder={t("host.tagsPlaceholder")}
-            spellCheck={false}
-            onChange={(event) => set("tags", event.target.value)}
+            onChange={(tags) => set("tags", tags)}
           />
         </Field>
 

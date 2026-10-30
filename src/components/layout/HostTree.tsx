@@ -20,6 +20,7 @@ import { Input } from "@/components/ui/form/Field";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn, hostSubtitle } from "@/lib/text/format";
+import { copyText } from "@/lib/session/clipboard";
 import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { useHosts } from "@/store/hosts";
@@ -116,9 +117,13 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
       onDoubleClick={() => openHostDialog(host)}
       onContextMenu={(event) => {
         event.preventDefault();
+        const address = `${host.username ? `${host.username}@` : ""}${host.host}`;
+        const command = `ssh ${host.port !== 22 ? `-p ${host.port} ` : ""}${address}`;
         openMenu(event.clientX, event.clientY, [
           { label: t("host.open"), onSelect: () => openHost(host) },
           { label: t("menu.edit"), onSelect: () => openHostDialog(host) },
+          { label: t("menu.copySsh"), onSelect: () => copyText(command) },
+          { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
           {
             label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
             onSelect: () => void toggleFavorite(host),
@@ -240,9 +245,21 @@ export function HostTree() {
   const deleteGroup = useHosts((state) => state.deleteGroup);
   const openPage = useWorkspace((state) => state.openPage);
   const [query, setQuery] = useState("");
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
-  const tree = useMemo(() => buildTree(groups, hosts, query.trim()), [groups, hosts, query]);
+  const tags = useMemo(
+    () => Array.from(new Set(hosts.flatMap((host) => host.tags))).sort(),
+    [hosts],
+  );
+  const visibleHosts = useMemo(
+    () => (tagFilter ? hosts.filter((host) => host.tags.includes(tagFilter)) : hosts),
+    [hosts, tagFilter],
+  );
+  const tree = useMemo(
+    () => buildTree(groups, visibleHosts, query.trim()),
+    [groups, visibleHosts, query],
+  );
   const searching = query.trim().length > 0;
 
   const toggle = (id: string) => {
@@ -275,6 +292,21 @@ export function HostTree() {
           spellCheck={false}
         />
       </div>
+
+      {tags.length > 0 ? (
+        <div className="sidebar__tags">
+          {tags.map((tag) => (
+            <button
+              key={tag}
+              type="button"
+              className={cn("sidebar__tag", tagFilter === tag && "is-active")}
+              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
+            >
+              {tag}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="sidebar__body">
         {isEmpty ? (
