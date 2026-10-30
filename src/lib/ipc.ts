@@ -88,6 +88,9 @@ export const api = {
   pluginsList: () => invoke<PluginInfo[]>("plugins_list"),
   pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),
   pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
+  pluginInstall: (path: string) => invoke<PluginInfo>("plugin_install", { path }),
+  pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
+  pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
   pluginRenderView: (id: string, view: string) =>
     invoke<unknown>("plugin_render_view", { id, view }),
   pluginRun: (id: string, command: string) =>

@@ -605,6 +605,24 @@ pub fn local_copy(from: String, to: String) -> AppResult<()> {
     sftp::local_copy(from, to)
 }
 
+#[tauri::command]
+pub async fn plugin_install(app: AppHandle, path: String) -> AppResult<plugins::PluginInfo> {
+    let state = app.state::<AppState>();
+    state.plugins.install(&path).await
+}
+
+#[tauri::command]
+pub async fn plugin_uninstall(app: AppHandle, id: String) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    state.plugins.uninstall(&id).await
+}
+
+#[tauri::command]
+pub async fn plugin_reload(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>> {
+    let state = app.state::<AppState>();
+    Ok(state.plugins.reload().await)
+}
+
 fn merge_json(base: &mut Value, patch: Value) {
     match (base, patch) {
         (Value::Object(base_map), Value::Object(patch_map)) => {

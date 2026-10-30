@@ -214,3 +214,137 @@ impl PluginsManager {
             .await
     }
 }
+fn copy_dir(source: &Path, target: &Path) -> AppResult<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let destination = target.join(entry.file_name());
+        if file_type.is_dir() {
+            copy_dir(&entry.path(), &destination)?;
+        } else if file_type.is_file() {
+            std::fs::copy(entry.path(), &destination)?;
+        }
+    }
+    Ok(())
+}
+
+impl PluginsManager {
+    pub async fn install(&self, source: &str) -> AppResult<PluginInfo> {
+        let source = PathBuf::from(source);
+        let manifest = manifest::load(&source)?;
+        let target = self.dir.join(&manifest.id);
+        if target.exists() {
+            return Err(AppError::validation("plugin.exists"));
+        }
+
+        copy_dir(&source, &target)?;
+        let copied = match manifest::load(&target) {
+            Ok(copied) => copied,
+            Err(error) => {
+                let _ = std::fs::remove_dir_all(&target);
+                return Err(error);
+            }
+        };
+
+        let instance = Instance {
+            manifest: copied,
+            dir: target,
+            status: PluginStatus::Stopped,
+            error: None,
+            host: None,
+        };
+        let info = instance.info();
+        self.plugins.lock().await.insert(info.id.clone(), instance);
+        Ok(info)
+    }
+
+    pub async fn uninstall(&self, id: &str) -> AppResult<()> {
+        let mut plugins = self.plugins.lock().await;
+        let mut instance = plugins
+            .remove(id)
+            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        if let Some(mut host) = instance.host.take() {
+            host.kill();
+        }
+        drop(plugins);
+
+        std::fs::remove_dir_all(&instance.dir)?;
+        Ok(())
+    }
+
+    pub async fn reload(&self) -> Vec<PluginInfo> {
+        let mut plugins = self.plugins.lock().await;
+        for instance in plugins.values_mut() {
+            if let Some(mut host) = instance.host.take() {
+                host.kill();
+            }
+        }
+        let fresh = Self::load(self.dir.clone()).plugins.into_inner();
+        *plugins = fresh;
+        let mut list: Vec<PluginInfo> = plugins.values().map(Instance::info).collect();
+        list.sort_by_key(|plugin| plugin.name.to_lowercase());
+        list
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_plugin(dir: &Path) {
+        std::fs::create_dir_all(dir).expect("plugin dir");
+        std::fs::write(dir.join("index.js"), "console.log('hello');\n").expect("entry");
+        std::fs::write(
+            dir.join(manifest::MANIFEST_FILE),
+            r#"{"id":"demo","name":"Demo","version":"0.1.0","apiVersion":1,"main":"index.js"}"#,
+        )
+        .expect("manifest");
+    }
+
+    fn temp_root(name: &str) -> PathBuf {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-plugins-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).expect("root");
+        root
+    }
+
+    #[tokio::test]
+    async fn installs_and_uninstalls_a_plugin() {
+        let root = temp_root("install");
+        let source = root.join("source");
+        write_plugin(&source);
+        let manager = PluginsManager::load(root.join("installed"));
+
+        let installed = manager
+            .install(source.to_str().unwrap())
+            .await
+            .expect("install");
+        assert_eq!(installed.id, "demo");
+        assert!(root
+            .join("installed")
+            .join("demo")
+            .join("index.js")
+            .exists());
+        assert_eq!(manager.list().await.len(), 1);
+
+        assert!(manager.install(source.to_str().unwrap()).await.is_err());
+        manager.uninstall("demo").await.expect("uninstall");
+        assert!(!root.join("installed").join("demo").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn reload_picks_up_plugins_added_on_disk() {
+        let root = temp_root("reload");
+        let manager = PluginsManager::load(root.clone());
+        assert!(manager.list().await.is_empty());
+
+        write_plugin(&root.join("demo"));
+        let list = manager.reload().await;
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "Demo");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+}

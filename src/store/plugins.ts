@@ -18,6 +18,8 @@ interface PluginsStore {
   busy: string | null;
   outputs: Record<string, PluginOutput>;
   load: () => Promise<void>;
+  reload: () => Promise<void>;
+  install: (path: string) => Promise<boolean>;
   apply: (info: PluginInfo) => void;
   start: (id: string) => Promise<void>;
   stop: (id: string) => Promise<void>;
@@ -34,6 +36,25 @@ export const usePlugins = create<PluginsStore>((set, get) => ({
       set({ items: await api.pluginsList() });
     } catch (error) {
       toast(translateError(error), "error");
+    }
+  },
+
+  reload: async () => {
+    try {
+      set({ items: await api.pluginReload() });
+    } catch (error) {
+      toast(translateError(error), "error");
+    }
+  },
+
+  install: async (path) => {
+    try {
+      await api.pluginInstall(path);
+      set({ items: await api.pluginsList() });
+      return true;
+    } catch (error) {
+      toast(translateError(error), "error");
+      return false;
     }
   },
 

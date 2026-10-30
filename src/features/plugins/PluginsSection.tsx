@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { FolderOpen, LayoutPanelLeft, Play, RefreshCw, Square } from "lucide-react";
-import { useEffect } from "react";
+import { FolderOpen, LayoutPanelLeft, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
+import { Button, IconButton } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Input } from "@/components/ui/Field";
 import { StatusDot } from "@/components/ui/Misc";
+import { translateError } from "@/lib/errors";
 import { cn } from "@/lib/format";
 import { api } from "@/lib/ipc";
+import { useDialogs } from "@/store/dialogs";
 import { usePlugins } from "@/store/plugins";
+import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 
 const STATUS_TONE = { running: "ok", stopped: "idle", failed: "error" } as const;
@@ -29,11 +34,32 @@ export function PluginsSection() {
   const start = usePlugins((state) => state.start);
   const stop = usePlugins((state) => state.stop);
   const run = usePlugins((state) => state.run);
+  const reload = usePlugins((state) => state.reload);
+  const install = usePlugins((state) => state.install);
+  const confirm = useDialogs((state) => state.confirm);
+  const [path, setPath] = useState<string | null>(null);
   const openPluginView = useWorkspace((state) => state.openPluginView);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  const uninstall = (plugin: (typeof items)[number]) => {
+    confirm({
+      title: t("plugins.uninstallTitle"),
+      body: t("plugins.uninstallBody", { name: plugin.name }),
+      confirmLabel: t("plugins.uninstall"),
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await api.pluginUninstall(plugin.id);
+          await load();
+        } catch (error) {
+          toast(translateError(error), "error");
+        }
+      },
+    });
+  };
 
   return (
     <section className="settings-section">
@@ -41,10 +67,18 @@ export function PluginsSection() {
         <h2 className="settings-section__title">{t("settings.plugins")}</h2>
         <div className="settings-actions settings-actions--inline">
           <Button
+            variant="primary"
+            size="sm"
+            leading={<Plus size={13} />}
+            onClick={() => setPath("")}
+          >
+            {t("plugins.install")}
+          </Button>
+          <Button
             variant="ghost"
             size="sm"
             leading={<RefreshCw size={13} />}
-            onClick={() => void load()}
+            onClick={() => void reload()}
           >
             {t("plugins.reload")}
           </Button>
@@ -81,6 +115,13 @@ export function PluginsSection() {
                 >
                   {running ? t("plugins.stop") : t("plugins.start")}
                 </Button>
+                <IconButton
+                  label={t("plugins.uninstall")}
+                  size="sm"
+                  onClick={() => uninstall(plugin)}
+                >
+                  <Trash2 size={12} />
+                </IconButton>
               </header>
 
               {plugin.description ? (
@@ -128,6 +169,54 @@ export function PluginsSection() {
           );
         })}
       </div>
+
+      {path !== null ? (
+        <Dialog
+          open
+          title={t("plugins.installTitle")}
+          closeLabel={t("common.cancel")}
+          onClose={() => setPath(null)}
+          width={480}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setPath(null)}>
+                {t("common.cancel")}
+              </Button>
+              <Button
+                variant="primary"
+                disabled={path.trim().length === 0}
+                onClick={() => {
+                  void install(path.trim()).then((ok) => {
+                    if (ok) {
+                      setPath(null);
+                    }
+                  });
+                }}
+              >
+                {t("plugins.install")}
+              </Button>
+            </>
+          }
+        >
+          <Input
+            autoFocus
+            value={path}
+            spellCheck={false}
+            placeholder={t("plugins.installHint")}
+            aria-label={t("plugins.installHint")}
+            onChange={(event) => setPath(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && path.trim().length > 0) {
+                void install(path.trim()).then((ok) => {
+                  if (ok) {
+                    setPath(null);
+                  }
+                });
+              }
+            }}
+          />
+        </Dialog>
+      ) : null}
     </section>
   );
 }

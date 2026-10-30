@@ -268,6 +268,12 @@
     "cancelTransfer": "取消传输",
     "done": "完成",
     "failed": "失败",
+    "install": "安装",
+    "installTitle": "安装插件",
+    "installHint": "包含 tunnelde-plugin.json 的文件夹",
+    "uninstall": "卸载",
+    "uninstallTitle": "卸载插件",
+    "uninstallBody": "删除 {{name}} 及其文件夹？",
     "cancelled": "已取消"
   },  "processes": {
     "title": "进程",
@@ -296,7 +302,13 @@
     "stop": "停止",
     "running": "运行中",
     "stopped": "已停止",
-    "failed": "失败"
+    "failed": "失败",
+    "install": "安装",
+    "installTitle": "安装插件",
+    "installHint": "包含 tunnelde-plugin.json 的文件夹",
+    "uninstall": "卸载",
+    "uninstallTitle": "卸载插件",
+    "uninstallBody": "删除 {{name}} 及其文件夹？"
   },  "history": {
     "title": "历史",
     "search": "搜索历史",
