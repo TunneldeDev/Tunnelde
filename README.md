@@ -22,7 +22,10 @@ Early development, built in public milestone by milestone.
   optional system menu; tag chips, key login and a trusted-hosts page
 - `v0.12.x` — host ordering by drag, passwordless setup from the password dialog, plugin zip
   archives
-- next — accessibility, a command palette and broader file selection
+- `v0.13.x` — command palette (`Ctrl+K`), dialog focus handling, terminal colour checks
+- `v0.14.x` — multi-selection in the file panels, keyboard-driven host sidebar
+- `v0.15.x` — a plugin marketplace served from this repository with checksum-verified installs
+- next — a WASM plugin runtime next to the Node host
 
 ## Stack
 
