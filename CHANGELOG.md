@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-30
+
 ### Fixed
 
 - Releases publish `latest.json` once after every platform finishes, so parallel builds no longer fail with a missing-asset error.
+
 
 ## [0.8.0] - 2026-10-30
 
