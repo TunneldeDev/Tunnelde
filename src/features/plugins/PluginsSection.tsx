@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { FolderOpen, Play, RefreshCw, Square } from "lucide-react";
+import { FolderOpen, LayoutPanelLeft, Play, RefreshCw, Square } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -10,6 +10,7 @@ import { StatusDot } from "@/components/ui/Misc";
 import { cn } from "@/lib/format";
 import { api } from "@/lib/ipc";
 import { usePlugins } from "@/store/plugins";
+import { useWorkspace } from "@/store/workspace";
 
 const STATUS_TONE = { running: "ok", stopped: "idle", failed: "error" } as const;
 
@@ -28,6 +29,7 @@ export function PluginsSection() {
   const start = usePlugins((state) => state.start);
   const stop = usePlugins((state) => state.stop);
   const run = usePlugins((state) => state.run);
+  const openPluginView = useWorkspace((state) => state.openPluginView);
 
   useEffect(() => {
     void load();
@@ -88,6 +90,18 @@ export function PluginsSection() {
 
               {plugin.commands.length > 0 || plugin.permissions.length > 0 ? (
                 <div className="plugin-card__row">
+                  {plugin.views.map((view) => (
+                    <Button
+                      key={view.id}
+                      variant="ghost"
+                      size="sm"
+                      leading={<LayoutPanelLeft size={12} />}
+                      disabled={!running}
+                      onClick={() => openPluginView(plugin.id, view.id, view.title)}
+                    >
+                      {view.title}
+                    </Button>
+                  ))}
                   {plugin.commands.map((command) => (
                     <Button
                       key={command.id}

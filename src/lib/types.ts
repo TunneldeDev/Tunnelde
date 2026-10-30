@@ -102,7 +102,8 @@ export type TabKind =
   | "sftp"
   | "editor"
   | "history"
-  | "monitor";
+  | "monitor"
+  | "pluginView";
 
 export interface TabRecord {
   id: string;
@@ -276,6 +277,11 @@ export interface PluginCommand {
   title: string;
 }
 
+export interface PluginView {
+  id: string;
+  title: string;
+}
+
 export interface PluginInfo {
   id: string;
   name: string;
@@ -283,6 +289,7 @@ export interface PluginInfo {
   apiVersion: number;
   description: string | null;
   commands: PluginCommand[];
+  views: PluginView[];
   permissions: string[];
   status: PluginStatus;
   error: string | null;

@@ -8,6 +8,7 @@ import { AboutPage } from "@/features/about/AboutPage";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
+import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -38,6 +39,13 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
       return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
     case "monitor":
       return <MonitorPage sessionId={tab.id.replace("monitor:", "")} />;
+    case "pluginView": {
+      const rest = tab.id.replace("plugin:", "");
+      const separator = rest.indexOf(":");
+      const pluginId = separator >= 0 ? rest.slice(0, separator) : rest;
+      const viewId = separator >= 0 ? rest.slice(separator + 1) : "default";
+      return <PluginViewPage pluginId={pluginId} viewId={viewId} />;
+    }
     default:
       return null;
   }

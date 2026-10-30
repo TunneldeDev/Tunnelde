@@ -14,6 +14,7 @@ const { plugin, apiMock } = vi.hoisted(() => {
     apiVersion: 1,
     description: "Minimal example plugin",
     commands: [{ id: "greet", title: "Say hello" }],
+    views: [{ id: "hello", title: "Hello panel" }],
     permissions: ["log"],
     status: "stopped",
     error: null,

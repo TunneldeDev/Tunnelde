@@ -86,7 +86,8 @@ scripts/ci/           Repository hygiene checks
 
 Plugins live in the app data `plugins` folder and speak JSON-RPC 2.0 over stdio, one JSON object
 per line. A minimal example ships in `examples/plugins/hello`; copy that folder into the plugins
-directory and start it from Settings → Plugins.
+directory and start it from Settings → Plugins. Plugins can also declare `views` and answer
+`view.render` with JSON blocks that the host renders as a read-only page.
 
 ## Platforms
 

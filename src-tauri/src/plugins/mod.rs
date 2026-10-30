@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::error::{AppError, AppResult};
 use crate::plugins::host::PluginHost;
-use crate::plugins::manifest::{PluginCommand, PluginManifest};
+use crate::plugins::manifest::{PluginCommand, PluginManifest, PluginView};
 
 pub const STATE_EVENT: &str = "plugin://state";
 const START_TIMEOUT: Duration = Duration::from_secs(8);
@@ -38,6 +38,7 @@ pub struct PluginInfo {
     pub api_version: u32,
     pub description: Option<String>,
     pub commands: Vec<PluginCommand>,
+    pub views: Vec<PluginView>,
     pub permissions: Vec<String>,
     pub status: PluginStatus,
     pub error: Option<String>,
@@ -61,6 +62,7 @@ impl Instance {
             api_version: self.manifest.api_version,
             description: self.manifest.description.clone(),
             commands: self.manifest.commands.clone(),
+            views: self.manifest.views.clone(),
             permissions: self.manifest.permissions.clone(),
             status: self.status,
             error: self.error.clone(),
@@ -182,6 +184,20 @@ impl PluginsManager {
         drop(plugins);
         let _ = app.emit(STATE_EVENT, &info);
         Ok(info)
+    }
+
+    pub async fn render_view(&self, id: &str, view: &str) -> AppResult<Value> {
+        let plugins = self.plugins.lock().await;
+        let instance = plugins
+            .get(id)
+            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        let host = instance
+            .host
+            .as_ref()
+            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
+
+        host.request("view.render", json!({ "view": view }), CALL_TIMEOUT)
+            .await
     }
 
     pub async fn run(&self, id: &str, command: &str) -> AppResult<Value> {

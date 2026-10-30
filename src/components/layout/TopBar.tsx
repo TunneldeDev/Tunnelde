@@ -6,6 +6,7 @@ import {
   CircleDot,
   Download,
   Activity,
+  Blocks,
   FileText,
   FolderTree,
   History,
@@ -37,6 +38,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   editor: FileText,
   history: History,
   monitor: Activity,
+  pluginView: Blocks,
 };
 
 const NAV_KEYS = {
@@ -132,7 +134,8 @@ export function TopBar() {
                 tab.kind === "sftp" ||
                 tab.kind === "editor" ||
                 tab.kind === "history" ||
-                tab.kind === "monitor"
+                tab.kind === "monitor" ||
+                tab.kind === "pluginView"
                   ? tab.title
                   : t(NAV_KEYS[tab.kind])}
               </span>

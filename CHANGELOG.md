@@ -6,12 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Plugins can declare views and answer `view.render` with JSON blocks (heading, text, key/value, table) that the host renders in a tab.
+
 ## [0.5.3] - 2026-10-30
 
 ### Added
 
 - Monitor tab with live CPU, memory and network charts, plus average and peak values for the session.
-
 
 ## [0.5.2] - 2026-10-30
 

@@ -101,6 +101,7 @@ pub fn run() {
             commands::plugin_stop,
             commands::plugin_run,
             commands::plugin_open_dir,
+            commands::plugin_render_view,
             commands::history_record,
             commands::history_list,
             commands::history_delete,

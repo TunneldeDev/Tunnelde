@@ -19,6 +19,13 @@ pub struct PluginCommand {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PluginView {
+    pub id: String,
+    pub title: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginManifest {
     pub id: String,
     pub name: String,
@@ -29,6 +36,8 @@ pub struct PluginManifest {
     pub description: Option<String>,
     #[serde(default)]
     pub commands: Vec<PluginCommand>,
+    #[serde(default)]
+    pub views: Vec<PluginView>,
     #[serde(default)]
     pub permissions: Vec<String>,
 }
@@ -60,6 +69,12 @@ impl PluginManifest {
         for command in &self.commands {
             if !valid_id(&command.id) || command.title.trim().is_empty() {
                 return Err(AppError::validation("plugin.command.invalid"));
+            }
+        }
+        let mut view_ids = std::collections::HashSet::new();
+        for view in &self.views {
+            if !valid_id(&view.id) || view.title.trim().is_empty() || !view_ids.insert(&view.id) {
+                return Err(AppError::validation("plugin.view.invalid"));
             }
         }
         for permission in &self.permissions {
@@ -132,6 +147,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn validates_view_declarations() {
+        let dir = temp_dir("views");
+        std::fs::write(dir.join("index.js"), "").expect("entry");
+
+        let payload = r#"{"id":"hello","name":"Hello","version":"0.1.0","apiVersion":1,"main":"index.js","views":[{"id":"panel","title":"Panel"}]}"#;
+        std::fs::write(dir.join(MANIFEST_FILE), payload).expect("manifest");
+        assert_eq!(load(&dir).expect("views").views.len(), 1);
+
+        let duplicate = r#"{"id":"hello","name":"Hello","version":"0.1.0","apiVersion":1,"main":"index.js","views":[{"id":"panel","title":"A"},{"id":"panel","title":"B"}]}"#;
+        std::fs::write(dir.join(MANIFEST_FILE), duplicate).expect("manifest");
+        assert!(load(&dir).is_err());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     #[test]
     fn rejects_missing_entry() {
         let dir = temp_dir("missing");

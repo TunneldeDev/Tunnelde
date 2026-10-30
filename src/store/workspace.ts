@@ -36,6 +36,7 @@ interface WorkspaceStore {
   openEditor: (session: SshSession, path: string) => void;
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
+  openPluginView: (pluginId: string, viewId: string, title: string) => void;
   closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
@@ -178,6 +179,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => ({
         kind: "monitor",
         title: session.title,
         hostId: session.hostId,
+        pinned: false,
+      };
+      return { tabs: [...state.tabs, tab], activeId: id };
+    });
+  },
+
+  openPluginView: (pluginId, viewId, title) => {
+    const id = `plugin:${pluginId}:${viewId}`;
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeId: id };
+      }
+      const tab: WorkspaceTab = {
+        id,
+        kind: "pluginView",
+        title,
+        hostId: null,
         pinned: false,
       };
       return { tabs: [...state.tabs, tab], activeId: id };

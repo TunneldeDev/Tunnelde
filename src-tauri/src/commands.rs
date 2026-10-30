@@ -20,9 +20,18 @@ use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 10] = [
-    "welcome", "host", "settings", "about", "updates", "terminal", "sftp", "editor", "history",
+const TAB_KINDS: [&str; 11] = [
+    "welcome",
+    "host",
+    "settings",
+    "about",
+    "updates",
+    "terminal",
+    "sftp",
+    "editor",
+    "history",
     "monitor",
+    "pluginView",
 ];
 const MAX_TABS: usize = 40;
 const MAX_USER_CSS: usize = 200_000;
@@ -573,6 +582,12 @@ pub fn known_hosts_forget(state: State<'_, AppState>, host: String, port: i64) -
     state
         .db
         .with(|conn| db::known_hosts::forget(conn, &host, port))
+}
+
+#[tauri::command]
+pub async fn plugin_render_view(app: AppHandle, id: String, view: String) -> AppResult<Value> {
+    let state = app.state::<AppState>();
+    state.plugins.render_view(&id, &view).await
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

@@ -296,6 +296,10 @@
     "live": "{{count}} 个采样",
     "average": "均值",
     "peak": "峰值"
+  },  "pluginView": {
+    "title": "插件",
+    "refresh": "刷新",
+    "empty": "暂无内容"
   },  "menu": {
     "edit": "编辑",
     "duplicate": "复制",

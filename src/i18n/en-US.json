@@ -296,6 +296,10 @@
     "live": "{{count}} samples",
     "average": "avg",
     "peak": "peak"
+  },  "pluginView": {
+    "title": "Plugin",
+    "refresh": "Refresh",
+    "empty": "No content"
   },  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",

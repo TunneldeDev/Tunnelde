@@ -264,6 +264,19 @@ mod tests {
             .to_string();
         assert!(message.contains("Hello"));
 
+        let view = host
+            .request(
+                "view.render",
+                json!({ "view": "hello" }),
+                Duration::from_secs(10),
+            )
+            .await
+            .expect("render view");
+        let blocks = view
+            .get("blocks")
+            .and_then(Value::as_array)
+            .expect("blocks array");
+        assert!(!blocks.is_empty());
         let _ = host
             .request("shutdown", json!({}), Duration::from_secs(2))
             .await;

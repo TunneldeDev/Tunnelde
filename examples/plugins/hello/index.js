@@ -29,6 +29,36 @@ const handle = (message) => {
     return;
   }
 
+  if (method === "view.render") {
+    log("info", `view=${params?.view}`);
+    write({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        title: "Hello plugin",
+        blocks: [
+          { type: "heading", text: "Example view" },
+          { type: "text", text: "This content comes from the plugin as JSON and is rendered by the host." },
+          {
+            type: "kv",
+            items: [
+              { label: "Plugin", value: "hello" },
+              { label: "API", value: "1" },
+            ],
+          },
+          {
+            type: "table",
+            columns: ["Metric", "Value"],
+            rows: [
+              ["cpu", "0.1"],
+              ["memory", "12 MB"],
+            ],
+          },
+        ],
+      },
+    });
+    return;
+  }
   if (method === "shutdown") {
     write({ jsonrpc: "2.0", id, result: null });
     process.exit(0);
