@@ -6,10 +6,13 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-10-30
+
 ### Fixed
 
 - Dialogs keep the keyboard focus inside themselves while open and return it when they close.
 - The file list tells screen readers which row is selected, and the toast dismiss button follows the UI language.
+
 
 ## [0.13.0] - 2026-10-30
 
