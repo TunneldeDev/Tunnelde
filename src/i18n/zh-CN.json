@@ -209,6 +209,7 @@
     "passphrase": "密钥口令",
     "optional": "可选",
     "trustHost": "信任并继续",
+    "previousKey": "原指纹",
     "replaceKey": "替换已信任密钥",
     "trustHint": "信任该密钥后才能连接；条件允许时请核对指纹。",
     "unknownHint": "该主机尚未被信任。",

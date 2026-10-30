@@ -2809,3 +2809,10 @@
   background: var(--td-hover);
   color: var(--td-text);
 }
+
+.key-box__fingerprint--old {
+  margin-top: -2px;
+  color: var(--td-faint);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}

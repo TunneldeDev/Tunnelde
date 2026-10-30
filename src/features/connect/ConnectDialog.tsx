@@ -184,6 +184,11 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
             </span>
           </div>
           {probe ? <code className="key-box__fingerprint">{probe.fingerprint}</code> : null}
+          {probe?.knownFingerprint ? (
+            <code className="key-box__fingerprint key-box__fingerprint--old">
+              {t("connect.previousKey")}: {probe.knownFingerprint}
+            </code>
+          ) : null}
           {status && status !== "known" ? (
             <>
               <p className="key-box__hint">

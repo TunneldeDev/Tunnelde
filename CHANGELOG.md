@@ -6,12 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The connect dialog shows the previously trusted fingerprint when a host key changed, so the two can be compared before replacing it.
+
 ## [0.10.1] - 2026-10-30
 
 ### Added
 
 - Settings → Advanced can open the data folder next to the existing logs shortcut.
-
 
 ## [0.10.0] - 2026-10-30
 

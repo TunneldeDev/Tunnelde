@@ -209,6 +209,7 @@
     "passphrase": "Key passphrase",
     "optional": "Optional",
     "trustHost": "Trust and continue",
+    "previousKey": "Previous fingerprint",
     "replaceKey": "Replace trusted key",
     "trustHint": "Trust the key to continue. Compare the fingerprint when possible.",
     "unknownHint": "This host has not been trusted yet.",
