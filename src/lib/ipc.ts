@@ -62,6 +62,7 @@ export const api = {
   installUpdate: () => invoke<UpdateState>("update_install"),
   openReleasePage: () => invoke<void>("open_release_page"),
 
+  openDataDir: () => invoke<void>("app_open_data_dir"),
   openLogDir: () => invoke<void>("open_log_dir"),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
 

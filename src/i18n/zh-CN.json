@@ -132,6 +132,7 @@
     "knownHostsForgetTitle": "移除主机密钥",
     "knownHostsForgetBody": "移除 {{host}}:{{port}} 的已保存密钥？下次连接会重新确认。",
     "openLogs": "打开日志",
+    "openData": "打开目录",
     "version": "版本"
   },
   "updates": {

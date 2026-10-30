@@ -623,6 +623,14 @@ pub async fn plugin_reload(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>
     Ok(state.plugins.reload().await)
 }
 
+#[tauri::command]
+pub fn app_open_data_dir(app: AppHandle) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    app.opener()
+        .open_path(state.data_dir.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|error| AppError::Internal(error.to_string()))
+}
+
 fn merge_json(base: &mut Value, patch: Value) {
     match (base, patch) {
         (Value::Object(base_map), Value::Object(patch_map)) => {

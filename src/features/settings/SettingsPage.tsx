@@ -315,7 +315,21 @@ function AdvancedSection() {
     <Section title={t("settings.advanced")}>
       <Row
         label={t("settings.dataDir")}
-        control={<code className="settings-path">{info?.dataDir ?? "—"}</code>}
+        control={
+          <div className="settings-inline">
+            <code className="settings-path">{info?.dataDir ?? "—"}</code>
+            <Button
+              variant="ghost"
+              size="sm"
+              leading={<FolderOpen size={13} />}
+              onClick={() =>
+                void api.openDataDir().catch((error) => toast(translateError(error), "error"))
+              }
+            >
+              {t("settings.openData")}
+            </Button>
+          </div>
+        }
       />
       <Row
         label={t("settings.logDir")}

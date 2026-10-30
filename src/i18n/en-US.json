@@ -132,6 +132,7 @@
     "knownHostsForgetTitle": "Forget host key",
     "knownHostsForgetBody": "Remove the saved key for {{host}}:{{port}}? The next connection will ask again.",
     "openLogs": "Open logs",
+    "openData": "Open folder",
     "version": "Version"
   },
   "updates": {

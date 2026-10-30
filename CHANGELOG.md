@@ -6,12 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Advanced can open the data folder next to the existing logs shortcut.
+
 ## [0.10.0] - 2026-10-30
 
 ### Added
 
 - `Ctrl+Shift+W` closes the focused pane when the editor is split, and each pane's strip has a close button.
-
 
 ## [0.9.1] - 2026-10-30
 
