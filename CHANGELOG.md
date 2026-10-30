@@ -6,6 +6,14 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-10-30
+
+### Added
+
+- Remote text editor: open a file from the files pane, edit it in place and save with Ctrl+S.
+- Dirty tabs show a dot and ask before closing without saving.
+- Binary files and files over 2 MB are rejected with a clear message.
+
 ## [0.4.1] - 2026-10-30
 
 ### Added
