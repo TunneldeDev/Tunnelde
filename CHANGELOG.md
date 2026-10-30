@@ -6,6 +6,29 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- File panes can show this computer or any open session, so two servers can be browsed side by side.
+- Dragging a file or folder between panes copies it, folders included, and moving inside a pane renames it.
+- Renaming happens in the row, files can be created next to folders, and the keyboard drives the list: arrows, Enter, Backspace, F2, Delete and Ctrl/Cmd+C/X/V.
+- Settings → Trusted hosts replaces the list that was buried in Advanced.
+- A monospace font can be chosen, Fira Code ships by default, and `Ctrl+=` / `Ctrl+-` / `Ctrl+0` resize it.
+- Tags are edited as chips and filter the sidebar; the host context menu copies the ssh command or `user@host`.
+- A private key can be picked from disk or pasted, and is stored with owner-only permissions.
+- The plugins dialog installs from a picked or dropped folder instead of a typed path.
+- Settings → General can show the OS menu bar, which mirrors the app actions in the UI language.
+
+### Changed
+
+- The duplicate top bar is gone: the brand, settings entry and update notice moved into the sidebar and status bar.
+- The app follows the OS language on first run instead of defaulting to English.
+- Dropdowns use the app's own listbox, destructive actions are red and ask first, and icon buttons line up with their rows.
+
+### Fixed
+
+- The connect dialog no longer shows a "previous fingerprint" when the trusted key is unchanged.
+- Host rows no longer clip their text, and an empty group shows "—" instead of the word None.
+
 ## [0.10.3] - 2026-10-30
 
 ### Fixed
