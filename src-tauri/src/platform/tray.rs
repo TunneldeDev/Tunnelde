@@ -61,7 +61,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
     let chinese = is_chinese(&app.state::<AppState>().locale());
 
     #[cfg(target_os = "macos")]
-    let icon_bytes: &[u8] = include_bytes!("../../resources/trayTemplate@2x.png");
+    let icon_bytes: &[u8] = include_bytes!("../../../resources/trayTemplate@2x.png");
     #[cfg(not(target_os = "macos"))]
     let icon_bytes: &[u8] = include_bytes!("../../../resources/tray-32.png");
 
