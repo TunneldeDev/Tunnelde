@@ -6,11 +6,14 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-10-30
+
 ### Added
 
 - Tab context menu with close, close others, split right, split down and close pane.
 - Host context menu with open, edit, favorite and delete.
 - `Ctrl+\` splits the active tab to the right, `Ctrl+Shift+\` splits down; `Ctrl+W` now asks before discarding unsaved edits.
+
 
 ## [0.7.0] - 2026-10-30
 
