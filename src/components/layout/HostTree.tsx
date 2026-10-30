@@ -12,7 +12,7 @@ import {
   Star,
   Trash2,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -86,10 +86,12 @@ function buildTree(groups: Group[], hosts: Host[], query: string): Filtered {
 interface HostRowProps {
   host: Host;
   active: boolean;
+  focused: boolean;
+  onFocusRow: () => void;
   nested?: boolean;
 }
 
-function HostRow({ host, active, nested = false }: HostRowProps) {
+function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowProps) {
   const { t } = useTranslation();
   const openHost = useWorkspace((state) => state.openHost);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -140,7 +142,10 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
         event.preventDefault();
         moveHost(dragged, host.id);
       }}
-      onClick={() => openHost(host)}
+      onClick={() => {
+        onFocusRow();
+        openHost(host);
+      }}
       onDoubleClick={() => openHostDialog(host)}
       onContextMenu={(event) => {
         event.preventDefault();
@@ -158,13 +163,11 @@ function HostRow({ host, active, nested = false }: HostRowProps) {
           { label: t("menu.delete"), danger: true, onSelect: removeHost },
         ]);
       }}
-      onKeyDown={(event) => {
-        if (event.key === "Enter") {
-          openHost(host);
-        }
-      }}
-      role="button"
-      tabIndex={0}
+      role="treeitem"
+      aria-selected={focused}
+      id={`host-${host.id}`}
+      data-host-id={host.id}
+      tabIndex={-1}
     >
       <span
         className="host-row__dot"
@@ -303,6 +306,63 @@ export function HostTree() {
 
   const isEmpty = hosts.length === 0;
 
+  const [focusId, setFocusId] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  const moveFocus = (delta: number) => {
+    const rows = Array.from(
+      bodyRef.current?.querySelectorAll<HTMLElement>("[data-host-id]") ?? [],
+    );
+    if (rows.length === 0) {
+      return;
+    }
+    const current = rows.findIndex((row) => row.dataset.hostId === focusId);
+    const next =
+      current < 0
+        ? delta < 0
+          ? rows.length - 1
+          : 0
+        : Math.min(rows.length - 1, Math.max(0, current + delta));
+    const id = rows[next]?.dataset.hostId;
+    if (id) {
+      setFocusId(id);
+    }
+  };
+
+  const onTreeKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveFocus(event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
+    if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      const rows = Array.from(
+        bodyRef.current?.querySelectorAll<HTMLElement>("[data-host-id]") ?? [],
+      );
+      const id = (event.key === "Home" ? rows[0] : rows[rows.length - 1])?.dataset.hostId;
+      if (id) {
+        setFocusId(id);
+      }
+      return;
+    }
+    if ((event.key === "Enter" || event.key === " ") && focusId) {
+      const host = hosts.find((item) => item.id === focusId);
+      if (host) {
+        event.preventDefault();
+        useWorkspace.getState().openHost(host);
+      }
+    }
+  };
+
+  const rowProps = (host: Host) => ({
+    focused: focusId === host.id,
+    onFocusRow: () => setFocusId(host.id),
+  });
+
   return (
     <div className="sidebar">
       <div className="sidebar__head">
@@ -335,7 +395,15 @@ export function HostTree() {
         </div>
       ) : null}
 
-      <div className="sidebar__body">
+      <div
+        ref={bodyRef}
+        className="sidebar__body"
+        role="tree"
+        aria-label={t("sidebar.hosts")}
+        tabIndex={0}
+        aria-activedescendant={focusId ? `host-${focusId}` : undefined}
+        onKeyDown={onTreeKeyDown}
+      >
         {isEmpty ? (
           <EmptyState
             icon={<Server size={22} />}
@@ -362,10 +430,10 @@ export function HostTree() {
         ) : null}
 
         {tree.favorites.length > 0 ? (
-          <section className="tree-section">
+          <section className="tree-section" role="group">
             <h2 className="tree-section__title">{t("sidebar.favorites")}</h2>
             {tree.favorites.map((host) => (
-              <HostRow key={`fav-${host.id}`} host={host} active={host.id === activeHostId} />
+              <HostRow key={`fav-${host.id}`} host={host} active={host.id === activeHostId} {...rowProps(host)} />
             ))}
           </section>
         ) : null}
@@ -398,12 +466,12 @@ export function HostTree() {
               />
               {!isCollapsed
                 ? groupHosts.map((host) => (
-                    <HostRow key={host.id} host={host} nested active={host.id === activeHostId} />
+                    <HostRow key={host.id} host={host} nested active={host.id === activeHostId} {...rowProps(host)} />
                   ))
                 : null}
               {!isCollapsed
                 ? children.map((child) => (
-                    <div key={child.group.id}>
+                    <div key={child.group.id} role="group">
                       <GroupRow
                         group={child.group}
                         count={child.hosts.length}
@@ -431,6 +499,7 @@ export function HostTree() {
                               host={host}
                               nested
                               active={host.id === activeHostId}
+                              {...rowProps(host)}
                             />
                           ))
                         : null}
@@ -442,12 +511,12 @@ export function HostTree() {
         })}
 
         {tree.ungrouped.length > 0 ? (
-          <section className="tree-section">
+          <section className="tree-section" role="group">
             {tree.groups.length > 0 ? (
               <h2 className="tree-section__title">{t("sidebar.ungrouped")}</h2>
             ) : null}
             {tree.ungrouped.map((host) => (
-              <HostRow key={host.id} host={host} active={host.id === activeHostId} />
+              <HostRow key={host.id} host={host} active={host.id === activeHostId} {...rowProps(host)} />
             ))}
           </section>
         ) : null}

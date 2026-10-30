@@ -355,6 +355,15 @@
   box-shadow: inset 0 2px 0 var(--td-accent);
 }
 
+.host-row.is-focused {
+  outline: 1px solid var(--td-accent);
+  outline-offset: -1px;
+}
+
+.sidebar__body:focus-visible {
+  outline: none;
+}
+
 .host-row__dot {
   width: 6px;
   height: 6px;
