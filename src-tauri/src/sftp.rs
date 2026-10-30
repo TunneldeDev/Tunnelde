@@ -488,3 +488,49 @@ async fn upload(
         Err(error) => Outcome::Failed(transferred, error.to_string()),
     }
 }
+
+const MAX_TEXT: u64 = 2 * 1024 * 1024;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextFile {
+    pub content: String,
+    pub size: u64,
+}
+
+pub async fn read_text(app: &AppHandle, session_id: &str, path: &str) -> AppResult<TextFile> {
+    let sftp = session(app, session_id).await?;
+    let metadata = sftp.metadata(path).await.map_err(map_sftp)?;
+    let size = metadata.len();
+    if size > MAX_TEXT {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
+    }
+    let bytes = sftp.read(path).await.map_err(map_sftp)?;
+    let _ = sftp.close().await;
+
+    if bytes.iter().take(8192).any(|byte| *byte == 0) {
+        return Err(AppError::Ssh("sftp.binaryFile".into()));
+    }
+
+    Ok(TextFile {
+        content: String::from_utf8_lossy(&bytes).into_owned(),
+        size,
+    })
+}
+
+pub async fn write_text(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    content: &str,
+) -> AppResult<()> {
+    if content.len() as u64 > MAX_TEXT {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
+    }
+    let sftp = session(app, session_id).await?;
+    sftp.write(path, content.as_bytes())
+        .await
+        .map_err(map_sftp)?;
+    let _ = sftp.close().await;
+    Ok(())
+}

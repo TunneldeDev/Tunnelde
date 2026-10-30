@@ -84,6 +84,8 @@ pub fn run() {
             commands::sftp_delete,
             commands::sftp_download,
             commands::sftp_upload,
+            commands::sftp_read_text,
+            commands::sftp_write_text,
             commands::local_list,
             commands::local_mkdir,
             commands::local_rename,

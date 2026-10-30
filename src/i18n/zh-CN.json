@@ -257,6 +257,14 @@
     "killBody": "向 {{name}}（{{pid}}）发送 SIGTERM？",
     "refresh": "刷新",
     "empty": "没有进程"
+  },  "editor": {
+    "open": "编辑",
+    "save": "保存",
+    "saved": "已保存",
+    "loading": "正在读取",
+    "discardTitle": "放弃修改",
+    "discardBody": "不保存就关闭“{{name}}”？",
+    "discard": "放弃"
   },  "menu": {
     "edit": "编辑",
     "duplicate": "复制",

@@ -5,6 +5,7 @@ import { create } from "zustand";
 
 import { api } from "@/lib/ipc";
 import type { Host, SshSession, TabKind, TabRecord } from "@/lib/types";
+import { fileName, useEditors } from "@/store/editors";
 
 export interface WorkspaceTab {
   id: string;
@@ -32,6 +33,7 @@ interface WorkspaceStore {
   openHost: (host: Host) => void;
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
+  openEditor: (session: SshSession, path: string) => void;
   closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
@@ -126,16 +128,45 @@ export const useWorkspace = create<WorkspaceStore>((set) => ({
     });
   },
 
-  closeSession: (sessionId) => {
-    const ids = new Set([`terminal:${sessionId}`, `sftp:${sessionId}`]);
+  openEditor: (session, path) => {
+    const id = `editor:${session.id}:${path}`;
     set((state) => {
-      const index = state.tabs.findIndex((tab) => ids.has(tab.id));
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeId: id };
+      }
+      const tab: WorkspaceTab = {
+        id,
+        kind: "editor",
+        title: fileName(path),
+        hostId: session.hostId,
+        pinned: false,
+      };
+      return { tabs: [...state.tabs, tab], activeId: id };
+    });
+    if (!useEditors.getState().entries[id]) {
+      void useEditors.getState().open(id, session.id, path);
+    }
+  },
+
+  closeSession: (sessionId) => {
+    const matches = (id: string) =>
+      id === `terminal:${sessionId}` ||
+      id === `sftp:${sessionId}` ||
+      id.startsWith(`editor:${sessionId}:`);
+
+    set((state) => {
+      const index = state.tabs.findIndex((tab) => matches(tab.id));
       if (index < 0) {
         return state;
       }
-      const tabs = state.tabs.filter((tab) => !ids.has(tab.id));
+      for (const tab of state.tabs) {
+        if (tab.kind === "editor" && matches(tab.id)) {
+          useEditors.getState().discard(tab.id);
+        }
+      }
+      const tabs = state.tabs.filter((tab) => !matches(tab.id));
       const activeId =
-        state.activeId && ids.has(state.activeId)
+        state.activeId && matches(state.activeId)
           ? neighbour(state.tabs, index, state.activeId)
           : state.activeId;
       return { tabs, activeId };

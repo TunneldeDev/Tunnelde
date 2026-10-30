@@ -14,6 +14,7 @@ import type {
   Listing,
   RemoteProcess,
   RemoteStats,
+  TextFile,
   Settings,
   SshConnectRequest,
   SshDataPayload,
@@ -90,6 +91,11 @@ export const api = {
   localDelete: (path: string, isDir: boolean) => invoke<void>("local_delete", { path, isDir }),
   sftpDownload: (sessionId: string, remotePath: string, localPath: string) =>
     invoke<string>("sftp_download", { sessionId, remotePath, localPath }),
+  sftpReadText: (sessionId: string, path: string) =>
+    invoke<TextFile>("sftp_read_text", { sessionId, path }),
+  sftpWriteText: (sessionId: string, path: string, content: string) =>
+    invoke<void>("sftp_write_text", { sessionId, path, content }),
+
   sftpUpload: (sessionId: string, localPath: string, remotePath: string) =>
     invoke<string>("sftp_upload", { sessionId, localPath, remotePath }),
   transferCancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),

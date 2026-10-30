@@ -8,6 +8,7 @@ import {
   File as FileIcon,
   Folder,
   FolderPlus,
+  PenLine,
   Pencil,
   RotateCw,
   Trash2,
@@ -28,6 +29,7 @@ import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { useTransfers } from "@/store/transfers";
+import { useWorkspace } from "@/store/workspace";
 
 type Side = "local" | "remote";
 
@@ -79,6 +81,8 @@ interface PaneProps {
   onRename: () => void;
   onDelete: () => void;
   onTransfer: () => void;
+  onEdit?: () => void;
+  onOpenFile?: (entry: FileEntry) => void;
   locale: string;
 }
 
@@ -99,6 +103,8 @@ function Pane({
   onRename,
   onDelete,
   onTransfer,
+  onEdit,
+  onOpenFile,
   locale,
 }: PaneProps) {
   const { t } = useTranslation();
@@ -133,6 +139,16 @@ function Pane({
           <IconButton label={t("sftp.delete")} size="sm" disabled={!selected} onClick={onDelete}>
             <Trash2 size={13} />
           </IconButton>
+          {onEdit ? (
+            <IconButton
+              label={t("editor.open")}
+              size="sm"
+              disabled={!selected || selected.isDir}
+              onClick={onEdit}
+            >
+              <PenLine size={13} />
+            </IconButton>
+          ) : null}
           <Button
             variant="secondary"
             size="sm"
@@ -201,7 +217,14 @@ function Pane({
             tabIndex={0}
             className={cn("sftp-row", selected?.path === entry.path && "is-selected")}
             onClick={() => onSelect(entry)}
-            onDoubleClick={() => (entry.isDir ? onEnter(entry) : onSelect(entry))}
+            onDoubleClick={() => {
+              if (entry.isDir) {
+                onEnter(entry);
+              } else {
+                onSelect(entry);
+                onOpenFile?.(entry);
+              }
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && entry.isDir) {
                 onEnter(entry);
@@ -233,6 +256,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const confirm = useDialogs((state) => state.confirm);
   const openConnect = useDialogs((state) => state.openConnect);
+  const openEditor = useWorkspace((state) => state.openEditor);
   const hosts = useHosts((state) => state.hosts);
   const transfers = useTransfers((state) => state.items);
   const cancelTransfer = useTransfers((state) => state.cancel);
@@ -419,6 +443,11 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       onRename: () => state.selected && startPrompt(side, "rename", state.selected.name),
       onDelete: () => deleteSelected(side),
       onTransfer: () => void transfer(side),
+      onEdit:
+        side === "remote" && state.selected && !state.selected.isDir
+          ? () => session && openEditor(session, state.selected!.path)
+          : undefined,
+      onOpenFile: side === "remote" ? (entry) => session && openEditor(session, entry.path) : undefined,
       locale,
     };
   };

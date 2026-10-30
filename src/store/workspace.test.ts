@@ -97,6 +97,18 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().activeId).toBe("terminal:s1");
   });
 
+  it("closes editor tabs together with their session", () => {
+    useWorkspace.setState({
+      tabs: [
+        { id: "editor:s1:/home/a.txt", kind: "editor", title: "a.txt", hostId: "a", pinned: false },
+        { id: "page:welcome", kind: "welcome", title: "welcome", hostId: null, pinned: false },
+      ],
+      activeId: "editor:s1:/home/a.txt",
+    });
+    useWorkspace.getState().closeSession("s1");
+    expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+  });
+
   it("opens one files tab per session and drops it on close", () => {
     useWorkspace.getState().openSftp(session("s1", "Alpha"));
     useWorkspace.getState().openSftp(session("s1", "Alpha"));

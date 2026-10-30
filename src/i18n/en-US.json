@@ -257,6 +257,14 @@
     "killBody": "Send SIGTERM to {{name}} ({{pid}})?",
     "refresh": "Refresh",
     "empty": "No processes"
+  },  "editor": {
+    "open": "Edit",
+    "save": "Save",
+    "saved": "Saved",
+    "loading": "Loading file",
+    "discardTitle": "Discard changes",
+    "discardBody": "Close “{{name}}” without saving?",
+    "discard": "Discard"
   },  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",

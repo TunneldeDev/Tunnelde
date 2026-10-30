@@ -19,8 +19,8 @@ use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 7] = [
-    "welcome", "host", "settings", "about", "updates", "terminal", "sftp",
+const TAB_KINDS: [&str; 8] = [
+    "welcome", "host", "settings", "about", "updates", "terminal", "sftp", "editor",
 ];
 const MAX_TABS: usize = 40;
 const MAX_USER_CSS: usize = 200_000;
@@ -467,6 +467,25 @@ pub async fn remote_processes(
 #[tauri::command]
 pub async fn remote_kill(app: AppHandle, session_id: String, pid: u32) -> AppResult<()> {
     monitor::kill(&app, &session_id, pid).await
+}
+
+#[tauri::command]
+pub async fn sftp_read_text(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+) -> AppResult<sftp::TextFile> {
+    sftp::read_text(&app, &session_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_write_text(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+    content: String,
+) -> AppResult<()> {
+    sftp::write_text(&app, &session_id, &path, &content).await
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

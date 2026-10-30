@@ -85,12 +85,21 @@ export function AppShell() {
   }, [openHostDialog, openPage]);
 
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
-  const activeSession =
-    activeTab && (activeTab.kind === "terminal" || activeTab.kind === "sftp")
-      ? (sessions.find((session) => activeTab.id.endsWith(session.id)) ?? null)
-      : activeTab?.kind === "host" && activeTab.hostId
-        ? (sessions.find((session) => session.hostId === activeTab.hostId) ?? null)
-        : null;
+  const activeSession = (() => {
+    if (!activeTab) {
+      return null;
+    }
+    if (activeTab.kind === "terminal" || activeTab.kind === "sftp") {
+      return sessions.find((session) => activeTab.id.endsWith(session.id)) ?? null;
+    }
+    if (activeTab.kind === "editor") {
+      return sessions.find((session) => activeTab.id.startsWith(`editor:${session.id}:`)) ?? null;
+    }
+    if (activeTab.kind === "host" && activeTab.hostId) {
+      return sessions.find((session) => session.hostId === activeTab.hostId) ?? null;
+    }
+    return null;
+  })();
 
   const style = {
     "--td-sidebar-w": `${sidebarWidth}px`,

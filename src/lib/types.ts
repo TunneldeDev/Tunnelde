@@ -92,7 +92,15 @@ export interface HostsSnapshot {
   hosts: Host[];
 }
 
-export type TabKind = "welcome" | "host" | "settings" | "about" | "updates" | "terminal" | "sftp";
+export type TabKind =
+  | "welcome"
+  | "host"
+  | "settings"
+  | "about"
+  | "updates"
+  | "terminal"
+  | "sftp"
+  | "editor";
 
 export interface TabRecord {
   id: string;
@@ -254,4 +262,8 @@ export interface RemoteStats {
   netTxRate: number;
   processes: RemoteProcess[];
   sampledAt: number;
+}
+export interface TextFile {
+  content: string;
+  size: number;
 }

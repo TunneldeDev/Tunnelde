@@ -5,6 +5,7 @@ import {
   ArrowUpCircle,
   CircleDot,
   Download,
+  FileText,
   FolderTree,
   Info,
   Pin,
@@ -18,6 +19,8 @@ import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/Button";
 import { cn } from "@/lib/format";
+import { useDialogs } from "@/store/dialogs";
+import { useEditors } from "@/store/editors";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
 
@@ -29,6 +32,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   updates: Download,
   terminal: Terminal,
   sftp: FolderTree,
+  editor: FileText,
 };
 
 const NAV_KEYS = {
@@ -63,6 +67,27 @@ export function TopBar() {
   const close = useWorkspace((value) => value.close);
   const togglePin = useWorkspace((value) => value.togglePin);
   const openPage = useWorkspace((value) => value.openPage);
+  const confirm = useDialogs((value) => value.confirm);
+
+  const requestClose = (tab: WorkspaceTab) => {
+    if (tab.kind === "editor" && useEditors.getState().isDirty(tab.id)) {
+      confirm({
+        title: t("editor.discardTitle"),
+        body: t("editor.discardBody", { name: tab.title }),
+        confirmLabel: t("editor.discard"),
+        danger: true,
+        onConfirm: () => {
+          useEditors.getState().discard(tab.id);
+          close(tab.id);
+        },
+      });
+      return;
+    }
+    if (tab.kind === "editor") {
+      useEditors.getState().discard(tab.id);
+    }
+    close(tab.id);
+  };
 
   return (
     <header className="topbar">
@@ -85,7 +110,7 @@ export function TopBar() {
               onClick={() => activate(tab.id)}
               onAuxClick={(event) => {
                 if (event.button === 1) {
-                  close(tab.id);
+                  requestClose(tab);
                 }
               }}
               onDoubleClick={() => togglePin(tab.id)}
@@ -98,7 +123,10 @@ export function TopBar() {
             >
               {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
               <span className="td-tab__label">
-                {tab.kind === "host" || tab.kind === "terminal" || tab.kind === "sftp"
+                {tab.kind === "host" ||
+                tab.kind === "terminal" ||
+                tab.kind === "sftp" ||
+                tab.kind === "editor"
                   ? tab.title
                   : t(NAV_KEYS[tab.kind])}
               </span>
@@ -108,7 +136,7 @@ export function TopBar() {
                 aria-label={t("tab.close")}
                 onClick={(event) => {
                   event.stopPropagation();
-                  close(tab.id);
+                  requestClose(tab);
                 }}
               >
                 <X size={12} />
