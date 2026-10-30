@@ -37,6 +37,7 @@ pub fn run() {
             window::apply_theme(&handle, &theme);
             tray::setup(&handle)?;
             window::install_close_handler(&handle);
+            window::configure_webview(&handle);
             update::spawn_auto_check(&handle);
             tracing::info!(
                 version = %handle.package_info().version,
