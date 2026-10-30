@@ -13,7 +13,7 @@ export const AUTH_LABELS: Record<
   keyboardInteractive: "host.auth.keyboardInteractive",
 };
 
-export const AUTH_METHODS: AuthMethod[] = ["password", "key", "agent", "keyboardInteractive"];
+export const AUTH_METHODS: AuthMethod[] = ["password", "key"];
 
 export const TAB_NAV_LABELS: Record<
   Exclude<TabKind, "host" | "terminal">,

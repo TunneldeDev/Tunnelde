@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { Host, TabRecord } from "@/lib/types";
+import type { Host, SshSession, TabRecord } from "@/lib/types";
 import { useWorkspace } from "@/store/workspace";
 
 const host = (id: string, name: string): Host => ({
@@ -14,6 +14,7 @@ const host = (id: string, name: string): Host => ({
   port: 22,
   username: "root",
   authMethod: "password",
+  keyPath: null,
   favorite: false,
   color: null,
   tags: [],
@@ -23,6 +24,15 @@ const host = (id: string, name: string): Host => ({
   updatedAt: 0,
 });
 
+const session = (id: string, title: string): SshSession => ({
+  id,
+  hostId: "a",
+  title,
+  address: "root@example.com:22",
+  cols: 120,
+  rows: 32,
+  connectedAt: 0,
+});
 const record = (id: string, kind: TabRecord["kind"], hostId: string | null = null): TabRecord => ({
   id,
   kind,
@@ -78,6 +88,20 @@ describe("workspace tabs", () => {
         record("terminal:1", "terminal"),
       ]);
     expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:welcome", "host:a"]);
+  });
+
+  it("opens one tab per SSH session", () => {
+    useWorkspace.getState().openTerminal(session("s1", "Alpha"));
+    useWorkspace.getState().openTerminal(session("s1", "Alpha"));
+    expect(useWorkspace.getState().tabs).toHaveLength(1);
+    expect(useWorkspace.getState().activeId).toBe("terminal:s1");
+  });
+
+  it("closes the tab when its session goes away", () => {
+    useWorkspace.getState().openTerminal(session("s1", "Alpha"));
+    useWorkspace.getState().openPage("welcome");
+    useWorkspace.getState().closeSession("s1");
+    expect(useWorkspace.getState().tabs.map((tab) => tab.kind)).toEqual(["welcome"]);
   });
 
   it("ensures a welcome tab only when empty", () => {

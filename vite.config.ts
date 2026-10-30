@@ -32,6 +32,7 @@ export default defineConfig({
         manualChunks: {
           react: ["react", "react-dom"],
           i18n: ["i18next", "react-i18next"],
+          xterm: ["@xterm/xterm", "@xterm/addon-fit"],
         },
       },
     },

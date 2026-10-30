@@ -85,6 +85,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
         port: host.port,
         username: host.username,
         authMethod: host.authMethod,
+        keyPath: host.keyPath,
         groupId: host.groupId,
         favorite: !host.favorite,
         color: host.color,

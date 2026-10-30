@@ -3,10 +3,12 @@
 
 import { api, events, isTauri } from "@/lib/ipc";
 import { applyAppearance } from "@/lib/appearance";
+import i18n from "@/i18n/i18n";
 import { translateError } from "@/lib/errors";
 import type { TabRecord } from "@/lib/types";
 import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
+import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
@@ -31,7 +33,9 @@ export async function bootstrap(): Promise<void> {
     const records = await api.tabs();
     useWorkspace.getState().hydrate(records);
     await useHosts.getState().load();
+    await useSsh.getState().refresh();
     pruneMissingHosts();
+    pruneMissingSessions();
     useWorkspace.getState().ensureWelcome();
     await useUpdates.getState().refresh();
     await wireEvents();
@@ -66,6 +70,15 @@ function pruneMissingHosts(): void {
   }
 }
 
+function pruneMissingSessions(): void {
+  const open = new Set(useSsh.getState().sessions.map((session) => session.id));
+  for (const tab of useWorkspace.getState().tabs) {
+    if (tab.kind === "terminal" && !open.has(tab.id.replace("terminal:", ""))) {
+      useWorkspace.getState().close(tab.id);
+    }
+  }
+}
+
 async function wireEvents(): Promise<void> {
   await events.onSettingsChanged((settings) => {
     useSettings.getState().applyRemote(settings);
@@ -79,6 +92,12 @@ async function wireEvents(): Promise<void> {
     if (page === "settings" || page === "about" || page === "updates") {
       useWorkspace.getState().openPage(page);
     }
+  });
+
+  await events.onSshClosed((payload) => {
+    useSsh.getState().forget(payload.sessionId);
+    useWorkspace.getState().closeSession(payload.sessionId);
+    toast(i18n.t("ssh.sessionEnded"), "info");
   });
 
   const media = window.matchMedia("(prefers-color-scheme: light)");

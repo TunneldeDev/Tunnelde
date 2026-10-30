@@ -63,6 +63,7 @@ export interface Host {
   port: number;
   username: string;
   authMethod: AuthMethod;
+  keyPath: string | null;
   favorite: boolean;
   color: string | null;
   tags: string[];
@@ -79,6 +80,7 @@ export interface HostInput {
   port?: number;
   username?: string;
   authMethod?: AuthMethod;
+  keyPath?: string | null;
   favorite?: boolean;
   color?: string | null;
   tags?: string[];
@@ -165,4 +167,41 @@ export function isIpcError(value: unknown): value is IpcError {
     "message" in value &&
     typeof (value as IpcError).message === "string"
   );
+}
+
+export type HostKeyStatus = "known" | "unknown" | "changed";
+
+export interface HostKeyInfo {
+  fingerprint: string;
+  algorithm: string;
+  status: HostKeyStatus;
+  knownFingerprint: string | null;
+}
+
+export interface SshSession {
+  id: string;
+  hostId: string;
+  title: string;
+  address: string;
+  cols: number;
+  rows: number;
+  connectedAt: number;
+}
+
+export interface SshConnectRequest {
+  hostId: string;
+  password?: string | null;
+  passphrase?: string | null;
+  cols?: number;
+  rows?: number;
+}
+
+export interface SshDataPayload {
+  sessionId: string;
+  data: string;
+}
+
+export interface SshClosedPayload {
+  sessionId: string;
+  reason: string;
 }

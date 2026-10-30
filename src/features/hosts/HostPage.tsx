@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { Pencil, Star, Trash2 } from "lucide-react";
+import { Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/Button";
@@ -27,6 +27,7 @@ function HostDetails({ host }: { host: Host }) {
   const groups = useHosts((state) => state.groups);
   const hosts = useHosts((state) => state.hosts);
   const openHostDialog = useDialogs((state) => state.openHost);
+  const openConnect = useDialogs((state) => state.openConnect);
   const confirm = useDialogs((state) => state.confirm);
   const deleteHost = useHosts((state) => state.deleteHost);
   const createHost = useHosts((state) => state.createHost);
@@ -66,6 +67,14 @@ function HostDetails({ host }: { host: Host }) {
           <p className="host-head__meta">{hostSubtitle(host.username, host.host, host.port)}</p>
         </div>
         <div className="host-head__actions">
+          <Button
+            variant="primary"
+            size="sm"
+            leading={<PlugZap size={13} />}
+            onClick={() => openConnect(host)}
+          >
+            {t("terminal.connect")}
+          </Button>
           <IconButton
             label={host.favorite ? t("menu.unfavorite") : t("menu.favorite")}
             active={host.favorite}
@@ -105,6 +114,9 @@ function HostDetails({ host }: { host: Host }) {
           <Detail label={t("host.username")} value={host.username || "—"} />
           <Detail label={t("host.authMethod")} value={t(AUTH_LABELS[host.authMethod])} />
           <Detail label={t("host.group")} value={group?.name ?? t("common.none")} />
+          {host.authMethod === "key" ? (
+            <Detail label={t("host.keyPath")} value={host.keyPath ?? "—"} />
+          ) : null}
           <Detail
             label={t("host.lastUsed")}
             value={host.lastUsedAt ? formatRelative(host.lastUsedAt, locale) : t("common.never")}

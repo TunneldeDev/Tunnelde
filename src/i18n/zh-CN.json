@@ -46,6 +46,7 @@
     "port": "端口",
     "username": "用户",
     "authMethod": "认证",
+    "keyPath": "密钥文件",
     "group": "分组",
     "tags": "标签",
     "note": "备注",
@@ -177,9 +178,47 @@
     "database": "存储错误",
     "update": "更新错误",
     "io": "文件错误",
-    "internal": "内部错误"
+    "internal": "内部错误",
+    "ssh": "SSH 错误"
   },
-  "menu": {
+  "connect": {
+    "title": "连接到 {{name}}",
+    "hostKey": "主机密钥",
+    "knownKey": "已信任",
+    "unknownKey": "新密钥",
+    "changedKey": "密钥已变化",
+    "probing": "读取中…",
+    "password": "密码",
+    "passphrase": "密钥口令",
+    "optional": "可选",
+    "trustHost": "信任并继续",
+    "replaceKey": "替换已信任密钥",
+    "trustHint": "信任该密钥后才能连接；条件允许时请核对指纹。",
+    "unknownHint": "该主机尚未被信任。",
+    "changedHint": "密钥与已信任的不一致，确认原因后再替换。",
+    "connect": "连接"
+  },
+  "terminal": {
+    "connect": "连接",
+    "disconnect": "断开"
+  },
+  "ssh": {
+    "closed": "会话已关闭",
+    "sessionEnded": "会话已结束",
+    "authFailed": "认证失败",
+    "passwordRequired": "请输入密码",
+    "keyPathRequired": "请为主机填写私钥路径",
+    "usernameRequired": "请为主机填写用户名",
+    "timeout": "连接超时",
+    "hostKeyUntrusted": "请先信任该主机密钥",
+    "hostKeyChanged": "主机密钥已变化",
+    "keyLoad": "无法读取私钥",
+    "sessionMissing": "会话不存在",
+    "sessionBusy": "会话繁忙",
+    "invalidPayload": "终端输入无效",
+    "noHostKey": "服务器未提供主机密钥",
+    "agentUnsupported": "暂不支持 Agent 认证"
+  },  "menu": {
     "edit": "编辑",
     "duplicate": "复制",
     "favorite": "加入收藏",

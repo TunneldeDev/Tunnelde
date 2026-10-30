@@ -46,6 +46,7 @@
     "port": "Port",
     "username": "User",
     "authMethod": "Auth",
+    "keyPath": "Key file",
     "group": "Group",
     "tags": "Tags",
     "note": "Note",
@@ -177,9 +178,47 @@
     "database": "Storage error",
     "update": "Update error",
     "io": "File error",
-    "internal": "Internal error"
+    "internal": "Internal error",
+    "ssh": "SSH error"
   },
-  "menu": {
+  "connect": {
+    "title": "Connect to {{name}}",
+    "hostKey": "Host key",
+    "knownKey": "Trusted",
+    "unknownKey": "New key",
+    "changedKey": "Key changed",
+    "probing": "Reading…",
+    "password": "Password",
+    "passphrase": "Key passphrase",
+    "optional": "Optional",
+    "trustHost": "Trust and continue",
+    "replaceKey": "Replace trusted key",
+    "trustHint": "Trust the key to continue. Compare the fingerprint when possible.",
+    "unknownHint": "This host has not been trusted yet.",
+    "changedHint": "The key differs from the trusted one. Only replace it if you know why.",
+    "connect": "Connect"
+  },
+  "terminal": {
+    "connect": "Connect",
+    "disconnect": "Disconnect"
+  },
+  "ssh": {
+    "closed": "session closed",
+    "sessionEnded": "Session ended",
+    "authFailed": "Authentication failed",
+    "passwordRequired": "Enter a password to connect",
+    "keyPathRequired": "Add a private key path to this host",
+    "usernameRequired": "Add a username to this host",
+    "timeout": "Connection timed out",
+    "hostKeyUntrusted": "Trust this host key first",
+    "hostKeyChanged": "The host key changed",
+    "keyLoad": "The private key could not be read",
+    "sessionMissing": "Session is gone",
+    "sessionBusy": "The session is busy",
+    "invalidPayload": "Invalid terminal input",
+    "noHostKey": "The server did not present a host key",
+    "agentUnsupported": "Agent authentication is not available yet"
+  },  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",
     "favorite": "Add to favorites",

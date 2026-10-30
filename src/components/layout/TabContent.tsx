@@ -7,24 +7,12 @@ import { EmptyState } from "@/components/ui/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { TerminalPage } from "@/features/terminal/TerminalPage";
 import { UpdatesPage } from "@/features/updates/UpdatesPage";
 import { WelcomePage } from "@/features/welcome/WelcomePage";
-import { useWorkspace } from "@/store/workspace";
+import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
 
-export function TabContent() {
-  const { t } = useTranslation();
-  const tab = useWorkspace(
-    (state) => state.tabs.find((item) => item.id === state.activeId) ?? null,
-  );
-
-  if (!tab) {
-    return (
-      <div className="page">
-        <EmptyState title={t("host.emptyTitle")} body={t("host.emptyBody")} />
-      </div>
-    );
-  }
-
+function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
   switch (tab.kind) {
     case "welcome":
       return <WelcomePage />;
@@ -36,7 +24,33 @@ export function TabContent() {
       return <AboutPage />;
     case "updates":
       return <UpdatesPage />;
+    case "terminal":
+      return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     default:
       return null;
   }
+}
+
+export function TabContent() {
+  const { t } = useTranslation();
+  const tabs = useWorkspace((state) => state.tabs);
+  const activeId = useWorkspace((state) => state.activeId);
+
+  if (tabs.length === 0) {
+    return (
+      <div className="page">
+        <EmptyState title={t("host.emptyTitle")} body={t("host.emptyBody")} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {tabs.map((tab) => (
+        <div key={tab.id} className="tab-panel" hidden={tab.id !== activeId}>
+          <TabBody tab={tab} active={tab.id === activeId} />
+        </div>
+      ))}
+    </>
+  );
 }

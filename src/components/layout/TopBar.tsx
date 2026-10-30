@@ -96,7 +96,7 @@ export function TopBar() {
             >
               {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
               <span className="td-tab__label">
-                {tab.kind === "host" ? tab.title : t(NAV_KEYS[tab.kind])}
+                {tab.kind === "host" || tab.kind === "terminal" ? tab.title : t(NAV_KEYS[tab.kind])}
               </span>
               <button
                 type="button"

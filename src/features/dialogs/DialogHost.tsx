@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/Button";
+import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { Dialog } from "@/components/ui/Dialog";
 import { Field, Input, Select, Switch, Textarea } from "@/components/ui/Field";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/labels";
@@ -21,6 +22,7 @@ interface HostFormState {
   username: string;
   authMethod: AuthMethod;
   groupId: string;
+  keyPath: string;
   favorite: boolean;
   tags: string;
   note: string;
@@ -33,6 +35,7 @@ const EMPTY: HostFormState = {
   username: "",
   authMethod: "password",
   groupId: "",
+  keyPath: "",
   favorite: false,
   tags: "",
   note: "",
@@ -46,6 +49,7 @@ function fromHost(host: Host): HostFormState {
     username: host.username,
     authMethod: host.authMethod,
     groupId: host.groupId ?? "",
+    keyPath: host.keyPath ?? "",
     favorite: host.favorite,
     tags: host.tags.join(", "),
     note: host.note ?? "",
@@ -91,6 +95,7 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
       username: form.username.trim(),
       authMethod: form.authMethod,
       groupId: form.groupId || null,
+      keyPath: form.authMethod === "key" ? form.keyPath.trim() || null : null,
       favorite: form.favorite,
       tags: parseTags(form.tags),
       note: form.note.trim() || null,
@@ -221,6 +226,18 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
             />
           </Field>
         </div>
+
+        {form.authMethod === "key" ? (
+          <Field label={t("host.keyPath")} htmlFor="host-key-path">
+            <Input
+              id="host-key-path"
+              value={form.keyPath}
+              placeholder="~/.ssh/id_ed25519"
+              spellCheck={false}
+              onChange={(event) => set("keyPath", event.target.value)}
+            />
+          </Field>
+        ) : null}
 
         <Field label={t("host.tags")} htmlFor="host-tags">
           <Input
@@ -373,6 +390,8 @@ export function DialogHost() {
       return <HostDialog key={dialog.host?.id ?? "new"} host={dialog.host} onClose={close} />;
     case "group":
       return <GroupDialog key={dialog.group?.id ?? "new"} group={dialog.group} onClose={close} />;
+    case "connect":
+      return <ConnectDialog key={dialog.host.id} host={dialog.host} onClose={close} />;
     case "confirm":
       return (
         <ConfirmDialog

@@ -1,0 +1,203 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
+
+import { ShieldAlert, ShieldCheck } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+
+import { Button } from "@/components/ui/Button";
+import { Dialog } from "@/components/ui/Dialog";
+import { Field, Input } from "@/components/ui/Field";
+import { cn } from "@/lib/format";
+import { translateError } from "@/lib/errors";
+import { api } from "@/lib/ipc";
+import type { Host, HostKeyInfo } from "@/lib/types";
+import { useSsh } from "@/store/ssh";
+import { useWorkspace } from "@/store/workspace";
+
+const STATUS_KEYS = {
+  known: "connect.knownKey",
+  unknown: "connect.unknownKey",
+  changed: "connect.changedKey",
+} as const;
+
+interface ConnectDialogProps {
+  host: Host;
+  onClose: () => void;
+}
+
+export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
+  const { t } = useTranslation();
+  const connect = useSsh((state) => state.connect);
+  const openTerminal = useWorkspace((state) => state.openTerminal);
+
+  const [probe, setProbe] = useState<HostKeyInfo | null>(null);
+  const [trusted, setTrusted] = useState(false);
+  const [probing, setProbing] = useState(true);
+  const [password, setPassword] = useState("");
+  const [passphrase, setPassphrase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    api
+      .sshProbe(host.id)
+      .then((info) => {
+        if (!alive) {
+          return;
+        }
+        setProbe(info);
+        setTrusted(info.status === "known");
+      })
+      .catch((cause: unknown) => {
+        if (alive) {
+          setError(translateError(cause));
+        }
+      })
+      .finally(() => {
+        if (alive) {
+          setProbing(false);
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, [host.id]);
+
+  const interactive = host.authMethod !== "key";
+  const canConnect = trusted && !busy && (!interactive || password.length > 0);
+
+  const trust = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const info = await api.sshTrust(host.id);
+      setProbe(info);
+      setTrusted(true);
+    } catch (cause) {
+      setError(translateError(cause));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submit = async () => {
+    if (!canConnect) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const session = await connect({
+      hostId: host.id,
+      password: interactive ? password : null,
+      passphrase: interactive ? null : passphrase || null,
+      cols: 120,
+      rows: 32,
+    });
+    setBusy(false);
+    if (session) {
+      openTerminal(session);
+      onClose();
+    }
+  };
+
+  const status = probe?.status ?? null;
+  const keyStatus = status ? t(STATUS_KEYS[status]) : t("connect.probing");
+
+  return (
+    <Dialog
+      open
+      title={t("connect.title", { name: host.name })}
+      closeLabel={t("common.close")}
+      onClose={onClose}
+      width={440}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>
+            {t("common.cancel")}
+          </Button>
+          <Button variant="primary" disabled={!canConnect} onClick={() => void submit()}>
+            {t("connect.connect")}
+          </Button>
+        </>
+      }
+    >
+      <div className="connect">
+        <div className="connect__target">
+          <code>{host.username ? `${host.username}@` : ""}{host.host}:{host.port}</code>
+        </div>
+
+        <div className={cn("key-box", status === "changed" && "is-danger")}>
+          <div className="key-box__head">
+            <span className="key-box__title">
+              {status === "known" ? <ShieldCheck size={13} /> : <ShieldAlert size={13} />}
+              {t("connect.hostKey")}
+            </span>
+            <span className={cn("key-box__status", status === "known" && "is-ok")}>
+              {probing ? t("connect.probing") : keyStatus}
+            </span>
+          </div>
+          {probe ? <code className="key-box__fingerprint">{probe.fingerprint}</code> : null}
+          {status && status !== "known" ? (
+            <>
+              <p className="key-box__hint">
+                {status === "unknown" ? t("connect.unknownHint") : t("connect.changedHint")}
+              </p>
+              <Button
+                size="sm"
+                variant={status === "changed" ? "danger" : "secondary"}
+                disabled={busy}
+                onClick={() => void trust()}
+              >
+                {status === "changed" ? t("connect.replaceKey") : t("connect.trustHost")}
+              </Button>
+            </>
+          ) : null}
+        </div>
+
+        {interactive ? (
+          <Field label={t("connect.password")} htmlFor="connect-password">
+            <Input
+              id="connect-password"
+              type="password"
+              autoFocus
+              autoComplete="off"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+          </Field>
+        ) : (
+          <Field label={t("connect.passphrase")} hint={t("connect.optional")} htmlFor="connect-passphrase">
+            <Input
+              id="connect-passphrase"
+              type="password"
+              autoFocus
+              autoComplete="off"
+              value={passphrase}
+              onChange={(event) => setPassphrase(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void submit();
+                }
+              }}
+            />
+          </Field>
+        )}
+
+        {!trusted && status !== null && !probing ? (
+          <p className="connect__hint">{t("connect.trustHint")}</p>
+        ) : null}
+
+        {error ? <p className="connect__error">{error}</p> : null}
+      </div>
+    </Dialog>
+  );
+}

@@ -9,8 +9,13 @@ import type {
   Group,
   Host,
   HostInput,
+  HostKeyInfo,
   HostsSnapshot,
   Settings,
+  SshConnectRequest,
+  SshDataPayload,
+  SshClosedPayload,
+  SshSession,
   SettingsPatch,
   SystemStats,
   TabRecord,
@@ -52,6 +57,15 @@ export const api = {
   openLogDir: () => invoke<void>("open_log_dir"),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
 
+  sshProbe: (hostId: string) => invoke<HostKeyInfo>("ssh_probe", { hostId }),
+  sshTrust: (hostId: string) => invoke<HostKeyInfo>("ssh_trust", { hostId }),
+  sshConnect: (request: SshConnectRequest) => invoke<SshSession>("ssh_connect", { request }),
+  sshWrite: (sessionId: string, data: string) => invoke<void>("ssh_write", { sessionId, data }),
+  sshResize: (sessionId: string, cols: number, rows: number) =>
+    invoke<void>("ssh_resize", { sessionId, cols, rows }),
+  sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
+  sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
+
   importCss: () => invoke<string | null>("user_css_import"),
   exportCss: (css: string) => invoke<string | null>("user_css_export", { css }),
 };
@@ -63,4 +77,8 @@ export const events = {
     listen<UpdateState>("update://state", (event) => handler(event.payload)),
   onNavigate: (handler: (page: string) => void): Promise<UnlistenFn> =>
     listen<string>("ui://navigate", (event) => handler(event.payload)),
+  onSshData: (handler: (payload: SshDataPayload) => void): Promise<UnlistenFn> =>
+    listen<SshDataPayload>("ssh://data", (event) => handler(event.payload)),
+  onSshClosed: (handler: (payload: SshClosedPayload) => void): Promise<UnlistenFn> =>
+    listen<SshClosedPayload>("ssh://closed", (event) => handler(event.payload)),
 };

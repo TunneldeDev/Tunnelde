@@ -4,7 +4,7 @@
 import { create } from "zustand";
 
 import { api } from "@/lib/ipc";
-import type { Host, TabKind, TabRecord } from "@/lib/types";
+import type { Host, SshSession, TabKind, TabRecord } from "@/lib/types";
 
 export interface WorkspaceTab {
   id: string;
@@ -30,6 +30,8 @@ interface WorkspaceStore {
   activeId: string | null;
   openPage: (kind: PageKind) => void;
   openHost: (host: Host) => void;
+  openTerminal: (session: SshSession) => void;
+  closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
   activate: (id: string) => void;
@@ -86,6 +88,36 @@ export const useWorkspace = create<WorkspaceStore>((set) => ({
         pinned: false,
       };
       return { tabs: [...state.tabs, tab], activeId: id };
+    });
+  },
+
+  openTerminal: (session) => {
+    const id = `terminal:${session.id}`;
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeId: id };
+      }
+      const tab: WorkspaceTab = {
+        id,
+        kind: "terminal",
+        title: session.title,
+        hostId: session.hostId,
+        pinned: false,
+      };
+      return { tabs: [...state.tabs, tab], activeId: id };
+    });
+  },
+
+  closeSession: (sessionId) => {
+    const id = `terminal:${sessionId}`;
+    set((state) => {
+      const index = state.tabs.findIndex((tab) => tab.id === id);
+      if (index < 0) {
+        return state;
+      }
+      const tabs = state.tabs.filter((tab) => tab.id !== id);
+      const activeId = state.activeId === id ? neighbour(state.tabs, index, id) : state.activeId;
+      return { tabs, activeId };
     });
   },
 
