@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-10-30
+
 ### Added
 
 - The connect dialog shows the previously trusted fingerprint when a host key changed, so the two can be compared before replacing it.
+
 
 ## [0.10.1] - 2026-10-30
 
