@@ -5,6 +5,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
 import { RemotePanel } from "@/components/layout/RemotePanel";
+import { ContextMenuHost } from "@/components/ui/ContextMenu";
 import { Resizer } from "@/components/layout/Resizer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { SystemPanel } from "@/components/layout/SystemPanel";
@@ -161,6 +162,7 @@ export function AppShell() {
       />
       <ToastHost />
       <DialogHost />
+      <ContextMenuHost />
     </div>
   );
 }

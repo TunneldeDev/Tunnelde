@@ -20,6 +20,8 @@ let started = false;
 let persistTimer: number | undefined;
 
 export async function bootstrap(): Promise<void> {
+  window.addEventListener("contextmenu", (event) => event.preventDefault());
+
   if (started) {
     return;
   }

@@ -23,11 +23,19 @@ import { EmptyState, StatusDot } from "@/components/ui/Misc";
 import { Input } from "@/components/ui/Field";
 import { cn, formatBytes, formatDate } from "@/lib/format";
 import { translateError } from "@/lib/errors";
+import {
+  readDragPayload,
+  resolveDrop,
+  setDragPayload,
+  type DragPayload,
+} from "@/lib/dnd";
 import { api } from "@/lib/ipc";
 import type { FileEntry, Listing } from "@/lib/types";
+import { useContextMenu } from "@/store/contextMenu";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
+import { toast } from "@/store/toasts";
 import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 
@@ -83,6 +91,8 @@ interface PaneProps {
   onTransfer: () => void;
   onEdit?: () => void;
   onOpenFile?: (entry: FileEntry) => void;
+  onDropFile: (payload: DragPayload, targetDirectory: string) => void;
+  onCopyPath: (entry: FileEntry) => void;
   locale: string;
 }
 
@@ -105,14 +115,38 @@ function Pane({
   onTransfer,
   onEdit,
   onOpenFile,
+  onDropFile,
+  onCopyPath,
   locale,
 }: PaneProps) {
   const { t } = useTranslation();
+  const openMenu = useContextMenu((state) => state.open);
   const [draftOverride, setDraftOverride] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
   const draft = draftOverride ?? state.listing?.path ?? "";
 
   const selected = state.selected;
   const transferLabel = side === "local" ? t("sftp.upload") : t("sftp.download");
+
+  const openItemMenu = (event: React.MouseEvent, entry: FileEntry) => {
+    event.preventDefault();
+    onSelect(entry);
+    const items = [];
+    if (entry.isDir) {
+      items.push({ label: t("sftp.open"), onSelect: () => onEnter(entry) });
+    } else if (onOpenFile) {
+      items.push({ label: t("editor.open"), onSelect: () => onOpenFile(entry) });
+    }
+    items.push({
+      label: entry.isDir ? t("sftp.open") : side === "local" ? t("sftp.upload") : t("sftp.download"),
+      disabled: entry.isDir,
+      onSelect: onTransfer,
+    });
+    items.push({ label: t("sftp.rename"), onSelect: onRename });
+    items.push({ label: t("sftp.copyPath"), onSelect: () => onCopyPath(entry) });
+    items.push({ label: t("sftp.delete"), danger: true, onSelect: onDelete });
+    openMenu(event.clientX, event.clientY, items);
+  };
 
   return (
     <section className="sftp-pane">
@@ -204,7 +238,25 @@ function Pane({
         </div>
       ) : null}
 
-      <div className="sftp-pane__body">
+      <div
+        className={cn("sftp-pane__body", dropTarget === "" && "is-drop")}
+        onDragOver={(event) => {
+          if (event.dataTransfer.types.includes("application/x-tunnelde-file")) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            setDropTarget("");
+          }
+        }}
+        onDragLeave={() => setDropTarget(null)}
+        onDrop={(event) => {
+          event.preventDefault();
+          const payload = readDragPayload(event.dataTransfer);
+          setDropTarget(null);
+          if (payload && state.listing) {
+            onDropFile(payload, state.listing.path);
+          }
+        }}
+      >
         {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
         {state.listing && state.listing.entries.length === 0 ? (
           <p className="sftp-pane__empty">{t("sftp.empty")}</p>
@@ -215,7 +267,42 @@ function Pane({
             role="option"
             aria-selected={selected?.path === entry.path}
             tabIndex={0}
-            className={cn("sftp-row", selected?.path === entry.path && "is-selected")}
+            className={cn(
+              "sftp-row",
+              selected?.path === entry.path && "is-selected",
+              dropTarget === entry.path && "is-drop",
+            )}
+            draggable
+            onDragStart={(event) =>
+              setDragPayload(event.dataTransfer, {
+                side,
+                path: entry.path,
+                name: entry.name,
+                isDir: entry.isDir,
+              })
+            }
+            onDragOver={(event) => {
+              if (!entry.isDir) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              setDropTarget(entry.path);
+            }}
+            onDragLeave={() => setDropTarget(null)}
+            onDrop={(event) => {
+              if (!entry.isDir) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              const payload = readDragPayload(event.dataTransfer);
+              setDropTarget(null);
+              if (payload) {
+                onDropFile(payload, entry.path);
+              }
+            }}
+            onContextMenu={(event) => openItemMenu(event, entry)}
             onClick={() => onSelect(entry)}
             onDoubleClick={() => {
               if (entry.isDir) {
@@ -420,6 +507,40 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
 
   const locale = i18n.resolvedLanguage ?? "en-US";
 
+  const handleDropFile = async (
+    targetSide: Side,
+    payload: DragPayload,
+    targetDirectory: string,
+  ) => {
+    const action = resolveDrop(payload, targetSide, targetDirectory);
+    if (action.kind === "noop") {
+      return;
+    }
+    try {
+      if (action.kind === "move") {
+        if (targetSide === "local") {
+          await api.localRename(action.from, action.to);
+        } else {
+          await api.sftpRename(sessionId, action.from, action.to);
+        }
+      } else if (action.direction === "upload") {
+        await api.sftpUpload(sessionId, action.from, action.to);
+      } else {
+        await api.sftpDownload(sessionId, action.from, action.to);
+      }
+      await Promise.all([loadLocal(local.listing?.path), loadRemote(remote.listing?.path)]);
+    } catch (error) {
+      toast(translateError(error), "error");
+    }
+  };
+
+  const copyPath = (entry: FileEntry) => {
+    void navigator.clipboard.writeText(entry.path).then(
+      () => toast(t("sftp.copied"), "success"),
+      () => toast(t("sftp.copyFailed"), "error"),
+    );
+  };
+
   const paneProps = (side: Side): PaneProps => {
     const state = side === "local" ? local : remote;
     const loader = side === "local" ? loadLocal : loadRemote;
@@ -448,6 +569,9 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           ? () => session && openEditor(session, state.selected!.path)
           : undefined,
       onOpenFile: side === "remote" ? (entry) => session && openEditor(session, entry.path) : undefined,
+      onDropFile: (payload, targetDirectory) =>
+        void handleDropFile(side, payload, targetDirectory),
+      onCopyPath: copyPath,
       locale,
     };
   };
