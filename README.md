@@ -3,8 +3,8 @@
 A cross-platform SSH, SFTP and remote-ops workbench for Windows, macOS and Linux.
 
 Tunnelde is built with **Tauri 2 + Rust + React + TypeScript**. It is designed for people who live
-in remote shells: multi-tab sessions, a dual-pane file manager, remote monitoring, a credential
-vault and a permissioned plugin system.
+in remote shells: multi-tab sessions, two file panels that can pair any two locations, remote
+monitoring, a credential vault and a permissioned plugin system.
 
 Tunnelde is developed by **quyansiyuanwang** under the **TunneldeDev** organization.
 
@@ -14,11 +14,15 @@ Early development, built in public milestone by milestone.
 
 - `v0.1.x` — workspace shell, host library, settings, GitHub Releases auto-update
 - `v0.2.x` — SSH terminal with host key trust, keychain passwords, command history
-- `v0.3.x` — SFTP dual-pane file manager, transfers and a remote text editor
+- `v0.3.x` — dual-pane file manager, transfers and a remote text editor
 - `v0.4.x` — remote monitoring and process control
 - `v0.5.x` — plugin host with JSON-RPC over stdio and TypeScript plugins
-- `v0.6.x` — WASM plugins, plugin marketplace and the MySQL plugin
-- `v1.0.0` — hardening and full documentation
+- `v0.6.x` – `v0.10.x` — plugin views, split panes, drag and drop, CI and release automation
+- `v0.11.x` — either file panel can show this computer or any session; monospace font choice;
+  optional system menu; tag chips, key login and a trusted-hosts page
+- `v0.12.x` — host ordering by drag, passwordless setup from the password dialog, plugin zip
+  archives
+- next — accessibility, a command palette and broader file selection
 
 ## Stack
 

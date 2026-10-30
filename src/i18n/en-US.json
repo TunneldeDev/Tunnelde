@@ -414,5 +414,10 @@
     "recent": "Recent",
     "hint": "Ctrl+N new host · Ctrl+, settings",
     "empty": "Add a host to get started"
+  },
+  "palette": {
+    "title": "Command palette",
+    "placeholder": "Type a command",
+    "empty": "No command matches"
   }
 }

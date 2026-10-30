@@ -2,6 +2,7 @@
 
 | Keys | Action |
 | --- | --- |
+| `Ctrl+K`, `Ctrl+Shift+P` | Command palette |
 | `Ctrl+N` | New host |
 | `Ctrl+,` | Settings |
 | `Ctrl+W` | Close the active tab (asks first for unsaved editors) |

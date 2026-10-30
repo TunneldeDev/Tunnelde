@@ -4,6 +4,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
+import { CommandPalette } from "@/components/layout/CommandPalette";
 import { PaneView, TAB_MIME } from "@/components/layout/PaneView";
 import { RemotePanel } from "@/components/layout/RemotePanel";
 import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
@@ -43,6 +44,7 @@ export function AppShell() {
   const [panelDraft, setPanelDraft] = useState<number | null>(null);
   const [tabDrag, setTabDrag] = useState(false);
   const [edge, setEdge] = useState<string | null>(null);
+  const [palette, setPalette] = useState(false);
   const sidebarWidth = sidebarDraft ?? settings.sidebarWidth;
   const panelWidth = panelDraft ?? settings.rightPanelWidth;
 
@@ -73,6 +75,11 @@ export function AppShell() {
         return;
       }
       const key = event.key.toLowerCase();
+      if (key === "k" || (event.shiftKey && key === "p")) {
+        event.preventDefault();
+        setPalette(true);
+        return;
+      }
       if (key === "n") {
         event.preventDefault();
         openHostDialog();
@@ -253,6 +260,7 @@ export function AppShell() {
       <ToastHost />
       <DialogHost />
       <ContextMenuHost />
+      <CommandPalette open={palette} onClose={() => setPalette(false)} />
     </div>
   );
 }
