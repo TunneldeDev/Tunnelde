@@ -6,6 +6,20 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+### Added
+
+- SSH sessions over russh with password and private-key authentication, PTY resize and framed terminal data.
+- Trust-on-first-use host keys stored in SQLite, with a fingerprint prompt and a changed-key guard.
+- xterm.js terminal tabs that keep their buffer while switching, with light and dark palettes.
+- Connect dialog that reads the host key before credentials and offers to trust or replace it.
+- Per-session disconnect that closes the tab and records the host as recently used.
+
+### Changed
+
+- Terminal tabs close themselves when the remote session ends.
+
 ## [0.1.0] - 2026-10-30
 
 ### Added

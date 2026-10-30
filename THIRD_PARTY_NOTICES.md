@@ -14,6 +14,10 @@ their notices are reproduced or referenced as required.
 | clsx                                          | MIT                                                    |
 | lucide-react                                  | ISC                                                    |
 | rusqlite (bundled SQLite)                     | MIT; SQLite is public domain                           |
+| russh                                         | MIT                                                    |
+| ring                                          | ISC-style license                                      |
+| xterm.js, @xterm/addon-fit                    | MIT                                                    |
+| base64                                        | MIT OR Apache-2.0                                      |
 | Tokio                                         | MIT                                                    |
 | Serde, serde_json                             | MIT OR Apache-2.0                                      |
 | tracing, tracing-subscriber, tracing-appender | MIT                                                    |
