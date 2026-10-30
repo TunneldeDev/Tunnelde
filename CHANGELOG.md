@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-10-30
+
 ### Added
 
 - A close button on each pane's tab strip once the editor is split.
@@ -17,6 +19,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Fixed
 
 - Re-dispatching a release now fails fast when the tag already exists instead of half-bumping the version.
+
 
 ## [0.9.0] - 2026-10-30
 
