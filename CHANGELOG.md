@@ -6,10 +6,13 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-30
+
 ### Added
 
 - Command history for every host, captured from the terminal, searchable and re-runnable from the History tab.
 - Release automation: scripts bump every manifest, cut the changelog section and are wired into the Release workflow.
+
 
 ## [0.5.0] - 2026-10-30
 
