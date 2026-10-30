@@ -6,11 +6,14 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-10-30
+
 ### Added
 
 - Hosts in the sidebar can be dragged into the order you want; the order is stored with the host.
 - The connect dialog can install Tunnelde's public key with the password you just typed and switch the host to key authentication, so the next connection is passwordless.
 - Plugins install from a `.zip` archive as well as a folder; archives are unpacked safely and capped in size.
+
 
 ## [0.11.0] - 2026-10-30
 
