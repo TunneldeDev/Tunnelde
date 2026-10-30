@@ -115,7 +115,7 @@ impl PluginsManager {
     pub async fn list(&self) -> Vec<PluginInfo> {
         let plugins = self.plugins.lock().await;
         let mut list: Vec<PluginInfo> = plugins.values().map(Instance::info).collect();
-        list.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+        list.sort_by_key(|plugin| plugin.name.to_lowercase());
         list
     }
     pub async fn start(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
