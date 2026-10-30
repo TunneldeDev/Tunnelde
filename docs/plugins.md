@@ -19,6 +19,7 @@ hello/
 | `version` | yes | `major.minor` or `major.minor.patch` |
 | `apiVersion` | yes | Must be `1` |
 | `main` | yes | Entry script, resolved inside the plugin folder |
+| `runtime` | no | `node` (the default) or `wasm`; `wasm` requires `main` to end in `.wasm` |
 | `description` | no | One line shown in the list |
 | `commands` | no | `[{ "id": "greet", "title": "Say hello" }]` |
 | `views` | no | `[{ "id": "status", "title": "Status" }]` |
@@ -48,6 +49,37 @@ Plugin → host notifications use the same framing without an `id`:
 ```
 
 Timeouts: 8 seconds for `initialize`, 20 seconds for everything else.
+
+## WASM plugins
+
+A plugin can run as a WebAssembly module instead of a Node process. Set `"runtime": "wasm"` in
+`tunnelde-plugin.json` and point `main` at a `.wasm` file; when `runtime` is omitted it defaults to
+`node`. The host compiles the module when the plugin directory is scanned and starts and stops it
+without spawning a process.
+
+The module must export:
+
+| Export | Signature | Description |
+| --- | --- | --- |
+| `memory` | linear memory | At least 327680 bytes (5 pages) |
+| `tunnelde_call` | `(i32, i32, i32, i32) -> i32` | Request handler |
+
+For every call the host writes the request JSON at offset `1024` and invokes
+`tunnelde_call(in_ptr, in_len, out_ptr, out_cap)` with `in_ptr = 1024`, `out_ptr = 65536` and
+`out_cap = 262144` (256 KiB). The guest writes its response into that buffer and returns the number
+of bytes written; the host reads that slice back and parses it as the JSON result.
+
+Requests use the same payloads as the Node protocol, without JSON-RPC framing:
+
+```json
+{ "method": "run", "command": "greet" }
+{ "method": "render", "view": "status" }
+```
+
+The host provides one import, `env.log(level: i32, ptr: i32, len: i32)`, which reads `len` bytes of
+UTF-8 from the guest's memory at `ptr` and logs the text. `level >= 2` is logged as a warning and
+anything lower as info, and messages are capped at 8 KiB. Every call instantiates the module in a
+fresh store, so the guest starts with clean state each time.
 
 ## Views
 

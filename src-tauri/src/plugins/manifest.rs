@@ -32,6 +32,9 @@ pub struct PluginManifest {
     pub version: String,
     pub api_version: u32,
     pub main: String,
+    /// Runtime that executes `main`: `node` (the default) or `wasm`.
+    #[serde(default)]
+    pub runtime: Option<String>,
     #[serde(default)]
     pub description: Option<String>,
     #[serde(default)]
@@ -81,6 +84,15 @@ impl PluginManifest {
             if permission != "log" {
                 return Err(AppError::validation("plugin.permission.unknown"));
             }
+        }
+        match self.runtime.as_deref() {
+            None | Some("node") => {}
+            Some("wasm") => {
+                if !self.main.to_ascii_lowercase().ends_with(".wasm") {
+                    return Err(AppError::validation("plugin.runtime.invalid"));
+                }
+            }
+            Some(_) => return Err(AppError::validation("plugin.runtime.invalid")),
         }
         entry_path(dir, &self.main)?;
         Ok(())
@@ -189,6 +201,30 @@ mod tests {
         let payload = r#"{"id":"Bad Id","name":"x","version":"1.0.0","apiVersion":1,"main":"index.js","permissions":["shell"]}"#;
         std::fs::write(dir.join(MANIFEST_FILE), payload).expect("manifest");
         assert!(load(&dir).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn validates_the_runtime_field() {
+        let dir = temp_dir("runtime");
+        std::fs::write(dir.join("plugin.wasm"), "").expect("wasm entry");
+        std::fs::write(dir.join("index.js"), "").expect("node entry");
+
+        let wasm = r#"{"id":"hello","name":"Hello","version":"0.1.0","apiVersion":1,"main":"plugin.wasm","runtime":"wasm"}"#;
+        std::fs::write(dir.join(MANIFEST_FILE), wasm).expect("manifest");
+        assert_eq!(
+            load(&dir).expect("wasm runtime").runtime.as_deref(),
+            Some("wasm")
+        );
+
+        let wrong_extension = r#"{"id":"hello","name":"Hello","version":"0.1.0","apiVersion":1,"main":"index.js","runtime":"wasm"}"#;
+        std::fs::write(dir.join(MANIFEST_FILE), wrong_extension).expect("manifest");
+        assert!(load(&dir).is_err());
+
+        let unknown = r#"{"id":"hello","name":"Hello","version":"0.1.0","apiVersion":1,"main":"index.js","runtime":"python"}"#;
+        std::fs::write(dir.join(MANIFEST_FILE), unknown).expect("manifest");
+        assert!(load(&dir).is_err());
+
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

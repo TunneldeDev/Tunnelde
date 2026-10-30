@@ -6,6 +6,10 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Plugins can ship as WebAssembly: the manifest selects the runtime, every call gets a fresh instance, and the module only sees one host function for logging.
+
 ## [0.15.0] - 2026-10-30
 
 ### Added

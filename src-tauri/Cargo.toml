@@ -41,6 +41,7 @@ rand = "0.10.3"
 base64 = "0.23.1"
 zip = { version = "5.0.1", default-features = false, features = ["deflate"] }
 sha2 = "0.10.9"
+wasmi = { version = "0.42.1", features = ["wat"] }
 
 [profile.release]
 codegen-units = 1

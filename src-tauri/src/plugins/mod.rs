@@ -4,6 +4,7 @@
 mod host;
 pub mod manifest;
 pub mod marketplace;
+pub mod wasm;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use tokio::sync::Mutex;
 use crate::error::{AppError, AppResult};
 use crate::plugins::host::PluginHost;
 use crate::plugins::manifest::{PluginCommand, PluginManifest, PluginView};
+use crate::plugins::wasm::WasmPlugin;
 
 pub const STATE_EVENT: &str = "plugin://state";
 const START_TIMEOUT: Duration = Duration::from_secs(8);
@@ -52,9 +54,41 @@ struct Instance {
     status: PluginStatus,
     error: Option<String>,
     host: Option<PluginHost>,
+    wasm: Option<WasmPlugin>,
 }
 
 impl Instance {
+    fn new(manifest: PluginManifest, dir: PathBuf) -> Self {
+        let mut instance = Self {
+            manifest,
+            dir,
+            status: PluginStatus::Stopped,
+            error: None,
+            host: None,
+            wasm: None,
+        };
+        if instance.is_wasm() {
+            match instance.load_wasm() {
+                Ok(wasm) => instance.wasm = Some(wasm),
+                Err(error) => {
+                    instance.status = PluginStatus::Failed;
+                    instance.error = Some(error.to_string());
+                }
+            }
+        }
+        instance
+    }
+
+    fn is_wasm(&self) -> bool {
+        self.manifest.runtime.as_deref() == Some("wasm")
+    }
+
+    fn load_wasm(&self) -> AppResult<WasmPlugin> {
+        let entry = manifest::entry_path(&self.dir, &self.manifest.main)?;
+        let bytes = std::fs::read(entry)?;
+        WasmPlugin::load(&bytes)
+    }
+
     fn info(&self) -> PluginInfo {
         PluginInfo {
             id: self.manifest.id.clone(),
@@ -88,16 +122,8 @@ impl PluginsManager {
                 }
                 match manifest::load(&path) {
                     Ok(manifest) => {
-                        plugins.insert(
-                            manifest.id.clone(),
-                            Instance {
-                                manifest,
-                                dir: path,
-                                status: PluginStatus::Stopped,
-                                error: None,
-                                host: None,
-                            },
-                        );
+                        let id = manifest.id.clone();
+                        plugins.insert(id, Instance::new(manifest, path));
                     }
                     Err(error) => {
                         tracing::warn!(%error, dir = %path.display(), "skipping plugin");
@@ -126,6 +152,30 @@ impl PluginsManager {
         let instance = plugins
             .get_mut(id)
             .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+
+        if instance.is_wasm() {
+            // The module is preloaded when the plugin is scanned, but a stop
+            // drops it, so reload on demand to keep start idempotent.
+            if instance.wasm.is_none() {
+                match instance.load_wasm() {
+                    Ok(wasm) => instance.wasm = Some(wasm),
+                    Err(error) => {
+                        instance.status = PluginStatus::Failed;
+                        instance.error = Some(error.to_string());
+                        let info = instance.info();
+                        drop(plugins);
+                        let _ = app.emit(STATE_EVENT, &info);
+                        return Ok(info);
+                    }
+                }
+            }
+            instance.status = PluginStatus::Running;
+            instance.error = None;
+            let info = instance.info();
+            drop(plugins);
+            let _ = app.emit(STATE_EVENT, &info);
+            return Ok(info);
+        }
 
         if instance.host.is_some() {
             return Ok(instance.info());
@@ -178,6 +228,7 @@ impl PluginsManager {
                 .await;
             host.kill();
         }
+        instance.wasm = None;
         instance.status = PluginStatus::Stopped;
         instance.error = None;
 
@@ -192,6 +243,9 @@ impl PluginsManager {
         let instance = plugins
             .get(id)
             .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        if instance.is_wasm() {
+            return wasm_call(instance, json!({ "method": "render", "view": view }));
+        }
         let host = instance
             .host
             .as_ref()
@@ -206,6 +260,9 @@ impl PluginsManager {
         let instance = plugins
             .get(id)
             .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        if instance.is_wasm() {
+            return wasm_call(instance, json!({ "method": "run", "command": command }));
+        }
         let host = instance
             .host
             .as_ref()
@@ -214,6 +271,20 @@ impl PluginsManager {
         host.request("command.run", json!({ "command": command }), CALL_TIMEOUT)
             .await
     }
+}
+
+/// Round-trips one request through a WASM plugin and parses its JSON answer.
+fn wasm_call(instance: &Instance, request: Value) -> AppResult<Value> {
+    let wasm = instance
+        .wasm
+        .as_ref()
+        .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
+    let payload = serde_json::to_string(&request)?;
+    let response = wasm
+        .call(&payload)
+        .map_err(|error| AppError::validation(format!("plugin.wasm.call: {error}")))?;
+    serde_json::from_str(&response)
+        .map_err(|error| AppError::validation(format!("plugin.wasm.call: {error}")))
 }
 fn copy_dir(source: &Path, target: &Path) -> AppResult<()> {
     std::fs::create_dir_all(target)?;
@@ -339,13 +410,7 @@ impl PluginsManager {
             }
         };
 
-        let instance = Instance {
-            manifest: copied,
-            dir: target,
-            status: PluginStatus::Stopped,
-            error: None,
-            host: None,
-        };
+        let instance = Instance::new(copied, target);
         let info = instance.info();
         self.plugins.lock().await.insert(info.id.clone(), instance);
         Ok(info)
@@ -490,6 +555,53 @@ mod tests {
         let list = manager.reload().await;
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "Demo");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    const WASM_STUB: &str = r#"
+        (module
+            (memory (export "memory") 5)
+            (func (export "tunnelde_call") (param i32 i32 i32 i32) (result i32)
+                (i32.const 0)))
+    "#;
+
+    fn write_wasm_plugin(dir: &Path, id: &str, module: &[u8]) {
+        std::fs::create_dir_all(dir).expect("plugin dir");
+        std::fs::write(dir.join("plugin.wasm"), module).expect("module");
+        let manifest = format!(
+            r#"{{"id":"{id}","name":"{id}","version":"0.1.0","apiVersion":1,"main":"plugin.wasm","runtime":"wasm"}}"#
+        );
+        std::fs::write(dir.join(manifest::MANIFEST_FILE), manifest).expect("manifest");
+    }
+
+    #[tokio::test]
+    async fn loads_wasm_plugins_and_records_compile_errors() {
+        let root = temp_root("wasm-load");
+        write_wasm_plugin(&root.join("echo"), "echo", WASM_STUB.as_bytes());
+        write_wasm_plugin(&root.join("broken"), "broken", b"not wasm");
+
+        let manager = PluginsManager::load(root.clone());
+        let list = manager.list().await;
+        assert_eq!(list.len(), 2);
+
+        let echo = list
+            .iter()
+            .find(|plugin| plugin.id == "echo")
+            .expect("echo");
+        assert_eq!(echo.status, PluginStatus::Stopped);
+        assert!(echo.error.is_none());
+
+        let broken = list
+            .iter()
+            .find(|plugin| plugin.id == "broken")
+            .expect("broken");
+        assert_eq!(broken.status, PluginStatus::Failed);
+        assert!(broken
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("plugin.wasm.invalid"));
+
         let _ = std::fs::remove_dir_all(&root);
     }
 }
