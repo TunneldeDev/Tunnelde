@@ -6,12 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Releases publish `latest.json` once after every platform finishes, so parallel builds no longer fail with a missing-asset error.
+
 ## [0.8.0] - 2026-10-30
 
 ### Added
 
 - Cut, copy and paste for files from the context menu or with Ctrl+X, Ctrl+C and Ctrl+V: cut moves, copy duplicates, and pasting across panes uploads or downloads. Folders are not pasted yet.
-
 
 ## [0.7.1] - 2026-10-30
 

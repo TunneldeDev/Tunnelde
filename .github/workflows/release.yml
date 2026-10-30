@@ -161,6 +161,43 @@ jobs:
           releaseBody: ${{ needs.prepare.outputs.body }}
           releaseDraft: false
           prerelease: false
-          includeUpdaterJson: true
-          updaterJsonPreferNsis: true
+          includeUpdaterJson: false
           args: ${{ matrix.args }}
+
+  updater:
+    name: Publish updater manifest
+    needs: [prepare, build]
+    if: needs.prepare.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Download signatures
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release download "${TAG}" --pattern "*.sig" --dir sigs --repo "${GITHUB_REPOSITORY}"
+
+      - name: Build latest.json
+        env:
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          node scripts/release/updater-json.mjs \
+            --tag "${TAG}" \
+            --sig-dir sigs \
+            --repo "${GITHUB_REPOSITORY}" \
+            --out latest.json
+
+      - name: Upload manifest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "${TAG}" latest.json --clobber --repo "${GITHUB_REPOSITORY}"
