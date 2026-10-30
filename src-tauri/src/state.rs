@@ -64,16 +64,23 @@ impl AppState {
 }
 
 pub fn init(app: &AppHandle) -> AppResult<()> {
-    let data_dir = app
-        .path()
-        .app_data_dir()
-        .map_err(|error| AppError::internal(error.to_string()))?;
+    let override_dir = std::env::var_os("TUNNELDE_DATA_DIR").map(PathBuf::from);
+    let data_dir = match &override_dir {
+        Some(path) => path.clone(),
+        None => app
+            .path()
+            .app_data_dir()
+            .map_err(|error| AppError::internal(error.to_string()))?,
+    };
     std::fs::create_dir_all(&data_dir)?;
 
-    let log_dir = app
-        .path()
-        .app_log_dir()
-        .map_err(|error| AppError::internal(error.to_string()))?;
+    let log_dir = match &override_dir {
+        Some(path) => path.join("logs"),
+        None => app
+            .path()
+            .app_log_dir()
+            .map_err(|error| AppError::internal(error.to_string()))?,
+    };
     let guard = crate::logging::init(&log_dir)?;
 
     let db_path = data_dir.join("tunnelde.db");
