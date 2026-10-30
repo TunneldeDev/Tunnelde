@@ -6,13 +6,20 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings → Advanced lists the trusted host keys and can forget them.
+
+### Fixed
+
+- Deleting a host also removes its stored password from the OS credential store.
+
 ## [0.5.1] - 2026-10-30
 
 ### Added
 
 - Command history for every host, captured from the terminal, searchable and re-runnable from the History tab.
 - Release automation: scripts bump every manifest, cut the changelog section and are wired into the Release workflow.
-
 
 ## [0.5.0] - 2026-10-30
 

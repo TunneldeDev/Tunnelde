@@ -117,6 +117,11 @@
     "resetConfirm": "将所有设置恢复为默认值？",
     "dataDir": "数据目录",
     "logDir": "日志",
+    "knownHosts": "已信任主机",
+    "knownHostsEmpty": "暂无已信任主机",
+    "knownHostsForget": "移除",
+    "knownHostsForgetTitle": "移除主机密钥",
+    "knownHostsForgetBody": "移除 {{host}}:{{port}} 的已保存密钥？下次连接会重新确认。",
     "openLogs": "打开日志",
     "version": "版本"
   },

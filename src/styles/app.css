@@ -2326,3 +2326,70 @@
 .history-row:focus-within .history-row__actions {
   opacity: 1;
 }
+
+/* ---------- trusted hosts ---------- */
+
+.settings-subsection {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--td-border);
+}
+
+.settings-subtitle {
+  margin: 0 0 8px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--td-faint);
+}
+
+.settings-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--td-faint);
+}
+
+.known-hosts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 720px;
+}
+
+.known-host {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px 90px 24px;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 4px;
+  border-radius: var(--td-radius-sm);
+  font-size: 11.5px;
+}
+
+.known-host:hover {
+  background: var(--td-hover);
+}
+
+.known-host__address {
+  font-family: var(--td-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.known-host__algorithm {
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-faint);
+}
+
+.known-host__fingerprint {
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

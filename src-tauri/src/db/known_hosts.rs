@@ -44,11 +44,70 @@ pub fn upsert(
     Ok(())
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownHostEntry {
+    pub host: String,
+    pub port: i64,
+    pub algorithm: String,
+    pub fingerprint: String,
+    pub updated_at: i64,
+}
+
+pub fn list(conn: &Connection) -> AppResult<Vec<KnownHostEntry>> {
+    let mut statement = conn.prepare(
+        "SELECT host, port, algorithm, fingerprint, updated_at
+         FROM known_hosts
+         ORDER BY updated_at DESC",
+    )?;
+    let rows = statement.query_map([], |row| {
+        Ok(KnownHostEntry {
+            host: row.get(0)?,
+            port: row.get(1)?,
+            algorithm: row.get(2)?,
+            fingerprint: row.get(3)?,
+            updated_at: row.get(4)?,
+        })
+    })?;
+
+    let mut entries = Vec::new();
+    for row in rows {
+        entries.push(row?);
+    }
+    Ok(entries)
+}
+
+pub fn forget(conn: &Connection, host: &str, port: i64) -> AppResult<bool> {
+    let removed = conn.execute(
+        "DELETE FROM known_hosts WHERE host = ?1 AND port = ?2",
+        params![host, port],
+    )?;
+    Ok(removed > 0)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::db::Database;
 
+    #[test]
+    fn lists_and_forgets_trusted_hosts() {
+        let db = Database::in_memory().expect("database");
+        db.with(|conn| {
+            upsert(conn, "one.example", 22, "ssh-ed25519", "SHA256:one")?;
+            upsert(conn, "two.example", 2222, "ssh-rsa", "SHA256:two")?;
+
+            let entries = list(conn)?;
+            assert_eq!(entries.len(), 2);
+
+            assert!(forget(conn, "one.example", 22)?);
+            assert!(!forget(conn, "one.example", 22)?);
+            let remaining = list(conn)?;
+            assert_eq!(remaining.len(), 1);
+            assert_eq!(remaining[0].host, "two.example");
+            Ok(())
+        })
+        .expect("known hosts list");
+    }
     #[test]
     fn stores_and_replaces_fingerprints() {
         let db = Database::in_memory().expect("database");

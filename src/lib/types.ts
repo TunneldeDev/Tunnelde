@@ -293,3 +293,10 @@ export interface HistoryEntry {
   command: string;
   executedAt: number;
 }
+export interface KnownHostEntry {
+  host: string;
+  port: number;
+  algorithm: string;
+  fingerprint: string;
+  updatedAt: number;
+}

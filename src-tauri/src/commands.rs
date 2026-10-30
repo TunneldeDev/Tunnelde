@@ -148,7 +148,10 @@ pub fn host_update(state: State<'_, AppState>, id: String, input: HostInput) -> 
 
 #[tauri::command]
 pub fn host_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    state.db.with(|conn| db::hosts::delete_host(conn, &id))
+    let host = state.db.with(|conn| db::hosts::find_host(conn, &id))?;
+    state.db.with(|conn| db::hosts::delete_host(conn, &id))?;
+    let _ = crate::vault::forget(&host.id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -555,6 +558,20 @@ pub fn history_delete(state: State<'_, AppState>, id: i64) -> AppResult<()> {
 #[tauri::command]
 pub fn history_clear(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
     state.db.with(|conn| db::history::clear(conn, &host_id))
+}
+
+#[tauri::command]
+pub fn known_hosts_list(
+    state: State<'_, AppState>,
+) -> AppResult<Vec<db::known_hosts::KnownHostEntry>> {
+    state.db.with(db::known_hosts::list)
+}
+
+#[tauri::command]
+pub fn known_hosts_forget(state: State<'_, AppState>, host: String, port: i64) -> AppResult<bool> {
+    state
+        .db
+        .with(|conn| db::known_hosts::forget(conn, &host, port))
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

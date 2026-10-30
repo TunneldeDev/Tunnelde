@@ -117,6 +117,11 @@
     "resetConfirm": "Reset every setting to its default?",
     "dataDir": "Data folder",
     "logDir": "Logs",
+    "knownHosts": "Trusted hosts",
+    "knownHostsEmpty": "No trusted hosts",
+    "knownHostsForget": "Forget",
+    "knownHostsForgetTitle": "Forget host key",
+    "knownHostsForgetBody": "Remove the saved key for {{host}}:{{port}}? The next connection will ask again.",
     "openLogs": "Open logs",
     "version": "Version"
   },

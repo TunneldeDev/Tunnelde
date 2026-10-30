@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Select, Switch, Textarea } from "@/components/ui/Field";
 import { Segmented, Stepper, SwatchPicker } from "@/components/ui/Segmented";
 import { PluginsSection } from "@/features/plugins/PluginsSection";
+import { KnownHostsList } from "@/features/settings/KnownHostsList";
 import { validateUserCss } from "@/lib/appearance";
 import { translateError } from "@/lib/errors";
 import { api, isTauri } from "@/lib/ipc";
@@ -346,6 +347,10 @@ function AdvancedSection() {
           }
         />
       )}
+      <div className="settings-subsection">
+        <h3 className="settings-subtitle">{t("settings.knownHosts")}</h3>
+        <KnownHostsList />
+      </div>
       <div className="settings-actions">
         <Button
           variant="ghost"

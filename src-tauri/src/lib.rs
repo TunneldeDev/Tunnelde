@@ -105,6 +105,8 @@ pub fn run() {
             commands::history_list,
             commands::history_delete,
             commands::history_clear,
+            commands::known_hosts_list,
+            commands::known_hosts_forget,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");
