@@ -275,6 +275,16 @@
     "running": "Running",
     "stopped": "Stopped",
     "failed": "Failed"
+  },  "history": {
+    "title": "History",
+    "search": "Search history",
+    "empty": "No commands yet",
+    "count": "{{count}} commands",
+    "insert": "Insert",
+    "delete": "Delete",
+    "clear": "Clear",
+    "clearTitle": "Clear history",
+    "clearBody": "Remove all commands recorded for “{{name}}”?"
   },  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",

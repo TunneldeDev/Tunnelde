@@ -20,8 +20,8 @@ use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 8] = [
-    "welcome", "host", "settings", "about", "updates", "terminal", "sftp", "editor",
+const TAB_KINDS: [&str; 9] = [
+    "welcome", "host", "settings", "about", "updates", "terminal", "sftp", "editor", "history",
 ];
 const MAX_TABS: usize = 40;
 const MAX_USER_CSS: usize = 200_000;
@@ -522,6 +522,39 @@ pub fn plugin_open_dir(app: AppHandle) -> AppResult<()> {
             None::<&str>,
         )
         .map_err(|error| AppError::Internal(error.to_string()))
+}
+
+#[tauri::command]
+pub fn history_record(
+    state: State<'_, AppState>,
+    host_id: String,
+    command: String,
+) -> AppResult<Option<db::history::HistoryEntry>> {
+    state.db.with(|conn| {
+        db::hosts::find_host(conn, &host_id)?;
+        db::history::record(conn, &host_id, &command)
+    })
+}
+
+#[tauri::command]
+pub fn history_list(
+    state: State<'_, AppState>,
+    host_id: String,
+    limit: Option<i64>,
+) -> AppResult<Vec<db::history::HistoryEntry>> {
+    state
+        .db
+        .with(|conn| db::history::list(conn, &host_id, limit.unwrap_or(200)))
+}
+
+#[tauri::command]
+pub fn history_delete(state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    state.db.with(|conn| db::history::delete(conn, id))
+}
+
+#[tauri::command]
+pub fn history_clear(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
+    state.db.with(|conn| db::history::clear(conn, &host_id))
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

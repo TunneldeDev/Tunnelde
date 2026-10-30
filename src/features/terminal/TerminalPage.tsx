@@ -4,7 +4,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { FolderTree, X } from "lucide-react";
+import { Clock, FolderTree, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -12,6 +12,7 @@ import { IconButton } from "@/components/ui/Button";
 import { StatusDot } from "@/components/ui/Misc";
 import { resolveTheme } from "@/lib/appearance";
 import { decodeBase64, encodeBase64 } from "@/lib/base64";
+import { consumeInput, type CommandCapture } from "@/lib/terminalInput";
 import { api, events, isTauri } from "@/lib/ipc";
 import { TERMINAL_FONT, terminalTheme } from "@/features/terminal/terminalTheme";
 import { useSettings } from "@/store/settings";
@@ -28,6 +29,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const disconnect = useSsh((state) => state.disconnect);
   const openSftp = useWorkspace((state) => state.openSftp);
+  const openHistory = useWorkspace((state) => state.openHistory);
   const theme = useSettings((state) => state.settings.theme);
   const fontSize = useSettings((state) => state.settings.monoFontSize);
   const resolvedTheme = resolveTheme(theme);
@@ -36,6 +38,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [closed, setClosed] = useState(false);
+  const capture = useRef<CommandCapture>({ text: "", escape: 0 });
 
   const fit = useCallback(() => {
     const terminal = terminalRef.current;
@@ -83,6 +86,18 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         return;
       }
       void api.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
+
+      const result = consumeInput(capture.current, data);
+      capture.current = result.state;
+      for (const command of result.commands) {
+        if (command.startsWith(" ")) {
+          continue;
+        }
+        const hostId = useSsh.getState().sessions.find((item) => item.id === sessionId)?.hostId;
+        if (hostId) {
+          void api.historyRecord(hostId, command).catch(() => undefined);
+        }
+      }
     });
 
     if (isTauri()) {
@@ -157,6 +172,16 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <span className="terminal-head__title">{session?.title ?? t("nav.host")}</span>
           {session ? <span className="terminal-head__meta">{session.address}</span> : null}
         </div>
+        <IconButton
+          label={t("history.title")}
+          onClick={() => {
+            if (session) {
+              openHistory(session);
+            }
+          }}
+        >
+          <Clock size={15} />
+        </IconButton>
         <IconButton
           label={t("sftp.title")}
           onClick={() => {

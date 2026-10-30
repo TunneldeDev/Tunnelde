@@ -73,4 +73,13 @@ CREATE TABLE known_hosts (
     PRIMARY KEY (host, port)
 );
 "#,
+    r#"
+CREATE TABLE command_history (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    host_id      TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    command      TEXT NOT NULL,
+    executed_at  INTEGER NOT NULL
+);
+CREATE INDEX idx_history_host ON command_history(host_id, executed_at DESC);
+"#,
 ];

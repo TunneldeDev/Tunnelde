@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/ui/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
 import { EditorPage } from "@/features/editor/EditorPage";
+import { HistoryPage } from "@/features/history/HistoryPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -32,6 +33,8 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
       return <SftpPage sessionId={tab.id.replace("sftp:", "")} />;
     case "editor":
       return <EditorPage tabId={tab.id} active={active} />;
+    case "history":
+      return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
     default:
       return null;
   }

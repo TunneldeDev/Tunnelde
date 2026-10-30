@@ -34,6 +34,7 @@ interface WorkspaceStore {
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
   openEditor: (session: SshSession, path: string) => void;
+  openHistory: (session: SshSession) => void;
   closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
@@ -148,10 +149,28 @@ export const useWorkspace = create<WorkspaceStore>((set) => ({
     }
   },
 
+  openHistory: (session) => {
+    const id = `history:${session.id}`;
+    set((state) => {
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeId: id };
+      }
+      const tab: WorkspaceTab = {
+        id,
+        kind: "history",
+        title: session.title,
+        hostId: session.hostId,
+        pinned: false,
+      };
+      return { tabs: [...state.tabs, tab], activeId: id };
+    });
+  },
+
   closeSession: (sessionId) => {
     const matches = (id: string) =>
       id === `terminal:${sessionId}` ||
       id === `sftp:${sessionId}` ||
+      id === `history:${sessionId}` ||
       id.startsWith(`editor:${sessionId}:`);
 
     set((state) => {

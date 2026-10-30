@@ -10,6 +10,7 @@ import type {
   Host,
   HostInput,
   HostKeyInfo,
+  HistoryEntry,
   HostsSnapshot,
   Listing,
   RemoteProcess,
@@ -71,6 +72,13 @@ export const api = {
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
+
+  historyRecord: (hostId: string, command: string) =>
+    invoke<HistoryEntry | null>("history_record", { hostId, command }),
+  historyList: (hostId: string, limit?: number) =>
+    invoke<HistoryEntry[]>("history_list", { hostId, limit: limit ?? null }),
+  historyDelete: (id: number) => invoke<void>("history_delete", { id }),
+  historyClear: (hostId: string) => invoke<void>("history_clear", { hostId }),
 
   pluginsList: () => invoke<PluginInfo[]>("plugins_list"),
   pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),

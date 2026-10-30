@@ -100,7 +100,8 @@ export type TabKind =
   | "updates"
   | "terminal"
   | "sftp"
-  | "editor";
+  | "editor"
+  | "history";
 
 export interface TabRecord {
   id: string;
@@ -285,4 +286,10 @@ export interface PluginInfo {
   status: PluginStatus;
   error: string | null;
   path: string;
+}
+export interface HistoryEntry {
+  id: number;
+  hostId: string;
+  command: string;
+  executedAt: number;
 }

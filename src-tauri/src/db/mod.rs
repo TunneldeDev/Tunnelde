@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
+pub mod history;
 pub mod hosts;
 pub mod known_hosts;
 pub mod migrations;

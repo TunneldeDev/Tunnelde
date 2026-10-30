@@ -7,6 +7,7 @@ import {
   Download,
   FileText,
   FolderTree,
+  History,
   Info,
   Pin,
   Server,
@@ -33,6 +34,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   terminal: Terminal,
   sftp: FolderTree,
   editor: FileText,
+  history: History,
 };
 
 const NAV_KEYS = {
@@ -126,7 +128,8 @@ export function TopBar() {
                 {tab.kind === "host" ||
                 tab.kind === "terminal" ||
                 tab.kind === "sftp" ||
-                tab.kind === "editor"
+                tab.kind === "editor" ||
+                tab.kind === "history"
                   ? tab.title
                   : t(NAV_KEYS[tab.kind])}
               </span>
