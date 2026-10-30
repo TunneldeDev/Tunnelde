@@ -2,6 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
 import { cn } from "@/lib/text/format";
@@ -14,6 +15,7 @@ const ICONS = {
 } as const;
 
 export function ToastHost() {
+  const { t } = useTranslation();
   const items = useToasts((state) => state.items);
   const dismiss = useToasts((state) => state.dismiss);
 
@@ -29,7 +31,7 @@ export function ToastHost() {
           <div key={toast.id} className={cn("td-toast", `td-toast--${toast.variant}`)}>
             <Icon size={14} className="td-toast__icon" />
             <span className="td-toast__text">{toast.message}</span>
-            <IconButton label="dismiss" size="sm" onClick={() => dismiss(toast.id)}>
+            <IconButton label={t("common.close")} size="sm" onClick={() => dismiss(toast.id)}>
               <X size={12} />
             </IconButton>
           </div>

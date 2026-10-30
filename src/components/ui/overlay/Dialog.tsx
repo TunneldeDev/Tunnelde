@@ -2,7 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { X } from "lucide-react";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 import { IconButton } from "@/components/ui/form/Button";
@@ -19,6 +19,15 @@ interface DialogProps {
   className?: string;
 }
 
+const FOCUSABLE = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
 export function Dialog({
   open,
   title,
@@ -29,6 +38,20 @@ export function Dialog({
   width = 420,
   className,
 }: DialogProps) {
+  const panel = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const previous = document.activeElement as HTMLElement | null;
+    const timer = window.setTimeout(() => panel.current?.focus(), 0);
+    return () => {
+      window.clearTimeout(timer);
+      previous?.focus?.();
+    };
+  }, [open]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -37,6 +60,23 @@ export function Dialog({
       if (event.key === "Escape") {
         event.stopPropagation();
         onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !panel.current) {
+        return;
+      }
+      const nodes = panel.current.querySelectorAll<HTMLElement>(FOCUSABLE);
+      const first = nodes.item(0);
+      const last = nodes.item(nodes.length - 1);
+      if (!first || !last) {
+        return;
+      }
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -57,6 +97,8 @@ export function Dialog({
       }}
     >
       <section
+        ref={panel}
+        tabIndex={-1}
         className={cn("td-dialog", className)}
         role="dialog"
         aria-modal="true"
