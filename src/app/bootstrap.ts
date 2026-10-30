@@ -9,6 +9,7 @@ import type { TabRecord } from "@/lib/types";
 import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
+import { useMonitor } from "@/store/monitor";
 import { useTransfers } from "@/store/transfers";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
@@ -101,6 +102,7 @@ async function wireEvents(): Promise<void> {
 
   await events.onSshClosed((payload) => {
     useSsh.getState().forget(payload.sessionId);
+    useMonitor.getState().forget(payload.sessionId);
     useWorkspace.getState().closeSession(payload.sessionId);
     toast(i18n.t("ssh.sessionEnded"), "info");
   });

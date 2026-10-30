@@ -12,6 +12,7 @@ import type {
   HostKeyInfo,
   HostsSnapshot,
   Listing,
+  RemoteStats,
   Settings,
   SshConnectRequest,
   SshDataPayload,
@@ -67,6 +68,8 @@ export const api = {
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
+
+  remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
 
   sftpList: (sessionId: string, path?: string | null) =>
     invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),

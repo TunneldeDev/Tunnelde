@@ -4,6 +4,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
+import { RemotePanel } from "@/components/layout/RemotePanel";
 import { Resizer } from "@/components/layout/Resizer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { SystemPanel } from "@/components/layout/SystemPanel";
@@ -13,12 +14,16 @@ import { ToastHost } from "@/components/ui/Toast";
 import { DialogHost } from "@/features/dialogs/DialogHost";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
+import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 
 export function AppShell() {
   const settings = useSettings((state) => state.settings);
   const updateSettings = useSettings((state) => state.update);
   const openPage = useWorkspace((state) => state.openPage);
+  const tabs = useWorkspace((state) => state.tabs);
+  const activeId = useWorkspace((state) => state.activeId);
+  const sessions = useSsh((state) => state.sessions);
   const openHostDialog = useDialogs((state) => state.openHost);
 
   const [sidebarDraft, setSidebarDraft] = useState<number | null>(null);
@@ -79,6 +84,14 @@ export function AppShell() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [openHostDialog, openPage]);
 
+  const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
+  const activeSession =
+    activeTab && (activeTab.kind === "terminal" || activeTab.kind === "sftp")
+      ? (sessions.find((session) => activeTab.id.endsWith(session.id)) ?? null)
+      : activeTab?.kind === "host" && activeTab.hostId
+        ? (sessions.find((session) => session.hostId === activeTab.hostId) ?? null)
+        : null;
+
   const style = {
     "--td-sidebar-w": `${sidebarWidth}px`,
     "--td-panel-w": `${panelWidth}px`,
@@ -118,10 +131,18 @@ export function AppShell() {
                 void updateSettings({ rightPanelWidth: value });
               }}
             />
-            <SystemPanel
-              width={panelWidth}
-              onHide={() => void updateSettings({ rightPanel: false })}
-            />
+            {activeSession ? (
+              <RemotePanel
+                sessionId={activeSession.id}
+                width={panelWidth}
+                onHide={() => void updateSettings({ rightPanel: false })}
+              />
+            ) : (
+              <SystemPanel
+                width={panelWidth}
+                onHide={() => void updateSettings({ rightPanel: false })}
+              />
+            )}
           </>
         ) : null}
       </div>

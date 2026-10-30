@@ -270,6 +270,12 @@
     "appMemory": "App memory",
     "processCount": "{{count}} processes",
     "hide": "Hide panel",
+    "remote": "Remote",
+    "network": "Network",
+    "load": "Load",
+    "topProcesses": "Top processes",
+    "waiting": "Waiting for data",
+    "cores": "{{count}} cores",
     "show": "Show panel"
   },
   "welcome": {

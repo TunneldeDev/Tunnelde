@@ -438,6 +438,7 @@ pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<Se
         );
         if let Some(state) = task_app.try_state::<AppState>() {
             state.ssh.remove(&task_session);
+            state.monitor.forget(&task_session);
         }
     });
 

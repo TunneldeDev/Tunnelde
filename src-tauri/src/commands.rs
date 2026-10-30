@@ -10,6 +10,7 @@ use tauri_plugin_opener::OpenerExt;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput, TabRecord};
+use crate::monitor;
 use crate::settings::{Settings, ACCENTS, DENSITIES, LANGUAGES, THEMES};
 use crate::sftp::{self, Listing};
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
@@ -448,6 +449,11 @@ pub fn sftp_upload(
 #[tauri::command]
 pub fn transfer_cancel(state: State<'_, AppState>, transfer_id: String) {
     state.transfers.cancel(&transfer_id);
+}
+
+#[tauri::command]
+pub async fn remote_stats(app: AppHandle, session_id: String) -> AppResult<monitor::RemoteStats> {
+    monitor::sample(&app, &session_id).await
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

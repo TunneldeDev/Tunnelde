@@ -231,3 +231,26 @@ export interface TransferEvent {
   status: TransferStatus;
   error: string | null;
 }
+export interface RemoteProcess {
+  pid: number;
+  name: string;
+  cpu: number;
+  memory: number;
+}
+
+export interface RemoteStats {
+  cpuPercent: number;
+  cpuCount: number;
+  memoryUsed: number;
+  memoryTotal: number;
+  swapUsed: number;
+  swapTotal: number;
+  diskUsed: number;
+  diskTotal: number;
+  load: [number, number, number];
+  uptime: number;
+  netRxRate: number;
+  netTxRate: number;
+  processes: RemoteProcess[];
+  sampledAt: number;
+}

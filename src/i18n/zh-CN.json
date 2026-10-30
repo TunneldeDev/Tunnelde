@@ -270,6 +270,12 @@
     "appMemory": "应用内存",
     "processCount": "{{count}} 个进程",
     "hide": "隐藏面板",
+    "remote": "远端",
+    "network": "网络",
+    "load": "负载",
+    "topProcesses": "高占用进程",
+    "waiting": "等待数据",
+    "cores": "{{count}} 核",
     "show": "显示面板"
   },
   "welcome": {

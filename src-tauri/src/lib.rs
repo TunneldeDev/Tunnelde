@@ -6,6 +6,7 @@ mod db;
 mod error;
 mod logging;
 mod models;
+mod monitor;
 mod settings;
 mod sftp;
 mod ssh;
@@ -89,6 +90,7 @@ pub fn run() {
             commands::local_delete,
             commands::local_home,
             commands::transfer_cancel,
+            commands::remote_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");

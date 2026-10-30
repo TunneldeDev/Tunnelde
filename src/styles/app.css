@@ -1948,3 +1948,60 @@
 .sftp-transfers {
   flex: 0 0 auto;
 }
+
+/* ---------- remote panel ---------- */
+
+.panel__subject {
+  margin-left: 8px;
+  font-size: 10.5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--td-muted);
+}
+
+.panel__error {
+  padding: 6px 8px;
+  border-radius: var(--td-radius-sm);
+  background: rgba(255, 93, 108, 0.08);
+  color: var(--td-red);
+  font-size: 11px;
+}
+
+.sparkline {
+  display: block;
+  width: 100%;
+  height: 28px;
+  margin-top: 6px;
+  color: var(--td-accent);
+}
+
+.proc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.proc-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  font-size: 11px;
+}
+
+.proc-row__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--td-muted);
+  font-family: var(--td-mono);
+}
+
+.proc-row__cpu {
+  text-align: right;
+  font-family: var(--td-mono);
+  font-size: 10.5px;
+  color: var(--td-faint);
+}
