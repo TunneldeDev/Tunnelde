@@ -261,11 +261,11 @@ async fn authenticate(
                 .map_err(map_ssh_error)?
         }
         _ => {
-            let password = request
-                .password
-                .clone()
-                .filter(|value| !value.is_empty())
-                .ok_or_else(|| AppError::Ssh("ssh.passwordRequired".into()))?;
+            let password = match request.password.clone().filter(|value| !value.is_empty()) {
+                Some(password) => password,
+                None => crate::vault::load(&host.id)?
+                    .ok_or_else(|| AppError::Ssh("ssh.passwordRequired".into()))?,
+            };
             handle
                 .authenticate_password(host.username.clone(), password)
                 .await

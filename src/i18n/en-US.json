@@ -196,7 +196,11 @@
     "trustHint": "Trust the key to continue. Compare the fingerprint when possible.",
     "unknownHint": "This host has not been trusted yet.",
     "changedHint": "The key differs from the trusted one. Only replace it if you know why.",
-    "connect": "Connect"
+    "connect": "Connect",
+    "remember": "Remember password",
+    "saved": "Saved",
+    "savedHint": "Loaded from the system keychain",
+    "forget": "Forget"
   },
   "terminal": {
     "connect": "Connect",

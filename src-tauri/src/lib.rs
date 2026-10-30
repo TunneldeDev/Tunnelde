@@ -12,6 +12,7 @@ mod state;
 mod system;
 mod tray;
 mod update;
+mod vault;
 mod window;
 
 pub fn run() {
@@ -72,6 +73,9 @@ pub fn run() {
             commands::ssh_resize,
             commands::ssh_disconnect,
             commands::ssh_sessions,
+            commands::credential_save,
+            commands::credential_forget,
+            commands::credential_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");

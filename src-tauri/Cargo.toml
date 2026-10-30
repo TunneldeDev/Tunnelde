@@ -35,6 +35,7 @@ chrono = { version = "0.4.45", features = ["serde"] }
 # Pinned: 0.39+ requires a newer rustc than the supported toolchain.
 sysinfo = "=0.38.4"
 russh = { version = "0.65.0", default-features = false, features = ["ring", "rsa", "flate2"] }
+keyring = "4.2.0"
 base64 = "0.23.1"
 
 [profile.release]

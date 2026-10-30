@@ -66,6 +66,11 @@ export const api = {
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
+  credentialSave: (hostId: string, password: string) =>
+    invoke<void>("credential_save", { hostId, password }),
+  credentialForget: (hostId: string) => invoke<void>("credential_forget", { hostId }),
+  credentialStatus: (hostId: string) => invoke<boolean>("credential_status", { hostId }),
+
   importCss: () => invoke<string | null>("user_css_import"),
   exportCss: (css: string) => invoke<string | null>("user_css_export", { css }),
 };

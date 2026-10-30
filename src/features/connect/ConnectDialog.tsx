@@ -7,12 +7,13 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
-import { Field, Input } from "@/components/ui/Field";
+import { Field, Input, Switch } from "@/components/ui/Field";
 import { cn } from "@/lib/format";
 import { translateError } from "@/lib/errors";
 import { api } from "@/lib/ipc";
 import type { Host, HostKeyInfo } from "@/lib/types";
 import { useSsh } from "@/store/ssh";
+import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 
 const STATUS_KEYS = {
@@ -36,6 +37,8 @@ export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
   const [probing, setProbing] = useState(true);
   const [password, setPassword] = useState("");
   const [passphrase, setPassphrase] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,8 +68,23 @@ export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
     };
   }, [host.id]);
 
+  useEffect(() => {
+    let alive = true;
+    api
+      .credentialStatus(host.id)
+      .then((value) => {
+        if (alive) {
+          setSaved(value);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [host.id]);
+
   const interactive = host.authMethod !== "key";
-  const canConnect = trusted && !busy && (!interactive || password.length > 0);
+  const canConnect = trusted && !busy && (!interactive || password.length > 0 || saved);
 
   const trust = async () => {
     setBusy(true);
@@ -90,15 +108,33 @@ export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
     setError(null);
     const session = await connect({
       hostId: host.id,
-      password: interactive ? password : null,
+      password: interactive ? password || null : null,
       passphrase: interactive ? null : passphrase || null,
       cols: 120,
       rows: 32,
     });
     setBusy(false);
-    if (session) {
-      openTerminal(session);
-      onClose();
+    if (!session) {
+      return;
+    }
+    if (interactive && remember && password.length > 0) {
+      try {
+        await api.credentialSave(host.id, password);
+      } catch (cause) {
+        toast(translateError(cause), "error");
+      }
+    }
+    openTerminal(session);
+    onClose();
+  };
+
+  const forget = async () => {
+    try {
+      await api.credentialForget(host.id);
+      setSaved(false);
+      setPassword("");
+    } catch (cause) {
+      toast(translateError(cause), "error");
     }
   };
 
@@ -125,7 +161,10 @@ export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
     >
       <div className="connect">
         <div className="connect__target">
-          <code>{host.username ? `${host.username}@` : ""}{host.host}:{host.port}</code>
+          <code>
+            {host.username ? `${host.username}@` : ""}
+            {host.host}:{host.port}
+          </code>
         </div>
 
         <div className={cn("key-box", status === "changed" && "is-danger")}>
@@ -157,24 +196,48 @@ export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
         </div>
 
         {interactive ? (
-          <Field label={t("connect.password")} htmlFor="connect-password">
-            <Input
-              id="connect-password"
-              type="password"
-              autoFocus
-              autoComplete="off"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void submit();
-                }
-              }}
-            />
-          </Field>
+          <>
+            <Field
+              label={t("connect.password")}
+              hint={saved && password.length === 0 ? t("connect.savedHint") : undefined}
+              htmlFor="connect-password"
+            >
+              <Input
+                id="connect-password"
+                type="password"
+                autoFocus
+                autoComplete="off"
+                placeholder={saved ? "••••••••" : undefined}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void submit();
+                  }
+                }}
+              />
+            </Field>
+            <div className="connect__remember">
+              <Switch
+                label={t("connect.remember")}
+                checked={remember}
+                onChange={setRemember}
+              />
+              <span className="connect__remember-label">{t("connect.remember")}</span>
+              {saved ? (
+                <Button variant="ghost" size="sm" onClick={() => void forget()}>
+                  {t("connect.forget")}
+                </Button>
+              ) : null}
+            </div>
+          </>
         ) : (
-          <Field label={t("connect.passphrase")} hint={t("connect.optional")} htmlFor="connect-passphrase">
+          <Field
+            label={t("connect.passphrase")}
+            hint={t("connect.optional")}
+            htmlFor="connect-passphrase"
+          >
             <Input
               id="connect-passphrase"
               type="password"

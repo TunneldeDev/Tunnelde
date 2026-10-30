@@ -196,7 +196,11 @@
     "trustHint": "信任该密钥后才能连接；条件允许时请核对指纹。",
     "unknownHint": "该主机尚未被信任。",
     "changedHint": "密钥与已信任的不一致，确认原因后再替换。",
-    "connect": "连接"
+    "connect": "连接",
+    "remember": "记住密码",
+    "saved": "已保存",
+    "savedHint": "已从系统钥匙串读取",
+    "forget": "忘记"
   },
   "terminal": {
     "connect": "连接",

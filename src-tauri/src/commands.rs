@@ -15,6 +15,7 @@ use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
 use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
+use crate::vault;
 
 const TAB_KINDS: [&str; 6] = [
     "welcome", "host", "settings", "about", "updates", "terminal",
@@ -339,6 +340,29 @@ pub fn ssh_resize(app: AppHandle, session_id: String, cols: u32, rows: u32) -> A
 #[tauri::command]
 pub fn ssh_disconnect(app: AppHandle, session_id: String) -> AppResult<()> {
     ssh::disconnect(&app, &session_id)
+}
+
+#[tauri::command]
+pub fn credential_save(
+    state: State<'_, AppState>,
+    host_id: String,
+    password: String,
+) -> AppResult<()> {
+    if password.is_empty() {
+        return Err(AppError::validation("ssh.passwordRequired"));
+    }
+    state.db.with(|conn| db::hosts::find_host(conn, &host_id))?;
+    vault::save(&host_id, &password)
+}
+
+#[tauri::command]
+pub fn credential_forget(host_id: String) -> AppResult<()> {
+    vault::forget(&host_id)
+}
+
+#[tauri::command]
+pub fn credential_status(host_id: String) -> AppResult<bool> {
+    vault::has(&host_id)
 }
 
 fn merge_json(base: &mut Value, patch: Value) {
