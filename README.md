@@ -13,7 +13,7 @@ Tunnelde is developed by **quyansiyuanwang** under the **TunneldeDev** organizat
 Early development, built in public milestone by milestone.
 
 - `v0.1.x` — workspace shell, host library, settings, GitHub Releases auto-update
-- `v0.2.x` — SSH terminal with host key trust, vault, command history
+- `v0.2.x` — SSH terminal with host key trust, keychain passwords, command history
 - `v0.3.x` — SFTP file manager and transfer queue
 - `v0.4.x` — remote monitoring and process tools
 - `v0.5.x` — plugin host, TypeScript plugins, MySQL plugin

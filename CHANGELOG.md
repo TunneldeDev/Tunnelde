@@ -6,6 +6,13 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-30
+
+### Added
+
+- Remember SSH passwords in the operating system credential store and reuse them from the connect dialog.
+- Forget a saved password without leaving the dialog.
+
 ## [0.2.0] - 2026-10-30
 
 ### Added

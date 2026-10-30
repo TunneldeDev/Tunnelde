@@ -18,6 +18,7 @@ their notices are reproduced or referenced as required.
 | ring                                          | ISC-style license                                      |
 | xterm.js, @xterm/addon-fit                    | MIT                                                    |
 | base64                                        | MIT OR Apache-2.0                                      |
+| keyring                                       | MIT OR Apache-2.0                                      |
 | Tokio                                         | MIT                                                    |
 | Serde, serde_json                             | MIT OR Apache-2.0                                      |
 | tracing, tracing-subscriber, tracing-appender | MIT                                                    |
