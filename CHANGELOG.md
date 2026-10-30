@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-30
+
 ### Added
 
 - File panes can show this computer or any open session, so two servers can be browsed side by side.
@@ -28,6 +30,7 @@ All notable changes to Tunnelde are documented here. The format follows
 
 - The connect dialog no longer shows a "previous fingerprint" when the trusted key is unchanged.
 - Host rows no longer clip their text, and an empty group shows "—" instead of the word None.
+
 
 ## [0.10.3] - 2026-10-30
 
