@@ -1,6 +1,6 @@
 [package]
 name = "tunnelde"
-version = "0.10.2"
+version = "0.10.3"
 description = "Desktop SSH and SFTP workstation with a plugin system"
 authors = ["quyansiyuanwang"]
 license = "GPL-3.0-only"

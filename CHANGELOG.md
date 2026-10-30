@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.10.3] - 2026-10-30
+
 ### Fixed
 
 - The file pane only offers Paste when the clipboard entry has somewhere to go, instead of silently doing nothing.
+
 
 ## [0.10.2] - 2026-10-30
 
