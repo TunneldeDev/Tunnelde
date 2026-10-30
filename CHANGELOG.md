@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-10-30
+
 ### Changed
 
 - The host sidebar is a single tab stop: arrow keys move the active host, Home and End jump to the edges, and Enter opens it.
+
 
 ## [0.14.0] - 2026-10-30
 
