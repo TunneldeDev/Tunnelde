@@ -3,8 +3,8 @@
 
 import { create } from "zustand";
 
-import { api } from "@/lib/ipc";
-import type { TransferEvent } from "@/lib/types";
+import { api } from "@/lib/api/ipc";
+import type { TransferEvent } from "@/lib/api/types";
 
 export interface TransferItem extends TransferEvent {
   updatedAt: number;

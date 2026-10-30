@@ -33,7 +33,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["**/*.test.{ts,tsx}", "src/test/**"],
+    files: ["tests/**/*.test.{ts,tsx}", "tests/**"],
     rules: { "no-console": "off" },
   },
   {

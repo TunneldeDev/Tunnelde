@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-export type FileSide = "local" | "remote";
+import type { FsSource } from "@/lib/api/types";
 
 export const DRAG_MIME = "application/x-tunnelde-file";
 
 export interface DragPayload {
-  side: FileSide;
+  source: FsSource;
   path: string;
   name: string;
   isDir: boolean;
@@ -14,42 +14,35 @@ export interface DragPayload {
 
 export type DropAction =
   | { kind: "noop" }
-  | { kind: "move"; from: string; to: string }
-  | { kind: "transfer"; direction: "upload" | "download"; from: string; to: string };
+  | { kind: "move"; source: FsSource; from: string; to: string }
+  | { kind: "copy"; source: FsSource; from: string; to: string }
+  | {
+      kind: "transfer";
+      from: FsSource;
+      to: FsSource;
+      fromPath: string;
+      toPath: string;
+      move: boolean;
+    };
 
-export function setDragPayload(data: DataTransfer, payload: DragPayload): void {
-  data.setData(DRAG_MIME, JSON.stringify(payload));
-  data.effectAllowed = "copyMove";
+export interface PasteClip {
+  source: FsSource;
+  action: "cut" | "copy";
+  path: string;
+  name: string;
+  isDir: boolean;
 }
 
-export function readDragPayload(data: DataTransfer): DragPayload | null {
-  const raw = data.getData(DRAG_MIME);
-  if (!raw) {
-    return null;
-  }
-  try {
-    const parsed = JSON.parse(raw) as Partial<DragPayload>;
-    if (
-      (parsed.side === "local" || parsed.side === "remote") &&
-      typeof parsed.path === "string" &&
-      typeof parsed.name === "string" &&
-      typeof parsed.isDir === "boolean"
-    ) {
-      return {
-        side: parsed.side,
-        path: parsed.path,
-        name: parsed.name,
-        isDir: parsed.isDir,
-      };
-    }
-  } catch {
-    return null;
-  }
-  return null;
+export function sourceKey(source: FsSource): string {
+  return source.kind === "local" ? "local" : `remote:${source.sessionId}`;
 }
 
-export function separatorFor(side: FileSide): string {
-  return side === "remote" ? "/" : "\\";
+export function sameSource(left: FsSource, right: FsSource): boolean {
+  return sourceKey(left) === sourceKey(right);
+}
+
+export function separatorFor(source: FsSource): string {
+  return source.kind === "remote" ? "/" : "\\";
 }
 
 export function joinPath(directory: string, name: string, separator: string): string {
@@ -69,84 +62,119 @@ export function parentOf(path: string): string {
   return trimmed.slice(0, index);
 }
 
+export function isInside(parent: string, candidate: string): boolean {
+  const base = parent.replace(/[\\/]+$/, "");
+  if (!base) {
+    return false;
+  }
+  return candidate === base || candidate.startsWith(`${base}/`) || candidate.startsWith(`${base}\\`);
+}
+
+function parsedSource(value: unknown): FsSource | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const candidate = value as { kind?: unknown; sessionId?: unknown };
+  if (candidate.kind === "local") {
+    return { kind: "local" };
+  }
+  if (candidate.kind === "remote" && typeof candidate.sessionId === "string") {
+    return { kind: "remote", sessionId: candidate.sessionId };
+  }
+  return null;
+}
+
+export function setDragPayload(data: DataTransfer, payload: DragPayload): void {
+  data.setData(DRAG_MIME, JSON.stringify(payload));
+  data.effectAllowed = "copyMove";
+}
+
+export function readDragPayload(data: DataTransfer): DragPayload | null {
+  const raw = data.getData(DRAG_MIME);
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as {
+      source?: unknown;
+      path?: unknown;
+      name?: unknown;
+      isDir?: unknown;
+    };
+    const source = parsedSource(parsed.source);
+    if (
+      source &&
+      typeof parsed.path === "string" &&
+      typeof parsed.name === "string" &&
+      typeof parsed.isDir === "boolean"
+    ) {
+      return { source, path: parsed.path, name: parsed.name, isDir: parsed.isDir };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 /**
- * Decides what a drop means: a move inside one pane, an upload, a download or
- * nothing when the file is dropped into the folder it already lives in.
+ * Decides what a drop means: a rename inside one panel, a copy between two
+ * panels, or nothing when the target is where the entry already lives.
  */
 export function resolveDrop(
   payload: DragPayload,
-  targetSide: FileSide,
+  target: FsSource,
   targetDirectory: string,
 ): DropAction {
-  if (payload.isDir && targetDirectory === payload.path) {
-    return { kind: "noop" };
-  }
+  const destination = joinPath(targetDirectory, payload.name, separatorFor(target));
 
-  if (payload.side === targetSide) {
-    const destination = joinPath(targetDirectory, payload.name, separatorFor(targetSide));
-    if (destination === payload.path) {
+  if (sameSource(payload.source, target)) {
+    if (destination === payload.path || isInside(payload.path, targetDirectory)) {
       return { kind: "noop" };
     }
-    return { kind: "move", from: payload.path, to: destination };
+    return { kind: "move", source: target, from: payload.path, to: destination };
   }
 
-  if (payload.isDir) {
-    return { kind: "noop" };
-  }
-
-  const destination = joinPath(targetDirectory, payload.name, separatorFor(targetSide));
   return {
     kind: "transfer",
-    direction: payload.side === "local" ? "upload" : "download",
-    from: payload.path,
-    to: destination,
+    from: payload.source,
+    to: target,
+    fromPath: payload.path,
+    toPath: destination,
+    move: false,
   };
 }
-export interface PasteClip {
-  side: FileSide;
-  action: "cut" | "copy";
-  path: string;
-  name: string;
-  isDir: boolean;
-}
 
-export type PasteAction =
-  | { kind: "noop" }
-  | { kind: "move"; from: string; to: string }
-  | { kind: "copy"; from: string; to: string }
-  | { kind: "transfer"; direction: "upload" | "download"; from: string; to: string };
-
-/**
- * Turns a cut or copied entry into the operation a paste performs. Folders are
- * not pasted yet, and pasting into the folder that already holds the entry is
- * a no-op.
- */
+/** Turns a cut or copied entry into the operation a paste performs. */
 export function planPaste(
   clip: PasteClip,
-  targetSide: FileSide,
+  target: FsSource,
   targetDirectory: string,
-): PasteAction {
-  const destination = joinPath(targetDirectory, clip.name, separatorFor(targetSide));
-  if (clip.side === targetSide) {
-    if (destination === clip.path) {
+): DropAction {
+  const destination = joinPath(targetDirectory, clip.name, separatorFor(target));
+
+  if (sameSource(clip.source, target)) {
+    if (destination === clip.path || isInside(clip.path, targetDirectory)) {
       return { kind: "noop" };
     }
     return clip.action === "cut"
-      ? { kind: "move", from: clip.path, to: destination }
-      : { kind: "copy", from: clip.path, to: destination };
-  }
-
-  if (clip.isDir) {
-    return { kind: "noop" };
+      ? { kind: "move", source: target, from: clip.path, to: destination }
+      : { kind: "copy", source: target, from: clip.path, to: destination };
   }
 
   return {
     kind: "transfer",
-    direction: clip.side === "local" ? "upload" : "download",
-    from: clip.path,
-    to: destination,
+    from: clip.source,
+    to: target,
+    fromPath: clip.path,
+    toPath: destination,
+    move: clip.action === "cut",
   };
 }
-export function canPaste(clip: PasteClip | null, targetSide: FileSide, targetDirectory: string): boolean {
-  return clip !== null && planPaste(clip, targetSide, targetDirectory).kind !== "noop";
+
+export function canPaste(
+  clip: PasteClip | null,
+  target: FsSource,
+  targetDirectory: string,
+): boolean {
+  return clip !== null && planPaste(clip, target, targetDirectory).kind !== "noop";
 }

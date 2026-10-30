@@ -24,7 +24,7 @@ const { stats, apiMock } = vi.hoisted(() => ({
   apiMock: { remoteStats: vi.fn() },
 }));
 
-vi.mock("@/lib/ipc", () => ({ api: apiMock }));
+vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
 
 import "@/i18n/i18n";
 import { MonitorPage } from "@/features/monitor/MonitorPage";

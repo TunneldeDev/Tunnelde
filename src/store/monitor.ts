@@ -3,9 +3,9 @@
 
 import { create } from "zustand";
 
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
-import type { RemoteStats } from "@/lib/types";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
+import type { RemoteStats } from "@/lib/api/types";
 
 const HISTORY = 60;
 

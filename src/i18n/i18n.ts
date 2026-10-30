@@ -4,7 +4,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 
-import type { ResolvedLanguage } from "@/lib/appearance";
+import type { ResolvedLanguage } from "@/lib/prefs/appearance";
 import en from "@/i18n/en-US.json";
 import zh from "@/i18n/zh-CN.json";
 

@@ -4,11 +4,11 @@
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { Button, IconButton } from "@/components/ui/Button";
-import { EmptyState, StatusDot } from "@/components/ui/Misc";
-import { formatDateTime, formatRelative, hostSubtitle } from "@/lib/format";
-import { AUTH_LABELS } from "@/lib/labels";
-import type { Host } from "@/lib/types";
+import { Button, IconButton } from "@/components/ui/form/Button";
+import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
+import { formatDateTime, formatRelative, hostSubtitle } from "@/lib/text/format";
+import { AUTH_LABELS } from "@/lib/prefs/labels";
+import type { Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";

@@ -3,7 +3,7 @@
 
 import { useRef, type PointerEvent } from "react";
 
-import { cn } from "@/lib/format";
+import { cn } from "@/lib/text/format";
 
 interface ResizerProps {
   value: number;

@@ -5,7 +5,7 @@ import { Check, ChevronDown } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { cn } from "@/lib/format";
+import { cn } from "@/lib/text/format";
 
 export interface SelectOption {
   value: string;

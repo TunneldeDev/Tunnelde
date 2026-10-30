@@ -4,14 +4,14 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/form/Button";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
-import { Dialog } from "@/components/ui/Dialog";
-import { Field, Input, Switch, Textarea } from "@/components/ui/Field";
-import { Select } from "@/components/ui/Select";
-import { AUTH_LABELS, AUTH_METHODS } from "@/lib/labels";
-import { parseTags } from "@/lib/format";
-import type { AuthMethod, Group, Host } from "@/lib/types";
+import { Dialog } from "@/components/ui/overlay/Dialog";
+import { Field, Input, Switch, Textarea } from "@/components/ui/form/Field";
+import { Select } from "@/components/ui/form/Select";
+import { AUTH_LABELS, AUTH_METHODS } from "@/lib/prefs/labels";
+import { parseTags } from "@/lib/text/format";
+import type { AuthMethod, Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";

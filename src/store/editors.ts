@@ -3,8 +3,8 @@
 
 import { create } from "zustand";
 
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
 

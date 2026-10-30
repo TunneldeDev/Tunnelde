@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import type { AuthMethod } from "./types";
+import type { AuthMethod } from "../api/types";
 
 export const AUTH_LABELS: Record<
   AuthMethod,

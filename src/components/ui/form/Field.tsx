@@ -7,7 +7,7 @@ import type {
   TextareaHTMLAttributes,
 } from "react";
 
-import { cn } from "@/lib/format";
+import { cn } from "@/lib/text/format";
 
 export interface FieldProps {
   label?: string;

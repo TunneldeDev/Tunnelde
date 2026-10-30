@@ -5,9 +5,9 @@ import { Minus, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
-import { ACCENT_SWATCHES } from "@/lib/defaults";
-import { cn } from "@/lib/format";
+import { IconButton } from "@/components/ui/form/Button";
+import { ACCENT_SWATCHES } from "@/lib/prefs/defaults";
+import { cn } from "@/lib/text/format";
 
 export interface SegmentedOption<T extends string> {
   value: T;

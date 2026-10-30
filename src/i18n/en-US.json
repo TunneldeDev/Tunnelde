@@ -28,7 +28,6 @@
     "retry": "Retry",
     "loading": "Loading",
     "more": "More",
-    "copy": "Copy",
     "error": "Error"
   },
   "nav": {
@@ -243,7 +242,8 @@
     "invalidPayload": "Invalid terminal input",
     "noHostKey": "The server did not present a host key",
     "agentUnsupported": "Agent authentication is not available yet"
-  },  "sftp": {
+  },
+  "sftp": {
     "title": "Files",
     "local": "Local",
     "remote": "Remote",
@@ -262,7 +262,6 @@
     "paste": "Paste",
     "copied": "Path copied",
     "copyFailed": "Could not copy the path",
-    "open": "Open host",
     "deleteTitle": "Delete",
     "deleteBody": "Delete “{{name}}” and everything inside it?",
     "upload": "Upload",
@@ -279,8 +278,16 @@
     "uninstall": "Uninstall",
     "uninstallTitle": "Uninstall plugin",
     "uninstallBody": "Remove {{name}} and its folder?",
-    "cancelled": "Cancelled"
-  },  "processes": {
+    "cancelled": "Cancelled",
+    "thisComputer": "This computer",
+    "source": "Source",
+    "newFile": "New file",
+    "fileName": "File name",
+    "openWith": "Open",
+    "copyToServer": "Copy to server",
+    "copyToFolder": "Copy to folder"
+  },
+  "processes": {
     "title": "Processes",
     "name": "Name",
     "pid": "PID",
@@ -291,7 +298,8 @@
     "killBody": "Send SIGTERM to {{name}} ({{pid}})?",
     "refresh": "Refresh",
     "empty": "No processes"
-  },  "editor": {
+  },
+  "editor": {
     "open": "Edit",
     "save": "Save",
     "saved": "Saved",
@@ -299,7 +307,8 @@
     "discardTitle": "Discard changes",
     "discardBody": "Close “{{name}}” without saving?",
     "discard": "Discard"
-  },  "plugins": {
+  },
+  "plugins": {
     "reload": "Reload",
     "openFolder": "Open folder",
     "empty": "No plugins installed",
@@ -314,7 +323,8 @@
     "uninstall": "Uninstall",
     "uninstallTitle": "Uninstall plugin",
     "uninstallBody": "Remove {{name}} and its folder?"
-  },  "history": {
+  },
+  "history": {
     "title": "History",
     "search": "Search history",
     "empty": "No commands yet",
@@ -331,17 +341,20 @@
     "clear": "Clear",
     "clearTitle": "Clear history",
     "clearBody": "Remove all commands recorded for “{{name}}”?"
-  },  "monitor": {
+  },
+  "monitor": {
     "title": "Monitor",
     "open": "Open monitor",
     "live": "{{count}} samples",
     "average": "avg",
     "peak": "peak"
-  },  "pluginView": {
+  },
+  "pluginView": {
     "title": "Plugin",
     "refresh": "Refresh",
     "empty": "No content"
-  },  "menu": {
+  },
+  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",
     "favorite": "Add to favorites",

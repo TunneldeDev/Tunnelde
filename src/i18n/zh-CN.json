@@ -28,7 +28,6 @@
     "retry": "重试",
     "loading": "加载中",
     "more": "更多",
-    "copy": "复制",
     "error": "错误"
   },
   "nav": {
@@ -243,7 +242,8 @@
     "invalidPayload": "终端输入无效",
     "noHostKey": "服务器未提供主机密钥",
     "agentUnsupported": "暂不支持 Agent 认证"
-  },  "sftp": {
+  },
+  "sftp": {
     "title": "文件",
     "local": "本地",
     "remote": "远端",
@@ -262,7 +262,6 @@
     "paste": "粘贴",
     "copied": "路径已复制",
     "copyFailed": "无法复制路径",
-    "open": "打开主机",
     "deleteTitle": "删除",
     "deleteBody": "删除“{{name}}”及其中的全部内容？",
     "upload": "上传",
@@ -279,8 +278,16 @@
     "uninstall": "卸载",
     "uninstallTitle": "卸载插件",
     "uninstallBody": "删除 {{name}} 及其文件夹？",
-    "cancelled": "已取消"
-  },  "processes": {
+    "cancelled": "已取消",
+    "thisComputer": "本机",
+    "source": "来源",
+    "newFile": "新建文件",
+    "fileName": "文件名",
+    "openWith": "打开",
+    "copyToServer": "复制到服务器",
+    "copyToFolder": "复制到文件夹"
+  },
+  "processes": {
     "title": "进程",
     "name": "名称",
     "pid": "PID",
@@ -291,7 +298,8 @@
     "killBody": "向 {{name}}（{{pid}}）发送 SIGTERM？",
     "refresh": "刷新",
     "empty": "没有进程"
-  },  "editor": {
+  },
+  "editor": {
     "open": "编辑",
     "save": "保存",
     "saved": "已保存",
@@ -299,7 +307,8 @@
     "discardTitle": "放弃修改",
     "discardBody": "不保存就关闭“{{name}}”？",
     "discard": "放弃"
-  },  "plugins": {
+  },
+  "plugins": {
     "reload": "重新扫描",
     "openFolder": "打开目录",
     "empty": "未安装插件",
@@ -314,7 +323,8 @@
     "uninstall": "卸载",
     "uninstallTitle": "卸载插件",
     "uninstallBody": "删除 {{name}} 及其文件夹？"
-  },  "history": {
+  },
+  "history": {
     "title": "历史",
     "search": "搜索历史",
     "empty": "暂无命令记录",
@@ -331,17 +341,20 @@
     "clear": "清空",
     "clearTitle": "清空历史",
     "clearBody": "删除“{{name}}”的全部命令记录？"
-  },  "monitor": {
+  },
+  "monitor": {
     "title": "监控",
     "open": "打开监控",
     "live": "{{count}} 个采样",
     "average": "均值",
     "peak": "峰值"
-  },  "pluginView": {
+  },
+  "pluginView": {
     "title": "插件",
     "refresh": "刷新",
     "empty": "暂无内容"
-  },  "menu": {
+  },
+  "menu": {
     "edit": "编辑",
     "duplicate": "复制",
     "favorite": "加入收藏",

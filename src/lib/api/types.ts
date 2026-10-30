@@ -232,7 +232,10 @@ export interface Listing {
   entries: FileEntry[];
 }
 
-export type TransferDirection = "upload" | "download";
+/** A file panel can show this computer or any connected server. */
+export type FsSource = { kind: "local" } | { kind: "remote"; sessionId: string };
+
+export type TransferDirection = "transfer";
 export type TransferStatus = "running" | "done" | "failed" | "cancelled";
 
 export interface TransferEvent {

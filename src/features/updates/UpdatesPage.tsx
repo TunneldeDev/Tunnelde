@@ -4,9 +4,9 @@
 import { Download, RefreshCw } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
-import { formatDateTime } from "@/lib/format";
-import { api } from "@/lib/ipc";
+import { Button } from "@/components/ui/form/Button";
+import { formatDateTime } from "@/lib/text/format";
+import { api } from "@/lib/api/ipc";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 

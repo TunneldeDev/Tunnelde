@@ -3,9 +3,9 @@
 
 import { create } from "zustand";
 
-import { translateError } from "@/lib/errors";
-import { api, isTauri } from "@/lib/ipc";
-import type { UpdateState } from "@/lib/types";
+import { translateError } from "@/lib/api/errors";
+import { api, isTauri } from "@/lib/api/ipc";
+import type { UpdateState } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 

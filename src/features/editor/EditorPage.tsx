@@ -5,9 +5,9 @@ import { Save } from "lucide-react";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/Misc";
-import { cn } from "@/lib/format";
+import { Button } from "@/components/ui/form/Button";
+import { EmptyState } from "@/components/ui/display/Misc";
+import { cn } from "@/lib/text/format";
 import { useEditors } from "@/store/editors";
 
 interface EditorPageProps {

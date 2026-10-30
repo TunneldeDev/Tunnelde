@@ -16,9 +16,9 @@ import {
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/form/Button";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
-import { formatBytes, formatPercent, formatUptime } from "@/lib/format";
+import { formatBytes, formatPercent, formatUptime } from "@/lib/text/format";
 import { useMonitor } from "@/store/monitor";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";

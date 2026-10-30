@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { decodeBase64, decodeBase64Text, encodeBase64 } from "@/lib/base64";
+import { decodeBase64, decodeBase64Text, encodeBase64 } from "@/lib/text/base64";
 
 describe("base64 transport", () => {
   it("round trips ascii", () => {

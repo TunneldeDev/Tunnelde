@@ -21,9 +21,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TabContent } from "@/components/layout/TabContent";
-import { EmptyState } from "@/components/ui/Misc";
-import { cn } from "@/lib/format";
-import { closeTab } from "@/lib/tabActions";
+import { EmptyState } from "@/components/ui/display/Misc";
+import { cn } from "@/lib/text/format";
+import { closeTab } from "@/lib/session/tabActions";
 import { useContextMenu } from "@/store/contextMenu";
 import {
   useWorkspace,
@@ -32,7 +32,7 @@ import {
   type WorkspaceTab,
 } from "@/store/workspace";
 
-const TAB_MIME = "application/x-tunnelde-tab";
+export const TAB_MIME = "application/x-tunnelde-tab";
 
 const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   welcome: CircleDot,
@@ -250,7 +250,8 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
   const split = (tabId: string, hintValue: DropHint) => {
     const direction: SplitDirection =
       hintValue === "left" || hintValue === "right" ? "row" : "column";
-    splitTab(tabId, direction);
+    const position = hintValue === "left" || hintValue === "top" ? "before" : "after";
+    splitTab(tabId, direction, position);
   };
 
   return (

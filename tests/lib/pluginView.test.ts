@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { normalizeBlocks, viewTitle } from "@/lib/pluginView";
+import { normalizeBlocks, viewTitle } from "@/lib/plugins/pluginView";
 
 describe("normalizeBlocks", () => {
   it("keeps known blocks in order", () => {

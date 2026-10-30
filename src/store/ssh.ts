@@ -3,9 +3,9 @@
 
 import { create } from "zustand";
 
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
-import type { SshConnectRequest, SshSession } from "@/lib/types";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
+import type { SshConnectRequest, SshSession } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
 

@@ -23,6 +23,45 @@
   flex-direction: column;
   background: var(--td-bg);
   overflow: hidden;
+  position: relative;
+}
+
+.pane-edges {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+}
+
+.pane-edge {
+  position: absolute;
+  transition:
+    background var(--td-ease),
+    box-shadow var(--td-ease);
+}
+
+.pane-edge.is-left {
+  inset: 0 auto 0 0;
+  width: 14%;
+}
+
+.pane-edge.is-right {
+  inset: 0 0 0 auto;
+  width: 14%;
+}
+
+.pane-edge.is-top {
+  inset: 0 14% auto;
+  height: 12%;
+}
+
+.pane-edge.is-bottom {
+  inset: auto 14% 0;
+  height: 12%;
+}
+
+.pane-edge.is-active {
+  background: var(--td-accent-soft);
+  box-shadow: inset 0 0 0 1px var(--td-accent);
 }
 
 .splash {
@@ -1804,27 +1843,6 @@
   flex-direction: column;
 }
 
-.sftp-head {
-  height: 34px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--td-border);
-  background: var(--td-panel);
-}
-
-.sftp-head__title {
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.sftp-head__meta {
-  font-family: var(--td-mono);
-  font-size: 10.5px;
-  color: var(--td-faint);
-}
-
 .sftp-panes {
   flex: 1 1 auto;
   min-height: 0;
@@ -1841,14 +1859,28 @@
   background: var(--td-bg);
 }
 
+.sftp-pane.is-active .sftp-pane__head {
+  box-shadow: inset 0 -1px 0 var(--td-accent);
+}
+
 .sftp-pane__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 5px 6px 5px 10px;
+  gap: 6px;
+  padding: 5px 6px 5px 8px;
   border-bottom: 1px solid var(--td-border);
   background: var(--td-panel);
+}
+
+.sftp-pane__head .td-select {
+  flex: 0 1 152px;
+  width: 152px;
+  min-width: 0;
+}
+
+.sftp-pane__head .td-select__control {
+  height: 24px;
+  font-size: 11.5px;
 }
 
 .sftp-pane__title {
@@ -1874,17 +1906,16 @@
   font-size: 11.5px;
 }
 
-.sftp-pane__prompt {
-  display: flex;
-  gap: 4px;
-  padding: 0 8px 6px;
-}
-
 .sftp-pane__body {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   padding: 2px 0;
+  outline: none;
+}
+
+.sftp-pane__body.is-drop {
+  box-shadow: inset 0 0 0 1px var(--td-accent);
 }
 
 .sftp-pane__error {
@@ -1907,6 +1938,17 @@
   gap: 6px;
   height: 26px;
   padding: 0 8px;
+  font-size: 12px;
+}
+
+.sftp-row.is-creating {
+  background: var(--td-hover);
+}
+
+.sftp-row .td-input.sftp-row__name {
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 4px;
   font-size: 12px;
 }
 

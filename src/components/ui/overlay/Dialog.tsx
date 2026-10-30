@@ -5,8 +5,8 @@ import { X } from "lucide-react";
 import { useEffect, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { IconButton } from "@/components/ui/Button";
-import { cn } from "@/lib/format";
+import { IconButton } from "@/components/ui/form/Button";
+import { cn } from "@/lib/text/format";
 
 interface DialogProps {
   open: boolean;

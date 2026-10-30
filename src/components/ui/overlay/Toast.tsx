@@ -3,8 +3,8 @@
 
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 
-import { IconButton } from "@/components/ui/Button";
-import { cn } from "@/lib/format";
+import { IconButton } from "@/components/ui/form/Button";
+import { cn } from "@/lib/text/format";
 import { useToasts } from "@/store/toasts";
 
 const ICONS = {

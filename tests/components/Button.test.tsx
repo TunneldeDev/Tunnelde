@@ -4,7 +4,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { Button, IconButton } from "@/components/ui/Button";
+import { Button, IconButton } from "@/components/ui/form/Button";
 
 describe("Button", () => {
   it("applies the variant class", () => {

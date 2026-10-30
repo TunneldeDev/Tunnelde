@@ -3,7 +3,7 @@
 
 import { useTranslation } from "react-i18next";
 
-import { EmptyState } from "@/components/ui/Misc";
+import { EmptyState } from "@/components/ui/display/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
 import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";

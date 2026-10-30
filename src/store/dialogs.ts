@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 
-import type { Group, Host } from "@/lib/types";
+import type { Group, Host } from "@/lib/api/types";
 
 export interface ConfirmOptions {
   title: string;

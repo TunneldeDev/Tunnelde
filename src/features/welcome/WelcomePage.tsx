@@ -4,7 +4,7 @@
 import { Plus, Settings as SettingsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
+import { Button } from "@/components/ui/form/Button";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";

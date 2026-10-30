@@ -10,7 +10,7 @@ const { apiMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/lib/ipc", () => ({ api: apiMock }));
+vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
 
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";

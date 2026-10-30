@@ -3,7 +3,7 @@
 
 import type { ITheme } from "@xterm/xterm";
 
-import type { ResolvedTheme } from "@/lib/appearance";
+import type { ResolvedTheme } from "@/lib/prefs/appearance";
 
 const DARK: ITheme = {
   background: "#070b12",

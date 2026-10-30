@@ -4,7 +4,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PluginInfo } from "@/lib/types";
+import type { PluginInfo } from "@/lib/api/types";
 
 const { plugin, apiMock } = vi.hoisted(() => {
   const plugin = {
@@ -32,7 +32,7 @@ const { plugin, apiMock } = vi.hoisted(() => {
   };
 });
 
-vi.mock("@/lib/ipc", () => ({ api: apiMock }));
+vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
 
 import "@/i18n/i18n";
 import { PluginsSection } from "@/features/plugins/PluginsSection";

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import type { Language, MonoFont, Settings, ThemeMode } from "./types";
+import type { Language, MonoFont, Settings, ThemeMode } from "../api/types";
 
 export type ResolvedTheme = "dark" | "light";
 export type ResolvedLanguage = "zh-CN" | "en-US";

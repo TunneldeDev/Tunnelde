@@ -3,8 +3,8 @@
 
 import { useEffect, useState } from "react";
 
-import { api, isTauri } from "@/lib/ipc";
-import type { SystemStats } from "@/lib/types";
+import { api, isTauri } from "@/lib/api/ipc";
+import type { SystemStats } from "@/lib/api/types";
 
 /**
  * Polls local machine stats only while the window is visible, so a hidden

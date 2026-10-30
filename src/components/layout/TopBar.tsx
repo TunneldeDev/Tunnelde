@@ -4,7 +4,7 @@
 import { ArrowUpCircle, Settings as SettingsIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
+import { IconButton } from "@/components/ui/form/Button";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 

@@ -4,22 +4,29 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
-import { PaneView } from "@/components/layout/PaneView";
+import { PaneView, TAB_MIME } from "@/components/layout/PaneView";
 import { RemotePanel } from "@/components/layout/RemotePanel";
-import { ContextMenuHost } from "@/components/ui/ContextMenu";
+import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
 import { Resizer } from "@/components/layout/Resizer";
 import { StatusBar } from "@/components/layout/StatusBar";
 import { SystemPanel } from "@/components/layout/SystemPanel";
 
 import { TopBar } from "@/components/layout/TopBar";
-import { ToastHost } from "@/components/ui/Toast";
+import { ToastHost } from "@/components/ui/overlay/Toast";
 import { DialogHost } from "@/features/dialogs/DialogHost";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
-import { cn } from "@/lib/format";
-import { closeTab } from "@/lib/tabActions";
+import { cn } from "@/lib/text/format";
+import { closeTab } from "@/lib/session/tabActions";
 import { useSsh } from "@/store/ssh";
-import { useWorkspace } from "@/store/workspace";
+import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/workspace";
+
+const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
+  { edge: "left", direction: "row", position: "before" },
+  { edge: "right", direction: "row", position: "after" },
+  { edge: "top", direction: "column", position: "before" },
+  { edge: "bottom", direction: "column", position: "after" },
+];
 
 export function AppShell() {
   const settings = useSettings((state) => state.settings);
@@ -35,8 +42,30 @@ export function AppShell() {
 
   const [sidebarDraft, setSidebarDraft] = useState<number | null>(null);
   const [panelDraft, setPanelDraft] = useState<number | null>(null);
+  const [tabDrag, setTabDrag] = useState(false);
+  const [edge, setEdge] = useState<string | null>(null);
   const sidebarWidth = sidebarDraft ?? settings.sidebarWidth;
   const panelWidth = panelDraft ?? settings.rightPanelWidth;
+
+  useEffect(() => {
+    const onDragStart = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes(TAB_MIME)) {
+        setTabDrag(true);
+      }
+    };
+    const onDragEnd = () => {
+      setTabDrag(false);
+      setEdge(null);
+    };
+    document.addEventListener("dragstart", onDragStart);
+    document.addEventListener("dragend", onDragEnd);
+    document.addEventListener("drop", onDragEnd);
+    return () => {
+      document.removeEventListener("dragstart", onDragStart);
+      document.removeEventListener("dragend", onDragEnd);
+      document.removeEventListener("drop", onDragEnd);
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -162,6 +191,33 @@ export function AppShell() {
               <PaneView key={item.id} pane={item} active={item.id === activePaneId} />
             ))}
           </div>
+          {tabDrag ? (
+            <div className="pane-edges">
+              {EDGES.map((item) => (
+                <div
+                  key={item.edge}
+                  className={cn("pane-edge", `is-${item.edge}`, edge === item.edge && "is-active")}
+                  onDragOver={(event) => {
+                    if (!event.dataTransfer.types.includes(TAB_MIME)) {
+                      return;
+                    }
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setEdge(item.edge);
+                  }}
+                  onDragLeave={() => setEdge(null)}
+                  onDrop={(event) => {
+                    const tabId = event.dataTransfer.getData(TAB_MIME);
+                    setEdge(null);
+                    if (tabId) {
+                      event.preventDefault();
+                      useWorkspace.getState().splitTab(tabId, item.direction, item.position);
+                    }
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
         </main>
         {settings.rightPanel ? (
           <>

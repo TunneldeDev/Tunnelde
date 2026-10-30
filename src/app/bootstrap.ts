@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { api, events, isTauri } from "@/lib/ipc";
-import { applyAppearance } from "@/lib/appearance";
+import { api, events, isTauri } from "@/lib/api/ipc";
+import { applyAppearance } from "@/lib/prefs/appearance";
 import i18n from "@/i18n/i18n";
-import { translateError } from "@/lib/errors";
-import type { TabRecord } from "@/lib/types";
+import { translateError } from "@/lib/api/errors";
+import type { TabRecord } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";

@@ -3,14 +3,14 @@
 
 import { create } from "zustand";
 
-import { applyAppearance, resolveLanguage } from "@/lib/appearance";
-import { DEFAULT_SETTINGS } from "@/lib/defaults";
-import { api, isTauri } from "@/lib/ipc";
-import type { AppInfo, Settings, SettingsPatch } from "@/lib/types";
+import { applyAppearance, resolveLanguage } from "@/lib/prefs/appearance";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { api, isTauri } from "@/lib/api/ipc";
+import type { AppInfo, Settings, SettingsPatch } from "@/lib/api/types";
 import { setLanguage } from "@/i18n/i18n";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
-import { translateError } from "@/lib/errors";
+import { translateError } from "@/lib/api/errors";
 
 interface SettingsStore {
   settings: Settings;

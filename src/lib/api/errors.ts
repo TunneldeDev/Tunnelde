@@ -2,7 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import i18n from "@/i18n/i18n";
-import { isIpcError } from "@/lib/types";
+import { isIpcError } from "@/lib/api/types";
 
 const CODE_KEYS: Record<string, string> = {
   validation: "error.validation",

@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { formatBytes, formatUptime, hostSubtitle, parseTags } from "@/lib/format";
+import { formatBytes, formatUptime, hostSubtitle, parseTags } from "@/lib/text/format";
 
 describe("formatBytes", () => {
   it("handles empty values", () => {

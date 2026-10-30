@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { consumeInput, type CommandCapture } from "@/lib/terminalInput";
+import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
 
 const empty: CommandCapture = { text: "", escape: 0 };
 

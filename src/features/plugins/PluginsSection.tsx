@@ -5,13 +5,13 @@ import { FolderOpen, LayoutPanelLeft, Play, Plus, RefreshCw, Square, Trash2 } fr
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, IconButton } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
-import { Input } from "@/components/ui/Field";
-import { StatusDot } from "@/components/ui/Misc";
-import { translateError } from "@/lib/errors";
-import { cn } from "@/lib/format";
-import { api } from "@/lib/ipc";
+import { Button, IconButton } from "@/components/ui/form/Button";
+import { Dialog } from "@/components/ui/overlay/Dialog";
+import { Input } from "@/components/ui/form/Field";
+import { StatusDot } from "@/components/ui/display/Misc";
+import { translateError } from "@/lib/api/errors";
+import { cn } from "@/lib/text/format";
+import { api } from "@/lib/api/ipc";
 import { useDialogs } from "@/store/dialogs";
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import type { MonoFont, Settings } from "./types";
+import type { MonoFont, Settings } from "../api/types";
 
 export const DEFAULT_SETTINGS: Settings = {
   language: "system",

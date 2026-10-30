@@ -5,8 +5,8 @@ import { MoreHorizontal } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
-import { IconButton } from "@/components/ui/Button";
-import { cn } from "@/lib/format";
+import { IconButton } from "@/components/ui/form/Button";
+import { cn } from "@/lib/text/format";
 
 export interface MenuAction {
   label: string;

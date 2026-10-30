@@ -4,7 +4,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ContextMenuHost } from "@/components/ui/ContextMenu";
+import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
 import { useContextMenu } from "@/store/contextMenu";
 
 beforeEach(() => {

@@ -3,9 +3,9 @@
 
 import { create } from "zustand";
 
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
-import type { PluginInfo } from "@/lib/types";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
+import type { PluginInfo } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 
 export interface PluginOutput {

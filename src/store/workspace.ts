@@ -3,8 +3,8 @@
 
 import { create } from "zustand";
 
-import { api } from "@/lib/ipc";
-import type { Host, SshSession, TabKind, TabRecord } from "@/lib/types";
+import { api } from "@/lib/api/ipc";
+import type { Host, SshSession, TabKind, TabRecord } from "@/lib/api/types";
 import { fileName, useEditors } from "@/store/editors";
 
 export interface WorkspaceTab {
@@ -22,6 +22,8 @@ export interface WorkspacePane {
 }
 
 export type SplitDirection = "row" | "column";
+/** Where a dragged tab lands relative to the tabs that stay behind. */
+export type PanePosition = "before" | "after";
 
 export type PageKind = "welcome" | "settings" | "about" | "updates";
 
@@ -36,6 +38,7 @@ const SUPPORTED_KINDS: TabKind[] = ["welcome", "host", "settings", "about", "upd
 
 export const FIRST_PANE = "pane-1";
 const SECOND_PANE = "pane-2";
+const LEADING_PANE = "pane-0";
 
 interface WorkspaceStore {
   tabs: WorkspaceTab[];
@@ -58,7 +61,7 @@ interface WorkspaceStore {
   activatePane: (paneId: string) => void;
   togglePin: (id: string) => void;
   reorder: (from: number, to: number) => void;
-  splitTab: (tabId: string, direction: SplitDirection) => void;
+  splitTab: (tabId: string, direction: SplitDirection, position?: PanePosition) => void;
   moveTab: (tabId: string, targetPaneId: string, beforeTabId?: string | null) => void;
   reorderTab: (tabId: string, beforeTabId: string | null) => void;
   closePane: (paneId: string) => void;
@@ -363,7 +366,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
       }),
 
-    splitTab: (tabId, direction) => {
+    splitTab: (tabId, direction, position = "after") => {
       set((state) => {
         const source = state.panes.find((item) => item.tabIds.includes(tabId));
         if (!source) {
@@ -380,22 +383,26 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               ? { ...item, tabIds: [...item.tabIds, tabId], activeId: tabId }
               : item,
           );
-          return { ...settle(panes, target.id, direction), split: direction };
+          return settle(panes, target.id, direction);
         }
 
         if (source.tabIds.length <= 1) {
           return state;
         }
         const remaining = source.tabIds.filter((id) => id !== tabId);
-        const panes: WorkspacePane[] = [
-          {
-            ...source,
-            tabIds: remaining,
-            activeId: source.activeId === tabId ? remaining[remaining.length - 1] ?? null : source.activeId,
-          },
-          { id: SECOND_PANE, tabIds: [tabId], activeId: tabId },
-        ];
-        return { panes, activePaneId: SECOND_PANE, activeId: tabId, split: direction };
+        const kept: WorkspacePane = {
+          ...source,
+          tabIds: remaining,
+          activeId:
+            source.activeId === tabId ? (remaining[remaining.length - 1] ?? null) : source.activeId,
+        };
+        const created: WorkspacePane = {
+          id: position === "before" ? LEADING_PANE : SECOND_PANE,
+          tabIds: [tabId],
+          activeId: tabId,
+        };
+        const panes = position === "before" ? [created, kept] : [kept, created];
+        return { panes, activePaneId: created.id, activeId: tabId, split: direction };
       });
     },
 

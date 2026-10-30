@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { resolveLanguage, resolveTheme, validateUserCss } from "@/lib/appearance";
+import { resolveLanguage, resolveTheme, validateUserCss } from "@/lib/prefs/appearance";
 
 describe("resolveTheme", () => {
   it("follows the system when asked", () => {

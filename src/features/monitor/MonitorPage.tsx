@@ -4,10 +4,10 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { EmptyState } from "@/components/ui/Misc";
-import { translateError } from "@/lib/errors";
-import { formatBytes, formatPercent } from "@/lib/format";
-import { api } from "@/lib/ipc";
+import { EmptyState } from "@/components/ui/display/Misc";
+import { translateError } from "@/lib/api/errors";
+import { formatBytes, formatPercent } from "@/lib/text/format";
+import { api } from "@/lib/api/ipc";
 import { summarize, useMonitorHistory, type MonitorSample } from "@/store/monitorHistory";
 import { useSsh } from "@/store/ssh";
 

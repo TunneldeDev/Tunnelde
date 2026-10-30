@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { closeTab } from "@/lib/tabActions";
+import { closeTab } from "@/lib/session/tabActions";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";

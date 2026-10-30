@@ -5,10 +5,10 @@ import { Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
-import type { KnownHostEntry } from "@/lib/types";
+import { IconButton } from "@/components/ui/form/Button";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
+import type { KnownHostEntry } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
 

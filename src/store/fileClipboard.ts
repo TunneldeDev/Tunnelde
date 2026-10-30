@@ -3,7 +3,7 @@
 
 import { create } from "zustand";
 
-import type { PasteClip } from "@/lib/dnd";
+import type { PasteClip } from "@/lib/files/dnd";
 
 interface FileClipboardStore {
   clip: PasteClip | null;

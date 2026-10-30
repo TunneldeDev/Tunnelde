@@ -5,12 +5,12 @@ import { RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, IconButton } from "@/components/ui/Button";
-import { Dialog } from "@/components/ui/Dialog";
-import { translateError } from "@/lib/errors";
-import { formatBytes, formatPercent } from "@/lib/format";
-import { api } from "@/lib/ipc";
-import type { RemoteProcess } from "@/lib/types";
+import { Button, IconButton } from "@/components/ui/form/Button";
+import { Dialog } from "@/components/ui/overlay/Dialog";
+import { translateError } from "@/lib/api/errors";
+import { formatBytes, formatPercent } from "@/lib/text/format";
+import { api } from "@/lib/api/ipc";
+import type { RemoteProcess } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 
 interface ProcessesDialogProps {

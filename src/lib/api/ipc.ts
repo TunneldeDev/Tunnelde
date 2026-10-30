@@ -64,6 +64,7 @@ export const api = {
 
   openDataDir: () => invoke<void>("app_open_data_dir"),
   openLogDir: () => invoke<void>("open_log_dir"),
+  openLocalPath: (path: string) => invoke<void>("open_local_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
 
   sshProbe: (hostId: string) => invoke<HostKeyInfo>("ssh_probe", { hostId }),
@@ -114,10 +115,11 @@ export const api = {
   sftpDelete: (sessionId: string, path: string, isDir: boolean) =>
     invoke<void>("sftp_delete", { sessionId, path, isDir }),
   localMkdir: (path: string) => invoke<void>("local_mkdir", { path }),
+  localCreateFile: (path: string) => invoke<void>("local_create_file", { path }),
   localRename: (from: string, to: string) => invoke<void>("local_rename", { from, to }),
   localDelete: (path: string, isDir: boolean) => invoke<void>("local_delete", { path, isDir }),
-  sftpDownload: (sessionId: string, remotePath: string, localPath: string) =>
-    invoke<string>("sftp_download", { sessionId, remotePath, localPath }),
+  sftpCreateFile: (sessionId: string, path: string) =>
+    invoke<void>("sftp_create_file", { sessionId, path }),
   sftpCopy: (sessionId: string, from: string, to: string) =>
     invoke<void>("sftp_copy", { sessionId, from, to }),
   localCopy: (from: string, to: string) => invoke<void>("local_copy", { from, to }),
@@ -127,8 +129,14 @@ export const api = {
   sftpWriteText: (sessionId: string, path: string, content: string) =>
     invoke<void>("sftp_write_text", { sessionId, path, content }),
 
-  sftpUpload: (sessionId: string, localPath: string, remotePath: string) =>
-    invoke<string>("sftp_upload", { sessionId, localPath, remotePath }),
+  fsTransfer: (
+    fromSession: string | null,
+    fromPath: string,
+    toSession: string | null,
+    toPath: string,
+    removeSource: boolean,
+  ) =>
+    invoke<string>("fs_transfer", { fromSession, fromPath, toSession, toPath, removeSource }),
   transferCancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),
 
   credentialSave: (hostId: string, password: string) =>

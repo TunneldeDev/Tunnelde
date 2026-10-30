@@ -4,10 +4,10 @@
 import { Activity, Cpu, HardDrive, Layers, MemoryStick, Timer, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
-import { formatBytes, formatPercent, formatUptime } from "@/lib/format";
-import { useSystemStats } from "@/lib/useSystemStats";
-import type { SystemStats } from "@/lib/types";
+import { IconButton } from "@/components/ui/form/Button";
+import { formatBytes, formatPercent, formatUptime } from "@/lib/text/format";
+import { useSystemStats } from "@/lib/session/useSystemStats";
+import type { SystemStats } from "@/lib/api/types";
 
 function Meter({ value }: { value: number }) {
   const clamped = Math.min(100, Math.max(0, Math.round(value)));

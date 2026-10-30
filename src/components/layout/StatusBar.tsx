@@ -4,8 +4,8 @@
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
-import { StatusDot } from "@/components/ui/Misc";
+import { IconButton } from "@/components/ui/form/Button";
+import { StatusDot } from "@/components/ui/display/Misc";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";

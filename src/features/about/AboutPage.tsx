@@ -4,9 +4,9 @@
 import { ExternalLink } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
+import { Button } from "@/components/ui/form/Button";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 

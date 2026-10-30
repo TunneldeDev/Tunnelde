@@ -3,9 +3,9 @@
 
 import { create } from "zustand";
 
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
-import type { Group, Host, HostInput } from "@/lib/types";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
+import type { Group, Host, HostInput } from "@/lib/api/types";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 

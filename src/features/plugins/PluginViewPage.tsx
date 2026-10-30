@@ -5,11 +5,11 @@ import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui/Button";
-import { EmptyState } from "@/components/ui/Misc";
-import { translateError } from "@/lib/errors";
-import { api } from "@/lib/ipc";
-import { normalizeBlocks, viewTitle, type PluginBlock } from "@/lib/pluginView";
+import { Button } from "@/components/ui/form/Button";
+import { EmptyState } from "@/components/ui/display/Misc";
+import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
+import { normalizeBlocks, viewTitle, type PluginBlock } from "@/lib/plugins/pluginView";
 
 interface PluginViewPageProps {
   pluginId: string;

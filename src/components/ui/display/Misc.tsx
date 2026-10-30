@@ -3,7 +3,7 @@
 
 import type { ReactNode } from "react";
 
-import { cn } from "@/lib/format";
+import { cn } from "@/lib/text/format";
 
 export type DotTone = "idle" | "ok" | "warn" | "error" | "accent";
 

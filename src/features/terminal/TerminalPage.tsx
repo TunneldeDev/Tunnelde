@@ -8,12 +8,12 @@ import { Clock, FolderTree, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { IconButton } from "@/components/ui/Button";
-import { StatusDot } from "@/components/ui/Misc";
-import { resolveTheme, monoStack } from "@/lib/appearance";
-import { decodeBase64, encodeBase64 } from "@/lib/base64";
-import { consumeInput, type CommandCapture } from "@/lib/terminalInput";
-import { api, events, isTauri } from "@/lib/ipc";
+import { IconButton } from "@/components/ui/form/Button";
+import { StatusDot } from "@/components/ui/display/Misc";
+import { resolveTheme, monoStack } from "@/lib/prefs/appearance";
+import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
+import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
+import { api, events, isTauri } from "@/lib/api/ipc";
 import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";

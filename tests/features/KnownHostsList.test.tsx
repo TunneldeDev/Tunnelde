@@ -18,7 +18,7 @@ const { entry, apiMock } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@/lib/ipc", () => ({ api: apiMock }));
+vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
 
 import "@/i18n/i18n";
 import { KnownHostsList } from "@/features/settings/KnownHostsList";

@@ -3,7 +3,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import type { Host, SshSession, TabRecord } from "@/lib/types";
+import type { Host, SshSession, TabRecord } from "@/lib/api/types";
 import { useWorkspace } from "@/store/workspace";
 
 const state = () => useWorkspace.getState();
@@ -188,5 +188,29 @@ describe("workspace tabs", () => {
     useWorkspace.getState().ensureWelcome();
     useWorkspace.getState().ensureWelcome();
     expect(useWorkspace.getState().tabs).toHaveLength(1);
+  });
+});
+
+describe("split placement", () => {
+  it("puts the dropped tab before the remaining ones", () => {
+    useWorkspace.getState().openTerminal(session("s1", "Alpha"));
+    useWorkspace.getState().openSftp(session("s1", "Alpha"));
+    useWorkspace.getState().splitTab("sftp:s1", "row", "before");
+    const panes = useWorkspace.getState().panes;
+    expect(panes).toHaveLength(2);
+    expect(panes[0]?.tabIds).toEqual(["sftp:s1"]);
+    expect(panes[1]?.tabIds).toEqual(["terminal:s1"]);
+    expect(useWorkspace.getState().split).toBe("row");
+  });
+
+  it("falls back to the second pane when one already exists", () => {
+    useWorkspace.getState().openTerminal(session("s2", "Beta"));
+    useWorkspace.getState().openSftp(session("s2", "Beta"));
+    useWorkspace.getState().splitTab("sftp:s2", "row");
+    useWorkspace.getState().splitTab("terminal:s2", "column", "before");
+    const panes = useWorkspace.getState().panes;
+    expect(panes).toHaveLength(1);
+    expect(panes[0]?.tabIds.sort()).toEqual(["sftp:s2", "terminal:s2"]);
+    expect(useWorkspace.getState().split).toBeNull();
   });
 });

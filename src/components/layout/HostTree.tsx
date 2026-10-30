@@ -14,16 +14,16 @@ import {
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, IconButton } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Field";
-import { Menu } from "@/components/ui/Menu";
-import { EmptyState } from "@/components/ui/Misc";
-import { cn, hostSubtitle } from "@/lib/format";
+import { Button, IconButton } from "@/components/ui/form/Button";
+import { Input } from "@/components/ui/form/Field";
+import { Menu } from "@/components/ui/overlay/Menu";
+import { EmptyState } from "@/components/ui/display/Misc";
+import { cn, hostSubtitle } from "@/lib/text/format";
 import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
-import type { Group, Host } from "@/lib/types";
+import type { Group, Host } from "@/lib/api/types";
 
 interface Filtered {
   favorites: Host[];
