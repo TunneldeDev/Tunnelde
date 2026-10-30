@@ -6,6 +6,17 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-30
+
+### Added
+
+- Process list for the active session with pid, CPU, memory and RSS, plus a confirmed SIGTERM action.
+- `TUNNELDE_DATA_DIR` to run Tunnelde against a throwaway profile.
+
+### Changed
+
+- Favorite hosts appear once in the sidebar instead of being repeated in their group.
+
 ## [0.4.0] - 2026-10-30
 
 ### Added
