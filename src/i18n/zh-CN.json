@@ -86,6 +86,7 @@
     "title": "设置",
     "general": "通用",
     "appearance": "外观",
+    "plugins": "插件",
     "css": "自定义 CSS",
     "updatesSection": "更新",
     "advanced": "高级",
@@ -265,6 +266,15 @@
     "discardTitle": "放弃修改",
     "discardBody": "不保存就关闭“{{name}}”？",
     "discard": "放弃"
+  },  "plugins": {
+    "reload": "重新扫描",
+    "openFolder": "打开目录",
+    "empty": "未安装插件",
+    "start": "启动",
+    "stop": "停止",
+    "running": "运行中",
+    "stopped": "已停止",
+    "failed": "失败"
   },  "menu": {
     "edit": "编辑",
     "duplicate": "复制",

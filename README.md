@@ -71,6 +71,11 @@ scripts/brand/        Icon generation and verification
 scripts/ci/           Repository hygiene checks
 ```
 
+## Plugins
+
+Plugins live in the app data `plugins` folder and speak JSON-RPC 2.0 over stdio, one JSON object
+per line. A minimal example ships in `examples/plugins/hello`; copy that folder into the plugins
+directory and start it from Settings → Plugins.
 ## Platforms
 
 - Windows 10/11 x64 — NSIS, automatic updates

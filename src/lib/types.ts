@@ -267,3 +267,22 @@ export interface TextFile {
   content: string;
   size: number;
 }
+export type PluginStatus = "stopped" | "running" | "failed";
+
+export interface PluginCommand {
+  id: string;
+  title: string;
+}
+
+export interface PluginInfo {
+  id: string;
+  name: string;
+  version: string;
+  apiVersion: number;
+  description: string | null;
+  commands: PluginCommand[];
+  permissions: string[];
+  status: PluginStatus;
+  error: string | null;
+  path: string;
+}

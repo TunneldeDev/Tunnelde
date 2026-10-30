@@ -37,6 +37,22 @@ export default tseslint.config(
     rules: { "no-console": "off" },
   },
   {
+    files: ["examples/**/*.js"],
+    languageOptions: {
+      sourceType: "module",
+      globals: {
+        require: "readonly",
+        process: "readonly",
+        module: "writable",
+        console: "readonly",
+        __dirname: "readonly",
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
     files: ["scripts/**/*.mjs", "*.config.{js,ts}", "eslint.config.js"],
     languageOptions: {
       globals: {

@@ -8,6 +8,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/Button";
 import { Select, Switch, Textarea } from "@/components/ui/Field";
 import { Segmented, Stepper, SwatchPicker } from "@/components/ui/Segmented";
+import { PluginsSection } from "@/features/plugins/PluginsSection";
 import { validateUserCss } from "@/lib/appearance";
 import { translateError } from "@/lib/errors";
 import { api, isTauri } from "@/lib/ipc";
@@ -19,13 +20,14 @@ import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
 
-type Section = "general" | "appearance" | "css" | "updates" | "advanced";
+type Section = "general" | "appearance" | "plugins" | "css" | "updates" | "advanced";
 
-const SECTIONS: Section[] = ["general", "appearance", "css", "updates", "advanced"];
+const SECTIONS: Section[] = ["general", "appearance", "plugins", "css", "updates", "advanced"];
 
 const SECTION_KEYS = {
   general: "settings.general",
   appearance: "settings.appearance",
+  plugins: "settings.plugins",
   css: "settings.css",
   updates: "settings.updatesSection",
   advanced: "settings.advanced",
@@ -386,6 +388,7 @@ export function SettingsPage() {
       <div className="settings__body">
         {section === "general" ? <GeneralSection /> : null}
         {section === "appearance" ? <AppearanceSection /> : null}
+        {section === "plugins" ? <PluginsSection /> : null}
         {section === "css" ? <CssSection /> : null}
         {section === "updates" ? <UpdatesSection /> : null}
         {section === "advanced" ? <AdvancedSection /> : null}

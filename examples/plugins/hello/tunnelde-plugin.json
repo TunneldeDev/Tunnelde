@@ -1,0 +1,10 @@
+{
+  "id": "hello",
+  "name": "Hello",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "main": "index.js",
+  "description": "Minimal example plugin",
+  "commands": [{ "id": "greet", "title": "Say hello" }],
+  "permissions": ["log"]
+}

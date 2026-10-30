@@ -10,6 +10,7 @@ import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { useMonitor } from "@/store/monitor";
+import { usePlugins } from "@/store/plugins";
 import { useTransfers } from "@/store/transfers";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
@@ -94,6 +95,10 @@ async function wireEvents(): Promise<void> {
     if (page === "settings" || page === "about" || page === "updates") {
       useWorkspace.getState().openPage(page);
     }
+  });
+
+  await events.onPluginState((payload) => {
+    usePlugins.getState().apply(payload);
   });
 
   await events.onTransfer((payload) => {

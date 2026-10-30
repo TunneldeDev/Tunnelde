@@ -13,6 +13,7 @@ import type {
   HostsSnapshot,
   Listing,
   RemoteProcess,
+  PluginInfo,
   RemoteStats,
   TextFile,
   Settings,
@@ -71,6 +72,13 @@ export const api = {
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
+  pluginsList: () => invoke<PluginInfo[]>("plugins_list"),
+  pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),
+  pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
+  pluginRun: (id: string, command: string) =>
+    invoke<unknown>("plugin_run", { id, command }),
+  pluginOpenDir: () => invoke<void>("plugin_open_dir"),
+
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
     invoke<RemoteProcess[]>("remote_processes", { sessionId }),
@@ -120,6 +128,8 @@ export const events = {
     listen<SshDataPayload>("ssh://data", (event) => handler(event.payload)),
   onSshClosed: (handler: (payload: SshClosedPayload) => void): Promise<UnlistenFn> =>
     listen<SshClosedPayload>("ssh://closed", (event) => handler(event.payload)),
+  onPluginState: (handler: (payload: PluginInfo) => void): Promise<UnlistenFn> =>
+    listen<PluginInfo>("plugin://state", (event) => handler(event.payload)),
   onTransfer: (handler: (payload: TransferEvent) => void): Promise<UnlistenFn> =>
     listen<TransferEvent>("sftp://transfer", (event) => handler(event.payload)),
 };
