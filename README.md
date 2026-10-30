@@ -16,8 +16,9 @@ Early development, built in public milestone by milestone.
 - `v0.2.x` — SSH terminal with host key trust, keychain passwords, command history
 - `v0.3.x` — SFTP dual-pane file manager, transfers and a remote text editor
 - `v0.4.x` — remote monitoring and process control
-- `v0.5.x` — plugin host, TypeScript plugins, MySQL plugin
-- `v1.0.0` — hardening, marketplace and full documentation
+- `v0.5.x` — plugin host with JSON-RPC over stdio and TypeScript plugins
+- `v0.6.x` — WASM plugins, plugin marketplace and the MySQL plugin
+- `v1.0.0` — hardening and full documentation
 
 ## Stack
 
@@ -76,6 +77,7 @@ scripts/ci/           Repository hygiene checks
 Plugins live in the app data `plugins` folder and speak JSON-RPC 2.0 over stdio, one JSON object
 per line. A minimal example ships in `examples/plugins/hello`; copy that folder into the plugins
 directory and start it from Settings → Plugins.
+
 ## Platforms
 
 - Windows 10/11 x64 — NSIS, automatic updates

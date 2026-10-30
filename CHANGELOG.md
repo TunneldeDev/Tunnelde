@@ -6,6 +6,20 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-30
+
+### Added
+
+- Plugin host: folders with `tunnelde-plugin.json` and an entry script, spawned as separate processes.
+- JSON-RPC 2.0 over stdio with newline framing, initialize handshake, command calls, timeouts and log forwarding.
+- Settings → Plugins lists manifests, starts and stops plugins, runs their commands and shows the last result.
+- Minimal `hello` example plugin under `examples/plugins/hello`.
+
+### Security
+
+- Manifests validate ids, API version and permissions, and the entry script must stay inside the plugin folder.
+- Each plugin runs in its own process and is killed when dropped.
+
 ## [0.4.2] - 2026-10-30
 
 ### Added

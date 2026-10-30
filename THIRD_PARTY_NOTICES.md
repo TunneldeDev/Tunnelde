@@ -38,6 +38,11 @@ their notices are reproduced or referenced as required.
 
 The SIL Open Font License permits bundling and redistribution with the application.
 
+## Optional runtimes
+
+Node.js 20 or newer is required to run plugins. It is not bundled; the host uses the `node`
+executable found on `PATH` (or `TUNNELDE_NODE`), under the Node.js license.
+
 ## Build tooling
 
 Vite, TypeScript, ESLint, Prettier, Vitest and Tailwind-free CSS tooling are development-only
