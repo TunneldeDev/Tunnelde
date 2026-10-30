@@ -6,9 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-10-30
+
 ### Added
 
 - File panels accept a multi-selection: Ctrl/Cmd+click, Shift+click and Ctrl/Cmd+A, with delete, transfer, cut, copy, paste and drag applying to every selected entry.
+
 
 ## [0.13.1] - 2026-10-30
 
