@@ -4,6 +4,8 @@
 import { FolderOpen, LayoutPanelLeft, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
@@ -11,7 +13,7 @@ import { Input } from "@/components/ui/form/Field";
 import { StatusDot } from "@/components/ui/display/Misc";
 import { translateError } from "@/lib/api/errors";
 import { cn } from "@/lib/text/format";
-import { api } from "@/lib/api/ipc";
+import { api, isTauri } from "@/lib/api/ipc";
 import { useDialogs } from "@/store/dialogs";
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";
@@ -43,6 +45,36 @@ export function PluginsSection() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // A folder dropped on the window fills the install dialog.
+  useEffect(() => {
+    if (path === null || !isTauri()) {
+      return;
+    }
+    let alive = true;
+    let unlisten: UnlistenFn | null = null;
+    void getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type === "drop") {
+          const first = event.payload.paths[0];
+          if (first) {
+            setPath(first);
+          }
+        }
+      })
+      .then((fn) => {
+        if (alive) {
+          unlisten = fn;
+        } else {
+          fn();
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+      unlisten?.();
+    };
+  }, [path]);
 
   const uninstall = (plugin: (typeof items)[number]) => {
     confirm({
@@ -199,23 +231,43 @@ export function PluginsSection() {
             </>
           }
         >
-          <Input
-            autoFocus
-            value={path}
-            spellCheck={false}
-            placeholder={t("plugins.installHint")}
-            aria-label={t("plugins.installHint")}
-            onChange={(event) => setPath(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && path.trim().length > 0) {
-                void install(path.trim()).then((ok) => {
-                  if (ok) {
-                    setPath(null);
-                  }
-                });
-              }
-            }}
-          />
+          <div className="field-row">
+            <Input
+              autoFocus
+              value={path}
+              spellCheck={false}
+              placeholder={t("plugins.installHint")}
+              aria-label={t("plugins.installHint")}
+              onChange={(event) => setPath(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && path.trim().length > 0) {
+                  void install(path.trim()).then((ok) => {
+                    if (ok) {
+                      setPath(null);
+                    }
+                  });
+                }
+              }}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              leading={<FolderOpen size={13} />}
+              onClick={() => {
+                void api
+                  .pluginPickFolder()
+                  .then((picked) => {
+                    if (picked) {
+                      setPath(picked);
+                    }
+                  })
+                  .catch((error: unknown) => toast(translateError(error), "error"));
+              }}
+            >
+              {t("common.browse")}
+            </Button>
+          </div>
+          <p className="settings-hint">{t("plugins.dropHint")}</p>
         </Dialog>
       ) : null}
     </section>

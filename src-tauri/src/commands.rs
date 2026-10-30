@@ -589,6 +589,22 @@ pub async fn plugin_run(app: AppHandle, id: String, command: String) -> AppResul
     state.plugins.run(&id, &command).await
 }
 
+/// Lets the user pick the folder that contains a plugin.
+#[tauri::command]
+pub async fn plugin_pick_folder(app: AppHandle) -> AppResult<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Plugin folder")
+        .pick_folder(move |path| {
+            let _ = tx.send(path);
+        });
+    let picked = rx
+        .await
+        .map_err(|_| AppError::internal("dialog.cancelled"))?;
+    Ok(picked.map(|path| path.to_string()))
+}
+
 #[tauri::command]
 pub fn plugin_open_dir(app: AppHandle) -> AppResult<()> {
     let state = app.state::<AppState>();

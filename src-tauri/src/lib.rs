@@ -115,6 +115,7 @@ pub fn run() {
             commands::plugin_stop,
             commands::plugin_run,
             commands::plugin_open_dir,
+            commands::plugin_pick_folder,
             commands::app_open_data_dir,
             commands::plugin_render_view,
             commands::plugin_install,

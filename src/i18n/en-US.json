@@ -326,7 +326,8 @@
     "installHint": "Folder containing tunnelde-plugin.json",
     "uninstall": "Uninstall",
     "uninstallTitle": "Uninstall plugin",
-    "uninstallBody": "Remove {{name}} and its folder?"
+    "uninstallBody": "Remove {{name}} and its folder?",
+    "dropHint": "Drop a plugin folder here"
   },
   "history": {
     "title": "History",
