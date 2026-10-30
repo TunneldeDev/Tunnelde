@@ -16,9 +16,9 @@ const payload = (overrides: Partial<DragPayload> = {}): DragPayload => ({
 describe("dnd helpers", () => {
   it("joins and splits paths on both sides", () => {
     expect(joinPath("/home/user", "a.txt", "/")).toBe("/home/user/a.txt");
-    expect(joinPath("C:\\Users\\me\\", "a.txt", "\\")).toBe("C:\\Users\\me\\a.txt");
+    expect(joinPath("C:\\work\\", "a.txt", "\\")).toBe("C:\\work\\a.txt");
     expect(parentOf("/home/user/a.txt")).toBe("/home/user");
-    expect(parentOf("C:\\Users\\me\\a.txt")).toBe("C:\\Users\\me");
+    expect(parentOf("C:\\work\\a.txt")).toBe("C:\\work");
   });
 
   it("ignores drops into the same folder", () => {
