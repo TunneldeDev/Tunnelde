@@ -8,6 +8,16 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ### Added
 
+- Drag files between the local and remote panes to upload or download them, or inside a pane to move them into another folder.
+- Right-click menus for files with open, transfer, rename, copy path and delete; the browser menu no longer appears.
+- `pnpm build:local` builds an installer without the updater signature for local testing.
+
+### Changed
+
+- The embedded WebView no longer shows autofill suggestions, password bubbles, page context menus, browser shortcuts or devtools in release builds.
+
+### Added
+
 - Plugins can declare views and answer `view.render` with JSON blocks (heading, text, key/value, table) that the host renders in a tab.
 
 ## [0.5.3] - 2026-10-30

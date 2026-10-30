@@ -27,7 +27,8 @@
     "version:check": "node scripts/release/version.mjs check",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "build:local": "node scripts/build-local.mjs"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "5.3.0",

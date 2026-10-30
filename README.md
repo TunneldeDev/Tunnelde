@@ -56,7 +56,8 @@ Releases are cut from **Actions → Release**: pick `patch`, `minor` or `major` 
 version) and the workflow bumps `package.json`, `Cargo.toml`, `Cargo.lock` and `tauri.conf.json`,
 moves the `Unreleased` changelog section under the new version, commits, tags `vX.Y.Z` and builds
 every platform. Export `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for
-local builds; the public key lives in `src-tauri/tauri.conf.json`.
+local builds; the public key lives in `src-tauri/tauri.conf.json`. For an installer without the
+updater signature use `pnpm build:local`.
 
 The same steps are available locally:
 
