@@ -25,6 +25,7 @@
     "release:prepare": "node scripts/release/release.mjs",
     "release:notes": "node scripts/release/changelog.mjs notes",
     "version:check": "node scripts/release/version.mjs check",
+    "i18n:check": "node scripts/ci/check-i18n.mjs",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

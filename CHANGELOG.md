@@ -6,6 +6,14 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A close button on each pane's tab strip once the editor is split.
+
+### Changed
+
+- CI checks that the English and Chinese catalogues share the same keys.
+
 ### Fixed
 
 - Re-dispatching a release now fails fast when the tag already exists instead of half-bumping the version.

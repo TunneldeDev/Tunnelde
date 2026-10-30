@@ -84,6 +84,8 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const splitTab = useWorkspace((state) => state.splitTab);
   const panes = useWorkspace((state) => state.panes);
   const openMenu = useContextMenu((state) => state.open);
+  const closePane = useWorkspace((state) => state.closePane);
+  const paneCount = panes.length;
   const [before, setBefore] = useState<string | null>(null);
 
   const items = pane.tabIds
@@ -200,6 +202,17 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
           </div>
         );
       })}
+      {paneCount > 1 ? (
+        <button
+          type="button"
+          className="pane__tabs-close"
+          aria-label={t("tab.closePane")}
+          title={t("tab.closePane")}
+          onClick={() => closePane(pane.id)}
+        >
+          <X size={11} />
+        </button>
+      ) : null}
     </div>
   );
 }

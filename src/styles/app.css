@@ -2790,3 +2790,22 @@
 .sftp-row.is-cut {
   opacity: 0.55;
 }
+
+.pane__tabs-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--td-radius-sm);
+  background: transparent;
+  color: var(--td-faint);
+  cursor: default;
+}
+
+.pane__tabs-close:hover {
+  background: var(--td-hover);
+  color: var(--td-text);
+}
