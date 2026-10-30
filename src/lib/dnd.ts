@@ -147,3 +147,6 @@ export function planPaste(
     to: destination,
   };
 }
+export function canPaste(clip: PasteClip | null, targetSide: FileSide, targetDirectory: string): boolean {
+  return clip !== null && planPaste(clip, targetSide, targetDirectory).kind !== "noop";
+}

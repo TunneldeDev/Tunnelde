@@ -3,7 +3,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { joinPath, parentOf, planPaste, resolveDrop, type DragPayload, type PasteClip } from "@/lib/dnd";
+import {
+  canPaste,
+  joinPath,
+  parentOf,
+  planPaste,
+  resolveDrop,
+  type DragPayload,
+  type PasteClip,
+} from "@/lib/dnd";
 
 const payload = (overrides: Partial<DragPayload> = {}): DragPayload => ({
   side: "remote",
@@ -108,5 +116,24 @@ describe("planPaste", () => {
       to: "/home/user/docs/a.txt",
     });
     expect(planPaste(clip({ isDir: true }), "local", "C:\\\\work")).toEqual({ kind: "noop" });
+  });
+});
+describe("canPaste", () => {
+  const clip: PasteClip = {
+    side: "remote",
+    action: "copy",
+    path: "/home/user/a.txt",
+    name: "a.txt",
+    isDir: false,
+  };
+
+  it("rejects empty clipboards and no-op targets", () => {
+    expect(canPaste(null, "remote", "/home/user/docs")).toBe(false);
+    expect(canPaste(clip, "remote", "/home/user")).toBe(false);
+  });
+
+  it("accepts another folder and the other pane", () => {
+    expect(canPaste(clip, "remote", "/home/user/docs")).toBe(true);
+    expect(canPaste(clip, "local", "C:\\work")).toBe(true);
   });
 });

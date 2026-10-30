@@ -6,12 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The file pane only offers Paste when the clipboard entry has somewhere to go, instead of silently doing nothing.
+
 ## [0.10.2] - 2026-10-30
 
 ### Added
 
 - The connect dialog shows the previously trusted fingerprint when a host key changed, so the two can be compared before replacing it.
-
 
 ## [0.10.1] - 2026-10-30
 

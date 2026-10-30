@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/Field";
 import { cn, formatBytes, formatDate } from "@/lib/format";
 import { translateError } from "@/lib/errors";
 import {
+  canPaste,
   planPaste,
   readDragPayload,
   resolveDrop,
@@ -99,6 +100,7 @@ interface PaneProps {
   onCopy: (entry: FileEntry) => void;
   onPaste: () => void;
   clipPath: string | null;
+  pasteEnabled: boolean;
   locale: string;
 }
 
@@ -127,6 +129,7 @@ function Pane({
   onCopy,
   onPaste,
   clipPath,
+  pasteEnabled,
   locale,
 }: PaneProps) {
   const { t } = useTranslation();
@@ -144,7 +147,7 @@ function Pane({
     const items = [];
     items.push({ label: t("sftp.cut"), onSelect: () => onCut(entry) });
     items.push({ label: t("sftp.copy"), onSelect: () => onCopy(entry) });
-    items.push({ label: t("sftp.paste"), disabled: !clipPath, onSelect: onPaste });
+    items.push({ label: t("sftp.paste"), disabled: !pasteEnabled, onSelect: onPaste });
     if (entry.isDir) {
       items.push({ label: t("sftp.open"), onSelect: () => onEnter(entry) });
     } else if (onOpenFile) {
@@ -660,6 +663,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         }),
       onPaste: () => void pasteInto(side, state.listing?.path ?? ""),
       clipPath: clip && clip.side === side ? clip.path : null,
+      pasteEnabled: canPaste(clip, side, state.listing?.path ?? ""),
       locale,
     };
   };
