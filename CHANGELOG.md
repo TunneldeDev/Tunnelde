@@ -6,6 +6,15 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
+### Added
+
+- Dual-pane file manager over the active SSH session with local and remote listings, path navigation and refresh.
+- Folder creation, rename and delete in both panes, with confirmation before deleting.
+- Streamed upload and download with progress, cancellation and a transfer strip.
+- Files entry points on the host page and in the terminal toolbar.
+
 ## [0.2.1] - 2026-10-30
 
 ### Added

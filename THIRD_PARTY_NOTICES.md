@@ -15,6 +15,7 @@ their notices are reproduced or referenced as required.
 | lucide-react                                  | ISC                                                    |
 | rusqlite (bundled SQLite)                     | MIT; SQLite is public domain                           |
 | russh                                         | MIT                                                    |
+| russh-sftp                                    | MIT                                                    |
 | ring                                          | ISC-style license                                      |
 | xterm.js, @xterm/addon-fit                    | MIT                                                    |
 | base64                                        | MIT OR Apache-2.0                                      |
