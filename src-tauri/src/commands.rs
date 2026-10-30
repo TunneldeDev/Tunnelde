@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -11,6 +11,7 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput, TabRecord};
 use crate::monitor;
+use crate::plugins;
 use crate::settings::{Settings, ACCENTS, DENSITIES, LANGUAGES, THEMES};
 use crate::sftp::{self, Listing};
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
@@ -486,6 +487,41 @@ pub async fn sftp_write_text(
     content: String,
 ) -> AppResult<()> {
     sftp::write_text(&app, &session_id, &path, &content).await
+}
+
+#[tauri::command]
+pub async fn plugins_list(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>> {
+    let state = app.state::<AppState>();
+    Ok(state.plugins.list().await)
+}
+
+#[tauri::command]
+pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::PluginInfo> {
+    let state = app.state::<AppState>();
+    state.plugins.start(&app, &id).await
+}
+
+#[tauri::command]
+pub async fn plugin_stop(app: AppHandle, id: String) -> AppResult<plugins::PluginInfo> {
+    let state = app.state::<AppState>();
+    state.plugins.stop(&app, &id).await
+}
+
+#[tauri::command]
+pub async fn plugin_run(app: AppHandle, id: String, command: String) -> AppResult<Value> {
+    let state = app.state::<AppState>();
+    state.plugins.run(&id, &command).await
+}
+
+#[tauri::command]
+pub fn plugin_open_dir(app: AppHandle) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    app.opener()
+        .open_path(
+            state.plugins.directory().to_string_lossy().into_owned(),
+            None::<&str>,
+        )
+        .map_err(|error| AppError::Internal(error.to_string()))
 }
 
 fn merge_json(base: &mut Value, patch: Value) {

@@ -7,6 +7,7 @@ mod error;
 mod logging;
 mod models;
 mod monitor;
+mod plugins;
 mod settings;
 mod sftp;
 mod ssh;
@@ -95,6 +96,11 @@ pub fn run() {
             commands::remote_stats,
             commands::remote_processes,
             commands::remote_kill,
+            commands::plugins_list,
+            commands::plugin_start,
+            commands::plugin_stop,
+            commands::plugin_run,
+            commands::plugin_open_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");

@@ -11,6 +11,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 use crate::db::{self, Database};
 use crate::error::{AppError, AppResult};
 use crate::monitor::MonitorCache;
+use crate::plugins::PluginsManager;
 use crate::settings::Settings;
 use crate::sftp::TransferRegistry;
 use crate::ssh::SshManager;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub ssh: SshManager,
     pub transfers: TransferRegistry,
     pub monitor: MonitorCache,
+    pub plugins: PluginsManager,
     pub locale: RwLock<String>,
     pub system: Mutex<System>,
     pub disks: Mutex<Disks>,
@@ -93,6 +95,11 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         }
     };
 
+    let plugins_dir = std::env::var_os("TUNNELDE_PLUGINS_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("plugins"));
+    let _ = std::fs::create_dir_all(&plugins_dir);
+
     let settings = database.with(db::settings::load)?;
     let version = app.package_info().version.to_string();
 
@@ -103,6 +110,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         ssh: SshManager::default(),
         transfers: TransferRegistry::default(),
         monitor: MonitorCache::default(),
+        plugins: PluginsManager::load(plugins_dir),
         locale: RwLock::new("en-US".into()),
         system: Mutex::new(System::new_all()),
         disks: Mutex::new(Disks::new_with_refreshed_list()),
