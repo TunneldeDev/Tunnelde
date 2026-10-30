@@ -7,6 +7,7 @@ mod error;
 mod logging;
 mod models;
 mod settings;
+mod sftp;
 mod ssh;
 mod state;
 mod system;
@@ -76,6 +77,18 @@ pub fn run() {
             commands::credential_save,
             commands::credential_forget,
             commands::credential_status,
+            commands::sftp_list,
+            commands::sftp_mkdir,
+            commands::sftp_rename,
+            commands::sftp_delete,
+            commands::sftp_download,
+            commands::sftp_upload,
+            commands::local_list,
+            commands::local_mkdir,
+            commands::local_rename,
+            commands::local_delete,
+            commands::local_home,
+            commands::transfer_cancel,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Tunnelde");

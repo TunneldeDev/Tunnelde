@@ -97,7 +97,7 @@ struct ObservedKey {
     algorithm: String,
 }
 
-struct ClientHandler {
+pub(crate) struct ClientHandler {
     expected: Option<String>,
     observed: Arc<StdMutex<Option<ObservedKey>>>,
 }
@@ -134,6 +134,7 @@ struct SessionHandle {
     info: SessionInfo,
     writer: mpsc::Sender<WriterMsg>,
     task: JoinHandle<()>,
+    handle: Arc<Handle<ClientHandler>>,
 }
 
 #[derive(Default)]
@@ -146,6 +147,17 @@ impl SshManager {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.insert(handle.info.id.clone(), handle);
         }
+    }
+
+    pub(crate) fn handle(&self, session_id: &str) -> AppResult<Arc<Handle<ClientHandler>>> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        sessions
+            .get(session_id)
+            .map(|session| session.handle.clone())
+            .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))
     }
 
     fn remove(&self, session_id: &str) {
@@ -377,12 +389,14 @@ pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<Se
         connected_at: now_ms(),
     };
 
+    let shared_handle = Arc::new(handle);
     let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
     let task_app = app.clone();
     let task_session = session_id.clone();
 
+    let task_handle = Arc::clone(&shared_handle);
     let task = tokio::spawn(async move {
-        let _session = handle;
+        let _session = task_handle;
         loop {
             tokio::select! {
                 incoming = reader.wait() => {
@@ -431,6 +445,7 @@ pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<Se
         info: info.clone(),
         writer: tx,
         task,
+        handle: shared_handle,
     });
 
     tracing::info!(host = %host.name, session = %session_id, "ssh session opened");

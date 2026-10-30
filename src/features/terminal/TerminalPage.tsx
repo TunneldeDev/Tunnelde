@@ -4,7 +4,7 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { X } from "lucide-react";
+import { FolderTree, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -16,6 +16,7 @@ import { api, events, isTauri } from "@/lib/ipc";
 import { TERMINAL_FONT, terminalTheme } from "@/features/terminal/terminalTheme";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
+import { useWorkspace } from "@/store/workspace";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -26,6 +27,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const disconnect = useSsh((state) => state.disconnect);
+  const openSftp = useWorkspace((state) => state.openSftp);
   const theme = useSettings((state) => state.settings.theme);
   const fontSize = useSettings((state) => state.settings.monoFontSize);
   const resolvedTheme = resolveTheme(theme);
@@ -155,6 +157,16 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <span className="terminal-head__title">{session?.title ?? t("nav.host")}</span>
           {session ? <span className="terminal-head__meta">{session.address}</span> : null}
         </div>
+        <IconButton
+          label={t("sftp.title")}
+          onClick={() => {
+            if (session) {
+              openSftp(session);
+            }
+          }}
+        >
+          <FolderTree size={15} />
+        </IconButton>
         <IconButton
           label={t("terminal.disconnect")}
           onClick={() => {

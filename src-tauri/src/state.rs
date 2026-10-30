@@ -11,6 +11,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 use crate::db::{self, Database};
 use crate::error::{AppError, AppResult};
 use crate::settings::Settings;
+use crate::sftp::TransferRegistry;
 use crate::ssh::SshManager;
 use crate::update::UpdateService;
 
@@ -19,6 +20,7 @@ pub struct AppState {
     pub settings: RwLock<Settings>,
     pub update: UpdateService,
     pub ssh: SshManager,
+    pub transfers: TransferRegistry,
     pub locale: RwLock<String>,
     pub system: Mutex<System>,
     pub disks: Mutex<Disks>,
@@ -90,6 +92,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         settings: RwLock::new(settings),
         update: UpdateService::new(version),
         ssh: SshManager::default(),
+        transfers: TransferRegistry::default(),
         locale: RwLock::new("en-US".into()),
         system: Mutex::new(System::new_all()),
         disks: Mutex::new(Disks::new_with_refreshed_list()),

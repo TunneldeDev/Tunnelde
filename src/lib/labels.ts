@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import type { AuthMethod, TabKind } from "./types";
+import type { AuthMethod } from "./types";
 
 export const AUTH_LABELS: Record<
   AuthMethod,
@@ -14,13 +14,3 @@ export const AUTH_LABELS: Record<
 };
 
 export const AUTH_METHODS: AuthMethod[] = ["password", "key"];
-
-export const TAB_NAV_LABELS: Record<
-  Exclude<TabKind, "host" | "terminal">,
-  "nav.welcome" | "nav.settings" | "nav.about" | "nav.updates"
-> = {
-  welcome: "nav.welcome",
-  settings: "nav.settings",
-  about: "nav.about",
-  updates: "nav.updates",
-};

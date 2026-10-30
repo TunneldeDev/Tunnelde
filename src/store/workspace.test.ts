@@ -97,6 +97,15 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().activeId).toBe("terminal:s1");
   });
 
+  it("opens one files tab per session and drops it on close", () => {
+    useWorkspace.getState().openSftp(session("s1", "Alpha"));
+    useWorkspace.getState().openSftp(session("s1", "Alpha"));
+    expect(useWorkspace.getState().tabs).toHaveLength(1);
+    expect(useWorkspace.getState().activeId).toBe("sftp:s1");
+    useWorkspace.getState().closeSession("s1");
+    expect(useWorkspace.getState().tabs).toHaveLength(0);
+  });
+
   it("closes the tab when its session goes away", () => {
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
     useWorkspace.getState().openPage("welcome");

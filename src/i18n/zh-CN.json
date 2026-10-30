@@ -21,7 +21,8 @@
     "retry": "重试",
     "loading": "加载中",
     "more": "更多",
-    "copy": "复制"
+    "copy": "复制",
+    "error": "错误"
   },
   "nav": {
     "welcome": "欢迎",
@@ -222,6 +223,29 @@
     "invalidPayload": "终端输入无效",
     "noHostKey": "服务器未提供主机密钥",
     "agentUnsupported": "暂不支持 Agent 认证"
+  },  "sftp": {
+    "title": "文件",
+    "local": "本地",
+    "remote": "远端",
+    "path": "路径",
+    "up": "上一级",
+    "refresh": "刷新",
+    "newFolder": "新建文件夹",
+    "folderName": "文件夹名称",
+    "rename": "重命名",
+    "renameTo": "新名称",
+    "delete": "删除",
+    "deleteTitle": "删除",
+    "deleteBody": "删除“{{name}}”？",
+    "upload": "上传",
+    "download": "下载",
+    "empty": "空文件夹",
+    "itemCount": "{{count}} 项",
+    "noSession": "连接后可浏览文件",
+    "cancelTransfer": "取消传输",
+    "done": "完成",
+    "failed": "失败",
+    "cancelled": "已取消"
   },  "menu": {
     "edit": "编辑",
     "duplicate": "复制",

@@ -9,6 +9,7 @@ import type { TabRecord } from "@/lib/types";
 import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
+import { useTransfers } from "@/store/transfers";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
@@ -92,6 +93,10 @@ async function wireEvents(): Promise<void> {
     if (page === "settings" || page === "about" || page === "updates") {
       useWorkspace.getState().openPage(page);
     }
+  });
+
+  await events.onTransfer((payload) => {
+    useTransfers.getState().apply(payload);
   });
 
   await events.onSshClosed((payload) => {

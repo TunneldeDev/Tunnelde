@@ -31,6 +31,7 @@ interface WorkspaceStore {
   openPage: (kind: PageKind) => void;
   openHost: (host: Host) => void;
   openTerminal: (session: SshSession) => void;
+  openSftp: (session: SshSession) => void;
   closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
@@ -108,15 +109,35 @@ export const useWorkspace = create<WorkspaceStore>((set) => ({
     });
   },
 
-  closeSession: (sessionId) => {
-    const id = `terminal:${sessionId}`;
+  openSftp: (session) => {
+    const id = `sftp:${session.id}`;
     set((state) => {
-      const index = state.tabs.findIndex((tab) => tab.id === id);
+      if (state.tabs.some((tab) => tab.id === id)) {
+        return { activeId: id };
+      }
+      const tab: WorkspaceTab = {
+        id,
+        kind: "sftp",
+        title: session.title,
+        hostId: session.hostId,
+        pinned: false,
+      };
+      return { tabs: [...state.tabs, tab], activeId: id };
+    });
+  },
+
+  closeSession: (sessionId) => {
+    const ids = new Set([`terminal:${sessionId}`, `sftp:${sessionId}`]);
+    set((state) => {
+      const index = state.tabs.findIndex((tab) => ids.has(tab.id));
       if (index < 0) {
         return state;
       }
-      const tabs = state.tabs.filter((tab) => tab.id !== id);
-      const activeId = state.activeId === id ? neighbour(state.tabs, index, id) : state.activeId;
+      const tabs = state.tabs.filter((tab) => !ids.has(tab.id));
+      const activeId =
+        state.activeId && ids.has(state.activeId)
+          ? neighbour(state.tabs, index, state.activeId)
+          : state.activeId;
       return { tabs, activeId };
     });
   },

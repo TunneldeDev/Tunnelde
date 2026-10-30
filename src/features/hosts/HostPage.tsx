@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { Pencil, PlugZap, Star, Trash2 } from "lucide-react";
+import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/Button";
@@ -12,6 +12,7 @@ import type { Host } from "@/lib/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
+import { useSsh } from "@/store/ssh";
 
 function Detail({ label, value }: { label: string; value: string }) {
   return (
@@ -28,6 +29,8 @@ function HostDetails({ host }: { host: Host }) {
   const hosts = useHosts((state) => state.hosts);
   const openHostDialog = useDialogs((state) => state.openHost);
   const openConnect = useDialogs((state) => state.openConnect);
+  const openSftp = useWorkspace((state) => state.openSftp);
+  const session = useSsh((state) => state.sessions.find((item) => item.hostId === host.id) ?? null);
   const confirm = useDialogs((state) => state.confirm);
   const deleteHost = useHosts((state) => state.deleteHost);
   const createHost = useHosts((state) => state.createHost);
@@ -74,6 +77,20 @@ function HostDetails({ host }: { host: Host }) {
             onClick={() => openConnect(host)}
           >
             {t("terminal.connect")}
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            leading={<FolderTree size={13} />}
+            onClick={() => {
+              if (session) {
+                openSftp(session);
+              } else {
+                openConnect(host, "sftp");
+              }
+            }}
+          >
+            {t("sftp.title")}
           </Button>
           <IconButton
             label={host.favorite ? t("menu.unfavorite") : t("menu.favorite")}

@@ -391,7 +391,14 @@ export function DialogHost() {
     case "group":
       return <GroupDialog key={dialog.group?.id ?? "new"} group={dialog.group} onClose={close} />;
     case "connect":
-      return <ConnectDialog key={dialog.host.id} host={dialog.host} onClose={close} />;
+      return (
+        <ConnectDialog
+          key={dialog.host.id}
+          host={dialog.host}
+          after={dialog.after}
+          onClose={close}
+        />
+      );
     case "confirm":
       return (
         <ConfirmDialog

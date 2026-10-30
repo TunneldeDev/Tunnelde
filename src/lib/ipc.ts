@@ -11,6 +11,7 @@ import type {
   HostInput,
   HostKeyInfo,
   HostsSnapshot,
+  Listing,
   Settings,
   SshConnectRequest,
   SshDataPayload,
@@ -19,6 +20,7 @@ import type {
   SettingsPatch,
   SystemStats,
   TabRecord,
+  TransferEvent,
   UpdateState,
 } from "./types";
 
@@ -66,6 +68,24 @@ export const api = {
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
+  sftpList: (sessionId: string, path?: string | null) =>
+    invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),
+  localList: (path?: string | null) => invoke<Listing>("local_list", { path: path ?? null }),
+  localHome: () => invoke<string>("local_home"),
+  sftpMkdir: (sessionId: string, path: string) => invoke<void>("sftp_mkdir", { sessionId, path }),
+  sftpRename: (sessionId: string, from: string, to: string) =>
+    invoke<void>("sftp_rename", { sessionId, from, to }),
+  sftpDelete: (sessionId: string, path: string, isDir: boolean) =>
+    invoke<void>("sftp_delete", { sessionId, path, isDir }),
+  localMkdir: (path: string) => invoke<void>("local_mkdir", { path }),
+  localRename: (from: string, to: string) => invoke<void>("local_rename", { from, to }),
+  localDelete: (path: string, isDir: boolean) => invoke<void>("local_delete", { path, isDir }),
+  sftpDownload: (sessionId: string, remotePath: string, localPath: string) =>
+    invoke<string>("sftp_download", { sessionId, remotePath, localPath }),
+  sftpUpload: (sessionId: string, localPath: string, remotePath: string) =>
+    invoke<string>("sftp_upload", { sessionId, localPath, remotePath }),
+  transferCancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),
+
   credentialSave: (hostId: string, password: string) =>
     invoke<void>("credential_save", { hostId, password }),
   credentialForget: (hostId: string) => invoke<void>("credential_forget", { hostId }),
@@ -86,4 +106,6 @@ export const events = {
     listen<SshDataPayload>("ssh://data", (event) => handler(event.payload)),
   onSshClosed: (handler: (payload: SshClosedPayload) => void): Promise<UnlistenFn> =>
     listen<SshClosedPayload>("ssh://closed", (event) => handler(event.payload)),
+  onTransfer: (handler: (payload: TransferEvent) => void): Promise<UnlistenFn> =>
+    listen<TransferEvent>("sftp://transfer", (event) => handler(event.payload)),
 };

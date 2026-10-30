@@ -92,7 +92,7 @@ export interface HostsSnapshot {
   hosts: Host[];
 }
 
-export type TabKind = "welcome" | "host" | "settings" | "about" | "updates" | "terminal";
+export type TabKind = "welcome" | "host" | "settings" | "about" | "updates" | "terminal" | "sftp";
 
 export interface TabRecord {
   id: string;
@@ -204,4 +204,30 @@ export interface SshDataPayload {
 export interface SshClosedPayload {
   sessionId: string;
   reason: string;
+}
+export interface FileEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  modified: number | null;
+  permissions: number | null;
+}
+
+export interface Listing {
+  path: string;
+  entries: FileEntry[];
+}
+
+export type TransferDirection = "upload" | "download";
+export type TransferStatus = "running" | "done" | "failed" | "cancelled";
+
+export interface TransferEvent {
+  id: string;
+  direction: TransferDirection;
+  name: string;
+  transferred: number;
+  total: number;
+  status: TransferStatus;
+  error: string | null;
 }

@@ -45,6 +45,13 @@ export function formatDateTime(timestamp: number | null, locale: string): string
   }).format(new Date(timestamp));
 }
 
+export function formatDate(timestamp: number | null, locale: string): string {
+  if (!timestamp) {
+    return "—";
+  }
+  return new Intl.DateTimeFormat(locale, { dateStyle: "medium" }).format(new Date(timestamp));
+}
+
 export function formatRelative(timestamp: number | null, locale: string): string {
   if (!timestamp) {
     return "—";

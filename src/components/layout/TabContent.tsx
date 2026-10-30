@@ -6,6 +6,7 @@ import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/ui/Misc";
 import { AboutPage } from "@/features/about/AboutPage";
 import { HostPage } from "@/features/hosts/HostPage";
+import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { TerminalPage } from "@/features/terminal/TerminalPage";
 import { UpdatesPage } from "@/features/updates/UpdatesPage";
@@ -26,6 +27,8 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
       return <UpdatesPage />;
     case "terminal":
       return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
+    case "sftp":
+      return <SftpPage sessionId={tab.id.replace("sftp:", "")} />;
     default:
       return null;
   }

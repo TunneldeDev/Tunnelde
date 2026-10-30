@@ -21,7 +21,8 @@
     "retry": "Retry",
     "loading": "Loading",
     "more": "More",
-    "copy": "Copy"
+    "copy": "Copy",
+    "error": "Error"
   },
   "nav": {
     "welcome": "Welcome",
@@ -222,6 +223,29 @@
     "invalidPayload": "Invalid terminal input",
     "noHostKey": "The server did not present a host key",
     "agentUnsupported": "Agent authentication is not available yet"
+  },  "sftp": {
+    "title": "Files",
+    "local": "Local",
+    "remote": "Remote",
+    "path": "Path",
+    "up": "Up",
+    "refresh": "Refresh",
+    "newFolder": "New folder",
+    "folderName": "Folder name",
+    "rename": "Rename",
+    "renameTo": "New name",
+    "delete": "Delete",
+    "deleteTitle": "Delete",
+    "deleteBody": "Delete “{{name}}”?",
+    "upload": "Upload",
+    "download": "Download",
+    "empty": "Empty folder",
+    "itemCount": "{{count}} items",
+    "noSession": "Connect to browse files",
+    "cancelTransfer": "Cancel transfer",
+    "done": "Done",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
   },  "menu": {
     "edit": "Edit",
     "duplicate": "Duplicate",

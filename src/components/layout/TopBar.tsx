@@ -5,6 +5,7 @@ import {
   ArrowUpCircle,
   CircleDot,
   Download,
+  FolderTree,
   Info,
   Pin,
   Server,
@@ -27,6 +28,7 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   about: Info,
   updates: Download,
   terminal: Terminal,
+  sftp: FolderTree,
 };
 
 const NAV_KEYS = {
@@ -96,7 +98,9 @@ export function TopBar() {
             >
               {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
               <span className="td-tab__label">
-                {tab.kind === "host" || tab.kind === "terminal" ? tab.title : t(NAV_KEYS[tab.kind])}
+                {tab.kind === "host" || tab.kind === "terminal" || tab.kind === "sftp"
+                  ? tab.title
+                  : t(NAV_KEYS[tab.kind])}
               </span>
               <button
                 type="button"

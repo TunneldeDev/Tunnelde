@@ -24,13 +24,15 @@ const STATUS_KEYS = {
 
 interface ConnectDialogProps {
   host: Host;
+  after?: "terminal" | "sftp";
   onClose: () => void;
 }
 
-export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
+export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
   const openTerminal = useWorkspace((state) => state.openTerminal);
+  const openSftp = useWorkspace((state) => state.openSftp);
 
   const [probe, setProbe] = useState<HostKeyInfo | null>(null);
   const [trusted, setTrusted] = useState(false);
@@ -124,7 +126,11 @@ export function ConnectDialog({ host, onClose }: ConnectDialogProps) {
         toast(translateError(cause), "error");
       }
     }
-    openTerminal(session);
+    if (after === "sftp") {
+      openSftp(session);
+    } else {
+      openTerminal(session);
+    }
     onClose();
   };
 

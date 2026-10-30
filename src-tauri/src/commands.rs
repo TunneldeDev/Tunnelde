@@ -11,14 +11,15 @@ use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{Group, GroupInput, Host, HostInput, TabRecord};
 use crate::settings::{Settings, ACCENTS, DENSITIES, LANGUAGES, THEMES};
+use crate::sftp::{self, Listing};
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
 use crate::system::{self, SystemStats};
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 6] = [
-    "welcome", "host", "settings", "about", "updates", "terminal",
+const TAB_KINDS: [&str; 7] = [
+    "welcome", "host", "settings", "about", "updates", "terminal", "sftp",
 ];
 const MAX_TABS: usize = 40;
 const MAX_USER_CSS: usize = 200_000;
@@ -363,6 +364,90 @@ pub fn credential_forget(host_id: String) -> AppResult<()> {
 #[tauri::command]
 pub fn credential_status(host_id: String) -> AppResult<bool> {
     vault::has(&host_id)
+}
+
+#[tauri::command]
+pub async fn sftp_list(
+    app: AppHandle,
+    session_id: String,
+    path: Option<String>,
+) -> AppResult<Listing> {
+    sftp::remote_list(&app, &session_id, path).await
+}
+
+#[tauri::command]
+pub fn local_list(path: Option<String>) -> AppResult<Listing> {
+    sftp::local_list(path)
+}
+
+#[tauri::command]
+pub fn local_home() -> String {
+    sftp::home_dir().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+pub async fn sftp_mkdir(app: AppHandle, session_id: String, path: String) -> AppResult<()> {
+    sftp::remote_mkdir(&app, &session_id, path).await
+}
+
+#[tauri::command]
+pub async fn sftp_rename(
+    app: AppHandle,
+    session_id: String,
+    from: String,
+    to: String,
+) -> AppResult<()> {
+    sftp::remote_rename(&app, &session_id, from, to).await
+}
+
+#[tauri::command]
+pub async fn sftp_delete(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+    is_dir: bool,
+) -> AppResult<()> {
+    sftp::remote_delete(&app, &session_id, path, is_dir).await
+}
+
+#[tauri::command]
+pub fn local_mkdir(path: String) -> AppResult<()> {
+    sftp::local_mkdir(path)
+}
+
+#[tauri::command]
+pub fn local_rename(from: String, to: String) -> AppResult<()> {
+    sftp::local_rename(from, to)
+}
+
+#[tauri::command]
+pub fn local_delete(path: String, is_dir: bool) -> AppResult<()> {
+    sftp::local_delete(path, is_dir)
+}
+
+#[tauri::command]
+pub fn sftp_download(
+    app: AppHandle,
+    session_id: String,
+    remote_path: String,
+    local_path: String,
+) -> AppResult<String> {
+    sftp::spawn_download(app, session_id, remote_path, local_path)
+}
+
+#[tauri::command]
+pub fn sftp_upload(
+    app: AppHandle,
+    session_id: String,
+    local_path: String,
+    remote_path: String,
+) -> AppResult<String> {
+    sftp::spawn_upload(app, session_id, local_path, remote_path)
+}
+
+#[tauri::command]
+pub fn transfer_cancel(state: State<'_, AppState>, transfer_id: String) {
+    state.transfers.cancel(&transfer_id);
 }
 
 fn merge_json(base: &mut Value, patch: Value) {
