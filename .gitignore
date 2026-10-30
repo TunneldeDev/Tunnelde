@@ -18,8 +18,8 @@ src-tauri/gen/
 src-tauri/.cargo/
 
 # Installers, bundles and updater metadata
-release/
-artifacts/
+/release/
+/artifacts/
 *.blockmap
 dev-app-update.yml
 

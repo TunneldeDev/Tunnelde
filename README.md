@@ -52,9 +52,19 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --all
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
-Release builds sign the updater artifacts. Export `TAURI_SIGNING_PRIVATE_KEY` and
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` before running `pnpm tauri build`; the public key lives in
-`src-tauri/tauri.conf.json`.
+Releases are cut from **Actions → Release**: pick `patch`, `minor` or `major` (or pass an explicit
+version) and the workflow bumps `package.json`, `Cargo.toml`, `Cargo.lock` and `tauri.conf.json`,
+moves the `Unreleased` changelog section under the new version, commits, tags `vX.Y.Z` and builds
+every platform. Export `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for
+local builds; the public key lives in `src-tauri/tauri.conf.json`.
+
+The same steps are available locally:
+
+```bash
+pnpm release:prepare --part patch   # bump manifests and cut the changelog
+pnpm release:notes 0.5.0            # print the notes for a version
+pnpm version:check                  # verify every manifest agrees
+```
 
 ```bash
 pnpm tauri build

@@ -5,9 +5,14 @@ on:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
-      tag:
-        description: Release tag, for example v0.1.0
-        required: true
+      part:
+        description: Semantic version part to bump
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: Explicit version (overrides part)
+        required: false
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,53 +24,76 @@ permissions:
 jobs:
   prepare:
     name: Prepare release
+    # The bot pushes the bump commit and its tag; that tag push must not build twice.
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      body: ${{ steps.meta.outputs.body }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          fetch-depth: 0
 
-      - name: Resolve tag
-        id: tag
-        shell: bash
-        run: |
-          tag="$GITHUB_REF_NAME"
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
-            tag="${{ inputs.tag }}"
-          fi
-          if ! [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::tag must look like vX.Y.Z"
-            exit 1
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
 
-      - name: Check version consistency
+      - name: Bump version, cut changelog and tag
+        if: github.event_name == 'workflow_dispatch'
         env:
-          TAG: ${{ steps.tag.outputs.tag }}
+          RELEASE_PART: ${{ inputs.part }}
+          RELEASE_VERSION: ${{ inputs.version }}
         shell: bash
         run: |
-          node <<'NODE'
-          const fs = require("node:fs");
-          const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
-          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-          const cargo = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-          const cargoVersion = /^version = "(.+)"$/m.exec(cargo)?.[1];
-          const tag = process.env.TAG.replace(/^v/, "");
-          const problems = [];
-          if (pkg.version !== cargoVersion) problems.push(`Cargo.toml ${cargoVersion} != package.json ${pkg.version}`);
-          if (conf.version !== pkg.version) problems.push(`tauri.conf.json ${conf.version} != package.json ${pkg.version}`);
-          if (pkg.version !== tag) problems.push(`tag ${tag} != package.json ${pkg.version}`);
-          if (problems.length > 0) {
-            for (const problem of problems) console.error(`::error::${problem}`);
-            process.exit(1);
-          }
-          console.log(`releasing ${pkg.version}`);
-          NODE
+          set -euo pipefail
+          if [ -n "${RELEASE_VERSION}" ]; then
+            node scripts/release/release.mjs --version "${RELEASE_VERSION}"
+          else
+            node scripts/release/release.mjs --part "${RELEASE_PART:-patch}"
+          fi
+
+          version=$(node scripts/release/version.mjs current)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json CHANGELOG.md
+          git commit -m "chore(release): ${version}"
+          git tag "v${version}"
+          git push origin HEAD:main
+          git push origin "v${version}"
+
+      - name: Verify tag against manifests
+        if: github.event_name == 'push'
+        run: node scripts/release/version.mjs check "${GITHUB_REF_NAME}"
+
+      - name: Collect tag, version and release notes
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            tag="${GITHUB_REF_NAME}"
+            version="${tag#v}"
+          else
+            version=$(node scripts/release/version.mjs current)
+            tag="v${version}"
+          fi
+          echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+          {
+            echo "body<<RELEASE_NOTES"
+            node scripts/release/changelog.mjs notes "${version}"
+            echo "RELEASE_NOTES"
+          } >> "${GITHUB_OUTPUT}"
 
   build:
     name: Build ${{ matrix.platform }}
     needs: prepare
+    if: needs.prepare.outputs.tag != ''
     strategy:
       fail-fast: false
       matrix:
@@ -83,6 +111,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
 
       - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
@@ -127,8 +157,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: ${{ needs.prepare.outputs.tag }}
-          releaseName: Tunnelde ${{ needs.prepare.outputs.tag }}
-          releaseBody: See the changelog in the repository for details.
+          releaseName: Tunnelde ${{ needs.prepare.outputs.version }}
+          releaseBody: ${{ needs.prepare.outputs.body }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
