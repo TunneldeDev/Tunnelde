@@ -6,6 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Terminal glyphs are measured after the webfont loads, and output that arrives during that wait is replayed instead of dropped.
+- Dragging the sidebar or right panel keeps whole pixels and saves the width the drag ended on, so the panel no longer springs back with a validation toast.
+- The file source picker lists one row per host instead of one per open session.
+
 ## [0.16.0] - 2026-10-30
 
 ### Added
