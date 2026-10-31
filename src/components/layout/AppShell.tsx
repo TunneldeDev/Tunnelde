@@ -187,7 +187,7 @@ export function AppShell() {
           onChange={setSidebarDraft}
           onCommit={(value) => {
             setSidebarDraft(null);
-            void updateSettings({ sidebarWidth: value });
+            void updateSettings({ sidebarWidth: Math.round(value) });
           }}
         />
         <main className="workspace">
@@ -235,7 +235,7 @@ export function AppShell() {
               onChange={setPanelDraft}
               onCommit={(value) => {
                 setPanelDraft(null);
-                void updateSettings({ rightPanelWidth: value });
+                void updateSettings({ rightPanelWidth: Math.round(value) });
               }}
             />
             {activeSession ? (

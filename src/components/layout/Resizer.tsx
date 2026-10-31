@@ -20,11 +20,18 @@ interface ResizerProps {
  * are persisted once on release.
  */
 export function Resizer({ value, min, max, edge, label, onChange, onCommit }: ResizerProps) {
-  const drag = useRef({ startX: 0, startValue: 0, active: false });
+  const drag = useRef({ startX: 0, startValue: 0, latest: 0, active: false });
+
+  const clamp = (next: number) => Math.round(Math.min(max, Math.max(min, next)));
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
-    drag.current = { startX: event.clientX, startValue: value, active: true };
+    drag.current = {
+      startX: event.clientX,
+      startValue: value,
+      latest: value,
+      active: true,
+    };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -32,8 +39,15 @@ export function Resizer({ value, min, max, edge, label, onChange, onCommit }: Re
     if (!drag.current.active) {
       return;
     }
+    // A scaled display reports fractional client coordinates; keep whole pixels
+    // so the persisted width stays an integer.
     const delta = (event.clientX - drag.current.startX) * (edge === "right" ? 1 : -1);
-    onChange(Math.min(max, Math.max(min, drag.current.startValue + delta)));
+    const next = clamp(drag.current.startValue + delta);
+    if (!Number.isFinite(next)) {
+      return;
+    }
+    drag.current.latest = next;
+    onChange(next);
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -42,7 +56,8 @@ export function Resizer({ value, min, max, edge, label, onChange, onCommit }: Re
     }
     drag.current.active = false;
     event.currentTarget.releasePointerCapture(event.pointerId);
-    onCommit(value);
+    // Commit what the drag ended on, not the value the render started with.
+    onCommit(drag.current.latest);
   };
 
   return (
