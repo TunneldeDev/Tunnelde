@@ -110,6 +110,9 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         fontSize,
         lineHeight: 1.2,
         cursorBlink: true,
+        cursorStyle: "block",
+        // Keep the cursor visible when the terminal does not hold focus.
+        cursorInactiveStyle: "block",
         scrollback: 5000,
         allowProposedApi: false,
         theme: terminalTheme(resolvedTheme),
