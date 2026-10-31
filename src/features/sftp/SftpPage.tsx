@@ -30,7 +30,7 @@ import {
   setDragPayload,
   type DragPayload,
 } from "@/lib/files/dnd";
-import { fs, LOCAL_SOURCE, sourceKey } from "@/lib/files/fs";
+import { fs, LOCAL_SOURCE } from "@/lib/files/fs";
 import { cn, formatBytes, formatDate } from "@/lib/text/format";
 import { useContextMenu } from "@/store/contextMenu";
 import { useDialogs } from "@/store/dialogs";
@@ -238,13 +238,34 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     return () => window.clearTimeout(timer);
   }, [transfers, load]);
 
+  // Several sessions can point at the same host; one row per host is enough.
+  const canonicalSessions = useMemo(() => {
+    const seen = new Set<string>();
+    return sessions.filter((item) => {
+      if (seen.has(item.hostId)) {
+        return false;
+      }
+      seen.add(item.hostId);
+      return true;
+    });
+  }, [sessions]);
+
   const sourceOptions = useMemo(
     () => [
       { value: "local", label: t("sftp.thisComputer") },
-      ...sessions.map((item) => ({ value: `remote:${item.id}`, label: item.title })),
+      ...canonicalSessions.map((item) => ({ value: `remote:${item.id}`, label: item.title })),
     ],
-    [sessions, t],
+    [canonicalSessions, t],
   );
+
+  const keyForSource = (source: FsSource): string => {
+    if (source.kind === "local") {
+      return "local";
+    }
+    const owner = sessions.find((item) => item.id === source.sessionId)?.hostId;
+    const canonical = canonicalSessions.find((item) => item.hostId === owner);
+    return `remote:${canonical?.id ?? source.sessionId}`;
+  };
 
   const locale = i18n.resolvedLanguage ?? "en-US";
   const host = hosts.find((entry) => entry.id === session?.hostId) ?? null;
@@ -662,7 +683,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         <header className="sftp-pane__head">
           <Select
             label={t("sftp.source")}
-            value={sourceKey(source)}
+            value={keyForSource(source)}
             options={sourceOptions}
             onChange={(value) => chooseSource(id, value)}
           />

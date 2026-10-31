@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { fsMock } = vi.hoisted(() => ({
@@ -187,5 +187,21 @@ describe("SftpPage", () => {
       expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
     });
     expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
+  });
+});
+
+describe("SftpPage source picker", () => {
+  it("lists one row per host even when the host has several sessions", () => {
+    useSsh.setState({ sessions: [session, { ...session, id: "session-2" }] });
+    render(<SftpPage sessionId="session-1" />);
+
+    const picker = screen.getAllByRole("button", { name: "Source" })[0]!;
+    fireEvent.click(picker);
+
+    const popup = screen.getByRole("listbox", { name: "Source" });
+    const labels = within(popup)
+      .getAllByRole("option")
+      .map((option) => option.textContent);
+    expect(labels).toEqual(["This computer", "web-01"]);
   });
 });
