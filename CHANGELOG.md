@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-31
+
 ### Added
 
 - Settings → General can draw the window buttons inside the app instead of the OS title bar, which removes the second bar on top; dragging the tab strip or the sidebar header moves the window and the edges still resize it.
@@ -19,6 +21,7 @@ All notable changes to Tunnelde are documented here. The format follows
 - The expand and close buttons in the panel header sit together instead of being spread across the bar.
 - Folders use a filled accent icon, so they no longer look like files.
 - The terminal keeps its monospace grid, kerning and visible cursor even when the renderer's injected stylesheet is unavailable; ligatures and letter spacing are pinned to keep columns aligned.
+
 
 ## [0.17.0] - 2026-10-31
 
