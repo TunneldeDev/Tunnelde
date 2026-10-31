@@ -2,7 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { ShieldAlert, ShieldCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -27,10 +27,16 @@ const STATUS_KEYS = {
 interface ConnectDialogProps {
   host: Host;
   after?: "terminal" | "sftp";
+  intent?: "connect" | "installKey";
   onClose: () => void;
 }
 
-export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDialogProps) {
+export function ConnectDialog({
+  host,
+  after = "terminal",
+  intent = "connect",
+  onClose,
+}: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
   const openTerminal = useWorkspace((state) => state.openTerminal);
@@ -46,6 +52,15 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const alive = useRef(true);
+  const pending = useRef(false);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -88,27 +103,43 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
     };
   }, [host.id]);
 
-  const interactive = host.authMethod !== "key";
-  const canConnect = trusted && !busy && (!interactive || password.length > 0 || saved);
+  const setup = intent === "installKey";
+  const unsupported = !setup && host.authMethod === "agent";
+  const interactive = setup || (host.authMethod !== "key" && !unsupported);
+  const canConnect =
+    trusted && !probing && !busy && !unsupported && (!interactive || password.length > 0 || saved);
 
   const trust = async () => {
+    if (pending.current) {
+      return;
+    }
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
       const info = await api.sshTrust(host.id);
+      if (!alive.current) {
+        return;
+      }
       setProbe(info);
       setTrusted(true);
     } catch (cause) {
-      setError(translateError(cause));
+      if (alive.current) {
+        setError(translateError(cause));
+      }
     } finally {
-      setBusy(false);
+      pending.current = false;
+      if (alive.current) {
+        setBusy(false);
+      }
     }
   };
 
   const submit = async () => {
-    if (!canConnect) {
+    if (!canConnect || pending.current) {
       return;
     }
+    pending.current = true;
     setBusy(true);
     setError(null);
     const session = await connect({
@@ -118,8 +149,11 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
       cols: 120,
       rows: 32,
     });
-    setBusy(false);
     if (!session) {
+      pending.current = false;
+      if (alive.current) {
+        setBusy(false);
+      }
       return;
     }
     if (interactive && remember && password.length > 0) {
@@ -134,7 +168,11 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
     } else {
       openTerminal(session);
     }
-    onClose();
+    pending.current = false;
+    if (alive.current) {
+      setBusy(false);
+      onClose();
+    }
   };
 
   const forget = () => {
@@ -156,6 +194,10 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
   };
 
   const installKey = async () => {
+    if (pending.current || !trusted || unsupported || (password.length === 0 && !saved)) {
+      return;
+    }
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -163,11 +205,18 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
       await api.sshInstallKey(host.id, password || null);
       await useHosts.getState().load();
       toast(t("connect.installKeyDone"), "success");
-      onClose();
+      if (alive.current) {
+        onClose();
+      }
     } catch (cause) {
-      setError(translateError(cause));
+      if (alive.current) {
+        setError(translateError(cause));
+      }
     } finally {
-      setBusy(false);
+      pending.current = false;
+      if (alive.current) {
+        setBusy(false);
+      }
     }
   };
 
@@ -177,22 +226,39 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
   return (
     <Dialog
       open
-      title={t("connect.title", { name: host.name })}
+      title={
+        setup
+          ? `${t("connect.installKey")} · ${host.name}`
+          : t("connect.title", { name: host.name })
+      }
       closeLabel={t("common.close")}
       onClose={onClose}
+      dismissible={!busy}
       width={440}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" disabled={!canConnect} onClick={() => void submit()}>
-            {t("connect.connect")}
+          <Button
+            variant="primary"
+            disabled={!canConnect}
+            onClick={() => void (setup ? installKey() : submit())}
+          >
+            {setup ? t("connect.installKey") : t("connect.connect")}
           </Button>
         </>
       }
     >
       <div className="connect">
+        {setup ? (
+          <p className="connect__hint">
+            {t("connect.installKeyHint", {
+              defaultValue:
+                "Sign in once with your password to add Tunnelde’s public key to this account and use key login for future connections. Existing authorized keys are preserved.",
+            })}
+          </p>
+        ) : null}
         <div className="connect__target">
           <code>
             {host.username ? `${host.username}@` : ""}
@@ -243,6 +309,7 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
               <Input
                 id="connect-password"
                 type="password"
+                disabled={busy}
                 autoFocus
                 autoComplete="off"
                 placeholder={saved ? "••••••••" : undefined}
@@ -251,36 +318,41 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
                     event.preventDefault();
-                    void submit();
+                    void (setup ? installKey() : submit());
                   }
                 }}
               />
             </Field>
-            <div className="connect__remember">
-              <Switch
-                label={t("connect.remember")}
-                checked={remember}
-                onChange={setRemember}
-              />
-              <span className="connect__remember-label">{t("connect.remember")}</span>
-              {saved ? (
-                <Button variant="ghost-danger" size="sm" onClick={forget}>
-                  {t("connect.forget")}
+            {!setup ? (
+              <div className="connect__remember">
+                <Switch
+                  label={t("connect.remember")}
+                  checked={remember}
+                  disabled={busy}
+                  onChange={setRemember}
+                />
+                <span className="connect__remember-label">{t("connect.remember")}</span>
+                {saved ? (
+                  <Button variant="ghost-danger" size="sm" disabled={busy} onClick={forget}>
+                    {t("connect.forget")}
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            {!setup ? (
+              <div className="connect__actions">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy || !trusted || (password.length === 0 && !saved)}
+                  onClick={() => void installKey()}
+                >
+                  {t("connect.installKey")}
                 </Button>
-              ) : null}
-            </div>
-            <div className="connect__actions">
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={busy || !trusted || (password.length === 0 && !saved)}
-                onClick={() => void installKey()}
-              >
-                {t("connect.installKey")}
-              </Button>
-            </div>
+              </div>
+            ) : null}
           </>
-        ) : (
+        ) : host.authMethod === "key" ? (
           <Field
             label={t("connect.passphrase")}
             hint={t("connect.optional")}
@@ -289,6 +361,7 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
             <Input
               id="connect-passphrase"
               type="password"
+              disabled={busy}
               autoFocus
               autoComplete="off"
               value={passphrase}
@@ -301,13 +374,14 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
               }}
             />
           </Field>
-        )}
+        ) : null}
 
         {!trusted && status !== null && !probing ? (
           <p className="connect__hint">{t("connect.trustHint")}</p>
         ) : null}
 
         {error ? <p className="connect__error">{error}</p> : null}
+        {unsupported ? <p className="connect__error">{t("ssh.agentUnsupported")}</p> : null}
       </div>
     </Dialog>
   );

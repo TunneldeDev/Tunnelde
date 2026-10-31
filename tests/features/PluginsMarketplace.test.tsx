@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { apiMock, marketMock } = vi.hoisted(() => ({
@@ -67,5 +67,37 @@ describe("Plugin marketplace", () => {
     marketMock.fetchMarketplace.mockRejectedValue(new Error("offline"));
     render(<PluginsSection />);
     expect(await screen.findByText("Marketplace unavailable")).toBeTruthy();
+  });
+
+  it("keeps each pending marketplace installation disabled independently", async () => {
+    const second = { ...entry, id: "second", name: "Second" };
+    marketMock.fetchMarketplace.mockResolvedValue([entry, second]);
+    let finishFirst!: () => void;
+    let finishSecond!: () => void;
+    marketMock.installMarketplaceEntry.mockImplementation(
+      (item: { id: string }) =>
+        new Promise<void>((resolve) => {
+          if (item.id === entry.id) finishFirst = resolve;
+          else finishSecond = resolve;
+        }),
+    );
+    render(<PluginsSection />);
+    const firstRow = (await screen.findByText("Hello")).closest(".market-row") as HTMLElement;
+    const secondRow = screen.getByText("Second").closest(".market-row") as HTMLElement;
+    const firstButton = within(firstRow).getByRole("button", {
+      name: "Install",
+    }) as HTMLButtonElement;
+    const secondButton = within(secondRow).getByRole("button", {
+      name: "Install",
+    }) as HTMLButtonElement;
+    fireEvent.click(firstButton);
+    fireEvent.click(secondButton);
+    expect(firstButton.disabled).toBe(true);
+    expect(secondButton.disabled).toBe(true);
+    await act(async () => finishFirst());
+    expect(firstButton.disabled).toBe(false);
+    expect(secondButton.disabled).toBe(true);
+    await act(async () => finishSecond());
+    expect(secondButton.disabled).toBe(false);
   });
 });

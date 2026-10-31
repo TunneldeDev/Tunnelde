@@ -2,7 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { RefreshCw } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -22,42 +22,48 @@ interface RenderedView {
 }
 
 export function PluginViewPage({ pluginId, viewId }: PluginViewPageProps) {
+  return (
+    <PluginViewContent
+      key={JSON.stringify([pluginId, viewId])}
+      pluginId={pluginId}
+      viewId={viewId}
+    />
+  );
+}
+
+function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<RenderedView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const requestId = useRef(0);
 
-  const load = () => {
-    api
+  const load = useCallback(() => {
+    const current = ++requestId.current;
+    return api
       .pluginRenderView(pluginId, viewId)
       .then((payload) => {
-        const record = (payload ?? {}) as Record<string, unknown>;
-        setView({ title: viewTitle(payload), blocks: normalizeBlocks(record.blocks) });
-        setError(null);
-      })
-      .catch((cause: unknown) => setError(translateError(cause)));
-  };
-
-  useEffect(() => {
-    let alive = true;
-    api
-      .pluginRenderView(pluginId, viewId)
-      .then((payload) => {
-        if (!alive) {
-          return;
-        }
+        if (current !== requestId.current) return;
         const record = (payload ?? {}) as Record<string, unknown>;
         setView({ title: viewTitle(payload), blocks: normalizeBlocks(record.blocks) });
         setError(null);
       })
       .catch((cause: unknown) => {
-        if (alive) {
-          setError(translateError(cause));
-        }
+        if (current === requestId.current) setError(translateError(cause));
+      })
+      .finally(() => {
+        if (current === requestId.current) setLoading(false);
       });
-    return () => {
-      alive = false;
-    };
   }, [pluginId, viewId]);
+
+  const invalidate = useCallback(() => {
+    ++requestId.current;
+  }, []);
+
+  useEffect(() => {
+    void load();
+    return invalidate;
+  }, [invalidate, load]);
 
   return (
     <div className="plugin-view">
@@ -68,7 +74,12 @@ export function PluginViewPage({ pluginId, viewId }: PluginViewPageProps) {
           variant="ghost"
           size="sm"
           leading={<RefreshCw size={13} />}
-          onClick={load}
+          disabled={loading}
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void load();
+          }}
         >
           {t("pluginView.refresh")}
         </Button>
@@ -76,8 +87,12 @@ export function PluginViewPage({ pluginId, viewId }: PluginViewPageProps) {
 
       {error ? <p className="panel__error">{error}</p> : null}
 
-      <div className="plugin-view__body">
-        {view === null ? null : view.blocks.length === 0 ? (
+      <div className="plugin-view__body" aria-busy={loading}>
+        {view === null ? (
+          loading ? (
+            <p role="status">{t("common.loading")}</p>
+          ) : null
+        ) : view.blocks.length === 0 ? (
           <EmptyState title={t("pluginView.empty")} />
         ) : (
           view.blocks.map((block, index) => {

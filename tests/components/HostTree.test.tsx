@@ -43,6 +43,18 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("puts search and creation actions together without repeating the app title or footer", () => {
+    const { container } = render(<HostTree />);
+    const toolbar = screen.getByRole("toolbar", { name: "Hosts" });
+    expect(toolbar.contains(screen.getByRole("textbox"))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "New host" }));
+    expect(useDialogs.getState().openHost).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "New group" }));
+    expect(useDialogs.getState().openGroup).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Tunnelde")).toBeNull();
+    expect(container.querySelector(".sidebar__foot")).toBeNull();
+  });
+
   it("moves the active row with the arrow keys and opens it with Enter", () => {
     render(<HostTree />);
 
@@ -67,5 +79,24 @@ describe("HostTree keyboard navigation", () => {
 
     fireEvent.keyDown(tree, { key: "Home" });
     expect(tree.getAttribute("aria-activedescendant")).toBe("host-a");
+  });
+
+  it("disables drag reordering when the list is filtered", () => {
+    render(<HostTree />);
+    expect(
+      screen.getAllByRole("treeitem").every((row) => row.getAttribute("draggable") === "true"),
+    ).toBe(true);
+    fireEvent.change(screen.getByRole("textbox"), { target: { value: "alpha" } });
+    expect(screen.getAllByRole("treeitem")).toHaveLength(1);
+    expect(screen.getByRole("treeitem").getAttribute("draggable")).toBe("false");
+  });
+
+  it("scrolls the keyboard target into view", () => {
+    const scroll = vi.fn();
+    render(<HostTree />);
+    const rows = screen.getAllByRole("treeitem");
+    rows[1]!.scrollIntoView = scroll;
+    fireEvent.keyDown(screen.getByRole("tree"), { key: "End" });
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
   });
 });

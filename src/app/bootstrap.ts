@@ -2,10 +2,10 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { api, events, isTauri } from "@/lib/api/ipc";
+import type { TabRecord } from "@/lib/api/types";
 import { applyAppearance } from "@/lib/prefs/appearance";
 import i18n from "@/i18n/i18n";
 import { translateError } from "@/lib/api/errors";
-import type { TabRecord } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
@@ -14,18 +14,20 @@ import { usePlugins } from "@/store/plugins";
 import { useTransfers } from "@/store/transfers";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
-import { useWorkspace } from "@/store/workspace";
+import { useWorkspace, workspaceRecords } from "@/store/workspace";
 
-let started = false;
+let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
+let pendingRecords: TabRecord[] | undefined;
+let saving = false;
 
-export async function bootstrap(): Promise<void> {
+export function bootstrap(): Promise<void> {
+  return (startup ??= start());
+}
+
+async function start(): Promise<void> {
+  const initialTabs = useWorkspace.getState().tabs;
   window.addEventListener("contextmenu", (event) => event.preventDefault());
-
-  if (started) {
-    return;
-  }
-  started = true;
 
   await useSettings.getState().load();
 
@@ -34,36 +36,60 @@ export async function bootstrap(): Promise<void> {
     return;
   }
 
+  await wireEvents();
+  let restored = false;
   try {
     const records = await api.tabs();
-    useWorkspace.getState().hydrate(records);
-    await useHosts.getState().load();
-    await useSsh.getState().refresh();
-    pruneMissingHosts();
-    pruneMissingSessions();
-    useWorkspace.getState().ensureWelcome();
-    await useUpdates.getState().refresh();
-    await wireEvents();
+    // A slow snapshot must not replace tabs opened while startup is in progress.
+    if (useWorkspace.getState().tabs === initialTabs) useWorkspace.getState().hydrate(records);
+    restored = true;
   } catch (error) {
     toast(translateError(error), "error");
-    useWorkspace.getState().ensureWelcome();
   }
+  const hostsLoaded = await useHosts.getState().load();
+  if (hostsLoaded) pruneMissingHosts();
+  await useSsh.getState().refresh();
+  useWorkspace.getState().ensureWelcome();
 
-  useWorkspace.subscribe(() => {
-    window.clearTimeout(persistTimer);
-    persistTimer = window.setTimeout(() => {
-      const records: TabRecord[] = useWorkspace.getState().tabs.map((tab, index) => ({
-        id: tab.id,
-        kind: tab.kind,
-        title: tab.title,
-        hostId: tab.hostId,
-        sortOrder: index,
-        pinned: tab.pinned,
-        state: null,
-      }));
-      void api.saveTabs(records).catch(() => undefined);
-    }, 400);
+  useWorkspace.subscribe((state, previous) => {
+    if (
+      state.tabs === previous.tabs &&
+      state.panes === previous.panes &&
+      state.layout === previous.layout &&
+      state.activePaneId === previous.activePaneId
+    )
+      return;
+    schedulePersistence();
   });
+  // Save pruned/normalized restoration, but never overwrite an unreadable snapshot.
+  if (restored) schedulePersistence();
+  await useUpdates.getState().refresh();
+}
+
+function schedulePersistence(): void {
+  window.clearTimeout(persistTimer);
+  persistTimer = window.setTimeout(() => {
+    pendingRecords = workspaceRecords();
+    void persistLatest();
+  }, 400);
+}
+
+async function persistLatest(): Promise<void> {
+  if (saving) return;
+  saving = true;
+  try {
+    while (pendingRecords) {
+      const records = pendingRecords;
+      pendingRecords = undefined;
+      try {
+        await api.saveTabs(records);
+      } catch (error) {
+        toast(translateError(error), "error");
+      }
+    }
+  } finally {
+    saving = false;
+  }
 }
 
 function pruneMissingHosts(): void {
@@ -75,44 +101,46 @@ function pruneMissingHosts(): void {
   }
 }
 
-function pruneMissingSessions(): void {
-  const open = new Set(useSsh.getState().sessions.map((session) => session.id));
-  for (const tab of useWorkspace.getState().tabs) {
-    if (tab.kind === "terminal" && !open.has(tab.id.replace("terminal:", ""))) {
-      useWorkspace.getState().close(tab.id);
-    }
-  }
-}
-
 async function wireEvents(): Promise<void> {
-  await events.onSettingsChanged((settings) => {
-    useSettings.getState().applyRemote(settings);
-  });
+  const listeners = await Promise.allSettled([
+    events.onSettingsChanged((settings) => {
+      useSettings.getState().applyRemote(settings);
+    }),
 
-  await events.onUpdateState((state) => {
-    useUpdates.getState().apply(state);
-  });
+    events.onUpdateState((state) => {
+      useUpdates.getState().apply(state);
+    }),
 
-  await events.onNavigate((page) => {
-    if (page === "welcome" || page === "settings" || page === "about" || page === "updates") {
-      useWorkspace.getState().openPage(page);
-    }
-  });
+    events.onNavigate((page) => {
+      if (
+        page === "welcome" ||
+        page === "settings" ||
+        page === "about" ||
+        page === "updates" ||
+        page === "knownHosts"
+      ) {
+        useWorkspace.getState().openPage(page);
+      }
+    }),
 
-  await events.onPluginState((payload) => {
-    usePlugins.getState().apply(payload);
-  });
+    events.onPluginState((payload) => {
+      usePlugins.getState().apply(payload);
+    }),
 
-  await events.onTransfer((payload) => {
-    useTransfers.getState().apply(payload);
-  });
+    events.onTransfer((payload) => {
+      useTransfers.getState().apply(payload);
+    }),
 
-  await events.onSshClosed((payload) => {
-    useSsh.getState().forget(payload.sessionId);
-    useMonitor.getState().forget(payload.sessionId);
-    useWorkspace.getState().closeSession(payload.sessionId);
-    toast(i18n.t("ssh.sessionEnded"), "info");
-  });
+    events.onSshClosed((payload) => {
+      const known = useSsh.getState().sessions.some((session) => session.id === payload.sessionId);
+      useSsh.getState().forget(payload.sessionId);
+      useMonitor.getState().forget(payload.sessionId);
+      useWorkspace.getState().closeSession(payload.sessionId);
+      if (known) toast(i18n.t("ssh.sessionEnded"), "info");
+    }),
+  ]);
+  const failed = listeners.find((listener) => listener.status === "rejected");
+  if (failed?.status === "rejected") toast(translateError(failed.reason), "error");
 
   const media = window.matchMedia("(prefers-color-scheme: light)");
   media.addEventListener("change", () => {

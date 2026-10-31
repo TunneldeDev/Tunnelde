@@ -6,6 +6,7 @@ import { create } from "zustand";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import type { RemoteStats } from "@/lib/api/types";
+import { useMonitorHistory } from "@/store/monitorHistory";
 
 const HISTORY = 60;
 
@@ -16,6 +17,8 @@ export interface MonitorEntry {
 }
 
 const EMPTY: MonitorEntry = { stats: null, cpuHistory: [], error: null };
+const pending = new Map<string, Promise<void>>();
+const versions = new Map<string, number>();
 
 interface MonitorStore {
   entries: Record<string, MonitorEntry>;
@@ -26,33 +29,63 @@ interface MonitorStore {
 export const useMonitor = create<MonitorStore>((set) => ({
   entries: {},
 
-  sample: async (sessionId) => {
-    try {
-      const stats = await api.remoteStats(sessionId);
-      set((state) => {
-        const current = state.entries[sessionId] ?? EMPTY;
-        const cpuHistory = [...current.cpuHistory, Math.round(stats.cpuPercent)].slice(-HISTORY);
-        return {
+  sample: (sessionId) => {
+    const existing = pending.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+    const version = versions.get(sessionId) ?? 0;
+    const request = (async () => {
+      try {
+        const stats = await api.remoteStats(sessionId);
+        if ((versions.get(sessionId) ?? 0) !== version) {
+          return;
+        }
+        set((state) => {
+          const current = state.entries[sessionId] ?? EMPTY;
+          const cpuHistory = [...current.cpuHistory, Math.round(stats.cpuPercent)].slice(-HISTORY);
+          return {
+            entries: {
+              ...state.entries,
+              [sessionId]: { stats, cpuHistory, error: null },
+            },
+          };
+        });
+        useMonitorHistory.getState().push(sessionId, {
+          at: stats.sampledAt,
+          cpu: stats.cpuPercent,
+          memory: stats.memoryTotal > 0 ? (stats.memoryUsed / stats.memoryTotal) * 100 : 0,
+          disk: stats.diskTotal > 0 ? (stats.diskUsed / stats.diskTotal) * 100 : 0,
+          rx: stats.netRxRate,
+          tx: stats.netTxRate,
+        });
+      } catch (error) {
+        if ((versions.get(sessionId) ?? 0) !== version) {
+          return;
+        }
+        set((state) => ({
           entries: {
             ...state.entries,
-            [sessionId]: { stats, cpuHistory, error: null },
+            [sessionId]: {
+              ...(state.entries[sessionId] ?? EMPTY),
+              error: translateError(error),
+            },
           },
-        };
-      });
-    } catch (error) {
-      set((state) => ({
-        entries: {
-          ...state.entries,
-          [sessionId]: {
-            ...(state.entries[sessionId] ?? EMPTY),
-            error: translateError(error),
-          },
-        },
-      }));
-    }
+        }));
+      }
+    })().finally(() => {
+      if (pending.get(sessionId) === request) {
+        pending.delete(sessionId);
+      }
+    });
+    pending.set(sessionId, request);
+    return request;
   },
 
   forget: (sessionId) => {
+    versions.set(sessionId, (versions.get(sessionId) ?? 0) + 1);
+    pending.delete(sessionId);
+    useMonitorHistory.getState().clear(sessionId);
     set((state) => {
       const next = { ...state.entries };
       delete next[sessionId];

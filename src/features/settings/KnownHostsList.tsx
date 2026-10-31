@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { RefreshCw, Trash2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
@@ -16,23 +16,33 @@ export function KnownHostsList() {
   const { t } = useTranslation();
   const confirm = useDialogs((state) => state.confirm);
   const [entries, setEntries] = useState<KnownHostEntry[] | null>(null);
+  const [query, setQuery] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const request = useRef(0);
 
+  const load = async () => {
+    const version = ++request.current;
+    try {
+      const list = await api.knownHostsList();
+      if (version === request.current) setEntries(list);
+    } catch (cause) {
+      if (version === request.current) setError(translateError(cause));
+    } finally {
+      if (version === request.current) setLoading(false);
+    }
+  };
   useEffect(() => {
     let alive = true;
-    api
-      .knownHostsList()
-      .then((list) => {
-        if (alive) {
-          setEntries(list);
-        }
-      })
-      .catch((error: unknown) => {
-        if (alive) {
-          toast(translateError(error), "error");
-        }
-      });
+    queueMicrotask(() => {
+      if (alive) void load();
+    });
+    const invalidate = () => {
+      request.current++;
+    };
     return () => {
       alive = false;
+      invalidate();
     };
   }, []);
 
@@ -45,6 +55,8 @@ export function KnownHostsList() {
       onConfirm: async () => {
         try {
           await api.knownHostsForget(entry.host, entry.port);
+          request.current++;
+          setLoading(false);
           setEntries(
             (current) =>
               current?.filter((item) => !(item.host === entry.host && item.port === entry.port)) ??
@@ -52,20 +64,59 @@ export function KnownHostsList() {
           );
         } catch (error) {
           toast(translateError(error), "error");
+          throw error;
         }
       },
     });
   };
 
-  if (entries !== null && entries.length === 0) {
-    return <p className="settings-hint">{t("settings.knownHostsEmpty")}</p>;
-  }
-
+  const search = query.trim().toLocaleLowerCase();
+  const visible = (entries ?? []).filter((entry) =>
+    `${entry.host}:${entry.port} ${entry.algorithm} ${entry.fingerprint}`
+      .toLocaleLowerCase()
+      .includes(search),
+  );
   return (
-    <div className="known-hosts">
-      {(entries ?? []).map((entry) => (
+    <div className="known-hosts" aria-busy={loading}>
+      <div className="known-hosts-toolbar">
+        <input
+          className="td-input"
+          type="search"
+          aria-label={t("settings.knownHostsSearch")}
+          placeholder={t("settings.knownHostsSearch")}
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+        />
+        <IconButton
+          label={t("common.refresh")}
+          disabled={loading}
+          onClick={() => {
+            setLoading(true);
+            setError(null);
+            void load();
+          }}
+        >
+          <RefreshCw size={14} />
+        </IconButton>
+      </div>
+      {loading ? (
+        <p role="status" className="settings-hint">
+          {t("common.loading")}
+        </p>
+      ) : null}
+      {error ? (
+        <p role="alert" className="panel__error">
+          {error}
+        </p>
+      ) : null}
+      {!loading && !error && visible.length === 0 ? (
+        <p className="settings-hint">
+          {t(search ? "common.noResults" : "settings.knownHostsEmpty")}
+        </p>
+      ) : null}
+      {visible.map((entry) => (
         <div className="known-host" key={`${entry.host}:${entry.port}`}>
-          <span className="known-host__address">
+          <span className="known-host__address" title={`${entry.host}:${entry.port}`}>
             {entry.host}:{entry.port}
           </span>
           <span className="known-host__algorithm">{entry.algorithm}</span>

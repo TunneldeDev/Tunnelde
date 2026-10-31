@@ -19,7 +19,8 @@ export const DEFAULT_SETTINGS: Settings = {
   skippedVersion: null,
   lastUpdateCheck: null,
   closeToTray: false,
-  nativeMenu: false,
+  titleBarStyle: "system",
+  recordTerminalHistory: false,
   preloadDirs: true,
   preloadCount: 8,
 };

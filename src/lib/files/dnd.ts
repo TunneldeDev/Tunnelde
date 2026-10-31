@@ -14,6 +14,7 @@ export interface DragItem {
 export interface DragPayload {
   source: FsSource;
   items: DragItem[];
+  paneId?: string;
 }
 
 /** One source/destination pair inside a batch operation. */
@@ -48,8 +49,8 @@ export function sameSource(left: FsSource, right: FsSource): boolean {
   return sourceKey(left) === sourceKey(right);
 }
 
-export function separatorFor(source: FsSource): string {
-  return source.kind === "remote" ? "/" : "\\";
+export function separatorFor(source: FsSource, path = ""): string {
+  return source.kind === "remote" || path.startsWith("/") ? "/" : "\\";
 }
 
 export function joinPath(directory: string, name: string, separator: string): string {
@@ -61,11 +62,41 @@ export function joinPath(directory: string, name: string, separator: string): st
 }
 
 export function parentOf(path: string): string {
+  if (/^[/\\]+$/.test(path)) {
+    return path.startsWith("/") ? "/" : "\\";
+  }
+  if (/^[A-Za-z]:[/\\]*$/.test(path)) {
+    return `${path.slice(0, 2)}\\`;
+  }
+  if (/^\\\\[^\\]+\\[^\\]+\\?$/.test(path)) {
+    return path.replace(/\\+$/, "");
+  }
   const trimmed = path.replace(/[\\/]+$/, "");
   const index = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
   const parent = index <= 0 ? trimmed.slice(0, index + 1) : trimmed.slice(0, index);
   // A drive root keeps its separator so joining a name still works.
-  return /^[A-Za-z]:$/.test(parent) ? `${parent}\\` : parent;
+  return /^[A-Za-z]:$/.test(parent) ? `${parent}\\` : parent || "/";
+}
+
+/** A single file name, never an absolute path or a traversal. */
+export function validName(name: string, source: FsSource, directory: string): boolean {
+  if (
+    !name ||
+    name === "." ||
+    name === ".." ||
+    /[/\\]/.test(name) ||
+    name.includes(String.fromCharCode(0))
+  ) {
+    return false;
+  }
+  return (
+    source.kind !== "local" ||
+    separatorFor(source, directory) !== "\\" ||
+    (!/[<>:"|?*]/.test(name) &&
+      !Array.from(name).some((char) => char.charCodeAt(0) < 32) &&
+      !/[. ]$/.test(name) &&
+      !/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(name))
+  );
 }
 
 export function isInside(parent: string, candidate: string): boolean {
@@ -125,10 +156,16 @@ export function readDragPayload(data: DataTransfer): DragPayload | null {
     return null;
   }
   try {
-    const parsed = JSON.parse(raw) as { source?: unknown; items?: unknown };
+    const parsed = JSON.parse(raw) as { source?: unknown; items?: unknown; paneId?: unknown };
     const source = parsedSource(parsed.source);
     const items = parsedItems(parsed.items);
-    return source && items ? { source, items } : null;
+    return source && items
+      ? {
+          source,
+          items,
+          ...(typeof parsed.paneId === "string" ? { paneId: parsed.paneId } : {}),
+        }
+      : null;
   } catch {
     return null;
   }
@@ -143,8 +180,9 @@ export function resolveDrop(
   payload: DragPayload,
   target: FsSource,
   targetDirectory: string,
+  targetPaneId?: string,
 ): DropAction {
-  const separator = separatorFor(target);
+  const separator = separatorFor(target, targetDirectory);
   const ops: DropOp[] = [];
 
   for (const item of payload.items) {
@@ -161,17 +199,17 @@ export function resolveDrop(
     return { kind: "noop" };
   }
   if (sameSource(payload.source, target)) {
-    return { kind: "move", source: target, ops };
+    return {
+      kind: payload.paneId && targetPaneId && payload.paneId !== targetPaneId ? "copy" : "move",
+      source: target,
+      ops,
+    };
   }
   return { kind: "transfer", from: payload.source, to: target, ops, move: false };
 }
 
 /** Turns a cut or copied selection into the operations a paste performs. */
-export function planPaste(
-  clip: PasteClip,
-  target: FsSource,
-  targetDirectory: string,
-): DropAction {
+export function planPaste(clip: PasteClip, target: FsSource, targetDirectory: string): DropAction {
   if (clip.items.length === 0) {
     return { kind: "noop" };
   }
@@ -181,7 +219,7 @@ export function planPaste(
 }
 
 function pasteWithin(clip: PasteClip, target: FsSource, directory: string): DropAction {
-  const separator = separatorFor(target);
+  const separator = separatorFor(target, directory);
   const ops: DropOp[] = [];
   for (const item of clip.items) {
     const destination = joinPath(directory, item.name, separator);
@@ -199,7 +237,7 @@ function pasteWithin(clip: PasteClip, target: FsSource, directory: string): Drop
 }
 
 function pasteAcross(clip: PasteClip, target: FsSource, directory: string): DropAction {
-  const separator = separatorFor(target);
+  const separator = separatorFor(target, directory);
   const ops = clip.items.map((item) => ({
     from: item.path,
     to: joinPath(directory, item.name, separator),

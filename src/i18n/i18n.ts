@@ -23,6 +23,7 @@ void i18n.use(initReactI18next).init({
 });
 
 export function setLanguage(language: ResolvedLanguage): void {
+  if (typeof document !== "undefined") document.documentElement.lang = language;
   if (i18n.resolvedLanguage !== language) {
     void i18n.changeLanguage(language);
   }

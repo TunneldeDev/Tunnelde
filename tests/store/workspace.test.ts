@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Host, SshSession, TabRecord } from "@/lib/api/types";
-import { useWorkspace } from "@/store/workspace";
+import { useWorkspace, workspaceRecords } from "@/store/workspace";
+import { useEditors } from "@/store/editors";
+import { useDialogs } from "@/store/dialogs";
 
 const state = () => useWorkspace.getState();
 
@@ -53,6 +55,7 @@ beforeEach(() => {
     activePaneId: "pane-1",
     activeId: null,
     split: null,
+    layout: { kind: "pane", paneId: "pane-1" },
   });
 });
 
@@ -204,14 +207,141 @@ describe("split placement", () => {
     expect(useWorkspace.getState().split).toBe("row");
   });
 
-  it("falls back to the second pane when one already exists", () => {
+  it("does not destroy another pane when splitting a sole tab", () => {
     useWorkspace.getState().openTerminal(session("s2", "Beta"));
     useWorkspace.getState().openSftp(session("s2", "Beta"));
     useWorkspace.getState().splitTab("sftp:s2", "row");
     useWorkspace.getState().splitTab("terminal:s2", "column", "before");
     const panes = useWorkspace.getState().panes;
-    expect(panes).toHaveLength(1);
-    expect(panes[0]?.tabIds.sort()).toEqual(["sftp:s2", "terminal:s2"]);
-    expect(useWorkspace.getState().split).toBeNull();
+    expect(panes).toHaveLength(2);
+    expect(panes.flatMap((item) => item.tabIds).sort()).toEqual(["sftp:s2", "terminal:s2"]);
+    expect(useWorkspace.getState().split).toBe("row");
+  });
+
+  it("nests another split inside a specific group", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().openPage("about");
+    state().splitTab("page:settings", "row");
+    const first = state().panes[0]!;
+    state().splitTab("page:about", "column", "before", first.id);
+    expect(state().panes).toHaveLength(3);
+    const layout = state().layout;
+    expect(layout.kind).toBe("split");
+    if (layout.kind !== "split") return;
+    expect(layout.direction).toBe("row");
+    expect(layout.first.kind).toBe("split");
+    if (layout.first.kind === "split") expect(layout.first.direction).toBe("column");
+    expect(
+      state()
+        .panes.flatMap((item) => item.tabIds)
+        .sort(),
+    ).toEqual(["page:about", "page:settings", "page:welcome"]);
+  });
+
+  it("activates the owning pane and preserves pinned status when reopening a tab", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().togglePin("page:settings");
+    state().splitTab("page:settings", "row");
+    const owner = state().activePaneId;
+    state().activate("page:welcome");
+    state().openPage("settings");
+    expect(state().activePaneId).toBe(owner);
+    expect(state().tabs.find((tab) => tab.id === "page:settings")?.pinned).toBe(true);
+    expect(
+      state().panes.every((item) => !item.activeId || item.tabIds.includes(item.activeId)),
+    ).toBe(true);
+  });
+
+  it("restores nested layout, active tabs and displayed ordering", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().openPage("about");
+    state().splitTab("page:settings", "row");
+    state().splitTab("page:about", "column", "before", state().panes[0]!.id);
+    const expected = {
+      layout: state().layout,
+      panes: state().panes,
+      activePaneId: state().activePaneId,
+    };
+    const records = workspaceRecords();
+    state().hydrate([]);
+    state().hydrate(records);
+    expect(state().layout).toEqual(expected.layout);
+    expect(state().panes).toEqual(expected.panes);
+    expect(state().activePaneId).toBe(expected.activePaneId);
+  });
+
+  it("keeps dirty editors on disconnect", () => {
+    const id = "editor:s1:/a.txt";
+    useEditors.setState({
+      entries: {
+        [id]: {
+          tabId: id,
+          sessionId: "s1",
+          path: "/a.txt",
+          name: "a.txt",
+          content: "new",
+          baseline: "old",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    useWorkspace.setState({
+      tabs: [{ id, kind: "editor", title: "a.txt", hostId: "a", pinned: false }],
+      panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
+    });
+    state().closeSession("s1");
+    expect(state().tabs).toHaveLength(1);
+    expect(useEditors.getState().entries[id]?.disconnected).toBe(true);
+    expect(useEditors.getState().entries[id]?.content).toBe("new");
+  });
+
+  it("only closes other unpinned tabs in the requested group", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().openPage("about");
+    state().splitTab("page:about", "row");
+    state().closeOthers("page:welcome");
+    expect(
+      state()
+        .tabs.map((tab) => tab.id)
+        .sort(),
+    ).toEqual(["page:about", "page:welcome"]);
+  });
+
+  it("asks once before closing a group of dirty editors", () => {
+    const confirm = vi.fn();
+    useDialogs.setState({ confirm });
+    const id = "editor:s1:/a.txt";
+    useEditors.setState({
+      entries: {
+        [id]: {
+          tabId: id,
+          sessionId: "s1",
+          path: "/a.txt",
+          name: "a.txt",
+          content: "new",
+          baseline: "old",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    useWorkspace.setState({
+      tabs: [{ id, kind: "editor", title: "a.txt", hostId: "a", pinned: false }],
+      panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
+    });
+    state().openPage("welcome");
+    state().closeOthers("page:welcome");
+    expect(confirm).toHaveBeenCalledTimes(1);
+    expect(state().tabs).toHaveLength(2);
+    confirm.mock.calls[0]![0].onConfirm();
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+    expect(useEditors.getState().entries[id]).toBeUndefined();
   });
 });

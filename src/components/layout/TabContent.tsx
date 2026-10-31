@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/ui/display/Misc";
@@ -12,12 +14,21 @@ import { PluginViewPage } from "@/features/plugins/PluginViewPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
+import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
 import { TerminalPage } from "@/features/terminal/TerminalPage";
 import { UpdatesPage } from "@/features/updates/UpdatesPage";
 import { WelcomePage } from "@/features/welcome/WelcomePage";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
 
-function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
+function TabBody({
+  tab,
+  active,
+  visible,
+}: {
+  tab: WorkspaceTab;
+  active: boolean;
+  visible: boolean;
+}) {
   switch (tab.kind) {
     case "welcome":
       return <WelcomePage />;
@@ -25,6 +36,8 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
       return <HostPage hostId={tab.hostId} />;
     case "settings":
       return <SettingsPage />;
+    case "knownHosts":
+      return <KnownHostsPage />;
     case "about":
       return <AboutPage />;
     case "updates":
@@ -38,7 +51,7 @@ function TabBody({ tab, active }: { tab: WorkspaceTab; active: boolean }) {
     case "history":
       return <HistoryPage sessionId={tab.id.replace("history:", "")} />;
     case "monitor":
-      return <MonitorPage sessionId={tab.id.replace("monitor:", "")} />;
+      return <MonitorPage sessionId={tab.id.replace("monitor:", "")} active={visible} />;
     case "pluginView": {
       const rest = tab.id.replace("plugin:", "");
       const separator = rest.indexOf(":");
@@ -57,6 +70,34 @@ export function TabContent({ paneId }: { paneId?: string }) {
   const panes = useWorkspace((state) => state.panes);
   const activePaneId = useWorkspace((state) => state.activePaneId);
   const pane = panes.find((item) => item.id === (paneId ?? activePaneId));
+  const mount = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const target = mount.current;
+    if (!target || !pane) return;
+    for (const id of pane.tabIds) {
+      const container = tabContainer(id);
+      if (container.parentElement !== target) target.appendChild(container);
+      container.hidden = id !== pane.activeId;
+    }
+  }, [pane, tabs]);
+
+  useEffect(() => {
+    const target = mount.current;
+    if (!target || !pane) return;
+    // Portal events follow their React owner. Listen on the actual DOM mount so
+    // clicking or tabbing into a page still focuses the group containing it.
+    const focus = () => {
+      if (useWorkspace.getState().activePaneId !== pane.id)
+        useWorkspace.getState().activatePane(pane.id);
+    };
+    target.addEventListener("mousedown", focus);
+    target.addEventListener("focusin", focus);
+    return () => {
+      target.removeEventListener("mousedown", focus);
+      target.removeEventListener("focusin", focus);
+    };
+  }, [pane]);
 
   if (!pane || pane.tabIds.length === 0) {
     return (
@@ -67,19 +108,50 @@ export function TabContent({ paneId }: { paneId?: string }) {
   }
 
   return (
-    <>
-      {pane.tabIds.map((tabId) => {
-        const tab = tabs.find((item) => item.id === tabId);
-        if (!tab) {
-          return null;
-        }
-        const active = tab.id === pane.activeId;
-        return (
-          <div key={tab.id} className="tab-panel" hidden={!active}>
-            <TabBody tab={tab} active={active} />
-          </div>
-        );
-      })}
-    </>
+    <div
+      ref={mount}
+      className="pane-content"
+      style={{ display: "flex", flex: "1 1 0", minWidth: 0, minHeight: 0 }}
+    />
   );
+}
+
+const tabContainers = new Map<string, HTMLDivElement>();
+
+function tabContainer(id: string): HTMLDivElement {
+  let container = tabContainers.get(id);
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "tab-panel";
+    container.dataset.contentTabId = id;
+    container.hidden = true;
+    tabContainers.set(id, container);
+  }
+  return container;
+}
+
+/** Own each page once; moving its DOM between groups keeps live terminals and file views intact. */
+export function WorkspaceContents() {
+  const tabs = useWorkspace((state) => state.tabs);
+  const panes = useWorkspace((state) => state.panes);
+  const activePaneId = useWorkspace((state) => state.activePaneId);
+
+  useEffect(() => {
+    const ids = new Set(tabs.map((tab) => tab.id));
+    for (const [id, container] of tabContainers) {
+      if (ids.has(id)) continue;
+      container.remove();
+      tabContainers.delete(id);
+    }
+  }, [tabs]);
+
+  return tabs.map((tab) => {
+    const owner = panes.find((pane) => pane.tabIds.includes(tab.id));
+    const visible = owner?.activeId === tab.id;
+    return createPortal(
+      <TabBody tab={tab} visible={visible} active={visible && owner?.id === activePaneId} />,
+      tabContainer(tab.id),
+      tab.id,
+    );
+  });
 }

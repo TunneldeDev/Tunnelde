@@ -2,14 +2,13 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { FolderOpen, LayoutPanelLeft, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { Input } from "@/components/ui/form/Field";
 import { StatusDot } from "@/components/ui/display/Misc";
 import { translateError } from "@/lib/api/errors";
 import { cn } from "@/lib/text/format";
@@ -32,7 +31,8 @@ const STATUS_LABEL = {
 export function PluginsSection() {
   const { t } = useTranslation();
   const items = usePlugins((state) => state.items);
-  const busy = usePlugins((state) => state.busy);
+  const busyIds = usePlugins((state) => state.busyIds);
+  const reloading = usePlugins((state) => state.reloading);
   const outputs = usePlugins((state) => state.outputs);
   const load = usePlugins((state) => state.load);
   const start = usePlugins((state) => state.start);
@@ -42,10 +42,23 @@ export function PluginsSection() {
   const install = usePlugins((state) => state.install);
   const confirm = useDialogs((state) => state.confirm);
   const [path, setPath] = useState<string | null>(null);
+  const [preview, setPreview] = useState<Awaited<ReturnType<typeof api.pluginInspect>> | null>(
+    null,
+  );
+  const [inspectError, setInspectError] = useState<string | null>(null);
+  const [localInstalling, setLocalInstalling] = useState(false);
+  const localInstallLock = useRef(false);
+  const sectionRef = useRef<HTMLElement>(null);
   const [market, setMarket] = useState<MarketEntry[] | null>(null);
   const [marketError, setMarketError] = useState(false);
-  const [installing, setInstalling] = useState<string | null>(null);
+  const [installing, setInstalling] = useState<string[]>([]);
+  const marketInstallLocks = useRef(new Set<string>());
   const openPluginView = useWorkspace((state) => state.openPluginView);
+  const choosePath = (value: string | null) => {
+    setPreview(null);
+    setInspectError(null);
+    setPath(value);
+  };
 
   useEffect(() => {
     void load();
@@ -70,7 +83,9 @@ export function PluginsSection() {
   }, []);
 
   const installFromMarket = async (entry: MarketEntry) => {
-    setInstalling(entry.id);
+    if (marketInstallLocks.current.has(entry.id)) return;
+    marketInstallLocks.current.add(entry.id);
+    setInstalling([...marketInstallLocks.current]);
     try {
       await installMarketplaceEntry(entry);
       await load();
@@ -78,13 +93,55 @@ export function PluginsSection() {
     } catch (error) {
       toast(translateError(error), "error");
     } finally {
-      setInstalling(null);
+      marketInstallLocks.current.delete(entry.id);
+      setInstalling([...marketInstallLocks.current]);
     }
   };
 
-  // A folder dropped on the window fills the install dialog.
   useEffect(() => {
-    if (path === null || !isTauri()) {
+    let alive = true;
+    if (path) {
+      void api
+        .pluginInspect(path)
+        .then((value) => {
+          if (alive) setPreview(value);
+        })
+        .catch((cause: unknown) => {
+          if (alive) setInspectError(translateError(cause));
+        });
+    }
+    return () => {
+      alive = false;
+    };
+  }, [path]);
+
+  const pickLocal = async (archive: boolean) => {
+    try {
+      const picked = await (archive ? api.pluginPickArchive() : api.pluginPickFolder());
+      if (picked) choosePath(picked);
+    } catch (cause) {
+      toast(translateError(cause), "error");
+    }
+  };
+
+  const installLocal = async () => {
+    if (!path || !preview || localInstallLock.current) return;
+    localInstallLock.current = true;
+    setLocalInstalling(true);
+    try {
+      if (await install(path)) {
+        choosePath(null);
+        toast(t("plugins.installed"), "success");
+      }
+    } finally {
+      localInstallLock.current = false;
+      setLocalInstalling(false);
+    }
+  };
+
+  // Only the visible plugin surface accepts a native package drop.
+  useEffect(() => {
+    if (!isTauri()) {
       return;
     }
     let alive = true;
@@ -92,9 +149,21 @@ export function PluginsSection() {
     void getCurrentWebview()
       .onDragDropEvent((event) => {
         if (event.payload.type === "drop") {
+          if (
+            localInstallLock.current ||
+            !sectionRef.current ||
+            sectionRef.current.closest("[hidden]")
+          )
+            return;
+          const { x, y } = event.payload.position;
+          const hit = document.elementFromPoint(
+            x / window.devicePixelRatio,
+            y / window.devicePixelRatio,
+          );
+          if (!hit?.closest(".plugins-section, .plugin-install-dialog")) return;
           const first = event.payload.paths[0];
           if (first) {
-            setPath(first);
+            choosePath(first);
           }
         }
       })
@@ -110,7 +179,7 @@ export function PluginsSection() {
       alive = false;
       unlisten?.();
     };
-  }, [path]);
+  }, []);
 
   const uninstall = (plugin: (typeof items)[number]) => {
     confirm({
@@ -130,7 +199,7 @@ export function PluginsSection() {
   };
 
   return (
-    <section className="settings-section">
+    <section className="settings-section plugins-section" ref={sectionRef}>
       <div className="settings-section__head">
         <h2 className="settings-section__title">{t("settings.plugins")}</h2>
         <div className="settings-actions settings-actions--inline">
@@ -138,7 +207,7 @@ export function PluginsSection() {
             variant="primary"
             size="sm"
             leading={<Plus size={13} />}
-            onClick={() => setPath("")}
+            onClick={() => choosePath("")}
           >
             {t("plugins.install")}
           </Button>
@@ -146,6 +215,7 @@ export function PluginsSection() {
             variant="ghost"
             size="sm"
             leading={<RefreshCw size={13} />}
+            disabled={reloading}
             onClick={() => void reload()}
           >
             {t("plugins.reload")}
@@ -178,7 +248,7 @@ export function PluginsSection() {
                   variant={running ? "secondary" : "primary"}
                   size="sm"
                   leading={running ? <Square size={11} /> : <Play size={11} />}
-                  disabled={busy === plugin.id}
+                  disabled={busyIds.includes(plugin.id)}
                   onClick={() => void (running ? stop(plugin.id) : start(plugin.id))}
                 >
                   {running ? t("plugins.stop") : t("plugins.start")}
@@ -187,6 +257,7 @@ export function PluginsSection() {
                   label={t("plugins.uninstall")}
                   size="sm"
                   danger
+                  disabled={busyIds.includes(plugin.id)}
                   onClick={() => uninstall(plugin)}
                 >
                   <Trash2 size={12} />
@@ -217,7 +288,7 @@ export function PluginsSection() {
                       key={command.id}
                       variant="ghost"
                       size="sm"
-                      disabled={!running || busy === plugin.id}
+                      disabled={!running || busyIds.includes(plugin.id)}
                       onClick={() => void run(plugin.id, command.id)}
                     >
                       {command.title}
@@ -244,82 +315,67 @@ export function PluginsSection() {
           open
           title={t("plugins.installTitle")}
           closeLabel={t("common.cancel")}
-          onClose={() => setPath(null)}
+          onClose={() => choosePath(null)}
           width={480}
+          className="plugin-install-dialog"
+          dismissible={!localInstalling}
           footer={
             <>
-              <Button variant="ghost" onClick={() => setPath(null)}>
+              <Button variant="ghost" disabled={localInstalling} onClick={() => choosePath(null)}>
                 {t("common.cancel")}
               </Button>
               <Button
                 variant="primary"
-                disabled={path.trim().length === 0}
-                onClick={() => {
-                  void install(path.trim()).then((ok) => {
-                    if (ok) {
-                      setPath(null);
-                    }
-                  });
-                }}
+                disabled={!preview || localInstalling}
+                onClick={() => void installLocal()}
               >
-                {t("plugins.install")}
+                {t(localInstalling ? "plugins.installing" : "plugins.install")}
               </Button>
             </>
           }
         >
-          <div className="field-row">
-            <Input
-              autoFocus
-              value={path}
-              spellCheck={false}
-              placeholder={t("plugins.installHint")}
-              aria-label={t("plugins.installHint")}
-              onChange={(event) => setPath(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && path.trim().length > 0) {
-                  void install(path.trim()).then((ok) => {
-                    if (ok) {
-                      setPath(null);
-                    }
-                  });
-                }
-              }}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              leading={<FolderOpen size={13} />}
-              onClick={() => {
-                void api
-                  .pluginPickFolder()
-                  .then((picked) => {
-                    if (picked) {
-                      setPath(picked);
-                    }
-                  })
-                  .catch((error: unknown) => toast(translateError(error), "error"));
-              }}
-            >
-              {t("common.browse")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => {
-                void api
-                  .pluginPickArchive()
-                  .then((picked) => {
-                    if (picked) {
-                      setPath(picked);
-                    }
-                  })
-                  .catch((error: unknown) => toast(translateError(error), "error"));
-              }}
-            >
-              {t("plugins.browseArchive")}
-            </Button>
+          <div className="plugin-install-zone" aria-busy={localInstalling}>
+            <FolderOpen size={28} aria-hidden="true" />
+            <p>{t("plugins.dropHint")}</p>
+            <div className="settings-actions">
+              <Button
+                variant="primary"
+                disabled={localInstalling}
+                onClick={() => void pickLocal(true)}
+              >
+                {t("plugins.browseArchive")}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={localInstalling}
+                onClick={() => void pickLocal(false)}
+              >
+                {t("plugins.browseFolder")}
+              </Button>
+            </div>
           </div>
-          <p className="settings-hint">{t("plugins.dropHint")}</p>
+          {path ? (
+            <p className="plugin-install-path" title={path}>
+              {path}
+            </p>
+          ) : null}
+          {path && !preview && !inspectError ? (
+            <p role="status">{t("plugins.inspecting")}</p>
+          ) : null}
+          {inspectError ? (
+            <p className="panel__error" role="alert">
+              {inspectError}
+            </p>
+          ) : null}
+          {preview ? (
+            <div className="plugin-install-preview">
+              <strong>{preview.name}</strong> <span>{preview.version}</span>
+              <p>
+                {t("plugins.permissions")}:{" "}
+                {preview.permissions.join(" · ") || t("plugins.noPermissions")}
+              </p>
+            </div>
+          ) : null}
         </Dialog>
       ) : null}
 
@@ -339,7 +395,7 @@ export function PluginsSection() {
             <Button
               variant="secondary"
               size="sm"
-              disabled={installing === entry.id}
+              disabled={installing.includes(entry.id)}
               onClick={() => void installFromMarket(entry)}
             >
               {t("plugins.install")}

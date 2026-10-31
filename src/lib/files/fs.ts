@@ -39,10 +39,10 @@ export const fs = {
       : api.sftpCreateFile(source.sessionId, path);
   },
 
-  rename(source: FsSource, from: string, to: string): Promise<void> {
+  rename(source: FsSource, from: string, to: string, overwrite = false): Promise<void> {
     return source.kind === "local"
-      ? api.localRename(from, to)
-      : api.sftpRename(source.sessionId, from, to);
+      ? api.localRename(from, to, overwrite)
+      : api.sftpRename(source.sessionId, from, to, overwrite);
   },
 
   remove(source: FsSource, path: string, isDir: boolean): Promise<void> {
@@ -51,10 +51,10 @@ export const fs = {
       : api.sftpDelete(source.sessionId, path, isDir);
   },
 
-  copy(source: FsSource, from: string, to: string): Promise<void> {
+  copy(source: FsSource, from: string, to: string, overwrite = false): Promise<void> {
     return source.kind === "local"
-      ? api.localCopy(from, to)
-      : api.sftpCopy(source.sessionId, from, to);
+      ? api.localCopy(from, to, overwrite)
+      : api.sftpCopy(source.sessionId, from, to, overwrite);
   },
 
   transfer(
@@ -63,14 +63,17 @@ export const fs = {
     to: FsSource,
     toPath: string,
     removeSource: boolean,
+    overwrite = false,
   ): Promise<string> {
     const fromSession = from.kind === "local" ? null : from.sessionId;
     const toSession = to.kind === "local" ? null : to.sessionId;
-    return api.fsTransfer(fromSession, fromPath, toSession, toPath, removeSource);
+    return api.fsTransfer(fromSession, fromPath, toSession, toPath, removeSource, overwrite);
   },
 
   readText(source: FsSource, path: string): Promise<TextFile | null> {
-    return source.kind === "local" ? Promise.resolve(null) : api.sftpReadText(source.sessionId, path);
+    return source.kind === "local"
+      ? Promise.resolve(null)
+      : api.sftpReadText(source.sessionId, path);
   },
 
   writeText(source: FsSource, path: string, content: string): Promise<void> {

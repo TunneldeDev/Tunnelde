@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -9,7 +9,8 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Field, Input, Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { TagInput } from "@/components/ui/form/TagInput";
+import { Segmented } from "@/components/ui/form/Segmented";
+import { TagInput, type TagInputHandle } from "@/components/ui/form/TagInput";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/prefs/labels";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
@@ -63,22 +64,41 @@ function fromHost(host: Host): HostFormState {
   };
 }
 
-function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void }) {
+function HostDialog({
+  host,
+  groupId,
+  onClose,
+}: {
+  host: Host | null;
+  groupId?: string | null;
+  onClose: () => void;
+}) {
   const { t } = useTranslation();
   const groups = useHosts((state) => state.groups);
   const createHost = useHosts((state) => state.createHost);
   const updateHost = useHosts((state) => state.updateHost);
   const openHost = useWorkspace((state) => state.openHost);
   const renameHost = useWorkspace((state) => state.renameHost);
-  const [form, setForm] = useState<HostFormState>(host ? fromHost(host) : EMPTY);
-  const [errors, setErrors] = useState<{ name?: string; host?: string; port?: string }>({});
+  const [form, setForm] = useState<HostFormState>(
+    host ? fromHost(host) : { ...EMPTY, groupId: groupId ?? "" },
+  );
+  const [keySource, setKeySource] = useState<"file" | "content">("file");
+  const [errors, setErrors] = useState<{
+    name?: string;
+    host?: string;
+    port?: string;
+    key?: string;
+  }>({});
   const [saving, setSaving] = useState(false);
+  const tagInput = useRef<TagInputHandle>(null);
+  const existingTags = useHosts((state) => state.hosts);
 
   const set = <K extends keyof HostFormState>(key: K, value: HostFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
   const submit = async () => {
+    if (saving) return;
     const nextErrors: typeof errors = {};
     if (!form.name.trim()) {
       nextErrors.name = t("error.required");
@@ -86,10 +106,15 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
     if (!form.host.trim()) {
       nextErrors.host = t("error.required");
     }
-    const port = Number.parseInt(form.port, 10);
-    if (!Number.isFinite(port) || port < 1 || port > 65535) {
+    const port = Number(form.port);
+    if (!/^\d+$/.test(form.port.trim()) || !Number.isInteger(port) || port < 1 || port > 65535) {
       nextErrors.port = t("error.invalidPort");
     }
+    if (
+      form.authMethod === "key" &&
+      !(keySource === "file" ? form.keyPath.trim() : form.keyContent.trim())
+    )
+      nextErrors.key = t("host.keyRequired");
     setErrors(nextErrors);
     if (Object.keys(nextErrors).length > 0) {
       return;
@@ -97,7 +122,7 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
 
     setSaving(true);
     let keyPath = form.authMethod === "key" ? form.keyPath.trim() || null : null;
-    if (form.authMethod === "key" && form.keyContent.trim()) {
+    if (form.authMethod === "key" && keySource === "content" && form.keyContent.trim()) {
       try {
         keyPath = await api.keyImport(form.keyContent);
       } catch (error) {
@@ -116,7 +141,7 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
       groupId: form.groupId || null,
       keyPath,
       favorite: form.favorite,
-      tags: form.tags,
+      tags: tagInput.current?.getValue() ?? form.tags,
       note: form.note.trim() || null,
     };
 
@@ -143,6 +168,7 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
       closeLabel={t("common.close")}
       onClose={onClose}
       width={460}
+      dismissible={!saving}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>
@@ -244,47 +270,63 @@ function HostDialog({ host, onClose }: { host: Host | null; onClose: () => void 
 
         {form.authMethod === "key" ? (
           <>
-            <Field label={t("host.keyFile")} htmlFor="host-key-path">
-              <div className="field-row">
-                <Input
-                  id="host-key-path"
-                  value={form.keyPath}
-                  placeholder="~/.ssh/id_ed25519"
-                  spellCheck={false}
-                  onChange={(event) => set("keyPath", event.target.value)}
-                />
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => {
-                    void api
-                      .keyPick()
-                      .then((path) => {
-                        if (path) {
-                          set("keyPath", path);
-                        }
-                      })
-                      .catch((error: unknown) => toast(translateError(error), "error"));
-                  }}
-                >
-                  {t("common.browse")}
-                </Button>
-              </div>
-            </Field>
-            <Field label={t("host.keyContent")} htmlFor="host-key-content">
-              <Textarea
-                id="host-key-content"
-                rows={3}
-                spellCheck={false}
-                value={form.keyContent}
-                onChange={(event) => set("keyContent", event.target.value)}
+            <Field label={t("host.keySource")} error={errors.key}>
+              <Segmented
+                label={t("host.keySource")}
+                value={keySource}
+                options={[
+                  { value: "file", label: t("host.keySourceFile") },
+                  { value: "content", label: t("host.keySourceContent") },
+                ]}
+                onChange={(value: "file" | "content") => setKeySource(value)}
               />
             </Field>
+            {keySource === "file" ? (
+              <Field label={t("host.keyFile")} htmlFor="host-key-path">
+                <div className="field-row">
+                  <Input
+                    id="host-key-path"
+                    value={form.keyPath}
+                    placeholder="~/.ssh/id_ed25519"
+                    spellCheck={false}
+                    onChange={(event) => set("keyPath", event.target.value)}
+                  />
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      void api
+                        .keyPick()
+                        .then((path) => {
+                          if (path) {
+                            set("keyPath", path);
+                          }
+                        })
+                        .catch((error: unknown) => toast(translateError(error), "error"));
+                    }}
+                  >
+                    {t("common.browse")}
+                  </Button>
+                </div>
+              </Field>
+            ) : (
+              <Field label={t("host.keyContent")} htmlFor="host-key-content">
+                <Textarea
+                  id="host-key-content"
+                  rows={3}
+                  spellCheck={false}
+                  value={form.keyContent}
+                  onChange={(event) => set("keyContent", event.target.value)}
+                />
+              </Field>
+            )}
           </>
         ) : null}
 
         <Field label={t("host.tags")}>
           <TagInput
+            ref={tagInput}
+            suggestions={Array.from(new Set(existingTags.flatMap((item) => item.tags)))}
             label={t("host.tags")}
             value={form.tags}
             placeholder={t("host.tagsPlaceholder")}
@@ -314,19 +356,16 @@ function GroupDialog({ group, onClose }: { group: Group | null; onClose: () => v
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
+    if (saving) return;
     const value = name.trim();
     if (!value) {
       setError(t("error.required"));
       return;
     }
     setSaving(true);
-    if (group) {
-      await renameGroup(group.id, value);
-    } else {
-      await createGroup(value);
-    }
+    const ok = group ? await renameGroup(group.id, value) : await createGroup(value);
     setSaving(false);
-    onClose();
+    if (ok) onClose();
   };
 
   return (
@@ -388,12 +427,16 @@ function ConfirmDialog({
   const [busy, setBusy] = useState(false);
 
   const run = async () => {
+    if (busy) return;
     setBusy(true);
     try {
       await onConfirm();
+      const current = useDialogs.getState().dialog;
+      if (current.kind === "confirm" && current.onConfirm === onConfirm) onClose();
+    } catch (cause) {
+      toast(translateError(cause), "error");
     } finally {
       setBusy(false);
-      onClose();
     }
   };
 
@@ -404,9 +447,10 @@ function ConfirmDialog({
       closeLabel={t("common.close")}
       onClose={onClose}
       width={400}
+      dismissible={!busy}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={busy} onClick={onClose}>
             {t("common.cancel")}
           </Button>
           <Button
@@ -430,15 +474,23 @@ export function DialogHost() {
 
   switch (dialog.kind) {
     case "host":
-      return <HostDialog key={dialog.host?.id ?? "new"} host={dialog.host} onClose={close} />;
+      return (
+        <HostDialog
+          key={dialog.host?.id ?? `new:${dialog.groupId ?? ""}`}
+          host={dialog.host}
+          groupId={dialog.groupId}
+          onClose={close}
+        />
+      );
     case "group":
       return <GroupDialog key={dialog.group?.id ?? "new"} group={dialog.group} onClose={close} />;
     case "connect":
       return (
         <ConnectDialog
-          key={dialog.host.id}
+          key={`${dialog.host.id}:${dialog.intent}`}
           host={dialog.host}
           after={dialog.after}
+          intent={dialog.intent}
           onClose={close}
         />
       );

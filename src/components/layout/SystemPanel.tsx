@@ -64,13 +64,17 @@ interface SystemPanelProps {
 
 export function SystemPanel({ width, onHide, hidden }: SystemPanelProps) {
   const { t } = useTranslation();
-  const stats: SystemStats | null = useSystemStats(3000);
+  const stats: SystemStats | null = useSystemStats(3000, !hidden);
   const disk = stats?.disks[0];
   const load = stats?.loadAverage ?? [0, 0, 0];
   const hasLoad = load.some((value) => value > 0);
 
   return (
-    <aside className={cn("panel", hidden && "is-collapsed")} style={{ width }} aria-label={t("panel.system")}>
+    <aside
+      className={cn("panel", hidden && "is-collapsed")}
+      style={{ width }}
+      aria-label={t("panel.system")}
+    >
       <header className="panel__head">
         <span className="panel__title">{t("panel.system")}</span>
         <IconButton label={t("panel.hide")} size="sm" onClick={onHide}>

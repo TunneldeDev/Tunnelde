@@ -6,6 +6,7 @@ export type ThemeMode = "dark" | "light" | "system";
 export type Density = "comfortable" | "compact";
 export type Accent = "blue" | "cyan" | "green" | "orange" | "violet";
 export type MonoFont = "fira-code" | "jetbrains-mono" | "plex-mono" | "system";
+export type TitleBarStyle = "system" | "compact";
 
 export interface Settings {
   language: Language;
@@ -23,7 +24,8 @@ export interface Settings {
   skippedVersion: string | null;
   lastUpdateCheck: number | null;
   closeToTray: boolean;
-  nativeMenu: boolean;
+  titleBarStyle: TitleBarStyle;
+  recordTerminalHistory: boolean;
   preloadDirs: boolean;
   preloadCount: number;
 }
@@ -38,6 +40,7 @@ export interface SettingsSchema {
 }
 
 export interface AppInfo {
+  systemLanguages?: string[];
   name: string;
   version: string;
   tauriVersion: string;
@@ -99,6 +102,7 @@ export interface HostsSnapshot {
 }
 
 export type TabKind =
+  | "knownHosts"
   | "welcome"
   | "host"
   | "settings"

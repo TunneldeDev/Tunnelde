@@ -72,7 +72,7 @@ describe("ConnectDialog", () => {
 
     const install = await screen.findByRole("button", { name: "Set up key login" });
     await waitFor(() => expect((install as HTMLButtonElement).disabled).toBe(false));
-    install.click();
+    fireEvent.click(install);
 
     await waitFor(() => {
       expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "secret");
@@ -86,5 +86,33 @@ describe("ConnectDialog", () => {
     render(<ConnectDialog host={host} onClose={() => undefined} />);
     await screen.findByText("SHA256:abc");
     expect(screen.queryByText(/Previous fingerprint/)).toBeNull();
+  });
+
+  it("offers a dedicated password-based key setup for an existing key host", async () => {
+    const close = vi.fn();
+    render(
+      <ConnectDialog host={{ ...host, authMethod: "key" }} intent="installKey" onClose={close} />,
+    );
+    expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+    fireEvent.change(await screen.findByLabelText("Password"), {
+      target: { value: "setup-secret" },
+    });
+    const install = screen.getByRole("button", { name: "Set up key login" });
+    await waitFor(() => expect((install as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(install);
+    await waitFor(() =>
+      expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "setup-secret"),
+    );
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  });
+
+  it("does not ask for a password for an unsupported agent record", async () => {
+    render(<ConnectDialog host={{ ...host, authMethod: "agent" }} onClose={() => undefined} />);
+    await screen.findByText("SHA256:abc");
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    expect(screen.queryByLabelText("Key passphrase")).toBeNull();
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
   });
 });

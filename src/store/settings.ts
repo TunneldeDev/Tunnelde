@@ -12,23 +12,52 @@ import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 
+let requestedLocale: string | undefined;
+let appliedLocale: string | undefined;
+let changingLocale = false;
+
+function applyNativeLocale(language: string): void {
+  requestedLocale = language;
+  if (changingLocale || appliedLocale === language) return;
+  changingLocale = true;
+  void (async () => {
+    try {
+      while (requestedLocale !== appliedLocale) {
+        const next: string = requestedLocale!;
+        try {
+          await api.setLocale(next);
+          appliedLocale = next;
+        } catch {
+          // Retry on the next settings application; never leave a rejected queue.
+          if (requestedLocale === next) break;
+        }
+      }
+    } finally {
+      changingLocale = false;
+    }
+  })();
+}
+
 interface SettingsStore {
   settings: Settings;
   info: AppInfo | null;
   ready: boolean;
   error: string | null;
   load: () => Promise<void>;
-  update: (patch: SettingsPatch) => Promise<void>;
+  update: (patch: SettingsPatch) => Promise<boolean>;
   reset: () => Promise<void>;
   applyRemote: (settings: Settings) => void;
 }
 
 export function applySettings(settings: Settings): void {
   applyAppearance(settings);
-  const language = resolveLanguage(settings.language, navigatorLanguages());
+  const language = resolveLanguage(settings.language, [
+    ...(useSettings.getState().info?.systemLanguages ?? []),
+    ...navigatorLanguages(),
+  ]);
   setLanguage(language);
   if (isTauri()) {
-    void api.setLocale(language).catch(() => undefined);
+    applyNativeLocale(language);
   }
 }
 
@@ -41,65 +70,88 @@ function navigatorLanguages(): readonly string[] {
   return list.filter((value): value is string => typeof value === "string" && value.length > 0);
 }
 
-export const useSettings = create<SettingsStore>((set) => ({
-  settings: DEFAULT_SETTINGS,
-  info: null,
-  ready: false,
-  error: null,
-
-  load: async () => {
-    if (!isTauri()) {
-      applySettings(DEFAULT_SETTINGS);
-      set({ ready: true });
-      return;
-    }
-    try {
-      const [settings, info] = await Promise.all([api.settings(), api.appInfo()]);
-      applySettings(settings);
-      set({ settings, info, ready: true, error: null });
-    } catch (error) {
-      set({ ready: true, error: translateError(error) });
-    }
-  },
-
-  update: async (patch) => {
-    const previous = useSettings.getState().settings;
-    set({ settings: { ...previous, ...patch } });
-    if (!isTauri()) {
-      applySettings({ ...previous, ...patch });
-      return;
-    }
-    try {
-      const settings = await api.updateSettings(patch);
-      applySettings(settings);
-      set({ settings, error: null });
-    } catch (error) {
-      set({ settings: previous, error: translateError(error) });
-      applySettings(previous);
-      toast(translateError(error), "error");
-    }
-  },
-
-  reset: async () => {
-    if (!isTauri()) {
-      applySettings(DEFAULT_SETTINGS);
-      set({ settings: DEFAULT_SETTINGS });
-      return;
-    }
-    try {
-      const settings = await api.resetSettings();
-      applySettings(settings);
-      set({ settings });
-      toast(i18n.t("toast.reset"), "success");
-    } catch (error) {
-      toast(translateError(error), "error");
-    }
-  },
-
-  applyRemote: (settings) => {
+export const useSettings = create<SettingsStore>((set, get) => {
+  let queue: Promise<unknown> = Promise.resolve();
+  let loading: Promise<void> | null = null;
+  let confirmed = DEFAULT_SETTINGS;
+  let remoteRevision = 0;
+  const pending: SettingsPatch[] = [];
+  const display = () => {
+    const settings = pending.reduce<Settings>(
+      (value, patch) => ({ ...value, ...patch }),
+      confirmed,
+    );
     applySettings(settings);
     set({ settings });
-  },
-}));
+  };
+  const commit = (patch: SettingsPatch, reset = false): Promise<boolean> => {
+    if (pending.length === 0) confirmed = get().settings;
+    pending.push(patch);
+    display();
+    const task = queue.then(async () => {
+      let ok = true;
+      try {
+        confirmed = isTauri()
+          ? await (reset ? api.resetSettings() : api.updateSettings(patch))
+          : { ...confirmed, ...patch };
+        set({ error: null });
+      } catch (error) {
+        ok = false;
+        set({ error: translateError(error) });
+        toast(translateError(error), "error");
+      } finally {
+        pending.shift();
+        display();
+      }
+      return ok;
+    });
+    queue = task.catch(() => undefined);
+    return task;
+  };
+  return {
+    settings: DEFAULT_SETTINGS,
+    info: null,
+    ready: false,
+    error: null,
+
+    load: () => {
+      if (loading) return loading;
+      const task = queue.then(async () => {
+        if (!isTauri()) {
+          display();
+          set({ ready: true });
+          return;
+        }
+        const revision = remoteRevision;
+        const [settings, info] = await Promise.allSettled([api.settings(), api.appInfo()]);
+        if (settings.status === "fulfilled" && revision === remoteRevision) {
+          confirmed = settings.value;
+        }
+        if (info.status === "fulfilled") set({ info: info.value });
+        const failed =
+          settings.status === "rejected" ? settings : info.status === "rejected" ? info : null;
+        set({ ready: true, error: failed ? translateError(failed.reason) : null });
+        display();
+      });
+      queue = task.catch(() => undefined);
+      loading = task.finally(() => {
+        loading = null;
+      });
+      return loading;
+    },
+
+    update: (patch) => commit(patch),
+
+    reset: async () => {
+      if (await commit(DEFAULT_SETTINGS, true)) toast(i18n.t("toast.reset"), "success");
+    },
+
+    applyRemote: (settings) => {
+      remoteRevision++;
+      confirmed = settings;
+      display();
+    },
+  };
+});
 
 export const settingsStore = useSettings;

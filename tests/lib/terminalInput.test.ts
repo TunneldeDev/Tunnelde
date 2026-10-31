@@ -47,6 +47,11 @@ describe("consumeInput", () => {
     expect(submitted.commands).toEqual([]);
   });
 
+  it("preserves the leading-space history privacy marker", () => {
+    const submitted = consumeInput(empty, " secret-command  \r");
+    expect(submitted.commands).toEqual([" secret-command"]);
+  });
+
   it("keeps long lines bounded", () => {
     const long = consumeInput(empty, "x".repeat(3000));
     expect(long.state.text.length).toBeLessThanOrEqual(2000);

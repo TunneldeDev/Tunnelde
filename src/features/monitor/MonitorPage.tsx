@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { EmptyState } from "@/components/ui/display/Misc";
-import { translateError } from "@/lib/api/errors";
 import { formatBytes, formatPercent } from "@/lib/text/format";
-import { api } from "@/lib/api/ipc";
+import { useRemoteMonitor } from "@/lib/session/useRemoteMonitor";
+import { useMonitor } from "@/store/monitor";
 import { summarize, useMonitorHistory, type MonitorSample } from "@/store/monitorHistory";
 import { useSsh } from "@/store/ssh";
 
@@ -70,46 +69,12 @@ function Metric({ label, value, caption, values, ceiling, tone }: MetricProps) {
   );
 }
 
-export function MonitorPage({ sessionId }: { sessionId: string }) {
+export function MonitorPage({ sessionId, active = true }: { sessionId: string; active?: boolean }) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const samples = useMonitorHistory((state) => state.samples[sessionId] ?? EMPTY);
-  const push = useMonitorHistory((state) => state.push);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-    const tick = () => {
-      api
-        .remoteStats(sessionId)
-        .then((stats) => {
-          if (!alive) {
-            return;
-          }
-          setError(null);
-          push(sessionId, {
-            at: stats.sampledAt,
-            cpu: stats.cpuPercent,
-            memory: stats.memoryTotal > 0 ? (stats.memoryUsed / stats.memoryTotal) * 100 : 0,
-            disk: stats.diskTotal > 0 ? (stats.diskUsed / stats.diskTotal) * 100 : 0,
-            rx: stats.netRxRate,
-            tx: stats.netTxRate,
-          });
-        })
-        .catch((cause: unknown) => {
-          if (alive) {
-            setError(translateError(cause));
-          }
-        });
-    };
-
-    tick();
-    const timer = window.setInterval(tick, 2000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, [sessionId, push]);
+  const error = useMonitor((state) => state.entries[sessionId]?.error);
+  useRemoteMonitor(sessionId, active && session !== null);
 
   if (!session) {
     return (

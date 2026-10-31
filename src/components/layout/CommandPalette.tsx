@@ -11,6 +11,7 @@ import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
+import { closeTab } from "@/lib/session/tabActions";
 
 interface Command {
   id: string;
@@ -24,7 +25,6 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const openPage = useWorkspace((state) => state.openPage);
   const openHost = useWorkspace((state) => state.openHost);
   const splitTab = useWorkspace((state) => state.splitTab);
-  const closeTab = useWorkspace((state) => state.close);
   const activeId = useWorkspace((state) => state.activeId);
   const settings = useSettings((state) => state.settings);
   const updateSettings = useSettings((state) => state.update);
@@ -59,6 +59,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       { id: "page.settings", title: t("nav.settings"), run: () => openPage("settings") },
       { id: "page.welcome", title: t("nav.welcome"), run: () => openPage("welcome") },
       { id: "page.about", title: t("nav.about"), run: () => openPage("about") },
+      { id: "page.knownHosts", title: t("settings.knownHosts"), run: () => openPage("knownHosts") },
       { id: "update.check", title: t("updates.check"), run: () => void checkUpdates(true) },
       {
         id: "panel.toggle",
@@ -70,7 +71,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         title: `${t("settings.theme")}: ${themeLabel}`,
         run: () =>
           void updateSettings({
-            theme: settings.theme === "dark" ? "light" : settings.theme === "light" ? "system" : "dark",
+            theme:
+              settings.theme === "dark" ? "light" : settings.theme === "light" ? "system" : "dark",
           }),
       },
       {
@@ -86,7 +88,10 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       {
         id: "tab.close",
         title: t("tab.close"),
-        run: () => activeId && closeTab(activeId),
+        run: () => {
+          const tab = useWorkspace.getState().tabs.find((item) => item.id === activeId);
+          if (tab) closeTab(tab);
+        },
       },
     ];
 
@@ -106,7 +111,6 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   }, [
     activeId,
     checkUpdates,
-    closeTab,
     hosts,
     openConnect,
     openHost,

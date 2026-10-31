@@ -14,6 +14,7 @@ import {
   resolveDrop,
   sameSource,
   setDragPayload,
+  validName,
   type PasteClip,
 } from "@/lib/files/dnd";
 import type { FsSource } from "@/lib/api/types";
@@ -48,6 +49,17 @@ describe("path helpers", () => {
     expect(parentOf("/home/user/a.txt")).toBe("/home/user");
     expect(parentOf("/home/user/")).toBe("/home");
     expect(parentOf("C:\\work")).toBe("C:\\");
+    expect(parentOf("/")).toBe("/");
+    expect(parentOf("C:\\")).toBe("C:\\");
+    expect(parentOf("\\\\server\\share")).toBe("\\\\server\\share");
+  });
+
+  it("rejects traversal and Windows reserved names while allowing remote names", () => {
+    expect(validName("../outside", LOCAL, "C:\\work")).toBe(false);
+    expect(validName("..", SERVER_A, "/home")).toBe(false);
+    expect(validName("CON.txt", LOCAL, "C:\\work")).toBe(false);
+    expect(validName("name:part", SERVER_A, "/home")).toBe(true);
+    expect(validName("name:part", LOCAL, "/home")).toBe(true);
   });
 
   it("detects containment", () => {
@@ -90,9 +102,9 @@ describe("resolveDrop", () => {
   });
 
   it("refuses to move a folder into itself", () => {
-    expect(
-      resolveDrop({ source: SERVER_A, items: [folder] }, SERVER_A, "/srv/app/nested"),
-    ).toEqual({ kind: "noop" });
+    expect(resolveDrop({ source: SERVER_A, items: [folder] }, SERVER_A, "/srv/app/nested")).toEqual(
+      { kind: "noop" },
+    );
   });
 
   it("keeps only the items that actually move", () => {
@@ -112,6 +124,15 @@ describe("resolveDrop", () => {
       to: SERVER_A,
       ops: [{ from: "/home/user/a.txt", to: "/srv/a.txt" }],
       move: false,
+    });
+  });
+
+  it("copies between panels even when both point at the same source", () => {
+    expect(
+      resolveDrop({ source: SERVER_A, paneId: "left", items: [file] }, SERVER_A, "/srv", "right"),
+    ).toMatchObject({ kind: "copy" });
+    expect(resolveDrop({ source: LOCAL, items: [file] }, LOCAL, "/tmp")).toMatchObject({
+      ops: [{ to: "/tmp/a.txt" }],
     });
   });
 

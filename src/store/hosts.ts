@@ -14,15 +14,85 @@ interface HostsStore {
   hosts: Host[];
   loaded: boolean;
   loading: boolean;
-  load: () => Promise<void>;
+  load: () => Promise<boolean>;
   createHost: (input: HostInput) => Promise<Host | null>;
   updateHost: (id: string, input: HostInput) => Promise<Host | null>;
   deleteHost: (id: string) => Promise<boolean>;
-  moveHost: (dragId: string, targetId: string) => void;
+  moveHost: (dragId: string, targetId: string, position?: "before" | "after") => void;
+  moveToGroup: (id: string, groupId: string | null, favorite?: boolean) => void;
   toggleFavorite: (host: Host) => Promise<void>;
   createGroup: (name: string, parentId?: string | null) => Promise<Group | null>;
   renameGroup: (id: string, name: string) => Promise<boolean>;
   deleteGroup: (id: string) => Promise<boolean>;
+}
+
+let snapshotVersion = 0;
+let editVersion = 0;
+const mutations: Array<() => Promise<void>> = [];
+let running = false;
+const idleWaiters: Array<() => void> = [];
+
+function queueMutation(operation: () => Promise<void>): void {
+  mutations.push(operation);
+  if (running) return;
+  running = true;
+  void (async () => {
+    let failed = false;
+    while (mutations.length) {
+      const next = mutations.shift()!;
+      try {
+        await next();
+      } catch (error) {
+        failed = true;
+        toast(translateError(error), "error");
+      }
+    }
+    running = false;
+    idleWaiters.splice(0).forEach((resolve) => resolve());
+    if (failed) await useHosts.getState().load();
+  })();
+}
+
+function hostInput(host: Host): HostInput {
+  const {
+    name,
+    host: address,
+    port,
+    username,
+    authMethod,
+    keyPath,
+    groupId,
+    favorite,
+    color,
+    tags,
+    note,
+  } = host;
+  return {
+    name,
+    host: address,
+    port,
+    username,
+    authMethod,
+    keyPath,
+    groupId,
+    favorite,
+    color,
+    tags,
+    note,
+  };
+}
+
+function persistPlacement(
+  id: string,
+  patch: Pick<Host, "groupId" | "favorite">,
+  order: string[],
+): void {
+  queueMutation(async () => {
+    const host = useHosts.getState().hosts.find((item) => item.id === id);
+    if (!host) return;
+    await api.updateHost(id, { ...hostInput(host), ...patch });
+    await api.hostsReorder(order);
+  });
 }
 
 export const useHosts = create<HostsStore>((set, get) => ({
@@ -32,13 +102,20 @@ export const useHosts = create<HostsStore>((set, get) => ({
   loading: false,
 
   load: async () => {
+    if (running) await new Promise<void>((resolve) => idleWaiters.push(resolve));
+    const request = ++snapshotVersion;
+    const revision = editVersion;
     set({ loading: true });
     try {
       const snapshot = await api.hostsSnapshot();
+      if (request !== snapshotVersion || revision !== editVersion) return false;
       set({ groups: snapshot.groups, hosts: snapshot.hosts, loaded: true, loading: false });
+      return true;
     } catch (error) {
+      if (request !== snapshotVersion || revision !== editVersion) return false;
       set({ loading: false });
       toast(translateError(error), "error");
+      return false;
     }
   },
 
@@ -78,49 +155,64 @@ export const useHosts = create<HostsStore>((set, get) => ({
     }
   },
 
-  moveHost: (dragId, targetId) => {
+  moveHost: (dragId, targetId, position = "before") => {
     if (dragId === targetId) {
       return;
     }
     const current = get().hosts;
     const dragged = current.find((host) => host.id === dragId);
-    if (!dragged) {
+    const target = current.find((host) => host.id === targetId);
+    if (!dragged || !target) {
       return;
     }
     const rest = current.filter((host) => host.id !== dragId);
-    const index = rest.findIndex((host) => host.id === targetId);
+    const index = rest.findIndex((host) => host.id === targetId) + (position === "after" ? 1 : 0);
     if (index < 0) {
       return;
     }
-    const next = [...rest.slice(0, index), dragged, ...rest.slice(index)].map(
-      (host, position) => ({ ...host, sortOrder: position }),
+    const placed = { ...dragged, groupId: target.groupId, favorite: target.favorite };
+    const next = [...rest.slice(0, index), placed, ...rest.slice(index)].map((host, position) => ({
+      ...host,
+      sortOrder: position,
+    }));
+    editVersion++;
+    set({ hosts: next, loading: false });
+    const order = next.map((host) => host.id);
+    if (dragged.groupId !== placed.groupId || dragged.favorite !== placed.favorite) {
+      persistPlacement(dragId, placed, order);
+    } else queueMutation(() => api.hostsReorder(order));
+  },
+
+  moveToGroup: (id, groupId, favorite = false) => {
+    if (groupId && !get().groups.some((group) => group.id === groupId)) return;
+    const current = get().hosts;
+    const host = current.find((item) => item.id === id);
+    if (!host || (host.groupId === groupId && host.favorite === favorite)) return;
+    const next = [...current.filter((item) => item.id !== id), { ...host, groupId, favorite }].map(
+      (item, index) => ({ ...item, sortOrder: index }),
     );
-    set({ hosts: next });
-    void api.hostsReorder(next.map((host) => host.id)).catch((error: unknown) => {
-      toast(translateError(error), "error");
-      void get().load();
-    });
+    editVersion++;
+    set({ hosts: next, loading: false });
+    persistPlacement(
+      id,
+      { groupId, favorite },
+      next.map((item) => item.id),
+    );
   },
 
   toggleFavorite: async (host) => {
-    try {
-      await api.updateHost(host.id, {
-        name: host.name,
-        host: host.host,
-        port: host.port,
-        username: host.username,
-        authMethod: host.authMethod,
-        keyPath: host.keyPath,
-        groupId: host.groupId,
-        favorite: !host.favorite,
-        color: host.color,
-        tags: host.tags,
-        note: host.note,
-      });
-      await get().load();
-    } catch (error) {
-      toast(translateError(error), "error");
-    }
+    const latest = get().hosts.find((item) => item.id === host.id);
+    if (!latest) return;
+    const favorite = !latest.favorite;
+    editVersion++;
+    set((state) => ({
+      hosts: state.hosts.map((item) => (item.id === host.id ? { ...item, favorite } : item)),
+      loading: false,
+    }));
+    queueMutation(async () => {
+      const current = get().hosts.find((item) => item.id === host.id);
+      if (current) await api.updateHost(host.id, { ...hostInput(current), favorite });
+    });
   },
 
   createGroup: async (name, parentId = null) => {

@@ -10,20 +10,21 @@ import { Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { Segmented, Stepper, SwatchPicker } from "@/components/ui/form/Segmented";
 import { PluginsSection } from "@/features/plugins/PluginsSection";
-import { KnownHostsList } from "@/features/settings/KnownHostsList";
 import { validateUserCss } from "@/lib/prefs/appearance";
 import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import { formatDateTime } from "@/lib/text/format";
-import type { Density, Language, MonoFont, ThemeMode } from "@/lib/api/types";
+import type { Density, Language, MonoFont, ThemeMode, TitleBarStyle } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
+import { useNavigation } from "@/store/navigation";
 
-type Section = "general" | "appearance" | "files" | "plugins" | "hosts" | "css" | "updates" | "advanced";
+type Section =
+  "general" | "appearance" | "files" | "plugins" | "hosts" | "css" | "updates" | "advanced";
 
 const SECTIONS: Section[] = [
   "general",
@@ -92,18 +93,34 @@ function GeneralSection() {
         }
       />
       <Row
-        label={t("settings.nativeMenu")}
+        label={t("settings.titleBar")}
+        hint={t("settings.titleBarHint")}
         control={
-          <Switch
-            label={t("settings.nativeMenu")}
-            checked={settings.nativeMenu}
-            onChange={(nativeMenu) => void update({ nativeMenu })}
+          <Select
+            label={t("settings.titleBar")}
+            value={settings.titleBarStyle}
+            options={[
+              { value: "system", label: t("settings.titleBarSystem") },
+              { value: "compact", label: t("settings.titleBarCompact") },
+            ]}
+            onChange={(value) => void update({ titleBarStyle: value as TitleBarStyle })}
           />
         }
       />
       <Row
         label={t("settings.version")}
         control={<span className="settings-value">{info?.version ?? "0.1.0"}</span>}
+      />
+      <Row
+        label={t("settings.recordTerminalHistory")}
+        hint={t("settings.recordTerminalHistoryHint")}
+        control={
+          <Switch
+            label={t("settings.recordTerminalHistory")}
+            checked={settings.recordTerminalHistory}
+            onChange={(recordTerminalHistory) => void update({ recordTerminalHistory })}
+          />
+        }
       />
     </Section>
   );
@@ -239,7 +256,7 @@ function CssSection() {
       setMessage({ tone: "error", text: t("settings.cssRejected") });
       return;
     }
-    await update({ userCss: draft });
+    if (!(await update({ userCss: draft }))) return;
     setDraftState(null);
     setMessage({ tone: "ok", text: t("settings.cssApplied") });
   };
@@ -454,17 +471,21 @@ function AdvancedSection() {
 
 function TrustedHostsSection() {
   const { t } = useTranslation();
+  const openPage = useWorkspace((state) => state.openPage);
 
   return (
     <Section title={t("settings.knownHosts")}>
-      <KnownHostsList />
+      <Button variant="secondary" onClick={() => openPage("knownHosts")}>
+        {t("settings.knownHosts")}
+      </Button>
     </Section>
   );
 }
 
 export function SettingsPage() {
   const { t } = useTranslation();
-  const [section, setSection] = useState<Section>("general");
+  const section = useNavigation((state) => state.settingsSection);
+  const setSection = useNavigation((state) => state.selectSettings);
 
   return (
     <div className="page settings">

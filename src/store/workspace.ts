@@ -6,6 +6,8 @@ import { create } from "zustand";
 import { api } from "@/lib/api/ipc";
 import type { Host, SshSession, TabKind, TabRecord } from "@/lib/api/types";
 import { fileName, useEditors } from "@/store/editors";
+import { useDialogs } from "@/store/dialogs";
+import i18n from "@/i18n/i18n";
 
 export interface WorkspaceTab {
   id: string;
@@ -22,23 +24,39 @@ export interface WorkspacePane {
 }
 
 export type SplitDirection = "row" | "column";
+export type WorkspaceLayout =
+  | { kind: "pane"; paneId: string }
+  | {
+      kind: "split";
+      id: string;
+      direction: SplitDirection;
+      ratio: number;
+      first: WorkspaceLayout;
+      second: WorkspaceLayout;
+    };
 /** Where a dragged tab lands relative to the tabs that stay behind. */
 export type PanePosition = "before" | "after";
 
-export type PageKind = "welcome" | "settings" | "about" | "updates";
+export type PageKind = "welcome" | "settings" | "about" | "updates" | "knownHosts";
 
 const PAGE_TITLES: Record<PageKind, string> = {
   welcome: "welcome",
   settings: "settings",
   about: "about",
   updates: "updates",
+  knownHosts: "knownHosts",
 };
 
-const SUPPORTED_KINDS: TabKind[] = ["welcome", "host", "settings", "about", "updates"];
+const SUPPORTED_KINDS: TabKind[] = [
+  "welcome",
+  "host",
+  "settings",
+  "about",
+  "updates",
+  "knownHosts",
+];
 
 export const FIRST_PANE = "pane-1";
-const SECOND_PANE = "pane-2";
-const LEADING_PANE = "pane-0";
 
 interface WorkspaceStore {
   tabs: WorkspaceTab[];
@@ -46,6 +64,7 @@ interface WorkspaceStore {
   activePaneId: string;
   activeId: string | null;
   split: SplitDirection | null;
+  layout: WorkspaceLayout;
   openPage: (kind: PageKind) => void;
   openHost: (host: Host) => void;
   openTerminal: (session: SshSession) => void;
@@ -61,7 +80,13 @@ interface WorkspaceStore {
   activatePane: (paneId: string) => void;
   togglePin: (id: string) => void;
   reorder: (from: number, to: number) => void;
-  splitTab: (tabId: string, direction: SplitDirection, position?: PanePosition) => void;
+  splitTab: (
+    tabId: string,
+    direction: SplitDirection,
+    position?: PanePosition,
+    targetPaneId?: string,
+  ) => void;
+  resizeSplit: (id: string, ratio: number) => void;
   moveTab: (tabId: string, targetPaneId: string, beforeTabId?: string | null) => void;
   reorderTab: (tabId: string, beforeTabId: string | null) => void;
   closePane: (paneId: string) => void;
@@ -76,13 +101,32 @@ interface PanesState {
   activePaneId: string;
   activeId: string | null;
   split: SplitDirection | null;
+  layout: WorkspaceLayout;
 }
 
 const pane = (id: string): WorkspacePane => ({ id, tabIds: [], activeId: null });
 
-function settle(panes: WorkspacePane[], preferred: string, split: SplitDirection | null): PanesState {
+function settle(
+  panes: WorkspacePane[],
+  preferred: string,
+  split: SplitDirection | null,
+  layout?: WorkspaceLayout,
+): PanesState {
   const nonEmpty = panes.filter((item) => item.tabIds.length > 0);
-  const finalPanes = nonEmpty.length > 0 ? nonEmpty : panes.slice(0, 1);
+  const finalPanes = (nonEmpty.length > 0 ? nonEmpty : panes.slice(0, 1)).map((item) => ({
+    ...item,
+    activeId:
+      item.activeId && item.tabIds.includes(item.activeId)
+        ? item.activeId
+        : (item.tabIds[0] ?? null),
+  }));
+  const pruned = pruneLayout(layout, new Set(finalPanes.map((item) => item.id)));
+  const normalizedLayout =
+    pruned && finalPanes.every((item) => layoutPanes(pruned).includes(item.id))
+      ? pruned
+      : linearLayout(finalPanes, split ?? "row");
+  const order = layoutPanes(normalizedLayout);
+  finalPanes.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   const activePaneId = finalPanes.some((item) => item.id === preferred)
     ? preferred
     : (finalPanes[0]?.id ?? FIRST_PANE);
@@ -91,7 +135,80 @@ function settle(panes: WorkspacePane[], preferred: string, split: SplitDirection
     panes: finalPanes,
     activePaneId,
     activeId: active?.activeId ?? null,
-    split: finalPanes.length > 1 ? (split ?? "row") : null,
+    split: normalizedLayout.kind === "split" ? normalizedLayout.direction : null,
+    layout: normalizedLayout,
+  };
+}
+
+function layoutPanes(layout: WorkspaceLayout): string[] {
+  return layout.kind === "pane"
+    ? [layout.paneId]
+    : [...layoutPanes(layout.first), ...layoutPanes(layout.second)];
+}
+
+function pruneLayout(
+  layout: WorkspaceLayout | undefined,
+  valid: Set<string>,
+): WorkspaceLayout | null {
+  if (!layout) return null;
+  if (layout.kind === "pane") return valid.has(layout.paneId) ? layout : null;
+  const first = pruneLayout(layout.first, valid);
+  const second = pruneLayout(layout.second, valid);
+  return first && second ? { ...layout, first, second } : (first ?? second);
+}
+
+function linearLayout(panes: WorkspacePane[], direction: SplitDirection): WorkspaceLayout {
+  const [first, ...rest] = panes;
+  const leaf: WorkspaceLayout = { kind: "pane", paneId: first?.id ?? FIRST_PANE };
+  return rest.length
+    ? {
+        kind: "split",
+        id: crypto.randomUUID(),
+        direction,
+        ratio: 0.5,
+        first: leaf,
+        second: linearLayout(rest, direction),
+      }
+    : leaf;
+}
+
+function mapLayout(
+  layout: WorkspaceLayout,
+  transform: (node: WorkspaceLayout) => WorkspaceLayout,
+): WorkspaceLayout {
+  const mapped =
+    layout.kind === "split"
+      ? {
+          ...layout,
+          first: mapLayout(layout.first, transform),
+          second: mapLayout(layout.second, transform),
+        }
+      : layout;
+  return transform(mapped);
+}
+
+function readLayout(value: unknown, depth = 0): WorkspaceLayout | null {
+  if (!value || typeof value !== "object" || depth > 20) return null;
+  const node = value as Record<string, unknown>;
+  if (node.kind === "pane" && typeof node.paneId === "string")
+    return { kind: "pane", paneId: node.paneId };
+  if (
+    node.kind !== "split" ||
+    typeof node.id !== "string" ||
+    (node.direction !== "row" && node.direction !== "column")
+  )
+    return null;
+  const first = readLayout(node.first, depth + 1);
+  const second = readLayout(node.second, depth + 1);
+  if (!first || !second || typeof node.ratio !== "number" || !Number.isFinite(node.ratio))
+    return null;
+  return {
+    kind: "split",
+    id: node.id,
+    direction: node.direction,
+    ratio: Math.max(0.15, Math.min(0.85, node.ratio)),
+    first,
+    second,
   };
 }
 
@@ -101,9 +218,7 @@ function withActiveTab(panes: WorkspacePane[], paneId: string, tabId: string): W
 
 function addTabTo(panes: WorkspacePane[], paneId: string, tabId: string): WorkspacePane[] {
   return panes.map((item) =>
-    item.id === paneId
-      ? { ...item, tabIds: [...item.tabIds, tabId], activeId: tabId }
-      : item,
+    item.id === paneId ? { ...item, tabIds: [...item.tabIds, tabId], activeId: tabId } : item,
   );
 }
 
@@ -125,28 +240,30 @@ function dropTab(panes: WorkspacePane[], tabId: string): WorkspacePane[] {
       return item;
     }
     const tabIds = item.tabIds.filter((id) => id !== tabId);
+    const index = item.tabIds.indexOf(tabId);
     return {
       ...item,
       tabIds,
-      activeId: item.activeId === tabId ? (tabIds[tabIds.length - 1] ?? null) : item.activeId,
+      activeId:
+        item.activeId === tabId
+          ? (tabIds[Math.min(index, tabIds.length - 1)] ?? null)
+          : item.activeId,
     };
   });
 }
 
 export const useWorkspace = create<WorkspaceStore>((set) => {
-  const insert = (
-    state: WorkspaceStore,
-    tab: WorkspaceTab,
-  ): Partial<WorkspaceStore> => {
-    const existing = state.tabs.some((item) => item.id === tab.id);
+  const insert = (state: WorkspaceStore, tab: WorkspaceTab): Partial<WorkspaceStore> => {
+    const existing = state.tabs.find((item) => item.id === tab.id);
     const tabs = existing
-      ? state.tabs.map((item) => (item.id === tab.id ? tab : item))
+      ? state.tabs.map((item) => (item.id === tab.id ? { ...tab, pinned: item.pinned } : item))
       : [...state.tabs, tab];
-    const placed = state.panes.some((item) => item.tabIds.includes(tab.id));
+    const placed = state.panes.find((item) => item.tabIds.includes(tab.id));
+    const ownerId = placed?.id ?? state.activePaneId;
     const panes = placed
-      ? withActiveTab(state.panes, state.activePaneId, tab.id)
+      ? withActiveTab(state.panes, ownerId, tab.id)
       : addTabTo(state.panes, state.activePaneId, tab.id);
-    return { tabs, ...settle(panes, state.activePaneId, state.split) };
+    return { tabs, ...settle(panes, ownerId, state.split, state.layout) };
   };
 
   return {
@@ -155,6 +272,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     activePaneId: FIRST_PANE,
     activeId: null,
     split: null,
+    layout: { kind: "pane", paneId: FIRST_PANE },
 
     openPage: (kind) => {
       const id = `page:${kind}`;
@@ -259,15 +377,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     closeSession: (sessionId) => {
+      const editors = useEditors.getState();
       const matches = (id: string) =>
-        id === `terminal:${sessionId}` ||
-        id === `sftp:${sessionId}` ||
-        id === `history:${sessionId}` ||
-        id === `monitor:${sessionId}` ||
-        id.startsWith(`editor:${sessionId}:`);
+        id.startsWith("editor:")
+          ? editors.entries[id]
+            ? editors.entries[id]?.sessionId === sessionId
+            : id.startsWith(`editor:${sessionId}:`)
+          : id === `terminal:${sessionId}` ||
+            id === `sftp:${sessionId}` ||
+            id === `history:${sessionId}` ||
+            id === `monitor:${sessionId}`;
+
+      editors.markDisconnected(sessionId);
 
       set((state) => {
-        const removed = state.tabs.filter((tab) => matches(tab.id));
+        const removed = state.tabs.filter(
+          (tab) => matches(tab.id) && !(tab.kind === "editor" && editors.isDirty(tab.id)),
+        );
         if (removed.length === 0) {
           return state;
         }
@@ -276,13 +402,15 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             useEditors.getState().discard(tab.id);
           }
         }
-        const tabs = state.tabs.filter((tab) => !matches(tab.id));
+        const removedIds = new Set(removed.map((tab) => tab.id));
+        const tabs = state.tabs.filter((tab) => !removedIds.has(tab.id));
         const panes = state.panes.map((item) => {
-          const tabIds = item.tabIds.filter((id) => !matches(id));
-          const activeId = item.activeId && matches(item.activeId) ? (tabIds[0] ?? null) : item.activeId;
+          const tabIds = item.tabIds.filter((id) => !removedIds.has(id));
+          const activeId =
+            item.activeId && removedIds.has(item.activeId) ? (tabIds[0] ?? null) : item.activeId;
           return { ...item, tabIds, activeId };
         });
-        return { tabs, ...settle(panes, state.activePaneId, state.split) };
+        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
       });
     },
 
@@ -293,24 +421,47 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         }
         const tabs = state.tabs.filter((tab) => tab.id !== id);
         const panes = dropTab(state.panes, id);
-        return { tabs, ...settle(panes, state.activePaneId, state.split) };
+        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
       });
     },
 
     closeOthers: (id) => {
-      set((state) => {
-        const origin = state.panes.find((item) => item.tabIds.includes(id));
-        if (!origin) {
-          return state;
-        }
-        const keep = new Set([id, ...origin.tabIds.filter((tabId) => state.tabs.find((tab) => tab.id === tabId)?.pinned)]);
-        const tabs = state.tabs.filter((tab) => keep.has(tab.id));
-        const panes = state.panes.map((item) =>
-          item.id === origin.id
-            ? { ...item, tabIds: item.tabIds.filter((tabId) => keep.has(tabId)), activeId: id }
-            : { ...item, tabIds: item.tabIds.filter((tabId) => keep.has(tabId)) },
-        );
-        return { tabs, ...settle(panes, origin.id, state.split) };
+      const state = useWorkspace.getState();
+      const origin = state.panes.find((item) => item.tabIds.includes(id));
+      if (!origin) return;
+      const removed = state.tabs.filter(
+        (tab) => origin.tabIds.includes(tab.id) && tab.id !== id && !tab.pinned,
+      );
+      const commit = () => {
+        const removedIds = new Set(removed.map((tab) => tab.id));
+        for (const tab of removed) if (tab.kind === "editor") useEditors.getState().discard(tab.id);
+        set((current) => {
+          const tabs = current.tabs.filter((tab) => !removedIds.has(tab.id));
+          const panes = current.panes.map((item) =>
+            item.id === origin.id
+              ? {
+                  ...item,
+                  tabIds: item.tabIds.filter((tabId) => !removedIds.has(tabId)),
+                  activeId: id,
+                }
+              : item,
+          );
+          return { tabs, ...settle(panes, origin.id, current.split, current.layout) };
+        });
+      };
+      const dirty = removed.filter(
+        (tab) => tab.kind === "editor" && useEditors.getState().isDirty(tab.id),
+      );
+      if (!dirty.length) {
+        commit();
+        return;
+      }
+      useDialogs.getState().confirm({
+        title: i18n.t("editor.discardTitle"),
+        body: i18n.t("editor.discardBody", { name: dirty.map((tab) => tab.title).join(", ") }),
+        confirmLabel: i18n.t("editor.discard"),
+        danger: true,
+        onConfirm: commit,
       });
     },
 
@@ -336,7 +487,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         }
         return {
           activePaneId: paneId,
-          activeId: target.activeId ?? state.activeId,
+          activeId: target.activeId,
         };
       });
     },
@@ -366,46 +517,50 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
       }),
 
-    splitTab: (tabId, direction, position = "after") => {
+    splitTab: (tabId, direction, position = "after", targetPaneId) => {
       set((state) => {
         const source = state.panes.find((item) => item.tabIds.includes(tabId));
-        if (!source) {
+        const target = state.panes.find((item) => item.id === (targetPaneId ?? source?.id));
+        if (!source || (targetPaneId !== "root" && !target)) return state;
+        if (source.tabIds.length <= 1 && (state.panes.length === 1 || source.id === target?.id))
           return state;
-        }
-
-        if (state.panes.length > 1) {
-          const target = state.panes.find((item) => item.id !== source.id);
-          if (!target) {
-            return state;
-          }
-          const panes = dropTab(state.panes, tabId).map((item) =>
-            item.id === target.id
-              ? { ...item, tabIds: [...item.tabIds, tabId], activeId: tabId }
-              : item,
-          );
-          return settle(panes, target.id, direction);
-        }
-
-        if (source.tabIds.length <= 1) {
-          return state;
-        }
-        const remaining = source.tabIds.filter((id) => id !== tabId);
-        const kept: WorkspacePane = {
-          ...source,
-          tabIds: remaining,
-          activeId:
-            source.activeId === tabId ? (remaining[remaining.length - 1] ?? null) : source.activeId,
-        };
         const created: WorkspacePane = {
-          id: position === "before" ? LEADING_PANE : SECOND_PANE,
+          id: `pane-${crypto.randomUUID()}`,
           tabIds: [tabId],
           activeId: tabId,
         };
-        const panes = position === "before" ? [created, kept] : [kept, created];
-        return { panes, activePaneId: created.id, activeId: tabId, split: direction };
+        const panes = [...dropTab(state.panes, tabId), created];
+        let layout =
+          pruneLayout(state.layout, new Set(state.panes.map((item) => item.id))) ??
+          linearLayout(state.panes, state.split ?? "row");
+        const wrap = (node: WorkspaceLayout): WorkspaceLayout => ({
+          kind: "split",
+          id: crypto.randomUUID(),
+          direction,
+          ratio: 0.5,
+          first: position === "before" ? { kind: "pane", paneId: created.id } : node,
+          second: position === "before" ? node : { kind: "pane", paneId: created.id },
+        });
+        layout =
+          targetPaneId === "root"
+            ? wrap(layout)
+            : mapLayout(layout, (node) =>
+                node.kind === "pane" && node.paneId === target?.id ? wrap(node) : node,
+              );
+        return settle(panes, created.id, direction, layout);
       });
     },
 
+    resizeSplit: (id, ratio) => {
+      if (!Number.isFinite(ratio)) return;
+      set((state) => ({
+        layout: mapLayout(state.layout, (node) =>
+          node.kind === "split" && node.id === id
+            ? { ...node, ratio: Math.max(0.15, Math.min(0.85, ratio)) }
+            : node,
+        ),
+      }));
+    },
     moveTab: (tabId, targetPaneId, beforeTabId) => {
       set((state) => {
         const source = state.panes.find((item) => item.tabIds.includes(tabId));
@@ -422,7 +577,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               }
             : item,
         );
-        return { ...settle(panes, targetPaneId, state.split) };
+        return { ...settle(panes, targetPaneId, state.split, state.layout) };
       });
     },
 
@@ -449,16 +604,15 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           return state;
         }
         const remaining = state.panes.filter((item) => item.id !== paneId);
-        const target = remaining[0];
+        const index = state.panes.findIndex((item) => item.id === paneId);
+        const target = state.panes[index - 1] ?? state.panes[index + 1];
         if (!target) {
           return state;
         }
         const panes = remaining.map((item) =>
-          item.id === target.id
-            ? { ...item, tabIds: [...item.tabIds, ...closing.tabIds] }
-            : item,
+          item.id === target.id ? { ...item, tabIds: [...item.tabIds, ...closing.tabIds] } : item,
         );
-        return { ...settle(panes, target.id, null), split: null };
+        return settle(panes, target.id, state.split, state.layout);
       });
     },
 
@@ -471,6 +625,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         if (record.kind === "host" && !record.hostId) {
           continue;
         }
+        if (tabs.some((tab) => tab.id === record.id)) continue;
         tabs.push({
           id: record.id,
           kind: record.kind,
@@ -479,12 +634,67 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           pinned: record.pinned,
         });
       }
+      let restored: PanesState | undefined;
+      try {
+        const metadata = records.find((record) => record.state)?.state;
+        const snapshot = metadata
+          ? (JSON.parse(metadata) as {
+              version?: unknown;
+              layout?: unknown;
+              panes?: WorkspacePane[];
+              activePaneId?: string;
+            })
+          : null;
+        const layout = readLayout(snapshot?.layout);
+        if (snapshot?.version === 1 && layout && Array.isArray(snapshot.panes)) {
+          const seen = new Set<string>();
+          const paneIds = new Set<string>();
+          const valid = new Set(tabs.map((tab) => tab.id));
+          const panes: WorkspacePane[] = [];
+          for (const item of snapshot.panes) {
+            if (
+              !item ||
+              typeof item.id !== "string" ||
+              paneIds.has(item.id) ||
+              !Array.isArray(item.tabIds)
+            )
+              continue;
+            paneIds.add(item.id);
+            const tabIds = item.tabIds.filter((id) => {
+              if (typeof id !== "string" || seen.has(id) || !valid.has(id)) return false;
+              seen.add(id);
+              return true;
+            });
+            panes.push({
+              id: item.id,
+              tabIds,
+              activeId: tabIds.includes(item.activeId ?? "") ? item.activeId : (tabIds[0] ?? null),
+            });
+          }
+          if (panes.length) {
+            panes[0]!.tabIds.push(...tabs.filter((tab) => !seen.has(tab.id)).map((tab) => tab.id));
+            const layoutIds = layoutPanes(layout);
+            if (
+              new Set(layoutIds).size === layoutIds.length &&
+              panes.every((item) => layoutIds.includes(item.id))
+            ) {
+              restored = settle(panes, snapshot.activePaneId ?? panes[0]!.id, null, layout);
+            }
+          }
+        }
+      } catch {
+        /* Older tabs did not store a layout. */
+      }
       set({
         tabs,
-        panes: [{ id: FIRST_PANE, tabIds: tabs.map((tab) => tab.id), activeId: tabs[0]?.id ?? null }],
+        panes: [
+          { id: FIRST_PANE, tabIds: tabs.map((tab) => tab.id), activeId: tabs[0]?.id ?? null },
+        ],
         activePaneId: FIRST_PANE,
         activeId: tabs[0]?.id ?? null,
         split: null,
+        layout: { kind: "pane", paneId: FIRST_PANE },
+        ...restored,
       });
     },
 
@@ -496,7 +706,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         }
         const tabs = state.tabs.filter((tab) => tab.id !== id);
         const panes = dropTab(state.panes, id);
-        return { tabs, ...settle(panes, state.activePaneId, state.split) };
+        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
       });
     },
 
@@ -523,21 +733,30 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           activePaneId: FIRST_PANE,
           activeId: tab.id,
           split: null,
+          layout: { kind: "pane", paneId: FIRST_PANE },
         };
       }),
   };
 });
 
 export function persistWorkspace(): void {
-  const { tabs } = useWorkspace.getState();
-  const records: TabRecord[] = tabs.map((tab, index) => ({
+  void api.saveTabs(workspaceRecords()).catch(() => undefined);
+}
+
+export function workspaceRecords(): TabRecord[] {
+  const { tabs, panes, layout, activePaneId } = useWorkspace.getState();
+  const ordered = panes
+    .flatMap((item) => item.tabIds)
+    .map((id) => tabs.find((tab) => tab.id === id))
+    .filter((tab): tab is WorkspaceTab => !!tab);
+  const snapshot = JSON.stringify({ version: 1, panes, layout, activePaneId });
+  return ordered.map((tab, index) => ({
     id: tab.id,
     kind: tab.kind,
     title: tab.title,
     hostId: tab.hostId,
     sortOrder: index,
     pinned: tab.pinned,
-    state: null,
+    state: index === 0 ? snapshot : null,
   }));
-  void api.saveTabs(records).catch(() => undefined);
 }

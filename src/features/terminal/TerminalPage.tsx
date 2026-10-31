@@ -9,8 +9,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
+import { Select } from "@/components/ui/form/Select";
 import { StatusDot } from "@/components/ui/display/Misc";
-import { resolveTheme, monoStack } from "@/lib/prefs/appearance";
+import { resolveTheme, monoStack, prefersLightScheme } from "@/lib/prefs/appearance";
+import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
+import type { MonoFont } from "@/lib/api/types";
+import { translateError } from "@/lib/api/errors";
 import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
 import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
 import { api, events, isTauri } from "@/lib/api/ipc";
@@ -18,6 +22,8 @@ import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
+import { useDialogs } from "@/store/dialogs";
+import { toast } from "@/store/toasts";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -29,17 +35,25 @@ async function waitForFont(family: string, size: number): Promise<void> {
   if (typeof document === "undefined" || !document.fonts) {
     return;
   }
-  const name = family.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
+  const name = family
+    .split(",")[0]
+    ?.trim()
+    .replace(/^["']|["']$/g, "");
   if (!name) {
     return;
   }
+  let timeout: number | undefined;
   try {
     await Promise.race([
       document.fonts.load(`${size}px "${name}"`),
-      new Promise((resolve) => window.setTimeout(resolve, 1500)),
+      new Promise((resolve) => {
+        timeout = window.setTimeout(resolve, 1500);
+      }),
     ]);
   } catch {
     // A missing webfont is not fatal; the fallback stack still renders.
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -52,13 +66,46 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const theme = useSettings((state) => state.settings.theme);
   const fontSize = useSettings((state) => state.settings.monoFontSize);
   const monoFont = useSettings((state) => state.settings.monoFont);
-  const resolvedTheme = resolveTheme(theme);
+  const recordTerminalHistory = useSettings((state) => state.settings.recordTerminalHistory);
+  const updateSettings = useSettings((state) => state.update);
+  const disconnecting = useSsh((state) => state.disconnectingSessionIds.includes(sessionId));
+  const [prefersLight, setPrefersLight] = useState(prefersLightScheme);
+  const resolvedTheme = resolveTheme(theme, prefersLight);
+  const activeRef = useRef(active);
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: light)");
+    const change = () => setPrefersLight(media.matches);
+    media.addEventListener("change", change);
+    return () => media.removeEventListener("change", change);
+  }, []);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const [closed, setClosed] = useState(false);
   const capture = useRef<CommandCapture>({ text: "", escape: 0 });
+  useEffect(() => {
+    capture.current = { text: "", escape: 0 };
+  }, [recordTerminalHistory]);
+  const lastSize = useRef({ sessionId: "", cols: 0, rows: 0 });
+  const focus = useCallback(() => {
+    if (!activeRef.current || useDialogs.getState().dialog.kind !== "none") {
+      return;
+    }
+    const focused = document.activeElement;
+    if (
+      focused instanceof HTMLElement &&
+      focused.closest("input, select, button, [role='listbox']")
+    ) {
+      return;
+    }
+    terminalRef.current?.focus();
+  }, []);
 
   const fit = useCallback(() => {
     const terminal = terminalRef.current;
@@ -72,7 +119,14 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     } catch {
       return;
     }
-    if (isTauri()) {
+    const previous = lastSize.current;
+    if (
+      isTauri() &&
+      (previous.sessionId !== sessionId ||
+        previous.cols !== terminal.cols ||
+        previous.rows !== terminal.rows)
+    ) {
+      lastSize.current = { sessionId, cols: terminal.cols, rows: terminal.rows };
       void api.sshResize(sessionId, terminal.cols, terminal.rows).catch(() => undefined);
     }
   }, [sessionId]);
@@ -84,12 +138,16 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     }
 
     let disposed = false;
+    let ended = false;
     let terminal: Terminal | null = null;
     let addon: FitAddon | null = null;
     let dataListener: { dispose: () => void } | null = null;
     const subscriptions: UnlistenFn[] = [];
     const pending: Uint8Array[] = [];
     const write = (chunk: Uint8Array) => {
+      if (disposed) {
+        return;
+      }
       if (terminal) {
         terminal.write(chunk);
       } else {
@@ -100,14 +158,19 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     let observer: ResizeObserver | null = null;
 
     const start = async () => {
-      await waitForFont(monoStack(monoFont), fontSize);
+      const initial = useSettings.getState().settings;
+      await waitForFont(monoStack(initial.monoFont), initial.monoFontSize);
       if (disposed) {
         return;
       }
 
+      // Preferences may change while the first font is still loading.
+      const settings = useSettings.getState().settings;
+      const currentTheme = resolveTheme(settings.theme, prefersLightScheme());
+
       const instance = new Terminal({
-        fontFamily: monoStack(monoFont),
-        fontSize,
+        fontFamily: monoStack(settings.monoFont),
+        fontSize: settings.monoFontSize,
         lineHeight: 1.2,
         cursorBlink: true,
         cursorStyle: "block",
@@ -115,7 +178,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         cursorInactiveStyle: "block",
         scrollback: 5000,
         allowProposedApi: false,
-        theme: terminalTheme(resolvedTheme),
+        theme: terminalTheme(currentTheme),
       });
       terminal = instance;
       addon = new FitAddon();
@@ -125,10 +188,10 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       fitRef.current = addon;
       // Re-apply after open: a theme or font measured before the first frame
       // otherwise keeps the fallback colours and glyph metrics.
-      instance.options.theme = terminalTheme(resolvedTheme);
+      instance.options.theme = terminalTheme(currentTheme);
       fit();
       instance.refresh(0, Math.max(0, instance.rows - 1));
-      instance.focus();
+      focus();
 
       // Replay whatever arrived while the webfont was loading.
       for (const chunk of pending.splice(0)) {
@@ -136,11 +199,17 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       }
 
       dataListener = instance.onData((data) => {
-        if (!isTauri()) {
+        if (!isTauri() || disposed || ended) {
           return;
         }
         void api.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
 
+        // Raw terminal input includes password prompts and program responses.
+        // Capturing it requires an explicit user opt-in, separate from SSH I/O.
+        if (!useSettings.getState().settings.recordTerminalHistory) {
+          capture.current = { text: "", escape: 0 };
+          return;
+        }
         const result = consumeInput(capture.current, data);
         capture.current = result.state;
         for (const command of result.commands) {
@@ -159,21 +228,24 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     if (isTauri()) {
       void events
         .onSshData((payload) => {
-          if (payload.sessionId === sessionId) {
+          if (!disposed && payload.sessionId === sessionId) {
             write(decodeBase64(payload.data));
           }
         })
-        .then((unlisten) => subscriptions.push(unlisten));
+        .then((unlisten) => (disposed ? unlisten() : subscriptions.push(unlisten)))
+        .catch((error: unknown) => !disposed && toast(translateError(error), "error"));
 
       void events
         .onSshClosed((payload) => {
-          if (payload.sessionId !== sessionId) {
+          if (disposed || payload.sessionId !== sessionId) {
             return;
           }
+          ended = true;
           setClosed(true);
           write(new TextEncoder().encode(`\r\n\x1b[38;5;245m[${t("ssh.closed")}]\x1b[0m\r\n`));
         })
-        .then((unlisten) => subscriptions.push(unlisten));
+        .then((unlisten) => (disposed ? unlisten() : subscriptions.push(unlisten)))
+        .catch((error: unknown) => !disposed && toast(translateError(error), "error"));
     }
 
     observer = new ResizeObserver(() => {
@@ -185,7 +257,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     // Late font swaps change glyph widths; re-measure once they settle.
     void document.fonts?.ready.then(() => {
       if (!disposed && terminal) {
-        terminal.options.fontFamily = monoStack(monoFont);
+        terminal.options.fontFamily = monoStack(useSettings.getState().settings.monoFont);
         fit();
       }
     });
@@ -201,6 +273,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       terminal?.dispose();
       terminalRef.current = null;
       fitRef.current = null;
+      pending.length = 0;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
@@ -232,11 +305,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     if (active) {
       const frame = requestAnimationFrame(() => {
         fit();
-        terminalRef.current?.focus();
+        focus();
       });
       return () => cancelAnimationFrame(frame);
     }
-  }, [active, fit]);
+  }, [active, fit, focus]);
 
   return (
     <div className="terminal-page">
@@ -246,8 +319,16 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <span className="terminal-head__title">{session?.title ?? t("nav.host")}</span>
           {session ? <span className="terminal-head__meta">{session.address}</span> : null}
         </div>
+        <Select
+          label={t("settings.monoFont")}
+          className="terminal-font-select"
+          value={monoFont}
+          options={MONO_FONT_OPTIONS}
+          onChange={(value) => void updateSettings({ monoFont: value as MonoFont })}
+        />
         <IconButton
           label={t("history.title")}
+          disabled={!session || closed}
           onClick={() => {
             if (session) {
               openHistory(session);
@@ -258,6 +339,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         </IconButton>
         <IconButton
           label={t("sftp.title")}
+          disabled={!session || closed}
           onClick={() => {
             if (session) {
               openSftp(session);
@@ -268,6 +350,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         </IconButton>
         <IconButton
           label={t("terminal.disconnect")}
+          disabled={!session || closed || disconnecting}
           onClick={() => {
             void disconnect(sessionId);
           }}

@@ -29,14 +29,18 @@
     "loading": "Loading",
     "more": "More",
     "error": "Error",
-    "browse": "Browse…"
+    "browse": "Browse…",
+    "refresh": "Refresh",
+    "noResults": "No matches"
   },
   "nav": {
     "welcome": "Welcome",
     "settings": "Settings",
     "about": "About",
     "updates": "Updates",
-    "host": "Host"
+    "host": "Host",
+    "knownHosts": "Trusted hosts",
+    "workspace": "Workspace"
   },
   "sidebar": {
     "search": "Search hosts",
@@ -73,7 +77,7 @@
     "namePlaceholder": "Production API",
     "addressPlaceholder": "example.com",
     "usernamePlaceholder": "root",
-    "tagsPlaceholder": "web, eu-west",
+    "tagsPlaceholder": "Type a tag, then press Enter",
     "notePlaceholder": "",
     "auth": {
       "password": "Password",
@@ -82,7 +86,12 @@
       "keyboardInteractive": "Keyboard interactive"
     },
     "keyFile": "Key file",
-    "keyContent": "Paste the key"
+    "keyContent": "Paste the key",
+    "keySource": "Private key source",
+    "keySourceFile": "Key file",
+    "keySourceContent": "Paste key",
+    "keyRequired": "Choose a key file or paste a private key",
+    "tagRemove": "Remove tag"
   },
   "group": {
     "newTitle": "New group",
@@ -137,11 +146,17 @@
     "openLogs": "Open logs",
     "openData": "Open folder",
     "version": "Version",
-    "nativeMenu": "System menu bar",
+    "titleBar": "Window title bar",
+    "titleBarSystem": "System title bar",
+    "titleBarCompact": "Compact title bar",
+    "titleBarHint": "Compact mode uses smaller window controls. macOS keeps its native window buttons.",
     "files": "Files",
     "preloadDirs": "Preload parent and child folders",
     "preloadCount": "Folders to preload",
-    "customTitleBar": "In-app title bar"
+    "knownHostsDescription": "Manage trusted SSH server fingerprints. Removing an entry requires verification on the next connection.",
+    "knownHostsSearch": "Search trusted hosts",
+    "recordTerminalHistory": "Record terminal input history",
+    "recordTerminalHistoryHint": "Off by default. Records submitted input, which may include passwords and interactive program input."
   },
   "updates": {
     "title": "Updates",
@@ -230,7 +245,8 @@
     "forgetTitle": "Forget saved password",
     "forgetBody": "Remove the saved password for {{name}}? The next connection asks for it again.",
     "installKey": "Set up key login",
-    "installKeyDone": "Public key installed. The next connection uses it."
+    "installKeyDone": "Public key installed. The next connection uses it.",
+    "installKeyHint": "Sign in once with a password to add this application’s public key to the account. Existing authorized keys are preserved."
   },
   "terminal": {
     "connect": "Connect",
@@ -297,7 +313,23 @@
     "copyToServer": "Copy to server",
     "copyToFolder": "Copy to folder",
     "deleteManyBody": "Delete {{count}} items and everything inside them?",
-    "selectedCount": "{{count}} selected"
+    "selectedCount": "{{count}} selected",
+    "back": "Back",
+    "forward": "Forward",
+    "loading": "Loading…",
+    "invalidName": "Enter a valid file or folder name",
+    "alreadyExists": "An item with this name already exists",
+    "overwriteTitle": "Replace existing items?",
+    "overwriteBody": "These items already exist in {{path}}: {{names}}. Replace matching files and merge folders?",
+    "overwrite": "Replace",
+    "cancelling": "Cancelling…",
+    "edit": "Edit text",
+    "samePath": "Cannot copy or move an item into itself",
+    "typeConflict": "A file and folder cannot replace one another",
+    "symlinkUnsupported": "Copying symbolic links is not supported",
+    "unsupportedEncoding": "Only UTF-8 text files can be edited",
+    "binaryFile": "Binary files cannot be edited as text",
+    "fileTooLarge": "Text editing is limited to files up to 2 MB"
   },
   "processes": {
     "title": "Processes",
@@ -318,7 +350,12 @@
     "loading": "Loading file",
     "discardTitle": "Discard changes",
     "discardBody": "Close “{{name}}” without saving?",
-    "discard": "Discard"
+    "discard": "Discard",
+    "offline": "Disconnected. Unsaved changes are kept in this window.",
+    "reconnect": "Restore connection",
+    "saving": "Saving…",
+    "conflictTitle": "Remote file changed",
+    "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?"
   },
   "plugins": {
     "reload": "Reload",
@@ -331,16 +368,21 @@
     "failed": "Failed",
     "install": "Install",
     "installTitle": "Install plugin",
-    "installHint": "Folder containing tunnelde-plugin.json",
+    "installHint": "Choose a ZIP archive or plugin folder",
     "uninstall": "Uninstall",
     "uninstallTitle": "Uninstall plugin",
     "uninstallBody": "Remove {{name}} and its folder?",
-    "dropHint": "Drop a plugin folder or .zip here",
+    "dropHint": "Drop a plugin ZIP archive or folder here",
     "browseArchive": "Archive…",
     "marketplace": "Marketplace",
     "marketplaceEmpty": "No plugins published yet",
     "marketplaceUnavailable": "Marketplace unavailable",
-    "installed": "Plugin installed"
+    "installed": "Plugin installed",
+    "browseFolder": "Choose folder",
+    "installing": "Installing…",
+    "inspecting": "Checking package…",
+    "permissions": "Permissions",
+    "noPermissions": "None requested"
   },
   "history": {
     "title": "History",
@@ -388,7 +430,8 @@
     "rename": "Rename",
     "newHost": "New host",
     "copySsh": "Copy SSH command",
-    "copyAddress": "Copy user@host"
+    "copyAddress": "Copy user@host",
+    "moveGroup": "Move to group"
   },
   "tab": {
     "splitRight": "Split right",
@@ -397,7 +440,8 @@
     "closePane": "Close pane",
     "close": "Close tab",
     "pin": "Pin tab",
-    "unpin": "Unpin tab"
+    "unpin": "Unpin tab",
+    "resizeGroup": "Resize editor group"
   },
   "panel": {
     "system": "This machine",
@@ -431,9 +475,14 @@
     "empty": "No command matches"
   },
   "window": {
+    "controls": "Window controls",
+    "drag": "Drag window; double-click to maximize or restore",
     "minimize": "Minimize",
     "maximize": "Maximize",
     "restore": "Restore",
-    "close": "Close"
+    "close": "Close",
+    "unsavedTitle": "Close with unsaved changes?",
+    "unsavedBody": "These files have unsaved changes: {{names}}. Closing the window will discard them.",
+    "discardAndClose": "Discard and close"
   }
 }

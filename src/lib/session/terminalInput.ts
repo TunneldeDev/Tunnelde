@@ -47,8 +47,10 @@ export function consumeInput(state: CommandCapture, data: string): CaptureResult
     }
 
     if (character === "\r" || character === "\n") {
-      const command = text.trim();
-      if (command.length > 0) {
+      // A leading space is meaningful to callers that implement HISTCONTROL's
+      // ignorespace convention; strip only trailing whitespace here.
+      const command = text.trimEnd();
+      if (command.trim().length > 0) {
         commands.push(command);
       }
       text = "";

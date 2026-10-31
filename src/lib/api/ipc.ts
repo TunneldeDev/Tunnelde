@@ -95,14 +95,15 @@ export const api = {
   pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),
   pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
   pluginInstall: (path: string) => invoke<PluginInfo>("plugin_install", { path }),
+  pluginInspect: (path: string) =>
+    invoke<Pick<PluginInfo, "id" | "name" | "version" | "permissions">>("plugin_inspect", { path }),
   pluginPickFolder: () => invoke<string | null>("plugin_pick_folder"),
   pluginPickArchive: () => invoke<string | null>("plugin_pick_archive"),
   pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
   pluginRenderView: (id: string, view: string) =>
     invoke<unknown>("plugin_render_view", { id, view }),
-  pluginRun: (id: string, command: string) =>
-    invoke<unknown>("plugin_run", { id, command }),
+  pluginRun: (id: string, command: string) => invoke<unknown>("plugin_run", { id, command }),
   pluginOpenDir: () => invoke<void>("plugin_open_dir"),
   marketplaceInstall: (id: string, sha256: string, data: string) =>
     invoke<PluginInfo>("marketplace_install", { id, sha256, data }),
@@ -110,27 +111,28 @@ export const api = {
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
     invoke<RemoteProcess[]>("remote_processes", { sessionId }),
-  remoteKill: (sessionId: string, pid: number) =>
-    invoke<void>("remote_kill", { sessionId, pid }),
+  remoteKill: (sessionId: string, pid: number) => invoke<void>("remote_kill", { sessionId, pid }),
 
   sftpList: (sessionId: string, path?: string | null) =>
     invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),
   localList: (path?: string | null) => invoke<Listing>("local_list", { path: path ?? null }),
   localHome: () => invoke<string>("local_home"),
   sftpMkdir: (sessionId: string, path: string) => invoke<void>("sftp_mkdir", { sessionId, path }),
-  sftpRename: (sessionId: string, from: string, to: string) =>
-    invoke<void>("sftp_rename", { sessionId, from, to }),
+  sftpRename: (sessionId: string, from: string, to: string, overwrite = false) =>
+    invoke<void>("sftp_rename", { sessionId, from, to, overwrite }),
   sftpDelete: (sessionId: string, path: string, isDir: boolean) =>
     invoke<void>("sftp_delete", { sessionId, path, isDir }),
   localMkdir: (path: string) => invoke<void>("local_mkdir", { path }),
   localCreateFile: (path: string) => invoke<void>("local_create_file", { path }),
-  localRename: (from: string, to: string) => invoke<void>("local_rename", { from, to }),
+  localRename: (from: string, to: string, overwrite = false) =>
+    invoke<void>("local_rename", { from, to, overwrite }),
   localDelete: (path: string, isDir: boolean) => invoke<void>("local_delete", { path, isDir }),
   sftpCreateFile: (sessionId: string, path: string) =>
     invoke<void>("sftp_create_file", { sessionId, path }),
-  sftpCopy: (sessionId: string, from: string, to: string) =>
-    invoke<void>("sftp_copy", { sessionId, from, to }),
-  localCopy: (from: string, to: string) => invoke<void>("local_copy", { from, to }),
+  sftpCopy: (sessionId: string, from: string, to: string, overwrite = false) =>
+    invoke<void>("sftp_copy", { sessionId, from, to, overwrite }),
+  localCopy: (from: string, to: string, overwrite = false) =>
+    invoke<void>("local_copy", { from, to, overwrite }),
 
   sftpReadText: (sessionId: string, path: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path }),
@@ -143,8 +145,16 @@ export const api = {
     toSession: string | null,
     toPath: string,
     removeSource: boolean,
+    overwrite = false,
   ) =>
-    invoke<string>("fs_transfer", { fromSession, fromPath, toSession, toPath, removeSource }),
+    invoke<string>("fs_transfer", {
+      fromSession,
+      fromPath,
+      toSession,
+      toPath,
+      removeSource,
+      overwrite,
+    }),
   transferCancel: (transferId: string) => invoke<void>("transfer_cancel", { transferId }),
 
   credentialSave: (hostId: string, password: string) =>

@@ -7,12 +7,12 @@ import {
   FolderPlus,
   Pencil,
   Plus,
+  Search,
   Server,
-  Settings as SettingsIcon,
   Star,
   Trash2,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -25,6 +25,7 @@ import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
+import { useSettings } from "@/store/settings";
 import type { Group, Host } from "@/lib/api/types";
 
 const HOST_MIME = "application/x-tunnelde-host";
@@ -89,9 +90,10 @@ interface HostRowProps {
   focused: boolean;
   onFocusRow: () => void;
   nested?: boolean;
+  canReorder: boolean;
 }
 
-function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowProps) {
+function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder }: HostRowProps) {
   const { t } = useTranslation();
   const openHost = useWorkspace((state) => state.openHost);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -102,7 +104,11 @@ function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowP
   const removeHostTab = useWorkspace((state) => state.removeHost);
   const openMenu = useContextMenu((state) => state.open);
   const openConnect = useDialogs((state) => state.openConnect);
-  const [over, setOver] = useState(false);
+  const groups = useHosts((state) => state.groups);
+  const moveToGroup = useHosts((state) => state.moveToGroup);
+  const os = useSettings((state) => state.info?.os);
+  const [over, setOver] = useState<"before" | "after" | null>(null);
+  const row = useRef<HTMLDivElement>(null);
 
   const removeHost = () =>
     confirm({
@@ -117,31 +123,93 @@ function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowP
       },
     });
 
+  const quote = (value: string): string => {
+    if (/^[A-Za-z0-9_.:@%[\]-]+$/.test(value)) return value;
+    return os === "windows"
+      ? `'${value.replaceAll("'", "''")}'`
+      : `'${value.replaceAll("'", `'"'"'`)}'`;
+  };
+  const address = `${host.username ? `${host.username}@` : ""}${host.host.includes(":") && !host.host.startsWith("[") ? `[${host.host}]` : host.host}`;
+  const command = [
+    "ssh",
+    ...(host.port !== 22 ? ["-p", String(host.port)] : []),
+    ...(host.username ? ["-l", quote(host.username)] : []),
+    ...(host.authMethod === "key" && host.keyPath ? ["-i", quote(host.keyPath)] : []),
+    "--",
+    quote(host.host),
+  ].join(" ");
+  const menuItems = [
+    { label: t("host.open"), onSelect: () => openHost(host) },
+    { label: t("terminal.connect"), onSelect: () => openConnect(host, "terminal") },
+    { label: t("sftp.title"), onSelect: () => openConnect(host, "sftp") },
+    { label: t("menu.edit"), icon: <Pencil size={13} />, onSelect: () => openHostDialog(host) },
+    { label: t("menu.copySsh"), onSelect: () => copyText(command) },
+    { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
+    { label: t("connect.installKey"), onSelect: () => openConnect(host, "terminal", "installKey") },
+    {
+      label: t("menu.moveGroup"),
+      onSelect: () => {
+        const bounds = row.current?.getBoundingClientRect();
+        openMenu(bounds?.left ?? 0, bounds?.bottom ?? 0, [
+          { label: t("sidebar.ungrouped"), onSelect: () => moveToGroup(host.id, null) },
+          ...groups.map((group) => ({
+            label: group.name,
+            onSelect: () => moveToGroup(host.id, group.id),
+          })),
+        ]);
+      },
+    },
+    {
+      label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
+      icon: <Star size={13} />,
+      onSelect: () => void toggleFavorite(host),
+    },
+    { label: t("menu.delete"), icon: <Trash2 size={13} />, danger: true, onSelect: removeHost },
+  ];
+
   return (
     <div
+      ref={row}
       className={cn("host-row", nested && "is-nested", active && "is-active", over && "is-drop")}
-      draggable
+      style={
+        over
+          ? { boxShadow: `inset 0 ${over === "before" ? "2px" : "-2px"} 0 var(--td-accent)` }
+          : undefined
+      }
+      draggable={canReorder}
       onDragStart={(event) => {
+        if (!canReorder) {
+          event.preventDefault();
+          return;
+        }
         event.dataTransfer.setData(HOST_MIME, host.id);
         event.dataTransfer.effectAllowed = "move";
       }}
       onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes(HOST_MIME)) {
+        if (!canReorder || !event.dataTransfer.types.includes(HOST_MIME)) {
           return;
         }
         event.preventDefault();
+        event.stopPropagation();
         event.dataTransfer.dropEffect = "move";
-        setOver(true);
+        const bounds = event.currentTarget.getBoundingClientRect();
+        setOver(event.clientY < bounds.top + bounds.height / 2 ? "before" : "after");
       }}
-      onDragLeave={() => setOver(false)}
+      onDragLeave={() => setOver(null)}
       onDrop={(event) => {
         const dragged = event.dataTransfer.getData(HOST_MIME);
-        setOver(false);
-        if (!dragged || dragged === host.id) {
+        setOver(null);
+        if (!canReorder || !dragged || dragged === host.id) {
           return;
         }
         event.preventDefault();
-        moveHost(dragged, host.id);
+        event.stopPropagation();
+        const bounds = event.currentTarget.getBoundingClientRect();
+        moveHost(
+          dragged,
+          host.id,
+          event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
+        );
       }}
       onClick={() => {
         onFocusRow();
@@ -150,20 +218,9 @@ function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowP
       onDoubleClick={() => openHostDialog(host)}
       onContextMenu={(event) => {
         event.preventDefault();
-        const address = `${host.username ? `${host.username}@` : ""}${host.host}`;
-        const command = `ssh ${host.port !== 22 ? `-p ${host.port} ` : ""}${address}`;
-        openMenu(event.clientX, event.clientY, [
-          { label: t("host.open"), onSelect: () => openHost(host) },
-          { label: t("menu.edit"), onSelect: () => openHostDialog(host) },
-          { label: t("menu.copySsh"), onSelect: () => copyText(command) },
-          { label: t("connect.installKey"), onSelect: () => openConnect(host) },
-          { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
-          {
-            label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
-            onSelect: () => void toggleFavorite(host),
-          },
-          { label: t("menu.delete"), danger: true, onSelect: removeHost },
-        ]);
+        event.stopPropagation();
+        onFocusRow();
+        openMenu(event.clientX, event.clientY, menuItems);
       }}
       role="treeitem"
       aria-selected={focused}
@@ -184,27 +241,7 @@ function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowP
         <Star size={11} className="host-row__star" fill="currentColor" aria-hidden="true" />
       ) : null}
       <span className="host-row__actions">
-        <Menu
-          label={t("common.more")}
-          items={[
-            {
-              label: t("menu.edit"),
-              icon: <Pencil size={13} />,
-              onSelect: () => openHostDialog(host),
-            },
-            {
-              label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
-              icon: <Star size={13} />,
-              onSelect: () => void toggleFavorite(host),
-            },
-            {
-              label: t("menu.delete"),
-              icon: <Trash2 size={13} />,
-              danger: true,
-              onSelect: removeHost,
-            },
-          ]}
-        />
+        <Menu label={t("common.more")} items={menuItems} />
       </span>
     </div>
   );
@@ -219,6 +256,8 @@ interface GroupRowProps {
   onNewHost: () => void;
   onRename: () => void;
   onDelete: () => void;
+  canReorder: boolean;
+  onDropHost: (id: string) => void;
 }
 
 function GroupRow({
@@ -230,34 +269,63 @@ function GroupRow({
   onNewHost,
   onRename,
   onDelete,
+  canReorder,
+  onDropHost,
 }: GroupRowProps) {
   const { t } = useTranslation();
+  const openMenu = useContextMenu((state) => state.open);
+  const actions = [
+    { label: t("menu.newHost"), icon: <Plus size={13} />, onSelect: onNewHost },
+    { label: t("menu.rename"), icon: <Pencil size={13} />, onSelect: onRename },
+    { label: t("menu.delete"), icon: <Trash2 size={13} />, danger: true, onSelect: onDelete },
+  ];
   return (
     <div
       className="group-row"
       style={{ paddingLeft: 8 + depth * 12 }}
       onClick={onToggle}
+      onDragOver={(event) => {
+        if (!canReorder || !event.dataTransfer.types.includes(HOST_MIME)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        event.dataTransfer.dropEffect = "move";
+      }}
+      onDrop={(event) => {
+        if (!canReorder) return;
+        const id = event.dataTransfer.getData(HOST_MIME);
+        if (!id) return;
+        event.preventDefault();
+        event.stopPropagation();
+        onDropHost(id);
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        openMenu(event.clientX, event.clientY, actions);
+      }}
       role="button"
-      tabIndex={-1}
+      tabIndex={0}
+      aria-expanded={!collapsed}
+      onKeyDown={(event) => {
+        if (event.target !== event.currentTarget) return;
+        if (
+          event.key === "Enter" ||
+          event.key === " " ||
+          (event.key === "ArrowRight" && collapsed) ||
+          (event.key === "ArrowLeft" && !collapsed)
+        ) {
+          event.preventDefault();
+          event.stopPropagation();
+          onToggle();
+        }
+      }}
     >
       <ChevronRight size={12} className={cn("group-row__chevron", !collapsed && "is-open")} />
       <FolderClosed size={13} className="group-row__icon" />
       <span className="group-row__name">{group.name}</span>
       <span className="group-row__count">{count}</span>
       <span className="group-row__actions">
-        <Menu
-          label={t("common.more")}
-          items={[
-            { label: t("menu.newHost"), icon: <Plus size={13} />, onSelect: onNewHost },
-            { label: t("menu.rename"), icon: <Pencil size={13} />, onSelect: onRename },
-            {
-              label: t("menu.delete"),
-              icon: <Trash2 size={13} />,
-              danger: true,
-              onSelect: onDelete,
-            },
-          ]}
-        />
+        <Menu label={t("common.more")} items={actions} />
       </span>
     </div>
   );
@@ -275,7 +343,7 @@ export function HostTree() {
   const openGroupDialog = useDialogs((state) => state.openGroup);
   const confirm = useDialogs((state) => state.confirm);
   const deleteGroup = useHosts((state) => state.deleteGroup);
-  const openPage = useWorkspace((state) => state.openPage);
+  const moveToGroup = useHosts((state) => state.moveToGroup);
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -292,7 +360,8 @@ export function HostTree() {
     () => buildTree(groups, visibleHosts, query.trim()),
     [groups, visibleHosts, query],
   );
-  const searching = query.trim().length > 0;
+  const searching = query.trim().length > 0 || !!tagFilter;
+  const canReorder = !searching;
 
   const toggle = (id: string) => {
     setCollapsed((current) => {
@@ -311,10 +380,32 @@ export function HostTree() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>("[data-host-id]") ?? []);
+    const row = rows.find((item) => item.dataset.hostId === focusId);
+    row?.scrollIntoView?.({ block: "nearest" });
+    if (focusId && !row) setFocusId(null);
+  }, [focusId, query, tagFilter, collapsed, hosts]);
+
+  const dropHandlers = (groupId: string | null, favorite = false) => ({
+    onDragOver: (event: React.DragEvent<HTMLElement>) => {
+      if (!canReorder || !event.dataTransfer.types.includes(HOST_MIME)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+    },
+    onDrop: (event: React.DragEvent<HTMLElement>) => {
+      if (!canReorder) return;
+      const id = event.dataTransfer.getData(HOST_MIME);
+      if (!id) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const host = hosts.find((item) => item.id === id);
+      moveToGroup(id, favorite ? (host?.groupId ?? null) : groupId, favorite);
+    },
+  });
+
   const moveFocus = (delta: number) => {
-    const rows = Array.from(
-      bodyRef.current?.querySelectorAll<HTMLElement>("[data-host-id]") ?? [],
-    );
+    const rows = Array.from(bodyRef.current?.querySelectorAll<HTMLElement>("[data-host-id]") ?? []);
     if (rows.length === 0) {
       return;
     }
@@ -362,24 +453,32 @@ export function HostTree() {
 
   const rowProps = (host: Host) => ({
     focused: focusId === host.id,
-    onFocusRow: () => setFocusId(host.id),
+    canReorder,
+    onFocusRow: () => {
+      setFocusId(host.id);
+      bodyRef.current?.focus();
+    },
   });
 
   return (
     <div className="sidebar">
-      <div className="sidebar__head">
-        <img src="/brand/mark-64.png" alt="" width={16} height={16} draggable={false} />
-        <span className="sidebar__brand">Tunnelde</span>
-      </div>
-
-      <div className="sidebar__search">
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder={t("sidebar.search")}
-          aria-label={t("sidebar.search")}
-          spellCheck={false}
-        />
+      <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
+        <div className="sidebar__filter">
+          <Search size={13} aria-hidden="true" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={t("sidebar.search")}
+            aria-label={t("sidebar.search")}
+            spellCheck={false}
+          />
+        </div>
+        <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
+          <Plus size={15} />
+        </IconButton>
+        <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
+          <FolderPlus size={15} />
+        </IconButton>
       </div>
 
       {tags.length > 0 ? (
@@ -431,11 +530,16 @@ export function HostTree() {
           <p className="sidebar__note">{t("sidebar.noResults")}</p>
         ) : null}
 
-        {tree.favorites.length > 0 ? (
-          <section className="tree-section" role="group">
+        {tree.favorites.length > 0 || (!isEmpty && !searching) ? (
+          <section className="tree-section" role="group" {...dropHandlers(null, true)}>
             <h2 className="tree-section__title">{t("sidebar.favorites")}</h2>
             {tree.favorites.map((host) => (
-              <HostRow key={`fav-${host.id}`} host={host} active={host.id === activeHostId} {...rowProps(host)} />
+              <HostRow
+                key={`fav-${host.id}`}
+                host={host}
+                active={host.id === activeHostId}
+                {...rowProps(host)}
+              />
             ))}
           </section>
         ) : null}
@@ -452,7 +556,9 @@ export function HostTree() {
                 }
                 collapsed={isCollapsed}
                 onToggle={() => toggle(group.id)}
-                onNewHost={() => openHostDialog()}
+                onNewHost={() => openHostDialog(null, group.id)}
+                canReorder={canReorder}
+                onDropHost={(id) => moveToGroup(id, group.id)}
                 onRename={() => openGroupDialog(group)}
                 onDelete={() =>
                   confirm({
@@ -468,7 +574,13 @@ export function HostTree() {
               />
               {!isCollapsed
                 ? groupHosts.map((host) => (
-                    <HostRow key={host.id} host={host} nested active={host.id === activeHostId} {...rowProps(host)} />
+                    <HostRow
+                      key={host.id}
+                      host={host}
+                      nested
+                      active={host.id === activeHostId}
+                      {...rowProps(host)}
+                    />
                   ))
                 : null}
               {!isCollapsed
@@ -480,7 +592,9 @@ export function HostTree() {
                         depth={1}
                         collapsed={collapsed.has(child.group.id)}
                         onToggle={() => toggle(child.group.id)}
-                        onNewHost={() => openHostDialog()}
+                        onNewHost={() => openHostDialog(null, child.group.id)}
+                        canReorder={canReorder}
+                        onDropHost={(id) => moveToGroup(id, child.group.id)}
                         onRename={() => openGroupDialog(child.group)}
                         onDelete={() =>
                           confirm({
@@ -512,34 +626,22 @@ export function HostTree() {
           );
         })}
 
-        {tree.ungrouped.length > 0 ? (
-          <section className="tree-section" role="group">
-            {tree.groups.length > 0 ? (
+        {tree.ungrouped.length > 0 || (!isEmpty && !searching) ? (
+          <section className="tree-section" role="group" {...dropHandlers(null)}>
+            {tree.groups.length > 0 || !searching ? (
               <h2 className="tree-section__title">{t("sidebar.ungrouped")}</h2>
             ) : null}
             {tree.ungrouped.map((host) => (
-              <HostRow key={host.id} host={host} active={host.id === activeHostId} {...rowProps(host)} />
+              <HostRow
+                key={host.id}
+                host={host}
+                active={host.id === activeHostId}
+                {...rowProps(host)}
+              />
             ))}
           </section>
         ) : null}
       </div>
-
-      <footer className="sidebar__foot">
-        <Button
-          variant="primary"
-          size="sm"
-          leading={<Plus size={13} />}
-          onClick={() => openHostDialog()}
-        >
-          {t("sidebar.newHost")}
-        </Button>
-        <IconButton label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
-          <FolderPlus size={15} />
-        </IconButton>
-        <IconButton label={t("nav.settings")} onClick={() => openPage("settings")}>
-          <SettingsIcon size={15} />
-        </IconButton>
-      </footer>
     </div>
   );
 }

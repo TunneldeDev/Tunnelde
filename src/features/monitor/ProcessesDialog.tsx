@@ -2,7 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { RefreshCw, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -21,37 +21,47 @@ interface ProcessesDialogProps {
 export function ProcessesDialog({ sessionId, onClose }: ProcessesDialogProps) {
   const { t } = useTranslation();
   const confirm = useDialogs((state) => state.confirm);
-  const [items, setItems] = useState<RemoteProcess[] | null>(null);
+  const [result, setResult] = useState<{ sessionId: string; items: RemoteProcess[] } | null>(null);
+  const items = result?.sessionId === sessionId ? result.items : null;
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const generation = useRef(0);
+  const alive = useRef(false);
+  const owner = useRef(sessionId);
 
   const load = useCallback(async () => {
+    if (!alive.current || owner.current !== sessionId) {
+      return;
+    }
+    const request = ++generation.current;
+    setLoading(true);
     try {
-      setItems(await api.remoteProcesses(sessionId));
-      setError(null);
+      const items = await api.remoteProcesses(sessionId);
+      if (alive.current && request === generation.current) {
+        setResult({ sessionId, items });
+        setError(null);
+      }
     } catch (cause) {
-      setError(translateError(cause));
+      if (alive.current && request === generation.current) {
+        setError(translateError(cause));
+      }
+    } finally {
+      if (alive.current && request === generation.current) {
+        setLoading(false);
+      }
     }
   }, [sessionId]);
 
   useEffect(() => {
-    let alive = true;
-    api
-      .remoteProcesses(sessionId)
-      .then((list) => {
-        if (alive) {
-          setItems(list);
-          setError(null);
-        }
-      })
-      .catch((cause: unknown) => {
-        if (alive) {
-          setError(translateError(cause));
-        }
-      });
+    alive.current = true;
+    owner.current = sessionId;
+    const timer = window.setTimeout(() => void load(), 0);
     return () => {
-      alive = false;
+      window.clearTimeout(timer);
+      alive.current = false;
+      generation.current += 1;
     };
-  }, [sessionId]);
+  }, [sessionId, load]);
 
   const kill = (process: RemoteProcess) => {
     confirm({
@@ -64,7 +74,9 @@ export function ProcessesDialog({ sessionId, onClose }: ProcessesDialogProps) {
           await api.remoteKill(sessionId, process.pid);
           await load();
         } catch (cause) {
-          setError(translateError(cause));
+          if (alive.current && owner.current === sessionId) {
+            setError(translateError(cause));
+          }
         }
       },
     });
@@ -79,7 +91,12 @@ export function ProcessesDialog({ sessionId, onClose }: ProcessesDialogProps) {
       width={560}
       footer={
         <>
-          <Button variant="ghost" leading={<RefreshCw size={13} />} onClick={() => void load()}>
+          <Button
+            variant="ghost"
+            disabled={loading}
+            leading={<RefreshCw size={13} />}
+            onClick={() => void load()}
+          >
             {t("processes.refresh")}
           </Button>
           <Button variant="secondary" onClick={onClose}>
