@@ -24,6 +24,7 @@ export interface Settings {
   lastUpdateCheck: number | null;
   closeToTray: boolean;
   nativeMenu: boolean;
+  preloadDirs: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;

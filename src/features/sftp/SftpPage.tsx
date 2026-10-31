@@ -35,6 +35,7 @@ import { cn, formatBytes, formatDate } from "@/lib/text/format";
 import { useContextMenu } from "@/store/contextMenu";
 import { useDialogs } from "@/store/dialogs";
 import { useFileClipboard } from "@/store/fileClipboard";
+import { useSettings } from "@/store/settings";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
@@ -154,6 +155,49 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     });
   }, []);
 
+  const cache = useRef(new Map<string, Listing>());
+  const inflight = useRef(new Set<string>());
+  const cacheKey = (source: FsSource, path: string) =>
+    `${source.kind === "local" ? "local" : `remote:${source.sessionId}`}|${path}`;
+  const remember = useCallback((source: FsSource, listing: Listing) => {
+    cache.current.set(cacheKey(source, listing.path), listing);
+    if (cache.current.size > 64) {
+      const oldest = cache.current.keys().next().value;
+      if (oldest) {
+        cache.current.delete(oldest);
+      }
+    }
+  }, []);
+
+  // Warm the parent and the first few child folders so moving around feels instant.
+  const prefetch = useCallback(
+    (source: FsSource, listing: Listing) => {
+      if (!useSettings.getState().settings.preloadDirs) {
+        return;
+      }
+      const targets = [
+        parentOf(listing.path),
+        ...listing.entries
+          .filter((entry) => entry.isDir)
+          .slice(0, 8)
+          .map((entry) => entry.path),
+      ];
+      for (const target of targets) {
+        const key = cacheKey(source, target);
+        if (cache.current.has(key) || inflight.current.has(key)) {
+          continue;
+        }
+        inflight.current.add(key);
+        void fs
+          .list(source, target)
+          .then((child) => remember(source, child))
+          .catch(() => undefined)
+          .finally(() => inflight.current.delete(key));
+      }
+    },
+    [remember],
+  );
+
   const load = useCallback(
     async (
       id: PaneId,
@@ -162,9 +206,15 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       override?: FsSource,
     ): Promise<Listing | null> => {
       const source = override ?? panesRef.current[id].source;
-      patch(id, { busy: true, error: null });
+      const cached = path ? cache.current.get(cacheKey(source, path)) : undefined;
+      if (cached) {
+        patch(id, { listing: cached, error: null, busy: true, draft: null });
+      } else {
+        patch(id, { busy: true, error: null });
+      }
       try {
         const listing = await fs.list(source, path ?? null);
+        remember(source, listing);
         const selected = keep ? listing.entries.find((item) => item.path === keep) : null;
         patch(id, {
           listing,
@@ -176,13 +226,14 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         if (selected) {
           reveal(id);
         }
+        prefetch(source, listing);
         return listing;
       } catch (error) {
         patch(id, { busy: false, error: translateError(error) });
         return null;
       }
     },
-    [patch, reveal],
+    [patch, prefetch, remember, reveal],
   );
 
   useEffect(() => {
@@ -232,6 +283,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         return;
       }
       for (const id of PANE_IDS) {
+        cache.current.clear();
         void load(id, panesRef.current[id].state.listing?.path ?? null);
       }
     }, 0);
@@ -344,6 +396,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       for (const op of ops) {
         await run(source, op.from, op.to);
       }
+      cache.current.clear();
       await load(id, directory);
     } catch (error) {
       toast(translateError(error), "error");
@@ -447,6 +500,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     try {
       await fs.rename(source, entry.path, target);
       patch(id, { renaming: null });
+      cache.current.clear();
       await load(id, state.listing?.path ?? null, target);
       bodies.current[id]?.focus();
     } catch (error) {
@@ -479,6 +533,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         await fs.createFile(source, target);
       }
       patch(id, { creating: null });
+      cache.current.clear();
       await load(id, directory, target);
       bodies.current[id]?.focus();
     } catch (error) {
@@ -505,6 +560,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           for (const entry of entries) {
             await fs.remove(source, entry.path, entry.isDir);
           }
+          cache.current.clear();
           await load(id, panesRef.current[id].state.listing?.path ?? null);
         } catch (error) {
           toast(translateError(error), "error");

@@ -137,7 +137,9 @@
     "openLogs": "打开日志",
     "openData": "打开目录",
     "version": "版本",
-    "nativeMenu": "系统菜单栏"
+    "nativeMenu": "系统菜单栏",
+    "files": "文件",
+    "preloadDirs": "预加载上层与下层"
   },
   "updates": {
     "title": "更新",

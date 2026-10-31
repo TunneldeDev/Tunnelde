@@ -47,6 +47,7 @@ describe("path helpers", () => {
   it("walks up one level", () => {
     expect(parentOf("/home/user/a.txt")).toBe("/home/user");
     expect(parentOf("/home/user/")).toBe("/home");
+    expect(parentOf("C:\\work")).toBe("C:\\");
   });
 
   it("detects containment", () => {

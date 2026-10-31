@@ -23,11 +23,12 @@ import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
 
-type Section = "general" | "appearance" | "plugins" | "hosts" | "css" | "updates" | "advanced";
+type Section = "general" | "appearance" | "files" | "plugins" | "hosts" | "css" | "updates" | "advanced";
 
 const SECTIONS: Section[] = [
   "general",
   "appearance",
+  "files",
   "plugins",
   "hosts",
   "css",
@@ -38,6 +39,7 @@ const SECTIONS: Section[] = [
 const SECTION_KEYS = {
   general: "settings.general",
   appearance: "settings.appearance",
+  files: "settings.files",
   plugins: "settings.plugins",
   hosts: "settings.knownHosts",
   css: "settings.css",
@@ -102,6 +104,27 @@ function GeneralSection() {
       <Row
         label={t("settings.version")}
         control={<span className="settings-value">{info?.version ?? "0.1.0"}</span>}
+      />
+    </Section>
+  );
+}
+
+function FilesSection() {
+  const { t } = useTranslation();
+  const settings = useSettings((state) => state.settings);
+  const update = useSettings((state) => state.update);
+
+  return (
+    <Section title={t("settings.files")}>
+      <Row
+        label={t("settings.preloadDirs")}
+        control={
+          <Switch
+            label={t("settings.preloadDirs")}
+            checked={settings.preloadDirs}
+            onChange={(preloadDirs) => void update({ preloadDirs })}
+          />
+        }
       />
     </Section>
   );
@@ -446,6 +469,7 @@ export function SettingsPage() {
       <div className="settings__body">
         {section === "general" ? <GeneralSection /> : null}
         {section === "appearance" ? <AppearanceSection /> : null}
+        {section === "files" ? <FilesSection /> : null}
         {section === "plugins" ? <PluginsSection /> : null}
         {section === "hosts" ? <TrustedHostsSection /> : null}
         {section === "css" ? <CssSection /> : null}

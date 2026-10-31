@@ -31,8 +31,10 @@ vi.mock("@/lib/files/fs", () => ({
 import "@/i18n/i18n";
 import { SftpPage } from "@/features/sftp/SftpPage";
 import type { FsSource, SshSession } from "@/lib/api/types";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
+import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
@@ -203,5 +205,26 @@ describe("SftpPage source picker", () => {
       .getAllByRole("option")
       .map((option) => option.textContent);
     expect(labels).toEqual(["This computer", "web-01"]);
+  });
+});
+
+describe("SftpPage preloading", () => {
+  it("warms the parent and child folders when the setting is on", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: true } });
+    render(<SftpPage sessionId="session-1" />);
+
+    await screen.findByText("notes.txt");
+    await waitFor(() => {
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\");
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\src");
+    });
+  });
+
+  it("stays lazy when the setting is off", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: false } });
+    render(<SftpPage sessionId="session-1" />);
+
+    await screen.findByText("notes.txt");
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
   });
 });

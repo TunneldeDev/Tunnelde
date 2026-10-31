@@ -34,6 +34,8 @@ pub struct Settings {
     pub close_to_tray: bool,
     /// Show the OS menu bar instead of relying on the in-app chrome only.
     pub native_menu: bool,
+    /// Warm the parent and neighbouring folders of an open file panel.
+    pub preload_dirs: bool,
 }
 
 impl Default for Settings {
@@ -55,6 +57,7 @@ impl Default for Settings {
             last_update_check: None,
             close_to_tray: false,
             native_menu: cfg!(target_os = "macos"),
+            preload_dirs: false,
         }
     }
 }

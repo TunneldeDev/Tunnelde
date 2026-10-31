@@ -63,10 +63,9 @@ export function joinPath(directory: string, name: string, separator: string): st
 export function parentOf(path: string): string {
   const trimmed = path.replace(/[\\/]+$/, "");
   const index = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
-  if (index <= 0) {
-    return trimmed.slice(0, index + 1);
-  }
-  return trimmed.slice(0, index);
+  const parent = index <= 0 ? trimmed.slice(0, index + 1) : trimmed.slice(0, index);
+  // A drive root keeps its separator so joining a name still works.
+  return /^[A-Za-z]:$/.test(parent) ? `${parent}\\` : parent;
 }
 
 export function isInside(parent: string, candidate: string): boolean {

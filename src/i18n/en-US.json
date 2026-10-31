@@ -137,7 +137,9 @@
     "openLogs": "Open logs",
     "openData": "Open folder",
     "version": "Version",
-    "nativeMenu": "System menu bar"
+    "nativeMenu": "System menu bar",
+    "files": "Files",
+    "preloadDirs": "Preload parent and child folders"
   },
   "updates": {
     "title": "Updates",
