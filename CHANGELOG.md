@@ -6,10 +6,13 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-10-31
+
 ### Fixed
 
 - The window keeps its normal frame and edge resizing; the experimental in-app title bar is withdrawn because restoring the frame broke resizing.
 - The terminal also receives TERM as an environment variable, so shells that override it still report a colour-capable terminal.
+
 
 ## [0.18.0] - 2026-10-31
 
