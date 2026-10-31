@@ -102,6 +102,7 @@ function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowP
   const moveHost = useHosts((state) => state.moveHost);
   const removeHostTab = useWorkspace((state) => state.removeHost);
   const openMenu = useContextMenu((state) => state.open);
+  const openConnect = useDialogs((state) => state.openConnect);
   const [over, setOver] = useState(false);
 
   const removeHost = () =>
@@ -156,6 +157,7 @@ function HostRow({ host, active, focused, onFocusRow, nested = false }: HostRowP
           { label: t("host.open"), onSelect: () => openHost(host) },
           { label: t("menu.edit"), onSelect: () => openHostDialog(host) },
           { label: t("menu.copySsh"), onSelect: () => copyText(command) },
+          { label: t("connect.installKey"), onSelect: () => openConnect(host) },
           { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
           {
             label: host.favorite ? t("menu.unfavorite") : t("menu.favorite"),
