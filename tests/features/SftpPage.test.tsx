@@ -154,7 +154,7 @@ describe("SftpPage", () => {
 
     fireEvent.click(notes);
     fireEvent.click(source, { ctrlKey: true });
-    expect(screen.getByText("2 selected")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("2 selected")).toBeTruthy());
 
     fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
 
@@ -175,7 +175,7 @@ describe("SftpPage", () => {
     await screen.findByText("notes.txt");
     const local = screen.getAllByRole("listbox")[0] as HTMLElement;
     fireEvent.keyDown(local, { key: "a", ctrlKey: true });
-    expect(screen.getByText("2 selected")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("2 selected")).toBeTruthy());
   });
 
   it("opens local files with the system handler", async () => {
