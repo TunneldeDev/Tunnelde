@@ -15,6 +15,10 @@ All notable changes to Tunnelde are documented here. The format follows
 
 - "Set up key login" now works when the password is already in the keychain instead of staying disabled.
 - The sidebar header and the tab strip share the same height, so the top edge no longer steps between them.
+- The right panel slides out and back with the same transition instead of popping open slowly and snapping shut, and it keeps polling only while visible.
+- The expand and close buttons in the panel header sit together instead of being spread across the bar.
+- Folders use a filled accent icon, so they no longer look like files.
+- The terminal keeps its monospace grid, kerning and visible cursor even when the renderer's injected stylesheet is unavailable; ligatures and letter spacing are pinned to keep columns aligned.
 
 ## [0.17.0] - 2026-10-31
 

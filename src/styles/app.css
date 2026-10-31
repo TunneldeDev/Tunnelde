@@ -1899,6 +1899,25 @@
   height: 100%;
 }
 
+/*
+ * xterm injects these rules at runtime; repeating them keeps the monospace
+ * grid, kerning and cursor intact even when that stylesheet does not apply.
+ */
+.terminal-host .xterm-rows {
+  font-family: var(--td-mono) !important;
+  font-size: var(--td-mono-size) !important;
+  font-kerning: none !important;
+  font-variant-ligatures: none !important;
+  letter-spacing: 0 !important;
+  white-space: pre !important;
+  text-rendering: auto !important;
+}
+
+.terminal-host .xterm-rows .xterm-cursor.xterm-cursor-block {
+  background-color: var(--td-cyan) !important;
+  color: var(--td-bg) !important;
+}
+
 .terminal-host .xterm-viewport {
   background: transparent !important;
 }
