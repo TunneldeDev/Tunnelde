@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { releaseChangelog } from "./changelog.mjs";
+import { changelogNotes, releaseChangelog } from "./changelog.mjs";
 import { bumpVersion, compareVersions, currentVersion, setVersion } from "./version.mjs";
 
 function flag(name) {
@@ -20,6 +20,9 @@ try {
     throw new Error(`${next} must be greater than ${current}`);
   }
 
+  if (!changelogNotes("Unreleased")) {
+    throw new Error("## [Unreleased] is empty; write the release notes first");
+  }
   setVersion(next);
   const heading = releaseChangelog(next);
   console.log(next);

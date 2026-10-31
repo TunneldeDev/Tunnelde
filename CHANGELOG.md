@@ -6,13 +6,38 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-01
+
+### Added
+
+- A workbench with an activity bar, nested editor groups, four-edge tab splitting, draggable dividers and persistent layouts. Moving tabs preserves terminal output and unsaved editor drafts.
+- Inline file and folder creation, rename, keyboard navigation, path focus, selection reveal and file/folder drag transfers between local and remote panels.
+- A dedicated trusted-hosts page, host drag ordering, richer host context actions, private-key file/content selection and tag suggestions.
+- Plugin installation from a ZIP archive or folder picker, native drag-and-drop and a manifest preview before installation.
+- System and compact title-bar options adapted to Windows and macOS, a simplified host sidebar, and quick terminal font selection with bundled Fira Code.
+
+### Fixed
+
+- File creation no longer truncates existing files. Copy, move and transfer operations require explicit overwrite approval, reject incompatible destinations and retain sources on failure or cancellation.
+- Deleting a remote directory symlink removes the link without traversing its target. Copies and transfers reject symlinks.
+- Remote text saves correctly truncate shorter contents; unsupported text encodings are rejected instead of silently replacing bytes. Saving preserves edits made during a pending save, and disconnecting retains drafts with conflict checks on reconnect.
+- Closing the window asks before discarding unsaved editor drafts; closing to the tray keeps drafts and sessions alive.
+- Drag routing, tab ordering, long-name layout, icon alignment, dialog focus, dropdown keyboard behavior and Chinese input in tag fields now follow consistent interaction rules.
+- System language follows the operating system's preferred UI language. Terminal initialization preserves early output and correctly applies ANSI colors, themes and monospace fonts.
+- Directory refreshes, connection state, plugin operations, settings writes and layout persistence reject stale results and preserve later changes.
+- Remote and local monitoring pause while hidden, share samples and avoid overlapping requests. Recording raw terminal input in command history is now opt-in.
+- Removed redundant application menus and repeated sidebar branding. Settings remain accessible from the activity bar.
+
+### Changed
+
+- Releases remain drafts until all platform builds, signatures and the updater manifest are present; version checks now include the Cargo lockfile.
+
 ## [0.18.1] - 2026-10-31
 
 ### Fixed
 
 - The window keeps its normal frame and edge resizing; the experimental in-app title bar is withdrawn because restoring the frame broke resizing.
 - The terminal also receives TERM as an environment variable, so shells that override it still report a colour-capable terminal.
-
 
 ## [0.18.0] - 2026-10-31
 
@@ -30,7 +55,6 @@ All notable changes to Tunnelde are documented here. The format follows
 - Folders use a filled accent icon, so they no longer look like files.
 - The terminal keeps its monospace grid, kerning and visible cursor even when the renderer's injected stylesheet is unavailable; ligatures and letter spacing are pinned to keep columns aligned.
 
-
 ## [0.17.0] - 2026-10-31
 
 ### Added
@@ -41,7 +65,6 @@ All notable changes to Tunnelde are documented here. The format follows
 
 - Going up from a drive root such as `C:\work` lands on `C:\` instead of `C:`.
 
-
 ## [0.16.1] - 2026-10-31
 
 ### Fixed
@@ -50,13 +73,11 @@ All notable changes to Tunnelde are documented here. The format follows
 - Dragging the sidebar or right panel keeps whole pixels and saves the width the drag ended on, so the panel no longer springs back with a validation toast.
 - The file source picker lists one row per host instead of one per open session.
 
-
 ## [0.16.0] - 2026-10-30
 
 ### Added
 
 - Plugins can ship as WebAssembly: the manifest selects the runtime, every call gets a fresh instance, and the module only sees one host function for logging.
-
 
 ## [0.15.0] - 2026-10-30
 
@@ -64,20 +85,17 @@ All notable changes to Tunnelde are documented here. The format follows
 
 - Settings → Plugins lists a marketplace fed by `marketplace/index.json`; installing an entry downloads its archive, verifies the pinned SHA-256 in Rust and then unpacks it.
 
-
 ## [0.14.1] - 2026-10-30
 
 ### Changed
 
 - The host sidebar is a single tab stop: arrow keys move the active host, Home and End jump to the edges, and Enter opens it.
 
-
 ## [0.14.0] - 2026-10-30
 
 ### Added
 
 - File panels accept a multi-selection: Ctrl/Cmd+click, Shift+click and Ctrl/Cmd+A, with delete, transfer, cut, copy, paste and drag applying to every selected entry.
-
 
 ## [0.13.1] - 2026-10-30
 
@@ -86,13 +104,11 @@ All notable changes to Tunnelde are documented here. The format follows
 - Dialogs keep the keyboard focus inside themselves while open and return it when they close.
 - The file list tells screen readers which row is selected, and the toast dismiss button follows the UI language.
 
-
 ## [0.13.0] - 2026-10-30
 
 ### Added
 
 - `Ctrl+K` opens a command palette that searches pages, host actions, updates, panel and theme toggles and tab commands.
-
 
 ## [0.12.0] - 2026-10-30
 
@@ -101,7 +117,6 @@ All notable changes to Tunnelde are documented here. The format follows
 - Hosts in the sidebar can be dragged into the order you want; the order is stored with the host.
 - The connect dialog can install Tunnelde's public key with the password you just typed and switch the host to key authentication, so the next connection is passwordless.
 - Plugins install from a `.zip` archive as well as a folder; archives are unpacked safely and capped in size.
-
 
 ## [0.11.0] - 2026-10-30
 
@@ -128,13 +143,11 @@ All notable changes to Tunnelde are documented here. The format follows
 - The connect dialog no longer shows a "previous fingerprint" when the trusted key is unchanged.
 - Host rows no longer clip their text, and an empty group shows "—" instead of the word None.
 
-
 ## [0.10.3] - 2026-10-30
 
 ### Fixed
 
 - The file pane only offers Paste when the clipboard entry has somewhere to go, instead of silently doing nothing.
-
 
 ## [0.10.2] - 2026-10-30
 

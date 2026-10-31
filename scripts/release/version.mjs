@@ -70,10 +70,7 @@ export function setVersion(version) {
   writeFileSync(files.config, `${JSON.stringify(config, null, 2)}\n`);
 
   const cargo = readFileSync(files.cargo, "utf8");
-  const nextCargo = cargo.replace(
-    /(\[package\][\s\S]*?\nversion = ")[^"]+(")/,
-    `$1${version}$2`,
-  );
+  const nextCargo = cargo.replace(/(\[package\][\s\S]*?\nversion = ")[^"]+(")/, `$1${version}$2`);
   if (nextCargo === cargo) {
     throw new Error("could not update src-tauri/Cargo.toml");
   }
@@ -99,6 +96,9 @@ export function checkVersion(tag) {
   const pkg = currentVersion();
   const cargoMatch = /^version = "([^"]+)"$/m.exec(readFileSync(files.cargo, "utf8"));
   const config = JSON.parse(readFileSync(files.config, "utf8")).version;
+  const lockMatch = /\[\[package\]\]\r?\nname = "tunnelde"\r?\nversion = "([^"]+)"/.exec(
+    readFileSync(files.lock, "utf8"),
+  );
   const problems = [];
 
   if (!cargoMatch) {
@@ -108,6 +108,11 @@ export function checkVersion(tag) {
   }
   if (config !== pkg) {
     problems.push(`tauri.conf.json ${config} != package.json ${pkg}`);
+  }
+  if (!lockMatch) {
+    problems.push("src-tauri/Cargo.lock has no tunnelde package version");
+  } else if (lockMatch[1] !== pkg) {
+    problems.push(`Cargo.lock ${lockMatch[1]} != package.json ${pkg}`);
   }
   if (expected && expected !== pkg) {
     problems.push(`tag ${expected} != package.json ${pkg}`);

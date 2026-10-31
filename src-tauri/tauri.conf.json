@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Tunnelde",
-  "version": "0.18.1",
+  "version": "0.19.0",
   "identifier": "dev.tunnelde.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
@@ -29,20 +29,12 @@
     "security": {
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost https://raw.githubusercontent.com https://github.com https://objects.githubusercontent.com; object-src 'none'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'",
       "devCsp": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: asset: http://asset.localhost; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1421 http://localhost:1420 https://raw.githubusercontent.com https://github.com https://objects.githubusercontent.com; object-src 'none'; base-uri 'self'",
-      "capabilities": [
-        "default"
-      ]
+      "capabilities": ["default"]
     }
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "nsis",
-      "app",
-      "dmg",
-      "deb",
-      "appimage"
-    ],
+    "targets": ["nsis", "app", "dmg", "deb", "appimage"],
     "createUpdaterArtifacts": true,
     "publisher": "TunneldeDev",
     "homepage": "https://github.com/TunneldeDev/Tunnelde",
@@ -64,10 +56,7 @@
         "headerImage": "../build/installerHeader.bmp",
         "sidebarImage": "../build/installerSidebar.bmp",
         "installMode": "currentUser",
-        "languages": [
-          "English",
-          "SimpChinese"
-        ],
+        "languages": ["English", "SimpChinese"],
         "displayLanguageSelector": true
       }
     },
@@ -78,9 +67,7 @@
   "plugins": {
     "updater": {
       "active": true,
-      "endpoints": [
-        "https://github.com/TunneldeDev/Tunnelde/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/TunneldeDev/Tunnelde/releases/latest/download/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDMwMEVERUQzNTQxOTFCNjEKUldSaEd4bFUwOTRPTUZZaFZlQlZkZDc1TWtVVTJMSXczMVVPZGwwVDF5TVhxa0pENHN4czlLclAK",
       "windows": {
         "installMode": "passive"

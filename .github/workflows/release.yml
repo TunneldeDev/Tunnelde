@@ -165,7 +165,7 @@ jobs:
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: Tunnelde ${{ needs.prepare.outputs.version }}
           releaseBody: ${{ needs.prepare.outputs.body }}
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           includeUpdaterJson: false
           args: ${{ matrix.args }}
@@ -207,3 +207,12 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release upload "${TAG}" latest.json --clobber --repo "${GITHUB_REPOSITORY}"
+
+      - name: Verify assets and publish completed release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > assets.json
+          node scripts/release/verify-assets.mjs --tag "${TAG}" --manifest latest.json --assets assets.json
+          gh release edit "${TAG}" --draft=false --latest --repo "${GITHUB_REPOSITORY}"
