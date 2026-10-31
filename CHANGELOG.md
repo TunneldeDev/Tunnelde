@@ -6,6 +6,8 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-10-31
+
 ### Added
 
 - Settings → Files gains "Preload parent and child folders": with it on, the panel warms the parent directory and the first few subfolders, so moving around is instant.
@@ -13,6 +15,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Fixed
 
 - Going up from a drive root such as `C:\work` lands on `C:\` instead of `C:`.
+
 
 ## [0.16.1] - 2026-10-31
 
