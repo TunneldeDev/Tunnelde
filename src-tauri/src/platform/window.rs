@@ -26,6 +26,14 @@ pub fn apply_theme(app: &AppHandle, mode: &str) {
     let _ = window.set_theme(theme);
 }
 
+/// Drops the OS frame so the app can draw its own window buttons, or restores it.
+pub fn apply_chrome(app: &AppHandle, custom: bool) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+    let _ = window.set_decorations(!custom);
+}
+
 /// macOS keeps the app alive after the window closes; Windows and Linux
 /// quit unless the user opted into the tray.
 pub fn install_close_handler(app: &AppHandle) {

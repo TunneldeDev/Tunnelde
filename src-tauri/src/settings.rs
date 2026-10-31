@@ -36,6 +36,10 @@ pub struct Settings {
     pub native_menu: bool,
     /// Warm the parent and neighbouring folders of an open file panel.
     pub preload_dirs: bool,
+    /// How many child folders to warm per listing.
+    pub preload_count: u16,
+    /// Draw the window buttons inside the app instead of using the OS frame.
+    pub custom_title_bar: bool,
 }
 
 impl Default for Settings {
@@ -57,7 +61,9 @@ impl Default for Settings {
             last_update_check: None,
             close_to_tray: false,
             native_menu: cfg!(target_os = "macos"),
-            preload_dirs: false,
+            preload_dirs: true,
+            preload_count: 8,
+            custom_title_bar: false,
         }
     }
 }
@@ -85,6 +91,7 @@ impl Settings {
         }
         self.ui_font_size = self.ui_font_size.clamp(11, 16);
         self.mono_font_size = self.mono_font_size.clamp(11, 20);
+        self.preload_count = self.preload_count.min(32);
         if !MONO_FONTS.contains(&self.mono_font.as_str()) {
             self.mono_font = "fira-code".into();
         }

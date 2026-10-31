@@ -20,7 +20,9 @@ export const DEFAULT_SETTINGS: Settings = {
   lastUpdateCheck: null,
   closeToTray: false,
   nativeMenu: false,
-  preloadDirs: false,
+  preloadDirs: true,
+  preloadCount: 8,
+  customTitleBar: false,
 };
 
 export type AccentLabelKey =

@@ -6,6 +6,16 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Settings → General can draw the window buttons inside the app instead of the OS title bar, which removes the second bar on top; dragging the tab strip or the sidebar header moves the window and the edges still resize it.
+- Settings → Files controls how many child folders the preload warms, and preloading is on by default.
+
+### Fixed
+
+- "Set up key login" now works when the password is already in the keychain instead of staying disabled.
+- The sidebar header and the tab strip share the same height, so the top edge no longer steps between them.
+
 ## [0.17.0] - 2026-10-31
 
 ### Added

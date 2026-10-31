@@ -139,7 +139,9 @@
     "version": "版本",
     "nativeMenu": "系统菜单栏",
     "files": "文件",
-    "preloadDirs": "预加载上层与下层"
+    "preloadDirs": "预加载上层与下层",
+    "preloadCount": "预加载子目录数量",
+    "customTitleBar": "使用应用内标题栏"
   },
   "updates": {
     "title": "更新",
@@ -427,5 +429,11 @@
     "title": "命令面板",
     "placeholder": "输入命令",
     "empty": "没有匹配的命令"
+  },
+  "window": {
+    "minimize": "最小化",
+    "maximize": "最大化",
+    "restore": "还原",
+    "close": "关闭"
   }
 }

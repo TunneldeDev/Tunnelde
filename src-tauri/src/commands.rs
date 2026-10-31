@@ -107,6 +107,7 @@ pub fn settings_update(
     state.db.with(|conn| db::settings::save(conn, &next))?;
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
+    crate::platform::window::apply_chrome(&app, next.custom_title_bar);
     crate::platform::menu::apply(&app, next.native_menu, &state.locale())?;
     let _ = app.emit("settings://changed", &next);
     Ok(next)
@@ -119,6 +120,7 @@ pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<S
     state.db.with(|conn| db::settings::save(conn, &next))?;
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
+    crate::platform::window::apply_chrome(&app, next.custom_title_bar);
     crate::platform::menu::apply(&app, next.native_menu, &state.locale())?;
     let _ = app.emit("settings://changed", &next);
     Ok(next)

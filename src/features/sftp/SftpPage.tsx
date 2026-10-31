@@ -175,11 +175,12 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       if (!useSettings.getState().settings.preloadDirs) {
         return;
       }
+      const count = useSettings.getState().settings.preloadCount;
       const targets = [
         parentOf(listing.path),
         ...listing.entries
           .filter((entry) => entry.isDir)
-          .slice(0, 8)
+          .slice(0, count)
           .map((entry) => entry.path),
       ];
       for (const target of targets) {

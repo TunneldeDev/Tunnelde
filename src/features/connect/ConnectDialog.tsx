@@ -159,7 +159,8 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
     setBusy(true);
     setError(null);
     try {
-      await api.sshInstallKey(host.id, password);
+      // No typed password means the backend falls back to the keychain copy.
+      await api.sshInstallKey(host.id, password || null);
       await useHosts.getState().load();
       toast(t("connect.installKeyDone"), "success");
       onClose();
@@ -272,7 +273,7 @@ export function ConnectDialog({ host, after = "terminal", onClose }: ConnectDial
               <Button
                 variant="ghost"
                 size="sm"
-                disabled={busy || !trusted || password.length === 0}
+                disabled={busy || !trusted || (password.length === 0 && !saved)}
                 onClick={() => void installKey()}
               >
                 {t("connect.installKey")}

@@ -27,13 +27,19 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
-            let (theme, native_menu, locale) = {
+            let (theme, native_menu, locale, custom_chrome) = {
                 use tauri::Manager;
                 let state = handle.state::<state::AppState>();
                 let settings = state.settings();
-                (settings.theme, settings.native_menu, state.locale())
+                (
+                    settings.theme,
+                    settings.native_menu,
+                    state.locale(),
+                    settings.custom_title_bar,
+                )
             };
             window::apply_theme(&handle, &theme);
+            window::apply_chrome(&handle, custom_chrome);
             tray::setup(&handle)?;
             menu::apply(&handle, native_menu, &locale)?;
             app.on_menu_event(|app, event| {

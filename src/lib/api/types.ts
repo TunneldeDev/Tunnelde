@@ -25,6 +25,8 @@ export interface Settings {
   closeToTray: boolean;
   nativeMenu: boolean;
   preloadDirs: boolean;
+  preloadCount: number;
+  customTitleBar: boolean;
 }
 
 export type SettingsPatch = Partial<Settings>;

@@ -139,7 +139,9 @@
     "version": "Version",
     "nativeMenu": "System menu bar",
     "files": "Files",
-    "preloadDirs": "Preload parent and child folders"
+    "preloadDirs": "Preload parent and child folders",
+    "preloadCount": "Folders to preload",
+    "customTitleBar": "In-app title bar"
   },
   "updates": {
     "title": "Updates",
@@ -427,5 +429,11 @@
     "title": "Command palette",
     "placeholder": "Type a command",
     "empty": "No command matches"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore",
+    "close": "Close"
   }
 }
