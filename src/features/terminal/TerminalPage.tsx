@@ -24,6 +24,25 @@ interface TerminalPageProps {
   active: boolean;
 }
 
+/** Waits for a webfont so xterm measures the real glyphs instead of the fallback. */
+async function waitForFont(family: string, size: number): Promise<void> {
+  if (typeof document === "undefined" || !document.fonts) {
+    return;
+  }
+  const name = family.split(",")[0]?.trim().replace(/^["']|["']$/g, "");
+  if (!name) {
+    return;
+  }
+  try {
+    await Promise.race([
+      document.fonts.load(`${size}px "${name}"`),
+      new Promise((resolve) => window.setTimeout(resolve, 1500)),
+    ]);
+  } catch {
+    // A missing webfont is not fatal; the fallback stack still renders.
+  }
+}
+
 export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
@@ -64,48 +83,81 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       return;
     }
 
-    const terminal = new Terminal({
-      fontFamily: monoStack(monoFont),
-      fontSize,
-      lineHeight: 1.2,
-      cursorBlink: true,
-      scrollback: 5000,
-      allowProposedApi: false,
-      theme: terminalTheme(resolvedTheme),
-    });
-    const addon = new FitAddon();
-    terminal.loadAddon(addon);
-    terminal.open(element);
-    terminalRef.current = terminal;
-    fitRef.current = addon;
-    fit();
-    terminal.focus();
-
+    let disposed = false;
+    let terminal: Terminal | null = null;
+    let addon: FitAddon | null = null;
+    let dataListener: { dispose: () => void } | null = null;
     const subscriptions: UnlistenFn[] = [];
-    const dataListener = terminal.onData((data) => {
-      if (!isTauri()) {
+    const pending: Uint8Array[] = [];
+    const write = (chunk: Uint8Array) => {
+      if (terminal) {
+        terminal.write(chunk);
+      } else {
+        pending.push(chunk);
+      }
+    };
+    let frame = 0;
+    let observer: ResizeObserver | null = null;
+
+    const start = async () => {
+      await waitForFont(monoStack(monoFont), fontSize);
+      if (disposed) {
         return;
       }
-      void api.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
 
-      const result = consumeInput(capture.current, data);
-      capture.current = result.state;
-      for (const command of result.commands) {
-        if (command.startsWith(" ")) {
-          continue;
-        }
-        const hostId = useSsh.getState().sessions.find((item) => item.id === sessionId)?.hostId;
-        if (hostId) {
-          void api.historyRecord(hostId, command).catch(() => undefined);
-        }
+      const instance = new Terminal({
+        fontFamily: monoStack(monoFont),
+        fontSize,
+        lineHeight: 1.2,
+        cursorBlink: true,
+        scrollback: 5000,
+        allowProposedApi: false,
+        theme: terminalTheme(resolvedTheme),
+      });
+      terminal = instance;
+      addon = new FitAddon();
+      instance.loadAddon(addon);
+      instance.open(element);
+      terminalRef.current = instance;
+      fitRef.current = addon;
+      // Re-apply after open: a theme or font measured before the first frame
+      // otherwise keeps the fallback colours and glyph metrics.
+      instance.options.theme = terminalTheme(resolvedTheme);
+      fit();
+      instance.refresh(0, Math.max(0, instance.rows - 1));
+      instance.focus();
+
+      // Replay whatever arrived while the webfont was loading.
+      for (const chunk of pending.splice(0)) {
+        instance.write(chunk);
       }
-    });
 
+      dataListener = instance.onData((data) => {
+        if (!isTauri()) {
+          return;
+        }
+        void api.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
+
+        const result = consumeInput(capture.current, data);
+        capture.current = result.state;
+        for (const command of result.commands) {
+          if (command.startsWith(" ")) {
+            continue;
+          }
+          const hostId = useSsh.getState().sessions.find((item) => item.id === sessionId)?.hostId;
+          if (hostId) {
+            void api.historyRecord(hostId, command).catch(() => undefined);
+          }
+        }
+      });
+    };
+
+    // Listen before the terminal exists so early output is buffered, not lost.
     if (isTauri()) {
       void events
         .onSshData((payload) => {
           if (payload.sessionId === sessionId) {
-            terminal.write(decodeBase64(payload.data));
+            write(decodeBase64(payload.data));
           }
         })
         .then((unlisten) => subscriptions.push(unlisten));
@@ -116,24 +168,34 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             return;
           }
           setClosed(true);
-          terminal.write(`\r\n\x1b[38;5;245m[${t("ssh.closed")}]\x1b[0m\r\n`);
+          write(new TextEncoder().encode(`\r\n\x1b[38;5;245m[${t("ssh.closed")}]\x1b[0m\r\n`));
         })
         .then((unlisten) => subscriptions.push(unlisten));
     }
 
-    let frame = 0;
-    const observer = new ResizeObserver(() => {
+    observer = new ResizeObserver(() => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(fit);
     });
     observer.observe(element);
 
+    // Late font swaps change glyph widths; re-measure once they settle.
+    void document.fonts?.ready.then(() => {
+      if (!disposed && terminal) {
+        terminal.options.fontFamily = monoStack(monoFont);
+        fit();
+      }
+    });
+
+    void start();
+
     return () => {
+      disposed = true;
       cancelAnimationFrame(frame);
-      observer.disconnect();
+      observer?.disconnect();
       subscriptions.forEach((unlisten) => unlisten());
-      dataListener.dispose();
-      terminal.dispose();
+      dataListener?.dispose();
+      terminal?.dispose();
       terminalRef.current = null;
       fitRef.current = null;
     };
