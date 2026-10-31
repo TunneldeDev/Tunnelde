@@ -348,10 +348,30 @@ pub async fn trust(app: &AppHandle, host_id: &str) -> AppResult<HostKeyInfo> {
 }
 
 pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<SessionInfo> {
+    connect_for_auth(app, request, false).await
+}
+
+/// Key setup must authenticate with the supplied password even for a host
+/// whose saved authentication method is already a key or agent.
+pub(crate) async fn connect_with_password(
+    app: AppHandle,
+    request: SshConnectRequest,
+) -> AppResult<SessionInfo> {
+    connect_for_auth(app, request, true).await
+}
+
+async fn connect_for_auth(
+    app: AppHandle,
+    request: SshConnectRequest,
+    password_auth: bool,
+) -> AppResult<SessionInfo> {
     let state = app.state::<AppState>();
-    let host = state
+    let mut host = state
         .db
         .with(|conn| db::hosts::find_host(conn, &request.host_id))?;
+    if password_auth {
+        host.auth_method = "password".into();
+    }
     let known = state
         .db
         .with(|conn| db::known_hosts::find(conn, &host.host, host.port as i64))?

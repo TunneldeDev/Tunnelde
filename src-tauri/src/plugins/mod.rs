@@ -304,6 +304,23 @@ fn copy_dir(source: &Path, target: &Path) -> AppResult<()> {
 const MAX_ARCHIVE_ENTRIES: usize = 2000;
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 
+/// Validate a local package and show its identity before installation.
+pub fn inspect(source: &str) -> AppResult<PluginManifest> {
+    let source = Path::new(source);
+    if source.is_dir() {
+        return manifest::load(&locate_manifest_dir(source)?);
+    }
+    if !is_archive(source) {
+        return Err(AppError::validation("plugin.manifest.unreadable"));
+    }
+    let temporary = std::env::temp_dir().join(format!("tunnelde-inspect-{}", uuid::Uuid::new_v4()));
+    let result = extract_archive(source, &temporary)
+        .and_then(|()| locate_manifest_dir(&temporary))
+        .and_then(|directory| manifest::load(&directory));
+    let _ = std::fs::remove_dir_all(&temporary);
+    result
+}
+
 fn is_archive(path: &Path) -> bool {
     path.extension()
         .map(|extension| extension.eq_ignore_ascii_case("zip"))
@@ -472,6 +489,139 @@ mod tests {
             zip.write_all(body.as_bytes()).expect("body");
         }
         zip.finish().expect("finish");
+    }
+
+    fn write_archive_entries(path: &Path, entries: &[(&str, &str)]) {
+        use std::io::Write;
+        let file = std::fs::File::create(path).expect("archive file");
+        let mut archive = zip::ZipWriter::new(file);
+        for (name, body) in entries {
+            archive
+                .start_file(*name, zip::write::SimpleFileOptions::default())
+                .expect("archive entry");
+            archive.write_all(body.as_bytes()).expect("archive body");
+        }
+        archive.finish().expect("finish archive");
+    }
+
+    #[test]
+    fn inspects_bare_and_wrapped_plugin_folders_without_installing() {
+        let root = temp_root("inspect-folders");
+        let source = root.join("source");
+        write_plugin(&source);
+
+        for candidate in [&source, &root] {
+            let inspected = inspect(candidate.to_str().unwrap()).expect("inspect folder");
+            assert_eq!(inspected.id, "demo");
+            assert_eq!(inspected.name, "Demo");
+            assert_eq!(inspected.version, "0.1.0");
+            assert_eq!(inspected.main, "index.js");
+        }
+        assert!(source.join("index.js").exists());
+        assert_eq!(std::fs::read_dir(&root).expect("source parent").count(), 1);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inspects_root_and_wrapped_zip_packages() {
+        let root = temp_root("inspect-archives");
+        let flat = root.join("flat.ZIP");
+        write_archive_entries(
+            &flat,
+            &[(manifest::MANIFEST_FILE, MANIFEST), ("index.js", "")],
+        );
+        let wrapped = root.join("wrapped.zip");
+        write_archive(&wrapped, "demo-0.1.0");
+
+        for archive in [&flat, &wrapped] {
+            let original = std::fs::read(archive).expect("original package");
+            let inspected = inspect(archive.to_str().unwrap()).expect("inspect archive");
+            assert_eq!(inspected.id, "demo");
+            assert_eq!(inspected.api_version, manifest::API_VERSION);
+            assert_eq!(inspected.version, "0.1.0");
+            assert_eq!(std::fs::read(archive).expect("unchanged package"), original);
+        }
+        assert_eq!(std::fs::read_dir(&root).expect("package parent").count(), 2);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inspect_rejects_unsupported_files_and_corrupt_archives() {
+        let root = temp_root("inspect-unreadable");
+        let unsupported = root.join("package.txt");
+        std::fs::write(&unsupported, MANIFEST).expect("unsupported package");
+        let corrupt = root.join("corrupt.zip");
+        std::fs::write(&corrupt, "this is not an archive").expect("corrupt package");
+
+        for (source, expected) in [
+            (&unsupported, "plugin.manifest.unreadable"),
+            (&corrupt, "plugin.archive"),
+        ] {
+            let error = inspect(source.to_str().unwrap()).expect_err("invalid package");
+            assert!(error.to_string().contains(expected), "{error}");
+        }
+        assert!(inspect(root.join("missing.zip").to_str().unwrap()).is_err());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inspect_validates_manifest_and_entry_in_folders_and_archives() {
+        let root = temp_root("inspect-validation");
+        let folder = root.join("source");
+        write_plugin(&folder);
+        let archive = root.join("invalid.zip");
+        let invalid_api = MANIFEST.replace("\"apiVersion\":1", "\"apiVersion\":99");
+        let cases = [
+            ("not json", Some(""), "plugin.manifest.invalid"),
+            (
+                invalid_api.as_str(),
+                Some(""),
+                "plugin.apiVersion.unsupported",
+            ),
+            (MANIFEST, None, "plugin.entry.missing"),
+        ];
+        for (manifest_body, entry_body, expected) in cases {
+            std::fs::write(folder.join(manifest::MANIFEST_FILE), manifest_body)
+                .expect("invalid manifest");
+            let mut entries = vec![(manifest::MANIFEST_FILE, manifest_body)];
+            if let Some(entry) = entry_body {
+                std::fs::write(folder.join("index.js"), entry).expect("entry");
+                entries.push(("index.js", entry));
+            } else {
+                std::fs::remove_file(folder.join("index.js")).expect("remove entry");
+            }
+            write_archive_entries(&archive, &entries);
+            for source in [&folder, &archive] {
+                let error = inspect(source.to_str().unwrap()).expect_err("invalid package");
+                assert!(error.to_string().contains(expected), "{error}");
+            }
+        }
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inspect_rejects_empty_and_ambiguous_packages() {
+        let root = temp_root("inspect-ambiguous");
+        let empty = root.join("empty");
+        std::fs::create_dir_all(&empty).expect("empty folder");
+        let archive = root.join("ambiguous.zip");
+        write_archive_entries(
+            &archive,
+            &[
+                ("one/tunnelde-plugin.json", MANIFEST),
+                ("one/index.js", ""),
+                ("two/tunnelde-plugin.json", MANIFEST),
+                ("two/index.js", ""),
+            ],
+        );
+        for source in [&empty, &archive] {
+            let error = inspect(source.to_str().unwrap()).expect_err("missing single plugin");
+            assert!(
+                error.to_string().contains("plugin.manifest.missing"),
+                "{error}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[tokio::test]

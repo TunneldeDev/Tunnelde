@@ -3,6 +3,7 @@
 
 use tauri::{AppHandle, Manager, Theme, WindowEvent};
 
+use crate::error::AppResult;
 use crate::state::AppState;
 
 pub fn show_main(app: &AppHandle) {
@@ -26,6 +27,50 @@ pub fn apply_theme(app: &AppHandle, mode: &str) {
     let _ = window.set_theme(theme);
 }
 
+/// Applies native chrome immediately, including when the preference changes.
+pub fn apply_title_bar_style(app: &AppHandle, style: &str) -> AppResult<()> {
+    let Some(window) = app.get_webview_window("main") else {
+        return Ok(());
+    };
+    let compact = style == "compact";
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        // On Windows Tauri installs its native edge/corner resize hit testing
+        // when decorations are disabled, and removes it when they return.
+        let decorated = !compact;
+        if window.is_decorated()? != decorated {
+            window.set_decorations(decorated)?;
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // Keep native traffic lights, resizing, fullscreen and accessibility.
+        if !window.is_decorated()? {
+            window.set_decorations(true)?;
+        }
+        window.set_title_bar_style(if compact {
+            tauri::TitleBarStyle::Overlay
+        } else {
+            tauri::TitleBarStyle::Visible
+        })?;
+        let target = window.clone();
+        window.run_on_main_thread(move || {
+            if let Ok(pointer) = target.ns_window() {
+                // SAFETY: Tauri returned the live NSWindow for this target,
+                // and all AppKit access runs on its required main thread.
+                let native = unsafe { &*pointer.cast::<objc2_app_kit::NSWindow>() };
+                native.setTitleVisibility(if compact {
+                    objc2_app_kit::NSWindowTitleVisibility::Hidden
+                } else {
+                    objc2_app_kit::NSWindowTitleVisibility::Visible
+                });
+            }
+        })?;
+    }
+    Ok(())
+}
 
 /// macOS keeps the app alive after the window closes; Windows and Linux
 /// quit unless the user opted into the tray.

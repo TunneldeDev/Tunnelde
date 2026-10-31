@@ -20,7 +20,8 @@ use crate::state::AppState;
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 11] = [
+const TAB_KINDS: [&str; 12] = [
+    "knownHosts",
     "welcome",
     "host",
     "settings",
@@ -48,6 +49,7 @@ pub struct SettingsSchema {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
+    system_languages: Vec<String>,
     name: String,
     version: String,
     tauri_version: String,
@@ -70,6 +72,7 @@ pub struct HostsSnapshot {
 pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
     let package = app.package_info();
     AppInfo {
+        system_languages: crate::platform::locale::preferred_languages(),
         name: "Tunnelde".into(),
         version: package.version.to_string(),
         tauri_version: tauri::VERSION.to_string(),
@@ -98,28 +101,46 @@ pub fn settings_update(
     state: State<'_, AppState>,
     patch: Value,
 ) -> AppResult<Settings> {
-    let mut base = serde_json::to_value(state.settings())?;
+    let previous = state.settings();
+    let mut base = serde_json::to_value(&previous)?;
     merge_json(&mut base, patch);
     let mut next: Settings = serde_json::from_value(base)
         .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;
     next.sanitize();
 
-    state.db.with(|conn| db::settings::save(conn, &next))?;
+    let title_bar_changed = next.title_bar_style != previous.title_bar_style;
+    if title_bar_changed {
+        crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
+    }
+    if let Err(error) = state.db.with(|conn| db::settings::save(conn, &next)) {
+        if title_bar_changed {
+            let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
+        }
+        return Err(error);
+    }
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
-    crate::platform::menu::apply(&app, next.native_menu, &state.locale())?;
     let _ = app.emit("settings://changed", &next);
     Ok(next)
 }
 
 #[tauri::command]
 pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<Settings> {
+    let previous = state.settings();
     let mut next = Settings::default();
     next.sanitize();
-    state.db.with(|conn| db::settings::save(conn, &next))?;
+    let title_bar_changed = next.title_bar_style != previous.title_bar_style;
+    if title_bar_changed {
+        crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
+    }
+    if let Err(error) = state.db.with(|conn| db::settings::save(conn, &next)) {
+        if title_bar_changed {
+            let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
+        }
+        return Err(error);
+    }
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
-    crate::platform::menu::apply(&app, next.native_menu, &state.locale())?;
     let _ = app.emit("settings://changed", &next);
     Ok(next)
 }
@@ -131,8 +152,7 @@ pub fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) ->
     }
     state.set_locale(locale.clone());
     crate::platform::tray::set_language(&app, &locale)?;
-    let native_menu = state.settings().native_menu;
-    crate::platform::menu::apply(&app, native_menu, &locale)?;
+    crate::platform::menu::apply(&app, &locale)?;
     Ok(())
 }
 
@@ -480,8 +500,9 @@ pub async fn sftp_rename(
     session_id: String,
     from: String,
     to: String,
+    overwrite: Option<bool>,
 ) -> AppResult<()> {
-    sftp::remote_rename(&app, &session_id, from, to).await
+    sftp::remote_rename(&app, &session_id, from, to, overwrite.unwrap_or(false)).await
 }
 
 #[tauri::command]
@@ -500,8 +521,8 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn local_rename(from: String, to: String) -> AppResult<()> {
-    sftp::local_rename(from, to)
+pub fn local_rename(from: String, to: String, overwrite: Option<bool>) -> AppResult<()> {
+    sftp::local_rename(from, to, overwrite.unwrap_or(false))
 }
 
 #[tauri::command]
@@ -517,6 +538,7 @@ pub fn fs_transfer(
     to_session: Option<String>,
     to_path: String,
     remove_source: bool,
+    overwrite: Option<bool>,
 ) -> AppResult<String> {
     sftp::spawn_transfer(
         app,
@@ -529,6 +551,7 @@ pub fn fs_transfer(
             path: to_path,
         },
         remove_source,
+        overwrite.unwrap_or(false),
     )
 }
 
@@ -723,19 +746,25 @@ pub async fn sftp_copy(
     session_id: String,
     from: String,
     to: String,
+    overwrite: Option<bool>,
 ) -> AppResult<()> {
-    sftp::remote_copy(&app, &session_id, from, to).await
+    sftp::remote_copy(&app, &session_id, from, to, overwrite.unwrap_or(false)).await
 }
 
 #[tauri::command]
-pub fn local_copy(from: String, to: String) -> AppResult<()> {
-    sftp::local_copy(from, to)
+pub fn local_copy(from: String, to: String, overwrite: Option<bool>) -> AppResult<()> {
+    sftp::local_copy(from, to, overwrite.unwrap_or(false))
 }
 
 #[tauri::command]
 pub async fn plugin_install(app: AppHandle, path: String) -> AppResult<plugins::PluginInfo> {
     let state = app.state::<AppState>();
     state.plugins.install(&path).await
+}
+
+#[tauri::command]
+pub fn plugin_inspect(path: String) -> AppResult<plugins::manifest::PluginManifest> {
+    plugins::inspect(&path)
 }
 
 #[tauri::command]

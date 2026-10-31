@@ -6,12 +6,13 @@ use std::path::{Path, PathBuf};
 use russh::keys::ssh_key::LineEnding;
 use russh::keys::{Algorithm, PrivateKey};
 use russh_sftp::client::SftpSession;
+use russh_sftp::protocol::StatusCode;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
-use crate::ssh::session::{connect, disconnect, SshConnectRequest};
+use crate::ssh::session::{connect_with_password, disconnect, SshConnectRequest};
 use crate::state::AppState;
 
 #[derive(Debug, Clone, Serialize)]
@@ -63,6 +64,20 @@ fn merge_authorized(existing: &str, public: &str) -> Option<String> {
     Some(next)
 }
 
+fn authorized_contents(
+    result: Result<Vec<u8>, russh_sftp::client::error::Error>,
+) -> AppResult<String> {
+    match result {
+        Ok(bytes) => String::from_utf8(bytes).map_err(key_error),
+        Err(russh_sftp::client::error::Error::Status(status))
+            if status.status_code == StatusCode::NoSuchFile =>
+        {
+            Ok(String::new())
+        }
+        Err(error) => Err(key_error(error)),
+    }
+}
+
 async fn append_authorized(app: &AppHandle, session_id: &str, public: &str) -> AppResult<bool> {
     let handle = app.state::<AppState>().ssh.handle(session_id)?;
     let channel = handle
@@ -81,11 +96,7 @@ async fn append_authorized(app: &AppHandle, session_id: &str, public: &str) -> A
     let directory = format!("{}/.ssh", home.trim_end_matches('/'));
     let _ = sftp.create_dir(&directory).await;
     let file = format!("{directory}/authorized_keys");
-    let existing = sftp
-        .read(&file)
-        .await
-        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-        .unwrap_or_default();
+    let existing = authorized_contents(sftp.read(&file).await)?;
 
     let mut written = false;
     if let Some(next) = merge_authorized(&existing, public) {
@@ -110,7 +121,7 @@ pub async fn install(
     state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
     let (path, public) = ensure_keypair(&state.data_dir)?;
 
-    let session = connect(
+    let session = connect_with_password(
         app.clone(),
         SshConnectRequest {
             host_id: host_id.to_string(),
@@ -161,6 +172,32 @@ mod tests {
         assert_eq!(
             merge_authorized("ssh-rsa AAAA other\nssh-ed25519 AAAAC3Nza tunnelde\n", LINE),
             None
+        );
+    }
+
+    #[test]
+    fn only_a_missing_authorized_file_is_treated_as_empty() {
+        use russh_sftp::client::error::Error;
+        use russh_sftp::protocol::Status;
+
+        let status = |status_code| {
+            Error::Status(Status {
+                id: 0,
+                status_code,
+                error_message: String::new(),
+                language_tag: String::new(),
+            })
+        };
+        assert_eq!(
+            authorized_contents(Err(status(StatusCode::NoSuchFile))).unwrap(),
+            ""
+        );
+        assert!(authorized_contents(Err(status(StatusCode::PermissionDenied))).is_err());
+        assert!(authorized_contents(Err(Error::Timeout)).is_err());
+        assert!(authorized_contents(Ok(vec![0xff])).is_err());
+        assert_eq!(
+            authorized_contents(Ok(b"existing key\n".to_vec())).unwrap(),
+            "existing key\n"
         );
     }
 }

@@ -27,22 +27,16 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
-            let (theme, native_menu, locale) = {
+            let (theme, title_bar_style, locale) = {
                 use tauri::Manager;
                 let state = handle.state::<state::AppState>();
                 let settings = state.settings();
-                (
-                    settings.theme,
-                    settings.native_menu,
-                    state.locale(),
-                )
+                (settings.theme, settings.title_bar_style, state.locale())
             };
             window::apply_theme(&handle, &theme);
+            window::apply_title_bar_style(&handle, &title_bar_style)?;
             tray::setup(&handle)?;
-            menu::apply(&handle, native_menu, &locale)?;
-            app.on_menu_event(|app, event| {
-                platform::menu::handle_event(app, event.id().as_ref());
-            });
+            menu::apply(&handle, &locale)?;
             window::install_close_handler(&handle);
             window::configure_webview(&handle);
             update::spawn_auto_check(&handle);
@@ -123,6 +117,7 @@ pub fn run() {
             commands::plugin_render_view,
             commands::marketplace_install,
             commands::plugin_install,
+            commands::plugin_inspect,
             commands::plugin_uninstall,
             commands::plugin_reload,
             commands::history_record,

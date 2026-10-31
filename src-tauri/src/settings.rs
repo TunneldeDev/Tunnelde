@@ -8,6 +8,7 @@ pub const THEMES: [&str; 3] = ["dark", "light", "system"];
 pub const ACCENTS: [&str; 5] = ["blue", "cyan", "green", "orange", "violet"];
 pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
 pub const MONO_FONTS: [&str; 4] = ["fira-code", "jetbrains-mono", "plex-mono", "system"];
+pub const TITLE_BAR_STYLES: [&str; 2] = ["system", "compact"];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -32,8 +33,9 @@ pub struct Settings {
     pub skipped_version: Option<String>,
     pub last_update_check: Option<i64>,
     pub close_to_tray: bool,
-    /// Show the OS menu bar instead of relying on the in-app chrome only.
-    pub native_menu: bool,
+    /// "system" uses native chrome; "compact" integrates the window controls.
+    pub title_bar_style: String,
+    pub record_terminal_history: bool,
     /// Warm the parent and neighbouring folders of an open file panel.
     pub preload_dirs: bool,
     /// How many child folders to warm per listing.
@@ -58,7 +60,8 @@ impl Default for Settings {
             skipped_version: None,
             last_update_check: None,
             close_to_tray: false,
-            native_menu: cfg!(target_os = "macos"),
+            title_bar_style: "system".into(),
+            record_terminal_history: false,
             preload_dirs: true,
             preload_count: 8,
         }
@@ -74,6 +77,9 @@ impl Settings {
     /// Clamp and whitelist every field so a bad patch can never persist
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
+        if !TITLE_BAR_STYLES.contains(&self.title_bar_style.as_str()) {
+            self.title_bar_style = "system".into();
+        }
         if !LANGUAGES.contains(&self.language.as_str()) {
             self.language = "system".into();
         }
@@ -95,7 +101,11 @@ impl Settings {
         self.sidebar_width = self.sidebar_width.clamp(220, 420);
         self.right_panel_width = self.right_panel_width.clamp(240, 460);
         if self.user_css.len() > 200_000 {
-            self.user_css.truncate(200_000);
+            let mut end = 200_000;
+            while !self.user_css.is_char_boundary(end) {
+                end -= 1;
+            }
+            self.user_css.truncate(end);
         }
         if let Some(version) = &self.skipped_version {
             if version.trim().is_empty() {
@@ -110,6 +120,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn truncates_multibyte_css_on_a_character_boundary() {
+        let mut settings = Settings {
+            user_css: "中".repeat(70_000),
+            ..Settings::default()
+        };
+        settings.sanitize();
+        assert_eq!(settings.user_css.len(), 199_998);
+        assert!(settings.user_css.chars().all(|value| value == '中'));
+    }
+
+    #[test]
     fn defaults_need_no_repair() {
         let mut settings = Settings::default();
         settings.sanitize();
@@ -117,6 +138,34 @@ mod tests {
         assert_eq!(settings.accent, "blue");
         assert_eq!(settings.density, "comfortable");
         assert_eq!(settings.ui_font_size, 13);
+        assert_eq!(settings.title_bar_style, "system");
+    }
+
+    #[test]
+    fn title_bar_styles_round_trip_and_invalid_values_use_native_chrome() {
+        for style in TITLE_BAR_STYLES {
+            let mut settings: Settings =
+                serde_json::from_value(serde_json::json!({ "titleBarStyle": style })).unwrap();
+            settings.sanitize();
+            assert_eq!(settings.title_bar_style, style);
+            assert_eq!(
+                serde_json::to_value(&settings).unwrap()["titleBarStyle"],
+                style
+            );
+        }
+        for style in ["", "overlay", "COMPACT"] {
+            let mut settings = Settings {
+                title_bar_style: style.into(),
+                ..Settings::default()
+            };
+            settings.sanitize();
+            assert_eq!(settings.title_bar_style, "system");
+        }
+        let legacy: Settings = serde_json::from_value(serde_json::json!({
+            "menuMode": "both", "nativeMenu": true
+        }))
+        .unwrap();
+        assert_eq!(legacy.title_bar_style, "system");
     }
 
     #[test]

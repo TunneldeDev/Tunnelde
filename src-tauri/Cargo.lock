@@ -5970,6 +5970,7 @@ dependencies = [
  "base64 0.23.1",
  "chrono",
  "keyring",
+ "objc2-app-kit",
  "rand",
  "rusqlite",
  "russh",
