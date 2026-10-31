@@ -373,6 +373,7 @@ pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<Se
     // Color-aware tools look at these first; servers that do not accept them
     // simply ignore the request.
     for (name, value) in [
+        ("TERM", TERM),
         ("LANG", "en_US.UTF-8"),
         ("COLORTERM", "truecolor"),
         ("TERM_PROGRAM", "Tunnelde"),

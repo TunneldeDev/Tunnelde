@@ -38,8 +38,6 @@ pub struct Settings {
     pub preload_dirs: bool,
     /// How many child folders to warm per listing.
     pub preload_count: u16,
-    /// Draw the window buttons inside the app instead of using the OS frame.
-    pub custom_title_bar: bool,
 }
 
 impl Default for Settings {
@@ -63,7 +61,6 @@ impl Default for Settings {
             native_menu: cfg!(target_os = "macos"),
             preload_dirs: true,
             preload_count: 8,
-            custom_title_bar: false,
         }
     }
 }

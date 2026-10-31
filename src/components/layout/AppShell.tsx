@@ -4,7 +4,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
-import { WindowChrome } from "@/components/layout/WindowChrome";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { PaneView, TAB_MIME } from "@/components/layout/PaneView";
 import { RemotePanel } from "@/components/layout/RemotePanel";
@@ -176,8 +175,7 @@ export function AppShell() {
   } as CSSProperties;
 
   return (
-    <div className={cn("app", settings.customTitleBar && "is-custom-chrome")} style={style}>
-      <WindowChrome />
+    <div className="app" style={style}>
       <div className="app__body">
         <HostTree />
         <Resizer

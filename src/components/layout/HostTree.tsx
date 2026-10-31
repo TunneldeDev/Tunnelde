@@ -24,7 +24,6 @@ import { copyText } from "@/lib/session/clipboard";
 import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { useHosts } from "@/store/hosts";
-import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import type { Group, Host } from "@/lib/api/types";
 
@@ -277,7 +276,6 @@ export function HostTree() {
   const confirm = useDialogs((state) => state.confirm);
   const deleteGroup = useHosts((state) => state.deleteGroup);
   const openPage = useWorkspace((state) => state.openPage);
-  const customChrome = useSettings((state) => state.settings.customTitleBar);
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -369,7 +367,7 @@ export function HostTree() {
 
   return (
     <div className="sidebar">
-      <div className="sidebar__head" data-tauri-drag-region={customChrome ? "" : undefined}>
+      <div className="sidebar__head">
         <img src="/brand/mark-64.png" alt="" width={16} height={16} draggable={false} />
         <span className="sidebar__brand">Tunnelde</span>
       </div>

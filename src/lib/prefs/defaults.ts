@@ -22,7 +22,6 @@ export const DEFAULT_SETTINGS: Settings = {
   nativeMenu: false,
   preloadDirs: true,
   preloadCount: 8,
-  customTitleBar: false,
 };
 
 export type AccentLabelKey =

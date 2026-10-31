@@ -102,16 +102,6 @@ function GeneralSection() {
         }
       />
       <Row
-        label={t("settings.customTitleBar")}
-        control={
-          <Switch
-            label={t("settings.customTitleBar")}
-            checked={settings.customTitleBar}
-            onChange={(customTitleBar) => void update({ customTitleBar })}
-          />
-        }
-      />
-      <Row
         label={t("settings.version")}
         control={<span className="settings-value">{info?.version ?? "0.1.0"}</span>}
       />

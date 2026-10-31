@@ -25,7 +25,6 @@ import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
 import { closeTab } from "@/lib/session/tabActions";
 import { useContextMenu } from "@/store/contextMenu";
-import { useSettings } from "@/store/settings";
 import {
   useWorkspace,
   type SplitDirection,
@@ -87,7 +86,6 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const openMenu = useContextMenu((state) => state.open);
   const closePane = useWorkspace((state) => state.closePane);
   const paneCount = panes.length;
-  const customChrome = useSettings((state) => state.settings.customTitleBar);
   const [before, setBefore] = useState<string | null>(null);
 
   const items = pane.tabIds
@@ -113,7 +111,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
     <div
       className="pane__tabs"
       role="tablist"
-      data-tauri-drag-region={customChrome ? "" : undefined}
+
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes(TAB_MIME)) {
           return;
