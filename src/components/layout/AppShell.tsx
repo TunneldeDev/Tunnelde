@@ -227,33 +227,33 @@ export function AppShell() {
           ) : null}
         </main>
         {settings.rightPanel ? (
-          <>
-            <Resizer
-              value={panelWidth}
-              min={240}
-              max={460}
-              edge="left"
-              label="Panel width"
-              onChange={setPanelDraft}
-              onCommit={(value) => {
-                setPanelDraft(null);
-                void updateSettings({ rightPanelWidth: Math.round(value) });
-              }}
-            />
-            {activeSession ? (
-              <RemotePanel
-                sessionId={activeSession.id}
-                width={panelWidth}
-                onHide={() => void updateSettings({ rightPanel: false })}
-              />
-            ) : (
-              <SystemPanel
-                width={panelWidth}
-                onHide={() => void updateSettings({ rightPanel: false })}
-              />
-            )}
-          </>
+          <Resizer
+            value={panelWidth}
+            min={240}
+            max={460}
+            edge="left"
+            label="Panel width"
+            onChange={setPanelDraft}
+            onCommit={(value) => {
+              setPanelDraft(null);
+              void updateSettings({ rightPanelWidth: Math.round(value) });
+            }}
+          />
         ) : null}
+        {activeSession ? (
+          <RemotePanel
+            sessionId={activeSession.id}
+            width={panelWidth}
+            hidden={!settings.rightPanel}
+            onHide={() => void updateSettings({ rightPanel: false })}
+          />
+        ) : (
+          <SystemPanel
+            width={panelWidth}
+            hidden={!settings.rightPanel}
+            onHide={() => void updateSettings({ rightPanel: false })}
+          />
+        )}
       </div>
       <StatusBar
         panelOpen={settings.rightPanel}

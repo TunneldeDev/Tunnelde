@@ -951,7 +951,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
               }}
               onContextMenu={(event) => openEntryMenu(event, id, entry)}
             >
-              <span className="sftp-row__icon">
+              <span className={cn("sftp-row__icon", entry.isDir && "is-dir")}>
                 {entry.isDir ? <Folder size={13} /> : <FileIcon size={13} />}
               </span>
               {renaming?.path === entry.path ? (

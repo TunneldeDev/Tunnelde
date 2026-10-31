@@ -18,7 +18,7 @@ import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
-import { formatBytes, formatPercent, formatUptime } from "@/lib/text/format";
+import { cn, formatBytes, formatPercent, formatUptime } from "@/lib/text/format";
 import { useMonitor } from "@/store/monitor";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
@@ -91,12 +91,13 @@ function Card({ icon, label, value, detail, meter, action, children }: CardProps
 }
 
 interface RemotePanelProps {
+  hidden?: boolean;
   sessionId: string;
   width: number;
   onHide: () => void;
 }
 
-export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
+export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const entry = useMonitor((state) => state.entries[sessionId]);
@@ -105,6 +106,9 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
   const openMonitor = useWorkspace((state) => state.openMonitor);
 
   useEffect(() => {
+    if (hidden) {
+      return;
+    }
     void sample(sessionId);
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") {
@@ -112,7 +116,7 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
       }
     }, 3000);
     return () => window.clearInterval(timer);
-  }, [sessionId, sample]);
+  }, [hidden, sessionId, sample]);
 
   const stats = entry?.stats ?? null;
   const load = stats?.load ?? [0, 0, 0];
@@ -121,23 +125,25 @@ export function RemotePanel({ sessionId, width, onHide }: RemotePanelProps) {
   const diskPercent = stats && stats.diskTotal > 0 ? (stats.diskUsed / stats.diskTotal) * 100 : 0;
 
   return (
-    <aside className="panel" style={{ width }} aria-label={t("panel.remote")}>
+    <aside className={cn("panel", hidden && "is-collapsed")} style={{ width }} aria-label={t("panel.remote")}>
       <header className="panel__head">
         <span className="panel__title">
           {t("panel.remote")}
           {session ? <span className="panel__subject">{session.title}</span> : null}
         </span>
-        <IconButton
-          label={t("monitor.open")}
-          size="sm"
-          disabled={!session}
-          onClick={() => session && openMonitor(session)}
-        >
-          <Maximize2 size={12} />
-        </IconButton>
-        <IconButton label={t("panel.hide")} size="sm" onClick={onHide}>
-          <X size={13} />
-        </IconButton>
+        <span className="panel__actions">
+          <IconButton
+            label={t("monitor.open")}
+            size="sm"
+            disabled={!session}
+            onClick={() => session && openMonitor(session)}
+          >
+            <Maximize2 size={12} />
+          </IconButton>
+          <IconButton label={t("panel.hide")} size="sm" onClick={onHide}>
+            <X size={13} />
+          </IconButton>
+        </span>
       </header>
 
       <div className="panel__body">

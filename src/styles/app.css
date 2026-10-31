@@ -431,12 +431,31 @@
   min-height: 0;
   background: var(--td-panel);
   border-left: 1px solid var(--td-border);
+  overflow: hidden;
+  transition:
+    width 160ms cubic-bezier(0.2, 0, 0, 1),
+    opacity 120ms ease;
+}
+
+.panel.is-collapsed {
+  width: 0 !important;
+  opacity: 0;
+  border-left-width: 0;
+  pointer-events: none;
+}
+
+.panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
 }
 
 .panel__head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 6px;
   padding: 6px 6px 6px 12px;
   border-bottom: 1px solid var(--td-border);
 }
@@ -2118,6 +2137,15 @@
 .sftp-row__icon {
   display: flex;
   color: var(--td-faint);
+}
+
+.sftp-row__icon.is-dir {
+  color: var(--td-accent);
+}
+
+.sftp-row__icon.is-dir svg {
+  fill: currentColor;
+  fill-opacity: 0.22;
 }
 
 .sftp-row__name {
