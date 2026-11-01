@@ -139,6 +139,21 @@
     "deleteBody": "删除“{{name}}”及其中的全部内容？组内主机保留并移到未分组。"
   },
   "settings": {
+    "groups": {
+      "theme": "主题",
+      "typography": "字体",
+      "interface": "密度与动效",
+      "layout": "布局",
+      "startup": "启动与主机操作",
+      "rendering": "显示与渲染",
+      "cursor": "光标",
+      "scrolling": "滚动与缓冲区",
+      "clipboard": "复制与粘贴",
+      "history": "历史记录",
+      "browsing": "浏览",
+      "sorting": "排序",
+      "preloading": "预加载"
+    },
     "title": "设置",
     "general": "通用",
     "appearance": "外观",

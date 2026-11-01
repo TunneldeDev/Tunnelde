@@ -97,6 +97,7 @@ export function deriveRegionPalette(background: string, accent = "#2f6fed") {
       ? "#000000"
       : "#ffffff";
   return {
+    scheme: blackText ? "light" : "dark",
     bg,
     panel: bg,
     text,
@@ -117,6 +118,7 @@ export function deriveRegionPalette(background: string, accent = "#2f6fed") {
 }
 
 const paletteVariables: Record<keyof ReturnType<typeof deriveRegionPalette>, string> = {
+  scheme: "--td-scheme",
   bg: "--td-bg",
   panel: "--td-panel",
   text: "--td-text",
@@ -136,9 +138,13 @@ const paletteVariables: Record<keyof ReturnType<typeof deriveRegionPalette>, str
 };
 
 function paletteRule(selector: string, palette: ReturnType<typeof deriveRegionPalette>): string {
-  return `:where(${selector}){${Object.entries(palette)
+  return `:where(${selector}){${paletteDeclarations(palette)}}`;
+}
+
+function paletteDeclarations(palette: ReturnType<typeof deriveRegionPalette>): string {
+  return Object.entries(palette)
     .map(([key, value]) => `${paletteVariables[key as keyof typeof palette]}:${value};`)
-    .join("")}}`;
+    .join("");
 }
 type ColorPreferences = Pick<Settings, "accent" | "colors">;
 type ColorPreview = { accent?: string; colors?: ColorOverrides };
@@ -177,6 +183,12 @@ function renderColors() {
   const rules: string[] = [];
   const accent = preview?.accent ?? saved.accent;
   const resolvedAccent = resolveAccent(accent, light ? "light" : "dark");
+  // Portals, dialogs, inputs and nested region resets all inherit this palette.
+  // A background override defines the whole workbench baseline, not just pages.
+  const background = normalizeHex(colors.background ?? "");
+  if (background) {
+    declarations.push(paletteDeclarations(deriveRegionPalette(background, resolvedAccent)));
+  }
   for (const region of COLOR_REGIONS) {
     const value = colors[region];
     root.style.removeProperty(variables[region]);

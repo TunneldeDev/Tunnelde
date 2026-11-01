@@ -6,6 +6,18 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.1] - 2026-11-02
+
+### Changed
+
+- Settings use inline subgroups for appearance, workspace, terminal and files, with nested navigation within the existing category. Group names participate in bilingual search, and switching categories restores the top of the page.
+- Theme customization uses nested spacing, guide lines and stronger group headings to distinguish presets, custom colors and individual workbench/terminal controls.
+
+### Fixed
+
+- Built-in and plugin palettes now update the global surface tokens used by dropdowns, dialogs, context menus, native controls and other overlays. Region-only overrides stay isolated, and color previews, resets and user CSS preserve their existing behavior.
+- Terminal grid remainders no longer expose xterm's black viewport background at the bottom of previews and connected terminals, in both automatic and compatibility rendering.
+
 ## [0.21.0] - 2026-11-02
 
 ### Added

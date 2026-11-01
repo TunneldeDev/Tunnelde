@@ -114,6 +114,25 @@ describe("saved and preview colors", () => {
 });
 
 describe("region contrast and isolation", () => {
+  it("themes the global popup palette with the workbench background and restores it after previews and resets", () => {
+    const root = () => getComputedStyle(document.documentElement);
+    applyColorPreferences({ accent: "#a8b2c1", colors: { background: "#1e1e1e" } }, "dark");
+    expect(root().getPropertyValue("--td-bg")).toBe("#1e1e1e");
+    expect(root().getPropertyValue("--td-elevated")).toBe(
+      deriveRegionPalette("#1e1e1e", "#a8b2c1").elevated,
+    );
+    previewColors({ colors: { background: "#ffffff" } });
+    expect(root().getPropertyValue("--td-scheme")).toBe("light");
+    expect(root().getPropertyValue("--td-bg")).toBe("#ffffff");
+    previewColors(null);
+    expect(root().getPropertyValue("--td-scheme")).toBe("dark");
+    expect(root().getPropertyValue("--td-bg")).toBe("#1e1e1e");
+    applyColorPreferences({ accent: "blue", colors: { sidebar: "#ffffff" } }, "dark");
+    expect(root().getPropertyValue("--td-bg")).toBe("");
+    expect(root().getPropertyValue("--td-elevated")).toBe("");
+    expect(root().getPropertyValue("--td-scheme")).toBe("");
+  });
+
   it.each(["#ffffff", "#000000", "#777777", "#888888", "#ff0000", "#0000ff", "#33cc99"])(
     "derives readable text, accents and controls for %s",
     (background) => {

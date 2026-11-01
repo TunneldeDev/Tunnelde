@@ -1,5 +1,6 @@
 :root {
   /* Aliases resolve at the root, so nested regions can reset inherited overrides. */
+  --td-base-scheme: var(--td-scheme);
   --td-base-bg: var(--td-bg);
   --td-base-panel: var(--td-panel);
   --td-base-elevated: var(--td-elevated);
@@ -38,6 +39,7 @@
   .panel,
   .statusbar
 ) {
+  --td-scheme: var(--td-base-scheme);
   --td-bg: var(--td-base-bg);
   --td-panel: var(--td-base-panel);
   --td-elevated: var(--td-base-elevated);
@@ -55,6 +57,7 @@
   --td-accent-foreground: var(--td-base-accent-foreground);
   --td-focus: var(--td-base-focus);
   color: var(--td-text);
+  color-scheme: var(--td-scheme);
 }
 
 .app,
@@ -96,6 +99,10 @@
 }
 .terminal-host {
   background: var(--td-color-terminal-background, var(--td-base-bg));
+}
+.terminal-host .xterm-viewport {
+  /* The grid fills whole rows; its unused bottom pixels must share the host background. */
+  background-color: transparent;
 }
 [data-theme="light"] .terminal-host {
   background: var(--td-color-terminal-background, #f8fafd);
@@ -262,12 +269,17 @@
 .settings-row--colors > .settings-row__control {
   align-self: start;
 }
+.settings-row--colors > .settings-row__text .settings-row__label {
+  font-weight: 600;
+}
 .settings-themes {
   grid-column: 1 / -1;
   width: 100%;
   min-width: 0;
   display: grid;
   gap: 12px;
+  padding-inline-start: 16px;
+  border-inline-start: 1px solid var(--td-border);
 }
 .settings-theme-choices {
   display: grid;
@@ -380,12 +392,13 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  width: fit-content;
-  padding-block: 10px;
-  color: var(--td-muted);
+  width: 100%;
+  padding: 10px 4px;
+  color: var(--td-text);
   cursor: pointer;
   list-style: none;
   font-size: 12px;
+  font-weight: 500;
 }
 .settings-color-customize > summary::-webkit-details-marker {
   display: none;
@@ -399,8 +412,11 @@
 .settings-colors-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-  width: 100%;
   gap: 0 24px;
+  padding: 4px 0 4px 16px;
+  border-inline-start: 1px solid var(--td-border);
+  margin: 0 0 8px 10px;
+  width: calc(100% - 10px);
 }
 .settings-color-group {
   min-width: 0;
@@ -409,15 +425,16 @@
   border: 0;
 }
 .settings-color-group > legend {
-  padding: 0 0 6px;
-  color: var(--td-faint);
-  font-size: 11px;
+  padding: 4px 0 8px;
+  color: var(--td-text);
+  font-size: 12px;
+  font-weight: 600;
 }
 .settings-color-region {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-block: 9px;
+  padding: 9px 0 9px 10px;
   border-top: 1px solid var(--td-border);
 }
 .settings-color-region > div:first-child {

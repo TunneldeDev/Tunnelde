@@ -3,6 +3,9 @@
 Appearance starts with compact built-in palette choices and installed plugin themes. One plugin
 can supply multiple named palettes; pure theme packs need no Node. Detailed region controls live
 under the initially collapsed Customize colors disclosure, grouped into workbench and terminal.
+Nested headings, indentation and guide lines distinguish the theme preference from its region
+groups and individual colors. A custom main background also derives the global popup, dialog,
+border and native-control palette; changing only one region leaves the global palette intact.
 Applying a palette changes the base appearance, accent and full color map in one save. Manual
 changes show the current custom state; uninstalling a theme provider preserves applied colors.
 
@@ -22,6 +25,10 @@ Open Settings from the bottom of the activity bar or press `Ctrl+,` (`Cmd+,` on
 macOS). Search matches Chinese and English labels, descriptions and preference
 names across all categories. **Modified only** compares saved preferences with
 the current platform defaults. Each item shows its default and numeric range.
+Appearance, Workspace, Terminal and Files group related preferences within the same page.
+For example, Files separates Browsing, Sorting and Preloading; the preloading switch and child
+directory count stay together. Indented navigation jumps to these inline groups. Group names
+are searchable in Chinese and English, and changing categories scrolls back to the heading.
 
 Switches and dropdowns save immediately. Numbers save on Enter or blur after
 validation; Escape discards an incomplete number. Custom CSS uses an explicit

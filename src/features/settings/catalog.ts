@@ -53,6 +53,97 @@ export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   plugins: "settings.plugins",
   advanced: "settings.advanced",
 };
+
+export interface SettingsGroup {
+  id: string;
+  label: MessageKey;
+  keys: readonly SettingKey[];
+}
+
+/** Navigation and inline headings share the same groups; no extra settings pages. */
+export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsGroup[]>> = {
+  appearance: [
+    { id: "theme", label: "settings.groups.theme", keys: ["theme", "accent", "colors"] },
+    {
+      id: "typography",
+      label: "settings.groups.typography",
+      keys: ["uiFontSize", "monoFont", "monoFontSize"],
+    },
+    { id: "interface", label: "settings.groups.interface", keys: ["density", "motion"] },
+  ],
+  workspace: [
+    {
+      id: "layout",
+      label: "settings.groups.layout",
+      keys: ["showStatusBar", "sidebarWidth", "rightPanel", "rightPanelWidth"],
+    },
+    {
+      id: "startup",
+      label: "settings.groups.startup",
+      keys: ["restoreWorkspace", "hostActivation"],
+    },
+  ],
+  terminal: [
+    {
+      id: "rendering",
+      label: "settings.groups.rendering",
+      keys: ["terminalLineHeight", "terminalRenderer"],
+    },
+    {
+      id: "cursor",
+      label: "settings.groups.cursor",
+      keys: ["terminalCursorStyle", "terminalCursorBlink", "terminalInactiveCursorStyle"],
+    },
+    {
+      id: "scrolling",
+      label: "settings.groups.scrolling",
+      keys: [
+        "terminalScrollback",
+        "terminalScrollSensitivity",
+        "terminalSmoothScrolling",
+        "terminalScrollOnInput",
+      ],
+    },
+    {
+      id: "clipboard",
+      label: "settings.groups.clipboard",
+      keys: ["terminalCopyOnSelect", "terminalRightClick"],
+    },
+    { id: "history", label: "settings.groups.history", keys: ["recordTerminalHistory"] },
+  ],
+  files: [
+    {
+      id: "browsing",
+      label: "settings.groups.browsing",
+      keys: ["filesShowHidden", "filesFoldersFirst"],
+    },
+    {
+      id: "sorting",
+      label: "settings.groups.sorting",
+      keys: ["filesSortBy", "filesSortDirection"],
+    },
+    {
+      id: "preloading",
+      label: "settings.groups.preloading",
+      keys: ["preloadDirs", "preloadCount"],
+    },
+  ],
+};
+
+export function groupSettings(section: SettingsSection, definitions: SettingDefinition[]) {
+  const groups = SETTINGS_GROUPS[section] ?? [];
+  const groupedKeys = new Set(groups.flatMap((group) => [...group.keys]));
+  const ungrouped = definitions.filter((definition) => !groupedKeys.has(definition.key));
+  return [
+    ...groups.map((group) => ({
+      ...group,
+      definitions: group.keys.flatMap((key) =>
+        definitions.filter((definition) => definition.key === key),
+      ),
+    })),
+    { id: "ungrouped", label: null, definitions: ungrouped },
+  ].filter((group) => group.definitions.length);
+}
 const choice = (value: string | number, label: MessageKey): SettingOption => ({ value, label });
 const toggle = (
   key: SettingKey,

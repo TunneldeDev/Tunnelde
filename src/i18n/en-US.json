@@ -139,6 +139,21 @@
     "deleteBody": "Delete “{{name}}” and everything inside it? Hosts inside stay and move to Ungrouped."
   },
   "settings": {
+    "groups": {
+      "theme": "Theme",
+      "typography": "Typography",
+      "interface": "Density and motion",
+      "layout": "Layout",
+      "startup": "Startup and host actions",
+      "rendering": "Display and rendering",
+      "cursor": "Cursor",
+      "scrolling": "Scrolling and scrollback",
+      "clipboard": "Copy and paste",
+      "history": "History",
+      "browsing": "Browsing",
+      "sorting": "Sorting",
+      "preloading": "Preloading"
+    },
     "title": "Settings",
     "general": "General",
     "appearance": "Appearance",

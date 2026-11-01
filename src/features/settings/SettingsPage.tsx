@@ -1,5 +1,15 @@
 import { FileCode2, FolderOpen, RotateCcw, Search, X } from "lucide-react";
-import { lazy, Suspense, useId, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input, Switch, Textarea } from "@/components/ui/form/Field";
@@ -21,6 +31,8 @@ import {
   SECTION_LABELS,
   SETTINGS_CATALOG,
   SETTINGS_SECTIONS,
+  SETTINGS_GROUPS,
+  groupSettings,
   type SettingDefinition,
   type SettingOption,
 } from "./catalog";
@@ -304,6 +316,11 @@ export function SettingsPage() {
   const [modifiedOnly, setModifiedOnly] = useState(false);
   const [cssDraft, setCssDraft] = useState<string | null>(null);
   const [resetVersions, setResetVersions] = useState<Record<string, number>>({});
+  const body = useRef<HTMLDivElement>(null);
+  const settingsId = useId();
+  useLayoutEffect(() => {
+    if (body.current) body.current.scrollTop = 0;
+  }, [section, query, modifiedOnly]);
   const clearNumberDrafts = (keys: readonly string[]) =>
     setResetVersions((previous) => {
       const next = { ...previous };
@@ -327,6 +344,9 @@ export function SettingsPage() {
         return [
           translate(item.label),
           translate(SECTION_LABELS[item.section]),
+          ...(SETTINGS_GROUPS[item.section] ?? [])
+            .filter((group) => group.keys.includes(item.key))
+            .map((group) => translate(group.label)),
           item.hint ? translate(item.hint) : "",
           ...(item.key === "colors"
             ? COLOR_REGIONS.map((region) => translate(`color.region.${region}`))
@@ -407,18 +427,36 @@ export function SettingsPage() {
       <div className="settings__content">
         <nav className="settings__nav" aria-label={t("settings.title")}>
           {SETTINGS_SECTIONS.map((item) => (
-            <button
-              key={item}
-              type="button"
-              className={cn("settings__nav-item", !filtering && item === section && "is-active")}
-              aria-current={!filtering && item === section ? "page" : undefined}
-              onClick={() => showSection(item)}
-            >
-              {t(SECTION_LABELS[item])}
-            </button>
+            <Fragment key={item}>
+              <button
+                type="button"
+                className={cn("settings__nav-item", !filtering && item === section && "is-active")}
+                aria-current={!filtering && item === section ? "page" : undefined}
+                onClick={() => showSection(item)}
+              >
+                {t(SECTION_LABELS[item])}
+              </button>
+              {!filtering && item === section
+                ? (SETTINGS_GROUPS[item] ?? []).map((group) => (
+                    <button
+                      type="button"
+                      key={group.id}
+                      className="settings__nav-item settings__nav-item--child"
+                      aria-controls={`${settingsId}-${group.id}`}
+                      onClick={() =>
+                        document
+                          .getElementById(`${settingsId}-${group.id}`)
+                          ?.scrollIntoView({ block: "start" })
+                      }
+                    >
+                      {t(group.label)}
+                    </button>
+                  ))
+                : null}
+            </Fragment>
           ))}
         </nav>
-        <div className="settings__body">
+        <div className="settings__body" ref={body}>
           {filtering ? (
             <div className="settings-results">
               <span>{t("settings.resultCount", { count: visible.length })}</span>
@@ -458,44 +496,59 @@ export function SettingsPage() {
                     <TerminalPreview />
                   </Suspense>
                 ) : null}
-                {visible
-                  .filter((definition) => definition.section === item)
-                  .map((definition) =>
-                    definition.kind === "css" ? (
-                      <div
-                        key={definition.key}
-                        className="settings-css-group"
-                        data-setting="userCss"
-                      >
-                        <div className="settings-section__head">
-                          <span>{t(definition.label)}</span>
-                          <IconButton
-                            size="sm"
-                            label={t("settings.restoreOne", { name: t(definition.label) })}
-                            disabled={!isModified(definition)}
-                            onClick={() => resetOne(definition)}
+                {groupSettings(
+                  item,
+                  visible.filter((definition) => definition.section === item),
+                ).map((group) => (
+                  <div
+                    key={group.id}
+                    id={`${settingsId}-${group.id}`}
+                    className={group.label ? "settings-preference-group" : undefined}
+                    data-settings-group={group.id}
+                  >
+                    {group.label ? (
+                      <h3 className="settings-preference-group__title">{t(group.label)}</h3>
+                    ) : null}
+                    <div className={group.label ? "settings-preference-group__body" : undefined}>
+                      {group.definitions.map((definition) =>
+                        definition.kind === "css" ? (
+                          <div
+                            key={definition.key}
+                            className="settings-css-group"
+                            data-setting="userCss"
                           >
-                            <RotateCcw size={13} />
-                          </IconButton>
-                        </div>
-                        <p className="settings-row__hint">
-                          {t(definition.hint!)} ·{" "}
-                          {t("settings.defaultValue", { value: t("settings.cssEmpty") })}
-                        </p>
-                        <CssEditor draft={cssDraft} onDraft={setCssDraft} />
-                      </div>
-                    ) : (
-                      <PreferenceRow
-                        key={definition.key}
-                        definition={definition}
-                        settings={settings}
-                        defaults={defaults}
-                        onReset={() => resetOne(definition)}
-                        resetVersion={resetVersions[definition.key] ?? 0}
-                        theme={theme}
-                      />
-                    ),
-                  )}
+                            <div className="settings-section__head">
+                              <span>{t(definition.label)}</span>
+                              <IconButton
+                                size="sm"
+                                label={t("settings.restoreOne", { name: t(definition.label) })}
+                                disabled={!isModified(definition)}
+                                onClick={() => resetOne(definition)}
+                              >
+                                <RotateCcw size={13} />
+                              </IconButton>
+                            </div>
+                            <p className="settings-row__hint">
+                              {t(definition.hint!)} ·{" "}
+                              {t("settings.defaultValue", { value: t("settings.cssEmpty") })}
+                            </p>
+                            <CssEditor draft={cssDraft} onDraft={setCssDraft} />
+                          </div>
+                        ) : (
+                          <PreferenceRow
+                            key={definition.key}
+                            definition={definition}
+                            settings={settings}
+                            defaults={defaults}
+                            onReset={() => resetOne(definition)}
+                            resetVersion={resetVersions[definition.key] ?? 0}
+                            theme={theme}
+                          />
+                        ),
+                      )}
+                    </div>
+                  </div>
+                ))}
                 {!filtering && item === "updates" ? (
                   <>
                     <p className="settings-detail">

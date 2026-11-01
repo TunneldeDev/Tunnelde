@@ -42,6 +42,38 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("keeps related settings in inline groups and navigates within the current category", () => {
+    useNavigation.setState({ settingsSection: "files" });
+    render(<SettingsPage />);
+    const preloading = screen.getByRole("heading", { name: "Preloading", level: 3 }).parentElement!;
+    expect(preloading.querySelector('[data-setting="preloadDirs"]')).toBeTruthy();
+    expect(preloading.querySelector('[data-setting="preloadCount"]')).toBeTruthy();
+    expect(preloading.querySelector('[data-setting="filesSortBy"]')).toBeNull();
+    const scroll = vi.fn();
+    preloading.scrollIntoView = scroll;
+    fireEvent.click(screen.getByRole("button", { name: "Preloading" }));
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+    expect(useNavigation.getState().settingsSection).toBe("files");
+    expect(document.querySelectorAll(".settings-section")).toHaveLength(1);
+    const body = document.querySelector(".settings__body")!;
+    body.scrollTop = 400;
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    expect(body.scrollTop).toBe(0);
+    expect(screen.getByRole("heading", { name: "Typography", level: 3 })).toBeTruthy();
+  });
+
+  it("searches group names in both languages and retains each matching setting once", () => {
+    render(<SettingsPage />);
+    const search = screen.getByRole("textbox", { name: "Search settings" });
+    for (const value of ["preloading", "预加载"]) {
+      fireEvent.change(search, { target: { value } });
+      expect(document.querySelectorAll("[data-setting]")).toHaveLength(2);
+      expect(row("preloadDirs")).toBeTruthy();
+      expect(row("preloadCount")).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "Preloading", level: 3 })).toBeTruthy();
+    }
+  });
+
   it("catalogs every editable preference once with real bilingual labels", () => {
     const keys = SETTINGS_CATALOG.map((item) => item.key);
     expect(new Set(keys).size).toBe(keys.length);

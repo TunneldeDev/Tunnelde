@@ -1,5 +1,6 @@
 :root {
-  color-scheme: dark;
+  --td-scheme: dark;
+  color-scheme: var(--td-scheme);
 
   --td-bg: #070b12;
   --td-panel: #0e1420;
@@ -45,7 +46,7 @@
 }
 
 [data-theme="light"] {
-  color-scheme: light;
+  --td-scheme: light;
 
   --td-bg: #f2f5fa;
   --td-panel: #ffffff;
