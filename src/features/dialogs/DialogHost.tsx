@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +8,9 @@ import { Field, Input, Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { Segmented } from "@/components/ui/form/Segmented";
 import { TagInput, type TagInputHandle } from "@/components/ui/form/TagInput";
+import { ColorPicker } from "@/components/ui/form/ColorPicker";
+import { resolveAccent } from "@/lib/prefs/colors";
+import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { AUTH_LABELS, AUTH_METHODS } from "@/lib/prefs/labels";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
@@ -19,6 +19,7 @@ import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
+import { useSettings } from "@/store/settings";
 
 interface HostFormState {
   name: string;
@@ -32,6 +33,7 @@ interface HostFormState {
   favorite: boolean;
   tags: string[];
   note: string;
+  color: string | null;
 }
 
 const EMPTY: HostFormState = {
@@ -46,6 +48,7 @@ const EMPTY: HostFormState = {
   favorite: false,
   tags: [],
   note: "",
+  color: null,
 };
 
 function fromHost(host: Host): HostFormState {
@@ -61,6 +64,7 @@ function fromHost(host: Host): HostFormState {
     favorite: host.favorite,
     tags: host.tags,
     note: host.note ?? "",
+    color: host.color,
   };
 }
 
@@ -74,6 +78,8 @@ function HostDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const settings = useSettings((state) => state.settings);
+  const theme = useResolvedTheme(settings.theme);
   const groups = useHosts((state) => state.groups);
   const createHost = useHosts((state) => state.createHost);
   const updateHost = useHosts((state) => state.updateHost);
@@ -143,6 +149,7 @@ function HostDialog({
       favorite: form.favorite,
       tags: tagInput.current?.getValue() ?? form.tags,
       note: form.note.trim() || null,
+      color: form.color,
     };
 
     if (host) {
@@ -322,6 +329,26 @@ function HostDialog({
             )}
           </>
         ) : null}
+
+        <Field label={t("color.host")}>
+          <div className="field-row">
+            <ColorPicker
+              label={t("color.host")}
+              value={form.color ?? resolveAccent(settings.accent, theme)}
+              defaultValue={resolveAccent(settings.accent, theme)}
+              onChange={(color) => set("color", color)}
+              onReset={() => set("color", null)}
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!form.color}
+              onClick={() => set("color", null)}
+            >
+              {t("color.clearHost")}
+            </Button>
+          </div>
+        </Field>
 
         <Field label={t("host.tags")}>
           <TagInput

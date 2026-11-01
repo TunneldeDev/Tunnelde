@@ -4,6 +4,7 @@ import type { Host, SshSession, TabRecord } from "@/lib/api/types";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
+import { useNavigation } from "@/store/navigation";
 
 const state = () => useWorkspace.getState();
 
@@ -46,6 +47,11 @@ const record = (id: string, kind: TabRecord["kind"], hostId: string | null = nul
 });
 
 beforeEach(() => {
+  useNavigation.setState({
+    activeSidebar: "hosts",
+    sidebarVisible: true,
+    visitedSidebars: ["hosts"],
+  });
   useWorkspace.setState({
     tabs: [],
     panes: [{ id: "pane-1", tabIds: [], activeId: null }],
@@ -57,6 +63,69 @@ beforeEach(() => {
 });
 
 describe("workspace tabs", () => {
+  it("materializes a sidebar only after a valid drop, and opens each view once", () => {
+    state().openPage("welcome");
+    state().moveTab("sidebar:plugins", "missing-pane");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+    state().moveTab("sidebar:plugins", "pane-1", "page:welcome");
+    state().openSidebar("plugins");
+    expect(state().panes[0]?.tabIds).toEqual(["sidebar:plugins", "page:welcome"]);
+    expect(state().tabs.filter((tab) => tab.kind === "sidebar")).toHaveLength(1);
+    expect(state().activeId).toBe("sidebar:plugins");
+    expect(useNavigation.getState().visitedSidebars).toContain("plugins");
+  });
+
+  it("saves and restores sidebar panels in nested splits without accepting arbitrary sidebar ids", () => {
+    state().openPage("welcome");
+    state().splitTab("sidebar:hosts", "row", "before", "pane-1");
+    state().splitTab("sidebar:plugins", "column", "after", "pane-1");
+    const layout = state().layout;
+    const panes = state().panes;
+    const records = workspaceRecords();
+    records.push(record("sidebar:unknown", "sidebar"));
+    state().hydrate(records);
+    expect(state().layout).toEqual(layout);
+    expect(state().panes).toEqual(panes);
+    expect(
+      state()
+        .tabs.filter((tab) => tab.kind === "sidebar")
+        .map((tab) => tab.id)
+        .sort(),
+    ).toEqual(["sidebar:hosts", "sidebar:plugins"]);
+  });
+
+  it("focuses docked lists through activity navigation without changing the visible side view", () => {
+    state().openSidebar("plugins");
+    state().openPage("welcome");
+    useNavigation.getState().showSidebar("knownHosts");
+    useNavigation.getState().selectSidebar("plugins");
+    expect(state().activeId).toBe("sidebar:plugins");
+    expect(useNavigation.getState().activeSidebar).toBe("knownHosts");
+    expect(useNavigation.getState().sidebarVisible).toBe(true);
+    expect(state().tabs.filter((tab) => tab.kind === "sidebar")).toHaveLength(1);
+  });
+
+  it("returns a closed sidebar tab to its original side view and prunes the empty group", () => {
+    state().openPage("welcome");
+    state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
+    state().close("sidebar:knownHosts");
+    expect(state().panes).toHaveLength(1);
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+    expect(useNavigation.getState()).toMatchObject({
+      activeSidebar: "knownHosts",
+      sidebarVisible: true,
+    });
+  });
+
+  it("can expose an undocked sidebar with the global sidebar toggle after docking the active one", () => {
+    state().openSidebar("hosts");
+    useNavigation.getState().toggleSidebar();
+    expect(useNavigation.getState()).toMatchObject({
+      activeSidebar: "knownHosts",
+      sidebarVisible: true,
+    });
+  });
+
   it("opens a page once", () => {
     useWorkspace.getState().openPage("settings");
     useWorkspace.getState().openPage("settings");

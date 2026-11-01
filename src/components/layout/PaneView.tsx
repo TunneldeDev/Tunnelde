@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import {
   Activity,
   Blocks,
@@ -11,6 +8,7 @@ import {
   History,
   Info,
   Pin,
+  PanelLeft,
   Server,
   ShieldCheck,
   Settings as SettingsIcon,
@@ -31,6 +29,13 @@ import { useNavigation } from "@/store/navigation";
 import { isTauri } from "@/lib/api/ipc";
 import { useEditors } from "@/store/editors";
 import {
+  SIDEBAR_LABELS,
+  SIDEBAR_MIME,
+  sidebarTabId,
+  sidebarViewOf,
+  TAB_MIME,
+} from "@/lib/session/sidebarDock";
+import {
   useWorkspace,
   type SplitDirection,
   type WorkspacePane,
@@ -38,7 +43,7 @@ import {
   type WorkspaceLayout,
 } from "@/store/workspace";
 
-export const TAB_MIME = "application/x-tunnelde-tab";
+export { TAB_MIME } from "@/lib/session/sidebarDock";
 
 function topCornerPane(layout: WorkspaceLayout, side: "left" | "right"): string {
   if (layout.kind === "pane") return layout.paneId;
@@ -60,7 +65,9 @@ const ICONS: Record<WorkspaceTab["kind"], ComponentType<{ size?: number }>> = {
   history: History,
   monitor: Activity,
   pluginView: Blocks,
+  pluginDetail: Blocks,
   knownHosts: ShieldCheck,
+  sidebar: PanelLeft,
 };
 
 const NAMED: WorkspaceTab["kind"][] = [
@@ -71,6 +78,7 @@ const NAMED: WorkspaceTab["kind"][] = [
   "history",
   "monitor",
   "pluginView",
+  "pluginDetail",
 ];
 
 const NAV_KEYS = {
@@ -87,6 +95,8 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
     const entry = state.entries[tab.id];
     return !!entry && !entry.loading && entry.content !== entry.baseline;
   });
+  const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
+  if (sidebar) return <>{t(SIDEBAR_LABELS[sidebar])}</>;
   if (NAMED.includes(tab.kind)) {
     return (
       <>
@@ -115,7 +125,10 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const compact = useSettings((state) => state.settings.titleBarStyle === "compact");
   const panelOpen = useSettings((state) => state.settings.rightPanel);
   const mac = useSettings((state) => state.info?.os === "macos");
-  const sidebarOpen = useNavigation((state) => state.sidebarVisible);
+  const sidebarRequested = useNavigation((state) => state.sidebarVisible);
+  const activeSidebar = useNavigation((state) => state.activeSidebar);
+  const sidebarOpen =
+    sidebarRequested && !tabs.some((tab) => tab.id === sidebarTabId(activeSidebar));
   const reserveControls =
     isTauri() && compact && !mac && !panelOpen && topCornerPane(layout, "right") === pane.id;
   const reserveTrafficLights =
@@ -196,7 +209,11 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
             role="tab"
             aria-selected={active}
             title={
-              NAMED.includes(tab.kind) ? tab.title : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])
+              tab.kind === "sidebar"
+                ? t(SIDEBAR_LABELS[sidebarViewOf(tab.id) ?? "hosts"])
+                : NAMED.includes(tab.kind)
+                  ? tab.title
+                  : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])
             }
             tabIndex={active ? 0 : -1}
             draggable
@@ -208,6 +225,8 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
             )}
             onDragStart={(event) => {
               event.dataTransfer.setData(TAB_MIME, tab.id);
+              const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
+              if (sidebar) event.dataTransfer.setData(SIDEBAR_MIME, sidebar);
               event.dataTransfer.effectAllowed = "move";
             }}
             onClick={() => activate(tab.id)}
@@ -224,16 +243,28 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               const items = [
                 { label: t("tab.close"), onSelect: () => requestClose(tab) },
                 { label: t("tab.closeOthers"), onSelect: () => closeOthers(tab.id) },
-                { label: t("tab.splitRight"), onSelect: () => splitTab(tab.id, "row") },
+                {
+                  label: t("tab.splitRight"),
+                  separatorBefore: true,
+                  onSelect: () => splitTab(tab.id, "row"),
+                },
                 { label: t("tab.splitDown"), onSelect: () => splitTab(tab.id, "column") },
               ];
+              const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
+              if (sidebar)
+                items.push({
+                  label: t("docking.returnToSidebar"),
+                  separatorBefore: true,
+                  onSelect: () => useWorkspace.getState().returnSidebar(sidebar),
+                });
               if (panes.length > 1) {
                 items.push({
                   label: t("tab.closePane"),
+                  separatorBefore: true,
                   onSelect: () => useWorkspace.getState().closePane(pane.id),
                 });
               }
-              openMenu(event.clientX, event.clientY, items);
+              openMenu(event.clientX, event.clientY, items, event.currentTarget);
             }}
             onKeyDown={(event) => {
               if (event.target !== event.currentTarget) return;

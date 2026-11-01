@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -100,11 +97,7 @@ function HostDetails({ host }: { host: Host }) {
           >
             <Star size={15} fill={host.favorite ? "currentColor" : "none"} />
           </IconButton>
-          <IconButton
-            label={t("common.edit")}
-            size="sm"
-            onClick={() => openHostDialog(host)}
-          >
+          <IconButton label={t("common.edit")} size="sm" onClick={() => openHostDialog(host)}>
             <Pencil size={15} />
           </IconButton>
           <IconButton

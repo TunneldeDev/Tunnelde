@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -29,6 +26,7 @@ import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
+import { createTerminalOutputDecoder } from "./terminalOutput";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -124,15 +122,20 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     let selectionTimer: number | undefined;
     let copiedSelection = "";
     const subscriptions: UnlistenFn[] = [];
-    const pending: Uint8Array[] = [];
+    const pending: string[] = [];
+    const decodeOutput = createTerminalOutputDecoder();
     const write = (chunk: Uint8Array) => {
       if (disposed) {
         return;
       }
+      // Native streaming decode also avoids xterm's partial UTF-8 continuation
+      // bug, which can drop a ZWJ when a packet ends in a 0x80 byte.
+      const text = decodeOutput(chunk);
+      if (!text) return;
       if (terminal) {
-        terminal.write(chunk);
+        terminal.write(text);
       } else {
-        pending.push(chunk);
+        pending.push(text);
       }
     };
     let observer: ResizeObserver | null = null;
@@ -147,7 +150,6 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       const settings = useSettings.getState().settings;
       const instance = new Terminal({
         ...terminalOptions(settings),
-        allowProposedApi: false,
       });
       terminal = instance;
       addon = new FitAddon();
@@ -457,7 +459,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
               onSelect: actions.copy,
             },
             { label: t("terminal.paste"), disabled: !actions.canPaste(), onSelect: actions.paste },
-            { label: t("terminal.selectAll"), onSelect: actions.selectAll },
+            { label: t("terminal.selectAll"), separatorBefore: true, onSelect: actions.selectAll },
           ]);
         }}
       />

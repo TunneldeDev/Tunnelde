@@ -1,11 +1,54 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
+export interface PluginField {
+  id: string;
+  type: "text" | "textarea" | "select";
+  label: string;
+  value: string;
+  placeholder: string;
+  options: { value: string; label: string }[];
+}
+
+export interface PluginFormBlock {
+  type: "form";
+  id: string;
+  fields: PluginField[];
+  actions: { id: string; label: string; command: string }[];
+}
 
 export type PluginBlock =
   | { type: "heading"; text: string }
   | { type: "text"; text: string }
   | { type: "kv"; items: { label: string; value: string }[] }
-  | { type: "table"; columns: string[]; rows: string[][] };
+  | { type: "table"; columns: string[]; rows: string[][] }
+  | PluginFormBlock;
+
+export const PLUGIN_INPUT_MAX_BYTES = 256 * 1024;
+export const PLUGIN_RESULT_MAX_BYTES = 1024 * 1024;
+
+function identifier(value: unknown): string {
+  return typeof value === "string" &&
+    /^[a-zA-Z0-9][a-zA-Z0-9_.:-]{0,127}$/.test(value) &&
+    ![...Object.getOwnPropertyNames(Object.prototype), "prototype"].includes(value)
+    ? value
+    : "";
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+}
+
+/** Results are plain text, never plugin-supplied HTML. Preserve formatting and whitespace. */
+export function normalizeResult(value: unknown): { text: string; title: string; error: boolean } {
+  const result = record(value);
+  const body =
+    typeof result.text === "string"
+      ? result.text
+      : typeof value === "string"
+        ? value
+        : (JSON.stringify(value, null, 2) ?? "");
+  if (new TextEncoder().encode(body).length > PLUGIN_RESULT_MAX_BYTES)
+    throw new Error("resultTooLarge");
+  return { text: body, title: text(result.title), error: result.error === true };
+}
 
 const MAX_BLOCKS = 100;
 const MAX_TEXT = 4000;
@@ -27,12 +70,78 @@ function list(value: unknown): unknown[] {
  */
 export function normalizeBlocks(value: unknown): PluginBlock[] {
   const blocks: PluginBlock[] = [];
+  const formIds = new Set<string>();
 
   for (const raw of list(value).slice(0, MAX_BLOCKS)) {
     if (typeof raw !== "object" || raw === null) {
       continue;
     }
     const record = raw as Record<string, unknown>;
+
+    if (record.type === "form") {
+      const id = identifier(record.id);
+      if (!id || formIds.has(id)) continue;
+      const fieldIds = new Set<string>();
+      const fields: PluginField[] = [];
+      for (const item of list(record.fields).slice(0, 20)) {
+        const field =
+          typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+        const fieldId = identifier(field.id);
+        if (
+          !fieldId ||
+          fieldIds.has(fieldId) ||
+          !text(field.label) ||
+          !["text", "textarea", "select"].includes(String(field.type))
+        )
+          continue;
+        const optionValues = new Set<string>();
+        const options = list(field.options)
+          .slice(0, 100)
+          .flatMap((item) => {
+            const option =
+              typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+            if (
+              typeof option.value !== "string" ||
+              option.value.length > 4000 ||
+              !text(option.label) ||
+              optionValues.has(option.value)
+            )
+              return [];
+            optionValues.add(option.value);
+            return [{ value: option.value, label: text(option.label) }];
+          });
+        if (field.type === "select" && options.length === 0) continue;
+        const value =
+          typeof field.value === "string" ? field.value.slice(0, PLUGIN_INPUT_MAX_BYTES) : "";
+        fields.push({
+          id: fieldId,
+          type: field.type as PluginField["type"],
+          label: text(field.label),
+          value: field.type === "select" && !optionValues.has(value) ? options[0]!.value : value,
+          placeholder: text(field.placeholder),
+          options,
+        });
+        fieldIds.add(fieldId);
+      }
+      const actionIds = new Set<string>();
+      const actions = list(record.actions)
+        .slice(0, 12)
+        .flatMap((item) => {
+          const action =
+            typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+          const actionId = identifier(action.id);
+          const command = identifier(action.command);
+          const label = text(action.label);
+          if (!actionId || !command || !label || actionIds.has(actionId)) return [];
+          actionIds.add(actionId);
+          return [{ id: actionId, command, label }];
+        });
+      if (actions.length) {
+        blocks.push({ type: "form", id, fields, actions });
+        formIds.add(id);
+      }
+      continue;
+    }
 
     if (record.type === "heading" || record.type === "text") {
       const body = text(record.text);

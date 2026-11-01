@@ -10,17 +10,22 @@ const mocks = vi.hoisted(() => ({
   settingsLoad: vi.fn(),
   settings: { theme: "dark", motion: "system", restoreWorkspace: true },
   updateRefresh: vi.fn(),
+  securityLoad: vi.fn(),
   hosts: [] as { id: string }[],
   events: {
     onSettingsChanged: vi.fn(),
     onUpdateState: vi.fn(),
     onNavigate: vi.fn(),
     onPluginState: vi.fn(),
+    onPluginSecurity: vi.fn(),
     onTransfer: vi.fn(),
     onSshClosed: vi.fn(),
   },
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, events: mocks.events, isTauri: () => true }));
+vi.mock("@/app/pluginWorkspaceBridge", () => ({
+  wirePluginWorkspaceBridge: vi.fn(async () => vi.fn()),
+}));
 vi.mock("@/store/hosts", () => ({
   useHosts: { getState: () => ({ load: mocks.hostLoad, hosts: mocks.hosts }) },
 }));
@@ -41,6 +46,12 @@ vi.mock("@/store/updates", () => ({
 }));
 vi.mock("@/store/monitor", () => ({ useMonitor: { getState: () => ({ forget: vi.fn() }) } }));
 vi.mock("@/store/plugins", () => ({ usePlugins: { getState: () => ({ apply: vi.fn() }) } }));
+vi.mock("@/store/pluginSecurity", () => ({
+  reportPluginExecutionFailure: vi.fn(),
+  usePluginSecurity: {
+    getState: () => ({ load: mocks.securityLoad, apply: vi.fn(), reportFailure: vi.fn() }),
+  },
+}));
 vi.mock("@/store/transfers", () => ({ useTransfers: { getState: () => ({ apply: vi.fn() }) } }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
 vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
@@ -80,6 +91,7 @@ beforeEach(() => {
   mocks.sshRefresh.mockReset().mockResolvedValue(undefined);
   mocks.settingsLoad.mockReset().mockResolvedValue(undefined);
   mocks.updateRefresh.mockReset().mockResolvedValue(undefined);
+  mocks.securityLoad.mockReset().mockResolvedValue(undefined);
   mocks.toast.mockReset();
   mocks.hosts = [];
   mocks.settings = { theme: "dark", motion: "system", restoreWorkspace: true };

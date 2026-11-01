@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import {
   ChevronRight,
   FolderClosed,
@@ -27,6 +24,7 @@ import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
 import { useSettings } from "@/store/settings";
 import type { Group, Host } from "@/lib/api/types";
+import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 
 const HOST_MIME = "application/x-tunnelde-host";
 
@@ -156,10 +154,19 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
     { label: t("host.open"), onSelect: () => openHost(host) },
     { label: t("terminal.connect"), onSelect: () => openConnect(host, "terminal") },
     { label: t("sftp.title"), onSelect: () => openConnect(host, "sftp") },
-    { label: t("menu.edit"), icon: <Pencil size={13} />, onSelect: () => openHostDialog(host) },
+    {
+      label: t("menu.edit"),
+      separatorBefore: true,
+      icon: <Pencil size={13} />,
+      onSelect: () => openHostDialog(host),
+    },
     { label: t("menu.copySsh"), onSelect: () => copyText(command) },
     { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
-    { label: t("connect.installKey"), onSelect: () => openConnect(host, "terminal", "installKey") },
+    {
+      label: t("connect.installKey"),
+      separatorBefore: true,
+      onSelect: () => openConnect(host, "terminal", "installKey"),
+    },
     {
       label: t("menu.moveGroup"),
       onSelect: () => {
@@ -178,7 +185,13 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
       icon: <Star size={13} />,
       onSelect: () => void toggleFavorite(host),
     },
-    { label: t("menu.delete"), icon: <Trash2 size={13} />, danger: true, onSelect: removeHost },
+    {
+      label: t("menu.delete"),
+      separatorBefore: true,
+      icon: <Trash2 size={13} />,
+      danger: true,
+      onSelect: removeHost,
+    },
   ];
 
   return (
@@ -300,8 +313,19 @@ function GroupRow({
   const openMenu = useContextMenu((state) => state.open);
   const actions = [
     { label: t("menu.newHost"), icon: <Plus size={13} />, onSelect: onNewHost },
-    { label: t("menu.rename"), icon: <Pencil size={13} />, onSelect: onRename },
-    { label: t("menu.delete"), icon: <Trash2 size={13} />, danger: true, onSelect: onDelete },
+    {
+      label: t("menu.rename"),
+      separatorBefore: true,
+      icon: <Pencil size={13} />,
+      onSelect: onRename,
+    },
+    {
+      label: t("menu.delete"),
+      separatorBefore: true,
+      icon: <Trash2 size={13} />,
+      danger: true,
+      onSelect: onDelete,
+    },
   ];
   return (
     <div
@@ -325,7 +349,7 @@ function GroupRow({
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        openMenu(event.clientX, event.clientY, actions);
+        openMenu(event.clientX, event.clientY, actions, event.currentTarget);
       }}
       role="button"
       tabIndex={0}
@@ -488,13 +512,14 @@ export function HostTree() {
   return (
     <div className="sidebar">
       <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
-        <span className="sidebar__title">{t("sidebar.hosts")}</span>
+        <SidebarTitle view="hosts">{t("sidebar.hosts")}</SidebarTitle>
         <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
           <Plus size={15} />
         </IconButton>
         <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
           <FolderPlus size={15} />
         </IconButton>
+        <SidebarDockControls view="hosts" />
       </div>
       <div className="sidebar__search">
         <div className="sidebar__filter">

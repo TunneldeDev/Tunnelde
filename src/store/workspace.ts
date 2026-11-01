@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { create } from "zustand";
 
 import { api } from "@/lib/api/ipc";
@@ -8,6 +5,8 @@ import type { Host, SshSession, TabKind, TabRecord } from "@/lib/api/types";
 import { fileName, useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
+import { useNavigation, type SidebarView } from "@/store/navigation";
+import { SIDEBAR_LABELS, sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
 
 export interface WorkspaceTab {
   id: string;
@@ -54,6 +53,7 @@ const SUPPORTED_KINDS: TabKind[] = [
   "about",
   "updates",
   "knownHosts",
+  "sidebar",
 ];
 
 export const FIRST_PANE = "pane-1";
@@ -66,6 +66,8 @@ interface WorkspaceStore {
   split: SplitDirection | null;
   layout: WorkspaceLayout;
   openPage: (kind: PageKind) => void;
+  openSidebar: (view: SidebarView) => void;
+  returnSidebar: (view: SidebarView) => void;
   openHost: (host: Host) => void;
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
@@ -73,6 +75,7 @@ interface WorkspaceStore {
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
   openPluginView: (pluginId: string, viewId: string, title: string) => void;
+  openPluginDetail: (sourceId: string, pluginId: string, title: string) => void;
   closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
@@ -266,6 +269,21 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     return { tabs, ...settle(panes, ownerId, state.split, state.layout) };
   };
 
+  const materializeSidebar = (state: WorkspaceStore, id: string): WorkspaceStore => {
+    const view = sidebarViewOf(id);
+    if (!view || state.tabs.some((tab) => tab.id === id)) return state;
+    return {
+      ...state,
+      ...insert(state, {
+        id,
+        kind: "sidebar",
+        title: SIDEBAR_LABELS[view],
+        hostId: null,
+        pinned: false,
+      }),
+    };
+  };
+
   return {
     tabs: [],
     panes: [pane(FIRST_PANE)],
@@ -273,6 +291,25 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     activeId: null,
     split: null,
     layout: { kind: "pane", paneId: FIRST_PANE },
+
+    openSidebar: (view) => {
+      useNavigation.getState().rememberSidebar(view);
+      set((state) => {
+        const id = sidebarTabId(view);
+        const next = materializeSidebar(state, id);
+        const owner = next.panes.find((item) => item.tabIds.includes(id));
+        return owner
+          ? {
+              ...next,
+              ...settle(withActiveTab(next.panes, owner.id, id), owner.id, next.split, next.layout),
+            }
+          : state;
+      });
+    },
+
+    returnSidebar: (view) => {
+      useWorkspace.getState().close(sidebarTabId(view));
+    },
 
     openPage: (kind) => {
       const id = `page:${kind}`;
@@ -376,6 +413,18 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       );
     },
 
+    openPluginDetail: (sourceId, pluginId, title) => {
+      set((state) =>
+        insert(state, {
+          id: `extension:${sourceId}:${pluginId}`,
+          kind: "pluginDetail",
+          title,
+          hostId: null,
+          pinned: false,
+        }),
+      );
+    },
+
     closeSession: (sessionId) => {
       const editors = useEditors.getState();
       const matches = (id: string) =>
@@ -423,6 +472,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         const panes = dropTab(state.panes, id);
         return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
       });
+      const view = sidebarViewOf(id);
+      if (view) useNavigation.getState().showSidebar(view);
     },
 
     closeOthers: (id) => {
@@ -518,7 +569,16 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       }),
 
     splitTab: (tabId, direction, position = "after", targetPaneId) => {
-      set((state) => {
+      const view = sidebarViewOf(tabId);
+      if (view) useNavigation.getState().rememberSidebar(view);
+      set((current) => {
+        if (
+          targetPaneId &&
+          targetPaneId !== "root" &&
+          !current.panes.some((item) => item.id === targetPaneId)
+        )
+          return current;
+        const state = materializeSidebar(current, tabId);
         const source = state.panes.find((item) => item.tabIds.includes(tabId));
         const target = state.panes.find((item) => item.id === (targetPaneId ?? source?.id));
         if (!source || (targetPaneId !== "root" && !target)) return state;
@@ -547,7 +607,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             : mapLayout(layout, (node) =>
                 node.kind === "pane" && node.paneId === target?.id ? wrap(node) : node,
               );
-        return settle(panes, created.id, direction, layout);
+        return { tabs: state.tabs, ...settle(panes, created.id, direction, layout) };
       });
     },
 
@@ -562,7 +622,11 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       }));
     },
     moveTab: (tabId, targetPaneId, beforeTabId) => {
-      set((state) => {
+      const view = sidebarViewOf(tabId);
+      if (view) useNavigation.getState().rememberSidebar(view);
+      set((current) => {
+        if (!current.panes.some((item) => item.id === targetPaneId)) return current;
+        const state = materializeSidebar(current, tabId);
         const source = state.panes.find((item) => item.tabIds.includes(tabId));
         const target = state.panes.find((item) => item.id === targetPaneId);
         if (!source || !target) {
@@ -577,7 +641,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               }
             : item,
         );
-        return { ...settle(panes, targetPaneId, state.split, state.layout) };
+        return { tabs: state.tabs, ...settle(panes, targetPaneId, state.split, state.layout) };
       });
     },
 
@@ -625,6 +689,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         if (record.kind === "host" && !record.hostId) {
           continue;
         }
+        if (record.kind === "sidebar" && !sidebarViewOf(record.id)) continue;
         if (tabs.some((tab) => tab.id === record.id)) continue;
         tabs.push({
           id: record.id,

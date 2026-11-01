@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import catalogue from "../../marketplace/index.json";
@@ -18,8 +15,41 @@ const example = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("production marketplace", () => {
-  it("ships an empty production catalogue until real plugins are published", () => {
-    expect(catalogue.plugins).toEqual([]);
+  it("accepts theme catalogues and rejects unknown executable runtimes", async () => {
+    const theme = {
+      ...example,
+      id: "theme-pack",
+      runtime: "theme",
+      url: "https://plugins.example.org/themes.zip",
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValue({
+          ok: true,
+          json: async () => ({ plugins: [theme, { ...theme, runtime: "shell" }] }),
+        }),
+    );
+    expect(await fetchMarketplace()).toEqual([theme]);
+  });
+  it("ships independently installable utility plugins with versioned release archives and checksums", () => {
+    expect(catalogue.plugins.map((entry) => entry.id).sort()).toEqual([
+      "json-formatter",
+      "studio-themes",
+      "timestamp",
+      "uuid",
+    ]);
+    for (const entry of catalogue.plugins) {
+      expect(entry.name).toBeTruthy();
+      expect(entry.runtime).toBe(entry.id === "studio-themes" ? "theme" : "node");
+      expect(entry.apiVersion).toBe(1);
+      expect(entry.url).toBe(
+        `https://github.com/TunneldeDev/tunnelde-hub/releases/download/plugins-v${entry.version}/${entry.id}-${entry.version}.zip`,
+      );
+      expect(entry.sha256).toMatch(/^[a-f\d]{64}$/);
+      expect(entry.id).not.toBe("hello");
+    }
   });
 
   it("removes the historical official SDK artifact while retaining unrelated Hello plugins", async () => {

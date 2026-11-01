@@ -6,6 +6,35 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-02
+
+### Added
+
+- A plugin marketplace with official and custom HTTPS catalogues, publisher/source details, search, installed/update filters, offline catalogue caching, cancellable native downloads and checksum verification. Manual updates bind to the original source and restore the previous package if replacement fails.
+- Three independent official plugins: JSON formatting/minifying with numeric precision preserved, Unix timestamp/date conversion and batch UUID v4 generation. Declarative plugin forms accept input and show explicitly copyable results without evaluating plugin HTML.
+- On-demand Node setup with explicit consent before using an existing system executable, manual executable selection and private Node 24 LTS installation. Node is not bundled; private installations do not modify PATH or shell configuration, and system-runtime consent can be revoked.
+- A full HSV color picker with HEX/RGB entry, keyboard controls, live preview, Apply/Cancel and default reset. Custom colors cover individual workbench regions, terminal background/foreground/cursor, the accent and host markers, and are shared across light and dark themes.
+- Compact built-in theme palettes with collapsed regional customization. Plugins can contribute one or more named themes; the data-only Studio Themes pack supplies dark and light palettes without requiring Node or running code.
+- An independent `TunneldeDev/tunnelde-hub` marketplace repository with reproducible packages, catalogue validation, contribution workflows and a dependency-free plugin SDK.
+- A versioned host API for settings, hosts/groups, SSH commands, terminals, local/remote files, monitoring, history, workspace layout, clipboard, notifications and plugin-scoped storage. Per-plugin approvals bind to package content and declared permissions.
+- Restricted mode in settings and through `--safe-mode` / `--restricted-mode`, immediate authorization revocation, cancellation of pending API calls, and recovery guidance after plugin failures or abnormal exits.
+- Dockable Hosts, Plugins and Trusted Hosts panels with tab grouping, four-edge splits and preserved search/scroll state.
+
+### Changed
+
+- Plugin lists open reusable workspace detail tabs. Plugin sources and runtime choices are managed separately from appearance resets; existing plugin views and API v1 remain compatible.
+- Context menus and overflow menus group actions with separators and support keyboard navigation, measured placement and predictable focus restoration.
+- Removed repeated license/copyright headers from first-party source files; the repository LICENSE and third-party notices remain.
+
+### Fixed
+
+- Custom accent colors now apply to all accent tokens. Region resets remove persisted overrides, and terminal color previews preserve the existing terminal and connection.
+- Plugin operations isolate pending actions, reject package identity/source mismatches, and recover interrupted package replacements at startup.
+- Download confirmations close before long operations so progress and cancellation remain reachable. Plugin protocol reads are bounded and timeouts cover blocked writes as well as replies.
+- Terminal table borders now use Unicode grapheme widths for Chinese, emoji and joined sequences; streaming UTF-8 decoding preserves characters across SSH packets.
+- Plugin READMEs render Markdown, GFM tables, lists and code blocks safely without executing HTML or automatically fetching remote images.
+- Windows test executables embed the same Common Controls v6 manifest as the application, fixing the missing `TaskDialogIndirect` entry point before test startup.
+
 ## [0.20.0] - 2026-11-01
 
 ### Added
@@ -25,7 +54,6 @@ All notable changes to Tunnelde are documented here. The format follows
 - Terminal preferences update existing sessions without reconnecting or clearing output. Font changes wait for loaded fonts before measuring and coalesce resize/redraw work.
 - Hidden files remain part of collision checks; selection, keyboard navigation and batch actions follow the displayed sort order. Newly created hidden items reveal themselves, and new-item editing scrolls to the correct row.
 - Numeric preference resets clear invalid drafts, settings saves expose pending/error state, and editor display preferences preserve unsaved text and line endings.
-
 
 ## [0.19.1] - 2026-11-01
 

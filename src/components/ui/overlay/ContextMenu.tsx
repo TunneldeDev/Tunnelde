@@ -1,9 +1,8 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useContextMenu } from "@/store/contextMenu";
+import { focusMenuItem, handleMenuKeyDown } from "./menuKeyboard";
+import "@/styles/menus.css";
 
 export function ContextMenuHost() {
   const menu = useContextMenu((state) => state.menu);
@@ -24,6 +23,7 @@ export function ContextMenuHost() {
     const x = Math.min(menu.x, window.innerWidth - rect.width - 8);
     const y = Math.min(menu.y, window.innerHeight - rect.height - 8);
     setPosition({ x: Math.max(8, x), y: Math.max(8, y) });
+    focusMenuItem(element);
   }, [menu]);
 
   useEffect(() => {
@@ -32,21 +32,28 @@ export function ContextMenuHost() {
     }
     const onPointerDown = (event: MouseEvent) => {
       if (!ref.current?.contains(event.target as Node)) {
-        close();
+        close(false);
       }
     };
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        close();
-      }
+      handleMenuKeyDown(event, ref.current, () => close());
     };
+    const dismiss = () => close(false);
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Node && ref.current?.contains(event.target)) return;
+      dismiss();
+    };
+    window.addEventListener("pointerdown", onPointerDown);
     window.addEventListener("mousedown", onPointerDown);
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("resize", close);
+    window.addEventListener("resize", dismiss);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
+      window.removeEventListener("pointerdown", onPointerDown);
       window.removeEventListener("mousedown", onPointerDown);
       window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("resize", dismiss);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [menu, close]);
 
@@ -59,24 +66,31 @@ export function ContextMenuHost() {
       ref={ref}
       className="context-menu"
       role="menu"
+      tabIndex={-1}
       style={{ left: position.x, top: position.y }}
       onContextMenu={(event) => event.preventDefault()}
+      onKeyDown={(event) => handleMenuKeyDown(event, ref.current, () => close())}
     >
-      {menu.items.map((item) => (
-        <button
-          key={item.label}
-          type="button"
-          role="menuitem"
-          className="context-menu__item"
-          data-danger={item.danger ? "true" : undefined}
-          disabled={item.disabled}
-          onClick={() => {
-            close();
-            item.onSelect();
-          }}
-        >
-          {item.label}
-        </button>
+      {menu.items.map((item, index) => (
+        <Fragment key={index}>
+          {index > 0 && item.separatorBefore ? (
+            <div className="td-menu__separator" role="separator" />
+          ) : null}
+          <button
+            type="button"
+            role="menuitem"
+            className="context-menu__item"
+            data-danger={item.danger ? "true" : undefined}
+            disabled={item.disabled}
+            tabIndex={-1}
+            onClick={() => {
+              close();
+              item.onSelect();
+            }}
+          >
+            {item.label}
+          </button>
+        </Fragment>
       ))}
     </div>
   );

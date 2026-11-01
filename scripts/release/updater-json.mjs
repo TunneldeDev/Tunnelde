@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 //
 // Builds latest.json from the updater signatures uploaded by the build jobs.
 // Doing it once, after every platform finished, avoids the asset race that
@@ -57,7 +55,9 @@ try {
   const output = flag("--out") ?? "latest.json";
   const repository = flag("--repo");
   if (!tag || !directory || !repository) {
-    throw new Error("usage: updater-json.mjs --tag vX.Y.Z --sig-dir DIR --repo OWNER/NAME [--out FILE]");
+    throw new Error(
+      "usage: updater-json.mjs --tag vX.Y.Z --sig-dir DIR --repo OWNER/NAME [--out FILE]",
+    );
   }
 
   const version = tag.replace(/^v/, "");

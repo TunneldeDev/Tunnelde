@@ -1,5 +1,23 @@
 # Settings
 
+Appearance starts with compact built-in palette choices and installed plugin themes. One plugin
+can supply multiple named palettes; pure theme packs need no Node. Detailed region controls live
+under the initially collapsed Customize colors disclosure, grouped into workbench and terminal.
+Applying a palette changes the base appearance, accent and full color map in one save. Manual
+changes show the current custom state; uninstalling a theme provider preserves applied colors.
+
+Appearance includes a full HSV/HEX/RGB picker for the accent and individual backgrounds: main
+workspace, activity bar, sidebar, compact title bar, tab bar, editor, panel and status bar. Terminal
+background, foreground and cursor have separate controls, and host dialogs offer the same picker
+for host markers. Saved overrides are shared across light and dark themes; untouched/reset colors
+inherit the active theme. System title bars remain controlled by the OS.
+
+Dragging previews colors without saving; Apply persists once, while Cancel/Escape restores the
+latest saved preference. Terminal previews update existing instances and preserve output and
+connections. Region resets remove overrides. Custom CSS retains precedence over appearance
+settings. Plugin sources and Node setup live in their own Plugins settings category; resetting
+ordinary preferences does not delete sources, grants, runtimes or installed plugins.
+
 Open Settings from the bottom of the activity bar or press `Ctrl+,` (`Cmd+,` on
 macOS). Search matches Chinese and English labels, descriptions and preference
 names across all categories. **Modified only** compares saved preferences with
@@ -35,12 +53,28 @@ activation action: open a terminal (default), show details, or edit the host.
 Workspace restoration restores tabs and layout on the next launch; it does not
 automatically reconnect SSH sessions.
 
+Hosts, Plugins and Trusted Hosts can move from the sidebar into workspace tabs using
+their title drag handles or title menus. Drag a panel to a tab group or workspace edge
+to reorder or split it, then drag it back to the activity bar/sidebar or choose Return
+to sidebar. Search, expansion and scroll state survive moves. Clicking its activity
+icon focuses an already-docked panel; closing its tab returns it to the sidebar.
+
+Plugins settings also provide restricted mode, per-plugin approval/revocation, runtime
+selection and marketplace sources. `--safe-mode` and `--restricted-mode` force restricted
+mode for the current process, including an already-running single instance. Executable
+Node/WASM plugins stay stopped while pure theme packs remain available. After an abnormal
+exit following plugin execution, startup enters restricted mode and offers recovery.
+
 Terminal settings apply to open terminals without reconnecting. Reducing
 scrollback discards lines beyond the new capacity. Smooth scrolling follows the
 motion preference; reduced motion disables it. Right click opens a menu by default.
 Optional modes paste directly, or copy a selection and clear it before the next
 paste. Shift+right click always opens the menu. Copy-on-select is off by default.
 Automatic rendering uses WebGL when available and falls back to DOM rendering.
+
+Both the preview and connected terminals use Unicode 15 grapheme widths for Chinese,
+emoji sequences and modern terminal tables. A streaming UTF-8 decoder preserves
+characters split across SSH packets.
 
 Hidden entries include dotfiles and the Windows hidden attribute for local files.
 They still participate in collision checks. `Ctrl+H` / `Cmd+H` toggles visibility

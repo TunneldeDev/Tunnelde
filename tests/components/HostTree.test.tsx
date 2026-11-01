@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +9,7 @@ import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
 import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { useContextMenu } from "@/store/contextMenu";
 
 const host = (id: string, name: string, sortOrder: number): Host => ({
   id,
@@ -34,6 +32,7 @@ const host = (id: string, name: string, sortOrder: number): Host => ({
 const openHostDetails = useWorkspace.getState().openHost;
 
 beforeEach(() => {
+  useContextMenu.setState({ menu: null });
   useHosts.setState({ hosts: [host("a", "alpha", 0), host("b", "beta", 1)], groups: [] });
   useDialogs.setState({
     openHost: vi.fn(),
@@ -158,5 +157,20 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.doubleClick(screen.getAllByRole("button", { name: "More" })[0]!);
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
     expect(useWorkspace.getState().tabs).toEqual([]);
+  });
+
+  it("groups host actions consistently in context and ellipsis menus", () => {
+    render(<HostTree />);
+    fireEvent.contextMenu(screen.getAllByRole("treeitem")[0]!, { clientX: 20, clientY: 30 });
+    const items = useContextMenu.getState().menu!.items;
+    expect(items).toHaveLength(10);
+    expect(items.flatMap((item, index) => (item.separatorBefore ? [index] : []))).toEqual([
+      3, 6, 9,
+    ]);
+    fireEvent.click(screen.getAllByRole("button", { name: "More" })[0]!);
+    expect(screen.getAllByRole("menuitem")).toHaveLength(10);
+    expect(screen.getAllByRole("separator")).toHaveLength(3);
+    fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
+    expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
   });
 });

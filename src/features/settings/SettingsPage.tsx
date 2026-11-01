@@ -1,13 +1,10 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { FileCode2, FolderOpen, RotateCcw, Search, X } from "lucide-react";
 import { lazy, Suspense, useId, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input, Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { SwatchPicker } from "@/components/ui/form/Segmented";
+import { ColorPicker } from "@/components/ui/form/ColorPicker";
 import { validateUserCss } from "@/lib/prefs/appearance";
 import { createDefaultSettings, ACCENT_SWATCHES } from "@/lib/prefs/defaults";
 import type { Settings, SettingsPatch } from "@/lib/api/types";
@@ -28,6 +25,19 @@ import {
   type SettingOption,
 } from "./catalog";
 import { NumberPreference } from "./NumberPreference";
+import { RegionColors } from "./RegionColors";
+import { COLOR_REGIONS, previewColors, resolveAccent } from "@/lib/prefs/colors";
+import type { ResolvedTheme } from "@/lib/prefs/appearance";
+import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
+import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
+
+const samePreference = (left: unknown, right: unknown) =>
+  typeof left === "object" && left !== null && typeof right === "object" && right !== null
+    ? Object.keys(left).length === Object.keys(right).length &&
+      Object.entries(left).every(
+        ([key, value]) => (right as Record<string, unknown>)[key] === value,
+      )
+    : left === right;
 
 const TerminalPreview = lazy(() =>
   import("@/features/terminal/TerminalPreview").then((module) => ({
@@ -41,12 +51,14 @@ function PreferenceRow({
   defaults,
   onReset,
   resetVersion,
+  theme,
 }: {
   definition: SettingDefinition;
   settings: Settings;
   defaults: Settings;
   onReset: () => void;
   resetVersion: number;
+  theme: ResolvedTheme;
 }) {
   const { t } = useTranslation();
   const descriptionId = useId();
@@ -54,13 +66,14 @@ function PreferenceRow({
   const label = t(definition.label);
   const value = settings[definition.key];
   const defaultValue = defaults[definition.key];
-  const modified = value !== defaultValue;
+  const modified = !samePreference(value, defaultValue);
   const disabled = definition.dependsOn ? !settings[definition.dependsOn] : false;
   const setValue = (next: string | number | boolean) =>
     void update({ [definition.key]: next } as SettingsPatch);
   const optionLabel = (option: SettingOption) => (option.literal ? option.label : t(option.label));
   const formatValue = (next: Settings[typeof definition.key]) => {
     if (typeof next === "boolean") return t(next ? "settings.enabled" : "settings.disabled");
+    if (definition.kind === "colors") return t("color.themeDefault");
     const option = definition.options?.find((item) => item.value === next);
     if (option) return optionLabel(option);
     if (definition.kind === "accent") {
@@ -71,7 +84,12 @@ function PreferenceRow({
   };
   return (
     <div
-      className={cn("settings-row", modified && "is-modified", disabled && "is-disabled")}
+      className={cn(
+        "settings-row",
+        definition.kind === "colors" && "settings-row--colors",
+        modified && "is-modified",
+        disabled && "is-disabled",
+      )}
       data-setting={definition.key}
     >
       <div className="settings-row__text" id={descriptionId}>
@@ -134,7 +152,18 @@ function PreferenceRow({
           />
         ) : null}
         {definition.kind === "accent" ? (
-          <SwatchPicker value={String(value)} onChange={setValue} />
+          <ColorPicker
+            label={label}
+            value={String(value)}
+            defaultValue={String(defaultValue)}
+            presets={ACCENT_SWATCHES.map((preset) => ({
+              value: preset.id,
+              label: t(preset.labelKey),
+              color: resolveAccent(preset.id, theme),
+            }))}
+            onChange={setValue}
+            onPreview={(accent) => previewColors(accent ? { accent } : null)}
+          />
         ) : null}
         <IconButton
           className="settings-reset"
@@ -146,6 +175,7 @@ function PreferenceRow({
           <RotateCcw size={13} />
         </IconButton>
       </div>
+      {definition.kind === "colors" ? <RegionColors settings={settings} /> : null}
     </div>
   );
 }
@@ -260,6 +290,7 @@ function CssEditor({
 export function SettingsPage() {
   const { t, i18n } = useTranslation();
   const settings = useSettings((state) => state.settings);
+  const theme = useResolvedTheme(settings.theme);
   const info = useSettings((state) => state.info);
   const error = useSettings((state) => state.error);
   const saving = useSettings((state) => state.saving);
@@ -283,7 +314,7 @@ export function SettingsPage() {
   const filtering = Boolean(query.trim()) || modifiedOnly;
   const definitions = SETTINGS_CATALOG.filter((item) => !(item.hideOnMac && info?.os === "macos"));
   const isModified = (item: SettingDefinition) =>
-    settings[item.key] !== defaults[item.key] ||
+    !samePreference(settings[item.key], defaults[item.key]) ||
     (item.key === "userCss" && cssDraft !== null && cssDraft !== settings.userCss);
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const visible = definitions.filter((item) => {
@@ -297,6 +328,9 @@ export function SettingsPage() {
           translate(item.label),
           translate(SECTION_LABELS[item.section]),
           item.hint ? translate(item.hint) : "",
+          ...(item.key === "colors"
+            ? COLOR_REGIONS.map((region) => translate(`color.region.${region}`))
+            : []),
           ...(item.options ?? []).map((option) =>
             option.literal ? option.label : translate(option.label),
           ),
@@ -401,21 +435,24 @@ export function SettingsPage() {
             <section className="settings-section" key={item} aria-label={t(SECTION_LABELS[item])}>
               <div className="settings-section__head">
                 <h2 className="settings-section__title">{t(SECTION_LABELS[item])}</h2>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  disabled={
-                    !definitions.some(
-                      (definition) => definition.section === item && isModified(definition),
-                    )
-                  }
-                  leading={<RotateCcw size={13} />}
-                  onClick={() => resetSection(item)}
-                >
-                  {t("settings.restoreCategory")}
-                </Button>
+                {item !== "plugins" ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    disabled={
+                      !definitions.some(
+                        (definition) => definition.section === item && isModified(definition),
+                      )
+                    }
+                    leading={<RotateCcw size={13} />}
+                    onClick={() => resetSection(item)}
+                  >
+                    {t("settings.restoreCategory")}
+                  </Button>
+                ) : null}
               </div>
               <div className="settings-section__body">
+                {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
                 {item === "terminal" && !filtering ? (
                   <Suspense fallback={<p className="settings-row__hint">{t("common.loading")}</p>}>
                     <TerminalPreview />
@@ -455,6 +492,7 @@ export function SettingsPage() {
                         defaults={defaults}
                         onReset={() => resetOne(definition)}
                         resetVersion={resetVersions[definition.key] ?? 0}
+                        theme={theme}
                       />
                     ),
                   )}

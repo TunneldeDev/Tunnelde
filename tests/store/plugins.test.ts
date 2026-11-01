@@ -1,11 +1,11 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PluginInfo } from "@/lib/api/types";
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, native, ensureNode, ensurePermission } = vi.hoisted(() => ({
+  native: vi.fn(() => false),
+  ensureNode: vi.fn(),
+  ensurePermission: vi.fn(),
   apiMock: {
     pluginsList: vi.fn(),
     pluginReload: vi.fn(),
@@ -13,9 +13,13 @@ const { apiMock } = vi.hoisted(() => ({
     pluginStart: vi.fn(),
     pluginStop: vi.fn(),
     pluginRun: vi.fn(),
+    pluginUninstall: vi.fn(),
+    marketplaceDownload: vi.fn(),
   },
 }));
-vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
+vi.mock("@/lib/api/ipc", () => ({ api: apiMock, isTauri: native }));
+vi.mock("@/features/plugins/NodeRuntimeSection", () => ({ ensureNodeRuntime: ensureNode }));
+vi.mock("@/store/pluginSecurity", () => ({ ensurePluginPermission: ensurePermission }));
 vi.mock("@/store/toasts", () => ({ toast: vi.fn() }));
 
 import { usePlugins } from "@/store/plugins";
@@ -44,6 +48,8 @@ function deferred<T>() {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  native.mockReturnValue(false);
+  ensurePermission.mockResolvedValue(true);
   usePlugins.setState({
     items: [plugin],
     busy: null,
@@ -54,6 +60,53 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("does not inspect Node or start execution after permission is denied", async () => {
+    native.mockReturnValue(true);
+    ensurePermission.mockResolvedValueOnce(false);
+    await usePlugins.getState().start(plugin.id);
+    expect(ensurePermission).toHaveBeenCalledWith(plugin);
+    expect(ensureNode).not.toHaveBeenCalled();
+    expect(apiMock.pluginStart).not.toHaveBeenCalled();
+  });
+  it("never invokes Node setup or an executable startup for pure theme packs", async () => {
+    native.mockReturnValue(true);
+    const theme = {
+      ...plugin,
+      runtime: "theme" as const,
+      themes: [{ id: "dark", name: "Dark", appearance: "dark" as const, colors: {} }],
+    };
+    usePlugins.setState({ items: [theme] });
+    await usePlugins.getState().start(theme.id);
+    expect(ensureNode).not.toHaveBeenCalled();
+    expect(apiMock.pluginStart).not.toHaveBeenCalled();
+    expect(usePlugins.getState().items).toEqual([theme]);
+    expect(usePlugins.getState().busyIds).toEqual([]);
+  });
+  it("does not resurrect an uninstalled plugin from an earlier discovery request", async () => {
+    const snapshot = deferred<PluginInfo[]>();
+    apiMock.pluginsList.mockReturnValue(snapshot.promise);
+    apiMock.pluginUninstall.mockResolvedValue(undefined);
+    const refresh = usePlugins.getState().load();
+    await usePlugins.getState().uninstall(plugin.id);
+    snapshot.resolve([plugin]);
+    await refresh;
+    expect(usePlugins.getState().items).toEqual([]);
+  });
+
+  it("deduplicates starts while Node setup is pending and leaves the runtime unchanged on cancellation", async () => {
+    native.mockReturnValue(true);
+    const setup = deferred<boolean>();
+    ensureNode.mockReturnValue(setup.promise);
+    const first = usePlugins.getState().start(plugin.id);
+    expect(usePlugins.getState().start(plugin.id)).toBe(first);
+    expect(usePlugins.getState().stop(plugin.id)).toBe(first);
+    await vi.waitFor(() => expect(ensureNode).toHaveBeenCalledOnce());
+    setup.resolve(false);
+    await first;
+    expect(apiMock.pluginStart).not.toHaveBeenCalled();
+    expect(usePlugins.getState().items).toEqual([plugin]);
+    expect(usePlugins.getState().busyIds).toEqual([]);
+  });
   it("keeps another plugin busy when the first operation completes", async () => {
     const first = deferred<PluginInfo>();
     const second = deferred<PluginInfo>();

@@ -1,9 +1,6 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { describe, expect, it } from "vitest";
 
-import { normalizeBlocks, viewTitle } from "@/lib/plugins/pluginView";
+import { normalizeBlocks, normalizeResult, viewTitle } from "@/lib/plugins/pluginView";
 
 describe("normalizeBlocks", () => {
   it("keeps known blocks in order", () => {
@@ -54,5 +51,54 @@ describe("normalizeBlocks", () => {
     expect(viewTitle({ title: "Panel" })).toBe("Panel");
     expect(viewTitle(null)).toBe("");
     expect(viewTitle({ title: 42 })).toBe("");
+  });
+
+  it("normalizes interactive forms without accepting duplicate ids or executable content", () => {
+    const form = {
+      type: "form",
+      id: "tool",
+      fields: [
+        { id: "source", type: "textarea", label: "Source", value: "  a\n  " },
+        { id: "source", type: "text", label: "Duplicate" },
+        { id: "constructor", type: "text", label: "Unsafe" },
+        { id: "html", type: "html", label: "Unsupported" },
+        {
+          id: "unit",
+          type: "select",
+          label: "Unit",
+          value: "bad",
+          options: [
+            { value: "s", label: "Seconds" },
+            { value: "s", label: "Duplicate" },
+          ],
+        },
+      ],
+      actions: [
+        { id: "run", label: "Run", command: "run" },
+        { id: "run", label: "Again", command: "run" },
+      ],
+    };
+    const blocks = normalizeBlocks([form, form]);
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toMatchObject({
+      type: "form",
+      fields: [
+        { id: "source", value: "  a\n  " },
+        { id: "unit", value: "s", options: [{ value: "s", label: "Seconds" }] },
+      ],
+      actions: [{ id: "run", label: "Run", command: "run" }],
+    });
+  });
+
+  it("preserves large result formatting and rejects oversized output without silent truncation", () => {
+    const source = "  " + "x".repeat(12000) + "\n";
+    expect(normalizeResult({ text: source, title: "Output" })).toEqual({
+      text: source,
+      title: "Output",
+      error: false,
+    });
+    expect(normalizeResult({ text: "Failure", error: true }).error).toBe(true);
+    expect(normalizeResult({ legacy: "value" }).text).toBe('{\n  "legacy": "value"\n}');
+    expect(() => normalizeResult({ text: "中".repeat(400000) })).toThrow("resultTooLarge");
   });
 });

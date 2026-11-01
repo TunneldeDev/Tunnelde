@@ -1,11 +1,13 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { useEffect } from "react";
 
 import { bootstrap } from "@/app/bootstrap";
 import { AppShell } from "@/components/layout/AppShell";
 import { useSettings } from "@/store/settings";
+import { NodeRuntimeGate } from "@/features/plugins/NodeRuntimeSection";
+import {
+  PluginPermissionGate,
+  PluginRecoveryPrompt,
+} from "@/features/plugins/PluginPermissionGate";
 
 export function App() {
   const ready = useSettings((state) => state.ready);
@@ -22,5 +24,12 @@ export function App() {
     );
   }
 
-  return <AppShell />;
+  return (
+    <>
+      <AppShell />
+      <NodeRuntimeGate />
+      <PluginPermissionGate />
+      <PluginRecoveryPrompt />
+    </>
+  );
 }

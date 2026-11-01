@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { StatusDot } from "@/components/ui/display/Misc";
 import { UpdatePill } from "@/components/layout/UpdatePill";
+import { PluginSecurityBadge } from "@/features/plugins/PluginSecuritySection";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
@@ -29,6 +30,7 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
       </div>
       <div className="statusbar__group">
         <UpdatePill />
+        <PluginSecurityBadge />
         <IconButton
           size="sm"
           active={panelOpen}

@@ -1,15 +1,25 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
-import { RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Copy, RefreshCw } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
+import { Field, Input, Textarea } from "@/components/ui/form/Field";
+import { Select } from "@/components/ui/form/Select";
 import { translateError } from "@/lib/api/errors";
-import { api } from "@/lib/api/ipc";
-import { normalizeBlocks, viewTitle, type PluginBlock } from "@/lib/plugins/pluginView";
+import { api, isTauri } from "@/lib/api/ipc";
+import {
+  normalizeBlocks,
+  normalizeResult,
+  PLUGIN_INPUT_MAX_BYTES,
+  viewTitle,
+  type PluginBlock,
+  type PluginFormBlock,
+} from "@/lib/plugins/pluginView";
+import { copyText } from "@/lib/session/clipboard";
+import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/pluginSecurity";
+import { PluginRestrictedAction } from "./PluginSecuritySection";
+import "@/styles/pluginTools.css";
 
 interface PluginViewPageProps {
   pluginId: string;
@@ -32,29 +42,41 @@ export function PluginViewPage({ pluginId, viewId }: PluginViewPageProps) {
 }
 
 function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [view, setView] = useState<RenderedView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
 
-  const load = useCallback(() => {
-    const current = ++requestId.current;
-    return api
-      .pluginRenderView(pluginId, viewId)
-      .then((payload) => {
-        if (current !== requestId.current) return;
-        const record = (payload ?? {}) as Record<string, unknown>;
-        setView({ title: viewTitle(payload), blocks: normalizeBlocks(record.blocks) });
-        setError(null);
-      })
-      .catch((cause: unknown) => {
-        if (current === requestId.current) setError(translateError(cause));
-      })
-      .finally(() => {
-        if (current === requestId.current) setLoading(false);
-      });
-  }, [pluginId, viewId]);
+  const load = useCallback(
+    (interactive = false) => {
+      const current = ++requestId.current;
+      const render = () =>
+        api.pluginRenderView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language);
+      return (
+        interactive && isTauri()
+          ? authorizePluginAction(pluginId).then((allowed) =>
+              allowed && current === requestId.current ? render() : null,
+            )
+          : render()
+      )
+        .then((payload) => {
+          if (current !== requestId.current) return;
+          if (payload === null) return;
+          const record = (payload ?? {}) as Record<string, unknown>;
+          setView({ title: viewTitle(payload), blocks: normalizeBlocks(record.blocks) });
+          setError(null);
+        })
+        .catch((cause: unknown) => {
+          reportPluginExecutionFailure(cause);
+          if (current === requestId.current) setError(translateError(cause));
+        })
+        .finally(() => {
+          if (current === requestId.current) setLoading(false);
+        });
+    },
+    [pluginId, viewId, i18n.resolvedLanguage, i18n.language],
+  );
 
   const invalidate = useCallback(() => {
     ++requestId.current;
@@ -78,14 +100,21 @@ function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
           onClick={() => {
             setLoading(true);
             setError(null);
-            void load();
+            void load(true);
           }}
         >
           {t("pluginView.refresh")}
         </Button>
       </header>
 
-      {error ? <p className="panel__error">{error}</p> : null}
+      {error ? (
+        <div>
+          <p className="panel__error" role="alert">
+            {error}
+          </p>
+          <PluginRestrictedAction />
+        </div>
+      ) : null}
 
       <div className="plugin-view__body" aria-busy={loading}>
         {view === null ? (
@@ -96,6 +125,9 @@ function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
           <EmptyState title={t("pluginView.empty")} />
         ) : (
           view.blocks.map((block, index) => {
+            if (block.type === "form") {
+              return <PluginToolForm key={`form:${block.id}`} pluginId={pluginId} block={block} />;
+            }
             if (block.type === "heading") {
               return (
                 <h2 className="plugin-block__heading" key={index}>
@@ -146,5 +178,163 @@ function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
         )}
       </div>
     </div>
+  );
+}
+
+function PluginToolForm({ pluginId, block }: { pluginId: string; block: PluginFormBlock }) {
+  const { t, i18n } = useTranslation();
+  const id = useId();
+  // Workspace tabs remain mounted while inactive, preserving each tool's drafts and results.
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<ReturnType<typeof normalizeResult> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const pending = useRef(false);
+  const generation = useRef(0);
+  useEffect(
+    () => () => {
+      ++generation.current;
+    },
+    [],
+  );
+
+  const run = async (action: PluginFormBlock["actions"][number]) => {
+    if (pending.current) return;
+    const input = Object.fromEntries(
+      block.fields.map((field) => [field.id, draft[field.id] ?? field.value]),
+    );
+    input._locale = i18n.resolvedLanguage ?? i18n.language;
+    if (new TextEncoder().encode(JSON.stringify(input)).length > PLUGIN_INPUT_MAX_BYTES) {
+      setError(t("pluginView.inputTooLarge"));
+      return;
+    }
+    const current = ++generation.current;
+    pending.current = true;
+    setBusy(action.id);
+    setError(null);
+    try {
+      if (isTauri() && !(await authorizePluginAction(pluginId))) return;
+      if (generation.current !== current) return;
+      const response = await api.pluginRun(pluginId, action.command, input);
+      if (generation.current === current) setResult(normalizeResult(response));
+    } catch (cause) {
+      reportPluginExecutionFailure(cause);
+      if (generation.current === current) {
+        setError(
+          cause instanceof Error && cause.message === "resultTooLarge"
+            ? t("pluginView.resultTooLarge")
+            : translateError(cause),
+        );
+      }
+    } finally {
+      if (generation.current === current) {
+        pending.current = false;
+        setBusy(null);
+      }
+    }
+  };
+
+  return (
+    <section className="plugin-tool" aria-busy={busy !== null}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const action = block.actions[0];
+          if (action) void run(action);
+        }}
+      >
+        <div className="plugin-tool__fields">
+          {block.fields.map((field) => {
+            const fieldId = `${id}-${field.id}`;
+            const value = draft[field.id] ?? field.value;
+            const change = (value: string) =>
+              setDraft((previous) => ({ ...previous, [field.id]: value }));
+            return (
+              <Field key={field.id} label={field.label} htmlFor={fieldId}>
+                {field.type === "select" ? (
+                  <Select
+                    id={fieldId}
+                    label={field.label}
+                    value={value}
+                    options={field.options}
+                    onChange={change}
+                    disabled={busy !== null}
+                  />
+                ) : field.type === "textarea" ? (
+                  <Textarea
+                    id={fieldId}
+                    value={value}
+                    placeholder={field.placeholder}
+                    rows={10}
+                    spellCheck={false}
+                    onChange={(event) => change(event.target.value)}
+                  />
+                ) : (
+                  <Input
+                    id={fieldId}
+                    value={value}
+                    placeholder={field.placeholder}
+                    spellCheck={false}
+                    onChange={(event) => change(event.target.value)}
+                  />
+                )}
+              </Field>
+            );
+          })}
+        </div>
+        <div className="plugin-tool__actions">
+          {block.actions.map((action, index) => (
+            <Button
+              key={action.id}
+              type={index === 0 ? "submit" : "button"}
+              variant={index === 0 ? "primary" : "secondary"}
+              disabled={busy !== null}
+              onClick={index === 0 ? undefined : () => void run(action)}
+            >
+              {busy === action.id ? t("pluginView.running") : action.label}
+            </Button>
+          ))}
+        </div>
+      </form>
+      {error ? (
+        <div>
+          <p className="panel__error" role="alert">
+            {error}
+          </p>
+          <PluginRestrictedAction />
+        </div>
+      ) : null}
+      {result !== null ? (
+        <div className={`plugin-tool__result${result.error ? " is-error" : ""}`}>
+          <div className="plugin-tool__result-head">
+            <label htmlFor={`${id}-result`}>{result.title || t("pluginView.result")}</label>
+            <Button
+              variant="ghost"
+              size="sm"
+              leading={<Copy size={13} />}
+              onClick={() => copyText(result.text)}
+            >
+              {t("pluginView.copyResult")}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setResult(null)}>
+              {t("pluginView.clearResult")}
+            </Button>
+          </div>
+          <Textarea
+            id={`${id}-result`}
+            readOnly
+            value={result.text}
+            rows={10}
+            spellCheck={false}
+            aria-invalid={result.error || undefined}
+          />
+          {result.error ? (
+            <span role="alert" className="plugin-tool__announcement">
+              {result.text}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }

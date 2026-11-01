@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -11,6 +8,7 @@ import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
+import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
@@ -19,6 +17,8 @@ import { TerminalPage } from "@/features/terminal/TerminalPage";
 import { UpdatesPage } from "@/features/updates/UpdatesPage";
 import { WelcomePage } from "@/features/welcome/WelcomePage";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
+import { SidebarMount } from "@/components/layout/SidebarDock";
+import { sidebarViewOf } from "@/lib/session/sidebarDock";
 
 function TabBody({
   tab,
@@ -30,6 +30,10 @@ function TabBody({
   visible: boolean;
 }) {
   switch (tab.kind) {
+    case "sidebar": {
+      const view = sidebarViewOf(tab.id);
+      return view ? <SidebarMount view={view} docked /> : null;
+    }
     case "welcome":
       return <WelcomePage />;
     case "host":
@@ -58,6 +62,10 @@ function TabBody({
       const pluginId = separator >= 0 ? rest.slice(0, separator) : rest;
       const viewId = separator >= 0 ? rest.slice(separator + 1) : "default";
       return <PluginViewPage pluginId={pluginId} viewId={viewId} />;
+    }
+    case "pluginDetail": {
+      const [, sourceId, pluginId] = tab.id.split(":");
+      return <PluginDetailPage sourceId={sourceId ?? "local"} pluginId={pluginId ?? ""} />;
     }
     default:
       return null;

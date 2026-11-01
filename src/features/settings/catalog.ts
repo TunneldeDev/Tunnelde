@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { Settings } from "@/lib/api/types";
 import type { ParseKeys } from "i18next";
 import {
@@ -21,7 +18,7 @@ export interface SettingDefinition {
   key: SettingKey;
   section: SettingsSection;
   label: MessageKey;
-  kind: "toggle" | "number" | "select" | "accent" | "css";
+  kind: "toggle" | "number" | "select" | "accent" | "colors" | "css";
   hint?: MessageKey;
   options?: SettingOption[];
   min?: number;
@@ -41,6 +38,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "editor",
   "monitor",
   "updates",
+  "plugins",
   "advanced",
 ];
 export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
@@ -52,6 +50,7 @@ export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   editor: "settings.editor",
   monitor: "settings.monitor",
   updates: "settings.updatesSection",
+  plugins: "settings.plugins",
   advanced: "settings.advanced",
 };
 const choice = (value: string | number, label: MessageKey): SettingOption => ({ value, label });
@@ -125,6 +124,13 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     choice("light", "settings.themeLight"),
   ]),
   { key: "accent", section: "appearance", label: "settings.accent", kind: "accent" },
+  {
+    key: "colors",
+    section: "appearance",
+    label: "color.regions",
+    hint: "color.regionsHint",
+    kind: "colors",
+  },
   select("density", "appearance", [
     choice("comfortable", "settings.densityComfortable"),
     choice("compact", "settings.densityCompact"),

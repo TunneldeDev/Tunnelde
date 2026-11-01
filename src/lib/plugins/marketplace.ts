@@ -4,7 +4,7 @@ import { bytesToBase64 } from "@/lib/text/base64";
 
 /** The catalogue lives in the repository, so adding a plugin is a reviewable commit. */
 export const MARKETPLACE_INDEX_URL =
-  "https://raw.githubusercontent.com/TunneldeDev/Tunnelde/main/marketplace/index.json";
+  "https://raw.githubusercontent.com/TunneldeDev/tunnelde-hub/main/registry.json";
 
 const CHECKSUM = /^[0-9a-f]{64}$/i;
 
@@ -19,6 +19,7 @@ function isEntry(value: unknown): value is MarketEntry {
     typeof entry.version === "string" &&
     typeof entry.url === "string" &&
     typeof entry.sha256 === "string" &&
+    (entry.runtime == null || ["node", "wasm", "theme"].includes(entry.runtime)) &&
     CHECKSUM.test(entry.sha256) &&
     entry.url.startsWith("https://")
   );

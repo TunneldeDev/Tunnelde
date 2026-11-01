@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
+import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import type { KnownHostEntry } from "@/lib/api/types";
@@ -150,8 +151,9 @@ export function KnownHostsList({
     <div className={sidebar ? "trusted-hosts-sidebar" : "known-hosts"} aria-busy={loading}>
       {sidebar ? (
         <div className="sidebar__head">
-          <span className="sidebar__title">{t("settings.knownHosts")}</span>
+          <SidebarTitle view="knownHosts">{t("settings.knownHosts")}</SidebarTitle>
           {refresh}
+          <SidebarDockControls view="knownHosts" />
         </div>
       ) : null}
       <div className={sidebar ? "sidebar__search" : "known-hosts-toolbar"}>

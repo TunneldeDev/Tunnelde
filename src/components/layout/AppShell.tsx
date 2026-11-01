@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
-import { HostTree } from "@/components/layout/HostTree";
-import { TrustedHostsSidebar } from "@/features/settings/TrustedHostsSidebar";
-import { PluginsSidebar } from "@/features/plugins/PluginsSidebar";
+import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { PaneLayout } from "@/components/layout/PaneLayout";
@@ -29,6 +27,7 @@ import { useWindowCloseGuard } from "@/lib/session/useWindowCloseGuard";
 import { useSsh } from "@/store/ssh";
 import { isTauri } from "@/lib/api/ipc";
 import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/workspace";
+import { sidebarTabId } from "@/lib/session/sidebarDock";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -45,9 +44,10 @@ export function AppShell() {
   const updateSettings = useSettings((state) => state.update);
   const openPage = useWorkspace((state) => state.openPage);
   const tabs = useWorkspace((state) => state.tabs);
-  const sidebarVisible = useNavigation((state) => state.sidebarVisible);
+  const sidebarRequested = useNavigation((state) => state.sidebarVisible);
   const activeSidebar = useNavigation((state) => state.activeSidebar);
-  const visitedSidebars = useNavigation((state) => state.visitedSidebars);
+  const sidebarVisible =
+    sidebarRequested && !tabs.some((tab) => tab.id === sidebarTabId(activeSidebar));
   const activeId = useWorkspace((state) => state.activeId);
   const sessions = useSsh((state) => state.sessions);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -302,20 +302,8 @@ export function AppShell() {
       <WindowTitleBar />
       <div className="app__body">
         <ActivityBar />
-        {visitedSidebars.map((view) => (
-          <div
-            className="sidebar-view"
-            id={`sidebar-${view}`}
-            key={view}
-            hidden={!sidebarVisible || view !== activeSidebar}
-          >
-            {view === "hosts" ? <HostTree /> : null}
-            {view === "knownHosts" ? (
-              <TrustedHostsSidebar active={sidebarVisible && view === activeSidebar} />
-            ) : null}
-            {view === "plugins" ? <PluginsSidebar /> : null}
-          </div>
-        ))}
+        <SidebarArea />
+        <SidebarContents />
         {sidebarVisible ? (
           <Resizer
             value={sidebarWidth}

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -78,7 +75,7 @@ describe("activity sidebar navigation", () => {
     expect(useNavigation.getState().sidebarVisible).toBe(true);
   });
 
-  it("shows a requested sidebar idempotently and keeps activity pages out of Settings", () => {
+  it("shows a requested sidebar idempotently and exposes plugin configuration in Settings", () => {
     useNavigation.getState().showSidebar("knownHosts");
     useNavigation.getState().showSidebar("knownHosts");
     expect(useNavigation.getState().sidebarVisible).toBe(true);
@@ -86,6 +83,7 @@ describe("activity sidebar navigation", () => {
     render(<SettingsPage />);
     const nav = screen.getByRole("navigation", { name: "Settings" });
     expect(nav.textContent).not.toContain("Trusted hosts");
-    expect(nav.textContent).not.toContain("Plugins");
+    expect(nav.textContent).toContain("Plugins");
+    expect(useNavigation.getState().activeSidebar).toBe("knownHosts");
   });
 });

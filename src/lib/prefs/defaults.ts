@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { MonoFont, Settings } from "../api/types";
 
 export const MONO_FONT_SIZE_MIN = 10;
@@ -13,6 +10,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     language: "system",
     theme: "system",
     accent: "blue",
+    colors: {},
     density: "comfortable",
     uiFontSize: 13,
     monoFontSize: 14,

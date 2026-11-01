@@ -1,11 +1,8 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { create } from "zustand";
 
 import { translateError } from "@/lib/api/errors";
-import { api } from "@/lib/api/ipc";
-import type { PluginInfo } from "@/lib/api/types";
+import { api, isTauri } from "@/lib/api/ipc";
+import type { PluginInfo, MarketEntry } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 
 export interface PluginOutput {
@@ -23,6 +20,14 @@ interface PluginsStore {
   reload: () => Promise<void>;
   install: (path: string) => Promise<boolean>;
   apply: (info: PluginInfo) => void;
+  installMarket: (
+    entry: MarketEntry,
+    sourceId: string,
+    taskId: string,
+    update: boolean,
+    onError?: (error: unknown) => void,
+  ) => Promise<boolean>;
+  uninstall: (id: string) => Promise<void>;
   start: (id: string) => Promise<void>;
   stop: (id: string) => Promise<void>;
   run: (id: string, command: string) => Promise<void>;
@@ -53,7 +58,11 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         const ids = new Set(items.map((item) => item.id));
         return {
           items: [
-            ...items.map((item) => (changed(item.id) ? (current.get(item.id) ?? item) : item)),
+            ...items.flatMap((item) => {
+              if (!changed(item.id)) return [item];
+              const latest = current.get(item.id);
+              return latest ? [latest] : [];
+            }),
             ...state.items.filter((item) => !ids.has(item.id) && changed(item.id)),
           ],
         };
@@ -86,13 +95,17 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     return request;
   };
 
-  const changeStatus = (id: string, request: () => Promise<PluginInfo>) =>
+  const changeStatus = (id: string, request: () => Promise<PluginInfo | null>) =>
     operate(id, async (startedAt) => {
       try {
         const info = await request();
         // A pushed failure/status event may already be newer than this response.
-        if (revisions.get(id) === startedAt) get().apply(info);
+        if (info && revisions.get(id) === startedAt) get().apply(info);
       } catch (error) {
+        if (isTauri()) {
+          const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
+          reportPluginExecutionFailure(error);
+        }
         toast(translateError(error), "error");
       }
     });
@@ -153,16 +166,83 @@ export const usePlugins = create<PluginsStore>((set, get) => {
       }));
     },
 
-    start: (id) => changeStatus(id, () => api.pluginStart(id)),
+    start: (id) =>
+      changeStatus(id, async () => {
+        const info = get().items.find((item) => item.id === id);
+        if (info?.runtime === "theme") return null;
+        if (isTauri() && info) {
+          const { ensurePluginPermission } = await import("@/store/pluginSecurity");
+          if (!(await ensurePluginPermission(info))) return null;
+        }
+        if (isTauri() && info?.runtime !== "wasm") {
+          const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
+          if (!(await ensureNodeRuntime())) return null;
+        }
+        return api.pluginStart(id);
+      }),
     stop: (id) => changeStatus(id, () => api.pluginStop(id)),
+
+    installMarket: async (entry, sourceId, taskId, update, onError) => {
+      let success = false;
+      await operate(entry.id, async () => {
+        try {
+          get().apply(
+            await api.marketplaceDownload(
+              sourceId,
+              entry.id,
+              entry.version,
+              entry.sha256,
+              taskId,
+              update,
+            ),
+          );
+          success = true;
+        } catch (error) {
+          onError?.(error);
+          if (!(
+            typeof error === "object" &&
+            error !== null &&
+            "message" in error &&
+            error.message === "market.cancelled"
+          ))
+            toast(translateError(error), "error");
+        }
+      });
+      return success;
+    },
+
+    uninstall: (id) =>
+      operate(id, async () => {
+        try {
+          await api.pluginUninstall(id);
+          touch(id);
+          set((state) => ({
+            items: state.items.filter((item) => item.id !== id),
+            outputs: Object.fromEntries(
+              Object.entries(state.outputs).filter(([key]) => key !== id),
+            ),
+          }));
+        } catch (error) {
+          toast(translateError(error), "error");
+        }
+      }),
 
     run: (id, command) =>
       operate(id, async () => {
         let output: PluginOutput;
         try {
+          const info = get().items.find((item) => item.id === id);
+          if (isTauri() && info) {
+            const { ensurePluginPermission } = await import("@/store/pluginSecurity");
+            if (!(await ensurePluginPermission(info))) return;
+          }
           const result = await api.pluginRun(id, command);
           output = { text: JSON.stringify(result, null, 2), error: false };
         } catch (error) {
+          if (isTauri()) {
+            const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
+            reportPluginExecutionFailure(error);
+          }
           output = { text: translateError(error), error: true };
         }
         set((state) => ({ outputs: { ...state.outputs, [id]: output } }));

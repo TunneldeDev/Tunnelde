@@ -1,19 +1,29 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, copyMock, nativeMock, authorizeMock } = vi.hoisted(() => ({
+  copyMock: vi.fn(),
+  nativeMock: vi.fn(() => false),
+  authorizeMock: vi.fn(),
   apiMock: {
     pluginRenderView: vi.fn(),
+    pluginRun: vi.fn(),
   },
 }));
 
-vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
+vi.mock("@/lib/api/ipc", () => ({ api: apiMock, isTauri: nativeMock }));
+vi.mock("@/store/pluginSecurity", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  authorizePluginAction: authorizeMock,
+}));
+vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
 
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
+beforeEach(() => {
+  nativeMock.mockReturnValue(false);
+  authorizeMock.mockReset().mockResolvedValue(true);
+});
 
 describe("PluginViewPage", () => {
   it("renders heading, key/value and table blocks", async () => {
@@ -95,5 +105,189 @@ describe("PluginViewPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
     expect(await screen.findByText("Recovered")).toBeTruthy();
     expect(screen.queryByText("temporarily unavailable")).toBeNull();
+  });
+
+  const interactive = {
+    title: "JSON Formatter",
+    blocks: [
+      {
+        type: "form",
+        id: "json",
+        fields: [
+          { id: "source", type: "textarea", label: "JSON input", value: "{}" },
+          {
+            id: "indent",
+            type: "select",
+            label: "Indent",
+            value: "2",
+            options: [
+              { value: "2", label: "2 spaces" },
+              { value: "4", label: "4 spaces" },
+            ],
+          },
+        ],
+        actions: [
+          { id: "pretty", label: "Format", command: "pretty" },
+          { id: "minify", label: "Minify", command: "minify" },
+        ],
+      },
+    ],
+  };
+
+  it("requests permission only for explicit native actions and does not run when denied", async () => {
+    nativeMock.mockReturnValue(true);
+    authorizeMock.mockResolvedValue(false);
+    apiMock.pluginRenderView.mockClear().mockResolvedValue(interactive);
+    apiMock.pluginRun.mockClear();
+    render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
+    await screen.findByLabelText("JSON input");
+    expect(authorizeMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    await waitFor(() => expect(authorizeMock).toHaveBeenCalledWith("json-formatter"));
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Format" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    expect(apiMock.pluginRenderView).toHaveBeenCalledOnce();
+    expect(authorizeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("runs host-rendered fields and copies results only on explicit request", async () => {
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockResolvedValue({ text: '{\n  "a": 1\n}' });
+    copyMock.mockClear();
+    render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
+    const field = await screen.findByLabelText("JSON input");
+    fireEvent.change(field, { target: { value: '{"a":1}' } });
+    fireEvent.click(screen.getByRole("button", { name: "Indent" }));
+    fireEvent.click(screen.getByRole("option", { name: "4 spaces" }));
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    await waitFor(() =>
+      expect(apiMock.pluginRun).toHaveBeenLastCalledWith("json-formatter", "pretty", {
+        source: '{"a":1}',
+        indent: "4",
+        _locale: expect.stringMatching(/^en/),
+      }),
+    );
+    const output = await screen.findByLabelText("Result");
+    expect((output as HTMLTextAreaElement).value).toBe('{\n  "a": 1\n}');
+    expect(copyMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Copy result" }));
+    expect(copyMock).toHaveBeenCalledWith('{\n  "a": 1\n}');
+  });
+
+  it("does not execute a command if its view closes while permission approval is pending", async () => {
+    let approve!: (value: boolean) => void;
+    nativeMock.mockReturnValue(true);
+    authorizeMock.mockImplementationOnce(
+      () =>
+        new Promise<boolean>((resolve) => {
+          approve = resolve;
+        }),
+    );
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockClear();
+    const view = render(<PluginViewPage pluginId="first" viewId="main" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Format" }));
+    view.rerender(<PluginViewPage pluginId="second" viewId="main" />);
+    await screen.findByRole("button", { name: "Format" });
+    await act(async () => approve(true));
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+  });
+
+  it("retains drafts and results while hidden or refreshed and blocks concurrent runs", async () => {
+    let finish!: (value: unknown) => void;
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockClear().mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { rerender } = render(
+      <div hidden={false}>
+        <PluginViewPage pluginId="json-formatter" viewId="main" />
+      </div>,
+    );
+    fireEvent.change(await screen.findByLabelText("JSON input"), { target: { value: "[1,2]" } });
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    expect((screen.getByRole("button", { name: "Minify" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Minify" }));
+    expect(apiMock.pluginRun).toHaveBeenCalledTimes(1);
+    await act(async () => finish({ text: "[\n  1,\n  2\n]" }));
+    rerender(
+      <div hidden>
+        <PluginViewPage pluginId="json-formatter" viewId="main" />
+      </div>,
+    );
+    rerender(
+      <div hidden={false}>
+        <PluginViewPage pluginId="json-formatter" viewId="main" />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Refresh" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    expect((screen.getByLabelText("JSON input") as HTMLTextAreaElement).value).toBe("[1,2]");
+    expect((screen.getByLabelText("Result") as HTMLTextAreaElement).value).toBe("[\n  1,\n  2\n]");
+  });
+
+  it("does not place a late command result in another plugin's view", async () => {
+    let finish!: (value: unknown) => void;
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const { rerender } = render(<PluginViewPage pluginId="first" viewId="main" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Format" }));
+    rerender(<PluginViewPage pluginId="second" viewId="main" />);
+    await screen.findByRole("button", { name: "Format" });
+    await act(async () => finish({ text: "Stale command result" }));
+    expect(screen.queryByDisplayValue("Stale command result")).toBeNull();
+  });
+
+  it("rejects oversized UTF-8 input before invoking the plugin", async () => {
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockClear();
+    render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
+    fireEvent.change(await screen.findByLabelText("JSON input"), {
+      target: { value: "中".repeat(90000) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    expect(screen.getByRole("alert")).toBeTruthy();
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+  });
+
+  it("recovers from a command failure without losing the draft", async () => {
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockRejectedValueOnce(new Error("Plugin stopped"));
+    render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
+    fireEvent.change(await screen.findByLabelText("JSON input"), { target: { value: "[true]" } });
+    fireEvent.click(screen.getByRole("button", { name: "Format" }));
+    expect(await screen.findByRole("alert")).toHaveProperty("textContent", "Plugin stopped");
+    expect((screen.getByLabelText("JSON input") as HTMLTextAreaElement).value).toBe("[true]");
+    apiMock.pluginRun.mockResolvedValueOnce({ text: "[true]" });
+    fireEvent.click(screen.getByRole("button", { name: "Minify" }));
+    expect(await screen.findByLabelText("Result")).toHaveProperty("value", "[true]");
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Clear result" }));
+    expect(screen.queryByLabelText("Result")).toBeNull();
+    expect((screen.getByLabelText("JSON input") as HTMLTextAreaElement).value).toBe("[true]");
   });
 });

@@ -16,6 +16,7 @@ const SAMPLE = [
   "\x1b[33m●\x1b[0m  \x1b[31m●\x1b[0m  \x1b[35m●\x1b[0m  \x1b[36m●\x1b[0m  0123456789",
   "┌────────────────────────┐",
   "│ Tunnelde               │",
+  "│ 中文  ①  ❌ ✅ 👩‍💻      │",
   "└────────────────────────┘",
   "\x1b[32muser@tunnelde\x1b[0m:\x1b[34m~\x1b[0m$ ",
 ].join("\r\n");
@@ -39,7 +40,6 @@ export function TerminalPreview({ className = "" }: { className?: string }) {
       terminal = new Terminal({
         ...terminalOptions(useSettings.getState().settings),
         disableStdin: true,
-        allowProposedApi: false,
       });
       const fit = new FitAddon();
       terminal.loadAddon(fit);

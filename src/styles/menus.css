@@ -1,0 +1,31 @@
+.td-menu,
+.context-menu {
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.td-menu__separator {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: 5px 4px;
+  background: var(--td-border);
+  pointer-events: none;
+}
+.td-menu__item,
+.context-menu__item {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.td-menu__item:focus-visible,
+.context-menu__item:focus-visible {
+  outline: 1px solid var(--td-accent);
+  outline-offset: -1px;
+  background: var(--td-active);
+}
+.td-menu__item:disabled {
+  color: var(--td-faint);
+}

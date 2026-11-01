@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import "@xterm/xterm/css/xterm.css";
 import "@fontsource/fira-code/latin-400.css";
 import "@fontsource/fira-code/latin-500.css";
@@ -17,6 +14,7 @@ import "@/styles/app.css";
 import "@/styles/workbench.css";
 import "@/styles/plugins.css";
 import "@/styles/settings.css";
+import "@/styles/colors.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

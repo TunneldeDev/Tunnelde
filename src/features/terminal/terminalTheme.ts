@@ -1,9 +1,9 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { ITheme } from "@xterm/xterm";
 
 import type { ResolvedTheme } from "@/lib/prefs/appearance";
+import type { ColorOverrides } from "@/lib/api/types";
+import { deriveRegionPalette, effectiveColors } from "@/lib/prefs/colors";
+import { normalizeHex } from "@/lib/prefs/colorMath";
 
 const DARK: ITheme = {
   background: "#070b12",
@@ -53,6 +53,19 @@ const LIGHT: ITheme = {
   brightWhite: "#ffffff",
 };
 
-export function terminalTheme(theme: ResolvedTheme): ITheme {
-  return theme === "light" ? LIGHT : DARK;
+export function terminalTheme(theme: ResolvedTheme, colors: ColorOverrides = {}): ITheme {
+  const custom = effectiveColors(colors);
+  const base = theme === "light" ? LIGHT : DARK;
+  const background = normalizeHex(custom.terminalBackground ?? "");
+  const palette = background ? deriveRegionPalette(background) : null;
+  const foreground =
+    normalizeHex(custom.terminalForeground ?? "") ?? palette?.text ?? base.foreground;
+  const cursor = normalizeHex(custom.terminalCursor ?? "") ?? palette?.text ?? base.cursor;
+  return {
+    ...base,
+    background: background ?? base.background,
+    foreground,
+    cursor,
+    cursorAccent: background ?? base.cursorAccent,
+  };
 }

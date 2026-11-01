@@ -1,8 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { CornerDownLeft, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -21,40 +18,31 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
   const { t, i18n } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const confirm = useDialogs((state) => state.confirm);
-  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [snapshot, setSnapshot] = useState<{ hostId: string; entries: HistoryEntry[] } | null>(null);
   const [query, setQuery] = useState("");
   const hostId = session?.hostId ?? null;
-
-  const load = useCallback(async () => {
-    if (!hostId) {
-      return;
-    }
-    try {
-      setEntries(await api.historyList(hostId));
-    } catch (error) {
-      toast(translateError(error), "error");
-    }
-  }, [hostId]);
+  const entries = snapshot?.hostId === hostId ? snapshot.entries : null;
 
   useEffect(() => {
     let alive = true;
-    if (!hostId) {
-      return;
-    }
-    api
-      .historyList(hostId)
-      .then((list) => {
-        if (alive) {
-          setEntries(list);
-        }
-      })
-      .catch((error: unknown) => {
-        if (alive) {
-          toast(translateError(error), "error");
-        }
-      });
+    let revision = 0;
+    const load = () => {
+      if (!hostId) return;
+      const requested = ++revision;
+      void api
+        .historyList(hostId)
+        .then((list) => {
+          if (alive && revision === requested) setSnapshot({ hostId, entries: list });
+        })
+        .catch((error: unknown) => {
+          if (alive && revision === requested) toast(translateError(error), "error");
+        });
+    };
+    load();
+    window.addEventListener("tunnelde:history-changed", load);
     return () => {
       alive = false;
+      window.removeEventListener("tunnelde:history-changed", load);
     };
   }, [hostId]);
 
@@ -66,7 +54,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const filtered = (hostId ? entries ?? [] : []).filter((entry) =>
+  const filtered = (hostId ? (entries ?? []) : []).filter((entry) =>
     entry.command.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
@@ -79,7 +67,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
   const remove = (entry: HistoryEntry) => {
     void api
       .historyDelete(entry.id)
-      .then(() => setEntries((current) => current?.filter((item) => item.id !== entry.id) ?? null))
+      .then(() => window.dispatchEvent(new Event("tunnelde:history-changed")))
       .catch((error) => toast(translateError(error), "error"));
   };
 
@@ -92,7 +80,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
       onConfirm: async () => {
         try {
           await api.historyClear(session.hostId);
-          await load();
+          window.dispatchEvent(new Event("tunnelde:history-changed"));
         } catch (error) {
           toast(translateError(error), "error");
         }
@@ -137,14 +125,15 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
             </code>
             <span className="history-row__time">{formatRelative(entry.executedAt, locale)}</span>
             <span className="history-row__actions">
-              <IconButton
-                label={t("history.insert")}
-                size="sm"
-                onClick={() => insert(entry)}
-              >
+              <IconButton label={t("history.insert")} size="sm" onClick={() => insert(entry)}>
                 <CornerDownLeft size={12} />
               </IconButton>
-              <IconButton label={t("history.delete")} size="sm" danger onClick={() => remove(entry)}>
+              <IconButton
+                label={t("history.delete")}
+                size="sm"
+                danger
+                onClick={() => remove(entry)}
+              >
                 <Trash2 size={12} />
               </IconButton>
             </span>

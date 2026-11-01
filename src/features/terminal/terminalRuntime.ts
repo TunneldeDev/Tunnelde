@@ -1,7 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { WebglAddon } from "@xterm/addon-webgl";
+import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import type { ITerminalOptions, Terminal } from "@xterm/xterm";
 
 import type { Settings } from "@/lib/api/types";
@@ -13,6 +11,7 @@ import {
   resolveTheme,
 } from "@/lib/prefs/appearance";
 import { useSettings } from "@/store/settings";
+import { COLOR_PREVIEW_EVENT } from "@/lib/prefs/colors";
 import { terminalTheme } from "./terminalTheme";
 
 /** Wait for glyph metrics before opening or resizing the terminal. */
@@ -55,6 +54,8 @@ export function terminalOptions(
 ): ITerminalOptions {
   const reduceMotion = resolveMotion(settings.motion, reduced) === "reduced";
   return {
+    // The official Unicode addon uses xterm's proposed Unicode provider API.
+    allowProposedApi: true,
     fontFamily: monoStack(settings.monoFont),
     fontSize: settings.monoFontSize,
     lineHeight: settings.terminalLineHeight,
@@ -65,12 +66,15 @@ export function terminalOptions(
     scrollSensitivity: settings.terminalScrollSensitivity,
     smoothScrollDuration: settings.terminalSmoothScrolling && !reduceMotion ? 100 : 0,
     scrollOnUserInput: settings.terminalScrollOnInput,
-    theme: terminalTheme(resolveTheme(settings.theme, light)),
+    theme: terminalTheme(resolveTheme(settings.theme, light), settings.colors),
   };
 }
 
 /** Shares live preferences and the official renderer lifecycle with the local preview. */
 export function bindTerminalSettings(terminal: Terminal, fit: () => void) {
+  // Configure widths before any output: Unicode 6 counts ❌ as one column and
+  // splits emoji sequences, moving table borders and TUI cursor positions.
+  terminal.loadAddon(new UnicodeGraphemesAddon());
   let disposed = false;
   let frame: number | null = null;
   let fontRevision = 0;
@@ -147,6 +151,7 @@ export function bindTerminalSettings(terminal: Terminal, fit: () => void) {
   });
   colorScheme.addEventListener("change", apply);
   motion.addEventListener("change", apply);
+  window.addEventListener(COLOR_PREVIEW_EVENT, apply);
   return {
     requestLayout,
     dispose: () => {
@@ -155,6 +160,7 @@ export function bindTerminalSettings(terminal: Terminal, fit: () => void) {
       unsubscribe();
       colorScheme.removeEventListener("change", apply);
       motion.removeEventListener("change", apply);
+      window.removeEventListener(COLOR_PREVIEW_EVENT, apply);
       releaseRenderer();
     },
   };

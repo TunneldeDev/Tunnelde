@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 export type Language = "system" | "zh-CN" | "en-US";
 export type ThemeMode = "dark" | "light" | "system";
 export type Density = "comfortable" | "compact";
@@ -15,11 +12,25 @@ export type TerminalRightClick = "menu" | "copyPaste" | "paste";
 export type TerminalRenderer = "auto" | "dom";
 export type FileSortBy = "name" | "size" | "modified";
 export type SortDirection = "asc" | "desc";
+export type ColorRegion =
+  | "background"
+  | "activityBar"
+  | "sidebar"
+  | "titleBar"
+  | "tabBar"
+  | "editor"
+  | "panel"
+  | "statusBar"
+  | "terminalBackground"
+  | "terminalForeground"
+  | "terminalCursor";
+export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 
 export interface Settings {
   language: Language;
   theme: ThemeMode;
   accent: Accent | string;
+  colors: ColorOverrides;
   density: Density;
   uiFontSize: number;
   monoFontSize: number;
@@ -134,6 +145,7 @@ export interface HostsSnapshot {
 }
 
 export type TabKind =
+  | "sidebar"
   | "knownHosts"
   | "welcome"
   | "host"
@@ -145,7 +157,8 @@ export type TabKind =
   | "editor"
   | "history"
   | "monitor"
-  | "pluginView";
+  | "pluginView"
+  | "pluginDetail";
 
 export interface TabRecord {
   id: string;
@@ -340,6 +353,45 @@ export interface MarketEntry {
   description: string | null;
   url: string;
   sha256: string;
+  author?: string | null;
+  readme?: string | null;
+  runtime?: "node" | "wasm" | "theme" | null;
+  apiVersion?: number | null;
+  engines?: Record<string, string>;
+  sourceId?: string;
+}
+
+export interface MarketSource {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+}
+export interface PluginConfig {
+  sources: MarketSource[];
+  nodePath: string | null;
+  nodeSystemAllowed: boolean;
+}
+export interface MarketCatalogue {
+  source: MarketSource;
+  entries: MarketEntry[];
+  checkedAt: number;
+  stale: boolean;
+  error: string | null;
+}
+export interface PluginDownload {
+  taskId: string;
+  phase: string;
+  received: number;
+  total: number | null;
+}
+export interface NodeRuntimeInfo {
+  path: string | null;
+  version: string | null;
+  source: "explicit" | "environment" | "path" | "registry" | "shell" | "managed" | null;
+  compatible: boolean;
+  minimumMajor: number;
+  issue: string | null;
 }
 
 export interface PluginInfo {
@@ -354,6 +406,28 @@ export interface PluginInfo {
   status: PluginStatus;
   error: string | null;
   path: string;
+  fingerprint?: string;
+  runtime?: "node" | "wasm" | "theme";
+  themes?: PluginTheme[];
+  author?: string | null;
+  readme?: string | null;
+  engines?: Record<string, string>;
+  sourceId?: string | null;
+  sourceUrl?: string | null;
+}
+export interface PluginTheme {
+  id: string;
+  name: string;
+  appearance: "light" | "dark";
+  accent?: string;
+  colors: ColorOverrides;
+}
+export interface PluginSecurityState {
+  restricted: boolean;
+  cliLocked: boolean;
+  recoverySuggested: boolean;
+  reason: string | null;
+  grants: Record<string, string[]>;
 }
 export interface HistoryEntry {
   id: number;

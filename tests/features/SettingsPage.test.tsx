@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
@@ -73,6 +70,10 @@ describe("settings discovery and scoped resets", () => {
     expect(document.querySelector('[data-setting="language"]')).toBeNull();
     fireEvent.change(search, { target: { value: "editorWordWrap" } });
     expect(row("editorWordWrap")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "terminal background" } });
+    expect(row("colors").getByRole("button", { name: "Terminal background" })).toBeTruthy();
+    fireEvent.change(search, { target: { value: "终端背景" } });
+    expect(row("colors")).toBeTruthy();
     fireEvent.change(search, { target: { value: "zzzz-no-setting" } });
     expect(screen.getByText("No matches")).toBeTruthy();
   });
@@ -106,6 +107,90 @@ describe("settings discovery and scoped resets", () => {
     expect(Object.keys(update.mock.calls[0]![0])).toEqual(
       SETTINGS_CATALOG.filter((item) => item.section === "files").map((item) => item.key),
     );
+  });
+
+  it("ignores equivalent color maps in the modified filter and resets colors as one preference", () => {
+    useSettings.setState({ settings: { ...defaults, colors: {} } });
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(document.querySelectorAll("[data-setting]").length).toBe(0);
+    act(() => useSettings.setState({ settings: { ...defaults, colors: { sidebar: "#123456" } } }));
+    const colorsRow = document.querySelector('[data-setting="colors"]')!;
+    const aggregateReset = colorsRow.querySelector<HTMLButtonElement>(
+      ".settings-row__control .settings-reset",
+    )!;
+    fireEvent.click(aggregateReset);
+    expect(update).toHaveBeenLastCalledWith({ colors: {} });
+    expect(document.querySelectorAll("[data-setting]").length).toBe(0);
+  });
+
+  it("saves region colors once on Apply, merges the latest map, and deletes just one override on reset", () => {
+    useSettings.setState({ settings: { ...defaults, colors: { sidebar: "#123456" } } });
+    useNavigation.setState({ settingsSection: "appearance" });
+    render(<SettingsPage />);
+    fireEvent.click(row("colors").getByText(i18n.t("themes.customize")));
+    fireEvent.click(row("colors").getByRole("button", { name: "Sidebar" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "HEX" }), {
+      target: { value: "#abcdef" },
+    });
+    expect(update).not.toHaveBeenCalled();
+    act(() =>
+      useSettings.setState({
+        settings: { ...defaults, colors: { sidebar: "#123456", editor: "#654321" } },
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(update).toHaveBeenCalledExactlyOnceWith({
+      colors: { sidebar: "#abcdef", editor: "#654321" },
+    });
+    fireEvent.click(row("colors").getByRole("button", { name: "Reset Sidebar" }));
+    expect(update).toHaveBeenLastCalledWith({ colors: { editor: "#654321" } });
+  });
+
+  it("updates inherited region chips immediately when the system color scheme changes", () => {
+    let light = false;
+    const listeners = new Set<() => void>();
+    const originalMatchMedia = window.matchMedia;
+    window.matchMedia = vi.fn(
+      () =>
+        ({
+          get matches() {
+            return light;
+          },
+          addEventListener: (_event: string, callback: () => void) => listeners.add(callback),
+          removeEventListener: (_event: string, callback: () => void) => listeners.delete(callback),
+        }) as unknown as MediaQueryList,
+    );
+    try {
+      useNavigation.setState({ settingsSection: "appearance" });
+      const view = render(<SettingsPage />);
+      fireEvent.click(row("colors").getByText(i18n.t("themes.customize")));
+      const trigger = row("colors").getByRole("button", { name: "Terminal background" });
+      expect(trigger.textContent).toContain("#070B12");
+      act(() => {
+        light = true;
+        listeners.forEach((callback) => callback());
+      });
+      expect(trigger.textContent).toContain("#F8FAFD");
+      view.unmount();
+      expect(listeners.size).toBe(0);
+    } finally {
+      window.matchMedia = originalMatchMedia;
+    }
+  });
+
+  it("restores theme inheritance when Reset color is applied inside the region picker", () => {
+    useSettings.setState({
+      settings: { ...defaults, colors: { sidebar: "#123456", editor: "#654321" } },
+    });
+    useNavigation.setState({ settingsSection: "appearance" });
+    render(<SettingsPage />);
+    fireEvent.click(row("colors").getByText(i18n.t("themes.customize")));
+    fireEvent.click(row("colors").getByRole("button", { name: "Sidebar" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset color" }));
+    expect(update).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    expect(update).toHaveBeenCalledExactlyOnceWith({ colors: { editor: "#654321" } });
   });
 
   it("disables prefetch count while prefetch is off", () => {

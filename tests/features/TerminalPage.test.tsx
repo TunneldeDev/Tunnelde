@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { StrictMode } from "react";
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -39,6 +36,7 @@ const {
     clearSelection: ReturnType<typeof vi.fn>;
     open: ReturnType<typeof vi.fn>;
     refresh: ReturnType<typeof vi.fn>;
+    unicode: { activeVersion: string; register: ReturnType<typeof vi.fn> };
   }>,
   inputs: [] as Array<(data: string) => void>,
   keyboard: [] as Array<(event: KeyboardEvent) => boolean>,
@@ -102,6 +100,7 @@ vi.mock("@xterm/xterm", () => ({
     });
     open = vi.fn();
     refresh = vi.fn();
+    unicode = { activeVersion: "6", register: vi.fn() };
     onData = vi.fn((callback: (data: string) => void) => {
       inputs.push(callback);
       return { dispose: vi.fn() };
@@ -124,10 +123,12 @@ import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useContextMenu } from "@/store/contextMenu";
+import { previewColors } from "@/lib/prefs/colors";
 
 const originalFonts = Object.getOwnPropertyDescriptor(document, "fonts");
 
 beforeEach(() => {
+  previewColors(null);
   instances.length = 0;
   inputs.length = 0;
   keyboard.length = 0;
@@ -206,7 +207,7 @@ describe("terminal lifecycle", () => {
     expect(terminal.open.mock.invocationCallOrder[0]).toBeLessThan(
       gpu.activate.mock.invocationCallOrder[0]!,
     );
-    expect(terminal.options.allowProposedApi).toBe(false);
+    expect(terminal.options.allowProposedApi).toBe(true);
     expect(gpu.dispose).not.toHaveBeenCalled();
     view.unmount();
     expect(gpu.dispose).toHaveBeenCalledOnce();
@@ -224,7 +225,7 @@ describe("terminal lifecycle", () => {
     await act(async () => {
       eventMock.onSshData.mock.calls[0]![0]({ sessionId: "s1", data: "aGk=" });
     });
-    expect(new TextDecoder().decode(instances[0]!.write.mock.calls[0]![0])).toBe("hi");
+    expect(instances[0]!.write.mock.calls[0]![0]).toBe("hi");
     expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
   });
 
@@ -301,6 +302,12 @@ describe("terminal lifecycle", () => {
     expect(terminal.options.lineHeight).toBe(1.6);
     expect(terminal.options.scrollback).toBe(25_000);
     expect(terminal.options.cursorStyle).toBe("underline");
+    expect(terminal.options.allowProposedApi).toBe(true);
+    expect(terminal.unicode.activeVersion).toBe("15-graphemes");
+    const provider = terminal.unicode.register.mock.calls[1]![0];
+    expect(provider.wcwidth("❌".codePointAt(0))).toBe(2);
+    expect(provider.wcwidth("中".codePointAt(0))).toBe(2);
+    expect(provider.wcwidth("①".codePointAt(0))).toBe(1);
     expect(document.fonts.load).toHaveBeenLastCalledWith('18px "JetBrains Mono"');
     expect(webglInstances).toHaveLength(0);
     expect(terminal.focus).not.toHaveBeenCalled();
@@ -351,9 +358,7 @@ describe("terminal lifecycle", () => {
     expect(apiMock.sshAttach).toHaveBeenCalledWith("s1");
     expect(instances).toHaveLength(0);
     await act(async () => finishFont());
-    expect(new TextDecoder().decode(instances[0]!.write.mock.calls[0]![0])).toBe(
-      "\x1b[32mprompt\x1b[0m",
-    );
+    expect(instances[0]!.write.mock.calls[0]![0]).toBe("\x1b[32mprompt\x1b[0m");
   });
 
   it("cleans up a late successful listener when its peer fails and releases the remote PTY", async () => {
@@ -485,10 +490,7 @@ describe("live terminal settings", () => {
       theme: terminalTheme("light"),
     });
     expect(terminal.options.fontFamily).toContain("JetBrains Mono");
-    expect(terminal.write.mock.calls.map(([chunk]) => new TextDecoder().decode(chunk))).toEqual([
-      "before",
-      "after",
-    ]);
+    expect(terminal.write.mock.calls.map(([chunk]) => chunk)).toEqual(["before", "after"]);
     expect(instances).toHaveLength(1);
     expect(terminal.dispose).not.toHaveBeenCalled();
     expect(apiMock.sshAttach).toHaveBeenCalledTimes(1);
@@ -562,11 +564,58 @@ describe("live terminal settings", () => {
 });
 
 describe("local terminal preview", () => {
+  it("applies live regional previews and cancellation to an existing terminal without reconnecting", async () => {
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        colors: { terminalBackground: "#112233", terminalForeground: "#aabbcc" },
+      },
+    });
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    const terminal = instances[0]!;
+    const initial = terminal.options.theme as Record<string, unknown>;
+    const attaches = apiMock.sshAttach.mock.calls.length;
+    act(() =>
+      previewColors({ colors: { terminalBackground: "#445566", terminalCursor: "#ffaa00" } }),
+    );
+    expect(terminal.options.theme).toEqual({
+      ...initial,
+      background: "#445566",
+      cursorAccent: "#445566",
+      cursor: "#ffaa00",
+    });
+    expect(instances).toHaveLength(1);
+    expect(apiMock.sshAttach).toHaveBeenCalledTimes(attaches);
+    act(() =>
+      useSettings.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          theme: "light",
+          colors: { terminalBackground: "#778899", terminalForeground: "#abcdef" },
+        },
+      }),
+    );
+    expect((terminal.options.theme as Record<string, unknown>).background).toBe("#445566");
+    act(() => previewColors(null));
+    expect(terminal.options.theme).toEqual(
+      terminalTheme("light", { terminalBackground: "#778899", terminalForeground: "#abcdef" }),
+    );
+    expect(instances).toHaveLength(1);
+    expect(apiMock.sshAttach).toHaveBeenCalledTimes(attaches);
+    view.unmount();
+    const saved = terminal.options.theme;
+    act(() => previewColors({ colors: { terminalBackground: "#ffffff" } }));
+    expect(terminal.options.theme).toBe(saved);
+    previewColors(null);
+  });
+
   it("previews preferences live without creating an SSH session and releases resources", async () => {
     const view = render(<TerminalPreview />);
     await waitFor(() => expect(instances).toHaveLength(1));
     const terminal = instances[0]!;
     expect(terminal.options.disableStdin).toBe(true);
+    expect(terminal.unicode.activeVersion).toBe("15-graphemes");
     expect(terminal.write).toHaveBeenCalledWith(expect.stringContaining("user@tunnelde"));
     expect(eventMock.onSshData).not.toHaveBeenCalled();
     expect(apiMock.sshAttach).not.toHaveBeenCalled();

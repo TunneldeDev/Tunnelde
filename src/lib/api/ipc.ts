@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
@@ -17,6 +14,12 @@ import type {
   Listing,
   RemoteProcess,
   PluginInfo,
+  PluginSecurityState,
+  PluginConfig,
+  MarketSource,
+  MarketCatalogue,
+  PluginDownload,
+  NodeRuntimeInfo,
   RemoteStats,
   TextFile,
   Settings,
@@ -95,21 +98,56 @@ export const api = {
   historyClear: (hostId: string) => invoke<void>("history_clear", { hostId }),
 
   pluginsList: () => invoke<PluginInfo[]>("plugins_list"),
+  pluginSecurityState: () => invoke<PluginSecurityState>("plugin_security_state"),
+  pluginSetRestricted: (enabled: boolean) =>
+    invoke<PluginSecurityState>("plugin_set_restricted", { enabled }),
+  pluginSetPermissions: (
+    id: string,
+    permissions: string[] | null,
+    expectedFingerprint: string | null,
+  ) => invoke<void>("plugin_set_permissions", { id, permissions, expectedFingerprint }),
   pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),
   pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
   pluginInstall: (path: string) => invoke<PluginInfo>("plugin_install", { path }),
   pluginInspect: (path: string) =>
-    invoke<Pick<PluginInfo, "id" | "name" | "version" | "permissions">>("plugin_inspect", { path }),
+    invoke<
+      Pick<
+        PluginInfo,
+        "id" | "name" | "version" | "permissions" | "apiVersion" | "runtime" | "themes"
+      >
+    >("plugin_inspect", { path }),
   pluginPickFolder: () => invoke<string | null>("plugin_pick_folder"),
   pluginPickArchive: () => invoke<string | null>("plugin_pick_archive"),
   pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
-  pluginRenderView: (id: string, view: string) =>
-    invoke<unknown>("plugin_render_view", { id, view }),
-  pluginRun: (id: string, command: string) => invoke<unknown>("plugin_run", { id, command }),
+  pluginRenderView: (id: string, view: string, locale?: string) =>
+    invoke<unknown>("plugin_render_view", { id, view, locale: locale ?? null }),
+  pluginRun: (id: string, command: string, input?: Record<string, unknown>) =>
+    invoke<unknown>("plugin_run", { id, command, input: input ?? null }),
   pluginOpenDir: () => invoke<void>("plugin_open_dir"),
   marketplaceInstall: (id: string, sha256: string, data: string) =>
     invoke<PluginInfo>("marketplace_install", { id, sha256, data }),
+  pluginConfig: () => invoke<PluginConfig>("plugin_config"),
+  pluginSourcesSave: (sources: MarketSource[]) =>
+    invoke<PluginConfig>("plugin_sources_save", { sources }),
+  pluginSourceTest: (url: string) => invoke<number>("plugin_source_test", { url }),
+  marketplaceCatalogue: (sourceId: string, refresh = false) =>
+    invoke<MarketCatalogue>("marketplace_catalogue", { sourceId, refresh }),
+  marketplaceDownload: (
+    sourceId: string,
+    id: string,
+    version: string,
+    sha256: string,
+    taskId: string,
+    update: boolean,
+  ) =>
+    invoke<PluginInfo>("marketplace_download", { sourceId, id, version, sha256, taskId, update }),
+  downloadCancel: (taskId: string) => invoke<boolean>("plugin_download_cancel", { taskId }),
+  nodeDetect: () => invoke<NodeRuntimeInfo>("node_detect"),
+  nodeInstall: (taskId: string) => invoke<NodeRuntimeInfo>("node_install", { taskId }),
+  nodePick: () => invoke<string | null>("node_pick"),
+  nodeSetPath: (path: string | null) => invoke<NodeRuntimeInfo>("node_set_path", { path }),
+  nodeAllowSystem: (allowed: boolean) => invoke<NodeRuntimeInfo>("node_allow_system", { allowed }),
 
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
@@ -173,6 +211,12 @@ export const api = {
 };
 
 export const events = {
+  onPluginSecurity: (handler: (payload: PluginSecurityState) => void): Promise<UnlistenFn> =>
+    listen<PluginSecurityState>("plugin:security-changed", (event) => handler(event.payload)),
+  onPluginDownload: (handler: (payload: PluginDownload) => void): Promise<UnlistenFn> =>
+    listen<PluginDownload>("plugins://download", (event) => handler(event.payload)),
+  onPluginConfig: (handler: (payload: PluginConfig) => void): Promise<UnlistenFn> =>
+    listen<PluginConfig>("plugins://config", (event) => handler(event.payload)),
   onSettingsChanged: (handler: (settings: Settings) => void): Promise<UnlistenFn> =>
     listen<Settings>("settings://changed", (event) => handler(event.payload)),
   onUpdateState: (handler: (state: UpdateState) => void): Promise<UnlistenFn> =>

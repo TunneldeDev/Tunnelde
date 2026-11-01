@@ -1,7 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { Language, MonoFont, Settings, ThemeMode } from "../api/types";
+import { applyColorPreferences } from "./colors";
 
 export type ResolvedTheme = "dark" | "light";
 export type ResolvedLanguage = "zh-CN" | "en-US";
@@ -114,6 +112,7 @@ export function applyAppearance(settings: Settings, prefersLight = prefersLightS
   root.style.setProperty("--td-font-size", `${settings.uiFontSize}px`);
   root.style.setProperty("--td-mono-size", `${settings.monoFontSize}px`);
   root.style.setProperty("--td-mono", monoStack(settings.monoFont));
+  applyColorPreferences(settings, resolveTheme(settings.theme, prefersLight));
 
   const styleId = "td-user-css";
   let style = document.getElementById(styleId) as HTMLStyleElement | null;

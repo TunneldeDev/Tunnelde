@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import {
   ArrowLeftRight,
   ArrowLeft,
@@ -980,6 +977,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       label: string;
       disabled?: boolean;
       danger?: boolean;
+      separatorBefore?: boolean;
       onSelect: () => void;
     }> = [];
 
@@ -995,7 +993,11 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           onSelect: () => applyEntry(id, entry),
         });
       }
-      items.push({ label: t("sftp.cut"), onSelect: () => clipSelection(id, "cut") });
+      items.push({
+        label: t("sftp.cut"),
+        separatorBefore: true,
+        onSelect: () => clipSelection(id, "cut"),
+      });
       items.push({ label: t("sftp.copy"), onSelect: () => clipSelection(id, "copy") });
       items.push({
         label: t("sftp.paste"),
@@ -1006,20 +1008,34 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         label: t(transferKey(source, panesRef.current[other(id)].source)),
         onSelect: () => transferSelected(id),
       });
-      items.push({ label: t("sftp.rename"), onSelect: () => startRename(id, entry) });
+      items.push({
+        label: t("sftp.rename"),
+        separatorBefore: true,
+        onSelect: () => startRename(id, entry),
+      });
       items.push({ label: t("sftp.copyPath"), onSelect: () => copyPath(entry) });
-      items.push({ label: t("common.delete"), danger: true, onSelect: () => removeSelection(id) });
+      items.push({
+        label: t("common.delete"),
+        separatorBefore: true,
+        danger: true,
+        onSelect: () => removeSelection(id),
+      });
     } else {
       items.push({ label: t("sftp.newFile"), onSelect: () => startCreate(id, "file") });
       items.push({ label: t("sftp.newFolder"), onSelect: () => startCreate(id, "folder") });
       items.push({
         label: t("sftp.paste"),
+        separatorBefore: true,
         disabled: !canPaste(clip, source, directory),
         onSelect: () => pasteInto(id, directory),
       });
-      items.push({ label: t("sftp.refresh"), onSelect: () => void load(id, directory) });
+      items.push({
+        label: t("sftp.refresh"),
+        separatorBefore: true,
+        onSelect: () => void load(id, directory),
+      });
     }
-    openMenu(event.clientX, event.clientY, items);
+    openMenu(event.clientX, event.clientY, items, bodies.current[id]);
   };
 
   const onKeyDown = (event: React.KeyboardEvent, id: PaneId) => {
@@ -1283,6 +1299,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
                     void updateSettings({ filesFoldersFirst: !settings.filesFoldersFirst }),
                 },
                 ...(["name", "size", "modified"] as const).map((sort) => ({
+                  separatorBefore: sort === "name",
                   label: t(
                     sort === "name"
                       ? "sftp.sortName"
@@ -1299,6 +1316,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
                   onSelect: () => void updateSettings({ filesSortBy: sort }),
                 })),
                 ...(["asc", "desc"] as const).map((direction) => ({
+                  separatorBefore: direction === "asc",
                   label: t(direction === "asc" ? "sftp.sortAscending" : "sftp.sortDescending"),
                   icon: (
                     <Check

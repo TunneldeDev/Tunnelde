@@ -8,10 +8,12 @@ import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { useMonitor } from "@/store/monitor";
 import { usePlugins } from "@/store/plugins";
+import { reportPluginExecutionFailure, usePluginSecurity } from "@/store/pluginSecurity";
 import { useTransfers } from "@/store/transfers";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
+import { wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -36,6 +38,7 @@ async function start(): Promise<void> {
   }
 
   await wireEvents();
+  await usePluginSecurity.getState().load();
   let restored = false;
   try {
     const records = await api.tabs();
@@ -104,6 +107,7 @@ function pruneMissingHosts(): void {
 
 async function wireEvents(): Promise<void> {
   const listeners = await Promise.allSettled([
+    wirePluginWorkspaceBridge(),
     events.onSettingsChanged((settings) => {
       useSettings.getState().applyRemote(settings);
     }),
@@ -126,7 +130,10 @@ async function wireEvents(): Promise<void> {
 
     events.onPluginState((payload) => {
       usePlugins.getState().apply(payload);
+      if (payload.status === "failed" && payload.error)
+        reportPluginExecutionFailure({ code: "validation", message: payload.error });
     }),
+    events.onPluginSecurity((payload) => usePluginSecurity.getState().apply(payload)),
 
     events.onTransfer((payload) => {
       useTransfers.getState().apply(payload);
