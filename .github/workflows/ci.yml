@@ -48,7 +48,10 @@ jobs:
         run: pnpm lint
 
       - name: Test
-        run: pnpm test
+        run: |
+          pnpm test
+          pnpm test:plugins
+          pnpm plugins:package
 
       - name: Build frontend
         run: pnpm build
