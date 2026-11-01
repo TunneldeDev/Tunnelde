@@ -21,7 +21,9 @@ vi.mock("@/components/layout/CommandPalette", () => ({
 }));
 vi.mock("@/components/layout/ActivityBar", () => ({ ActivityBar: () => null }));
 vi.mock("@/components/layout/RemotePanel", () => ({ RemotePanel: () => null }));
-vi.mock("@/components/layout/StatusBar", () => ({ StatusBar: () => null }));
+vi.mock("@/components/layout/StatusBar", () => ({
+  StatusBar: () => <footer data-testid="statusbar" />,
+}));
 vi.mock("@/components/layout/SystemPanel", () => ({ SystemPanel: () => null }));
 vi.mock("@/components/ui/overlay/Toast", () => ({ ToastHost: () => null }));
 vi.mock("@/components/ui/overlay/ContextMenu", () => ({ ContextMenuHost: () => null }));
@@ -168,7 +170,7 @@ describe("AppShell terminal shortcut ownership", () => {
     fireEvent.keyDown(input, { key: "Tab", ctrlKey: true, shiftKey: true });
     expect(useWorkspace.getState().activeId).toBe("terminal:a");
     fireEvent.keyDown(input, { key: "+", ctrlKey: true });
-    expect(useSettings.getState().update).toHaveBeenCalledWith({ monoFontSize: 14 });
+    expect(useSettings.getState().update).toHaveBeenCalledWith({ monoFontSize: 15 });
     fireEvent.keyDown(input, { key: "N", ctrlKey: true, shiftKey: true });
     expect(useDialogs.getState().dialog.kind).toBe("host");
     useDialogs.getState().close();
@@ -211,6 +213,30 @@ describe("AppShell terminal shortcut ownership", () => {
 });
 
 describe("AppShell side view persistence", () => {
+  it("removes the status row live while keeping the workspace mounted", () => {
+    const { container } = render(<AppShell />);
+    const workspace = container.querySelector(".workspace");
+    expect(screen.getByTestId("statusbar")).toBeTruthy();
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, showStatusBar: false } }));
+    expect(screen.queryByTestId("statusbar")).toBeNull();
+    expect(container.querySelector(".app")?.classList.contains("is-statusbar-hidden")).toBe(true);
+    expect(container.querySelector(".workspace")).toBe(workspace);
+    act(() => useSettings.setState({ settings: DEFAULT_SETTINGS }));
+    expect(screen.getByTestId("statusbar")).toBeTruthy();
+  });
+
+  it("uses the new font bounds and resets to the application default", () => {
+    render(<AppShell />);
+    const update = useSettings.getState().update;
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monoFontSize: 31 } }));
+    fireEvent.keyDown(window, { key: "+", ctrlKey: true });
+    expect(update).toHaveBeenLastCalledWith({ monoFontSize: 32 });
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monoFontSize: 11 } }));
+    fireEvent.keyDown(window, { key: "-", ctrlKey: true });
+    expect(update).toHaveBeenLastCalledWith({ monoFontSize: 10 });
+    fireEvent.keyDown(window, { key: "0", ctrlKey: true });
+    expect(update).toHaveBeenLastCalledWith({ monoFontSize: 14 });
+  });
   it("lazily mounts side views and retains their DOM state when switching and collapsing", () => {
     const { container } = render(<AppShell />);
     const hosts = screen.getByRole("textbox", { name: "Host view search" });

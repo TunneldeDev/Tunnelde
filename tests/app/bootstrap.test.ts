@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   sshRefresh: vi.fn(),
   toast: vi.fn(),
   settingsLoad: vi.fn(),
+  settings: { theme: "dark", motion: "system", restoreWorkspace: true },
   updateRefresh: vi.fn(),
   hosts: [] as { id: string }[],
   events: {
@@ -33,7 +34,7 @@ vi.mock("@/store/settings", () => ({
   useSettings: {
     getState: () => ({
       load: mocks.settingsLoad,
-      settings: { theme: "dark" },
+      settings: mocks.settings,
       applyRemote: vi.fn(),
     }),
   },
@@ -84,6 +85,7 @@ beforeEach(() => {
   mocks.updateRefresh.mockReset().mockResolvedValue(undefined);
   mocks.toast.mockReset();
   mocks.hosts = [];
+  mocks.settings = { theme: "dark", motion: "system", restoreWorkspace: true };
   Object.values(mocks.events).forEach((mock) => mock.mockReset().mockResolvedValue(vi.fn()));
 });
 afterEach(() => {
@@ -92,6 +94,36 @@ afterEach(() => {
 });
 
 describe("workspace startup and persistence", () => {
+  it("skips restoring on the next startup without immediately replacing the saved snapshot", async () => {
+    mocks.settings.restoreWorkspace = false;
+    const { bootstrap, useWorkspace } = await fresh();
+    await bootstrap();
+    expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(mocks.saveTabs).not.toHaveBeenCalled();
+    useWorkspace.getState().openPage("settings");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(mocks.saveTabs).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not close a current workspace when restore is disabled after startup", async () => {
+    const { bootstrap, useWorkspace } = await fresh();
+    await bootstrap();
+    mocks.settings.restoreWorkspace = false;
+    expect(useWorkspace.getState().tabs[0]?.id).toBe("page:about");
+  });
+
+  it("restores pages while leaving saved SSH sessions disconnected", async () => {
+    mocks.tabs.mockResolvedValue([
+      record(),
+      { ...record("terminal:old"), kind: "terminal" },
+      { ...record("sftp:old"), kind: "sftp" },
+    ]);
+    const { bootstrap, useWorkspace } = await fresh();
+    await bootstrap();
+    expect(useWorkspace.getState().tabs.map((tab) => tab.kind)).toEqual(["about"]);
+    expect(mocks.sshRefresh).toHaveBeenCalledTimes(1);
+  });
   it("retains restored host tabs when the host snapshot cannot be loaded", async () => {
     mocks.tabs.mockResolvedValue([record("host:one", "one")]);
     mocks.hostLoad.mockResolvedValue(false);

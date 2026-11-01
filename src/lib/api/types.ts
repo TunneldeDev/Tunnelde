@@ -7,6 +7,14 @@ export type Density = "comfortable" | "compact";
 export type Accent = "blue" | "cyan" | "green" | "orange" | "violet";
 export type MonoFont = "fira-code" | "jetbrains-mono" | "plex-mono" | "system";
 export type TitleBarStyle = "system" | "compact";
+export type MotionPreference = "system" | "reduced" | "full";
+export type HostActivation = "terminal" | "details" | "edit";
+export type TerminalCursorStyle = "block" | "bar" | "underline";
+export type TerminalInactiveCursorStyle = TerminalCursorStyle | "outline" | "none";
+export type TerminalRightClick = "menu" | "copyPaste" | "paste";
+export type TerminalRenderer = "auto" | "dom";
+export type FileSortBy = "name" | "size" | "modified";
+export type SortDirection = "asc" | "desc";
 
 export interface Settings {
   language: Language;
@@ -28,6 +36,29 @@ export interface Settings {
   recordTerminalHistory: boolean;
   preloadDirs: boolean;
   preloadCount: number;
+  motion: MotionPreference;
+  showStatusBar: boolean;
+  restoreWorkspace: boolean;
+  hostActivation: HostActivation;
+  terminalScrollback: number;
+  terminalLineHeight: number;
+  terminalCursorStyle: TerminalCursorStyle;
+  terminalCursorBlink: boolean;
+  terminalInactiveCursorStyle: TerminalInactiveCursorStyle;
+  terminalScrollSensitivity: number;
+  terminalSmoothScrolling: boolean;
+  terminalScrollOnInput: boolean;
+  terminalCopyOnSelect: boolean;
+  terminalRightClick: TerminalRightClick;
+  terminalRenderer: TerminalRenderer;
+  filesShowHidden: boolean;
+  filesFoldersFirst: boolean;
+  filesSortBy: FileSortBy;
+  filesSortDirection: SortDirection;
+  editorWordWrap: boolean;
+  editorTabSize: number;
+  editorSpellCheck: boolean;
+  monitorIntervalMs: number;
 }
 
 export type SettingsPatch = Partial<Settings>;
@@ -40,6 +71,7 @@ export interface SettingsSchema {
 }
 
 export interface AppInfo {
+  defaultSettings: Settings;
   systemLanguages?: string[];
   name: string;
   version: string;
@@ -232,6 +264,7 @@ export interface SshClosedPayload {
   reason: string;
 }
 export interface FileEntry {
+  isHidden: boolean;
   name: string;
   path: string;
   isDir: boolean;

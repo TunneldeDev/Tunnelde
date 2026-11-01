@@ -72,6 +72,7 @@ pub struct SettingsSchema {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppInfo {
+    default_settings: Settings,
     system_languages: Vec<String>,
     name: String,
     version: String,
@@ -95,6 +96,7 @@ pub struct HostsSnapshot {
 pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
     let package = app.package_info();
     AppInfo {
+        default_settings: Settings::default(),
         system_languages: crate::platform::locale::preferred_languages(),
         name: "Tunnelde".into(),
         version: package.version.to_string(),

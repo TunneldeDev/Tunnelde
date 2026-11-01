@@ -6,6 +6,27 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-01
+
+### Added
+
+- Searchable settings with bilingual keyword matching, a modified-only filter, platform-aware default/range hints, and individual, category and full resets. Numeric drafts validate before saving; custom CSS drafts survive category switches.
+- Live terminal settings for scrollback, line height, active/inactive cursor shape, blinking, scrolling, copy-on-select, right-click behavior and automatic/DOM rendering, with a local preview.
+- Workspace controls for status-bar visibility, startup restoration, host activation, animation preference and monitoring interval. Hosts select on single click and activate on double click or Enter.
+- File-view controls for hidden entries, folders first, natural name/size/date sorting and direction, plus editor wrapping, tab width and spellcheck preferences.
+
+### Changed
+
+- Fresh installations follow the system language and theme, use bundled Fira Code at 14 px, keep monitoring closed, and use compact window controls on Windows and native title bars on macOS/Linux. Existing saved preferences are retained.
+- Directory preloading now warms the parent and the configured number of children through a shared queue of two requests, prioritizes foreground navigation and discards stale results.
+
+### Fixed
+
+- Terminal preferences update existing sessions without reconnecting or clearing output. Font changes wait for loaded fonts before measuring and coalesce resize/redraw work.
+- Hidden files remain part of collision checks; selection, keyboard navigation and batch actions follow the displayed sort order. Newly created hidden items reveal themselves, and new-item editing scrolls to the correct row.
+- Numeric preference resets clear invalid drafts, settings saves expose pending/error state, and editor display preferences preserve unsaved text and line endings.
+
+
 ## [0.19.1] - 2026-11-01
 
 ### Fixed

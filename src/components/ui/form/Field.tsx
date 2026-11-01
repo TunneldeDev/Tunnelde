@@ -1,11 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import type {
-  InputHTMLAttributes,
-  ReactNode,
-  TextareaHTMLAttributes,
-} from "react";
+import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 import { cn } from "@/lib/text/format";
 
@@ -53,15 +49,17 @@ export interface SwitchProps {
   onChange: (checked: boolean) => void;
   label: string;
   disabled?: boolean;
+  descriptionId?: string;
 }
 
-export function Switch({ checked, onChange, label, disabled }: SwitchProps) {
+export function Switch({ checked, onChange, label, disabled, descriptionId }: SwitchProps) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      aria-describedby={descriptionId}
       disabled={disabled}
       className={cn("td-switch", checked && "is-on")}
       onClick={() => onChange(!checked)}

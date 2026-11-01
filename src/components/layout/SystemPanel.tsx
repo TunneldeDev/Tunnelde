@@ -64,7 +64,7 @@ interface SystemPanelProps {
 
 export function SystemPanel({ width, onHide, hidden }: SystemPanelProps) {
   const { t } = useTranslation();
-  const stats: SystemStats | null = useSystemStats(3000, !hidden);
+  const stats: SystemStats | null = useSystemStats(undefined, !hidden);
   const disk = stats?.disks[0];
   const load = stats?.loadAverage ?? [0, 0, 0];
   const hasLoad = load.some((value) => value > 0);

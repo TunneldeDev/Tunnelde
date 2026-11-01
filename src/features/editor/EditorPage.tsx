@@ -11,6 +11,7 @@ import { cn } from "@/lib/text/format";
 import { useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
+import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 
 interface EditorPageProps {
@@ -24,6 +25,9 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const change = useEditors((state) => state.change);
   const save = useEditors((state) => state.save);
   const reconnect = useEditors((state) => state.reconnect);
+  const wordWrap = useSettings((state) => state.settings.editorWordWrap);
+  const tabSize = useSettings((state) => state.settings.editorTabSize);
+  const spellCheck = useSettings((state) => state.settings.editorSpellCheck);
   const hostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
   const candidate = useSsh((state) => state.sessions.find((session) => session.hostId === hostId));
   const [reconnecting, setReconnecting] = useState(false);
@@ -115,8 +119,13 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         <textarea
           className="editor-body"
           aria-label={entry.name}
-          spellCheck={false}
-          wrap="off"
+          spellCheck={spellCheck}
+          wrap={wordWrap ? "soft" : "off"}
+          style={{
+            whiteSpace: wordWrap ? "pre-wrap" : "pre",
+            overflowWrap: wordWrap ? "anywhere" : "normal",
+            tabSize,
+          }}
           value={entry.content}
           onChange={(event) => change(tabId, event.target.value)}
         />

@@ -30,7 +30,7 @@ vi.mock("@/lib/files/fs", () => ({
 
 import "@/i18n/i18n";
 import { SftpPage } from "@/features/sftp/SftpPage";
-import type { FsSource, SshSession } from "@/lib/api/types";
+import type { FileEntry, FsSource, SshSession } from "@/lib/api/types";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
@@ -40,6 +40,8 @@ import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { DRAG_MIME } from "@/lib/files/dnd";
+import { useContextMenu } from "@/store/contextMenu";
+import * as clipboard from "@/lib/session/clipboard";
 
 const session: SshSession = {
   id: "session-1",
@@ -58,11 +60,20 @@ const localListing = {
       name: "notes.txt",
       path: "C:\\work\\notes.txt",
       isDir: false,
+      isHidden: false,
       size: 12,
       modified: null,
       permissions: null,
     },
-    { name: "src", path: "C:\\work\\src", isDir: true, size: 0, modified: null, permissions: null },
+    {
+      name: "src",
+      path: "C:\\work\\src",
+      isDir: true,
+      isHidden: false,
+      size: 0,
+      modified: null,
+      permissions: null,
+    },
   ],
 };
 
@@ -73,6 +84,7 @@ const remoteListing = {
       name: "readme.md",
       path: "/srv/app/readme.md",
       isDir: false,
+      isHidden: false,
       size: 20,
       modified: null,
       permissions: null,
@@ -179,6 +191,30 @@ describe("SftpPage", () => {
     await waitFor(() => {
       expect(fsMock.createFile).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\draft.md");
     });
+  });
+
+  it("reveals the new inline row instead of scrolling to an old selection", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollIntoView");
+    const scroll = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scroll,
+    });
+    try {
+      render(<SftpPage sessionId="session-1" />);
+      fireEvent.click((await screen.findByText("notes.txt")).closest(".sftp-row")!);
+      fireEvent.click(screen.getAllByRole("button", { name: "New file" })[0]!);
+      await waitFor(() => {
+        const latest = scroll.mock.contexts.at(-1) as HTMLElement | undefined;
+        expect(latest?.classList.contains("is-creating")).toBe(true);
+      });
+      expect(document.activeElement?.closest(".sftp-row")?.classList.contains("is-creating")).toBe(
+        true,
+      );
+    } finally {
+      if (descriptor) Object.defineProperty(HTMLElement.prototype, "scrollIntoView", descriptor);
+      else Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
+    }
   });
 
   it("copies the selected entry into the other panel", async () => {
@@ -333,9 +369,9 @@ describe("SftpPage asynchronous interactions", () => {
     render(<SftpPage sessionId="session-1" />);
     fireEvent.click((await screen.findByText("notes.txt")).closest(".sftp-row")!);
     const body = screen.getAllByRole("listbox")[0]!;
-    fireEvent.keyDown(body, { key: "ArrowDown", shiftKey: true });
-    expect(within(body).getAllByRole("option", { selected: true })).toHaveLength(2);
     fireEvent.keyDown(body, { key: "ArrowUp", shiftKey: true });
+    expect(within(body).getAllByRole("option", { selected: true })).toHaveLength(2);
+    fireEvent.keyDown(body, { key: "ArrowDown", shiftKey: true });
     expect(within(body).getAllByRole("option", { selected: true })).toHaveLength(1);
   });
 
@@ -428,6 +464,23 @@ describe("SftpPage source picker", () => {
 });
 
 describe("SftpPage preloading", () => {
+  const viewFolders = [
+    { name: ".secret", isHidden: true, size: 0, modified: 0 },
+    { name: "folder10", isHidden: false, size: 10, modified: 10 },
+    { name: "folder2", isHidden: false, size: 2, modified: 2 },
+  ].map((entry): FileEntry => ({
+    ...entry,
+    path: `C:\\work\\${entry.name}`,
+    isDir: true,
+    permissions: null,
+  }));
+  const mockViewFolders = () =>
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) =>
+      source.kind === "local"
+        ? { path: path ?? localListing.path, entries: path ? [] : viewFolders }
+        : { path: path ?? remoteListing.path, entries: [] },
+    );
+
   it("warms the parent and child folders when the setting is on", async () => {
     useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: true } });
     render(<SftpPage sessionId="session-1" />);
@@ -445,5 +498,242 @@ describe("SftpPage preloading", () => {
 
     await screen.findByText("notes.txt");
     expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
+  });
+
+  it.each(["name", "size", "modified"] as const)(
+    "prioritizes visible %s order and changes targets without reloading the open directory",
+    async (sortBy) => {
+      mockViewFolders();
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, preloadDirs: true, preloadCount: 1, filesSortBy: sortBy },
+      });
+      render(<SftpPage sessionId="session-1" />);
+      await waitFor(() =>
+        expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder2"),
+      );
+      expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
+      expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10");
+      await act(async () =>
+        useSettings.setState((state) => ({
+          settings: { ...state.settings, filesSortDirection: "desc" },
+        })),
+      );
+      await waitFor(() =>
+        expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10"),
+      );
+      expect(fsMock.list.mock.calls.filter(([, path]) => path === null)).toHaveLength(2);
+      expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, localListing.path);
+    },
+  );
+
+  it("updates preload targets when hidden directories become visible without reloading the current directory", async () => {
+    mockViewFolders();
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: true, preloadCount: 1 } });
+    render(<SftpPage sessionId="session-1" />);
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder2"),
+    );
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
+    await act(async () =>
+      useSettings.setState((state) => ({ settings: { ...state.settings, filesShowHidden: true } })),
+    );
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret"),
+    );
+    expect(fsMock.list.mock.calls.filter(([, path]) => path === null)).toHaveLength(2);
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, localListing.path);
+  });
+
+  it.each([0, 5])("preloads exactly the parent plus %i children", async (count) => {
+    const entries = Array.from({ length: 7 }, (_, index): FileEntry => ({
+      name: `folder${index}`,
+      path: `C:\\work\\folder${index}`,
+      isDir: true,
+      isHidden: false,
+      size: 0,
+      modified: null,
+      permissions: null,
+    }));
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) =>
+      source.kind === "local"
+        ? { path: path ?? localListing.path, entries: path ? [] : entries }
+        : { path: path ?? remoteListing.path, entries: [] },
+    );
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, preloadDirs: true, preloadCount: count },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await waitFor(() =>
+      expect(
+        fsMock.list.mock.calls.filter(([source, path]) => source.kind === "local" && path),
+      ).toHaveLength(count + 1),
+    );
+    const paths = fsMock.list.mock.calls
+      .filter(([source, path]) => source.kind === "local" && path)
+      .map(([, path]) => path);
+    expect(paths).toEqual(["C:\\", ...entries.slice(0, count).map((entry) => entry.path)]);
+  });
+});
+
+describe("SftpPage visible file interactions", () => {
+  const hidden: FileEntry = {
+    name: ".env",
+    path: "C:\\work\\.env",
+    isDir: false,
+    isHidden: true,
+    size: 5,
+    modified: null,
+    permissions: null,
+  };
+  const withHidden = () => {
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+      const listing =
+        source.kind === "local"
+          ? { ...localListing, entries: [...localListing.entries, hidden] }
+          : remoteListing;
+      return { ...listing, path: path ?? listing.path };
+    });
+  };
+
+  it("selects, ranges, and batches only visible rows in their displayed order", async () => {
+    withHidden();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(screen.queryByText(".env")).toBeNull();
+    const body = screen.getAllByRole("listbox")[0]!;
+    expect(
+      within(body)
+        .getAllByRole("option")
+        .map((row) => row.dataset.path),
+    ).toEqual(["C:\\work\\src", "C:\\work\\notes.txt"]);
+    fireEvent.keyDown(body, { key: "Home" });
+    fireEvent.keyDown(body, { key: "ArrowDown", shiftKey: true });
+    expect(within(body).getAllByRole("option", { selected: true })).toHaveLength(2);
+    fireEvent.keyDown(body, { key: "a", ctrlKey: true });
+    fireEvent.keyDown(body, { key: "c", ctrlKey: true });
+    expect(useFileClipboard.getState().clip?.items.map((entry) => entry.name)).toEqual([
+      "src",
+      "notes.txt",
+    ]);
+  });
+
+  it("scopes the hidden shortcut to the file list and ignores invisible old selections", async () => {
+    withHidden();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    fireEvent.keyDown(path, { key: "h", ctrlKey: true });
+    expect(useSettings.getState().settings.filesShowHidden).toBe(false);
+    const body = screen.getAllByRole("listbox")[0]!;
+    fireEvent.keyDown(body, { key: "h", ctrlKey: true });
+    fireEvent.click((await within(body).findByText(".env")).closest(".sftp-row")!);
+    await act(async () => {
+      await useSettings.getState().update({ filesShowHidden: false });
+    });
+    expect(within(body).queryByText(".env")).toBeNull();
+    fireEvent.keyDown(body, { key: "Delete" });
+    expect(useDialogs.getState().confirm).not.toHaveBeenCalled();
+    expect(screen.getAllByRole("button", { name: "Upload" })[0]!.hasAttribute("disabled")).toBe(
+      true,
+    );
+  });
+
+  it("checks hidden raw entries when creating a file with an existing name", async () => {
+    withHidden();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "New file" })[0]!);
+    const input = document.querySelector(".sftp-row.is-creating input")!;
+    fireEvent.change(input, { target: { value: ".env" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(fsMock.createFile).not.toHaveBeenCalled();
+    expect((input as HTMLInputElement).value).toBe(".env");
+  });
+
+  it("requires overwrite confirmation for an invisible paste destination", async () => {
+    withHidden();
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "local" },
+        action: "copy",
+        items: [{ path: "C:\\elsewhere\\.env", name: ".env", isDir: false }],
+      },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(useDialogs.getState().confirm).toHaveBeenCalled());
+    expect(fsMock.copy).not.toHaveBeenCalled();
+    const dialog = vi.mocked(useDialogs.getState().confirm).mock.calls[0]![0];
+    expect(dialog.body).toContain(".env");
+  });
+
+  it("applies view menu preferences immediately without reading the filesystem again", async () => {
+    withHidden();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const reads = fsMock.list.mock.calls.length;
+    fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Show hidden files" }));
+    const body = screen.getAllByRole("listbox")[0]!;
+    expect(await within(body).findByText(".env")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Folders first" }));
+    await waitFor(() =>
+      expect(within(body).getAllByRole("option")[0]!.dataset.path).toBe(hidden.path),
+    );
+    expect(fsMock.list).toHaveBeenCalledTimes(reads);
+  });
+
+  it.each(["create", "rename"] as const)(
+    "temporarily reveals a hidden file after %s and clears it on navigation",
+    async (operation) => {
+      let entries: FileEntry[] = [...localListing.entries];
+      fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) =>
+        source.kind === "local" ? { path: path ?? localListing.path, entries } : remoteListing,
+      );
+      fsMock.createFile.mockImplementation(async () => {
+        entries = [...entries, hidden];
+      });
+      fsMock.rename.mockImplementation(async () => {
+        entries = [...entries.filter((entry) => entry.name !== "notes.txt"), hidden];
+      });
+      render(<SftpPage sessionId="session-1" />);
+      const notes = await screen.findByText("notes.txt");
+      const body = screen.getAllByRole("listbox")[0]!;
+      if (operation === "create")
+        fireEvent.click(screen.getAllByRole("button", { name: "New file" })[0]!);
+      else {
+        fireEvent.click(notes.closest(".sftp-row")!);
+        fireEvent.keyDown(body, { key: "F2" });
+      }
+      const input = document.querySelector(".sftp-row input")!;
+      fireEvent.change(input, { target: { value: ".env" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      await waitFor(() =>
+        expect(
+          within(body).getByText(".env").closest(".sftp-row")?.getAttribute("aria-selected"),
+        ).toBe("true"),
+      );
+      expect(useSettings.getState().settings.filesShowHidden).toBe(false);
+      fireEvent.keyDown(body, { key: "Backspace" });
+      await waitFor(() =>
+        expect(
+          (screen.getAllByRole("textbox", { name: "Path" })[0] as HTMLInputElement).value,
+        ).toBe("C:\\"),
+      );
+      expect(within(body).queryByText(".env")).toBeNull();
+    },
+  );
+
+  it("copies paths through the native-aware clipboard helper", async () => {
+    const copy = vi.spyOn(clipboard, "copyText").mockImplementation(() => undefined);
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.contextMenu((await screen.findByText("notes.txt")).closest(".sftp-row")!);
+    useContextMenu
+      .getState()
+      .menu!.items.find((item) => item.label === "Copy path")!
+      .onSelect();
+    expect(copy).toHaveBeenCalledExactlyOnceWith("C:\\work\\notes.txt");
   });
 });

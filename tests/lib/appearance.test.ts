@@ -1,9 +1,79 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolveLanguage, resolveTheme, validateUserCss } from "@/lib/prefs/appearance";
+import {
+  applyAppearance,
+  observeSystemAppearance,
+  resolveLanguage,
+  resolveMotion,
+  resolveTheme,
+  validateUserCss,
+} from "@/lib/prefs/appearance";
+import { createDefaultSettings, DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+
+afterEach(() => vi.restoreAllMocks());
+
+describe("appearance preferences", () => {
+  it("uses the platform title bar defaults with system theme, 14px mono and no right panel", () => {
+    expect(createDefaultSettings("windows").titleBarStyle).toBe("compact");
+    expect(createDefaultSettings("macos").titleBarStyle).toBe("system");
+    expect(createDefaultSettings("linux").titleBarStyle).toBe("system");
+    expect(DEFAULT_SETTINGS.theme).toBe("system");
+    expect(DEFAULT_SETTINGS.monoFontSize).toBe(14);
+    expect(DEFAULT_SETTINGS.rightPanel).toBe(false);
+  });
+
+  it("resolves system motion and respects explicit full/reduced choices", () => {
+    expect(resolveMotion("system", true)).toBe("reduced");
+    expect(resolveMotion("system", false)).toBe("full");
+    expect(resolveMotion("full", true)).toBe("full");
+    expect(resolveMotion("reduced", false)).toBe("reduced");
+  });
+
+  it("updates system motion and theme live, and releases OS listeners", () => {
+    const theme = Object.assign(new EventTarget(), { matches: false });
+    const motion = Object.assign(new EventTarget(), { matches: false });
+    vi.spyOn(window, "matchMedia").mockImplementation(
+      (query) => (query.includes("reduced-motion") ? motion : theme) as MediaQueryList,
+    );
+    let settings = { ...DEFAULT_SETTINGS };
+    applyAppearance(settings);
+    const stop = observeSystemAppearance(() => settings);
+    expect(document.documentElement.dataset.motion).toBe("full");
+    motion.matches = true;
+    motion.dispatchEvent(new Event("change"));
+    expect(document.documentElement.dataset.motion).toBe("reduced");
+    theme.matches = true;
+    theme.dispatchEvent(new Event("change"));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    settings = { ...settings, motion: "full" };
+    applyAppearance(settings);
+    motion.dispatchEvent(new Event("change"));
+    expect(document.documentElement.dataset.motion).toBe("full");
+    expect(document.documentElement.dataset.motionPreference).toBe("full");
+    stop();
+    settings = { ...settings, motion: "system" };
+    motion.dispatchEvent(new Event("change"));
+    expect(document.documentElement.dataset.motion).toBe("full");
+  });
+
+  it("keeps unchanged user CSS nodes intact during unrelated settings updates", () => {
+    const settings = { ...DEFAULT_SETTINGS, userCss: ":root { --custom-token: red; }" };
+    applyAppearance(settings);
+    const style = document.getElementById("td-user-css")!;
+    const observer = new MutationObserver(() => {});
+    observer.observe(style, { childList: true, characterData: true, subtree: true });
+    applyAppearance({ ...settings, monitorIntervalMs: 10000 });
+    expect(document.getElementById("td-user-css")).toBe(style);
+    expect(observer.takeRecords()).toHaveLength(0);
+    applyAppearance({ ...settings, userCss: ":root { --custom-token: blue; }" });
+    expect(observer.takeRecords().length).toBeGreaterThan(0);
+    observer.disconnect();
+    style.remove();
+  });
+});
 
 describe("resolveTheme", () => {
   it("follows the system when asked", () => {

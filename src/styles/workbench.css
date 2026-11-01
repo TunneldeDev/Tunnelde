@@ -443,9 +443,13 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
     scroll-behavior: auto !important;
   }
+}
+
+.app.is-statusbar-hidden {
+  grid-template-rows: minmax(0, 1fr);
 }

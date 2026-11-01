@@ -4,7 +4,7 @@
 import { create } from "zustand";
 
 import { applyAppearance, resolveLanguage } from "@/lib/prefs/appearance";
-import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { createDefaultSettings, DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { AppInfo, Settings, SettingsPatch } from "@/lib/api/types";
 import { setLanguage } from "@/i18n/i18n";
@@ -42,6 +42,7 @@ interface SettingsStore {
   settings: Settings;
   info: AppInfo | null;
   ready: boolean;
+  saving: boolean;
   error: string | null;
   load: () => Promise<void>;
   update: (patch: SettingsPatch) => Promise<boolean>;
@@ -82,7 +83,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
       confirmed,
     );
     applySettings(settings);
-    set({ settings });
+    set({ settings, saving: pending.length > 0 });
   };
   const commit = (patch: SettingsPatch, reset = false): Promise<boolean> => {
     if (pending.length === 0) confirmed = get().settings;
@@ -112,6 +113,7 @@ export const useSettings = create<SettingsStore>((set, get) => {
     settings: DEFAULT_SETTINGS,
     info: null,
     ready: false,
+    saving: false,
     error: null,
 
     load: () => {
@@ -143,7 +145,8 @@ export const useSettings = create<SettingsStore>((set, get) => {
     update: (patch) => commit(patch),
 
     reset: async () => {
-      if (await commit(DEFAULT_SETTINGS, true)) toast(i18n.t("toast.reset"), "success");
+      const defaults = get().info?.defaultSettings ?? createDefaultSettings(get().info?.os);
+      if (await commit(defaults, true)) toast(i18n.t("toast.reset"), "success");
     },
 
     applyRemote: (settings) => {

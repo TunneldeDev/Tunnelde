@@ -3,7 +3,7 @@
 
 import { api, events, isTauri } from "@/lib/api/ipc";
 import type { TabRecord } from "@/lib/api/types";
-import { applyAppearance } from "@/lib/prefs/appearance";
+import { observeSystemAppearance } from "@/lib/prefs/appearance";
 import i18n from "@/i18n/i18n";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
@@ -30,6 +30,8 @@ async function start(): Promise<void> {
   window.addEventListener("contextmenu", (event) => event.preventDefault());
 
   await useSettings.getState().load();
+  observeSystemAppearance(() => useSettings.getState().settings);
+  const restoreWorkspace = useSettings.getState().settings.restoreWorkspace !== false;
 
   if (!isTauri()) {
     useWorkspace.getState().ensureWelcome();
@@ -41,8 +43,10 @@ async function start(): Promise<void> {
   try {
     const records = await api.tabs();
     // A slow snapshot must not replace tabs opened while startup is in progress.
-    if (useWorkspace.getState().tabs === initialTabs) useWorkspace.getState().hydrate(records);
-    restored = true;
+    if (restoreWorkspace) {
+      if (useWorkspace.getState().tabs === initialTabs) useWorkspace.getState().hydrate(records);
+      restored = true;
+    }
   } catch (error) {
     toast(translateError(error), "error");
   }
@@ -141,12 +145,4 @@ async function wireEvents(): Promise<void> {
   ]);
   const failed = listeners.find((listener) => listener.status === "rejected");
   if (failed?.status === "rejected") toast(translateError(failed.reason), "error");
-
-  const media = window.matchMedia("(prefers-color-scheme: light)");
-  media.addEventListener("change", () => {
-    const settings = useSettings.getState().settings;
-    if (settings.theme === "system") {
-      applyAppearance(settings);
-    }
-  });
 }

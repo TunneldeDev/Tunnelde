@@ -12,6 +12,8 @@ vi.mock("@/lib/api/ipc", () => ({ api: apiMock, isTauri: () => true }));
 import "@/i18n/i18n";
 import { SystemPanel } from "@/components/layout/SystemPanel";
 import { useSystemStats } from "@/lib/session/useSystemStats";
+import { useSettings } from "@/store/settings";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 const stats: SystemStats = {
   cpuUsage: 21,
@@ -36,6 +38,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   apiMock.systemStats.mockReset().mockResolvedValue(stats);
   visibility = "visible";
+  useSettings.setState({ settings: DEFAULT_SETTINGS });
   vi.spyOn(document, "visibilityState", "get").mockImplementation(() => visibility);
 });
 
@@ -56,6 +59,32 @@ async function flushRequests() {
 }
 
 describe("local system stats sampling", () => {
+  it("adopts configured intervals live without overlapping a pending request", async () => {
+    let finish!: (value: SystemStats) => void;
+    apiMock.systemStats.mockReturnValueOnce(
+      new Promise<SystemStats>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderHook(() => useSystemStats());
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 1000 } }));
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(1);
+    await act(async () => finish(stats));
+    await act(() => vi.advanceTimersByTimeAsync(999));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(2);
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 30000 } }),
+    );
+    await flushRequests();
+    const calls = apiMock.systemStats.mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(29999));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(calls);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(calls + 1);
+  });
   it("stops a collapsed SystemPanel and refreshes immediately when reopened", async () => {
     const { rerender } = render(<SystemPanel width={280} hidden onHide={() => {}} />);
     expect(apiMock.systemStats).not.toHaveBeenCalled();

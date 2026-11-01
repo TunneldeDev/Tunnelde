@@ -3,27 +3,59 @@
 
 import type { MonoFont, Settings } from "../api/types";
 
-export const DEFAULT_SETTINGS: Settings = {
-  language: "system",
-  theme: "dark",
-  accent: "blue",
-  density: "comfortable",
-  uiFontSize: 13,
-  monoFontSize: 13,
-  monoFont: "fira-code",
-  sidebarWidth: 272,
-  rightPanel: true,
-  rightPanelWidth: 296,
-  userCss: "",
-  autoCheckUpdates: true,
-  skippedVersion: null,
-  lastUpdateCheck: null,
-  closeToTray: false,
-  titleBarStyle: "system",
-  recordTerminalHistory: false,
-  preloadDirs: true,
-  preloadCount: 8,
-};
+export const MONO_FONT_SIZE_MIN = 10;
+export const MONO_FONT_SIZE_MAX = 32;
+export const UI_FONT_SIZE_MIN = 11;
+export const UI_FONT_SIZE_MAX = 20;
+
+export function createDefaultSettings(platform = "unknown"): Settings {
+  return {
+    language: "system",
+    theme: "system",
+    accent: "blue",
+    density: "comfortable",
+    uiFontSize: 13,
+    monoFontSize: 14,
+    monoFont: "fira-code",
+    sidebarWidth: 272,
+    rightPanel: false,
+    rightPanelWidth: 296,
+    userCss: "",
+    autoCheckUpdates: true,
+    skippedVersion: null,
+    lastUpdateCheck: null,
+    closeToTray: false,
+    titleBarStyle: platform === "windows" ? "compact" : "system",
+    recordTerminalHistory: false,
+    preloadDirs: true,
+    preloadCount: 4,
+    motion: "system",
+    showStatusBar: true,
+    restoreWorkspace: true,
+    hostActivation: "terminal",
+    terminalScrollback: 10_000,
+    terminalLineHeight: 1.2,
+    terminalCursorStyle: "block",
+    terminalCursorBlink: true,
+    terminalInactiveCursorStyle: "outline",
+    terminalScrollSensitivity: 1,
+    terminalSmoothScrolling: false,
+    terminalScrollOnInput: true,
+    terminalCopyOnSelect: false,
+    terminalRightClick: "menu",
+    terminalRenderer: "auto",
+    filesShowHidden: false,
+    filesFoldersFirst: true,
+    filesSortBy: "name",
+    filesSortDirection: "asc",
+    editorWordWrap: false,
+    editorTabSize: 4,
+    editorSpellCheck: false,
+    monitorIntervalMs: 3000,
+  };
+}
+
+export const DEFAULT_SETTINGS = createDefaultSettings();
 
 export type AccentLabelKey =
   | "settings.accentBlue"

@@ -1,492 +1,550 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { FileCode2, FolderOpen, RotateCcw } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { FileCode2, FolderOpen, RotateCcw, Search, X } from "lucide-react";
+import { lazy, Suspense, useId, useState, type Dispatch, type SetStateAction } from "react";
 import { useTranslation } from "react-i18next";
-
-import { Button } from "@/components/ui/form/Button";
-import { Switch, Textarea } from "@/components/ui/form/Field";
+import { Button, IconButton } from "@/components/ui/form/Button";
+import { Input, Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { Segmented, Stepper, SwatchPicker } from "@/components/ui/form/Segmented";
+import { SwatchPicker } from "@/components/ui/form/Segmented";
 import { validateUserCss } from "@/lib/prefs/appearance";
-import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
+import { createDefaultSettings, ACCENT_SWATCHES } from "@/lib/prefs/defaults";
+import type { Settings, SettingsPatch } from "@/lib/api/types";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
-import { formatDateTime } from "@/lib/text/format";
-import type { Density, Language, MonoFont, ThemeMode, TitleBarStyle } from "@/lib/api/types";
+import { cn, formatDateTime } from "@/lib/text/format";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
 import { useNavigation, type SettingsSection } from "@/store/navigation";
+import {
+  SECTION_LABELS,
+  SETTINGS_CATALOG,
+  SETTINGS_SECTIONS,
+  type SettingDefinition,
+  type SettingOption,
+} from "./catalog";
+import { NumberPreference } from "./NumberPreference";
 
-const SECTIONS: SettingsSection[] = [
-  "general",
-  "appearance",
-  "files",
-  "css",
-  "updates",
-  "advanced",
-];
+const TerminalPreview = lazy(() =>
+  import("@/features/terminal/TerminalPreview").then((module) => ({
+    default: module.TerminalPreview,
+  })),
+);
 
-const SECTION_KEYS = {
-  general: "settings.general",
-  appearance: "settings.appearance",
-  files: "settings.files",
-  css: "settings.css",
-  updates: "settings.updatesSection",
-  advanced: "settings.advanced",
-} as const;
-
-function Row({ label, control, hint }: { label: string; control: ReactNode; hint?: string }) {
+function PreferenceRow({
+  definition,
+  settings,
+  defaults,
+  onReset,
+  resetVersion,
+}: {
+  definition: SettingDefinition;
+  settings: Settings;
+  defaults: Settings;
+  onReset: () => void;
+  resetVersion: number;
+}) {
+  const { t } = useTranslation();
+  const descriptionId = useId();
+  const update = useSettings((state) => state.update);
+  const label = t(definition.label);
+  const value = settings[definition.key];
+  const defaultValue = defaults[definition.key];
+  const modified = value !== defaultValue;
+  const disabled = definition.dependsOn ? !settings[definition.dependsOn] : false;
+  const setValue = (next: string | number | boolean) =>
+    void update({ [definition.key]: next } as SettingsPatch);
+  const optionLabel = (option: SettingOption) => (option.literal ? option.label : t(option.label));
+  const formatValue = (next: Settings[typeof definition.key]) => {
+    if (typeof next === "boolean") return t(next ? "settings.enabled" : "settings.disabled");
+    const option = definition.options?.find((item) => item.value === next);
+    if (option) return optionLabel(option);
+    if (definition.kind === "accent") {
+      const swatch = ACCENT_SWATCHES.find((item) => item.id === next);
+      if (swatch) return t(swatch.labelKey);
+    }
+    return `${next}${definition.unit ? ` ${definition.unit}` : ""}`;
+  };
   return (
-    <div className="settings-row">
-      <div className="settings-row__text">
-        <span className="settings-row__label">{label}</span>
-        {hint ? <span className="settings-row__hint">{hint}</span> : null}
+    <div
+      className={cn("settings-row", modified && "is-modified", disabled && "is-disabled")}
+      data-setting={definition.key}
+    >
+      <div className="settings-row__text" id={descriptionId}>
+        <span className="settings-row__label">
+          {label}
+          {modified ? (
+            <span
+              className="settings-row__modified"
+              title={t("settings.modified")}
+              aria-label={t("settings.modified")}
+            />
+          ) : null}
+        </span>
+        {definition.hint ? <span className="settings-row__hint">{t(definition.hint)}</span> : null}
+        <span className="settings-row__default">
+          {t("settings.defaultValue", { value: formatValue(defaultValue) })}
+          {definition.kind === "number"
+            ? ` · ${t("settings.valueRange", { min: definition.min, max: definition.max })}`
+            : ""}
+        </span>
       </div>
-      <div className="settings-row__control">{control}</div>
+      <div
+        className="settings-row__control"
+        aria-describedby={definition.hint ? descriptionId : undefined}
+      >
+        {definition.kind === "toggle" ? (
+          <Switch
+            label={label}
+            checked={Boolean(value)}
+            disabled={disabled}
+            onChange={setValue}
+            descriptionId={descriptionId}
+          />
+        ) : null}
+        {definition.kind === "number" ? (
+          <NumberPreference
+            key={resetVersion}
+            label={label}
+            descriptionId={descriptionId}
+            value={Number(value)}
+            min={definition.min!}
+            max={definition.max!}
+            step={definition.step}
+            unit={definition.unit}
+            disabled={disabled}
+            onChange={setValue}
+          />
+        ) : null}
+        {definition.kind === "select" ? (
+          <Select
+            label={label}
+            descriptionId={descriptionId}
+            value={String(value)}
+            disabled={disabled}
+            options={definition.options!.map((option) => ({
+              value: String(option.value),
+              label: optionLabel(option),
+            }))}
+            onChange={(next) => setValue(typeof defaultValue === "number" ? Number(next) : next)}
+          />
+        ) : null}
+        {definition.kind === "accent" ? (
+          <SwatchPicker value={String(value)} onChange={setValue} />
+        ) : null}
+        <IconButton
+          className="settings-reset"
+          size="sm"
+          label={t("settings.restoreOne", { name: label })}
+          disabled={!modified}
+          onClick={onReset}
+        >
+          <RotateCcw size={13} />
+        </IconButton>
+      </div>
     </div>
   );
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <section className="settings-section">
-      <h2 className="settings-section__title">{title}</h2>
-      <div className="settings-section__body">{children}</div>
-    </section>
-  );
-}
-
-function GeneralSection() {
+function CssEditor({
+  draft,
+  onDraft,
+}: {
+  draft: string | null;
+  onDraft: Dispatch<SetStateAction<string | null>>;
+}) {
   const { t } = useTranslation();
-  const settings = useSettings((state) => state.settings);
-  const info = useSettings((state) => state.info);
+  const value = useSettings((state) => state.settings.userCss);
   const update = useSettings((state) => state.update);
-
-  return (
-    <Section title={t("settings.general")}>
-      <Row
-        label={t("settings.language")}
-        control={
-          <Select
-            label={t("settings.language")}
-            value={settings.language}
-            options={[
-              { value: "system", label: t("settings.languageSystem") },
-              { value: "zh-CN", label: "简体中文" },
-              { value: "en-US", label: "English" },
-            ]}
-            onChange={(value) => void update({ language: value as Language })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.titleBar")}
-        hint={t("settings.titleBarHint")}
-        control={
-          <Select
-            label={t("settings.titleBar")}
-            value={settings.titleBarStyle}
-            options={[
-              { value: "system", label: t("settings.titleBarSystem") },
-              { value: "compact", label: t("settings.titleBarCompact") },
-            ]}
-            onChange={(value) => void update({ titleBarStyle: value as TitleBarStyle })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.version")}
-        control={<span className="settings-value">{info?.version ?? "0.1.0"}</span>}
-      />
-      <Row
-        label={t("settings.recordTerminalHistory")}
-        hint={t("settings.recordTerminalHistoryHint")}
-        control={
-          <Switch
-            label={t("settings.recordTerminalHistory")}
-            checked={settings.recordTerminalHistory}
-            onChange={(recordTerminalHistory) => void update({ recordTerminalHistory })}
-          />
-        }
-      />
-    </Section>
-  );
-}
-
-function FilesSection() {
-  const { t } = useTranslation();
-  const settings = useSettings((state) => state.settings);
-  const update = useSettings((state) => state.update);
-
-  return (
-    <Section title={t("settings.files")}>
-      <Row
-        label={t("settings.preloadDirs")}
-        control={
-          <Switch
-            label={t("settings.preloadDirs")}
-            checked={settings.preloadDirs}
-            onChange={(preloadDirs) => void update({ preloadDirs })}
-          />
-        }
-      />
-      {settings.preloadDirs ? (
-        <Row
-          label={t("settings.preloadCount")}
-          control={
-            <Stepper
-              label={t("settings.preloadCount")}
-              value={settings.preloadCount}
-              min={0}
-              max={32}
-              onChange={(preloadCount) => void update({ preloadCount })}
-            />
-          }
-        />
-      ) : null}
-    </Section>
-  );
-}
-
-function AppearanceSection() {
-  const { t } = useTranslation();
-  const settings = useSettings((state) => state.settings);
-  const update = useSettings((state) => state.update);
-
-  return (
-    <Section title={t("settings.appearance")}>
-      <Row
-        label={t("settings.theme")}
-        control={
-          <Segmented
-            label={t("settings.theme")}
-            value={settings.theme}
-            options={[
-              { value: "dark", label: t("settings.themeDark") },
-              { value: "light", label: t("settings.themeLight") },
-              { value: "system", label: t("settings.themeSystem") },
-            ]}
-            onChange={(value: ThemeMode) => void update({ theme: value })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.accent")}
-        control={
-          <SwatchPicker value={settings.accent} onChange={(accent) => void update({ accent })} />
-        }
-      />
-      <Row
-        label={t("settings.density")}
-        control={
-          <Segmented
-            label={t("settings.density")}
-            value={settings.density}
-            options={[
-              { value: "comfortable", label: t("settings.densityComfortable") },
-              { value: "compact", label: t("settings.densityCompact") },
-            ]}
-            onChange={(value: Density) => void update({ density: value })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.uiFontSize")}
-        control={
-          <Stepper
-            label={t("settings.uiFontSize")}
-            value={settings.uiFontSize}
-            min={11}
-            max={16}
-            onChange={(uiFontSize) => void update({ uiFontSize })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.monoFontSize")}
-        control={
-          <Stepper
-            label={t("settings.monoFontSize")}
-            value={settings.monoFontSize}
-            min={11}
-            max={20}
-            onChange={(monoFontSize) => void update({ monoFontSize })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.monoFont")}
-        control={
-          <Select
-            label={t("settings.monoFont")}
-            value={settings.monoFont}
-            options={MONO_FONT_OPTIONS}
-            onChange={(value) => void update({ monoFont: value as MonoFont })}
-          />
-        }
-      />
-    </Section>
-  );
-}
-
-function CssSection() {
-  const { t } = useTranslation();
-  const settings = useSettings((state) => state.settings);
-  const update = useSettings((state) => state.update);
-  const [draftState, setDraftState] = useState<string | null>(null);
-  const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  const draft = draftState ?? settings.userCss;
-
+  const [applying, setApplying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const text = draft ?? value;
   const apply = async () => {
-    const check = validateUserCss(draft);
-    if (!check.ok) {
-      setMessage({ tone: "error", text: t("settings.cssRejected") });
+    if (applying) return;
+    const submitted = text;
+    if (!validateUserCss(submitted).ok) {
+      setError(t("settings.cssRejected"));
       return;
     }
-    if (!(await update({ userCss: draft }))) return;
-    setDraftState(null);
-    setMessage({ tone: "ok", text: t("settings.cssApplied") });
+    setApplying(true);
+    try {
+      if (await update({ userCss: submitted })) {
+        onDraft((current) => (current === submitted ? null : current));
+        setError(null);
+      }
+    } finally {
+      setApplying(false);
+    }
   };
-
   const importFile = async () => {
-    if (!isTauri()) {
-      return;
-    }
     try {
-      const text = await api.importCss();
-      if (text !== null) {
-        setDraftState(text);
-        setMessage({ tone: "ok", text: t("toast.cssImported") });
+      const imported = await api.importCss();
+      if (imported !== null) {
+        onDraft(imported);
+        setError(null);
       }
-    } catch (error) {
-      toast(translateError(error), "error");
+    } catch (failure) {
+      toast(translateError(failure), "error");
     }
   };
-
   const exportFile = async () => {
-    if (!isTauri()) {
-      return;
-    }
     try {
-      const path = await api.exportCss(draft);
-      if (path) {
-        toast(t("toast.cssExported", { path }), "success");
-      }
-    } catch (error) {
-      toast(translateError(error), "error");
+      const path = await api.exportCss(text);
+      if (path) toast(t("toast.cssExported", { path }), "success");
+    } catch (failure) {
+      toast(translateError(failure), "error");
     }
   };
-
   return (
-    <Section title={t("settings.customCss")}>
+    <div className="settings-css-editor">
       <Textarea
-        className="settings-css"
         aria-label={t("settings.customCss")}
+        className="settings-css"
         spellCheck={false}
-        rows={14}
-        value={draft}
+        rows={10}
+        value={text}
         placeholder={t("settings.customCssPlaceholder")}
         onChange={(event) => {
-          setDraftState(event.target.value);
-          setMessage(null);
+          onDraft(event.target.value);
+          setError(null);
         }}
       />
-      {message ? (
-        <p
-          className={message.tone === "ok" ? "settings-message is-ok" : "settings-message is-error"}
-        >
-          {message.text}
+      {draft !== null && draft !== value ? (
+        <p className="settings-row__hint" role="status">
+          {t("settings.cssDraft")}
+        </p>
+      ) : null}
+      {error ? (
+        <p className="settings-message is-error" role="alert">
+          {error}
         </p>
       ) : null}
       <div className="settings-actions">
-        <Button variant="primary" onClick={() => void apply()}>
+        <Button
+          variant="primary"
+          disabled={applying || text === value}
+          onClick={() => void apply()}
+        >
           {t("common.apply")}
         </Button>
         <Button
-          variant="secondary"
           leading={<FileCode2 size={14} />}
+          disabled={!isTauri()}
           onClick={() => void importFile()}
         >
           {t("common.import")}
         </Button>
-        <Button variant="ghost" onClick={() => void exportFile()}>
+        <Button variant="ghost" disabled={!isTauri()} onClick={() => void exportFile()}>
           {t("common.export")}
         </Button>
-        <Button
-          variant="ghost"
-          onClick={() => {
-            setDraftState(null);
-            setMessage(null);
-            void update({ userCss: "" });
-          }}
-        >
-          {t("common.reset")}
-        </Button>
+        {draft !== null ? (
+          <Button
+            variant="ghost"
+            onClick={() => {
+              onDraft(null);
+              setError(null);
+            }}
+          >
+            {t("settings.discardDraft")}
+          </Button>
+        ) : null}
       </div>
-    </Section>
-  );
-}
-
-function UpdatesSection() {
-  const { t, i18n } = useTranslation();
-  const settings = useSettings((state) => state.settings);
-  const update = useSettings((state) => state.update);
-  const info = useSettings((state) => state.info);
-  const openPage = useWorkspace((state) => state.openPage);
-  const locale = i18n.resolvedLanguage ?? "en-US";
-
-  return (
-    <Section title={t("settings.updatesSection")}>
-      <Row
-        label={t("settings.autoCheck")}
-        control={
-          <Switch
-            label={t("settings.autoCheck")}
-            checked={settings.autoCheckUpdates}
-            onChange={(autoCheckUpdates) => void update({ autoCheckUpdates })}
-          />
-        }
-      />
-      <Row
-        label={t("settings.version")}
-        control={<span className="settings-value">{info?.version ?? "0.1.0"}</span>}
-      />
-      <Row
-        label={t("updates.lastChecked")}
-        control={
-          <span className="settings-value">
-            {settings.lastUpdateCheck
-              ? formatDateTime(settings.lastUpdateCheck, locale)
-              : t("common.never")}
-          </span>
-        }
-      />
-      <div className="settings-actions">
-        <Button
-          variant="secondary"
-          onClick={() => {
-            openPage("updates");
-            void useUpdates.getState().check(true);
-          }}
-        >
-          {t("updates.check")}
-        </Button>
-      </div>
-    </Section>
-  );
-}
-
-function AdvancedSection() {
-  const { t } = useTranslation();
-  const settings = useSettings((state) => state.settings);
-  const info = useSettings((state) => state.info);
-  const update = useSettings((state) => state.update);
-  const reset = useSettings((state) => state.reset);
-  const confirm = useDialogs((state) => state.confirm);
-  const isMac = info?.os === "macos";
-
-  return (
-    <Section title={t("settings.advanced")}>
-      <Row
-        label={t("settings.dataDir")}
-        control={
-          <div className="settings-inline">
-            <code className="settings-path">{info?.dataDir ?? "—"}</code>
-            <Button
-              variant="ghost"
-              size="sm"
-              leading={<FolderOpen size={13} />}
-              onClick={() =>
-                void api.openDataDir().catch((error) => toast(translateError(error), "error"))
-              }
-            >
-              {t("settings.openData")}
-            </Button>
-          </div>
-        }
-      />
-      <Row
-        label={t("settings.logDir")}
-        control={
-          <div className="settings-inline">
-            <code className="settings-path">{info?.logDir ?? "—"}</code>
-            <Button
-              variant="ghost"
-              size="sm"
-              leading={<FolderOpen size={13} />}
-              onClick={() =>
-                void api.openLogDir().catch((error) => toast(translateError(error), "error"))
-              }
-            >
-              {t("settings.openLogs")}
-            </Button>
-          </div>
-        }
-      />
-      {isMac ? null : (
-        <Row
-          label={t("settings.closeToTray")}
-          control={
-            <Switch
-              label={t("settings.closeToTray")}
-              checked={settings.closeToTray}
-              onChange={(closeToTray) => void update({ closeToTray })}
-            />
-          }
-        />
-      )}
-      <div className="settings-actions">
-        <Button
-          variant="ghost-danger"
-          leading={<RotateCcw size={14} />}
-          onClick={() =>
-            confirm({
-              title: t("settings.resetAll"),
-              body: t("settings.resetConfirm"),
-              confirmLabel: t("common.reset"),
-              danger: true,
-              onConfirm: () => void reset(),
-            })
-          }
-        >
-          {t("settings.resetAll")}
-        </Button>
-      </div>
-    </Section>
+    </div>
   );
 }
 
 export function SettingsPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const settings = useSettings((state) => state.settings);
+  const info = useSettings((state) => state.info);
+  const error = useSettings((state) => state.error);
+  const saving = useSettings((state) => state.saving);
+  const update = useSettings((state) => state.update);
+  const reset = useSettings((state) => state.reset);
+  const confirm = useDialogs((state) => state.confirm);
   const section = useNavigation((state) => state.settingsSection);
-  const setSection = useNavigation((state) => state.selectSettings);
-
+  const selectSection = useNavigation((state) => state.selectSettings);
+  const openPage = useWorkspace((state) => state.openPage);
+  const [query, setQuery] = useState("");
+  const [modifiedOnly, setModifiedOnly] = useState(false);
+  const [cssDraft, setCssDraft] = useState<string | null>(null);
+  const [resetVersions, setResetVersions] = useState<Record<string, number>>({});
+  const clearNumberDrafts = (keys: readonly string[]) =>
+    setResetVersions((previous) => {
+      const next = { ...previous };
+      for (const key of keys) next[key] = (next[key] ?? 0) + 1;
+      return next;
+    });
+  const defaults = info?.defaultSettings ?? createDefaultSettings(info?.os);
+  const filtering = Boolean(query.trim()) || modifiedOnly;
+  const definitions = SETTINGS_CATALOG.filter((item) => !(item.hideOnMac && info?.os === "macos"));
+  const isModified = (item: SettingDefinition) =>
+    settings[item.key] !== defaults[item.key] ||
+    (item.key === "userCss" && cssDraft !== null && cssDraft !== settings.userCss);
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const visible = definitions.filter((item) => {
+    if (!filtering && item.section !== section) return false;
+    if (modifiedOnly && !isModified(item)) return false;
+    const text = [
+      item.key,
+      ...["en-US", "zh-CN"].flatMap((language) => {
+        const translate = i18n.getFixedT(language);
+        return [
+          translate(item.label),
+          translate(SECTION_LABELS[item.section]),
+          item.hint ? translate(item.hint) : "",
+          ...(item.options ?? []).map((option) =>
+            option.literal ? option.label : translate(option.label),
+          ),
+        ];
+      }),
+    ]
+      .join(" ")
+      .toLocaleLowerCase();
+    return words.every((word) => text.includes(word));
+  });
+  const resetOne = (definition: SettingDefinition) => {
+    clearNumberDrafts([definition.key]);
+    if (definition.key === "userCss") setCssDraft(null);
+    void update({ [definition.key]: defaults[definition.key] } as SettingsPatch);
+  };
+  const resetSection = (target: SettingsSection) => {
+    const items = definitions.filter((item) => item.section === target);
+    confirm({
+      title: t("settings.restoreSection", { name: t(SECTION_LABELS[target]) }),
+      body: t("settings.restoreSectionConfirm", { name: t(SECTION_LABELS[target]) }),
+      confirmLabel: t("common.reset"),
+      onConfirm: () => {
+        clearNumberDrafts(items.map((definition) => definition.key));
+        if (target === "advanced") setCssDraft(null);
+        void update(
+          Object.fromEntries(items.map((item) => [item.key, defaults[item.key]])) as SettingsPatch,
+        );
+      },
+    });
+  };
+  const clearFilters = () => {
+    setQuery("");
+    setModifiedOnly(false);
+  };
+  const showSection = (target: SettingsSection) => {
+    selectSection(target);
+    clearFilters();
+  };
+  const locale = i18n.resolvedLanguage ?? "en-US";
   return (
     <div className="page settings">
-      <nav className="settings__nav" aria-label={t("settings.title")}>
-        {SECTIONS.map((item) => (
-          <button
-            key={item}
-            type="button"
-            className={item === section ? "settings__nav-item is-active" : "settings__nav-item"}
-            onClick={() => setSection(item)}
-          >
-            {t(SECTION_KEYS[item])}
-          </button>
-        ))}
-      </nav>
-      <div className="settings__body">
-        {section === "general" ? <GeneralSection /> : null}
-        {section === "appearance" ? <AppearanceSection /> : null}
-        {section === "files" ? <FilesSection /> : null}
-        {section === "css" ? <CssSection /> : null}
-        {section === "updates" ? <UpdatesSection /> : null}
-        {section === "advanced" ? <AdvancedSection /> : null}
+      <div className="settings-toolbar">
+        <div className="settings-search">
+          <Search size={15} aria-hidden="true" />
+          <Input
+            aria-label={t("settings.search")}
+            placeholder={t("settings.search")}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {query ? (
+            <IconButton size="sm" label={t("settings.clearSearch")} onClick={() => setQuery("")}>
+              <X size={13} />
+            </IconButton>
+          ) : null}
+        </div>
+        <label className="settings-modified-filter">
+          <input
+            type="checkbox"
+            checked={modifiedOnly}
+            onChange={(event) => setModifiedOnly(event.target.checked)}
+          />
+          {t("settings.modifiedOnly")}
+          <span>{definitions.filter(isModified).length}</span>
+        </label>
+      </div>
+      <div className="settings-save-state" role="status">
+        {error ? (
+          <span className="settings-message is-error">{error}</span>
+        ) : (
+          t(saving ? "settings.saving" : "settings.autoSavedHint")
+        )}
+      </div>
+      <div className="settings__content">
+        <nav className="settings__nav" aria-label={t("settings.title")}>
+          {SETTINGS_SECTIONS.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={cn("settings__nav-item", !filtering && item === section && "is-active")}
+              aria-current={!filtering && item === section ? "page" : undefined}
+              onClick={() => showSection(item)}
+            >
+              {t(SECTION_LABELS[item])}
+            </button>
+          ))}
+        </nav>
+        <div className="settings__body">
+          {filtering ? (
+            <div className="settings-results">
+              <span>{t("settings.resultCount", { count: visible.length })}</span>
+              <Button size="sm" variant="ghost" onClick={clearFilters}>
+                {t("settings.clearFilters")}
+              </Button>
+            </div>
+          ) : null}
+          {SETTINGS_SECTIONS.filter(
+            (item) =>
+              visible.some((definition) => definition.section === item) ||
+              (!filtering && item === section),
+          ).map((item) => (
+            <section className="settings-section" key={item} aria-label={t(SECTION_LABELS[item])}>
+              <div className="settings-section__head">
+                <h2 className="settings-section__title">{t(SECTION_LABELS[item])}</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={
+                    !definitions.some(
+                      (definition) => definition.section === item && isModified(definition),
+                    )
+                  }
+                  leading={<RotateCcw size={13} />}
+                  onClick={() => resetSection(item)}
+                >
+                  {t("settings.restoreCategory")}
+                </Button>
+              </div>
+              <div className="settings-section__body">
+                {item === "terminal" && !filtering ? (
+                  <Suspense fallback={<p className="settings-row__hint">{t("common.loading")}</p>}>
+                    <TerminalPreview />
+                  </Suspense>
+                ) : null}
+                {visible
+                  .filter((definition) => definition.section === item)
+                  .map((definition) =>
+                    definition.kind === "css" ? (
+                      <div
+                        key={definition.key}
+                        className="settings-css-group"
+                        data-setting="userCss"
+                      >
+                        <div className="settings-section__head">
+                          <span>{t(definition.label)}</span>
+                          <IconButton
+                            size="sm"
+                            label={t("settings.restoreOne", { name: t(definition.label) })}
+                            disabled={!isModified(definition)}
+                            onClick={() => resetOne(definition)}
+                          >
+                            <RotateCcw size={13} />
+                          </IconButton>
+                        </div>
+                        <p className="settings-row__hint">
+                          {t(definition.hint!)} ·{" "}
+                          {t("settings.defaultValue", { value: t("settings.cssEmpty") })}
+                        </p>
+                        <CssEditor draft={cssDraft} onDraft={setCssDraft} />
+                      </div>
+                    ) : (
+                      <PreferenceRow
+                        key={definition.key}
+                        definition={definition}
+                        settings={settings}
+                        defaults={defaults}
+                        onReset={() => resetOne(definition)}
+                        resetVersion={resetVersions[definition.key] ?? 0}
+                      />
+                    ),
+                  )}
+                {!filtering && item === "updates" ? (
+                  <>
+                    <p className="settings-detail">
+                      {t("settings.version")}: {info?.version ?? "—"} · {t("updates.lastChecked")}:{" "}
+                      {settings.lastUpdateCheck
+                        ? formatDateTime(settings.lastUpdateCheck, locale)
+                        : t("common.never")}
+                    </p>
+                    <div className="settings-actions">
+                      <Button
+                        onClick={() => {
+                          openPage("updates");
+                          void useUpdates.getState().check(true);
+                        }}
+                      >
+                        {t("updates.check")}
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
+                {!filtering && item === "advanced" ? (
+                  <>
+                    <div className="settings-locations">
+                      {(
+                        [
+                          ["settings.dataDir", info?.dataDir, api.openDataDir],
+                          ["settings.logDir", info?.logDir, api.openLogDir],
+                        ] as const
+                      ).map(([key, path, open]) => (
+                        <div className="settings-location" key={key}>
+                          <span>{t(key)}</span>
+                          <code title={path}>{path ?? "—"}</code>
+                          <IconButton
+                            size="sm"
+                            label={t(
+                              key === "settings.dataDir"
+                                ? "settings.openData"
+                                : "settings.openLogs",
+                            )}
+                            disabled={!isTauri()}
+                            onClick={() =>
+                              void open().catch((failure) =>
+                                toast(translateError(failure), "error"),
+                              )
+                            }
+                          >
+                            <FolderOpen size={14} />
+                          </IconButton>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="settings-actions">
+                      <Button
+                        variant="ghost-danger"
+                        leading={<RotateCcw size={14} />}
+                        onClick={() =>
+                          confirm({
+                            title: t("settings.resetAll"),
+                            body: t("settings.resetConfirm"),
+                            confirmLabel: t("common.reset"),
+                            danger: true,
+                            onConfirm: () => {
+                              clearNumberDrafts(definitions.map((definition) => definition.key));
+                              setCssDraft(null);
+                              void reset();
+                            },
+                          })
+                        }
+                      >
+                        {t("settings.resetAll")}
+                      </Button>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            </section>
+          ))}
+          {filtering && visible.length === 0 ? (
+            <div className="settings-empty">
+              <Search size={24} aria-hidden="true" />
+              <p>{t("common.noResults")}</p>
+              <Button variant="ghost" onClick={clearFilters}>
+                {t("settings.clearFilters")}
+              </Button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </div>
   );

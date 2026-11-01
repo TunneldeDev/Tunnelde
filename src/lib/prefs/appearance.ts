@@ -18,7 +18,6 @@ export function monoStack(font: MonoFont): string {
   return MONO_STACKS[font] ?? MONO_STACKS["fira-code"];
 }
 
-
 export function resolveTheme(mode: ThemeMode, prefersLight = false): ResolvedTheme {
   if (mode === "system") {
     return prefersLight ? "light" : "dark";
@@ -49,8 +48,38 @@ export function resolveLanguage(
 
 export function prefersLightScheme(): boolean {
   return (
-    typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: light)").matches
+    typeof window !== "undefined" && !!window.matchMedia?.("(prefers-color-scheme: light)")?.matches
   );
+}
+
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches
+  );
+}
+
+export function resolveMotion(
+  mode: Settings["motion"],
+  prefersReduced = prefersReducedMotion(),
+): "reduced" | "full" {
+  return mode === "reduced" || (mode === "system" && prefersReduced) ? "reduced" : "full";
+}
+
+/** Observe OS changes once at startup; explicit preferences keep their meaning. */
+export function observeSystemAppearance(getSettings: () => Settings): () => void {
+  const theme = window.matchMedia("(prefers-color-scheme: light)");
+  const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const update = () => {
+    const settings = getSettings();
+    if (settings.theme === "system" || settings.motion === "system") applyAppearance(settings);
+  };
+  theme.addEventListener("change", update);
+  motion.addEventListener("change", update);
+  return () => {
+    theme.removeEventListener("change", update);
+    motion.removeEventListener("change", update);
+  };
 }
 
 const EXTERNAL_URL = /url\(\s*['"]?(?:https?:)?\/\//i;
@@ -80,6 +109,8 @@ export function applyAppearance(settings: Settings, prefersLight = prefersLightS
   root.dataset.theme = resolveTheme(settings.theme, prefersLight);
   root.dataset.density = settings.density;
   root.dataset.accent = settings.accent;
+  root.dataset.motion = resolveMotion(settings.motion);
+  root.dataset.motionPreference = settings.motion;
   root.style.setProperty("--td-font-size", `${settings.uiFontSize}px`);
   root.style.setProperty("--td-mono-size", `${settings.monoFontSize}px`);
   root.style.setProperty("--td-mono", monoStack(settings.monoFont));
@@ -98,5 +129,5 @@ export function applyAppearance(settings: Settings, prefersLight = prefersLightS
     style.id = styleId;
     document.head.appendChild(style);
   }
-  style.textContent = css;
+  if (style.textContent !== css) style.textContent = css;
 }

@@ -67,4 +67,14 @@ describe("CommandPalette", () => {
     expect(useNavigation.getState().sidebarVisible).toBe(true);
     expect(useWorkspace.getState().tabs).toEqual([]);
   });
+
+  it("keeps the panel toggle accessible when the status bar is hidden", () => {
+    const update = vi.fn().mockResolvedValue(true);
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, showStatusBar: false }, update });
+    render(<CommandPalette open onClose={() => undefined} />);
+    const input = screen.getByPlaceholderText("Type a command");
+    fireEvent.change(input, { target: { value: "Show panel" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(update).toHaveBeenCalledWith({ rightPanel: true });
+  });
 });

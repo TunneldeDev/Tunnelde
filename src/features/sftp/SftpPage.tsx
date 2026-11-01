@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Check,
   File as FileIcon,
   FilePlus,
   Folder,
@@ -21,6 +22,7 @@ import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
+import { Menu } from "@/components/ui/overlay/Menu";
 import { translateError } from "@/lib/api/errors";
 import { isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
@@ -40,6 +42,9 @@ import {
   type PasteClip,
 } from "@/lib/files/dnd";
 import { fs, LOCAL_SOURCE } from "@/lib/files/fs";
+import { createPrefetchQueue } from "@/lib/files/prefetch";
+import { createFileViewSelector, visibleFiles } from "@/lib/files/view";
+import { copyText } from "@/lib/session/clipboard";
 import { cn, formatBytes, formatDate } from "@/lib/text/format";
 import { useContextMenu } from "@/store/contextMenu";
 import { useDialogs } from "@/store/dialogs";
@@ -78,6 +83,7 @@ interface PaneState {
   draft: string | null;
   renaming: RenameState | null;
   creating: CreateState | null;
+  revealedPaths: string[];
 }
 
 interface PaneModel {
@@ -97,7 +103,9 @@ const EMPTY: PaneState = {
   draft: null,
   renaming: null,
   creating: null,
+  revealedPaths: [],
 };
+const NO_ENTRIES: FileEntry[] = [];
 
 function joinIn(source: FsSource, directory: string, name: string): string {
   return joinPath(directory, name, separatorFor(source, directory));
@@ -135,6 +143,21 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const clip = useFileClipboard((state) => state.clip);
   const setClip = useFileClipboard((state) => state.set);
   const openMenu = useContextMenu((state) => state.open);
+  const settings = useSettings((state) => state.settings);
+  const updateSettings = useSettings((state) => state.update);
+  const locale = i18n.resolvedLanguage ?? "en-US";
+  const collator = useMemo(
+    () => new Intl.Collator(locale, { numeric: true, sensitivity: "base" }),
+    [locale],
+  );
+  const prefetchCollator = useRef(collator);
+  useEffect(() => {
+    prefetchCollator.current = collator;
+  }, [collator]);
+  const viewSelectors = useMemo(
+    () => ({ a: createFileViewSelector(), b: createFileViewSelector() }),
+    [],
+  );
 
   const [panes, setPanes] = useState<Record<PaneId, PaneModel>>(() => ({
     a: { source: LOCAL_SOURCE, state: EMPTY },
@@ -178,7 +201,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const reveal = useCallback((id: PaneId, path?: string, editing = false) => {
     requestAnimationFrame(() => {
       const body = bodies.current[id];
-      const wanted = path ?? panesRef.current[id].state.cursor;
+      const wanted = path ?? (editing ? null : panesRef.current[id].state.cursor);
       const row = Array.from(body?.querySelectorAll<HTMLElement>(".sftp-row") ?? []).find(
         (element) =>
           wanted ? element.dataset.path === wanted : element.classList.contains("is-creating"),
@@ -191,8 +214,6 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   }, []);
 
   const cache = useRef(new Map<string, Listing>());
-  const cacheGeneration = useRef(0);
-  const inflight = useRef(new Set<string>());
   const cacheKey = (source: FsSource, path: string) =>
     `${source.kind === "local" ? "local" : `remote:${source.sessionId}`}|${path}`;
   const remember = useCallback((source: FsSource, listing: Listing) => {
@@ -205,39 +226,71 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     }
   }, []);
 
+  const preloader = useRef<ReturnType<typeof createPrefetchQueue<Listing>> | null>(null);
+  useEffect(() => {
+    const queue = createPrefetchQueue<Listing>({
+      enabled: () => useSettings.getState().settings.preloadDirs,
+      cached: (key) => cache.current.has(key),
+    });
+    preloader.current = queue;
+    return () => {
+      queue.invalidate();
+      preloader.current = null;
+    };
+  }, []);
+
   // Warm the parent and the first few child folders so moving around feels instant.
   const prefetch = useCallback(
-    (source: FsSource, listing: Listing) => {
+    (id: PaneId, source: FsSource, listing: Listing) => {
       if (!useSettings.getState().settings.preloadDirs) {
         return;
       }
-      const count = useSettings.getState().settings.preloadCount;
+      const preferences = useSettings.getState().settings;
+      const count = preferences.preloadCount;
       const targets = [
         parentOf(listing.path),
-        ...listing.entries
+        ...visibleFiles(
+          listing.entries,
+          preferences,
+          prefetchCollator.current,
+          panesRef.current[id].state.revealedPaths,
+        )
           .filter((entry) => entry.isDir)
           .slice(0, count)
           .map((entry) => entry.path),
       ];
-      for (const target of targets) {
-        if (inflight.current.size >= 2) break;
-        const key = cacheKey(source, target);
-        if (cache.current.has(key) || inflight.current.has(key)) {
-          continue;
-        }
-        inflight.current.add(key);
-        const generation = cacheGeneration.current;
-        void fs
-          .list(source, target)
-          .then((child) => {
-            if (mounted.current && cacheGeneration.current === generation) remember(source, child);
-          })
-          .catch(() => undefined)
-          .finally(() => inflight.current.delete(key));
-      }
+      preloader.current?.replace(
+        id,
+        [...new Set(targets)].map((target) => ({
+          key: cacheKey(source, target),
+          read: () => fs.list(source, target),
+          commit: (child) => remember(source, child),
+        })),
+      );
     },
-    [remember],
+    [preloader, remember],
   );
+
+  useEffect(() => {
+    if (!settings.preloadDirs) {
+      preloader.current?.invalidate();
+      return;
+    }
+    for (const id of PANE_IDS) {
+      const pane = panesRef.current[id];
+      if (pane.state.listing && !pane.state.busy) prefetch(id, pane.source, pane.state.listing);
+    }
+  }, [
+    settings.preloadDirs,
+    settings.preloadCount,
+    settings.filesShowHidden,
+    settings.filesFoldersFirst,
+    settings.filesSortBy,
+    settings.filesSortDirection,
+    collator,
+    prefetch,
+    preloader,
+  ]);
 
   const load = useCallback(
     async (
@@ -249,6 +302,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     ): Promise<Listing | null> => {
       const source = override ?? panesRef.current[id].source;
       const version = ++requests.current[id];
+      const release = preloader.current?.foreground(id, path ? cacheKey(source, path) : undefined);
       const cached = path ? cache.current.get(cacheKey(source, path)) : undefined;
       if (cached) {
         patch(id, { listing: cached, error: null, busy: true, draft: null });
@@ -281,19 +335,22 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           historyIndex: historyIndex ?? history.length - 1,
           busy: false,
           draft: null,
+          revealedPaths: current.listing?.path === listing.path ? current.revealedPaths : [],
         });
         if (selected) {
           reveal(id);
         }
-        prefetch(source, listing);
+        prefetch(id, source, listing);
         return listing;
       } catch (error) {
         if (!mounted.current || requests.current[id] !== version) return null;
         patch(id, { busy: false, error: translateError(error) });
         return null;
+      } finally {
+        release?.();
       }
     },
-    [patch, prefetch, remember, reveal],
+    [cache, patch, prefetch, preloader, remember, reveal],
   );
 
   useEffect(() => {
@@ -309,7 +366,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       const { source, origin } = (event as CustomEvent<{ source: FsSource; origin: string }>)
         .detail;
       if (origin === instanceId) return;
-      cacheGeneration.current++;
+      preloader.current?.invalidate();
       cache.current.clear();
       for (const id of PANE_IDS) {
         if (sameSource(source, panesRef.current[id].source))
@@ -318,7 +375,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     };
     window.addEventListener(FILES_CHANGED, onChanged);
     return () => window.removeEventListener(FILES_CHANGED, onChanged);
-  }, [instanceId, load]);
+  }, [cache, instanceId, load, preloader]);
 
   // A panel that points at a session which has ended falls back to this computer.
   useEffect(() => {
@@ -358,7 +415,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         return;
       }
       for (const id of PANE_IDS) {
-        cacheGeneration.current++;
+        preloader.current?.invalidate();
         cache.current.clear();
         void load(id, panesRef.current[id].state.listing?.path ?? null);
         window.dispatchEvent(
@@ -369,7 +426,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [transfers, transferEpoch, load, instanceId]);
+  }, [cache, transfers, transferEpoch, load, instanceId, preloader]);
 
   // Several sessions can point at the same host; one row per host is enough.
   const canonicalSessions = useMemo(() => {
@@ -400,24 +457,51 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     return `remote:${canonical?.id ?? source.sessionId}`;
   };
 
-  const locale = i18n.resolvedLanguage ?? "en-US";
   const host = hosts.find((entry) => entry.id === session?.hostId) ?? null;
+
+  const renderedEntries = useMemo(
+    () => ({
+      a: viewSelectors.a(
+        panes.a.state.listing?.entries ?? NO_ENTRIES,
+        settings,
+        collator,
+        panes.a.state.revealedPaths,
+      ),
+      b: viewSelectors.b(
+        panes.b.state.listing?.entries ?? NO_ENTRIES,
+        settings,
+        collator,
+        panes.b.state.revealedPaths,
+      ),
+    }),
+    [panes, settings, collator, viewSelectors],
+  );
+
+  const visibleEntries = (id: PaneId): FileEntry[] => {
+    const state = panesRef.current[id].state;
+    return viewSelectors[id](
+      state.listing?.entries ?? NO_ENTRIES,
+      useSettings.getState().settings,
+      collator,
+      state.revealedPaths,
+    );
+  };
 
   const selectedEntries = (id: PaneId): FileEntry[] => {
     const state = panesRef.current[id].state;
     const chosen = new Set(state.selectedPaths);
-    return (state.listing?.entries ?? []).filter((entry) => chosen.has(entry.path));
+    return visibleEntries(id).filter((entry) => chosen.has(entry.path));
   };
 
   const primaryEntry = (id: PaneId): FileEntry | null => {
     const state = panesRef.current[id].state;
     const path = state.cursor ?? state.selectedPaths[state.selectedPaths.length - 1];
-    return state.listing?.entries.find((entry) => entry.path === path) ?? null;
+    return visibleEntries(id).find((entry) => entry.path === path) ?? null;
   };
 
   const selectEntry = (id: PaneId, entry: FileEntry, mode: "single" | "toggle" | "range") => {
     const state = panesRef.current[id].state;
-    const entries = state.listing?.entries ?? [];
+    const entries = visibleEntries(id);
     let next: string[];
     if (mode === "range" && state.anchor) {
       const start = entries.findIndex((item) => item.path === state.anchor);
@@ -427,9 +511,10 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           ? entries.slice(Math.min(start, end), Math.max(start, end) + 1).map((item) => item.path)
           : [entry.path];
     } else if (mode === "toggle") {
-      next = state.selectedPaths.includes(entry.path)
-        ? state.selectedPaths.filter((path) => path !== entry.path)
-        : [...state.selectedPaths, entry.path];
+      const visibleSelection = selectedEntries(id).map((item) => item.path);
+      next = visibleSelection.includes(entry.path)
+        ? visibleSelection.filter((path) => path !== entry.path)
+        : [...visibleSelection, entry.path];
     } else {
       next = [entry.path];
     }
@@ -443,7 +528,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   };
 
   const selectAt = (id: PaneId, index: number, extend = false) => {
-    const entries = panesRef.current[id].state.listing?.entries ?? [];
+    const entries = visibleEntries(id);
     const entry = entries[index];
     if (!entry) {
       return;
@@ -452,7 +537,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   };
 
   const navigate = (id: PaneId, path: string) => {
-    patch(id, { creating: null, renaming: null });
+    patch(id, { creating: null, renaming: null, revealedPaths: [] });
     void load(id, path);
   };
 
@@ -460,7 +545,10 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     const state = panesRef.current[id].state;
     const index = state.historyIndex + delta;
     const path = state.history[index];
-    if (path) void load(id, path, null, undefined, index);
+    if (path) {
+      patch(id, { creating: null, renaming: null, revealedPaths: [] });
+      void load(id, path, null, undefined, index);
+    }
   };
 
   const startTransfer = async (
@@ -482,7 +570,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   };
 
   const refreshSource = async (source: FsSource) => {
-    cacheGeneration.current++;
+    preloader.current?.invalidate();
     cache.current.clear();
     window.dispatchEvent(
       new CustomEvent(FILES_CHANGED, { detail: { source, origin: instanceId } }),
@@ -759,7 +847,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     patch(id, { busy: true });
     try {
       await fs.rename(source, entry.path, target);
-      patch(id, { renaming: null });
+      patch(id, { renaming: null, revealedPaths: [...state.revealedPaths, target] });
       await refreshSource(source);
       if (
         !sameSource(source, panesRef.current[id].source) ||
@@ -813,7 +901,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       } else {
         await fs.createFile(source, target);
       }
-      patch(id, { creating: null });
+      patch(id, { creating: null, revealedPaths: [...state.revealedPaths, target] });
       await refreshSource(source);
       if (
         !sameSource(source, panesRef.current[id].source) ||
@@ -874,10 +962,12 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   };
 
   const copyPath = (entry: FileEntry) => {
-    void navigator.clipboard.writeText(entry.path).then(
-      () => toast(t("sftp.copied"), "success"),
-      () => toast(t("sftp.copyFailed"), "error"),
-    );
+    copyText(entry.path);
+  };
+
+  const toggleHidden = () => {
+    for (const pane of PANE_IDS) patch(pane, { revealedPaths: [] });
+    void updateSettings({ filesShowHidden: !useSettings.getState().settings.filesShowHidden });
   };
 
   const openEntryMenu = (event: React.MouseEvent, id: PaneId, entry: FileEntry | null) => {
@@ -937,10 +1027,17 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       return;
     }
     const state = panesRef.current[id].state;
-    const entries = state.listing?.entries ?? [];
+    const entries = visibleEntries(id);
     const primary = primaryEntry(id);
     const index = primary ? entries.findIndex((item) => item.path === primary.path) : -1;
     const mod = event.ctrlKey || event.metaKey;
+
+    if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "h") {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleHidden();
+      return;
+    }
 
     if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault();
@@ -965,10 +1062,10 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           anchor: entries[0]?.path ?? null,
           cursor: entries[entries.length - 1]?.path ?? null,
         });
-      } else if (key === "c" && state.selectedPaths.length > 0) {
+      } else if (key === "c" && selectedEntries(id).length > 0) {
         event.preventDefault();
         clipSelection(id, "copy");
-      } else if (key === "x" && state.selectedPaths.length > 0) {
+      } else if (key === "x" && selectedEntries(id).length > 0) {
         event.preventDefault();
         clipSelection(id, "cut");
       } else if (key === "v") {
@@ -1003,10 +1100,10 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       if (state.listing) {
         navigate(id, parentOf(state.listing.path));
       }
-    } else if (event.key === "F2" && primary && state.selectedPaths.length === 1) {
+    } else if (event.key === "F2" && primary && selectedEntries(id).length === 1) {
       event.preventDefault();
       startRename(id, primary);
-    } else if (event.key === "Delete" && state.selectedPaths.length > 0) {
+    } else if (event.key === "Delete" && selectedEntries(id).length > 0) {
       event.preventDefault();
       removeSelection(id);
     } else if (event.key === "Escape") {
@@ -1048,11 +1145,12 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     const model = panes[id];
     const state = model.state;
     const source = model.source;
-    const entries = state.listing?.entries ?? [];
+    const entries = renderedEntries[id];
     const draft = state.draft ?? state.listing?.path ?? "";
     const renaming = state.renaming;
     const creating = state.creating;
     const selectedSet = new Set(state.selectedPaths);
+    const selectedCount = entries.filter((entry) => selectedSet.has(entry.path)).length;
     const cutSet =
       clip?.action === "cut" && sameSource(clip.source, source)
         ? new Set(clip.items.map((item) => item.path))
@@ -1156,13 +1254,62 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
               disabled={
                 state.busy ||
                 panes[other(id)].state.busy ||
-                state.selectedPaths.length === 0 ||
+                selectedCount === 0 ||
                 !panes[other(id)].state.listing
               }
               onClick={() => transferSelected(id)}
             >
               <ArrowLeftRight size={13} />
             </IconButton>
+            <Menu
+              label={t("sftp.viewOptions")}
+              items={[
+                {
+                  label: t("sftp.showHidden"),
+                  icon: (
+                    <Check size={13} visibility={settings.filesShowHidden ? "visible" : "hidden"} />
+                  ),
+                  onSelect: toggleHidden,
+                },
+                {
+                  label: t("sftp.foldersFirst"),
+                  icon: (
+                    <Check
+                      size={13}
+                      visibility={settings.filesFoldersFirst ? "visible" : "hidden"}
+                    />
+                  ),
+                  onSelect: () =>
+                    void updateSettings({ filesFoldersFirst: !settings.filesFoldersFirst }),
+                },
+                ...(["name", "size", "modified"] as const).map((sort) => ({
+                  label: t(
+                    sort === "name"
+                      ? "sftp.sortName"
+                      : sort === "size"
+                        ? "sftp.sortSize"
+                        : "sftp.sortModified",
+                  ),
+                  icon: (
+                    <Check
+                      size={13}
+                      visibility={settings.filesSortBy === sort ? "visible" : "hidden"}
+                    />
+                  ),
+                  onSelect: () => void updateSettings({ filesSortBy: sort }),
+                })),
+                ...(["asc", "desc"] as const).map((direction) => ({
+                  label: t(direction === "asc" ? "sftp.sortAscending" : "sftp.sortDescending"),
+                  icon: (
+                    <Check
+                      size={13}
+                      visibility={settings.filesSortDirection === direction ? "visible" : "hidden"}
+                    />
+                  ),
+                  onSelect: () => void updateSettings({ filesSortDirection: direction }),
+                })),
+              ]}
+            />
           </div>
         </header>
 
@@ -1379,7 +1526,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
               )}
               <span className="sftp-row__size">{entry.isDir ? "" : formatBytes(entry.size)}</span>
               <span className="sftp-row__time">
-                {entry.modified ? formatDate(entry.modified, locale) : ""}
+                {entry.modified !== null ? formatDate(entry.modified, locale) : ""}
               </span>
             </div>
           ))}
@@ -1387,9 +1534,9 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
 
         <footer className="sftp-pane__foot">
           <span>{state.listing ? t("sftp.itemCount", { count: entries.length }) : "—"}</span>
-          {state.selectedPaths.length > 1 ? (
+          {selectedCount > 1 ? (
             <span className="sftp-pane__selection">
-              {t("sftp.selectedCount", { count: state.selectedPaths.length })}
+              {t("sftp.selectedCount", { count: selectedCount })}
             </span>
           ) : primary ? (
             <span className="sftp-pane__selection">{primary.name}</span>

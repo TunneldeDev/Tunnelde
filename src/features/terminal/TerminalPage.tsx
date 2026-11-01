@@ -2,7 +2,6 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { FitAddon } from "@xterm/addon-fit";
-import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { Clock, FolderTree, X } from "lucide-react";
@@ -12,7 +11,6 @@ import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
 import { StatusDot } from "@/components/ui/display/Misc";
-import { resolveTheme, monoStack, prefersLightScheme } from "@/lib/prefs/appearance";
 import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
 import type { MonoFont } from "@/lib/api/types";
 import { translateError } from "@/lib/api/errors";
@@ -20,7 +18,11 @@ import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
 import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
 import { copyText } from "@/lib/session/clipboard";
 import { api, events, isTauri } from "@/lib/api/ipc";
-import { terminalTheme } from "@/features/terminal/terminalTheme";
+import {
+  bindTerminalSettings,
+  terminalOptions,
+  waitForCurrentTerminalFont,
+} from "./terminalRuntime";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
@@ -33,65 +35,28 @@ interface TerminalPageProps {
   active: boolean;
 }
 
-/** Waits for a webfont so xterm measures the real glyphs instead of the fallback. */
-async function waitForFont(family: string, size: number): Promise<void> {
-  if (typeof document === "undefined" || !document.fonts) {
-    return;
-  }
-  const name = family
-    .split(",")[0]
-    ?.trim()
-    .replace(/^["']|["']$/g, "");
-  if (!name) {
-    return;
-  }
-  let timeout: number | undefined;
-  try {
-    await Promise.race([
-      document.fonts.load(`${size}px "${name}"`),
-      new Promise((resolve) => {
-        timeout = window.setTimeout(resolve, 1500);
-      }),
-    ]);
-  } catch {
-    // A missing webfont is not fatal; the fallback stack still renders.
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
 export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const disconnect = useSsh((state) => state.disconnect);
   const openSftp = useWorkspace((state) => state.openSftp);
   const openHistory = useWorkspace((state) => state.openHistory);
-  const theme = useSettings((state) => state.settings.theme);
-  const fontSize = useSettings((state) => state.settings.monoFontSize);
   const monoFont = useSettings((state) => state.settings.monoFont);
   const recordTerminalHistory = useSettings((state) => state.settings.recordTerminalHistory);
   const updateSettings = useSettings((state) => state.update);
   const disconnecting = useSsh((state) => state.disconnectingSessionIds.includes(sessionId));
-  const [prefersLight, setPrefersLight] = useState(prefersLightScheme);
-  const resolvedTheme = resolveTheme(theme, prefersLight);
   const activeRef = useRef(active);
 
   useEffect(() => {
     activeRef.current = active;
   }, [active]);
 
-  useEffect(() => {
-    const media = window.matchMedia("(prefers-color-scheme: light)");
-    const change = () => setPrefersLight(media.matches);
-    media.addEventListener("change", change);
-    return () => media.removeEventListener("change", change);
-  }, []);
-
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const clipboardRef = useRef<{
     copy: () => void;
+    copyAndClear: () => void;
     paste: () => void;
     selectAll: () => void;
     hasSelection: () => boolean;
@@ -153,16 +118,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     setClosed(false);
     let terminal: Terminal | null = null;
     let addon: FitAddon | null = null;
-    let webgl: WebglAddon | null = null;
-    let contextLossListener: { dispose: () => void } | null = null;
-    const disposeWebgl = () => {
-      contextLossListener?.dispose();
-      contextLossListener = null;
-      const renderer = webgl;
-      webgl = null;
-      renderer?.dispose();
-    };
+    let runtime: ReturnType<typeof bindTerminalSettings> | null = null;
     let dataListener: { dispose: () => void } | null = null;
+    let selectionListener: { dispose: () => void } | null = null;
+    let selectionTimer: number | undefined;
+    let copiedSelection = "";
     const subscriptions: UnlistenFn[] = [];
     const pending: Uint8Array[] = [];
     const write = (chunk: Uint8Array) => {
@@ -175,31 +135,19 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         pending.push(chunk);
       }
     };
-    let frame = 0;
     let observer: ResizeObserver | null = null;
 
     const start = async () => {
-      const initial = useSettings.getState().settings;
-      await waitForFont(monoStack(initial.monoFont), initial.monoFontSize);
+      await waitForCurrentTerminalFont(() => disposed);
       if (disposed) {
         return;
       }
 
       // Preferences may change while the first font is still loading.
       const settings = useSettings.getState().settings;
-      const currentTheme = resolveTheme(settings.theme, prefersLightScheme());
-
       const instance = new Terminal({
-        fontFamily: monoStack(settings.monoFont),
-        fontSize: settings.monoFontSize,
-        lineHeight: 1.2,
-        cursorBlink: true,
-        cursorStyle: "block",
-        // Keep the cursor visible when the terminal does not hold focus.
-        cursorInactiveStyle: "block",
-        scrollback: 5000,
+        ...terminalOptions(settings),
         allowProposedApi: false,
-        theme: terminalTheme(currentTheme),
       });
       terminal = instance;
       addon = new FitAddon();
@@ -207,22 +155,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       instance.open(element);
       terminalRef.current = instance;
       fitRef.current = addon;
-      try {
-        webgl = new WebglAddon();
-        contextLossListener = webgl.onContextLoss(() => {
-          if (disposed || !webgl) {
-            return;
-          }
-          // Disposing the official addon restores xterm's DOM renderer.
-          disposeWebgl();
-          fit();
-          instance.refresh(0, Math.max(0, instance.rows - 1));
-        });
-        instance.loadAddon(webgl);
-      } catch {
-        // Remote desktops and older GPUs can lack WebGL2; keep the DOM terminal.
-        disposeWebgl();
-      }
+      runtime = bindTerminalSettings(instance, fit);
       const copy = () => {
         if (!disposed && instance.hasSelection()) {
           copyText(instance.getSelection());
@@ -246,6 +179,10 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       };
       clipboardRef.current = {
         copy,
+        copyAndClear: () => {
+          copy();
+          if (!disposed) instance.clearSelection();
+        },
         paste,
         selectAll: () => {
           if (!disposed) {
@@ -256,6 +193,26 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         hasSelection: () => !disposed && instance.hasSelection(),
         canPaste: () => !disposed && !ended,
       };
+      selectionListener = instance.onSelectionChange(() => {
+        window.clearTimeout(selectionTimer);
+        if (!instance.hasSelection()) copiedSelection = "";
+        if (!useSettings.getState().settings.terminalCopyOnSelect) return;
+        selectionTimer = window.setTimeout(() => {
+          if (disposed || !useSettings.getState().settings.terminalCopyOnSelect) return;
+          if (!instance.hasSelection()) return;
+          const text = instance.getSelection();
+          if (!text || text === copiedSelection) return;
+          copiedSelection = text;
+          // Selection changes must not steal focus or flood success notifications.
+          void (
+            isTauri() ? api.clipboardWriteText(text) : navigator.clipboard.writeText(text)
+          ).catch(() => {
+            if (disposed) return;
+            if (copiedSelection === text) copiedSelection = "";
+            toast(t("menu.copyFailed"), "error");
+          });
+        }, 150);
+      });
       const mac = /Mac|iPhone|iPad/.test(navigator.platform);
       instance.attachCustomKeyEventHandler((event) => {
         if (
@@ -295,9 +252,6 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         }
         return true;
       });
-      // Re-apply after open: a theme or font measured before the first frame
-      // otherwise keeps the fallback colours and glyph metrics.
-      instance.options.theme = terminalTheme(currentTheme);
       fit();
       instance.refresh(0, Math.max(0, instance.rows - 1));
       focus();
@@ -392,16 +346,14 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     }
 
     observer = new ResizeObserver(() => {
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(fit);
+      runtime?.requestLayout();
     });
     observer.observe(element);
 
     // Late font swaps change glyph widths; re-measure once they settle.
     void document.fonts?.ready.then(() => {
       if (!disposed && terminal) {
-        terminal.options.fontFamily = monoStack(useSettings.getState().settings.monoFont);
-        fit();
+        runtime?.requestLayout();
       }
     });
 
@@ -409,11 +361,12 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
 
     return () => {
       disposed = true;
-      cancelAnimationFrame(frame);
       observer?.disconnect();
       subscriptions.forEach((unlisten) => unlisten());
       dataListener?.dispose();
-      disposeWebgl();
+      selectionListener?.dispose();
+      window.clearTimeout(selectionTimer);
+      runtime?.dispose();
       terminal?.dispose();
       terminalRef.current = null;
       fitRef.current = null;
@@ -422,29 +375,6 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
-
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    if (terminal) {
-      terminal.options.theme = terminalTheme(resolvedTheme);
-    }
-  }, [resolvedTheme]);
-
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    if (terminal) {
-      terminal.options.fontSize = fontSize;
-      fit();
-    }
-  }, [fontSize, fit]);
-
-  useEffect(() => {
-    const terminal = terminalRef.current;
-    if (terminal) {
-      terminal.options.fontFamily = monoStack(monoFont);
-      fit();
-    }
-  }, [monoFont, fit]);
 
   useEffect(() => {
     if (active) {
@@ -511,6 +441,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           event.stopPropagation();
           const actions = clipboardRef.current;
           if (!actions) {
+            return;
+          }
+          const mode = useSettings.getState().settings.terminalRightClick;
+          if (!event.shiftKey && mode !== "menu") {
+            useContextMenu.getState().close();
+            if (mode === "copyPaste" && actions.hasSelection()) actions.copyAndClear();
+            else actions.paste();
             return;
           }
           useContextMenu.getState().open(event.clientX, event.clientY, [

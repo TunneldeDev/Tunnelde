@@ -9,6 +9,8 @@ vi.mock("@/lib/api/ipc", () => ({ api: { remoteStats } }));
 import { useMonitor } from "@/store/monitor";
 import { useMonitorHistory } from "@/store/monitorHistory";
 import { subscribeRemoteMonitor } from "@/lib/session/useRemoteMonitor";
+import { useSettings } from "@/store/settings";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 const stats: RemoteStats = {
   cpuPercent: 42,
@@ -32,6 +34,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   remoteStats.mockReset().mockResolvedValue(stats);
   useMonitor.getState().forget("s1");
+  useSettings.setState({ settings: DEFAULT_SETTINGS });
   Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
 });
 afterEach(() => {
@@ -63,10 +66,10 @@ describe("shared remote monitoring", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(remoteStats).toHaveBeenCalledTimes(1);
     expect(useMonitorHistory.getState().samples.s1).toHaveLength(1);
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(3000);
     expect(remoteStats).toHaveBeenCalledTimes(2);
     releases.pop()?.();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(3000);
     expect(remoteStats).toHaveBeenCalledTimes(3);
     releases.pop()?.();
     await vi.advanceTimersByTimeAsync(10000);
@@ -98,11 +101,55 @@ describe("shared remote monitoring", () => {
     await vi.advanceTimersByTimeAsync(10000);
     expect(remoteStats).toHaveBeenCalledTimes(1);
     finish(stats);
-    await vi.advanceTimersByTimeAsync(1999);
+    await vi.advanceTimersByTimeAsync(2999);
     expect(remoteStats).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(remoteStats).toHaveBeenCalledTimes(2);
     finish(stats);
     await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it("reschedules shared consumers immediately when the configured interval changes", async () => {
+    releases.push(subscribeRemoteMonitor("s1"), subscribeRemoteMonitor("s1"));
+    await vi.advanceTimersByTimeAsync(0);
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 1000 } });
+    await vi.advanceTimersByTimeAsync(999);
+    expect(remoteStats).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(remoteStats).toHaveBeenCalledTimes(2);
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 30000 } });
+    await vi.advanceTimersByTimeAsync(29999);
+    expect(remoteStats).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(remoteStats).toHaveBeenCalledTimes(3);
+  });
+
+  it("applies an interval change after a slow sample without overlapping it", async () => {
+    let finish!: (value: RemoteStats) => void;
+    remoteStats.mockReturnValueOnce(
+      new Promise<RemoteStats>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    releases.push(subscribeRemoteMonitor("s1"));
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 1000 } });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(remoteStats).toHaveBeenCalledTimes(1);
+    finish(stats);
+    await vi.advanceTimersByTimeAsync(999);
+    expect(remoteStats).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(remoteStats).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps interval changes idle while the document is hidden", async () => {
+    releases.push(subscribeRemoteMonitor("s1"));
+    await vi.advanceTimersByTimeAsync(0);
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 1000 } });
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(remoteStats).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

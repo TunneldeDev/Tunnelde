@@ -27,6 +27,7 @@ pub struct FileEntry {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
+    pub is_hidden: bool,
     pub size: u64,
     pub modified: Option<i64>,
     pub permissions: Option<u32>,
@@ -126,6 +127,22 @@ fn sort_entries(entries: &mut [FileEntry]) {
     });
 }
 
+fn local_hidden(name: &str, metadata: &std::fs::Metadata) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        metadata.file_attributes() & 0x2 != 0
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = metadata;
+        false
+    }
+}
+
 fn map_sftp(error: russh_sftp::client::error::Error) -> AppError {
     AppError::Ssh(format!("sftp.error: {error}"))
 }
@@ -187,8 +204,10 @@ pub async fn remote_list(
     let mut entries: Vec<FileEntry> = directory
         .map(|entry| {
             let metadata = entry.metadata();
+            let name = entry.file_name();
             FileEntry {
-                name: entry.file_name(),
+                is_hidden: name.starts_with('.'),
+                name,
                 path: entry.path(),
                 is_dir: metadata.is_dir(),
                 size: metadata.len(),
@@ -219,8 +238,10 @@ pub fn local_list(path: Option<String>) -> AppResult<Listing> {
         let Ok(metadata) = entry.metadata() else {
             continue;
         };
+        let name = entry.file_name().to_string_lossy().into_owned();
         entries.push(FileEntry {
-            name: entry.file_name().to_string_lossy().into_owned(),
+            is_hidden: local_hidden(&name, &metadata),
+            name,
             path: display_path(&entry.path()),
             is_dir: metadata.is_dir(),
             size: metadata.len(),
@@ -1123,6 +1144,50 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_listing_reports_hidden_metadata_without_filtering_entries() {
+        let root = temp_root("hidden-metadata");
+        std::fs::write(root.join(".dotfile"), "hidden").unwrap();
+        std::fs::write(root.join("visible.txt"), "visible").unwrap();
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .attributes(0x2)
+                .open(root.join("windows-hidden.txt"))
+                .unwrap();
+        }
+        let listing = local_list(Some(display_path(&root))).unwrap();
+        assert!(
+            listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == ".dotfile")
+                .unwrap()
+                .is_hidden
+        );
+        assert!(
+            !listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == "visible.txt")
+                .unwrap()
+                .is_hidden
+        );
+        #[cfg(windows)]
+        assert!(
+            listing
+                .entries
+                .iter()
+                .find(|entry| entry.name == "windows-hidden.txt")
+                .unwrap()
+                .is_hidden
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
 
     #[test]
     fn transfer_outcome_distinguishes_cancellation_from_failure_without_losing_progress() {

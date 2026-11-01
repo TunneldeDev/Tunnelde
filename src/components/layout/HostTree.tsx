@@ -30,6 +30,20 @@ import type { Group, Host } from "@/lib/api/types";
 
 const HOST_MIME = "application/x-tunnelde-host";
 
+/** Mouse activation and Enter always follow the same configured action. */
+function activateHost(host: Host): void {
+  switch (useSettings.getState().settings.hostActivation) {
+    case "details":
+      useWorkspace.getState().openHost(host);
+      return;
+    case "edit":
+      useDialogs.getState().openHost(host);
+      return;
+    default:
+      useDialogs.getState().openConnect(host, "terminal");
+  }
+}
+
 interface Filtered {
   favorites: Host[];
   ungrouped: Host[];
@@ -170,7 +184,13 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
   return (
     <div
       ref={row}
-      className={cn("host-row", nested && "is-nested", active && "is-active", over && "is-drop")}
+      className={cn(
+        "host-row",
+        nested && "is-nested",
+        active && "is-active",
+        focused && "is-focused",
+        over && "is-drop",
+      )}
       style={
         over
           ? { boxShadow: `inset 0 ${over === "before" ? "2px" : "-2px"} 0 var(--td-accent)` }
@@ -213,9 +233,13 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
       }}
       onClick={() => {
         onFocusRow();
-        openHost(host);
       }}
-      onDoubleClick={() => openHostDialog(host)}
+      onDoubleClick={(event) => {
+        if (event.target instanceof Element && event.target.closest("button, [role='menu']"))
+          return;
+        onFocusRow();
+        activateHost(host);
+      }}
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
@@ -446,7 +470,8 @@ export function HostTree() {
       const host = hosts.find((item) => item.id === focusId);
       if (host) {
         event.preventDefault();
-        useWorkspace.getState().openHost(host);
+        if (event.key === "Enter" && !event.repeat && !event.nativeEvent.isComposing)
+          activateHost(host);
       }
     }
   };

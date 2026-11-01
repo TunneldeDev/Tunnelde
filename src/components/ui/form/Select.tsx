@@ -21,6 +21,7 @@ export interface SelectProps {
   id?: string;
   className?: string;
   disabled?: boolean;
+  descriptionId?: string;
 }
 
 const POPUP_MAX_HEIGHT = 280;
@@ -30,7 +31,16 @@ const POPUP_MAX_HEIGHT = 280;
  * rendered by the OS and cannot follow the theme, so every dropdown in the
  * product uses this instead.
  */
-export function Select({ value, options, onChange, label, id, className, disabled }: SelectProps) {
+export function Select({
+  value,
+  options,
+  onChange,
+  label,
+  id,
+  className,
+  disabled,
+  descriptionId,
+}: SelectProps) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [position, setPosition] = useState<{ top: number; left: number; width: number } | null>(
@@ -189,6 +199,7 @@ export function Select({ value, options, onChange, label, id, className, disable
         id={id}
         disabled={disabled}
         aria-label={label}
+        aria-describedby={descriptionId}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? listId : undefined}

@@ -25,6 +25,7 @@ import { DialogHost } from "@/features/dialogs/DialogHost";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
 import { cn } from "@/lib/text/format";
+import { DEFAULT_SETTINGS, MONO_FONT_SIZE_MAX, MONO_FONT_SIZE_MIN } from "@/lib/prefs/defaults";
 import { closeTab } from "@/lib/session/tabActions";
 import { useInternalDrag } from "@/lib/session/useInternalDrag";
 import { useWindowCloseGuard } from "@/lib/session/useWindowCloseGuard";
@@ -186,7 +187,12 @@ export function AppShell() {
         const settings = useSettings.getState();
         const delta = key === "-" ? -1 : 1;
         const next =
-          key === "0" ? 13 : Math.min(20, Math.max(11, settings.settings.monoFontSize + delta));
+          key === "0"
+            ? (settings.info?.defaultSettings?.monoFontSize ?? DEFAULT_SETTINGS.monoFontSize)
+            : Math.min(
+                MONO_FONT_SIZE_MAX,
+                Math.max(MONO_FONT_SIZE_MIN, settings.settings.monoFontSize + delta),
+              );
         // A reserved shortcut remains consumed even at the default or limit;
         // otherwise Ctrl+0 can unexpectedly send NUL to the remote terminal.
         event.preventDefault();
@@ -292,6 +298,7 @@ export function AppShell() {
         os === "macos" && "is-macos",
         sidebarVisible && "has-sidebar",
         settings.rightPanel && "has-panel",
+        !settings.showStatusBar && "is-statusbar-hidden",
       )}
       style={style}
     >
@@ -369,10 +376,12 @@ export function AppShell() {
           />
         )}
       </div>
-      <StatusBar
-        panelOpen={settings.rightPanel}
-        onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
-      />
+      {settings.showStatusBar ? (
+        <StatusBar
+          panelOpen={settings.rightPanel}
+          onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
+        />
+      ) : null}
       <ToastHost />
       <DialogHost />
       <ContextMenuHost />

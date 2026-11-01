@@ -16,6 +16,7 @@ import "@/styles/base.css";
 import "@/styles/app.css";
 import "@/styles/workbench.css";
 import "@/styles/plugins.css";
+import "@/styles/settings.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

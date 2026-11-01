@@ -15,6 +15,7 @@ const {
   webglInstances,
   webglState,
   contextLoss,
+  selections,
 } = vi.hoisted(() => ({
   apiMock: {
     sshResize: vi.fn(),
@@ -23,6 +24,7 @@ const {
     sshAttach: vi.fn(),
     sshDisconnect: vi.fn(),
     clipboardReadText: vi.fn(),
+    clipboardWriteText: vi.fn(),
   },
   eventMock: { onSshData: vi.fn(), onSshClosed: vi.fn() },
   instances: [] as Array<{
@@ -34,6 +36,7 @@ const {
     selectAll: ReturnType<typeof vi.fn>;
     hasSelection: ReturnType<typeof vi.fn>;
     getSelection: ReturnType<typeof vi.fn>;
+    clearSelection: ReturnType<typeof vi.fn>;
     open: ReturnType<typeof vi.fn>;
     refresh: ReturnType<typeof vi.fn>;
   }>,
@@ -48,6 +51,7 @@ const {
     unsubscribe: ReturnType<typeof vi.fn>;
   }>,
   contextLoss: [] as Array<() => void>,
+  selections: [] as Array<() => void>,
 }));
 
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock, events: eventMock, isTauri: () => true }));
@@ -85,6 +89,11 @@ vi.mock("@xterm/xterm", () => ({
     selectAll = vi.fn();
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => "selected text");
+    clearSelection = vi.fn(() => this.hasSelection.mockReturnValue(false));
+    onSelectionChange = vi.fn((callback: () => void) => {
+      selections.push(callback);
+      return { dispose: vi.fn() };
+    });
     attachCustomKeyEventHandler = vi.fn((callback: (event: KeyboardEvent) => boolean) => {
       keyboard.push(callback);
     });
@@ -108,6 +117,7 @@ vi.mock("@xterm/xterm", () => ({
 
 import "@/i18n/i18n";
 import { TerminalPage } from "@/features/terminal/TerminalPage";
+import { TerminalPreview } from "@/features/terminal/TerminalPreview";
 import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
@@ -123,6 +133,7 @@ beforeEach(() => {
   keyboard.length = 0;
   webglInstances.length = 0;
   contextLoss.length = 0;
+  selections.length = 0;
   webglState.failLoad = false;
   vi.clearAllMocks();
   apiMock.sshResize.mockResolvedValue(undefined);
@@ -131,6 +142,7 @@ beforeEach(() => {
   apiMock.sshAttach.mockResolvedValue(undefined);
   apiMock.sshDisconnect.mockResolvedValue(undefined);
   apiMock.clipboardReadText.mockResolvedValue("pasted\ntext");
+  apiMock.clipboardWriteText.mockResolvedValue(undefined);
   eventMock.onSshData.mockResolvedValue(vi.fn());
   eventMock.onSshClosed.mockResolvedValue(vi.fn());
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS } });
@@ -175,6 +187,7 @@ beforeEach(() => {
   });
 });
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   if (originalFonts) {
     Object.defineProperty(document, "fonts", originalFonts);
@@ -220,8 +233,10 @@ describe("terminal lifecycle", () => {
     await waitFor(() => expect(contextLoss).toHaveLength(1));
     const gpu = webglInstances[0]!;
     const terminal = instances[0]!;
+    act(() => vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0));
     const refreshes = terminal.refresh.mock.calls.length;
     act(() => contextLoss[0]!());
+    act(() => vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0));
     expect(gpu.dispose).toHaveBeenCalledOnce();
     expect(gpu.unsubscribe).toHaveBeenCalledOnce();
     expect(terminal.refresh).toHaveBeenCalledTimes(refreshes + 1);
@@ -256,7 +271,7 @@ describe("terminal lifecycle", () => {
 
   it("uses preferences changed while its first font was loading", async () => {
     let finishFont!: () => void;
-    vi.mocked(document.fonts.load).mockImplementation(
+    vi.mocked(document.fonts.load).mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           finishFont = () => resolve([]);
@@ -270,6 +285,10 @@ describe("terminal lifecycle", () => {
           theme: "light",
           monoFont: "jetbrains-mono",
           monoFontSize: 18,
+          terminalLineHeight: 1.6,
+          terminalScrollback: 25_000,
+          terminalCursorStyle: "underline",
+          terminalRenderer: "dom",
         },
       }),
     );
@@ -279,6 +298,11 @@ describe("terminal lifecycle", () => {
     expect(terminal.options.fontFamily).toContain("JetBrains Mono");
     expect(terminal.options.fontSize).toBe(18);
     expect(terminal.options.theme).toEqual(terminalTheme("light"));
+    expect(terminal.options.lineHeight).toBe(1.6);
+    expect(terminal.options.scrollback).toBe(25_000);
+    expect(terminal.options.cursorStyle).toBe("underline");
+    expect(document.fonts.load).toHaveBeenLastCalledWith('18px "JetBrains Mono"');
+    expect(webglInstances).toHaveLength(0);
     expect(terminal.focus).not.toHaveBeenCalled();
   });
 
@@ -370,7 +394,302 @@ describe("terminal lifecycle", () => {
   });
 });
 
+describe("live terminal settings", () => {
+  it("waits for the requested glyphs and rejects a font load that finishes after a newer choice", async () => {
+    render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    const terminal = instances[0]!;
+    const loads: Array<() => void> = [];
+    vi.mocked(document.fonts.load).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          loads.push(() => resolve([]));
+        }),
+    );
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monoFont: "jetbrains-mono" } }),
+    );
+    expect(terminal.options.fontFamily).toContain("Fira Code");
+    act(() =>
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, monoFont: "plex-mono", monoFontSize: 19 },
+      }),
+    );
+    expect(loads).toHaveLength(2);
+    await act(async () => loads[1]!());
+    expect(terminal.options.fontFamily).toContain("IBM Plex Mono");
+    expect(terminal.options.fontSize).toBe(19);
+    await act(async () => loads[0]!());
+    expect(terminal.options.fontFamily).toContain("IBM Plex Mono");
+    expect(terminal.options.fontSize).toBe(19);
+    expect(instances).toHaveLength(1);
+  });
+
+  it("coalesces font metrics and renderer layout work into a frame and cancels it on unmount", async () => {
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    act(() => vi.mocked(requestAnimationFrame).mock.calls.at(-1)![0](0));
+    vi.mocked(requestAnimationFrame).mockClear();
+    const terminal = instances[0]!;
+    const refreshes = terminal.refresh.mock.calls.length;
+    act(() => {
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalLineHeight: 1.3 } });
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, terminalLineHeight: 1.5, terminalRenderer: "dom" },
+      });
+    });
+    expect(requestAnimationFrame).toHaveBeenCalledOnce();
+    expect(terminal.refresh).toHaveBeenCalledTimes(refreshes);
+    const redraw = vi.mocked(requestAnimationFrame).mock.calls[0]![0];
+    view.unmount();
+    expect(cancelAnimationFrame).toHaveBeenCalled();
+    act(() => redraw(0));
+    expect(terminal.refresh).toHaveBeenCalledTimes(refreshes);
+  });
+
+  it("updates appearance and behavior in place while preserving output and the SSH session", async () => {
+    render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    const terminal = instances[0]!;
+    await act(async () => {
+      eventMock.onSshData.mock.calls[0]![0]({ sessionId: "s1", data: "YmVmb3Jl" });
+      useSettings.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          terminalScrollback: 50_000,
+          terminalLineHeight: 1.5,
+          terminalCursorStyle: "bar",
+          terminalCursorBlink: false,
+          terminalInactiveCursorStyle: "none",
+          terminalScrollSensitivity: 3,
+          terminalSmoothScrolling: true,
+          terminalScrollOnInput: false,
+          motion: "full",
+          theme: "light",
+          monoFont: "jetbrains-mono",
+          monoFontSize: 17,
+        },
+      });
+      eventMock.onSshData.mock.calls[0]![0]({ sessionId: "s1", data: "YWZ0ZXI=" });
+    });
+    expect(terminal.options).toMatchObject({
+      scrollback: 50_000,
+      lineHeight: 1.5,
+      cursorStyle: "bar",
+      cursorBlink: false,
+      cursorInactiveStyle: "none",
+      scrollSensitivity: 3,
+      smoothScrollDuration: 100,
+      scrollOnUserInput: false,
+      fontSize: 17,
+      theme: terminalTheme("light"),
+    });
+    expect(terminal.options.fontFamily).toContain("JetBrains Mono");
+    expect(terminal.write.mock.calls.map(([chunk]) => new TextDecoder().decode(chunk))).toEqual([
+      "before",
+      "after",
+    ]);
+    expect(instances).toHaveLength(1);
+    expect(terminal.dispose).not.toHaveBeenCalled();
+    expect(apiMock.sshAttach).toHaveBeenCalledTimes(1);
+    expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+  });
+
+  it("switches renderers without reconnecting, and retries a failed GPU only after a deliberate switch", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalRenderer: "dom" } });
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    expect(webglInstances).toHaveLength(0);
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalRenderer: "auto" } }),
+    );
+    expect(webglInstances).toHaveLength(1);
+    const first = webglInstances[0]!;
+    act(() => contextLoss[0]!());
+    expect(first.dispose).toHaveBeenCalledOnce();
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalLineHeight: 1.4 } }));
+    expect(webglInstances).toHaveLength(1);
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalRenderer: "dom" } }));
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalRenderer: "auto" } }),
+    );
+    expect(webglInstances).toHaveLength(2);
+    expect(first.dispose).toHaveBeenCalledOnce();
+    expect(instances).toHaveLength(1);
+    expect(apiMock.sshAttach).toHaveBeenCalledTimes(1);
+    expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+    view.unmount();
+    expect(webglInstances[1]!.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("follows OS reduced motion live and honors explicit motion overrides", async () => {
+    let changed!: () => void;
+    const motion = {
+      matches: false,
+      addEventListener: vi.fn((_event: string, callback: () => void) => {
+        changed = callback;
+      }),
+      removeEventListener: vi.fn(),
+    };
+    const light = { matches: false, addEventListener: vi.fn(), removeEventListener: vi.fn() };
+    vi.mocked(matchMedia).mockImplementation(
+      (query) => (query.includes("reduced-motion") ? motion : light) as unknown as MediaQueryList,
+    );
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalSmoothScrolling: true } });
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    expect(instances[0]!.options.smoothScrollDuration).toBe(100);
+    act(() => {
+      motion.matches = true;
+      changed();
+    });
+    expect(instances[0]!.options.smoothScrollDuration).toBe(0);
+    act(() =>
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, terminalSmoothScrolling: true, motion: "full" },
+      }),
+    );
+    expect(instances[0]!.options.smoothScrollDuration).toBe(100);
+    act(() =>
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, terminalSmoothScrolling: true, motion: "reduced" },
+      }),
+    );
+    expect(instances[0]!.options.smoothScrollDuration).toBe(0);
+    view.unmount();
+    expect(motion.removeEventListener).toHaveBeenCalledWith("change", changed);
+  });
+});
+
+describe("local terminal preview", () => {
+  it("previews preferences live without creating an SSH session and releases resources", async () => {
+    const view = render(<TerminalPreview />);
+    await waitFor(() => expect(instances).toHaveLength(1));
+    const terminal = instances[0]!;
+    expect(terminal.options.disableStdin).toBe(true);
+    expect(terminal.write).toHaveBeenCalledWith(expect.stringContaining("user@tunnelde"));
+    expect(eventMock.onSshData).not.toHaveBeenCalled();
+    expect(apiMock.sshAttach).not.toHaveBeenCalled();
+    expect(apiMock.sshWrite).not.toHaveBeenCalled();
+    act(() =>
+      useSettings.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          terminalCursorStyle: "underline",
+          terminalLineHeight: 1.4,
+          terminalRenderer: "dom",
+        },
+      }),
+    );
+    expect(terminal.options.cursorStyle).toBe("underline");
+    expect(terminal.options.lineHeight).toBe(1.4);
+    expect(webglInstances[0]!.dispose).toHaveBeenCalledOnce();
+    expect(instances).toHaveLength(1);
+    view.unmount();
+    expect(terminal.dispose).toHaveBeenCalledOnce();
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCursorStyle: "bar" } }),
+    );
+    expect(terminal.options.cursorStyle).toBe("underline");
+    expect(webglInstances[0]!.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("does not create a preview when font loading finishes after unmount", async () => {
+    let finishFont!: () => void;
+    vi.mocked(document.fonts.load).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finishFont = () => resolve([]);
+        }),
+    );
+    const view = render(<TerminalPreview />);
+    view.unmount();
+    await act(async () => finishFont());
+    expect(instances).toHaveLength(0);
+    expect(webglInstances).toHaveLength(0);
+  });
+});
+
 describe("terminal clipboard", () => {
+  it("debounces copy-on-select without stealing focus, and honors disabling and cleanup", async () => {
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(selections).toHaveLength(1));
+    vi.useFakeTimers();
+    const terminal = instances[0]!;
+    terminal.hasSelection.mockReturnValue(true);
+    act(() => {
+      selections[0]!();
+      vi.advanceTimersByTime(200);
+    });
+    expect(apiMock.clipboardWriteText).not.toHaveBeenCalled();
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } }),
+    );
+    act(() => {
+      selections[0]!();
+      selections[0]!();
+      vi.advanceTimersByTime(150);
+    });
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledWith("selected text");
+    expect(terminal.focus).not.toHaveBeenCalled();
+    act(() => {
+      selections[0]!();
+      vi.advanceTimersByTime(150);
+    });
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    terminal.getSelection.mockReturnValue("new selection");
+    act(() => {
+      selections[0]!();
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: false } });
+      vi.advanceTimersByTime(150);
+    });
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } }),
+    );
+    act(() => selections[0]!());
+    view.unmount();
+    act(() => vi.advanceTimersByTime(200));
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+  });
+
+  it("uses copy/paste right-click mode live, clears the copied selection, and always permits Shift+right-click", async () => {
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(instances).toHaveLength(1));
+    const host = view.container.querySelector(".terminal-host")!;
+    const terminal = instances[0]!;
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalRightClick: "copyPaste" } }),
+    );
+    terminal.hasSelection.mockReturnValue(true);
+    fireEvent.contextMenu(host);
+    expect(copyMock).toHaveBeenCalledWith("selected text");
+    expect(terminal.clearSelection).toHaveBeenCalledOnce();
+    expect(useContextMenu.getState().menu).toBeNull();
+    fireEvent.contextMenu(host);
+    await waitFor(() => expect(terminal.paste).toHaveBeenCalledWith("pasted\ntext"));
+    fireEvent.contextMenu(host, { shiftKey: true });
+    expect(useContextMenu.getState().menu?.items).toHaveLength(3);
+    expect(copyMock).toHaveBeenCalledOnce();
+    expect(apiMock.clipboardReadText).toHaveBeenCalledOnce();
+  });
+
+  it("uses paste-only right-click mode even with a selection, with Shift opening the menu", async () => {
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(instances).toHaveLength(1));
+    const host = view.container.querySelector(".terminal-host")!;
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalRightClick: "paste" } }),
+    );
+    instances[0]!.hasSelection.mockReturnValue(true);
+    fireEvent.contextMenu(host);
+    await waitFor(() => expect(instances[0]!.paste).toHaveBeenCalled());
+    expect(copyMock).not.toHaveBeenCalled();
+    fireEvent.contextMenu(host, { shiftKey: true });
+    expect(useContextMenu.getState().menu?.items).toHaveLength(3);
+  });
+
   it("uses the native clipboard bridge and xterm paste for Shift+Insert", async () => {
     render(<TerminalPage sessionId="s1" active={false} />);
     await waitFor(() => expect(keyboard).toHaveLength(1));

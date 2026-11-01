@@ -49,6 +49,7 @@ File panes:
 | `Backspace`, `Alt+↑`                | Go to the parent folder                         |
 | `Alt+←` / `Alt+→`                   | Back / forward through folder history           |
 | `F5`                                | Refresh the current folder                      |
+| `Ctrl+H` / `Cmd+H`                  | Toggle hidden entries in the focused file list  |
 | `F2`                                | Rename the selected entry in place              |
 | `Ctrl+L`                            | Focus and select the current panel's path       |
 | `Enter` / `Esc` in a filename input | Commit / cancel inline creation or rename       |

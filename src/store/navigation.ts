@@ -2,7 +2,16 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 import { create } from "zustand";
 
-export type SettingsSection = "general" | "appearance" | "files" | "css" | "updates" | "advanced";
+export type SettingsSection =
+  | "general"
+  | "appearance"
+  | "workspace"
+  | "terminal"
+  | "files"
+  | "editor"
+  | "monitor"
+  | "updates"
+  | "advanced";
 export type SidebarView = "hosts" | "knownHosts" | "plugins";
 
 export const useNavigation = create<{
