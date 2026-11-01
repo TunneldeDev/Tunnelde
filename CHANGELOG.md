@@ -6,6 +6,20 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.2] - 2026-11-02
+
+### Changed
+
+- Codex, Claude Code and Pi use independent marketplace packages, activity views, configurations and conversation storage. Tunnelde AI now focuses on API connections, with existing CLI settings preserved for explicit migration.
+- Chat panels use compact conversation controls and bottom composers with model, execution-location and approval menus. Codex adds recent conversations and an execution-location bar; Claude Code has its own brand layout and composer controls.
+- Plugin chat configuration separates agent connections from independent API reviewers. Profile policies restrict each plugin to its supported agent protocol, and unsupported CLI read-only modes are explained before sending.
+
+### Fixed
+
+- Pane controls stay centered at the right of the tab strip without scrolling with tabs. Close-pane actions live in the pane menu, and splitting or closing panes restores keyboard focus.
+- Docked plugin panels remove duplicate titles, and chat views remove the redundant refresh row while keeping recovery controls for errors.
+- Radio menus support keyboard navigation, checked states, descriptive text and positioning above bottom-anchored controls.
+
 ## [0.22.1] - 2026-11-02
 
 ### Added

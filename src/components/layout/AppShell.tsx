@@ -66,11 +66,12 @@ export function AppShell() {
     if (!element) return;
     const rootEdge = (event: DragEvent) => {
       if (!event.dataTransfer?.types.includes(TAB_MIME)) return null;
-      if (event.target instanceof Element && event.target.closest(".pane__tabs")) return null;
+      if (event.target instanceof Element && event.target.closest(".pane__header")) return null;
       const rect = element.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
-      const tabsHeight = element.querySelector(".pane__tabs")?.getBoundingClientRect().height ?? 34;
+      const tabsHeight =
+        element.querySelector(".pane__header")?.getBoundingClientRect().height ?? 34;
       const name =
         x < 32
           ? "left"

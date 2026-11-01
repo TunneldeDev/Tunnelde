@@ -12,6 +12,7 @@ import {
   Server,
   ShieldCheck,
   Settings as SettingsIcon,
+  Columns2,
   Terminal,
   X,
 } from "lucide-react";
@@ -21,6 +22,9 @@ import { useTranslation } from "react-i18next";
 
 import { TabContent } from "@/components/layout/TabContent";
 import { EmptyState } from "@/components/ui/display/Misc";
+import { IconButton } from "@/components/ui/form/Button";
+import { Menu } from "@/components/ui/overlay/Menu";
+import { sidebarMoveActions } from "@/components/layout/SidebarDockControls";
 import { cn } from "@/lib/text/format";
 import { closeTab } from "@/lib/session/tabActions";
 import { useContextMenu } from "@/store/contextMenu";
@@ -147,6 +151,25 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
     .filter((tab): tab is WorkspaceTab => Boolean(tab));
 
   const requestClose = (tab: WorkspaceTab) => closeTab(tab);
+  const activeTab = items.find((tab) => tab.id === pane.activeId);
+  const activeSidebarView = activeTab?.kind === "sidebar" ? sidebarViewOf(activeTab.id) : null;
+  const focusActiveTab = () => {
+    requestAnimationFrame(() => {
+      const activeId = useWorkspace.getState().activeId;
+      Array.from(document.querySelectorAll<HTMLElement>("[data-tab-id]"))
+        .find((element) => element.dataset.tabId === activeId)
+        ?.focus({ preventScroll: true });
+    });
+  };
+  const splitActive = (direction: SplitDirection) => {
+    if (!activeTab || items.length < 2) return;
+    splitTab(activeTab.id, direction);
+    focusActiveTab();
+  };
+  const closeGroup = () => {
+    closePane(pane.id);
+    focusActiveTab();
+  };
 
   const dropIndex = (event: DragEvent<HTMLDivElement>): string | null => {
     const elements = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-tab-id]"));
@@ -161,169 +184,208 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
 
   return (
     <div
-      ref={strip}
       className={cn(
-        "pane__tabs",
+        "pane__header",
         reserveControls && "has-window-controls",
         reserveTrafficLights && "has-native-window-controls",
       )}
-      role="tablist"
-
-      onDragOver={(event) => {
-        if (!event.dataTransfer.types.includes(TAB_MIME)) {
-          return;
-        }
-        event.preventDefault();
-        event.dataTransfer.dropEffect = "move";
-        const rect = event.currentTarget.getBoundingClientRect();
-        if (event.clientX < rect.left + 36) event.currentTarget.scrollLeft -= 18;
-        if (event.clientX > rect.right - 36) event.currentTarget.scrollLeft += 18;
-        setBefore(dropIndex(event));
-      }}
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBefore(null);
-      }}
-      onDrop={(event) => {
-        const tabId = event.dataTransfer.getData(TAB_MIME);
-        const target = dropIndex(event);
-        setBefore(null);
-        if (!tabId) {
-          return;
-        }
-        event.preventDefault();
-        event.stopPropagation();
-        if (pane.tabIds.includes(tabId)) {
-          reorderTab(tabId, target);
-        } else {
-          moveTab(tabId, pane.id, target);
-        }
-      }}
     >
-      {items.map((tab) => {
-        const Icon = ICONS[tab.kind];
-        const active = tab.id === pane.activeId;
-        return (
-          <div
-            key={tab.id}
-            data-tab-id={tab.id}
-            role="tab"
-            aria-selected={active}
-            title={
-              tab.kind === "sidebar"
-                ? sidebarLabel(sidebarViewOf(tab.id) ?? "hosts", t)
-                : NAMED.includes(tab.kind)
-                  ? tab.title
-                  : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])
-            }
-            tabIndex={active ? 0 : -1}
-            draggable
-            className={cn(
-              "td-tab",
-              active && "is-active",
-              tab.pinned && "is-pinned",
-              before === tab.id && "is-drop-before",
-            )}
-            onDragStart={(event) => {
-              event.dataTransfer.setData(TAB_MIME, tab.id);
-              const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
-              if (sidebar) event.dataTransfer.setData(SIDEBAR_MIME, sidebar);
-              event.dataTransfer.effectAllowed = "move";
-            }}
-            onClick={() => activate(tab.id)}
-            onAuxClick={(event) => {
-              if (event.button === 1) {
+      <div
+        ref={strip}
+        className="pane__tabs"
+        role="tablist"
+        onDragOver={(event) => {
+          if (!event.dataTransfer.types.includes(TAB_MIME)) {
+            return;
+          }
+          event.preventDefault();
+          event.dataTransfer.dropEffect = "move";
+          const rect = event.currentTarget.getBoundingClientRect();
+          if (event.clientX < rect.left + 36) event.currentTarget.scrollLeft -= 18;
+          if (event.clientX > rect.right - 36) event.currentTarget.scrollLeft += 18;
+          setBefore(dropIndex(event));
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBefore(null);
+        }}
+        onDrop={(event) => {
+          const tabId = event.dataTransfer.getData(TAB_MIME);
+          const target = dropIndex(event);
+          setBefore(null);
+          if (!tabId) {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          if (pane.tabIds.includes(tabId)) {
+            reorderTab(tabId, target);
+          } else {
+            moveTab(tabId, pane.id, target);
+          }
+        }}
+      >
+        {items.map((tab) => {
+          const Icon = ICONS[tab.kind];
+          const active = tab.id === pane.activeId;
+          return (
+            <div
+              key={tab.id}
+              data-tab-id={tab.id}
+              role="tab"
+              aria-selected={active}
+              title={
+                tab.kind === "sidebar"
+                  ? sidebarLabel(sidebarViewOf(tab.id) ?? "hosts", t)
+                  : NAMED.includes(tab.kind)
+                    ? tab.title
+                    : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])
+              }
+              tabIndex={active ? 0 : -1}
+              draggable
+              className={cn(
+                "td-tab",
+                active && "is-active",
+                tab.pinned && "is-pinned",
+                before === tab.id && "is-drop-before",
+              )}
+              onDragStart={(event) => {
+                event.dataTransfer.setData(TAB_MIME, tab.id);
+                const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
+                if (sidebar) event.dataTransfer.setData(SIDEBAR_MIME, sidebar);
+                event.dataTransfer.effectAllowed = "move";
+              }}
+              onClick={() => activate(tab.id)}
+              onAuxClick={(event) => {
+                if (event.button === 1) {
+                  event.preventDefault();
+                  requestClose(tab);
+                }
+              }}
+              onDoubleClick={() => togglePin(tab.id)}
+              onContextMenu={(event) => {
                 event.preventDefault();
-                requestClose(tab);
-              }
-            }}
-            onDoubleClick={() => togglePin(tab.id)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              const items = [
-                { label: t("tab.close"), onSelect: () => requestClose(tab) },
-                { label: t("tab.closeOthers"), onSelect: () => closeOthers(tab.id) },
-                {
-                  label: t("tab.splitRight"),
-                  separatorBefore: true,
-                  onSelect: () => splitTab(tab.id, "row"),
-                },
-                { label: t("tab.splitDown"), onSelect: () => splitTab(tab.id, "column") },
-              ];
-              const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
-              if (sidebar)
-                items.push({
-                  label: t("docking.returnToSidebar"),
-                  separatorBefore: true,
-                  onSelect: () => useWorkspace.getState().returnSidebar(sidebar),
-                });
-              if (panes.length > 1) {
-                items.push({
-                  label: t("tab.closePane"),
-                  separatorBefore: true,
-                  onSelect: () => useWorkspace.getState().closePane(pane.id),
-                });
-              }
-              openMenu(event.clientX, event.clientY, items, event.currentTarget);
-            }}
-            onKeyDown={(event) => {
-              if (event.target !== event.currentTarget) return;
-              const index = items.findIndex((item) => item.id === tab.id);
-              const destination =
-                event.key === "ArrowLeft"
-                  ? items[(index - 1 + items.length) % items.length]
-                  : event.key === "ArrowRight"
-                    ? items[(index + 1) % items.length]
-                    : event.key === "Home"
-                      ? items[0]
-                      : event.key === "End"
-                        ? items[items.length - 1]
-                        : undefined;
-              if (destination) {
-                event.preventDefault();
-                activate(destination.id);
-                const element = Array.from(
-                  strip.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [],
-                ).find((item) => item.dataset.tabId === destination.id);
-                element?.focus();
-                return;
-              }
-              if (event.key === "Enter" || event.key === " ") {
-                event.preventDefault();
-                activate(tab.id);
-              }
-            }}
-          >
-            {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
-            <span className="td-tab__label">
-              <TabLabel tab={tab} />
-            </span>
-            <button
-              type="button"
-              className="td-tab__close"
-              aria-label={t("tab.close")}
-              title={t("tab.close")}
-              onClick={(event) => {
                 event.stopPropagation();
-                requestClose(tab);
+                const items = [
+                  { label: t("tab.close"), onSelect: () => requestClose(tab) },
+                  { label: t("tab.closeOthers"), onSelect: () => closeOthers(tab.id) },
+                  {
+                    label: t("tab.splitRight"),
+                    separatorBefore: true,
+                    onSelect: () => splitTab(tab.id, "row"),
+                  },
+                  { label: t("tab.splitDown"), onSelect: () => splitTab(tab.id, "column") },
+                ];
+                const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
+                if (sidebar)
+                  items.push({
+                    label: t("docking.returnToSidebar"),
+                    separatorBefore: true,
+                    onSelect: () => useWorkspace.getState().returnSidebar(sidebar),
+                  });
+                if (panes.length > 1) {
+                  items.push({
+                    label: t("tab.closePane"),
+                    separatorBefore: true,
+                    onSelect: closeGroup,
+                  });
+                }
+                openMenu(event.clientX, event.clientY, items, event.currentTarget);
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return;
+                const index = items.findIndex((item) => item.id === tab.id);
+                const destination =
+                  event.key === "ArrowLeft"
+                    ? items[(index - 1 + items.length) % items.length]
+                    : event.key === "ArrowRight"
+                      ? items[(index + 1) % items.length]
+                      : event.key === "Home"
+                        ? items[0]
+                        : event.key === "End"
+                          ? items[items.length - 1]
+                          : undefined;
+                if (destination) {
+                  event.preventDefault();
+                  activate(destination.id);
+                  const element = Array.from(
+                    strip.current?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [],
+                  ).find((item) => item.dataset.tabId === destination.id);
+                  element?.focus();
+                  return;
+                }
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  activate(tab.id);
+                }
               }}
             >
-              <X size={12} />
-            </button>
-          </div>
-        );
-      })}
-      {paneCount > 1 ? (
-        <button
-          type="button"
-          className="pane__tabs-close"
-          aria-label={t("tab.closePane")}
-          title={t("tab.closePane")}
-          onClick={() => closePane(pane.id)}
-        >
-          <X size={11} />
-        </button>
-      ) : null}
+              {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
+              <span className="td-tab__label">
+                <TabLabel tab={tab} />
+              </span>
+              <button
+                type="button"
+                className="td-tab__close"
+                aria-label={t("tab.close")}
+                title={t("tab.close")}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  requestClose(tab);
+                }}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <div className="pane__actions">
+        {items.length > 1 ? (
+          <IconButton label={t("tab.splitRight")} size="sm" onClick={() => splitActive("row")}>
+            <Columns2 size={14} />
+          </IconButton>
+        ) : null}
+        <Menu
+          label={t("common.more")}
+          items={[
+            {
+              label: t("tab.close"),
+              disabled: !activeTab,
+              onSelect: () => {
+                if (activeTab) requestClose(activeTab);
+              },
+            },
+            {
+              label: t("tab.splitRight"),
+              separatorBefore: true,
+              disabled: items.length < 2,
+              onSelect: () => splitActive("row"),
+            },
+            {
+              label: t("tab.splitDown"),
+              disabled: items.length < 2,
+              onSelect: () => splitActive("column"),
+            },
+            {
+              label: t("tab.closeOthers"),
+              separatorBefore: true,
+              disabled: !activeTab || items.length < 2,
+              onSelect: () => {
+                if (activeTab) closeOthers(activeTab.id);
+              },
+            },
+            ...(activeSidebarView
+              ? sidebarMoveActions(activeSidebarView, t).map((action, index) => ({
+                  ...action,
+                  separatorBefore: index === 0 || action.separatorBefore,
+                }))
+              : []),
+            ...(paneCount > 1
+              ? [{ label: t("tab.closePane"), separatorBefore: true, onSelect: closeGroup }]
+              : []),
+          ]}
+        />
+      </div>
     </div>
   );
 }

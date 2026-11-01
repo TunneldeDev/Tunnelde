@@ -8,7 +8,13 @@ import { Button, IconButton } from "@/components/ui/form/Button";
 import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { Dialog } from "@/components/ui/overlay/Dialog";
-import { CHAT_PROTOCOLS, type ChatProfile, type PluginChatConfig } from "@/lib/plugins/pluginChat";
+import {
+  CHAT_PROTOCOLS,
+  type ChatProfile,
+  type ChatProfilePolicy,
+  type ChatProtocol,
+  type PluginChatConfig,
+} from "@/lib/plugins/pluginChat";
 
 interface ProfileDraft extends ChatProfile {
   apiKey?: string;
@@ -159,12 +165,16 @@ function StringList({
 
 export function PluginChatConfigDialog({
   config,
+  title,
+  profilePolicy,
   busy,
   error,
   onClose,
   onSave,
 }: {
   config?: PluginChatConfig;
+  title?: string;
+  profilePolicy?: ChatProfilePolicy;
   busy: boolean;
   error: string | null;
   onClose: () => void;
@@ -173,7 +183,7 @@ export function PluginChatConfigDialog({
   const { t } = useTranslation();
   // Secrets exist only in this mounted editor; the plugin stores them in the OS credential vault.
   const [draft, setDraft] = useState<ChatConfigDraft>(() => structuredClone(config ?? EMPTY));
-  const [section, setSection] = useState<"profiles" | "scope">("profiles");
+  const [section, setSection] = useState<"profiles" | "reviewers" | "scope">("profiles");
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const pick = async (kind: "file" | "folder", label: string, apply: (value: string) => void) => {
@@ -196,11 +206,55 @@ export function PluginChatConfigDialog({
       ...current,
       profiles: current.profiles.map((item) => (item.id === id ? { ...item, ...patch } : item)),
     }));
-  const choices = draft.profiles.map((item) => ({ value: item.id, label: item.name || item.id }));
+  const primaryProtocols = profilePolicy?.primaryProtocols ?? [...CHAT_PROTOCOLS];
+  const reviewerProtocols =
+    profilePolicy?.reviewerProtocols ?? CHAT_PROTOCOLS.filter((protocol) => !cli(protocol));
+  const splitReviewers =
+    !!profilePolicy && !primaryProtocols.some((protocol) => reviewerProtocols.includes(protocol));
+  const primaryProfiles = draft.profiles.filter((item) => primaryProtocols.includes(item.protocol));
+  const reviewerProfiles = draft.profiles.filter((item) =>
+    reviewerProtocols.includes(item.protocol),
+  );
+  const visibleProfiles =
+    section === "reviewers" ? reviewerProfiles : splitReviewers ? primaryProfiles : draft.profiles;
+  const choices = primaryProfiles.map((item) => ({ value: item.id, label: item.name || item.id }));
+  const protocolChoices = section === "reviewers" ? reviewerProtocols : primaryProtocols;
+  const dialogTitle = title
+    ? t("pluginChat.configureNamed", { name: title })
+    : t("pluginChat.configure");
+  const addProfile = () => {
+    const id = crypto.randomUUID();
+    const protocol =
+      section === "reviewers"
+        ? reviewerProtocols[0]
+        : (profilePolicy?.defaultProtocol ?? "openai-chat");
+    if (!protocol) return;
+    setDraft((current) => ({
+      ...current,
+      activeProfileId:
+        section === "reviewers" ? current.activeProfileId : current.activeProfileId || id,
+      approverProfileId:
+        section === "reviewers" ? current.approverProfileId || id : current.approverProfileId,
+      profiles: [
+        ...current.profiles,
+        {
+          id,
+          name: "",
+          protocol,
+          baseUrl: "",
+          model: "",
+          hasApiKey: false,
+          executable: "",
+          cwd: "",
+          sessionId: "",
+        },
+      ],
+    }));
+  };
   return (
     <Dialog
       open
-      title={t("pluginChat.configure")}
+      title={dialogTitle}
       onClose={onClose}
       closeLabel={t("common.close")}
       dismissible={!busy && !picking}
@@ -234,55 +288,64 @@ export function PluginChatConfigDialog({
       }
     >
       <p className="settings-hint">{t("pluginChat.credentialsHint")}</p>
-      <div className="plugin-chat-config__tabs" role="group" aria-label={t("pluginChat.configure")}>
-        {(["profiles", "scope"] as const).map((item) => (
-          <Button
-            key={item}
-            variant={section === item ? "secondary" : "ghost"}
-            onClick={() => setSection(item)}
-          >
-            {t(`pluginChat.${item}`)}
-          </Button>
-        ))}
+      <div className="plugin-chat-config__tabs" role="group" aria-label={dialogTitle}>
+        {(["profiles", ...(splitReviewers ? ["reviewers" as const] : []), "scope"] as const).map(
+          (item) => (
+            <Button
+              key={item}
+              variant={section === item ? "secondary" : "ghost"}
+              onClick={() => setSection(item)}
+            >
+              {t(item === "reviewers" ? "pluginChat.reviewerProfiles" : `pluginChat.${item}`)}
+            </Button>
+          ),
+        )}
       </div>
       <fieldset className="plugin-chat-config" disabled={busy || picking}>
-        {section === "profiles" ? (
+        {section !== "scope" ? (
           <>
+            {section === "reviewers" ? (
+              <p className="settings-hint">{t("pluginChat.reviewerProfilesHint")}</p>
+            ) : null}
             <div className="plugin-chat-config__grid">
-              <Field label={t("pluginChat.activeProfile")}>
-                <Select
-                  label={t("pluginChat.activeProfile")}
-                  value={draft.activeProfileId}
-                  options={[{ value: "", label: t("pluginChat.chooseProfile") }, ...choices]}
-                  onChange={(activeProfileId) =>
-                    setDraft((current) => ({
-                      ...current,
-                      activeProfileId,
-                      approverProfileId:
-                        current.approverProfileId === activeProfileId
-                          ? ""
-                          : current.approverProfileId,
-                    }))
-                  }
-                />
-              </Field>
-              <Field label={t("pluginChat.approverProfile")} hint={t("pluginChat.approverHint")}>
-                <Select
-                  label={t("pluginChat.approverProfile")}
-                  value={draft.approverProfileId}
-                  options={[
-                    { value: "", label: t("pluginChat.manualFallback") },
-                    ...draft.profiles
-                      .filter((item) => item.id !== draft.activeProfileId && !cli(item.protocol))
-                      .map((item) => ({ value: item.id, label: item.name || item.id })),
-                  ]}
-                  onChange={(approverProfileId) =>
-                    setDraft((current) => ({ ...current, approverProfileId }))
-                  }
-                />
-              </Field>
+              {section === "profiles" ? (
+                <Field label={t("pluginChat.activeProfile")}>
+                  <Select
+                    label={t("pluginChat.activeProfile")}
+                    value={draft.activeProfileId}
+                    options={[{ value: "", label: t("pluginChat.chooseProfile") }, ...choices]}
+                    onChange={(activeProfileId) =>
+                      setDraft((current) => ({
+                        ...current,
+                        activeProfileId,
+                        approverProfileId:
+                          current.approverProfileId === activeProfileId
+                            ? ""
+                            : current.approverProfileId,
+                      }))
+                    }
+                  />
+                </Field>
+              ) : null}
+              {!splitReviewers || section === "reviewers" ? (
+                <Field label={t("pluginChat.approverProfile")} hint={t("pluginChat.approverHint")}>
+                  <Select
+                    label={t("pluginChat.approverProfile")}
+                    value={draft.approverProfileId}
+                    options={[
+                      { value: "", label: t("pluginChat.manualFallback") },
+                      ...reviewerProfiles
+                        .filter((item) => item.id !== draft.activeProfileId)
+                        .map((item) => ({ value: item.id, label: item.name || item.id })),
+                    ]}
+                    onChange={(approverProfileId) =>
+                      setDraft((current) => ({ ...current, approverProfileId }))
+                    }
+                  />
+                </Field>
+              ) : null}
             </div>
-            {draft.profiles.map((item, index) => (
+            {visibleProfiles.map((item, index) => (
               <section
                 className="plugin-chat-config__card"
                 key={item.id}
@@ -312,16 +375,22 @@ export function PluginChatConfigDialog({
                     value={item.name}
                     onChange={(name) => profile(item.id, { name })}
                   />
-                  <Field label={t("pluginChat.protocol")}>
-                    <Select
-                      label={t("pluginChat.protocol")}
-                      value={item.protocol}
-                      options={CHAT_PROTOCOLS.map((value) => ({ value, label: value }))}
-                      onChange={(protocol) =>
-                        profile(item.id, { protocol: protocol as ChatProfile["protocol"] })
-                      }
-                    />
-                  </Field>
+                  {protocolChoices.length > 1 ? (
+                    <Field label={t("pluginChat.protocol")}>
+                      <Select
+                        label={t("pluginChat.protocol")}
+                        value={item.protocol}
+                        options={protocolChoices.map((value) => ({ value, label: value }))}
+                        onChange={(protocol) =>
+                          profile(item.id, { protocol: protocol as ChatProtocol })
+                        }
+                      />
+                    </Field>
+                  ) : (
+                    <Field label={t("pluginChat.protocol")}>
+                      <span>{title || item.protocol}</span>
+                    </Field>
+                  )}
                   <ConfigInput
                     label={t("pluginChat.model")}
                     value={item.model}
@@ -458,32 +527,8 @@ export function PluginChatConfigDialog({
                 ) : null}
               </section>
             ))}
-            <Button
-              size="sm"
-              leading={<Plus size={13} />}
-              onClick={() => {
-                const id = crypto.randomUUID();
-                setDraft((current) => ({
-                  ...current,
-                  activeProfileId: current.activeProfileId || id,
-                  profiles: [
-                    ...current.profiles,
-                    {
-                      id,
-                      name: "",
-                      protocol: "openai-chat",
-                      baseUrl: "",
-                      model: "",
-                      hasApiKey: false,
-                      executable: "",
-                      cwd: "",
-                      sessionId: "",
-                    },
-                  ],
-                }));
-              }}
-            >
-              {t("pluginChat.addProfile")}
+            <Button size="sm" leading={<Plus size={13} />} onClick={addProfile}>
+              {t(section === "reviewers" ? "pluginChat.addReviewer" : "pluginChat.addProfile")}
             </Button>
           </>
         ) : (

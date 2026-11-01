@@ -10,6 +10,11 @@ export const CHAT_PROTOCOLS = [
   "pi",
 ] as const;
 export type ChatProtocol = (typeof CHAT_PROTOCOLS)[number];
+export interface ChatProfilePolicy {
+  primaryProtocols: ChatProtocol[];
+  reviewerProtocols: ChatProtocol[];
+  defaultProtocol: ChatProtocol;
+}
 export interface ChatProfile {
   id: string;
   name: string;
@@ -66,6 +71,8 @@ export interface ChatTask {
 export interface PluginChatBlock {
   type: "chat";
   id: string;
+  title?: string;
+  profilePolicy?: ChatProfilePolicy;
   commands: {
     send: string;
     stop: string;
@@ -183,6 +190,26 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
   const raw = chatRecord(value),
     commands = chatRecord(raw.commands);
   if (raw.type !== "chat" || !id(raw.id) || !id(commands.send) || !id(commands.stop)) return null;
+  let profilePolicy: ChatProfilePolicy | undefined;
+  if (raw.profilePolicy !== undefined) {
+    const policy = chatRecord(raw.profilePolicy);
+    const protocols = (value: unknown) =>
+      Array.isArray(value) &&
+      value.length <= CHAT_PROTOCOLS.length &&
+      value.every((protocol) => CHAT_PROTOCOLS.includes(protocol as ChatProtocol));
+    if (
+      !protocols(policy.primaryProtocols) ||
+      !(policy.primaryProtocols as ChatProtocol[]).length ||
+      !protocols(policy.reviewerProtocols) ||
+      !(policy.primaryProtocols as ChatProtocol[]).includes(policy.defaultProtocol as ChatProtocol)
+    )
+      return null;
+    profilePolicy = {
+      primaryProtocols: [...new Set(policy.primaryProtocols as ChatProtocol[])],
+      reviewerProtocols: [...new Set(policy.reviewerProtocols as ChatProtocol[])],
+      defaultProtocol: policy.defaultProtocol as ChatProtocol,
+    };
+  }
   const run = chatRecord(raw.run);
   const status = text(run.status) as NonNullable<PluginChatBlock["run"]>["status"];
   const mode = text(raw.mode) as ChatMode;
@@ -192,6 +219,8 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
   return {
     type: "chat",
     id: id(raw.id),
+    ...(text(raw.title, 80) ? { title: text(raw.title, 80) } : {}),
+    ...(profilePolicy ? { profilePolicy } : {}),
     commands: {
       send: id(commands.send),
       stop: id(commands.stop),

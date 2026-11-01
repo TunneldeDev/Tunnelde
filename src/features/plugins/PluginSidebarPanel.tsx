@@ -4,6 +4,8 @@ import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDo
 import type { PluginSidebarView } from "@/lib/plugins/sidebars";
 import { parsePluginSidebar } from "@/lib/plugins/sidebars";
 import { usePlugins } from "@/store/plugins";
+import { useWorkspace } from "@/store/workspace";
+import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { PluginViewPage } from "./PluginViewPage";
 import { PluginError } from "./PluginError";
 
@@ -12,15 +14,18 @@ export function PluginSidebarPanel({ view }: { view: PluginSidebarView }) {
   const reference = parsePluginSidebar(view)!;
   const plugin = usePlugins((state) => state.items.find((item) => item.id === reference.pluginId));
   const busy = usePlugins((state) => state.busyIds.includes(reference.pluginId));
+  const docked = useWorkspace((state) => state.tabs.some((tab) => tab.id === sidebarTabId(view)));
   const contribution = plugin?.views.find(
     (item) => item.id === reference.viewId && item.location === "sidebar",
   );
   return (
     <section className="plugin-sidebar-panel" aria-label={contribution?.title ?? reference.viewId}>
-      <header className="sidebar__head">
-        <SidebarTitle view={view}>{contribution?.title ?? reference.viewId}</SidebarTitle>
-        <SidebarDockControls view={view} />
-      </header>
+      {!docked ? (
+        <header className="sidebar__head">
+          <SidebarTitle view={view}>{contribution?.title ?? reference.viewId}</SidebarTitle>
+          <SidebarDockControls view={view} />
+        </header>
+      ) : null}
       {!plugin || !contribution ? (
         <p className="plugins-sidebar__empty">{t("pluginChat.missingView")}</p>
       ) : plugin.status !== "running" ? (

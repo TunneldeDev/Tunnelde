@@ -151,7 +151,7 @@ still mandatory. Unknown methods and permissions are rejected.
 | `log`                               | Bounded logs tagged with the plugin's identity                                                                                 |
 | `network`                           | Declares network use by Node code; does not provide an OS network sandbox                                                      |
 | `process.exec`                      | Explicitly selected local streaming executables; no automatic runtime discovery                                                |
-| `secrets`                           | This plugin's own OS-keyring values; never SSH passwords or private keys                                                        |
+| `secrets`                           | This plugin's own OS-keyring values; never SSH passwords or private keys                                                       |
 
 Tunnelde 0.22 adds `events.publish`, plugin-owned `tasks.*`, scoped `tools.*`, and durable
 `runners.*` transport. `tools.invoke` accepts `ask`, `approve`, `full` or `readOnly` and explicit
@@ -166,6 +166,15 @@ contribute a dockable controlled chat panel. `view.render` returns a `chat` bloc
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
 The UI preserves drafts when a panel is moved. Secrets belong in `secrets.*`, never view data
 or plugin storage. See the hub SDK and Tunnelde AI source for the complete schema.
+
+Since 0.22.2, chat blocks may include a `title` and a `profilePolicy` containing
+`primaryProtocols`, `reviewerProtocols` and `defaultProtocol`. The default must be one of
+the primary protocols. The host uses these to show the plugin's identity and keep its
+agent connections separate from approval-only API connections. Plugins must also enforce
+their own fixed policy when loading, saving and executing configurations; view metadata
+is not an authorization boundary. Codex, Claude Code and Pi are independent marketplace
+packages with separate views, storage, permissions and runtimes. Tunnelde AI provides API
+chat without aggregating these CLI agents.
 
 Remote runners require explicit confirmation, a separately selected native helper, a fresh
 private remote directory and an explicitly chosen remote runtime. No service or Node runtime

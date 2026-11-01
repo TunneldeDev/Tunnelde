@@ -90,29 +90,35 @@ function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) 
     return invalidate;
   }, [invalidate, load]);
 
+  const chatOnly = !!view?.blocks.length && view.blocks.every((block) => block.type === "chat");
+
   return (
-    <div className={`plugin-view${embedded ? " plugin-view--sidebar" : ""}`}>
-      <header className="plugin-view__head">
-        {!embedded ? (
-          <>
-            <span className="plugin-view__title">{view?.title || t("pluginView.title")}</span>
-            <span className="plugin-view__plugin">{pluginId}</span>
-          </>
-        ) : null}
-        <Button
-          variant="ghost"
-          size="sm"
-          leading={<RefreshCw size={13} />}
-          disabled={loading}
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            void load(true);
-          }}
-        >
-          {t("pluginView.refresh")}
-        </Button>
-      </header>
+    <div
+      className={`plugin-view${embedded ? " plugin-view--sidebar" : ""}${chatOnly ? " plugin-view--chat" : ""}`}
+    >
+      {!chatOnly || error ? (
+        <header className="plugin-view__head">
+          {!embedded ? (
+            <>
+              <span className="plugin-view__title">{view?.title || t("pluginView.title")}</span>
+              <span className="plugin-view__plugin">{pluginId}</span>
+            </>
+          ) : null}
+          <Button
+            variant="ghost"
+            size="sm"
+            leading={<RefreshCw size={13} />}
+            disabled={loading}
+            onClick={() => {
+              setLoading(true);
+              setError(null);
+              void load(true);
+            }}
+          >
+            {t("pluginView.refresh")}
+          </Button>
+        </header>
+      ) : null}
 
       {error ? (
         <div>

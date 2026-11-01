@@ -321,7 +321,7 @@ describe("controlled plugin chat", () => {
   it("requires confirmation before full access and passes the chosen mode on send", async () => {
     render(<PluginChat pluginId="assistant" viewId="chat" block={chat} />);
     fireEvent.click(screen.getByRole("button", { name: "Approval mode" }));
-    fireEvent.click(screen.getByRole("option", { name: i18n.t("pluginChat.modes.full") }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: i18n.t("pluginChat.modes.full") }));
     const dialog = useDialogs.getState().dialog;
     expect(dialog.kind).toBe("confirm");
     expect(screen.getByRole("button", { name: "Approval mode" }).textContent).toContain(

@@ -1,9 +1,30 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowDown, Copy, Plus, Send, Settings2, Square, Trash2 } from "lucide-react";
+import {
+  ArrowDown,
+  Asterisk,
+  CheckCheck,
+  ChevronDown,
+  CircleHelp,
+  Code2,
+  Copy,
+  History,
+  Laptop,
+  Plus,
+  Send,
+  Server,
+  Settings2,
+  ShieldCheck,
+  ShieldOff,
+  Sparkles,
+  Square,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
+import { Menu } from "@/components/ui/overlay/Menu";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import {
@@ -11,7 +32,6 @@ import {
   applyChatEvent,
   chatRecord,
   normalizeChatBlock,
-  type ChatMode,
   type PluginChatBlock,
 } from "@/lib/plugins/pluginChat";
 import { PLUGIN_INPUT_MAX_BYTES } from "@/lib/plugins/pluginView";
@@ -118,6 +138,58 @@ export function PluginChat({
       (message.status === "streaming" && active),
   );
   const draft = drafts[block.activeSessionId] ?? "";
+  const title = block.title || t("pluginChat.title");
+  const primaryProtocol =
+    block.profilePolicy?.primaryProtocols.length === 1
+      ? block.profilePolicy.primaryProtocols[0]
+      : null;
+  const presentation =
+    primaryProtocol === "claude-code"
+      ? "claude"
+      : primaryProtocol === "codex"
+        ? "codex"
+        : primaryProtocol === "pi"
+          ? "pi"
+          : "copilot";
+  const BrandIcon =
+    presentation === "claude"
+      ? Asterisk
+      : presentation === "codex"
+        ? Code2
+        : presentation === "pi"
+          ? Terminal
+          : Sparkles;
+  const configureLabel = block.title
+    ? t("pluginChat.configureNamed", { name: block.title })
+    : t("pluginChat.configure");
+  const profile =
+    block.config?.profiles.find((item) => item.id === block.modelId) ??
+    block.config?.profiles.find((item) => item.id === block.config?.activeProfileId);
+  const executionProfiles =
+    block.config?.profiles.filter(
+      (item) =>
+        !block.profilePolicy || block.profilePolicy.primaryProtocols.includes(item.protocol),
+    ) ?? [];
+  const unsupportedReadOnly = (protocol: string | undefined) =>
+    protocol === "claude-code" || protocol === "pi";
+  const readOnlyUnavailable =
+    block.mode === "readOnly" &&
+    unsupportedReadOnly(profile?.protocol || primaryProtocol || undefined);
+  const remoteSession = profile?.remote?.sessionId || profile?.sessionId;
+  const location = remoteSession ? t("pluginChat.remoteExecution") : t("pluginChat.localExecution");
+  const locationDetail = remoteSession
+    ? [remoteSession, profile?.remote?.directory || profile?.cwd].filter(Boolean).join(" · ")
+    : profile?.cwd;
+  const modeIcons = {
+    ask: <CircleHelp size={13} />,
+    approve: <CheckCheck size={13} />,
+    full: <ShieldOff size={13} />,
+    readOnly: <ShieldCheck size={13} />,
+  };
+  const openConfig = () => {
+    setError(null);
+    setConfigOpen(true);
+  };
   const command = async (
     name: string | undefined,
     input: Record<string, unknown>,
@@ -168,7 +240,7 @@ export function PluginChat({
   };
   const send = async () => {
     const message = draft.trim();
-    if (!message || active || !block.configured) return;
+    if (!message || active || !block.configured || readOnlyUnavailable) return;
     if (new TextEncoder().encode(message).length > PLUGIN_INPUT_MAX_BYTES / 2) {
       setError(t("pluginView.inputTooLarge"));
       return;
@@ -201,7 +273,7 @@ export function PluginChat({
       setDrafts((previous) => ({ ...previous, [sessionId]: previous[sessionId] || message }));
     }
   };
-  const setMode = (mode: ChatMode) => {
+  const setMode = (mode: typeof block.mode) => {
     if (mode === "full" && block.mode !== "full") {
       if (useDialogs.getState().dialog.kind !== "none") return;
       useDialogs.getState().confirm({
@@ -216,10 +288,114 @@ export function PluginChat({
   const chooseSession = (sessionId: string) => {
     void command(block.commands.session, { action: "select", sessionId });
   };
+  const modelPicker = (
+    <Menu
+      label={t("pluginChat.model")}
+      className="plugin-chat__model"
+      menuClassName="plugin-chat__model-menu"
+      disabled={!!busy || active || !block.models.length}
+      trigger={
+        <>
+          <Sparkles size={13} aria-hidden="true" />
+          <span className="plugin-chat__control-label">
+            {block.models.find((item) => item.id === block.modelId)?.label ||
+              t("pluginChat.chooseProfile")}
+          </span>
+          <ChevronDown size={11} aria-hidden="true" />
+        </>
+      }
+      items={block.models.map((item) => ({
+        label: item.label,
+        checked: item.id === block.modelId,
+        disabled:
+          block.mode === "readOnly" &&
+          unsupportedReadOnly(
+            block.config?.profiles.find((entry) => entry.id === item.id)?.protocol,
+          ),
+        onSelect: () => update((previous) => ({ ...previous, modelId: item.id })),
+      }))}
+    />
+  );
+  const permissionPicker = (
+    <Menu
+      label={t("pluginChat.mode")}
+      className={`plugin-chat__mode${block.mode === "full" ? " is-full" : ""}`}
+      menuClassName="plugin-chat__permissions-menu"
+      disabled={!!busy || active}
+      trigger={
+        <>
+          {modeIcons[block.mode]}
+          <span className="plugin-chat__control-label">{t(`pluginChat.modes.${block.mode}`)}</span>
+          <ChevronDown size={11} aria-hidden="true" />
+        </>
+      }
+      items={CHAT_MODES.map((mode) => ({
+        label: t(`pluginChat.modes.${mode}`),
+        description:
+          mode === "readOnly" &&
+          unsupportedReadOnly(profile?.protocol || primaryProtocol || undefined)
+            ? t("pluginChat.readOnlyUnavailable")
+            : t(`pluginChat.modeHints.${mode}`),
+        disabled:
+          mode === "readOnly" &&
+          unsupportedReadOnly(profile?.protocol || primaryProtocol || undefined),
+        checked: mode === block.mode,
+        icon: modeIcons[mode],
+        onSelect: () => setMode(mode),
+      }))}
+    />
+  );
+  const locationControl = (
+    <Menu
+      className="plugin-chat__location"
+      menuClassName="plugin-chat__location-menu"
+      label={t("pluginChat.executionLocation")}
+      disabled={!!busy || active || (!executionProfiles.length && !block.commands.configure)}
+      trigger={
+        <>
+          {remoteSession ? <Server size={13} /> : <Laptop size={13} />}
+          <span className="plugin-chat__control-label">{location}</span>
+          <ChevronDown size={11} aria-hidden="true" />
+        </>
+      }
+      items={[
+        ...executionProfiles.map((item) => {
+          const remote = item.remote?.sessionId || item.sessionId;
+          return {
+            label: `${t(remote ? "pluginChat.remoteExecution" : "pluginChat.localExecution")} · ${item.name || item.model || item.id}`,
+            description: remote
+              ? [remote, item.remote?.directory || item.cwd].filter(Boolean).join(" · ")
+              : item.cwd || undefined,
+            checked: item.id === block.modelId,
+            disabled: block.mode === "readOnly" && unsupportedReadOnly(item.protocol),
+            icon: remote ? <Server size={13} /> : <Laptop size={13} />,
+            onSelect: () => update((previous) => ({ ...previous, modelId: item.id })),
+          };
+        }),
+        ...(block.commands.configure
+          ? [
+              {
+                label: configureLabel,
+                icon: <Settings2 size={13} />,
+                separatorBefore: executionProfiles.length > 0,
+                onSelect: openConfig,
+              },
+            ]
+          : []),
+      ]}
+    />
+  );
   return (
-    <section className="plugin-chat" aria-label={t("pluginChat.title")}>
+    <section className={`plugin-chat plugin-chat--${presentation}`} aria-label={title}>
+      {presentation === "claude" || presentation === "pi" ? (
+        <div className="plugin-chat__brand-header">
+          <BrandIcon size={18} aria-hidden="true" />
+          <strong>{title}</strong>
+        </div>
+      ) : null}
       <div className="plugin-chat__toolbar">
         <Select
+          className="plugin-chat__session"
           label={t("pluginChat.session")}
           value={block.activeSessionId}
           options={
@@ -263,44 +439,11 @@ export function PluginChat({
           </>
         ) : null}
         {block.commands.configure ? (
-          <IconButton
-            label={t("pluginChat.configure")}
-            disabled={!!busy || active}
-            onClick={() => {
-              setError(null);
-              setConfigOpen(true);
-            }}
-          >
+          <IconButton label={configureLabel} disabled={!!busy || active} onClick={openConfig}>
             <Settings2 size={14} />
           </IconButton>
         ) : null}
       </div>
-      <div className="plugin-chat__selectors">
-        <Select
-          label={t("pluginChat.model")}
-          value={block.modelId}
-          options={
-            block.models.length
-              ? block.models.map((item) => ({ value: item.id, label: item.label }))
-              : [{ value: "", label: t("pluginChat.chooseProfile") }]
-          }
-          disabled={!!busy || active}
-          onChange={(modelId) => update((previous) => ({ ...previous, modelId }))}
-        />
-        <Select
-          label={t("pluginChat.mode")}
-          value={block.mode}
-          options={CHAT_MODES.map((mode) => ({
-            value: mode,
-            label: t(`pluginChat.modes.${mode}`),
-          }))}
-          disabled={!!busy || active}
-          onChange={(mode) => setMode(mode as ChatMode)}
-        />
-      </div>
-      <p className={`plugin-chat__mode-hint${block.mode === "full" ? " is-full" : ""}`}>
-        {t(`pluginChat.modeHints.${block.mode}`)}
-      </p>
       <div
         className="plugin-chat__messages"
         ref={viewport}
@@ -313,17 +456,47 @@ export function PluginChat({
           setAtBottom(nearBottom.current);
         }}
       >
-        {!block.configured ? (
+        {presentation === "codex" &&
+        !messages.length &&
+        block.commands.session &&
+        block.sessions.some((item) => item.id !== block.activeSessionId) ? (
+          <section className="plugin-chat__recents" aria-label={t("pluginChat.recentSessions")}>
+            <h3>{t("pluginChat.recentSessions")}</h3>
+            {block.sessions
+              .filter((item) => item.id !== block.activeSessionId)
+              .slice(0, 3)
+              .map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  disabled={!!busy || active}
+                  onClick={() => chooseSession(item.id)}
+                >
+                  <History size={13} aria-hidden="true" />
+                  <span>{item.title || t("pluginChat.untitled")}</span>
+                </button>
+              ))}
+          </section>
+        ) : null}
+        {!messages.length && !block.approvals.length && !block.tasks.length ? (
           <div className="plugin-chat__empty">
-            <p>{t("pluginChat.setupHint")}</p>
-            {block.commands.configure ? (
-              <Button size="sm" onClick={() => setConfigOpen(true)}>
-                {t("pluginChat.configure")}
+            <span className="plugin-chat__brand-mark" aria-hidden="true">
+              <BrandIcon size={32} strokeWidth={1.5} />
+            </span>
+            <h2>{title}</h2>
+            <p>
+              {block.configured
+                ? t("pluginChat.emptyPrompt")
+                : presentation !== "copilot"
+                  ? t("pluginChat.setupNamed", { name: title })
+                  : t("pluginChat.setupHint")}
+            </p>
+            {!block.configured && block.commands.configure ? (
+              <Button size="sm" onClick={openConfig}>
+                {configureLabel}
               </Button>
             ) : null}
           </div>
-        ) : !messages.length ? (
-          <p className="plugin-chat__empty">{t("pluginChat.empty")}</p>
         ) : null}
         {messages.map((message) =>
           message.role === "tool" ? (
@@ -346,7 +519,9 @@ export function PluginChat({
           ) : (
             <article className={`plugin-chat__message is-${message.role}`} key={message.id}>
               <div className="plugin-chat__message-head">
-                <strong>{t(`pluginChat.roles.${message.role}`)}</strong>
+                <strong>
+                  {message.role === "assistant" ? title : t(`pluginChat.roles.${message.role}`)}
+                </strong>
                 <IconButton
                   size="sm"
                   label={t("pluginChat.copyMessage")}
@@ -461,6 +636,7 @@ export function PluginChat({
       {!atBottom ? (
         <Button
           size="sm"
+          className="plugin-chat__latest"
           variant="ghost"
           leading={<ArrowDown size={12} />}
           onClick={() => {
@@ -472,9 +648,9 @@ export function PluginChat({
           {t("pluginChat.latest")}
         </Button>
       ) : null}
-      {block.notice ? (
+      {block.notice || readOnlyUnavailable ? (
         <p className="plugin-chat__notice" role="status">
-          {block.notice}
+          {readOnlyUnavailable ? t("pluginChat.readOnlyUnavailable") : block.notice}
         </p>
       ) : null}
       {error ? (
@@ -505,54 +681,87 @@ export function PluginChat({
         <label className="sr-only" htmlFor={inputId}>
           {t("pluginChat.message")}
         </label>
-        <Textarea
-          id={inputId}
-          aria-label={t("pluginChat.message")}
-          placeholder={t("pluginChat.placeholder")}
-          value={draft}
-          rows={3}
-          disabled={!block.configured}
-          onChange={(event) =>
-            setDrafts((previous) => ({ ...previous, [block.activeSessionId]: event.target.value }))
-          }
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (!active && !busy) void send();
+        {presentation === "codex" ? (
+          <div className="plugin-chat__location-bar">
+            {locationControl}
+            <span title={locationDetail}>{locationDetail}</span>
+          </div>
+        ) : null}
+        <div className="plugin-chat__input-card">
+          <Textarea
+            id={inputId}
+            aria-label={t("pluginChat.message")}
+            placeholder={
+              block.title
+                ? t("pluginChat.placeholderNamed", { name: block.title })
+                : t("pluginChat.placeholder")
             }
-          }}
-        />
-        <div className="plugin-chat__composer-foot">
-          <span role="status" aria-live="polite">
+            value={draft}
+            rows={3}
+            disabled={!block.configured}
+            onChange={(event) =>
+              setDrafts((previous) => ({
+                ...previous,
+                [block.activeSessionId]: event.target.value,
+              }))
+            }
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (!active && !busy) void send();
+              }
+            }}
+          />
+          <div className="plugin-chat__composer-foot">
+            {presentation === "codex" ? permissionPicker : modelPicker}
+            {presentation === "copilot" || presentation === "pi" ? locationControl : null}
+            {presentation === "claude" ? permissionPicker : null}
+            {presentation === "codex" ? modelPicker : null}
+            {active ? (
+              <IconButton
+                className="plugin-chat__send is-stopping"
+                label={t("pluginChat.stop")}
+                disabled={!!busy}
+                onClick={() => void command(block.commands.stop, {})}
+              >
+                <Square size={13} fill="currentColor" />
+              </IconButton>
+            ) : (
+              <IconButton
+                className="plugin-chat__send"
+                label={t("pluginChat.send")}
+                type="submit"
+                disabled={!!busy || !draft.trim() || !block.configured || readOnlyUnavailable}
+              >
+                <Send size={14} />
+              </IconButton>
+            )}
+          </div>
+        </div>
+        <div className="plugin-chat__composer-meta">
+          {presentation === "copilot" || presentation === "pi" ? (
+            <>
+              <span className="plugin-chat__identity" title={title}>
+                <BrandIcon size={12} aria-hidden="true" />
+                <span>{title}</span>
+              </span>
+              <span className="plugin-chat__meta-divider" aria-hidden="true" />
+              {permissionPicker}
+            </>
+          ) : null}
+          {presentation === "claude" ? locationControl : null}
+          <span className="sr-only" role="status" aria-live="polite">
             {active
               ? t(block.run?.status === "waiting" ? "pluginChat.waiting" : "pluginChat.streaming")
               : t("pluginChat.enterHint")}
           </span>
-          {active ? (
-            <Button
-              size="sm"
-              disabled={!!busy}
-              leading={<Square size={12} />}
-              onClick={() => void command(block.commands.stop, {})}
-            >
-              {t("pluginChat.stop")}
-            </Button>
-          ) : (
-            <Button
-              size="sm"
-              type="submit"
-              variant="primary"
-              disabled={!!busy || !draft.trim() || !block.configured}
-              leading={<Send size={12} />}
-            >
-              {t("pluginChat.send")}
-            </Button>
-          )}
         </div>
       </form>
       {configOpen && !appDialogOpen ? (
         <PluginChatConfigDialog
           config={block.config}
+          title={block.title}
+          profilePolicy={block.profilePolicy}
           busy={!!busy}
           error={error}
           onClose={() => {

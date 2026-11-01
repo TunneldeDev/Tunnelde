@@ -59,7 +59,8 @@ export function WindowTitleBar() {
   useEffect(() => {
     if (!enabled) return;
     const isDragTarget = (target: EventTarget | null) =>
-      target instanceof Element && target.matches(".pane__tabs, .panel__head, .panel__title");
+      target instanceof Element &&
+      target.matches(".pane__header, .pane__tabs, .panel__head, .panel__title");
     const drag = (event: MouseEvent) => {
       if (event.button === 0 && event.detail < 2 && isDragTarget(event.target)) {
         void getCurrentWindow()

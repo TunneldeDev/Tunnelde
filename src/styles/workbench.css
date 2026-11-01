@@ -82,10 +82,10 @@
   background: #e81123;
   color: #fff;
 }
-.pane__tabs.has-window-controls {
+.pane__header.has-window-controls {
   padding-right: 156px;
 }
-.pane__tabs.has-native-window-controls {
+.pane__header.has-native-window-controls {
   padding-left: 34px;
 }
 .is-compact-chrome.is-macos .activitybar {

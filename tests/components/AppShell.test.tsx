@@ -72,7 +72,7 @@ function renderWorkspace() {
   const rendered = render(<AppShell />);
   const workspace = rendered.container.querySelector(".workspace")!;
   vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue(rectangle(100, 50, 800, 600));
-  const strips = [...workspace.querySelectorAll(".pane__tabs")];
+  const strips = [...workspace.querySelectorAll(".pane__header")];
   const bodies = [...workspace.querySelectorAll(".pane__body")];
   strips.forEach((strip, index) => {
     vi.spyOn(strip, "getBoundingClientRect").mockReturnValue(

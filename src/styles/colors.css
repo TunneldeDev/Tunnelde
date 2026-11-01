@@ -32,6 +32,7 @@
   .window-titlebar,
   .terminal-head,
   .editor-head,
+  .pane__header,
   .pane__tabs,
   .td-tab.is-active,
   .editor-page,
@@ -81,6 +82,7 @@
 .editor-head {
   background: var(--td-color-title-bar, var(--td-panel));
 }
+.pane__header,
 .pane__tabs {
   background: var(--td-color-tab-bar, var(--td-panel));
 }

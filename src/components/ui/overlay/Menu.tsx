@@ -1,4 +1,4 @@
-import { MoreHorizontal } from "lucide-react";
+import { Check, MoreHorizontal } from "lucide-react";
 import {
   Fragment,
   useCallback,
@@ -22,23 +22,30 @@ export interface MenuAction {
   danger?: boolean;
   disabled?: boolean;
   separatorBefore?: boolean;
+  description?: string;
+  checked?: boolean;
   onSelect: () => void;
 }
 
 interface MenuProps {
   label: string;
   items: MenuAction[];
+  trigger?: ReactNode;
+  className?: string;
+  menuClassName?: string;
+  disabled?: boolean;
 }
 
 const MENU_WIDTH = 184;
 
-export function Menu({ label, items }: MenuProps) {
+export function Menu({ label, items, trigger, className, menuClassName, disabled }: MenuProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const openLast = useRef(false);
   const menuId = useId();
+  if (disabled && open) setOpen(false);
   const close = useCallback((restoreFocus = true) => {
     setOpen(false);
     setPosition(null);
@@ -102,7 +109,8 @@ export function Menu({ label, items }: MenuProps) {
         label={label}
         size="sm"
         ref={buttonRef}
-        className="td-menu__trigger"
+        className={cn("td-menu__trigger", trigger && "td-menu__trigger--custom", className)}
+        disabled={disabled}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -123,16 +131,16 @@ export function Menu({ label, items }: MenuProps) {
           else setOpen(true);
         }}
       >
-        <MoreHorizontal size={14} />
+        {trigger ?? <MoreHorizontal size={14} />}
       </IconButton>
-      {open
+      {open && !disabled
         ? createPortal(
             <div
               ref={menuRef}
               id={menuId}
               tabIndex={-1}
               aria-label={label}
-              className="td-menu"
+              className={cn("td-menu", menuClassName)}
               role="menu"
               onKeyDown={(event) => handleMenuKeyDown(event, menuRef.current, () => close())}
               style={{
@@ -148,18 +156,34 @@ export function Menu({ label, items }: MenuProps) {
                   ) : null}
                   <button
                     type="button"
-                    role="menuitem"
+                    role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+                    aria-label={item.label}
+                    aria-describedby={
+                      item.description ? `${menuId}-description-${index}` : undefined
+                    }
+                    aria-checked={item.checked}
                     disabled={item.disabled}
                     tabIndex={-1}
                     className={cn("td-menu__item", item.danger && "is-danger")}
                     onClick={(event) => {
                       event.stopPropagation();
+                      if (item.disabled) return;
                       close();
                       item.onSelect();
                     }}
                   >
                     {item.icon ? <span className="td-menu__icon">{item.icon}</span> : null}
-                    {item.label}
+                    {item.description ? (
+                      <span className="td-menu__item-text">
+                        <span>{item.label}</span>
+                        <small id={`${menuId}-description-${index}`}>{item.description}</small>
+                      </span>
+                    ) : (
+                      item.label
+                    )}
+                    {item.checked ? (
+                      <Check size={13} aria-hidden="true" className="td-menu__check" />
+                    ) : null}
                   </button>
                 </Fragment>
               ))}

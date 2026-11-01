@@ -4,6 +4,25 @@ import { normalizeBlocks } from "@/lib/plugins/pluginView";
 import { chat } from "../fixtures/pluginChat";
 
 describe("controlled plugin chat payloads", () => {
+  it("preserves independent agent identity and refuses invalid profile policies", () => {
+    const policy = {
+      primaryProtocols: ["codex"],
+      reviewerProtocols: ["openai-responses"],
+      defaultProtocol: "codex",
+    };
+    expect(normalizeChatBlock({ ...chat, title: "Codex", profilePolicy: policy })).toMatchObject({
+      title: "Codex",
+      profilePolicy: policy,
+    });
+    for (const invalid of [
+      { ...policy, primaryProtocols: [] },
+      { ...policy, primaryProtocols: ["unknown"] },
+      { ...policy, reviewerProtocols: "all" },
+      { ...policy, defaultProtocol: "claude-code" },
+    ])
+      expect(normalizeChatBlock({ ...chat, profilePolicy: invalid })).toBeNull();
+  });
+
   it("preserves execution mode and CLI parameters while dropping unsupported MCP settings", () => {
     const normalized = normalizeChatConfig({
       ...chat.config,

@@ -29,3 +29,28 @@
 .td-menu__item:disabled {
   color: var(--td-faint);
 }
+.td-menu__trigger--custom {
+  width: auto;
+  min-width: 0;
+  gap: 5px;
+  padding-inline: 6px;
+}
+.td-menu__item-text {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.td-menu__item-text > small {
+  color: var(--td-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+.td-menu__check {
+  flex: 0 0 auto;
+  margin-left: auto;
+}

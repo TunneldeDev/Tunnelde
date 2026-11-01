@@ -87,6 +87,27 @@ describe("compact window controls", () => {
     expect(screen.getByRole("button", { name: "Restore" })).toBeTruthy();
   });
 
+  it("drags an empty group header while fixed group action buttons stay interactive", () => {
+    render(
+      <>
+        <WindowTitleBar />
+        <div className="pane__header" data-testid="group-header">
+          <div className="pane__actions">
+            <button>Group action</button>
+          </div>
+        </div>
+      </>,
+    );
+    fireEvent.mouseDown(screen.getByTestId("group-header"), { button: 0, detail: 1 });
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Group action" }), {
+      button: 0,
+      detail: 1,
+    });
+    fireEvent.doubleClick(screen.getByRole("button", { name: "Group action" }));
+    expect(mocks.startDragging).toHaveBeenCalledTimes(1);
+    expect(mocks.toggleMaximize).not.toHaveBeenCalled();
+  });
+
   it("keeps native macOS traffic lights and supports dragging the existing tab row", () => {
     useSettings.setState({ info: { os: "macos" } as AppInfo });
     render(
@@ -165,6 +186,9 @@ describe("window control space in nested groups", () => {
     });
     const { container } = render(<PaneLayout />);
     expect(container.querySelectorAll(".has-window-controls")).toHaveLength(1);
+    expect(
+      container.querySelector(".pane__header.has-window-controls > .pane__actions"),
+    ).toBeTruthy();
     expect(container.querySelector('.has-window-controls [data-tab-id="b"]')).toBeTruthy();
     act(() => {
       useSettings.setState({ info: { os: "macos" } as AppInfo });

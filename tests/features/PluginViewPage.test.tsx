@@ -17,6 +17,9 @@ vi.mock("@/store/pluginSecurity", async (original) => ({
   authorizePluginAction: authorizeMock,
 }));
 vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
+vi.mock("@/features/plugins/PluginChat", () => ({
+  PluginChat: () => <div data-testid="plugin-chat" />,
+}));
 
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
@@ -26,6 +29,21 @@ beforeEach(() => {
 });
 
 describe("PluginViewPage", () => {
+  it("omits the redundant refresh header for chat-only views but keeps it for mixed tools", async () => {
+    const chat = { type: "chat", id: "chat", commands: { send: "send", stop: "stop" } };
+    apiMock.pluginRenderView.mockResolvedValueOnce({ title: "AI", blocks: [chat] });
+    const { container, rerender } = render(<PluginViewPage pluginId="ai" viewId="chat" embedded />);
+    expect(await screen.findByTestId("plugin-chat")).toBeTruthy();
+    expect(container.querySelector(".plugin-view__head")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh" })).toBeNull();
+    apiMock.pluginRenderView.mockResolvedValueOnce({
+      blocks: [chat, { type: "text", text: "Tool status" }],
+    });
+    rerender(<PluginViewPage pluginId="ai" viewId="mixed" embedded />);
+    expect(await screen.findByText("Tool status")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeTruthy();
+  });
+
   it("keeps password form fields masked and sends them only after explicit submission", async () => {
     apiMock.pluginRenderView.mockResolvedValue({
       blocks: [

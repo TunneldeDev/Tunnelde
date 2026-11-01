@@ -8,7 +8,11 @@ interface MenuKeyboardEvent {
 }
 
 function enabledItems(menu: HTMLElement): HTMLButtonElement[] {
-  return Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)'));
+  return Array.from(
+    menu.querySelectorAll<HTMLButtonElement>(
+      '[role="menuitem"]:not(:disabled), [role="menuitemradio"]:not(:disabled), [role="menuitemcheckbox"]:not(:disabled)',
+    ),
+  );
 }
 
 export function focusMenuItem(menu: HTMLElement | null, last = false): void {
