@@ -1,3 +1,62 @@
 {
-  "plugins": []
+  "version": 1,
+  "plugins": [
+    {
+      "id": "json-formatter",
+      "name": "JSON Formatter",
+      "version": "1.0.0",
+      "description": "Format and minify JSON locally without losing numeric precision.",
+      "author": "TunneldeDev",
+      "runtime": "node",
+      "apiVersion": 1,
+      "engines": {
+        "node": ">=22"
+      },
+      "readme": "# JSON Formatter\n\nFormat and minify JSON locally without losing numeric precision.\n\nAn independent official Tunnelde plugin. Requires Node.js 22 or later. No npm installation, network access, filesystem access or clipboard permission is required. Install the folder or its release ZIP in Tunnelde, then open the plugin view.\n\nAll fields and results remain local. Results are copied only when you click the host's Copy result button. Switching workspace tabs preserves unfinished input and the last result; closing the tab discards that draft.\n\n## Commands\n\n- `pretty`: Format JSON\n- `minify`: Minify JSON\n\n## Runtime protocol\n\nJSON-RPC 2.0 over newline-delimited stdin/stdout. Supports initialize, view.render (main, optional locale), command.run (command, optional input), and shutdown. UI is declarative JSON rendered by the host; this plugin never sends HTML.\n\n## License\n\nGPL-3.0-only. Copyright (C) 2026 TunneldeDev.\n",
+      "url": "https://github.com/TunneldeDev/tunnelde-hub/releases/download/plugins-v1.0.0/json-formatter-1.0.0.zip",
+      "sha256": "982d952564231d64596aea8a898f5538c48e9d6d1822dcc7ea310991b0b124d3"
+    },
+    {
+      "id": "studio-themes",
+      "name": "Studio Themes",
+      "version": "1.0.0",
+      "description": "Cobalt Dusk and Porcelain: a coordinated dark and light theme for the entire workbench.",
+      "author": "TunneldeDev",
+      "runtime": "theme",
+      "apiVersion": 1,
+      "readme": "# Studio Themes\n\nTwo themes for the Tunnelde workbench:\n\n- **Cobalt Dusk** combines deep blue surfaces with a soft cobalt accent.\n- **Porcelain** combines warm light surfaces with a restrained blue accent.\n\nInstall the package from the marketplace, a local folder, or a ZIP archive. Open its plugin details, then select **Apply theme** beside the theme you want. Both themes include workbench and terminal colors. Applying a theme takes effect immediately and replaces your current appearance, accent, and region color overrides; other preferences stay as configured. You can customize individual colors afterward in Settings → Appearance.\n\nThis is a pure theme package. It contains no executable entry point, commands, or views and needs no Node runtime or startup step. Installing the package does not change your current theme. Removing it leaves your selected colors in place.\n",
+      "url": "https://github.com/TunneldeDev/tunnelde-hub/releases/download/plugins-v1.0.0/studio-themes-1.0.0.zip",
+      "sha256": "a40b7c4e4c71cbf83e7b922f6264196bd10a8c1e68e2dcfc20de2485ed6a730e"
+    },
+    {
+      "id": "timestamp",
+      "name": "Timestamp Converter",
+      "version": "1.0.0",
+      "description": "Convert Unix seconds/milliseconds and local or UTC dates.",
+      "author": "TunneldeDev",
+      "runtime": "node",
+      "apiVersion": 1,
+      "engines": {
+        "node": ">=22"
+      },
+      "readme": "# Timestamp Converter\n\nConvert Unix seconds/milliseconds and local or UTC dates.\n\nAn independent official Tunnelde plugin. Requires Node.js 22 or later. No npm installation, network access, filesystem access or clipboard permission is required. Install the folder or its release ZIP in Tunnelde, then open the plugin view.\n\nAll fields and results remain local. Results are copied only when you click the host's Copy result button. Switching workspace tabs preserves unfinished input and the last result; closing the tab discards that draft.\n\n## Commands\n\n- `decode`: Timestamp to date\n- `encode`: Date to timestamp\n- `now`: Current time\n\n## Runtime protocol\n\nJSON-RPC 2.0 over newline-delimited stdin/stdout. Supports initialize, view.render (main, optional locale), command.run (command, optional input), and shutdown. UI is declarative JSON rendered by the host; this plugin never sends HTML.\n\n## License\n\nGPL-3.0-only. Copyright (C) 2026 TunneldeDev.\n",
+      "url": "https://github.com/TunneldeDev/tunnelde-hub/releases/download/plugins-v1.0.0/timestamp-1.0.0.zip",
+      "sha256": "6e683cf59b2dfdec042c7ad495ddefafacb95a1306f1480f14bc8e09a7730071"
+    },
+    {
+      "id": "uuid",
+      "name": "UUID Generator",
+      "version": "1.0.0",
+      "description": "Generate batches of cryptographically random UUID v4 values.",
+      "author": "TunneldeDev",
+      "runtime": "node",
+      "apiVersion": 1,
+      "engines": {
+        "node": ">=22"
+      },
+      "readme": "# UUID Generator\n\nGenerate batches of cryptographically random UUID v4 values.\n\nAn independent official Tunnelde plugin. Requires Node.js 22 or later. No npm installation, network access, filesystem access or clipboard permission is required. Install the folder or its release ZIP in Tunnelde, then open the plugin view.\n\nAll fields and results remain local. Results are copied only when you click the host's Copy result button. Switching workspace tabs preserves unfinished input and the last result; closing the tab discards that draft.\n\n## Commands\n\n- `generate`: Generate UUIDs\n\n## Runtime protocol\n\nJSON-RPC 2.0 over newline-delimited stdin/stdout. Supports initialize, view.render (main, optional locale), command.run (command, optional input), and shutdown. UI is declarative JSON rendered by the host; this plugin never sends HTML.\n\n## License\n\nGPL-3.0-only. Copyright (C) 2026 TunneldeDev.\n",
+      "url": "https://github.com/TunneldeDev/tunnelde-hub/releases/download/plugins-v1.0.0/uuid-1.0.0.zip",
+      "sha256": "b14d956a7c8d8e30c4c3755074f4aeb5324c086925a5d71b5b88059a4e6a0b84"
+    }
+  ]
 }

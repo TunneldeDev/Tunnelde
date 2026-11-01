@@ -1,28 +1,32 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
+pub mod api;
+pub mod config;
 mod host;
 pub mod manifest;
 pub mod marketplace;
+pub mod network;
+pub mod node;
+pub mod security;
 pub mod wasm;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::Mutex;
 
 use crate::error::{AppError, AppResult};
 use crate::plugins::host::PluginHost;
-use crate::plugins::manifest::{PluginCommand, PluginManifest, PluginView};
+use crate::plugins::manifest::{PluginCommand, PluginManifest, PluginTheme, PluginView};
 use crate::plugins::wasm::WasmPlugin;
 
 pub const STATE_EVENT: &str = "plugin://state";
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +50,14 @@ pub struct PluginInfo {
     pub status: PluginStatus,
     pub error: Option<String>,
     pub path: String,
+    pub runtime: String,
+    pub author: Option<String>,
+    pub readme: Option<String>,
+    pub engines: std::collections::BTreeMap<String, String>,
+    pub source_id: Option<String>,
+    pub source_url: Option<String>,
+    pub themes: Vec<PluginTheme>,
+    pub fingerprint: String,
 }
 
 struct Instance {
@@ -55,10 +67,19 @@ struct Instance {
     error: Option<String>,
     host: Option<PluginHost>,
     wasm: Option<WasmPlugin>,
+    retired: bool,
+    readme: Option<String>,
+    node_source: Option<String>,
+    fingerprint: String,
 }
 
 impl Instance {
     fn new(manifest: PluginManifest, dir: PathBuf) -> Self {
+        let fingerprint = security::fingerprint(&dir).unwrap_or_default();
+        let readme = manifest
+            .readme
+            .as_deref()
+            .and_then(|name| manifest::read_readme(&dir, name));
         let mut instance = Self {
             manifest,
             dir,
@@ -66,6 +87,10 @@ impl Instance {
             error: None,
             host: None,
             wasm: None,
+            retired: false,
+            readme,
+            node_source: None,
+            fingerprint,
         };
         if instance.is_wasm() {
             match instance.load_wasm() {
@@ -81,6 +106,13 @@ impl Instance {
 
     fn is_wasm(&self) -> bool {
         self.manifest.runtime.as_deref() == Some("wasm")
+    }
+
+    fn require_runtime(&self) -> AppResult<()> {
+        if self.manifest.runtime.as_deref() == Some("theme") {
+            return Err(AppError::validation("plugin.theme.noRuntime"));
+        }
+        Ok(())
     }
 
     fn load_wasm(&self) -> AppResult<WasmPlugin> {
@@ -102,28 +134,185 @@ impl Instance {
             status: self.status,
             error: self.error.clone(),
             path: self.dir.to_string_lossy().into_owned(),
+            runtime: self
+                .manifest
+                .runtime
+                .clone()
+                .unwrap_or_else(|| "node".into()),
+            author: self.manifest.author.clone(),
+            readme: self.readme.clone(),
+            engines: self.manifest.engines.clone(),
+            source_id: marketplace::origin(&self.dir).map(|o| o.id),
+            source_url: marketplace::origin(&self.dir).map(|o| o.url),
+            themes: self.manifest.themes.clone(),
+            fingerprint: self.fingerprint.clone(),
         }
     }
 }
 
 pub struct PluginsManager {
     dir: PathBuf,
-    plugins: Mutex<HashMap<String, Instance>>,
+    plugins: Mutex<HashMap<String, Arc<Mutex<Instance>>>>,
+    mutations: Mutex<()>,
+    snapshots: std::sync::RwLock<HashMap<String, PluginInfo>>,
+    runtime_sources: std::sync::RwLock<HashMap<String, String>>,
+    pub(super) security: Arc<security::PluginSecurity>,
 }
 
 impl PluginsManager {
+    pub fn initialize_security(&self, db: &crate::db::Database, locked: bool) -> AppResult<()> {
+        self.security.initialize(db, locked)
+    }
+
+    pub fn mark_clean(&self, db: &crate::db::Database) -> AppResult<()> {
+        self.security.mark_clean(db)
+    }
+
+    pub async fn security_state(&self) -> security::SecurityState {
+        let plugins = self.list().await;
+        let identities = tokio::task::spawn_blocking(move || {
+            plugins
+                .into_iter()
+                .filter(|plugin| plugin.runtime != "theme")
+                .filter_map(|plugin| {
+                    security::fingerprint(Path::new(&plugin.path))
+                        .ok()
+                        .map(|digest| (plugin.id, digest, plugin.permissions))
+                })
+                .collect::<Vec<_>>()
+        })
+        .await
+        .unwrap_or_default();
+        self.security.snapshot(&identities)
+    }
+
+    pub async fn set_permissions(
+        &self,
+        db: &crate::db::Database,
+        id: &str,
+        permissions: Option<Vec<String>>,
+        expected_fingerprint: Option<String>,
+    ) -> AppResult<()> {
+        if permissions.is_none() {
+            // Revoke before waiting for an instance's in-flight command mutex.
+            return self
+                .security
+                .set_permissions(db, id, String::new(), &[], None);
+        }
+        let _mutation = self.mutations.lock().await;
+        let info = self
+            .snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AppError::validation("plugin.notFound"))?;
+        if info.runtime == "theme" {
+            return Err(AppError::validation("plugin.theme.noRuntime"));
+        }
+        let digest = security::fingerprint_async(PathBuf::from(info.path)).await?;
+        if permissions.is_some() && expected_fingerprint.as_deref() != Some(digest.as_str()) {
+            return Err(AppError::validation("pluginSecurity.changed"));
+        }
+        self.security
+            .set_permissions(db, id, digest, &info.permissions, permissions)
+    }
+
+    pub async fn stop_immediately(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
+        self.security.invalidate_runtime(id);
+        self.remember_source(id, None);
+        let handle = self.instance(id).await?;
+        let mut instance = handle.lock().await;
+        if let Some(mut host) = instance.host.take() {
+            host.kill();
+        }
+        instance.wasm = None;
+        instance.node_source = None;
+        instance.status = PluginStatus::Stopped;
+        instance.error = None;
+        let info = instance.info();
+        self.remember(&info);
+        drop(instance);
+        let _ = app.emit(STATE_EVENT, &info);
+        Ok(info)
+    }
+
+    pub async fn stop_all_immediately(&self, app: &AppHandle) {
+        let ids: Vec<_> = self.plugins.lock().await.keys().cloned().collect();
+        for id in ids {
+            let _ = self.stop_immediately(app, &id).await;
+        }
+    }
+
+    pub fn force_cli_restricted(&self, app: &AppHandle, db: &crate::db::Database) {
+        if let Err(error) = self.security.set_restricted(db, true, true) {
+            tracing::error!(%error, "could not persist restricted extension mode");
+        }
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            app.state::<crate::state::AppState>()
+                .plugins
+                .stop_all_immediately(&app)
+                .await;
+            security::emit_state(&app).await;
+        });
+    }
+
     pub fn load(dir: PathBuf) -> Self {
         let mut plugins = HashMap::new();
+        let mut snapshots = HashMap::new();
+        // Recover an interrupted replacement before scanning ordinary plugin folders.
+        if let Ok(entries) = std::fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if let Some(id) = name
+                    .strip_prefix(".backup-")
+                    .filter(|id| manifest::valid_id(id))
+                {
+                    let target = dir.join(id);
+                    if !entry.file_type().is_ok_and(|kind| kind.is_dir())
+                        || !manifest::load(&entry.path()).is_ok_and(|value| value.id == id)
+                    {
+                        continue;
+                    }
+                    if !target.exists() {
+                        let _ = std::fs::rename(entry.path(), &target);
+                    } else if manifest::load(&target).is_ok_and(|value| value.id == id) {
+                        let _ = std::fs::remove_dir_all(entry.path());
+                    } else {
+                        // A crash may leave a partially written/corrupt target
+                        // alongside the previous complete version. Quarantine
+                        // it before restoring; never discard the good backup.
+                        let failed = dir.join(format!(".failed-{}", uuid::Uuid::new_v4()));
+                        if std::fs::rename(&target, &failed).is_ok() {
+                            if std::fs::rename(entry.path(), &target).is_ok() {
+                                let _ = std::fs::remove_dir_all(&failed);
+                            } else {
+                                let _ = std::fs::rename(&failed, &target);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         if let Ok(entries) = std::fs::read_dir(&dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if !path.is_dir() {
+                if entry.file_name().to_string_lossy().starts_with('.') {
+                    continue;
+                }
+                if !entry.file_type().is_ok_and(|kind| kind.is_dir()) {
                     continue;
                 }
                 match manifest::load(&path) {
                     Ok(manifest) => {
                         let id = manifest.id.clone();
-                        plugins.insert(id, Instance::new(manifest, path));
+                        if entry.file_name() != std::ffi::OsStr::new(&id) {
+                            continue;
+                        }
+                        let instance = Instance::new(manifest, path);
+                        snapshots.insert(id.clone(), instance.info());
+                        plugins.insert(id, Arc::new(Mutex::new(instance)));
                     }
                     Err(error) => {
                         tracing::warn!(%error, dir = %path.display(), "skipping plugin");
@@ -134,6 +323,10 @@ impl PluginsManager {
         Self {
             dir,
             plugins: Mutex::new(plugins),
+            mutations: Mutex::new(()),
+            snapshots: std::sync::RwLock::new(snapshots),
+            runtime_sources: std::sync::RwLock::new(HashMap::new()),
+            security: Arc::new(security::PluginSecurity::default()),
         }
     }
 
@@ -142,16 +335,61 @@ impl PluginsManager {
     }
 
     pub async fn list(&self) -> Vec<PluginInfo> {
-        let plugins = self.plugins.lock().await;
-        let mut list: Vec<PluginInfo> = plugins.values().map(Instance::info).collect();
+        let mut list: Vec<_> = self
+            .snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .values()
+            .cloned()
+            .collect();
         list.sort_by_key(|plugin| plugin.name.to_lowercase());
         list
     }
+    fn remember(&self, info: &PluginInfo) {
+        self.snapshots
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(info.id.clone(), info.clone());
+    }
+    fn forget(&self, id: &str) {
+        self.snapshots
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(id);
+    }
+    fn remember_source(&self, id: &str, source: Option<String>) {
+        let mut sources = self
+            .runtime_sources
+            .write()
+            .unwrap_or_else(|error| error.into_inner());
+        if let Some(source) = source {
+            sources.insert(id.into(), source);
+        } else {
+            sources.remove(id);
+        }
+    }
+    async fn instance(&self, id: &str) -> AppResult<Arc<Mutex<Instance>>> {
+        self.plugins
+            .lock()
+            .await
+            .get(id)
+            .cloned()
+            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))
+    }
     pub async fn start(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        let mut plugins = self.plugins.lock().await;
-        let instance = plugins
-            .get_mut(id)
-            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        let handle = self.instance(id).await?;
+        let mut instance = handle.lock().await;
+        if instance.retired {
+            return Err(AppError::NotFound("plugin.notFound".into()));
+        }
+        instance.require_runtime()?;
+        let lease = self.security.lease(
+            id,
+            security::fingerprint_async(instance.dir.clone()).await?,
+            instance.manifest.permissions.clone(),
+        )?;
+        let state = app.state::<crate::state::AppState>();
+        self.security.mark_running(&state.db)?;
 
         if instance.is_wasm() {
             // The module is preloaded when the plugin is scanned, but a stop
@@ -163,7 +401,8 @@ impl PluginsManager {
                         instance.status = PluginStatus::Failed;
                         instance.error = Some(error.to_string());
                         let info = instance.info();
-                        drop(plugins);
+                        self.remember(&info);
+                        drop(instance);
                         let _ = app.emit(STATE_EVENT, &info);
                         return Ok(info);
                     }
@@ -172,7 +411,8 @@ impl PluginsManager {
             instance.status = PluginStatus::Running;
             instance.error = None;
             let info = instance.info();
-            drop(plugins);
+            self.remember(&info);
+            drop(instance);
             let _ = app.emit(STATE_EVENT, &info);
             return Ok(info);
         }
@@ -181,46 +421,144 @@ impl PluginsManager {
             return Ok(instance.info());
         }
 
-        let node = std::env::var("TUNNELDE_NODE").unwrap_or_else(|_| "node".to_string());
+        let config = state.db.with(config::load)?;
+        let runtime = self
+            .security
+            .guard(
+                &lease,
+                node::resolve(
+                    &state.data_dir,
+                    config.node_path.as_deref().map(Path::new),
+                    config.node_system_allowed,
+                ),
+            )
+            .await
+            .inspect_err(|_| {
+                self.remember_source(id, None);
+            })?;
+        if !runtime.compatible {
+            return Err(AppError::validation("node.required"));
+        }
+        let node = runtime
+            .path
+            .ok_or_else(|| AppError::validation("node.required"))?;
+        if let Some(range) = instance.manifest.engines.get("node") {
+            let version = runtime
+                .version
+                .as_deref()
+                .and_then(|value| semver::Version::parse(value.trim_start_matches('v')).ok());
+            if !version.is_some_and(|version| {
+                semver::VersionReq::parse(range).is_ok_and(|req| req.matches(&version))
+            }) {
+                return Err(AppError::validation("node.incompatible"));
+            }
+        }
         let entry = manifest::entry_path(&instance.dir, &instance.manifest.main)?;
-        let host = PluginHost::spawn(&node, &entry, &instance.dir).await?;
+        self.remember_source(id, runtime.source.clone());
+        if matches!(
+            runtime.source.as_deref(),
+            Some("environment" | "path" | "registry" | "shell")
+        ) && !state.db.with(config::load)?.node_system_allowed
+        {
+            self.remember_source(id, None);
+            return Err(AppError::validation("node.required"));
+        }
+        self.security
+            .authorize(
+                id,
+                &lease.fingerprint,
+                &lease.permissions,
+                None,
+                Some(lease.generation),
+            )
+            .inspect_err(|_| self.remember_source(id, None))?;
+        let host = self
+            .security
+            .guard(
+                &lease,
+                PluginHost::spawn(
+                    &node,
+                    &entry,
+                    &instance.dir,
+                    Some(api::HostContext {
+                        app: app.clone(),
+                        id: id.into(),
+                        fingerprint: lease.fingerprint.clone(),
+                        permissions: lease.permissions.clone(),
+                        generation: lease.generation,
+                    }),
+                ),
+            )
+            .await
+            .inspect_err(|_| self.remember_source(id, None))?;
 
-        let initialized = host
-            .request(
-                "initialize",
-                json!({
-                    "apiVersion": manifest::API_VERSION,
-                    "pluginId": instance.manifest.id,
-                }),
-                START_TIMEOUT,
+        let initialized = self
+            .security
+            .guard(
+                &lease,
+                host.request(
+                    "initialize",
+                    json!({
+                        "apiVersion": manifest::API_VERSION,
+                        "pluginId": instance.manifest.id,
+                        "permissions": instance.manifest.permissions,
+                        "hostApiVersion": 1,
+                    }),
+                    START_TIMEOUT,
+                ),
             )
             .await;
+
+        if let Err(error) = self.security.authorize(
+            id,
+            &lease.fingerprint,
+            &lease.permissions,
+            None,
+            Some(lease.generation),
+        ) {
+            let mut host = host;
+            host.kill();
+            self.remember_source(id, None);
+            instance.status = PluginStatus::Stopped;
+            instance.error = None;
+            let info = instance.info();
+            self.remember(&info);
+            drop(instance);
+            let _ = app.emit(STATE_EVENT, &info);
+            return Err(error);
+        }
 
         match initialized {
             Ok(_) => {
                 instance.host = Some(host);
+                instance.node_source = runtime.source;
                 instance.status = PluginStatus::Running;
                 instance.error = None;
             }
             Err(error) => {
                 let mut host = host;
                 host.kill();
+                self.remember_source(id, None);
                 instance.status = PluginStatus::Failed;
                 instance.error = Some(error.to_string());
             }
         }
 
         let info = instance.info();
-        drop(plugins);
+        self.remember(&info);
+        drop(instance);
         let _ = app.emit(STATE_EVENT, &info);
         Ok(info)
     }
 
     pub async fn stop(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        let mut plugins = self.plugins.lock().await;
-        let instance = plugins
-            .get_mut(id)
-            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        self.security.invalidate_runtime(id);
+        self.remember_source(id, None);
+        let handle = self.instance(id).await?;
+        let mut instance = handle.lock().await;
+        if instance.retired {
+            return Err(AppError::NotFound("plugin.notFound".into()));
+        }
 
         if let Some(mut host) = instance.host.take() {
             let _ = host
@@ -229,59 +567,177 @@ impl PluginsManager {
             host.kill();
         }
         instance.wasm = None;
+        instance.node_source = None;
         instance.status = PluginStatus::Stopped;
         instance.error = None;
 
         let info = instance.info();
-        drop(plugins);
+        self.remember(&info);
+        drop(instance);
         let _ = app.emit(STATE_EVENT, &info);
         Ok(info)
     }
 
-    pub async fn render_view(&self, id: &str, view: &str) -> AppResult<Value> {
-        let plugins = self.plugins.lock().await;
-        let instance = plugins
-            .get(id)
-            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+    pub async fn stop_system_nodes(&self, app: &AppHandle) {
+        let ids: Vec<_> = self
+            .runtime_sources
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .iter()
+            .filter(|(_, source)| {
+                matches!(
+                    source.as_str(),
+                    "environment" | "path" | "registry" | "shell"
+                )
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in ids {
+            self.security.invalidate_runtime(&id);
+            self.remember_source(&id, None);
+            let Ok(handle) = self.instance(&id).await else {
+                continue;
+            };
+            let mut instance = handle.lock().await;
+            if !matches!(
+                instance.node_source.as_deref(),
+                Some("environment" | "path" | "registry" | "shell")
+            ) {
+                continue;
+            }
+            if let Some(mut host) = instance.host.take() {
+                host.kill();
+            }
+            instance.node_source = None;
+            self.remember_source(&id, None);
+            instance.status = PluginStatus::Stopped;
+            instance.error = None;
+            let info = instance.info();
+            self.remember(&info);
+            drop(instance);
+            let _ = app.emit(STATE_EVENT, info);
+        }
+    }
+
+    pub async fn render_view(
+        &self,
+        id: &str,
+        view: &str,
+        locale: Option<&str>,
+    ) -> AppResult<Value> {
+        let handle = self.instance(id).await?;
+        let instance = handle.lock().await;
+        if instance.retired {
+            return Err(AppError::NotFound("plugin.notFound".into()));
+        }
+        instance.require_runtime()?;
+        let lease = self.security.lease(
+            id,
+            security::fingerprint_async(instance.dir.clone()).await?,
+            instance.manifest.permissions.clone(),
+        )?;
         if instance.is_wasm() {
-            return wasm_call(instance, json!({ "method": "render", "view": view }));
+            let result = wasm_call(
+                &instance,
+                json!({ "method": "render", "view": view, "locale": locale }),
+                &self.security,
+                &lease,
+            );
+            self.security.authorize(
+                id,
+                &lease.fingerprint,
+                &lease.permissions,
+                None,
+                Some(lease.generation),
+            )?;
+            return result;
         }
         let host = instance
             .host
             .as_ref()
             .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
 
-        host.request("view.render", json!({ "view": view }), CALL_TIMEOUT)
+        self.security
+            .guard(
+                &lease,
+                host.request(
+                    "view.render",
+                    json!({ "view": view, "locale": locale }),
+                    CALL_TIMEOUT,
+                ),
+            )
             .await
     }
 
-    pub async fn run(&self, id: &str, command: &str) -> AppResult<Value> {
-        let plugins = self.plugins.lock().await;
-        let instance = plugins
-            .get(id)
-            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+    pub async fn run(&self, id: &str, command: &str, input: Option<Value>) -> AppResult<Value> {
+        if input
+            .as_ref()
+            .is_some_and(|value| !value.is_object() || value.to_string().len() > 256 * 1024)
+        {
+            return Err(AppError::validation("plugin.input.invalid"));
+        }
+        let handle = self.instance(id).await?;
+        let instance = handle.lock().await;
+        if instance.retired {
+            return Err(AppError::NotFound("plugin.notFound".into()));
+        }
+        instance.require_runtime()?;
+        let lease = self.security.lease(
+            id,
+            security::fingerprint_async(instance.dir.clone()).await?,
+            instance.manifest.permissions.clone(),
+        )?;
         if instance.is_wasm() {
-            return wasm_call(instance, json!({ "method": "run", "command": command }));
+            let result = wasm_call(
+                &instance,
+                json!({ "method": "run", "command": command, "input": input }),
+                &self.security,
+                &lease,
+            );
+            self.security.authorize(
+                id,
+                &lease.fingerprint,
+                &lease.permissions,
+                None,
+                Some(lease.generation),
+            )?;
+            return result;
         }
         let host = instance
             .host
             .as_ref()
             .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
 
-        host.request("command.run", json!({ "command": command }), CALL_TIMEOUT)
+        self.security
+            .guard(
+                &lease,
+                host.request(
+                    "command.run",
+                    json!({ "command": command, "input": input }),
+                    COMMAND_TIMEOUT,
+                ),
+            )
             .await
     }
 }
 
 /// Round-trips one request through a WASM plugin and parses its JSON answer.
-fn wasm_call(instance: &Instance, request: Value) -> AppResult<Value> {
+fn wasm_call(
+    instance: &Instance,
+    request: Value,
+    security: &Arc<security::PluginSecurity>,
+    lease: &security::Lease,
+) -> AppResult<Value> {
+    if instance.status != PluginStatus::Running {
+        return Err(AppError::validation("plugin.notRunning"));
+    }
     let wasm = instance
         .wasm
         .as_ref()
         .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
     let payload = serde_json::to_string(&request)?;
     let response = wasm
-        .call(&payload)
+        .call_with_security(&payload, Some((security.clone(), lease.clone())))
         .map_err(|error| AppError::validation(format!("plugin.wasm.call: {error}")))?;
     serde_json::from_str(&response)
         .map_err(|error| AppError::validation(format!("plugin.wasm.call: {error}")))
@@ -343,9 +799,15 @@ fn extract_archive(archive: &Path, target: &Path) -> AppResult<()> {
         let mut entry = zip
             .by_index(index)
             .map_err(|error| AppError::validation(format!("plugin.archive: {error}")))?;
-        let Some(relative) = entry.enclosed_name() else {
-            continue;
-        };
+        let relative = entry
+            .enclosed_name()
+            .ok_or_else(|| AppError::validation("plugin.archive.path"))?;
+        if entry
+            .unix_mode()
+            .is_some_and(|mode| mode & 0o170000 == 0o120000)
+        {
+            return Err(AppError::validation("plugin.archive.path"));
+        }
         let destination = target.join(relative);
         if entry.is_dir() {
             std::fs::create_dir_all(&destination)?;
@@ -382,7 +844,136 @@ fn locate_manifest_dir(root: &Path) -> AppResult<PathBuf> {
     }
 }
 
+fn activate_package(
+    root: &Path,
+    target: &Path,
+    backup: &Path,
+    update: bool,
+    validate: impl FnOnce(&Path) -> AppResult<PluginManifest>,
+) -> AppResult<PluginManifest> {
+    if update {
+        std::fs::rename(target, backup)?;
+    }
+    if let Err(error) = std::fs::rename(root, target) {
+        if update {
+            std::fs::rename(backup, target)?;
+        }
+        return Err(error.into());
+    }
+    match validate(target) {
+        Ok(manifest) => Ok(manifest),
+        Err(error) => {
+            std::fs::rename(target, root)
+                .map_err(|_| AppError::validation("market.recoveryNeeded"))?;
+            if update {
+                std::fs::rename(backup, target)
+                    .map_err(|_| AppError::validation("market.recoveryNeeded"))?;
+            }
+            Err(error)
+        }
+    }
+}
+
 impl PluginsManager {
+    pub async fn install_market(
+        &self,
+        root: &Path,
+        source: &config::MarketSource,
+        update: bool,
+    ) -> AppResult<PluginInfo> {
+        let _mutation = self.mutations.lock().await;
+        let manifest = manifest::load(root)?;
+        let target = self.dir.join(&manifest.id);
+        let backup = self.dir.join(format!(".backup-{}", manifest.id));
+        let root = root.canonicalize()?;
+        std::fs::create_dir_all(&self.dir)?;
+        let directory = self.dir.canonicalize()?;
+        // A package cannot contain the installation root, nor be the installed
+        // target itself. These moves cannot be completed or safely rolled back.
+        if directory.starts_with(&root) || root == directory.join(&manifest.id) {
+            return Err(AppError::validation("plugin.entry.outside"));
+        }
+        if manifest.runtime.as_deref() == Some("wasm") {
+            WasmPlugin::load(&std::fs::read(manifest::entry_path(
+                &root,
+                &manifest.main,
+            )?)?)?;
+        }
+        let previous = self.plugins.lock().await.get(&manifest.id).cloned();
+        let mut previous = match previous.as_ref() {
+            Some(value) => Some(value.lock().await),
+            None => None,
+        };
+        if update {
+            let old = previous
+                .as_ref()
+                .ok_or_else(|| AppError::validation("plugin.notFound"))?;
+            let origin = marketplace::origin(&old.dir)
+                .ok_or_else(|| AppError::validation("market.sourceMismatch"))?;
+            if origin.id != source.id || origin.url != source.url {
+                return Err(AppError::validation("market.sourceMismatch"));
+            }
+            let old_version = manifest::normalized_version(&old.manifest.version)
+                .ok_or_else(|| AppError::validation("plugin.version.invalid"))?;
+            if manifest::normalized_version(&manifest.version)
+                .is_none_or(|version| version <= old_version)
+            {
+                return Err(AppError::validation("market.notNewer"));
+            }
+        } else if previous.is_some() || target.exists() {
+            return Err(AppError::validation("plugin.exists"));
+        }
+        std::fs::write(
+            root.join(marketplace::ORIGIN_FILE),
+            serde_json::to_vec(source)?,
+        )?;
+        if backup.exists() {
+            return Err(AppError::validation("market.recoveryNeeded"));
+        }
+        if update {
+            if let Some(old) = previous.as_mut() {
+                if let Some(mut host) = old.host.take() {
+                    host.kill();
+                }
+                old.wasm = None;
+                old.status = PluginStatus::Stopped;
+                old.error = None;
+                self.remember(&old.info());
+            }
+        }
+        let copied = match activate_package(&root, &target, &backup, update, manifest::load) {
+            Ok(value) => value,
+            Err(error) => {
+                if backup.exists() {
+                    if let Some(old) = previous.as_mut() {
+                        old.retired = true;
+                    }
+                    self.plugins.lock().await.remove(&manifest.id);
+                    self.forget(&manifest.id);
+                }
+                return Err(error);
+            }
+        };
+        let instance = Instance::new(copied, target);
+        self.security.invalidate(&instance.manifest.id);
+        self.remember_source(&instance.manifest.id, None);
+        let info = instance.info();
+        self.remember(&info);
+        if let Some(old) = previous.as_mut() {
+            old.retired = true;
+        }
+        self.plugins
+            .lock()
+            .await
+            .insert(info.id.clone(), Arc::new(Mutex::new(instance)));
+        if update {
+            if let Err(error) = std::fs::remove_dir_all(&backup) {
+                tracing::warn!(%error,"plugin backup cleanup failed");
+            }
+        }
+        Ok(info)
+    }
+
     pub async fn install(&self, source: &str) -> AppResult<PluginInfo> {
         let source = PathBuf::from(source);
         let archive = is_archive(&source);
@@ -412,53 +1003,98 @@ impl PluginsManager {
     }
 
     async fn install_from(&self, root: &Path) -> AppResult<PluginInfo> {
+        let _mutation = self.mutations.lock().await;
         let manifest = manifest::load(root)?;
         let target = self.dir.join(&manifest.id);
         if target.exists() {
             return Err(AppError::validation("plugin.exists"));
         }
 
-        copy_dir(root, &target)?;
-        let copied = match manifest::load(&target) {
+        let stage = self.dir.join(format!(".install-{}", uuid::Uuid::new_v4()));
+        if let Err(error) = copy_dir(root, &stage) {
+            let _ = std::fs::remove_dir_all(&stage);
+            return Err(error);
+        }
+        let _ = std::fs::remove_file(stage.join(marketplace::ORIGIN_FILE));
+        let copied = match manifest::load(&stage) {
             Ok(copied) => copied,
             Err(error) => {
-                let _ = std::fs::remove_dir_all(&target);
+                let _ = std::fs::remove_dir_all(&stage);
                 return Err(error);
             }
         };
 
+        if copied.runtime.as_deref() == Some("wasm") {
+            let validation = manifest::entry_path(&stage, &copied.main)
+                .and_then(|path| WasmPlugin::load(&std::fs::read(path)?));
+            if let Err(error) = validation {
+                let _ = std::fs::remove_dir_all(&stage);
+                return Err(error);
+            }
+        }
+        if let Err(error) = std::fs::rename(&stage, &target) {
+            let _ = std::fs::remove_dir_all(&stage);
+            return Err(error.into());
+        }
+
         let instance = Instance::new(copied, target);
+        self.security.invalidate(&instance.manifest.id);
+        self.remember_source(&instance.manifest.id, None);
         let info = instance.info();
-        self.plugins.lock().await.insert(info.id.clone(), instance);
+        self.remember(&info);
+        self.plugins
+            .lock()
+            .await
+            .insert(info.id.clone(), Arc::new(Mutex::new(instance)));
         Ok(info)
     }
 
     pub async fn uninstall(&self, id: &str) -> AppResult<()> {
-        let mut plugins = self.plugins.lock().await;
-        let mut instance = plugins
-            .remove(id)
-            .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))?;
+        let _mutation = self.mutations.lock().await;
+        self.security.invalidate(id);
+        self.remember_source(id, None);
+        let handle = self.instance(id).await?;
+        let mut instance = handle.lock().await;
         if let Some(mut host) = instance.host.take() {
             host.kill();
         }
-        drop(plugins);
-
+        instance.node_source = None;
+        instance.wasm = None;
+        instance.status = PluginStatus::Stopped;
+        instance.error = None;
+        self.remember(&instance.info());
         std::fs::remove_dir_all(&instance.dir)?;
+        instance.retired = true;
+        self.plugins.lock().await.remove(id);
+        self.forget(id);
         Ok(())
     }
 
     pub async fn reload(&self) -> Vec<PluginInfo> {
-        let mut plugins = self.plugins.lock().await;
-        for instance in plugins.values_mut() {
+        let _mutation = self.mutations.lock().await;
+        self.security.invalidate_runtimes();
+        self.runtime_sources
+            .write()
+            .unwrap_or_else(|error| error.into_inner())
+            .clear();
+        let handles: Vec<_> = self.plugins.lock().await.values().cloned().collect();
+        for handle in handles {
+            let mut instance = handle.lock().await;
             if let Some(mut host) = instance.host.take() {
                 host.kill();
             }
+            instance.retired = true;
         }
-        let fresh = Self::load(self.dir.clone()).plugins.into_inner();
-        *plugins = fresh;
-        let mut list: Vec<PluginInfo> = plugins.values().map(Instance::info).collect();
-        list.sort_by_key(|plugin| plugin.name.to_lowercase());
-        list
+        let fresh = Self::load(self.dir.clone());
+        *self
+            .snapshots
+            .write()
+            .unwrap_or_else(|error| error.into_inner()) = fresh
+            .snapshots
+            .into_inner()
+            .unwrap_or_else(|error| error.into_inner());
+        *self.plugins.lock().await = fresh.plugins.into_inner();
+        self.list().await
     }
 }
 
@@ -696,6 +1332,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn grant_requires_the_reviewed_package_snapshot_and_reinstall_clears_consent() {
+        let root = temp_root("grant-snapshot");
+        let source = root.join("source");
+        write_plugin(&source);
+        let manager = PluginsManager::load(root.join("installed"));
+        let db = crate::db::Database::in_memory().unwrap();
+        let installed = manager.install(source.to_str().unwrap()).await.unwrap();
+        manager
+            .set_permissions(
+                &db,
+                "demo",
+                Some(installed.permissions.clone()),
+                Some(installed.fingerprint.clone()),
+            )
+            .await
+            .unwrap();
+        assert!(manager.security_state().await.grants.contains_key("demo"));
+        std::fs::write(root.join("installed/demo/index.js"), "changed code").unwrap();
+        let error = manager
+            .set_permissions(
+                &db,
+                "demo",
+                Some(installed.permissions.clone()),
+                Some(installed.fingerprint),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "pluginSecurity.changed");
+        assert!(manager.security_state().await.grants.is_empty());
+        manager.uninstall("demo").await.unwrap();
+        let reinstalled = manager.install(source.to_str().unwrap()).await.unwrap();
+        assert!(!reinstalled.fingerprint.is_empty());
+        assert!(manager.security_state().await.grants.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn reload_picks_up_plugins_added_on_disk() {
         let root = temp_root("reload");
         let manager = PluginsManager::load(root.clone());
@@ -706,6 +1379,247 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0].name, "Demo");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[tokio::test]
+    async fn market_update_requires_same_source_and_a_newer_version() {
+        let root = temp_root("market-identity");
+        let manager = PluginsManager::load(root.join("installed"));
+        let first = root.join("first");
+        write_plugin(&first);
+        let source = config::official();
+        let info = manager
+            .install_market(&first, &source, false)
+            .await
+            .unwrap();
+        assert_eq!(info.source_id.as_deref(), Some("official"));
+        let next = root.join("next");
+        write_plugin(&next);
+        assert!(manager
+            .install_market(&next, &source, true)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("market.notNewer"));
+        std::fs::write(
+            next.join(manifest::MANIFEST_FILE),
+            MANIFEST.replace("0.1.0", "0.2.0"),
+        )
+        .unwrap();
+        let wrong_source = config::MarketSource {
+            id: "another".into(),
+            url: "https://example.org/plugins.json".into(),
+            ..source.clone()
+        };
+        assert!(manager
+            .install_market(&next, &wrong_source, true)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("market.sourceMismatch"));
+        assert_eq!(manager.list().await[0].version, "0.1.0");
+        assert!(next.is_dir());
+        let updated = manager.install_market(&next, &source, true).await.unwrap();
+        assert_eq!(updated.version, "0.2.0");
+        assert_eq!(manager.list().await[0].version, "0.2.0");
+        assert!(!root.join("installed/.backup-demo").exists());
+        assert!(!next.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn theme_pack_inspects_installs_updates_and_exposes_all_themes_without_node() {
+        let probes = node::probe_count_for_test();
+        let root = temp_root("theme-pack-lifecycle");
+        let body = serde_json::json!({"id":"theme-pack", "name":"Theme Pack", "version":"1.0.0", "apiVersion":1,
+            "runtime":"theme", "themes":[
+                {"id":"night", "name":"Night", "appearance":"dark", "colors":{"background":"#101010"}},
+                {"id":"day", "name":"Day", "appearance":"light", "accent":"#0088ff", "colors":{"sidebar":"#fafafa"}}]});
+        let archive = root.join("theme.zip");
+        write_archive_entries(&archive, &[(manifest::MANIFEST_FILE, &body.to_string())]);
+        let preview = inspect(archive.to_str().unwrap()).unwrap();
+        assert!(preview.main.is_empty());
+        assert_eq!(preview.themes.len(), 2);
+        let manager = PluginsManager::load(root.join("installed"));
+        let info = manager.install(archive.to_str().unwrap()).await.unwrap();
+        assert_eq!(info.runtime, "theme");
+        assert_eq!(info.themes.len(), 2);
+        assert_eq!(info.themes[1].accent.as_deref(), Some("#0088ff"));
+        assert_eq!(manager.list().await[0].themes.len(), 2);
+        assert!(manager
+            .run("theme-pack", "run", None)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("plugin.theme.noRuntime"));
+        assert!(manager
+            .render_view("theme-pack", "panel", None)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("plugin.theme.noRuntime"));
+        {
+            let handle = manager.instance("theme-pack").await.unwrap();
+            let instance = handle.lock().await;
+            // This is the first guard used by start(), before AppState or Node
+            // detection is accessed. A theme pack never has a live runtime.
+            assert!(instance.require_runtime().is_err());
+            assert!(instance.host.is_none());
+            assert!(instance.wasm.is_none());
+            assert!(instance.node_source.is_none());
+        }
+        let installed = root.join("installed/theme-pack");
+        std::fs::write(
+            installed.join(marketplace::ORIGIN_FILE),
+            serde_json::to_vec(&config::official()).unwrap(),
+        )
+        .unwrap();
+        let next = root.join("next");
+        std::fs::create_dir(&next).unwrap();
+        let mut changed = body;
+        changed["version"] = "1.1.0".into();
+        changed["themes"][0]["colors"]["background"] = "#121212".into();
+        std::fs::write(
+            next.join(manifest::MANIFEST_FILE),
+            serde_json::to_vec(&changed).unwrap(),
+        )
+        .unwrap();
+        let updated = manager
+            .install_market(&next, &config::official(), true)
+            .await
+            .unwrap();
+        assert_eq!(updated.version, "1.1.0");
+        assert_eq!(
+            updated.themes[0]
+                .colors
+                .get("background")
+                .map(String::as_str),
+            Some("#121212")
+        );
+        assert_eq!(node::probe_count_for_test(), probes);
+        manager.uninstall("theme-pack").await.unwrap();
+        assert!(manager.list().await.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_activation_restores_original_package_and_preserves_staging() {
+        let root = temp_root("activation-rollback");
+        let target = root.join("demo");
+        write_plugin(&target);
+        let staged = root.join("stage");
+        write_plugin(&staged);
+        std::fs::write(
+            staged.join(manifest::MANIFEST_FILE),
+            MANIFEST.replace("0.1.0", "0.2.0"),
+        )
+        .unwrap();
+        let backup = root.join(".backup-demo");
+        let result = activate_package(&staged, &target, &backup, true, |_| {
+            Err(AppError::validation("injected.validationFailure"))
+        });
+        assert!(result.is_err());
+        assert_eq!(manifest::load(&target).unwrap().version, "0.1.0");
+        assert_eq!(manifest::load(&staged).unwrap().version, "0.2.0");
+        assert!(!backup.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn startup_recovers_missing_or_corrupt_target_and_cleans_committed_backup() {
+        for state in ["missing", "corrupt", "committed"] {
+            let root = temp_root(&format!("recovery-{state}"));
+            let backup = root.join(".backup-demo");
+            write_plugin(&backup);
+            let target = root.join("demo");
+            if state != "missing" {
+                write_plugin(&target);
+                std::fs::write(
+                    target.join(manifest::MANIFEST_FILE),
+                    if state == "corrupt" {
+                        "broken".into()
+                    } else {
+                        MANIFEST.replace("0.1.0", "0.2.0")
+                    },
+                )
+                .unwrap();
+            }
+            let manager = PluginsManager::load(root.clone());
+            let plugins = manager.list().await;
+            assert_eq!(plugins.len(), 1, "{state}");
+            assert_eq!(
+                plugins[0].version,
+                if state == "committed" {
+                    "0.2.0"
+                } else {
+                    "0.1.0"
+                }
+            );
+            assert!(!backup.exists(), "{state}");
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn invalid_wasm_cannot_replace_a_working_package_or_leave_partial_local_install() {
+        let root = temp_root("invalid-wasm-install");
+        let manager = PluginsManager::load(root.join("installed"));
+        let first = root.join("first");
+        write_plugin(&first);
+        manager
+            .install_market(&first, &config::official(), false)
+            .await
+            .unwrap();
+        let invalid = root.join("invalid");
+        write_wasm_plugin(&invalid, "demo", b"broken wasm");
+        let metadata = std::fs::read_to_string(invalid.join(manifest::MANIFEST_FILE))
+            .unwrap()
+            .replace("0.1.0", "0.2.0");
+        std::fs::write(invalid.join(manifest::MANIFEST_FILE), metadata).unwrap();
+        assert!(manager
+            .install_market(&invalid, &config::official(), true)
+            .await
+            .is_err());
+        assert_eq!(manager.list().await[0].version, "0.1.0");
+        let separate = PluginsManager::load(root.join("local"));
+        assert!(separate.install(invalid.to_str().unwrap()).await.is_err());
+        assert!(separate.list().await.is_empty());
+        assert_eq!(std::fs::read_dir(root.join("local")).unwrap().count(), 0);
+        assert!(invalid.exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn one_busy_plugin_does_not_block_another_plugin_command() {
+        let root = temp_root("independent-locks");
+        write_wasm_plugin(&root.join("one"), "one", WASM_STUB.as_bytes());
+        write_wasm_plugin(&root.join("two"), "two", WASM_STUB.as_bytes());
+        let manager = PluginsManager::load(root.clone());
+        let db = crate::db::Database::in_memory().unwrap();
+        let two = manager
+            .list()
+            .await
+            .into_iter()
+            .find(|plugin| plugin.id == "two")
+            .unwrap();
+        manager
+            .set_permissions(&db, "two", Some(vec![]), Some(two.fingerprint))
+            .await
+            .unwrap();
+        manager.instance("two").await.unwrap().lock().await.status = PluginStatus::Running;
+        let first = manager.instance("one").await.unwrap();
+        let _busy = first.lock().await;
+        // The stub returns invalid JSON; reaching that response still proves
+        // the second command acquired its own lock without waiting on "one".
+        let result =
+            tokio::time::timeout(Duration::from_millis(200), manager.run("two", "test", None))
+                .await;
+        assert!(result
+            .unwrap()
+            .unwrap_err()
+            .to_string()
+            .contains("plugin.wasm.call"));
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     const WASM_STUB: &str = r#"

@@ -1,5 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 //
 // Minimal Tunnelde plugin: JSON-RPC 2.0 over stdin/stdout, one JSON object per line.
 // stderr is free-form and only used for diagnostics.
@@ -38,7 +36,10 @@ const handle = (message) => {
         title: "Hello plugin",
         blocks: [
           { type: "heading", text: "Example view" },
-          { type: "text", text: "This content comes from the plugin as JSON and is rendered by the host." },
+          {
+            type: "text",
+            text: "This content comes from the plugin as JSON and is rendered by the host.",
+          },
           {
             type: "kv",
             items: [
@@ -73,15 +74,13 @@ const handle = (message) => {
   }
 };
 
-readline
-  .createInterface({ input: process.stdin })
-  .on("line", (line) => {
-    if (!line.trim()) {
-      return;
-    }
-    try {
-      handle(JSON.parse(line));
-    } catch (error) {
-      log("error", String(error));
-    }
-  });
+readline.createInterface({ input: process.stdin }).on("line", (line) => {
+  if (!line.trim()) {
+    return;
+  }
+  try {
+    handle(JSON.parse(line));
+  } catch (error) {
+    log("error", String(error));
+  }
+});

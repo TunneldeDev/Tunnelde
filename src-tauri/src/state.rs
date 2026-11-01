@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, RwLock};
 
@@ -25,6 +22,7 @@ pub struct AppState {
     pub transfers: TransferRegistry,
     pub monitor: MonitorCache,
     pub plugins: PluginsManager,
+    pub downloads: crate::plugins::network::DownloadRegistry,
     pub locale: RwLock<String>,
     pub system: Mutex<System>,
     pub disks: Mutex<Disks>,
@@ -102,6 +100,11 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
 
     let settings = database.with(db::settings::load)?;
     let version = app.package_info().version.to_string();
+    let plugins = PluginsManager::load(plugins_dir);
+    plugins.initialize_security(
+        &database,
+        crate::plugins::security::cli_restricted(std::env::args()),
+    )?;
 
     app.manage(AppState {
         db: database,
@@ -110,7 +113,8 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         ssh: SshManager::default(),
         transfers: TransferRegistry::default(),
         monitor: MonitorCache::default(),
-        plugins: PluginsManager::load(plugins_dir),
+        plugins,
+        downloads: crate::plugins::network::DownloadRegistry::default(),
         locale: RwLock::new("en-US".into()),
         system: Mutex::new(System::new_all()),
         disks: Mutex::new(Disks::new_with_refreshed_list()),

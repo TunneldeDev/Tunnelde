@@ -60,26 +60,181 @@ pub struct TransferEvent {
 
 #[derive(Default)]
 pub struct TransferRegistry {
-    active: std::sync::Mutex<std::collections::HashMap<String, Arc<AtomicBool>>>,
+    inner: std::sync::Mutex<TransferState>,
+}
+
+#[derive(Default)]
+struct TransferState {
+    active: std::collections::HashMap<String, ActiveTransfer>,
+    completed: std::collections::VecDeque<CompletedTransfer>,
+}
+
+struct ActiveTransfer {
+    cancel: Arc<AtomicBool>,
+    owner: Option<TransferOwner>,
+    event: TransferEvent,
+}
+
+struct CompletedTransfer {
+    plugin_id: String,
+    generation: u64,
+    event: TransferEvent,
+}
+
+struct TransferOwner {
+    plugin_id: String,
+    generation: u64,
+    cancelled: tokio::sync::watch::Sender<bool>,
+}
+
+impl ActiveTransfer {
+    fn cancel(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
+        if let Some(owner) = &self.owner {
+            owner.cancelled.send_replace(true);
+        }
+    }
 }
 
 impl TransferRegistry {
-    fn register(&self, id: &str, flag: Arc<AtomicBool>) {
-        if let Ok(mut active) = self.active.lock() {
-            active.insert(id.to_string(), flag);
+    fn register(
+        &self,
+        id: &str,
+        flag: Arc<AtomicBool>,
+        owner: Option<TransferOwner>,
+    ) -> AppResult<()> {
+        let mut state = self
+            .inner
+            .lock()
+            .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+        if owner.as_ref().is_some_and(|owner| {
+            state
+                .active
+                .values()
+                .filter(|transfer| {
+                    transfer
+                        .owner
+                        .as_ref()
+                        .is_some_and(|existing| existing.plugin_id == owner.plugin_id)
+                })
+                .count()
+                >= 8
+        }) {
+            return Err(AppError::validation("plugin.api.transferBusy"));
+        }
+        state.active.insert(
+            id.to_string(),
+            ActiveTransfer {
+                cancel: flag,
+                owner,
+                event: TransferEvent {
+                    id: id.into(),
+                    direction: "transfer",
+                    name: id.into(),
+                    transferred: 0,
+                    total: 0,
+                    status: TransferStatus::Running,
+                    error: None,
+                },
+            },
+        );
+        Ok(())
+    }
+
+    fn update(&self, event: &TransferEvent) {
+        if let Ok(mut state) = self.inner.lock() {
+            if let Some(transfer) = state.active.get_mut(&event.id) {
+                transfer.event = event.clone();
+            }
         }
     }
 
-    fn unregister(&self, id: &str) {
-        if let Ok(mut active) = self.active.lock() {
-            active.remove(id);
+    fn complete(&self, mut event: TransferEvent) -> TransferEvent {
+        if let Ok(mut state) = self.inner.lock() {
+            if let Some(transfer) = state.active.remove(&event.id) {
+                if event.status == TransferStatus::Cancelled {
+                    event.transferred = event.transferred.max(transfer.event.transferred);
+                    event.total = event.total.max(transfer.event.total);
+                }
+                if let Some(owner) = transfer.owner {
+                    state.completed.push_back(CompletedTransfer {
+                        plugin_id: owner.plugin_id,
+                        generation: owner.generation,
+                        event: event.clone(),
+                    });
+                    while state.completed.len() > 256 {
+                        state.completed.pop_front();
+                    }
+                }
+            }
         }
+        event
     }
 
     pub fn cancel(&self, id: &str) {
-        if let Ok(active) = self.active.lock() {
-            if let Some(flag) = active.get(id) {
-                flag.store(true, Ordering::SeqCst);
+        if let Ok(state) = self.inner.lock() {
+            if let Some(transfer) = state.active.get(id) {
+                transfer.cancel();
+            }
+        }
+    }
+
+    /// Plugins can cancel only transfers created by their current runtime.
+    pub fn cancel_owned(&self, id: &str, plugin_id: &str, generation: u64) -> bool {
+        let Ok(state) = self.inner.lock() else {
+            return false;
+        };
+        let Some(transfer) = state.active.get(id) else {
+            return false;
+        };
+        if transfer
+            .owner
+            .as_ref()
+            .is_some_and(|owner| owner.plugin_id == plugin_id && owner.generation == generation)
+        {
+            transfer.cancel();
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn status_owned(
+        &self,
+        id: &str,
+        plugin_id: &str,
+        generation: u64,
+    ) -> Option<TransferEvent> {
+        let state = self.inner.lock().ok()?;
+        if let Some(transfer) = state.active.get(id) {
+            return transfer
+                .owner
+                .as_ref()
+                .filter(|owner| owner.plugin_id == plugin_id && owner.generation == generation)
+                .map(|_| transfer.event.clone());
+        }
+        state
+            .completed
+            .iter()
+            .rev()
+            .find(|transfer| {
+                transfer.event.id == id
+                    && transfer.plugin_id == plugin_id
+                    && transfer.generation == generation
+            })
+            .map(|transfer| transfer.event.clone())
+    }
+
+    /// An exited process must not leave background work running. Matching the
+    /// generation prevents an older process from cancelling its replacement.
+    pub fn cancel_plugin(&self, plugin_id: &str, generation: u64) {
+        if let Ok(state) = self.inner.lock() {
+            for transfer in state.active.values() {
+                if transfer.owner.as_ref().is_some_and(|owner| {
+                    owner.plugin_id == plugin_id && owner.generation == generation
+                }) {
+                    transfer.cancel();
+                }
             }
         }
     }
@@ -340,6 +495,7 @@ pub fn local_delete(path: String, _is_dir: bool) -> AppResult<()> {
 }
 
 fn emit(app: &AppHandle, event: TransferEvent) {
+    app.state::<AppState>().transfers.update(&event);
     let _ = app.emit(TRANSFER_EVENT, event);
 }
 
@@ -376,7 +532,6 @@ impl Outcome {
 
 fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let state = app.state::<AppState>();
-    state.transfers.unregister(id);
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
@@ -406,6 +561,7 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             error: Some(error),
         },
     };
+    let event = state.transfers.complete(event);
     emit(app, event);
 }
 
@@ -419,6 +575,29 @@ pub fn spawn_transfer(
     remove_source: bool,
     overwrite: bool,
 ) -> AppResult<String> {
+    spawn_transfer_inner(app, from, to, remove_source, overwrite, None)
+}
+
+pub(crate) fn spawn_plugin_transfer(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    overwrite: bool,
+    owner: crate::plugins::security::Lease,
+) -> AppResult<String> {
+    // Plugin transfers copy only; deleting the source requires a separate,
+    // explicitly permitted file operation.
+    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner))
+}
+
+fn spawn_transfer_inner(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    remove_source: bool,
+    overwrite: bool,
+    owner: Option<crate::plugins::security::Lease>,
+) -> AppResult<String> {
     if from.session == to.session && from.path == to.path {
         return Err(AppError::validation("sftp.samePath"));
     }
@@ -426,14 +605,21 @@ pub fn spawn_transfer(
     let id = uuid::Uuid::new_v4().to_string();
     let name = file_name_of(&from.path);
     let cancel = Arc::new(AtomicBool::new(false));
+    let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
+    let transfer_owner = owner.as_ref().map(|lease| TransferOwner {
+        plugin_id: lease.id.clone(),
+        generation: lease.generation,
+        cancelled: cancel_sender,
+    });
     app.state::<AppState>()
         .transfers
-        .register(&id, cancel.clone());
+        .register(&id, cancel.clone(), transfer_owner)?;
+    progress(&app, &id, &name, 0, 0);
 
     let transfer_id = id.clone();
     tauri::async_runtime::spawn(async move {
         let app_handle = app.clone();
-        let outcome = run(
+        let operation = run(
             &app_handle,
             &from,
             &to,
@@ -444,12 +630,42 @@ pub fn spawn_transfer(
                 remove_source,
                 overwrite,
             },
-        )
-        .await;
+        );
+        let plugin_transfer = owner.is_some();
+        let outcome = if let Some(owner) = owner {
+            let state = app_handle.state::<AppState>();
+            guard_plugin_transfer(&state.plugins.security, &owner, &mut cancelled, operation).await
+        } else {
+            operation.await
+        };
         finish(&app_handle, &transfer_id, &name, outcome);
+        if plugin_transfer {
+            let _ = app_handle.emit(
+                "plugin://domain-changed",
+                serde_json::json!({"domain":"files","sessionId":to.session}),
+            );
+        }
     });
 
     Ok(id)
+}
+
+async fn guard_plugin_transfer(
+    security: &crate::plugins::security::PluginSecurity,
+    owner: &crate::plugins::security::Lease,
+    cancelled: &mut tokio::sync::watch::Receiver<bool>,
+    operation: impl std::future::Future<Output = Outcome>,
+) -> Outcome {
+    if *cancelled.borrow() {
+        return Outcome::Cancelled(0);
+    }
+    tokio::select! {
+        biased;
+        _ = cancelled.changed() => Outcome::Cancelled(0),
+        result = security.guard(owner, async { Ok(operation.await) }) => {
+            result.unwrap_or(Outcome::Cancelled(0))
+        }
+    }
 }
 
 struct Meter<'a> {
@@ -1141,6 +1357,257 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn transfer_event(id: &str, status: TransferStatus) -> TransferEvent {
+        TransferEvent {
+            id: id.into(),
+            direction: "transfer",
+            name: "file.txt".into(),
+            transferred: 42,
+            total: 42,
+            status,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn plugin_transfer_cancellation_cannot_target_user_or_other_runtime_transfers() {
+        let registry = TransferRegistry::default();
+        let user = Arc::new(AtomicBool::new(false));
+        registry.register("user", user.clone(), None).unwrap();
+        let own = Arc::new(AtomicBool::new(false));
+        let (sender, receiver) = tokio::sync::watch::channel(false);
+        registry
+            .register(
+                "own",
+                own.clone(),
+                Some(TransferOwner {
+                    plugin_id: "one".into(),
+                    generation: 7,
+                    cancelled: sender,
+                }),
+            )
+            .unwrap();
+        assert!(!registry.cancel_owned("user", "one", 7));
+        assert!(!registry.cancel_owned("own", "two", 7));
+        assert!(!registry.cancel_owned("own", "one", 8));
+        assert!(!own.load(Ordering::SeqCst));
+        assert!(registry.cancel_owned("own", "one", 7));
+        assert!(own.load(Ordering::SeqCst));
+        assert!(*receiver.borrow());
+        assert!(!user.load(Ordering::SeqCst));
+        registry.complete(transfer_event("own", TransferStatus::Done));
+        assert!(!registry.cancel_owned("own", "one", 7));
+    }
+
+    #[test]
+    fn exited_plugin_cancels_only_its_own_generation_of_background_transfers() {
+        let registry = TransferRegistry::default();
+        let mut flags = Vec::new();
+        for (id, plugin, generation) in [("a", "one", 7), ("b", "one", 8), ("c", "two", 7)] {
+            let flag = Arc::new(AtomicBool::new(false));
+            let (sender, _) = tokio::sync::watch::channel(false);
+            registry
+                .register(
+                    id,
+                    flag.clone(),
+                    Some(TransferOwner {
+                        plugin_id: plugin.into(),
+                        generation,
+                        cancelled: sender,
+                    }),
+                )
+                .unwrap();
+            flags.push(flag);
+        }
+        registry.cancel_plugin("one", 7);
+        assert!(flags[0].load(Ordering::SeqCst));
+        assert!(!flags[1].load(Ordering::SeqCst));
+        assert!(!flags[2].load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn limits_background_transfers_per_plugin_without_limiting_user_transfers() {
+        let registry = TransferRegistry::default();
+        for index in 0..9 {
+            let (sender, _) = tokio::sync::watch::channel(false);
+            let result = registry.register(
+                &format!("plugin-{index}"),
+                Arc::new(AtomicBool::new(false)),
+                Some(TransferOwner {
+                    plugin_id: "one".into(),
+                    generation: 7,
+                    cancelled: sender,
+                }),
+            );
+            assert_eq!(result.is_ok(), index < 8);
+        }
+        assert!(registry
+            .register("user", Arc::new(AtomicBool::new(false)), None)
+            .is_ok());
+        registry.complete(transfer_event("plugin-0", TransferStatus::Done));
+        let (sender, _) = tokio::sync::watch::channel(false);
+        assert!(registry
+            .register(
+                "replacement",
+                Arc::new(AtomicBool::new(false)),
+                Some(TransferOwner {
+                    plugin_id: "one".into(),
+                    generation: 8,
+                    cancelled: sender,
+                })
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn transfer_status_keeps_progress_and_completed_results_private_to_the_owner_generation() {
+        let registry = TransferRegistry::default();
+        registry
+            .register("user", Arc::new(AtomicBool::new(false)), None)
+            .unwrap();
+        let (sender, _) = tokio::sync::watch::channel(false);
+        registry
+            .register(
+                "owned",
+                Arc::new(AtomicBool::new(false)),
+                Some(TransferOwner {
+                    plugin_id: "one".into(),
+                    generation: 7,
+                    cancelled: sender,
+                }),
+            )
+            .unwrap();
+        assert_eq!(
+            registry.status_owned("owned", "one", 7).unwrap().status,
+            TransferStatus::Running
+        );
+        registry.update(&transfer_event("owned", TransferStatus::Running));
+        assert_eq!(
+            registry
+                .status_owned("owned", "one", 7)
+                .unwrap()
+                .transferred,
+            42
+        );
+        assert!(registry.status_owned("owned", "two", 7).is_none());
+        assert!(registry.status_owned("owned", "one", 8).is_none());
+        assert!(registry.status_owned("user", "one", 7).is_none());
+        registry.complete(TransferEvent {
+            transferred: 0,
+            total: 0,
+            ..transfer_event("owned", TransferStatus::Cancelled)
+        });
+        assert_eq!(
+            registry.status_owned("owned", "one", 7).unwrap().status,
+            TransferStatus::Cancelled
+        );
+        assert_eq!(
+            registry
+                .status_owned("owned", "one", 7)
+                .unwrap()
+                .transferred,
+            42
+        );
+        assert!(registry.status_owned("owned", "one", 8).is_none());
+        assert!(!registry.cancel_owned("owned", "one", 7));
+        assert!(!registry.inner.lock().unwrap().active.contains_key("owned"));
+    }
+
+    #[test]
+    fn completed_transfer_cache_evicts_old_results_and_excludes_user_transfers() {
+        let registry = TransferRegistry::default();
+        for index in 0..257 {
+            let id = format!("done-{index}");
+            let (sender, _) = tokio::sync::watch::channel(false);
+            registry
+                .register(
+                    &id,
+                    Arc::new(AtomicBool::new(false)),
+                    Some(TransferOwner {
+                        plugin_id: "one".into(),
+                        generation: 7,
+                        cancelled: sender,
+                    }),
+                )
+                .unwrap();
+            registry.complete(transfer_event(&id, TransferStatus::Done));
+        }
+        registry
+            .register("user", Arc::new(AtomicBool::new(false)), None)
+            .unwrap();
+        registry.complete(transfer_event("user", TransferStatus::Done));
+        assert_eq!(registry.inner.lock().unwrap().completed.len(), 256);
+        assert!(registry.status_owned("done-0", "one", 7).is_none());
+        assert!(registry.status_owned("done-1", "one", 7).is_some());
+        assert!(registry.status_owned("done-256", "one", 7).is_some());
+        assert!(registry.status_owned("done-256", "two", 7).is_none());
+        assert!(registry.inner.lock().unwrap().active.is_empty());
+    }
+
+    #[tokio::test]
+    async fn plugin_transfers_drop_in_flight_work_on_revoke_restricted_mode_and_restart() {
+        use crate::plugins::security::PluginSecurity;
+        struct Dropped(Arc<AtomicBool>);
+        impl Drop for Dropped {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::SeqCst);
+            }
+        }
+        for action in ["cancel", "revoke", "restrict", "restart"] {
+            let db = crate::db::Database::in_memory().unwrap();
+            let security = Arc::new(PluginSecurity::default());
+            let permissions = vec!["fs.read".to_string(), "sftp.write".to_string()];
+            let digest = "a".repeat(64);
+            security
+                .set_permissions(
+                    &db,
+                    "plugin",
+                    digest.clone(),
+                    &permissions,
+                    Some(permissions.clone()),
+                )
+                .unwrap();
+            let owner = security.lease("plugin", digest, permissions).unwrap();
+            // Keep the cancellation channel open for the whole operation.
+            let (sender, mut cancelled) = tokio::sync::watch::channel(false);
+            let dropped = Arc::new(AtomicBool::new(false));
+            let marker = dropped.clone();
+            let (ready, started) = tokio::sync::oneshot::channel();
+            let operation_security = security.clone();
+            let keep_open = sender.clone();
+            let task = tokio::spawn(async move {
+                let _keep_open = keep_open;
+                guard_plugin_transfer(&operation_security, &owner, &mut cancelled, async move {
+                    let _marker = Dropped(marker);
+                    let _ = ready.send(());
+                    std::future::pending::<Outcome>().await
+                })
+                .await
+            });
+            started.await.unwrap();
+            match action {
+                "cancel" => {
+                    sender.send_replace(true);
+                }
+                "revoke" => security
+                    .set_permissions(&db, "plugin", String::new(), &[], None)
+                    .unwrap(),
+                "restrict" => security.set_restricted(&db, true, false).unwrap(),
+                "restart" => security.invalidate_runtime("plugin"),
+                _ => unreachable!(),
+            }
+            let result = tokio::time::timeout(std::time::Duration::from_millis(200), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(result, Outcome::Cancelled(0)), "{action}");
+            assert!(
+                dropped.load(Ordering::SeqCst),
+                "in-flight transfer survived {action}"
+            );
+        }
+    }
 
     #[test]
     fn local_listing_reports_hidden_metadata_without_filtering_entries() {

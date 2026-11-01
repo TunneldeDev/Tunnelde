@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -24,6 +22,37 @@ pub struct PluginView {
     pub title: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PluginTheme {
+    pub id: String,
+    pub name: String,
+    pub appearance: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accent: Option<String>,
+    pub colors: std::collections::BTreeMap<String, String>,
+}
+
+impl PluginTheme {
+    fn valid(&self) -> bool {
+        valid_id(&self.id)
+            && !self.name.trim().is_empty()
+            && self.name.len() <= 120
+            && matches!(self.appearance.as_str(), "light" | "dark")
+            && self.accent.as_deref().is_none_or(hex_color)
+            && !self.colors.is_empty()
+            && self.colors.iter().all(|(key, value)| {
+                crate::settings::COLOR_REGIONS.contains(&key.as_str()) && hex_color(value)
+            })
+    }
+}
+
+fn hex_color(value: &str) -> bool {
+    value.len() == 7
+        && value.starts_with('#')
+        && value.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginManifest {
@@ -31,8 +60,9 @@ pub struct PluginManifest {
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    #[serde(default)]
     pub main: String,
-    /// Runtime that executes `main`: `node` (the default) or `wasm`.
+    /// `theme` packages contribute data without an executable entry point.
     #[serde(default)]
     pub runtime: Option<String>,
     #[serde(default)]
@@ -43,12 +73,25 @@ pub struct PluginManifest {
     pub views: Vec<PluginView>,
     #[serde(default)]
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+    #[serde(default)]
+    pub readme: Option<String>,
+    #[serde(default)]
+    pub engines: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub themes: Vec<PluginTheme>,
 }
 
 pub fn load(dir: &Path) -> AppResult<PluginManifest> {
     let path = dir.join(MANIFEST_FILE);
-    let raw = std::fs::read_to_string(&path)
+    let mut raw = String::new();
+    std::fs::File::open(&path)
+        .and_then(|file| file.take(1024 * 1024 + 1).read_to_string(&mut raw))
         .map_err(|error| AppError::Validation(format!("plugin.manifest.unreadable: {error}")))?;
+    if raw.len() > 1024 * 1024 {
+        return Err(AppError::validation("plugin.manifest.invalid"));
+    }
     let manifest: PluginManifest = serde_json::from_str(&raw)
         .map_err(|error| AppError::Validation(format!("plugin.manifest.invalid: {error}")))?;
     manifest.validate(dir)?;
@@ -66,11 +109,31 @@ impl PluginManifest {
         if self.api_version != API_VERSION {
             return Err(AppError::validation("plugin.apiVersion.unsupported"));
         }
-        if !matches!(self.version.split('.').count(), 2 | 3) {
+        if normalized_version(&self.version).is_none() {
             return Err(AppError::validation("plugin.version.invalid"));
         }
+        let mut theme_ids = std::collections::HashSet::new();
+        if self.themes.len() > 32
+            || self
+                .themes
+                .iter()
+                .any(|theme| !theme.valid() || !theme_ids.insert(&theme.id))
+        {
+            return Err(AppError::validation("plugin.theme.invalid"));
+        }
+        if self
+            .engines
+            .get("node")
+            .is_some_and(|range| semver::VersionReq::parse(range).is_err())
+        {
+            return Err(AppError::validation("node.invalidRange"));
+        }
+        let mut command_ids = std::collections::HashSet::new();
         for command in &self.commands {
-            if !valid_id(&command.id) || command.title.trim().is_empty() {
+            if !valid_id(&command.id)
+                || command.title.trim().is_empty()
+                || !command_ids.insert(&command.id)
+            {
                 return Err(AppError::validation("plugin.command.invalid"));
             }
         }
@@ -80,8 +143,11 @@ impl PluginManifest {
                 return Err(AppError::validation("plugin.view.invalid"));
             }
         }
+        let mut permission_names = std::collections::HashSet::new();
         for permission in &self.permissions {
-            if permission != "log" {
+            if !super::security::PERMISSIONS.contains(&permission.as_str())
+                || !permission_names.insert(permission)
+            {
                 return Err(AppError::validation("plugin.permission.unknown"));
             }
         }
@@ -91,6 +157,17 @@ impl PluginManifest {
                 if !self.main.to_ascii_lowercase().ends_with(".wasm") {
                     return Err(AppError::validation("plugin.runtime.invalid"));
                 }
+            }
+            Some("theme") => {
+                if self.themes.is_empty()
+                    || !self.main.is_empty()
+                    || !self.commands.is_empty()
+                    || !self.views.is_empty()
+                    || !self.permissions.is_empty()
+                {
+                    return Err(AppError::validation("plugin.theme.invalid"));
+                }
+                return Ok(());
             }
             Some(_) => return Err(AppError::validation("plugin.runtime.invalid")),
         }
@@ -111,10 +188,33 @@ pub fn entry_path(dir: &Path, main: &str) -> AppResult<PathBuf> {
     if !entry.starts_with(&root) {
         return Err(AppError::validation("plugin.entry.outside"));
     }
+    if !entry.is_file() {
+        return Err(AppError::validation("plugin.entry.missing"));
+    }
     Ok(entry)
 }
 
-fn valid_id(value: &str) -> bool {
+pub fn read_readme(dir: &Path, name: &str) -> Option<String> {
+    let path = entry_path(dir, name).ok()?;
+    let mut text = String::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(100 * 1024 + 1)
+        .read_to_string(&mut text)
+        .ok()?;
+    (text.len() <= 100 * 1024).then_some(text)
+}
+
+pub fn normalized_version(value: &str) -> Option<semver::Version> {
+    let normalized = if value.split('.').count() == 2 {
+        format!("{value}.0")
+    } else {
+        value.into()
+    };
+    semver::Version::parse(&normalized).ok()
+}
+
+pub fn valid_id(value: &str) -> bool {
     let mut chars = value.chars();
     match chars.next() {
         Some(first) if first.is_ascii_lowercase() || first.is_ascii_digit() => {}
@@ -147,6 +247,103 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    fn theme_manifest() -> serde_json::Value {
+        serde_json::json!({"id":"theme-pack", "name":"Theme pack", "version":"1.0.0", "apiVersion":1,
+            "runtime":"theme", "themes":[{"id":"midnight", "name":"Midnight", "appearance":"dark",
+                "accent":"#AABBCC", "colors":{"background":"#101214", "terminalForeground":"#eeeeee"}}]})
+    }
+
+    #[test]
+    fn pure_theme_package_needs_no_executable_and_supports_many_themes() {
+        let dir = temp_dir("theme-many");
+        let mut data = theme_manifest();
+        let mut themes = Vec::new();
+        for index in 0..32 {
+            let mut theme = data["themes"][0].clone();
+            theme["id"] = format!("theme-{index}").into();
+            theme["appearance"] = if index % 2 == 0 { "dark" } else { "light" }.into();
+            themes.push(theme);
+        }
+        data["themes"] = themes.into();
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert!(loaded.main.is_empty());
+        assert_eq!(loaded.themes.len(), 32);
+        assert!(loaded.commands.is_empty());
+        assert_eq!(loaded.themes[0].accent.as_deref(), Some("#AABBCC"));
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_theme_colors_ids_names_appearances_and_pack_shapes() {
+        let dir = temp_dir("theme-invalid");
+        let base = theme_manifest();
+        let mut cases = Vec::new();
+        for (field, value) in [
+            ("id", serde_json::json!("../escape")),
+            ("name", serde_json::json!(" ")),
+            ("name", serde_json::json!("x".repeat(121))),
+            ("appearance", serde_json::json!("system")),
+            ("accent", serde_json::json!("blue")),
+            ("accent", serde_json::json!("#abc")),
+            ("colors", serde_json::json!({})),
+            ("colors", serde_json::json!({"unknown":"#123456"})),
+            ("colors", serde_json::json!({"background":"red"})),
+            ("colors", serde_json::json!({"background":"#12345g"})),
+            ("colors", serde_json::json!({"background":"#12345678"})),
+            ("colors", serde_json::json!({"background":"url(external)"})),
+        ] {
+            let mut data = base.clone();
+            data["themes"][0][field] = value;
+            cases.push(data);
+        }
+        let mut duplicate = base.clone();
+        duplicate["themes"]
+            .as_array_mut()
+            .unwrap()
+            .push(base["themes"][0].clone());
+        cases.push(duplicate);
+        let mut too_many = base.clone();
+        too_many["themes"] = vec![base["themes"][0].clone(); 33].into();
+        cases.push(too_many);
+        for (field, value) in [
+            ("themes", serde_json::json!([])),
+            ("main", serde_json::json!("index.js")),
+            ("commands", serde_json::json!([{"id":"run", "title":"Run"}])),
+            (
+                "views",
+                serde_json::json!([{"id":"panel", "title":"Panel"}]),
+            ),
+            ("permissions", serde_json::json!(["log"])),
+        ] {
+            let mut data = base.clone();
+            data[field] = value;
+            cases.push(data);
+        }
+        for data in cases {
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+            assert!(load(&dir).is_err(), "{data}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn executable_plugins_can_add_themes_but_still_require_their_entry() {
+        let dir = temp_dir("theme-executable");
+        for (runtime, main) in [("node", "index.js"), ("wasm", "plugin.wasm")] {
+            let mut data = theme_manifest();
+            data["runtime"] = runtime.into();
+            data["main"] = main.into();
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+            assert!(load(&dir).is_err());
+            std::fs::write(dir.join(main), "").unwrap();
+            assert_eq!(load(&dir).unwrap().themes.len(), 1);
+            std::fs::remove_file(dir.join(main)).unwrap();
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
@@ -182,6 +379,26 @@ mod tests {
         std::fs::write(dir.join(MANIFEST_FILE), payload).expect("manifest");
         assert!(load(&dir).is_err());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn readme_is_bounded_text_inside_package_and_main_must_be_a_file() {
+        let dir = temp_dir("readme");
+        std::fs::write(dir.join("README.md"), "# Plugin\nUseful documentation").unwrap();
+        assert_eq!(
+            read_readme(&dir, "README.md").as_deref(),
+            Some("# Plugin\nUseful documentation")
+        );
+        assert!(read_readme(&dir, "https://example.org/readme").is_none());
+        let outside = dir.with_extension("md");
+        std::fs::write(&outside, "outside").unwrap();
+        assert!(read_readme(&dir, outside.to_str().unwrap()).is_none());
+        std::fs::write(dir.join("huge.md"), vec![b'x'; 100 * 1024 + 1]).unwrap();
+        assert!(read_readme(&dir, "huge.md").is_none());
+        std::fs::create_dir(dir.join("folder")).unwrap();
+        assert!(entry_path(&dir, "folder").is_err());
+        std::fs::remove_file(outside).unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

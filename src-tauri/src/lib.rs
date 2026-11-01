@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 mod commands;
 mod db;
 mod error;
@@ -17,7 +14,13 @@ pub fn run() {
     use platform::{menu, tray, window};
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            use tauri::Manager;
+            if plugins::security::cli_restricted(args.iter()) {
+                if let Some(state) = app.try_state::<state::AppState>() {
+                    state.plugins.force_cli_restricted(app, &state.db);
+                }
+            }
             window::show_main(app);
         }))
         .plugin(tauri_plugin_opener::init())
@@ -48,6 +51,11 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            plugins::security::plugin_security_state,
+            plugins::security::plugin_set_restricted,
+            plugins::security::plugin_set_permissions,
+            plugins::api::plugin_workspace_reply,
+            plugins::api::plugin_workspace_authorize,
             commands::app_info,
             commands::clipboard_read_text,
             commands::clipboard_write_text,
@@ -120,6 +128,17 @@ pub fn run() {
             commands::app_open_data_dir,
             commands::plugin_render_view,
             commands::marketplace_install,
+            commands::plugin_config,
+            commands::plugin_sources_save,
+            commands::plugin_source_test,
+            commands::marketplace_catalogue,
+            commands::marketplace_download,
+            commands::plugin_download_cancel,
+            commands::node_detect,
+            commands::node_install,
+            commands::node_set_path,
+            commands::node_allow_system,
+            commands::node_pick,
             commands::plugin_install,
             commands::plugin_inspect,
             commands::plugin_uninstall,
@@ -131,6 +150,16 @@ pub fn run() {
             commands::known_hosts_list,
             commands::known_hosts_forget,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Tunnelde");
+        .build(tauri::generate_context!())
+        .expect("error while building Tunnelde")
+        .run(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                use tauri::Manager;
+                if let Some(state) = app.try_state::<state::AppState>() {
+                    if let Err(error) = state.plugins.mark_clean(&state.db) {
+                        tracing::warn!(%error, "could not clear extension recovery marker");
+                    }
+                }
+            }
+        });
 }

@@ -1,7 +1,5 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 pub const LANGUAGES: [&str; 3] = ["system", "zh-CN", "en-US"];
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];
@@ -10,6 +8,19 @@ pub const DENSITIES: [&str; 2] = ["comfortable", "compact"];
 pub const MONO_FONTS: [&str; 4] = ["fira-code", "jetbrains-mono", "plex-mono", "system"];
 pub const TITLE_BAR_STYLES: [&str; 2] = ["system", "compact"];
 pub const MONITOR_INTERVALS: [u32; 6] = [1000, 2000, 3000, 5000, 10000, 30000];
+pub const COLOR_REGIONS: [&str; 11] = [
+    "background",
+    "activityBar",
+    "sidebar",
+    "titleBar",
+    "tabBar",
+    "editor",
+    "panel",
+    "statusBar",
+    "terminalBackground",
+    "terminalForeground",
+    "terminalCursor",
+];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -18,8 +29,9 @@ pub struct Settings {
     pub language: String,
     /// "dark" | "light" | "system"
     pub theme: String,
-    /// Preset id from [`ACCENTS`].
+    /// Preset id from [`ACCENTS`] or an opaque six-digit HEX color.
     pub accent: String,
+    pub colors: BTreeMap<String, String>,
     /// "comfortable" | "compact"
     pub density: String,
     pub ui_font_size: u16,
@@ -72,6 +84,7 @@ impl Default for Settings {
             language: "system".into(),
             theme: "system".into(),
             accent: "blue".into(),
+            colors: BTreeMap::new(),
             density: "comfortable".into(),
             ui_font_size: 13,
             mono_font_size: 14,
@@ -141,6 +154,12 @@ impl Settings {
         }
         if !ACCENTS.contains(&self.accent.as_str()) && !is_hex_color(&self.accent) {
             self.accent = "blue".into();
+        }
+        self.colors.retain(|region, value| {
+            COLOR_REGIONS.contains(&region.as_str()) && is_hex_color(value)
+        });
+        for value in self.colors.values_mut() {
+            *value = value.to_ascii_lowercase();
         }
         if !DENSITIES.contains(&self.density.as_str()) {
             self.density = "comfortable".into();
@@ -222,6 +241,27 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn regional_colors_validate_and_survive_theme_switches_and_round_trip() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({ "colors": {
+            "background": "#AABBCC", "terminalCursor": "#123456", "sidebar": "red", "panel": "#fff", "unknownRegion": "#123456"
+        } })).unwrap();
+        settings.sanitize();
+        assert_eq!(settings.colors.len(), 2);
+        assert_eq!(settings.colors["background"], "#aabbcc");
+        let saved = settings.colors.clone();
+        for theme in THEMES {
+            settings.theme = theme.into();
+            settings.sanitize();
+            assert_eq!(settings.colors, saved);
+        }
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(restored.colors, saved);
+        let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert!(legacy.colors.is_empty());
+    }
 
     #[test]
     fn truncates_multibyte_css_on_a_character_boundary() {

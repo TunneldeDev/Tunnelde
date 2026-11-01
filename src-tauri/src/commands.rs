@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -21,7 +18,9 @@ use crate::state::AppState;
 use crate::update::{self, UpdateState, RELEASES_PAGE};
 use crate::vault;
 
-const TAB_KINDS: [&str; 12] = [
+const TAB_KINDS: [&str; 14] = [
+    "sidebar",
+    "pluginDetail",
     "knownHosts",
     "welcome",
     "host",
@@ -128,7 +127,11 @@ pub fn settings_update(
 ) -> AppResult<Settings> {
     let previous = state.settings();
     let mut base = serde_json::to_value(&previous)?;
+    let colors = patch.get("colors").cloned();
     merge_json(&mut base, patch);
+    if let Some(colors) = colors {
+        base["colors"] = colors;
+    }
     let mut next: Settings = serde_json::from_value(base)
         .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;
     next.sanitize();
@@ -324,21 +327,49 @@ pub fn open_local_path(app: AppHandle, path: String) -> AppResult<()> {
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
-/// Only these origins may be opened in the system browser; everything else
-/// is rejected so a malformed link cannot turn into an arbitrary launch.
+/// README links open only after an explicit user action, using web protocols.
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> AppResult<()> {
-    const ALLOWED: [&str; 3] = [
-        "https://github.com/TunneldeDev/",
-        "https://www.gnu.org/licenses/",
-        "https://tunnelde.dev/",
-    ];
-    if !ALLOWED.iter().any(|prefix| url.starts_with(prefix)) {
-        return Err(AppError::validation("url.notAllowed"));
-    }
+    let url = external_web_url(&url)?;
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|error| AppError::Internal(error.to_string()))
+}
+
+fn external_web_url(value: &str) -> AppResult<String> {
+    let url = reqwest::Url::parse(value).map_err(|_| AppError::validation("url.notAllowed"))?;
+    if value.len() > 4096
+        || value.chars().any(char::is_control)
+        || !matches!(url.scheme(), "https" | "http")
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+    {
+        return Err(AppError::validation("url.notAllowed"));
+    }
+    Ok(url.to_string())
+}
+
+#[cfg(test)]
+mod external_url_tests {
+    use super::external_web_url;
+
+    #[test]
+    fn accepts_plugin_authors_web_links_and_rejects_other_launches() {
+        assert!(external_web_url("https://nodejs.org/en/download#install").is_ok());
+        assert!(external_web_url("http://localhost:8000/docs").is_ok());
+        for url in [
+            "javascript:alert(1)",
+            "file:///C:/Windows/notepad.exe",
+            "mailto:author@example.com",
+            "data:text/html,example",
+            "https://user:password@example.com/",
+            "https://example.com/\nscript",
+            "relative/path",
+        ] {
+            assert!(external_web_url(url).is_err(), "{url}");
+        }
+    }
 }
 
 /// Stores a pasted private key inside the app data folder and returns its path.
@@ -656,9 +687,14 @@ pub async fn plugin_stop(app: AppHandle, id: String) -> AppResult<plugins::Plugi
 }
 
 #[tauri::command]
-pub async fn plugin_run(app: AppHandle, id: String, command: String) -> AppResult<Value> {
+pub async fn plugin_run(
+    app: AppHandle,
+    id: String,
+    command: String,
+    input: Option<Value>,
+) -> AppResult<Value> {
     let state = app.state::<AppState>();
-    state.plugins.run(&id, &command).await
+    state.plugins.run(&id, &command, input).await
 }
 
 /// Lets the user pick the folder that contains a plugin.
@@ -753,9 +789,17 @@ pub fn known_hosts_forget(state: State<'_, AppState>, host: String, port: i64) -
 }
 
 #[tauri::command]
-pub async fn plugin_render_view(app: AppHandle, id: String, view: String) -> AppResult<Value> {
+pub async fn plugin_render_view(
+    app: AppHandle,
+    id: String,
+    view: String,
+    locale: Option<String>,
+) -> AppResult<Value> {
     let state = app.state::<AppState>();
-    state.plugins.render_view(&id, &view).await
+    state
+        .plugins
+        .render_view(&id, &view, locale.as_deref())
+        .await
 }
 
 /// Installs a plugin archive the webview downloaded; the pinned checksum must
@@ -767,7 +811,174 @@ pub async fn marketplace_install(
     sha256: String,
     data: String,
 ) -> AppResult<plugins::PluginInfo> {
-    plugins::marketplace::install_archive(&app, &id, &sha256, &data).await
+    let result = plugins::marketplace::install_archive(&app, &id, &sha256, &data).await;
+    plugins::security::emit_state(&app).await;
+    result
+}
+
+#[tauri::command]
+pub fn plugin_config(state: State<'_, AppState>) -> AppResult<plugins::config::PluginConfig> {
+    state.db.with(plugins::config::load)
+}
+
+#[tauri::command]
+pub fn plugin_sources_save(
+    app: AppHandle,
+    sources: Vec<plugins::config::MarketSource>,
+) -> AppResult<plugins::config::PluginConfig> {
+    let state = app.state::<AppState>();
+    let next = state.db.with(|conn| {
+        let mut config = plugins::config::load(conn)?;
+        config.sources = sources;
+        plugins::config::save(conn, &config)?;
+        Ok(config)
+    })?;
+    let _ = app.emit("plugins://config", &next);
+    Ok(next)
+}
+
+#[tauri::command]
+pub async fn plugin_source_test(url: String) -> AppResult<usize> {
+    let payload = plugins::network::fetch_json::<Value>(&url, 2 * 1024 * 1024).await?;
+    payload
+        .get("plugins")
+        .and_then(|p| p.as_array())
+        .map(|p| p.len())
+        .ok_or_else(|| AppError::validation("market.invalidCatalogue"))
+}
+
+#[tauri::command]
+pub async fn marketplace_catalogue(
+    app: AppHandle,
+    source_id: String,
+    refresh: bool,
+) -> AppResult<plugins::marketplace::Catalogue> {
+    let state = app.state::<AppState>();
+    let source = state
+        .db
+        .with(plugins::config::load)?
+        .sources
+        .into_iter()
+        .find(|source| source.id == source_id && source.enabled)
+        .ok_or_else(|| AppError::validation("market.sourceDisabled"))?;
+    plugins::marketplace::catalogue(&state.data_dir, &source, refresh).await
+}
+
+#[tauri::command]
+pub async fn marketplace_download(
+    app: AppHandle,
+    source_id: String,
+    id: String,
+    version: String,
+    sha256: String,
+    task_id: String,
+    update: bool,
+) -> AppResult<plugins::PluginInfo> {
+    let result = plugins::marketplace::install_remote(
+        &app, &source_id, &id, &version, &sha256, &task_id, update,
+    )
+    .await;
+    plugins::security::emit_state(&app).await;
+    result
+}
+
+#[tauri::command]
+pub fn plugin_download_cancel(app: AppHandle, task_id: String) -> bool {
+    plugins::network::cancel(&app, &task_id)
+}
+
+#[tauri::command]
+pub async fn node_detect(app: AppHandle) -> AppResult<plugins::node::NodeRuntimeInfo> {
+    let state = app.state::<AppState>();
+    let config = state.db.with(plugins::config::load)?;
+    plugins::node::resolve(
+        &state.data_dir,
+        config.node_path.as_deref().map(std::path::Path::new),
+        config.node_system_allowed,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn node_install(
+    app: AppHandle,
+    task_id: String,
+) -> AppResult<plugins::node::NodeRuntimeInfo> {
+    let info = plugins::node::install(&app, &task_id).await?;
+    let state = app.state::<AppState>();
+    let next = state.db.with(|conn| {
+        let mut config = plugins::config::load(conn)?;
+        config.node_path = None;
+        plugins::config::save(conn, &config)?;
+        Ok(config)
+    })?;
+    let _ = app.emit("plugins://config", next);
+    Ok(info)
+}
+
+#[tauri::command]
+pub async fn node_set_path(
+    app: AppHandle,
+    path: Option<String>,
+) -> AppResult<plugins::node::NodeRuntimeInfo> {
+    let state = app.state::<AppState>();
+    let previous = state.db.with(plugins::config::load)?;
+    let info = plugins::node::resolve(
+        &state.data_dir,
+        path.as_deref().map(std::path::Path::new),
+        previous.node_system_allowed,
+    )
+    .await?;
+    if path.is_some() && !info.compatible {
+        return Err(AppError::validation("node.incompatible"));
+    }
+    let next = state.db.with(|conn| {
+        let mut config = plugins::config::load(conn)?;
+        config.node_path = path;
+        plugins::config::save(conn, &config)?;
+        Ok(config)
+    })?;
+    let _ = app.emit("plugins://config", next);
+    Ok(info)
+}
+
+#[tauri::command]
+pub async fn node_allow_system(
+    app: AppHandle,
+    allowed: bool,
+) -> AppResult<plugins::node::NodeRuntimeInfo> {
+    let state = app.state::<AppState>();
+    let next = state.db.with(|conn| {
+        let mut config = plugins::config::load(conn)?;
+        config.node_system_allowed = allowed;
+        plugins::config::save(conn, &config)?;
+        Ok(config)
+    })?;
+    let _ = app.emit("plugins://config", &next);
+    if !allowed {
+        state.plugins.stop_system_nodes(&app).await;
+    }
+    plugins::node::resolve(
+        &state.data_dir,
+        next.node_path.as_deref().map(std::path::Path::new),
+        allowed,
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn node_pick(app: AppHandle) -> AppResult<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Node executable")
+        .pick_file(move |path| {
+            let _ = tx.send(path);
+        });
+    Ok(rx
+        .await
+        .map_err(|_| AppError::internal("dialog.cancelled"))?
+        .map(|p| p.to_string()))
 }
 
 #[tauri::command]
@@ -789,7 +1000,9 @@ pub fn local_copy(from: String, to: String, overwrite: Option<bool>) -> AppResul
 #[tauri::command]
 pub async fn plugin_install(app: AppHandle, path: String) -> AppResult<plugins::PluginInfo> {
     let state = app.state::<AppState>();
-    state.plugins.install(&path).await
+    let result = state.plugins.install(&path).await;
+    plugins::security::emit_state(&app).await;
+    result
 }
 
 #[tauri::command]
@@ -800,13 +1013,17 @@ pub fn plugin_inspect(path: String) -> AppResult<plugins::manifest::PluginManife
 #[tauri::command]
 pub async fn plugin_uninstall(app: AppHandle, id: String) -> AppResult<()> {
     let state = app.state::<AppState>();
-    state.plugins.uninstall(&id).await
+    let result = state.plugins.uninstall(&id).await;
+    plugins::security::emit_state(&app).await;
+    result
 }
 
 #[tauri::command]
 pub async fn plugin_reload(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>> {
     let state = app.state::<AppState>();
-    Ok(state.plugins.reload().await)
+    let result = state.plugins.reload().await;
+    plugins::security::emit_state(&app).await;
+    Ok(result)
 }
 
 #[tauri::command]

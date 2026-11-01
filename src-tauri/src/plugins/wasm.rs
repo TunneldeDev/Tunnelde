@@ -1,4 +1,4 @@
-use wasmi::{Caller, Engine, Linker, Module, Store};
+use wasmi::{Caller, Config, Engine, Linker, Module, Store, StoreLimits, StoreLimitsBuilder};
 
 use crate::error::{AppError, AppResult};
 
@@ -20,22 +20,74 @@ pub struct WasmPlugin {
     module: Module,
 }
 
+struct GuestState {
+    limits: StoreLimits,
+    authority: Option<(
+        std::sync::Arc<super::security::PluginSecurity>,
+        super::security::Lease,
+    )>,
+}
+
 impl WasmPlugin {
     pub fn load(bytes: &[u8]) -> AppResult<Self> {
-        let engine = Engine::default();
+        let mut config = Config::default();
+        config.consume_fuel(true);
+        let engine = Engine::new(&config);
         let module = Module::new(&engine, bytes)
             .map_err(|error| AppError::validation(format!("plugin.wasm.invalid: {error}")))?;
         Ok(Self { engine, module })
     }
 
+    #[cfg(test)]
     pub fn call(&self, request: &str) -> AppResult<String> {
-        let mut store = Store::new(&self.engine, ());
+        self.call_with_security(request, None)
+    }
+
+    pub fn call_with_security(
+        &self,
+        request: &str,
+        authority: Option<(
+            std::sync::Arc<super::security::PluginSecurity>,
+            super::security::Lease,
+        )>,
+    ) -> AppResult<String> {
+        let limits = StoreLimitsBuilder::new()
+            .memory_size(64 * 1024 * 1024)
+            .instances(1)
+            .memories(1)
+            .tables(2)
+            .table_elements(65536)
+            .build();
+        let mut store = Store::new(&self.engine, GuestState { limits, authority });
+        store.limiter(|state| &mut state.limits);
+        store
+            .set_fuel(10_000_000)
+            .map_err(|error| AppError::validation(format!("plugin.wasm.trap: {error}")))?;
         let mut linker = Linker::new(&self.engine);
         linker
             .func_wrap(
                 "env",
                 "log",
-                |mut caller: Caller<'_, ()>, level: i32, ptr: i32, len: i32| {
+                |mut caller: Caller<'_, GuestState>, level: i32, ptr: i32, len: i32| {
+                    let allowed =
+                        caller
+                            .data()
+                            .authority
+                            .as_ref()
+                            .is_some_and(|(security, lease)| {
+                                security
+                                    .authorize(
+                                        &lease.id,
+                                        &lease.fingerprint,
+                                        &lease.permissions,
+                                        Some("log"),
+                                        Some(lease.generation),
+                                    )
+                                    .is_ok()
+                            });
+                    if !allowed {
+                        return;
+                    }
                     log_from_guest(&mut caller, level, ptr, len);
                 },
             )
@@ -91,7 +143,7 @@ impl WasmPlugin {
 }
 
 /// Forwards a guest log line to `tracing`, tolerating any malformed arguments.
-fn log_from_guest(caller: &mut Caller<'_, ()>, level: i32, ptr: i32, len: i32) {
+fn log_from_guest(caller: &mut Caller<'_, GuestState>, level: i32, ptr: i32, len: i32) {
     let Some(memory) = caller
         .get_export("memory")
         .and_then(|export| export.into_memory())
@@ -151,5 +203,21 @@ mod tests {
         let plugin = WasmPlugin::load(wat.as_bytes()).expect("compile empty module");
         let error = plugin.call("{}").expect_err("missing entry export");
         assert!(error.to_string().contains("plugin.wasm.noEntry"));
+    }
+
+    #[test]
+    fn terminates_infinite_guest_code_and_rejects_excessive_memory() {
+        let infinite = r#"(module (memory (export "memory") 5)
+            (func (export "tunnelde_call") (param i32 i32 i32 i32) (result i32)
+                (loop $forever (br $forever)) (i32.const 0)))"#;
+        let plugin = WasmPlugin::load(infinite.as_bytes()).unwrap();
+        let started = std::time::Instant::now();
+        let error = plugin.call("{}").unwrap_err();
+        assert!(error.to_string().contains("fuel"), "{error}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let excessive = r#"(module (memory (export "memory") 1025)
+            (func (export "tunnelde_call") (param i32 i32 i32 i32) (result i32) (i32.const 0)))"#;
+        let plugin = WasmPlugin::load(excessive.as_bytes()).unwrap();
+        assert!(plugin.call("{}").is_err());
     }
 }

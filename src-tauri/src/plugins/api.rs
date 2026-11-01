@@ -1,0 +1,856 @@
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
+
+use base64::Engine;
+use russh::ChannelMsg;
+use serde::{de::DeserializeOwned, Serialize};
+use serde_json::{json, Map, Value};
+use sha2::{Digest, Sha256};
+use tauri::{AppHandle, Emitter, Manager};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::oneshot;
+
+use crate::commands;
+use crate::error::{AppError, AppResult};
+use crate::state::AppState;
+
+const MAX_PAYLOAD: usize = 1024 * 1024 - 4096;
+const MAX_REQUEST: usize = 256 * 1024;
+const MAX_TEXT: usize = 512 * 1024;
+const MAX_STORAGE: usize = 256 * 1024;
+const FRONTEND_EVENT: &str = "plugin://workspace-request";
+
+#[derive(Clone)]
+pub struct HostContext {
+    pub app: AppHandle,
+    pub id: String,
+    pub fingerprint: String,
+    pub permissions: Vec<String>,
+    pub generation: u64,
+}
+
+#[derive(Serialize)]
+pub struct ApiMethod {
+    pub name: &'static str,
+    pub permissions: &'static [&'static str],
+    pub params: &'static str,
+    pub description: &'static str,
+}
+
+macro_rules! method {
+    ($name:literal, [$($permission:literal),*], $params:literal, $description:literal) => {
+        ApiMethod { name: $name, permissions: &[$($permission),*], params: $params, description: $description }
+    };
+}
+
+pub const METHODS: &[ApiMethod] = &[
+    method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization."),
+    method!("log", ["log"], "{message:string,level?:string}", "Write a bounded plugin-tagged log message."),
+    method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
+    method!("app.openExternal", ["app.openExternal"], "{url:string}", "Open an http/https URL with the system browser."),
+    method!("settings.get", ["settings.read"], "{}", "Read application preferences."),
+    method!("settings.update", ["settings.write"], "{patch:object}", "Update and sanitize preferences through the normal settings service."),
+    method!("hosts.snapshot", ["hosts.read"], "{}", "Read saved host and group metadata; authentication secrets are never returned."),
+    method!("hosts.create", ["hosts.write"], "{input:HostInput}", "Create a validated saved host."),
+    method!("hosts.update", ["hosts.write"], "{id:string,input:HostInput}", "Replace a saved host's validated metadata."),
+    method!("hosts.delete", ["hosts.write"], "{id:string}", "Delete a saved host and forget its stored credential."),
+    method!("hosts.markUsed", ["hosts.write"], "{id:string}", "Update a saved host's last-used time."),
+    method!("hosts.reorder", ["hosts.write"], "{ids:string[]}", "Persist the order of saved hosts; at most 500 IDs."),
+    method!("groups.create", ["hosts.write"], "{input:GroupInput}", "Create a validated host group."),
+    method!("groups.update", ["hosts.write"], "{id:string,input:GroupInput}", "Update a validated host group."),
+    method!("groups.delete", ["hosts.write"], "{id:string}", "Delete a host group through the normal group service."),
+    method!("sessions.list", ["sessions.read"], "{}", "List active SSH session metadata; no passwords or private keys."),
+    method!("sessions.connect", ["ssh.exec"], "{request:SshConnectRequest}", "Connect a saved host with normal host-key verification; never auto-trust a server."),
+    method!("sessions.disconnect", ["ssh.exec"], "{sessionId:string}", "Disconnect an active SSH session."),
+    method!("sessions.exec", ["ssh.exec"], "{sessionId:string,command:string,timeoutMs?:number}", "Execute in a separate SSH channel; return stdout/stderr/exitCode/signal. Timeout 100–60000ms, output at most 1MiB."),
+    method!("terminal.write", ["ssh.exec"], "{sessionId:string,data:string}", "Write plain UTF-8 terminal input, including remote shell commands; the host handles transport encoding."),
+    method!("terminal.resize", ["ssh.exec"], "{sessionId:string,cols:number,rows:number}", "Resize the remote terminal through the validated session service."),
+    method!("files.local.home", ["fs.read"], "{}", "Read the local home directory path."),
+    method!("files.local.list", ["fs.read"], "{path?:string}", "List a local directory."),
+    method!("files.local.readText", ["fs.read"], "{path:string}", "Read a UTF-8 local text file, at most 512KiB; reject binary data."),
+    method!("files.local.writeText", ["fs.write"], "{path:string,content:string}", "Replace an existing local UTF-8 file, at most 512KiB."),
+    method!("files.local.createFile", ["fs.write"], "{path:string}", "Create an empty local file without replacing an existing file."),
+    method!("files.local.mkdir", ["fs.write"], "{path:string}", "Create a local directory."),
+    method!("files.local.rename", ["fs.write"], "{from:string,to:string,overwrite?:boolean}", "Rename a local file or directory; overwriting is opt-in."),
+    method!("files.local.copy", ["fs.read", "fs.write"], "{from:string,to:string,overwrite?:boolean}", "Copy local files/directories through the existing copy service."),
+    method!("files.local.delete", ["fs.write"], "{path:string,isDir:boolean}", "Delete a local file or directory."),
+    method!("files.sftp.list", ["sftp.read"], "{sessionId:string,path?:string}", "List a remote directory using an active SSH session."),
+    method!("files.sftp.readText", ["sftp.read"], "{sessionId:string,path:string}", "Read remote UTF-8 text through the editor service; API response size limits apply."),
+    method!("files.sftp.writeText", ["sftp.write"], "{sessionId:string,path:string,content:string}", "Replace existing remote text through the editor service."),
+    method!("files.sftp.createFile", ["sftp.write"], "{sessionId:string,path:string}", "Create an empty remote file without replacing an existing file."),
+    method!("files.sftp.mkdir", ["sftp.write"], "{sessionId:string,path:string}", "Create a remote directory."),
+    method!("files.sftp.rename", ["sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Rename a remote file/directory; overwriting is opt-in."),
+    method!("files.sftp.copy", ["sftp.read", "sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Copy remote files/directories within a session."),
+    method!("files.sftp.delete", ["sftp.write"], "{sessionId:string,path:string,isDir:boolean}", "Delete a remote file or directory."),
+    method!("files.upload", ["fs.read", "sftp.write"], "{sessionId:string,localPath:string,remotePath:string,overwrite?:boolean}", "Copy a local file or directory to a remote path. Return transferId; cancellation, progress and file refresh use the normal transfer service. Revoking access or stopping this runtime cancels its active transfers."),
+    method!("files.download", ["sftp.read", "fs.write"], "{sessionId:string,remotePath:string,localPath:string,overwrite?:boolean}", "Copy a remote file or directory to a local path. Return transferId; never remove the source. Revoking access or stopping this runtime cancels its active transfers."),
+    method!("files.cancelTransfer", [], "{transferId:string}", "Cancel only a transfer owned by this plugin's current runtime. Return true if its active transfer was found; false for completed, missing or other owners' transfers."),
+    method!("files.transferStatus", [], "{transferId:string}", "Read progress or the final TransferEvent for this runtime's own transfer; return null for missing, other-owner or expired IDs. The latest 256 completed plugin transfers are retained in memory."),
+    method!("monitor.system", ["monitor.read"], "{}", "Read local CPU, memory, disk and network statistics."),
+    method!("monitor.stats", ["monitor.read"], "{sessionId:string}", "Sample remote system statistics."),
+    method!("monitor.processes", ["monitor.read"], "{sessionId:string}", "List remote processes."),
+    method!("monitor.kill", ["monitor.write"], "{sessionId:string,pid:number}", "Send TERM to a remote process; protected process validation still applies."),
+    method!("history.list", ["history.read"], "{hostId:string,limit?:number}", "Read saved command history, at most 500 rows."),
+    method!("history.record", ["history.write"], "{hostId:string,command:string}", "Record a command for an existing saved host."),
+    method!("history.delete", ["history.write"], "{id:number}", "Delete one command-history entry."),
+    method!("history.clear", ["history.write"], "{hostId:string}", "Clear a saved host's command history."),
+    method!("workspace.snapshot", ["workspace.read"], "{}", "Read the live tabs, panes, active group and split layout."),
+    method!("workspace.openPage", ["workspace.write"], "{kind:welcome|settings|about|updates|knownHosts}", "Open or focus an existing application page."),
+    method!("workspace.openHost", ["workspace.write", "hosts.read"], "{hostId:string}", "Open a saved host's details; never reveal an authentication secret."),
+    method!("workspace.openTerminal", ["workspace.write", "sessions.read"], "{sessionId:string}", "Open a terminal tab for an already-connected session."),
+    method!("workspace.openFiles", ["workspace.write", "sessions.read"], "{sessionId:string}", "Open a file browser for an already-connected session."),
+    method!("workspace.openSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Dock a list into the current workspace group."),
+    method!("workspace.activate", ["workspace.write"], "{tabId:string}", "Activate an existing tab and its group."),
+    method!("workspace.close", ["workspace.write"], "{tabId:string}", "Close a tab; dirty editors retain the normal user confirmation. Result reports pending confirmation."),
+    method!("workspace.split", ["workspace.write"], "{tabId:string,direction:row|column,position?:before|after,targetPaneId?:string}", "Move a tab into a split group."),
+    method!("workspace.move", ["workspace.write"], "{tabId:string,paneId:string,beforeTabId?:string|null}", "Move or reorder an existing tab."),
+    method!("workspace.returnSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Return a docked list to the sidebar."),
+    method!("clipboard.readText", ["clipboard.read"], "{}", "Read the system text clipboard."),
+    method!("clipboard.writeText", ["clipboard.write"], "{text:string}", "Replace the system text clipboard."),
+    method!("storage.get", [], "{key:string}", "Read plugin-scoped JSON data. Keys use 1–128 ASCII letters, digits, dot, hyphen or underscore."),
+    method!("storage.set", [], "{key:string,value:JSON}", "Persist plugin-scoped JSON data, at most 256KiB total per plugin."),
+    method!("storage.delete", [], "{key:string}", "Remove a key from plugin-scoped JSON data."),
+    method!("ui.showMessage", [], "{message:string,kind?:info|success|error}", "Show a bounded notification prefixed with the installed plugin's identity."),
+    method!("ui.confirm", [], "{message:string}", "Ask the user a plugin-identified confirmation; never replace an existing dialog."),
+];
+
+pub fn method_info(name: &str) -> Option<&'static ApiMethod> {
+    METHODS.iter().find(|entry| entry.name == name)
+}
+
+fn authorize(context: &HostContext, permissions: &[&str]) -> AppResult<()> {
+    let state = context.app.state::<AppState>();
+    state.plugins.security.authorize(
+        &context.id,
+        &context.fingerprint,
+        &context.permissions,
+        None,
+        Some(context.generation),
+    )?;
+    for permission in permissions {
+        state.plugins.security.authorize(
+            &context.id,
+            &context.fingerprint,
+            &context.permissions,
+            Some(permission),
+            Some(context.generation),
+        )?;
+    }
+    Ok(())
+}
+
+fn field<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<T> {
+    serde_json::from_value(
+        params
+            .get(key)
+            .cloned()
+            .ok_or_else(|| AppError::validation(format!("plugin.api.missing:{key}")))?,
+    )
+    .map_err(|_| AppError::validation(format!("plugin.api.invalid:{key}")))
+}
+
+fn optional<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<Option<T>> {
+    match params.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(value) => serde_json::from_value(value.clone())
+            .map(Some)
+            .map_err(|_| AppError::validation(format!("plugin.api.invalid:{key}"))),
+    }
+}
+
+fn encode(value: impl Serialize) -> AppResult<Value> {
+    Ok(serde_json::to_value(value)?)
+}
+
+pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
+    let entry =
+        method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
+    authorize(context, entry.permissions)?;
+    if !params.is_object() || serde_json::to_vec(&params)?.len() > MAX_REQUEST {
+        return Err(AppError::validation("plugin.api.invalidParams"));
+    }
+    let result = route(context, method, params).await?;
+    // A revoked or replaced runtime must not receive a response after an await.
+    authorize(context, entry.permissions)?;
+    if serde_json::to_vec(&result)?.len() > MAX_PAYLOAD {
+        return Err(AppError::validation("plugin.api.responseTooLarge"));
+    }
+    Ok(result)
+}
+
+async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
+    let app = &context.app;
+    let state = app.state::<AppState>();
+    let change_session = params
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .map(str::to_owned);
+    let result = match method {
+        "api.describe" => encode(json!({"version":1,"methods":METHODS})),
+        "log" => {
+            let message: String = field(&params, "message")?;
+            let level: String = optional(&params, "level")?.unwrap_or_else(|| "info".into());
+            if message.len() > 16 * 1024 || level.len() > 16 {
+                return Err(AppError::validation("plugin.api.logTooLarge"));
+            }
+            tracing::info!(plugin = %context.id, level = %level, message = %message, "plugin log");
+            Ok(Value::Null)
+        }
+        "app.info" => encode(commands::app_info(app.clone(), state)),
+        "app.openExternal" => {
+            commands::open_external(app.clone(), field(&params, "url")?)?;
+            Ok(Value::Null)
+        }
+        "settings.get" => encode(commands::settings_get(state)),
+        "settings.update" => {
+            let patch: Value = field(&params, "patch")?;
+            if !patch.is_object() {
+                return Err(AppError::validation("plugin.api.invalid:patch"));
+            }
+            encode(commands::settings_update(app.clone(), state, patch)?)
+        }
+        "hosts.snapshot" => encode(commands::hosts_snapshot(state)?),
+        "hosts.create" => encode(commands::host_create(state, field(&params, "input")?)?),
+        "hosts.update" => encode(commands::host_update(
+            state,
+            field(&params, "id")?,
+            field(&params, "input")?,
+        )?),
+        "hosts.delete" => {
+            commands::host_delete(state, field(&params, "id")?)?;
+            Ok(Value::Null)
+        }
+        "hosts.markUsed" => {
+            commands::host_mark_used(state, field(&params, "id")?)?;
+            Ok(Value::Null)
+        }
+        "hosts.reorder" => {
+            commands::hosts_reorder(state, field(&params, "ids")?)?;
+            Ok(Value::Null)
+        }
+        "groups.create" => encode(commands::group_create(state, field(&params, "input")?)?),
+        "groups.update" => encode(commands::group_update(
+            state,
+            field(&params, "id")?,
+            field(&params, "input")?,
+        )?),
+        "groups.delete" => {
+            commands::group_delete(state, field(&params, "id")?)?;
+            Ok(Value::Null)
+        }
+        "sessions.list" => encode(commands::ssh_sessions(state)),
+        "sessions.connect" => {
+            encode(commands::ssh_connect(app.clone(), field(&params, "request")?).await?)
+        }
+        "sessions.disconnect" => {
+            commands::ssh_disconnect(app.clone(), field(&params, "sessionId")?)?;
+            Ok(Value::Null)
+        }
+        "sessions.exec" => execute(context, &params).await,
+        "terminal.write" => {
+            let data: String = field(&params, "data")?;
+            commands::ssh_write(
+                app.clone(),
+                field(&params, "sessionId")?,
+                base64::engine::general_purpose::STANDARD.encode(data.as_bytes()),
+            )?;
+            Ok(Value::Null)
+        }
+        "terminal.resize" => {
+            commands::ssh_resize(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "cols")?,
+                field(&params, "rows")?,
+            )?;
+            Ok(Value::Null)
+        }
+        "files.local.home" => encode(commands::local_home()),
+        "files.local.list" => encode(commands::local_list(optional(&params, "path")?)?),
+        "files.local.readText" => local_read(field(&params, "path")?).await,
+        "files.local.writeText" => {
+            let content: String = field(&params, "content")?;
+            validate_text(content.as_bytes())?;
+            let mut file = tokio::fs::OpenOptions::new()
+                .write(true)
+                .open(field::<String>(&params, "path")?)
+                .await?;
+            authorize(context, &["fs.write"])?;
+            file.set_len(0).await?;
+            file.write_all(content.as_bytes()).await?;
+            file.flush().await?;
+            Ok(Value::Null)
+        }
+        "files.local.createFile" => {
+            commands::local_create_file(field(&params, "path")?)?;
+            Ok(Value::Null)
+        }
+        "files.local.mkdir" => {
+            commands::local_mkdir(field(&params, "path")?)?;
+            Ok(Value::Null)
+        }
+        "files.local.rename" => {
+            commands::local_rename(
+                field(&params, "from")?,
+                field(&params, "to")?,
+                optional(&params, "overwrite")?,
+            )?;
+            Ok(Value::Null)
+        }
+        "files.local.copy" => {
+            commands::local_copy(
+                field(&params, "from")?,
+                field(&params, "to")?,
+                optional(&params, "overwrite")?,
+            )?;
+            Ok(Value::Null)
+        }
+        "files.local.delete" => {
+            commands::local_delete(field(&params, "path")?, field(&params, "isDir")?)?;
+            Ok(Value::Null)
+        }
+        "files.sftp.list" => encode(
+            commands::sftp_list(
+                app.clone(),
+                field(&params, "sessionId")?,
+                optional(&params, "path")?,
+            )
+            .await?,
+        ),
+        "files.sftp.readText" => encode(
+            commands::sftp_read_text(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "path")?,
+            )
+            .await?,
+        ),
+        "files.sftp.writeText" => {
+            commands::sftp_write_text(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "path")?,
+                field(&params, "content")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "files.sftp.createFile" => {
+            commands::sftp_create_file(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "path")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "files.sftp.mkdir" => {
+            commands::sftp_mkdir(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "path")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "files.sftp.rename" => {
+            commands::sftp_rename(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "from")?,
+                field(&params, "to")?,
+                optional(&params, "overwrite")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "files.sftp.copy" => {
+            commands::sftp_copy(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "from")?,
+                field(&params, "to")?,
+                optional(&params, "overwrite")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "files.sftp.delete" => {
+            commands::sftp_delete(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "path")?,
+                field(&params, "isDir")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "files.upload" | "files.download" => {
+            let session_id: String = field(&params, "sessionId")?;
+            // Validate the session before registering any background task.
+            state.ssh.handle(&session_id)?;
+            let local = crate::ssh::files::Endpoint {
+                session: None,
+                path: field(&params, "localPath")?,
+            };
+            let remote = crate::ssh::files::Endpoint {
+                session: Some(session_id),
+                path: field(&params, "remotePath")?,
+            };
+            let (from, to) = if method == "files.upload" {
+                (local, remote)
+            } else {
+                (remote, local)
+            };
+            let transfer_id = crate::ssh::files::spawn_plugin_transfer(
+                app.clone(),
+                from,
+                to,
+                optional::<bool>(&params, "overwrite")?.unwrap_or(false),
+                super::security::Lease {
+                    id: context.id.clone(),
+                    fingerprint: context.fingerprint.clone(),
+                    permissions: context.permissions.clone(),
+                    generation: context.generation,
+                },
+            )?;
+            encode(transfer_id)
+        }
+        "files.cancelTransfer" => encode(state.transfers.cancel_owned(
+            &field::<String>(&params, "transferId")?,
+            &context.id,
+            context.generation,
+        )),
+        "files.transferStatus" => encode(state.transfers.status_owned(
+            &field::<String>(&params, "transferId")?,
+            &context.id,
+            context.generation,
+        )),
+        "monitor.system" => encode(commands::system_stats(state)),
+        "monitor.stats" => {
+            encode(commands::remote_stats(app.clone(), field(&params, "sessionId")?).await?)
+        }
+        "monitor.processes" => {
+            encode(commands::remote_processes(app.clone(), field(&params, "sessionId")?).await?)
+        }
+        "monitor.kill" => {
+            commands::remote_kill(
+                app.clone(),
+                field(&params, "sessionId")?,
+                field(&params, "pid")?,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "history.list" => encode(commands::history_list(
+            state,
+            field(&params, "hostId")?,
+            optional(&params, "limit")?,
+        )?),
+        "history.record" => encode(commands::history_record(
+            state,
+            field(&params, "hostId")?,
+            field(&params, "command")?,
+        )?),
+        "history.delete" => {
+            commands::history_delete(state, field(&params, "id")?)?;
+            Ok(Value::Null)
+        }
+        "history.clear" => {
+            commands::history_clear(state, field(&params, "hostId")?)?;
+            Ok(Value::Null)
+        }
+        "clipboard.readText" => encode(commands::clipboard_read_text(app.clone()).await?),
+        "clipboard.writeText" => {
+            commands::clipboard_write_text(app.clone(), field(&params, "text")?).await?;
+            Ok(Value::Null)
+        }
+        "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
+        name if name.starts_with("workspace.") || name.starts_with("ui.") => {
+            frontend_request(context, name, params).await
+        }
+        _ => Err(AppError::validation("plugin.api.unknownMethod")),
+    }?;
+    let domain = match method {
+        "hosts.create" | "hosts.update" | "hosts.delete" | "hosts.markUsed" | "hosts.reorder"
+        | "groups.create" | "groups.update" | "groups.delete" => Some("hosts"),
+        "sessions.connect" | "sessions.disconnect" => Some("sessions"),
+        "history.record" | "history.delete" | "history.clear" => Some("history"),
+        name if name.starts_with("files.")
+            && !matches!(
+                name,
+                "files.upload" | "files.download" | "files.cancelTransfer" | "files.transferStatus"
+            )
+            && !name.ends_with(".readText")
+            && !name.ends_with(".list")
+            && !name.ends_with(".home") =>
+        {
+            Some("files")
+        }
+        _ => None,
+    };
+    if let Some(domain) = domain {
+        let _ = app.emit(
+            "plugin://domain-changed",
+            json!({"domain":domain,"sessionId":change_session}),
+        );
+    }
+    Ok(result)
+}
+
+fn validate_text(bytes: &[u8]) -> AppResult<()> {
+    if bytes.len() > MAX_TEXT {
+        return Err(AppError::validation("plugin.api.fileTooLarge"));
+    }
+    if bytes.contains(&0) || std::str::from_utf8(bytes).is_err() {
+        return Err(AppError::validation("plugin.api.invalidText"));
+    }
+    Ok(())
+}
+
+async fn local_read(path: String) -> AppResult<Value> {
+    let file = tokio::fs::File::open(path).await?;
+    if file.metadata().await?.len() > MAX_TEXT as u64 {
+        return Err(AppError::validation("plugin.api.fileTooLarge"));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_TEXT as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    validate_text(&bytes)?;
+    Ok(
+        json!({"size":bytes.len(),"content":String::from_utf8(bytes).map_err(|_| AppError::validation("plugin.api.invalidText"))?}),
+    )
+}
+
+// Cancellation drops the host dispatch future immediately. Close the dedicated
+// channel from a detached, bounded cleanup task even when that future cannot
+// reach its normal async cleanup path.
+struct ExecChannel(Option<russh::Channel<russh::client::Msg>>);
+
+impl Drop for ExecChannel {
+    fn drop(&mut self) {
+        if let Some(channel) = self.0.take() {
+            if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+                runtime.spawn(async move {
+                    let _ = tokio::time::timeout(Duration::from_secs(2), channel.close()).await;
+                });
+            }
+        }
+    }
+}
+
+async fn execute(context: &HostContext, params: &Value) -> AppResult<Value> {
+    let session_id: String = field(params, "sessionId")?;
+    let command: String = field(params, "command")?;
+    let timeout = optional::<u64>(params, "timeoutMs")?.unwrap_or(20_000);
+    if !(100..=60_000).contains(&timeout)
+        || command.trim().is_empty()
+        || command.len() > 64 * 1024
+        || command.contains('\0')
+    {
+        return Err(AppError::validation("plugin.api.invalidExec"));
+    }
+    let handle = context.app.state::<AppState>().ssh.handle(&session_id)?;
+    let channel = tokio::time::timeout(Duration::from_secs(8), handle.channel_open_session())
+        .await
+        .map_err(|_| AppError::validation("plugin.api.execTimeout"))?
+        .map_err(|error| AppError::Ssh(format!("plugin.exec.channel:{error}")))?;
+    let mut guard = ExecChannel(Some(channel));
+    let channel = guard.0.as_mut().expect("exec channel is present");
+    let result = tokio::time::timeout(Duration::from_millis(timeout), async {
+        authorize(context, &["ssh.exec"])?;
+        channel.exec(true, command).await.map_err(|error| AppError::Ssh(format!("plugin.exec:{error}")))?;
+        let mut stdout = Vec::new();
+        let mut stderr = Vec::new();
+        let mut exit_code = None;
+        let mut signal = None;
+        loop {
+            tokio::select! {
+                message = channel.wait() => match message {
+                    Some(ChannelMsg::Data { data }) => stdout.extend_from_slice(&data),
+                    Some(ChannelMsg::ExtendedData { data, .. }) => stderr.extend_from_slice(&data),
+                    Some(ChannelMsg::ExitStatus { exit_status }) => exit_code = Some(exit_status),
+                    Some(ChannelMsg::ExitSignal { signal_name, .. }) => signal = Some(format!("{signal_name:?}")),
+                    Some(ChannelMsg::Close) | None => break,
+                    _ => {}
+                },
+                _ = tokio::time::sleep(Duration::from_millis(250)) => { authorize(context, &["ssh.exec"])?; }
+            }
+            if stdout.len().saturating_add(stderr.len()) > MAX_PAYLOAD { return Err(AppError::validation("plugin.api.outputTooLarge")); }
+        }
+        Ok(json!({"stdout":String::from_utf8_lossy(&stdout),"stderr":String::from_utf8_lossy(&stderr),"exitCode":exit_code,"signal":signal}))
+    }).await.unwrap_or_else(|_| Err(AppError::validation("plugin.api.execTimeout")));
+    let _ = channel.close().await;
+    guard.0.take();
+    result
+}
+
+fn storage_path(root: &Path, id: &str) -> PathBuf {
+    root.join("plugin-data")
+        .join(format!("{:x}.json", Sha256::digest(id.as_bytes())))
+}
+
+fn storage_key(params: &Value) -> AppResult<String> {
+    let key: String = field(params, "key")?;
+    if key.is_empty()
+        || key.len() > 128
+        || !key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+        || ["__proto__", "constructor", "prototype"].contains(&key.as_str())
+    {
+        return Err(AppError::validation("plugin.api.invalidStorageKey"));
+    }
+    Ok(key)
+}
+
+async fn storage(context: &HostContext, method: &str, params: &Value) -> AppResult<Value> {
+    static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    let key = storage_key(params)?;
+    let _guard = LOCK
+        .get_or_init(|| tokio::sync::Mutex::new(()))
+        .lock()
+        .await;
+    authorize(context, &[])?;
+    let path = storage_path(&context.app.state::<AppState>().data_dir, &context.id);
+    let mut values: Map<String, Value> = match tokio::fs::File::open(&path).await {
+        Ok(file) => {
+            let mut bytes = Vec::new();
+            file.take(MAX_STORAGE as u64 + 1)
+                .read_to_end(&mut bytes)
+                .await?;
+            if bytes.len() > MAX_STORAGE {
+                return Err(AppError::validation("plugin.api.storageTooLarge"));
+            }
+            serde_json::from_slice(&bytes)
+                .map_err(|_| AppError::validation("plugin.api.invalidStorage"))?
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Map::new(),
+        Err(error) => return Err(error.into()),
+    };
+    if method == "storage.get" {
+        return Ok(values.get(&key).cloned().unwrap_or(Value::Null));
+    }
+    if method == "storage.set" {
+        values.insert(key, field(params, "value")?);
+    } else {
+        values.remove(&key);
+    }
+    let bytes = serde_json::to_vec(&values)?;
+    if bytes.len() > MAX_STORAGE {
+        return Err(AppError::validation("plugin.api.storageTooLarge"));
+    }
+    let root = path
+        .parent()
+        .ok_or_else(|| AppError::internal("plugin.api.storagePath"))?;
+    tokio::fs::create_dir_all(root).await?;
+    let temporary = root.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
+    let result = async {
+        tokio::fs::write(&temporary, bytes).await?;
+        authorize(context, &[])?;
+        tokio::fs::rename(&temporary, &path).await?;
+        Ok(Value::Null)
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temporary).await;
+    }
+    result
+}
+
+struct PendingFrontend {
+    context: HostContext,
+    permissions: &'static [&'static str],
+    reply: oneshot::Sender<AppResult<Value>>,
+}
+struct FrontendRequestGuard {
+    app: AppHandle,
+    request_id: String,
+}
+impl Drop for FrontendRequestGuard {
+    fn drop(&mut self) {
+        let removed = pending_frontend()
+            .lock()
+            .ok()
+            .and_then(|mut pending| pending.remove(&self.request_id));
+        if removed.is_some() {
+            let _ = self.app.emit(
+                "plugin://workspace-cancelled",
+                json!({"requestId": self.request_id}),
+            );
+        }
+    }
+}
+fn pending_frontend() -> &'static Mutex<HashMap<String, PendingFrontend>> {
+    static PENDING: OnceLock<Mutex<HashMap<String, PendingFrontend>>> = OnceLock::new();
+    PENDING.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+async fn frontend_request(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
+    let entry =
+        method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
+    let request_id = uuid::Uuid::new_v4().to_string();
+    let (sender, receiver) = oneshot::channel();
+    {
+        let mut pending = pending_frontend()
+            .lock()
+            .map_err(|_| AppError::internal("plugin.api.lock"))?;
+        if pending.len() >= 64
+            || pending
+                .values()
+                .filter(|item| item.context.id == context.id)
+                .count()
+                >= 8
+        {
+            return Err(AppError::validation("plugin.api.busy"));
+        }
+        pending.insert(
+            request_id.clone(),
+            PendingFrontend {
+                context: context.clone(),
+                permissions: entry.permissions,
+                reply: sender,
+            },
+        );
+    }
+    let _guard = FrontendRequestGuard {
+        app: context.app.clone(),
+        request_id: request_id.clone(),
+    };
+    let result = async {
+        context.app.emit(
+            FRONTEND_EVENT,
+            json!({"requestId":request_id,"pluginId":context.id,"method":method,"params":params}),
+        )?;
+        tokio::time::timeout(
+            Duration::from_secs(if method == "ui.confirm" { 60 } else { 15 }),
+            receiver,
+        )
+        .await
+        .map_err(|_| AppError::validation("plugin.api.frontendTimeout"))?
+        .map_err(|_| AppError::validation("plugin.api.frontendClosed"))?
+    }
+    .await;
+    result
+}
+
+#[tauri::command]
+pub fn plugin_workspace_authorize(request_id: String) -> AppResult<()> {
+    let pending = pending_frontend()
+        .lock()
+        .map_err(|_| AppError::internal("plugin.api.lock"))?;
+    let request = pending
+        .get(&request_id)
+        .ok_or_else(|| AppError::validation("plugin.api.requestExpired"))?;
+    authorize(&request.context, request.permissions)
+}
+
+#[tauri::command]
+pub fn plugin_workspace_reply(
+    request_id: String,
+    result: Option<Value>,
+    error: Option<String>,
+) -> AppResult<()> {
+    let request = pending_frontend()
+        .lock()
+        .map_err(|_| AppError::internal("plugin.api.lock"))?
+        .remove(&request_id)
+        .ok_or_else(|| AppError::validation("plugin.api.requestExpired"))?;
+    let result = authorize(&request.context, request.permissions).and_then(|_| match error {
+        Some(error) => Err(AppError::validation(format!(
+            "plugin.api.frontend:{}",
+            error.chars().take(512).collect::<String>()
+        ))),
+        None => {
+            let result = result.unwrap_or(Value::Null);
+            if serde_json::to_vec(&result)?.len() > MAX_PAYLOAD {
+                Err(AppError::validation("plugin.api.responseTooLarge"))
+            } else {
+                Ok(result)
+            }
+        }
+    });
+    let _ = request.reply.send(result);
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn exposes_only_unique_documented_methods_with_declared_permissions() {
+        let mut names = HashSet::new();
+        for entry in METHODS {
+            assert!(
+                names.insert(entry.name),
+                "duplicate API method {}",
+                entry.name
+            );
+            assert!(!entry.params.is_empty() && !entry.description.is_empty());
+            for permission in entry.permissions {
+                assert!(
+                    super::super::security::PERMISSIONS.contains(permission),
+                    "unknown permission {permission}"
+                );
+            }
+        }
+        for forbidden in [
+            "invoke",
+            "commands.invoke",
+            "vault.read",
+            "credential.read",
+            "ssh.trust",
+            "plugin.start",
+            "settings.reset",
+        ] {
+            assert!(method_info(forbidden).is_none());
+        }
+        assert_eq!(
+            method_info("sessions.exec").unwrap().permissions,
+            ["ssh.exec"]
+        );
+        assert_eq!(
+            method_info("files.local.copy").unwrap().permissions,
+            ["fs.read", "fs.write"]
+        );
+    }
+
+    #[test]
+    fn validates_parameter_types_and_storage_names() {
+        assert!(field::<String>(&json!({"id":42}), "id").is_err());
+        assert!(field::<String>(&json!({}), "id").is_err());
+        assert!(optional::<bool>(&json!({"overwrite":"yes"}), "overwrite").is_err());
+        for key in ["", "../other", "a/b", "__proto__", "constructor", "键"] {
+            assert!(storage_key(&json!({"key":key})).is_err());
+        }
+        assert_eq!(
+            storage_key(&json!({"key":"draft.v1-2_3"})).unwrap(),
+            "draft.v1-2_3"
+        );
+    }
+
+    #[test]
+    fn scopes_storage_by_plugin_identity_without_path_interpolation() {
+        let root = Path::new("store");
+        let a = storage_path(root, "plugin-a");
+        assert_ne!(a, storage_path(root, "plugin-b"));
+        assert_eq!(a, storage_path(root, "plugin-a"));
+        assert_eq!(
+            storage_path(root, "../../secret").parent(),
+            Some(root.join("plugin-data").as_path())
+        );
+    }
+
+    #[test]
+    fn refuses_large_or_binary_text_instead_of_truncating_it() {
+        assert!(validate_text(b"hello").is_ok());
+        assert!(validate_text(b"hello\0secret").is_err());
+        assert!(validate_text(&[0xff]).is_err());
+        assert!(validate_text(&vec![b'a'; MAX_TEXT + 1]).is_err());
+    }
+}
