@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import i18n from "@/i18n/i18n";
 import { api, isTauri } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";

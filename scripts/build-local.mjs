@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 //
 // Builds an installer for local testing without touching the updater signing
 // key. Release builds always run in CI, where the key is available.

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
 import { cn } from "@/lib/text/format";

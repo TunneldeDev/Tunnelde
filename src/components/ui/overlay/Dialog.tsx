@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";

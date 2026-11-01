@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { changelogNotes, releaseChangelog } from "./changelog.mjs";
 import { bumpVersion, compareVersions, currentVersion, setVersion } from "./version.mjs";
 

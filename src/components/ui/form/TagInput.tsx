@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { X } from "lucide-react";
 import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 

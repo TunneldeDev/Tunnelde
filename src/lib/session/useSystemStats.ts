@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { useEffect, useState } from "react";
 
 import { api, isTauri } from "@/lib/api/ipc";

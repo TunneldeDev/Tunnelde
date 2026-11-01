@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-only
-# Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 #
 # Fails when the repository tracks local artifacts, credentials or personal
 # paths. Runs in CI and can be executed locally before pushing.

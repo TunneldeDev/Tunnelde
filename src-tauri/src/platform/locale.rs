@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 /// Read UI language preferences from the OS, independently of the WebView locale.
 #[cfg(target_os = "windows")]
 pub fn preferred_languages() -> Vec<String> {

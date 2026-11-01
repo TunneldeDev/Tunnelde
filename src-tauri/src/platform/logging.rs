@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 use std::path::Path;
 
 use tracing_appender::non_blocking::WorkerGuard;

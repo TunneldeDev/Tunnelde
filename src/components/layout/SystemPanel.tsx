@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { Activity, Cpu, HardDrive, Layers, MemoryStick, Timer, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 

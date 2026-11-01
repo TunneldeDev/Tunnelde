@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { ArrowUpCircle } from "lucide-react";
 
 import { useUpdates } from "@/store/updates";

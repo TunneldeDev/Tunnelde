@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 use wasmi::{Caller, Engine, Linker, Module, Store};
 
 use crate::error::{AppError, AppResult};

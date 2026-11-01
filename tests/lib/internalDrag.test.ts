@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { installInternalDrag } from "@/lib/session/useInternalDrag";
 

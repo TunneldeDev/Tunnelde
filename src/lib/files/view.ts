@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { FileEntry } from "@/lib/api/types";
 
 export interface FileViewPreferences {

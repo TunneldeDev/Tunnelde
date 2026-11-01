@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { FsSource } from "@/lib/api/types";
 
 export const DRAG_MIME = "application/x-tunnelde-file";

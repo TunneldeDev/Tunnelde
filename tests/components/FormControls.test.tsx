@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { createRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";

@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{RwLock, RwLockWriteGuard};
 use std::time::Duration;

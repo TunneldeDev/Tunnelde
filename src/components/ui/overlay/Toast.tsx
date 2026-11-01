@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { AlertCircle, CheckCircle2, Info, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 

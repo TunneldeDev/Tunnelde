@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RemoteStats } from "@/lib/api/types";
 

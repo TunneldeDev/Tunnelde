@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 /// Ordered, append-only schema migrations. Never edit an entry that has
 /// shipped: add a new one and bump the array.
 pub const MIGRATIONS: &[&str] = &[

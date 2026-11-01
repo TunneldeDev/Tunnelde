@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: GPL-3.0-only
-# Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 """Tunnelde brand asset pipeline.
 
 Takes the raw artwork (white background), builds a clean alpha matte, trims it,

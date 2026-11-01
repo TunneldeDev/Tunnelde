@@ -1,7 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { readFileSync } from "node:fs";
 
 export function verifyAssets(tag, manifest, assets) {

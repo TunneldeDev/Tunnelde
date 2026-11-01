@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 //
 // Fails when the two catalogues drift apart: every key must exist in both
 // en-US and zh-CN with a non-empty string.

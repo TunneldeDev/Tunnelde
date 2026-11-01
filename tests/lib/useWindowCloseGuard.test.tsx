@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { act, renderHook, waitFor } from "@testing-library/react";
 import type { CloseRequestedEvent } from "@tauri-apps/api/window";
 import { beforeEach, describe, expect, it, vi } from "vitest";

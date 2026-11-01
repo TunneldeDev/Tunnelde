@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { describe, expect, it } from "vitest";
 
 import { formatBytes, formatUptime, hostSubtitle, parseTags } from "@/lib/text/format";

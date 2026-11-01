@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { describe, expect, it } from "vitest";
 
 import { decodeBase64, decodeBase64Text, encodeBase64 } from "@/lib/text/base64";

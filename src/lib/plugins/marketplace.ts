@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { MarketEntry, PluginInfo } from "@/lib/api/types";
 import { api } from "@/lib/api/ipc";
 import { bytesToBase64 } from "@/lib/text/base64";

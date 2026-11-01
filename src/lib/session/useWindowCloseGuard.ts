@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow, type CloseRequestedEvent } from "@tauri-apps/api/window";
 import { useEffect } from "react";

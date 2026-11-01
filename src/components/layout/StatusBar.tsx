@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 

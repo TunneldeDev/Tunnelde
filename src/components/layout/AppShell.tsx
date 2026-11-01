@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";

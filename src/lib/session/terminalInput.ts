@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 export interface CommandCapture {
   text: string;
   /** 0 = none, 1 = after ESC, 2 = inside CSI ([), 3 = inside SS3 (O). */

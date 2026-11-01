@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Copy, GripVertical, Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";

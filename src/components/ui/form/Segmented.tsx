@@ -1,6 +1,3 @@
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-
 import { Minus, Plus } from "lucide-react";
 import type { CSSProperties } from "react";
 import { useTranslation } from "react-i18next";

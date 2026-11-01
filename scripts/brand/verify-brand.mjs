@@ -1,6 +1,4 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: GPL-3.0-only
-// Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 /**
  * Verify the committed brand assets without extra dependencies.
  * Checks PNG dimensions, ICO frame list and ICNS container integrity.
