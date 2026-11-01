@@ -1,0 +1,227 @@
+/* SPDX-License-Identifier: GPL-3.0-only */
+/* Copyright (C) 2026 quyansiyuanwang (TunneldeDev) */
+
+.plugins-sidebar {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.plugins-sidebar__head {
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.plugins-sidebar__head .sidebar__title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.plugins-sidebar__tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 16px;
+  padding-inline: 14px;
+  border-bottom: 1px solid var(--td-border);
+}
+
+.plugins-sidebar__tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  padding: 4px 0 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--td-muted);
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.plugins-sidebar__tabs > button[aria-selected="true"] {
+  border-bottom-color: var(--td-accent);
+  color: var(--td-text);
+}
+
+.plugins-sidebar__tabs > button > span {
+  min-width: 16px;
+  border-radius: 4px;
+  background: var(--td-active);
+  color: var(--td-muted);
+  font: 10px var(--td-mono);
+  text-align: center;
+}
+
+.plugins-sidebar > .plugin-list,
+.plugins-sidebar__market {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  margin: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
+
+.plugins-sidebar__empty {
+  margin: 0;
+  padding: 22px 16px;
+  color: var(--td-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.plugins-sidebar__empty p {
+  margin: 0 0 8px;
+}
+
+.plugins-sidebar__plugin {
+  border-bottom: 1px solid var(--td-border);
+}
+
+.plugins-sidebar__plugin-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 0;
+  color: var(--td-text);
+  background: transparent;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.plugins-sidebar__plugin-row:hover {
+  background: var(--td-hover);
+}
+.plugins-sidebar__plugin-row[aria-expanded="true"] {
+  background: var(--td-accent-soft);
+}
+.plugins-sidebar__package {
+  flex: 0 0 auto;
+  color: var(--td-muted);
+}
+.plugins-sidebar__plugin-row > svg:last-child {
+  flex: 0 0 auto;
+  color: var(--td-faint);
+}
+.plugins-sidebar__plugin-row > svg.is-open {
+  transform: rotate(90deg);
+}
+.plugins-sidebar__identity {
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.plugins-sidebar__identity > strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.plugins-sidebar__identity > span {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 3px;
+  color: var(--td-muted);
+  font-size: 10px;
+}
+
+.plugins-sidebar__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.plugins-sidebar__details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 14px 14px;
+}
+.plugins-sidebar__description,
+.plugins-sidebar__permissions {
+  margin: 0;
+  color: var(--td-muted);
+  font-size: 11px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.plugins-sidebar__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.plugins-sidebar__details > .td-btn {
+  justify-content: flex-start;
+  min-width: 0;
+  white-space: normal;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.plugins-sidebar__details > .plugin-output {
+  min-width: 0;
+  width: 100%;
+  max-height: 200px;
+  overflow: auto;
+  margin: 0;
+}
+.plugins-sidebar__details > .plugin-card__error {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.plugins-sidebar .market-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px 8px;
+  padding: 13px 14px;
+  border-bottom: 1px solid var(--td-border);
+}
+
+.plugins-sidebar .market-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.plugins-sidebar .market-row__version {
+  font-size: 10px;
+  color: var(--td-muted);
+}
+.plugins-sidebar .market-row__desc {
+  grid-column: 1 / -1;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: var(--td-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.plugins-sidebar .market-row > .td-btn {
+  grid-column: 1 / -1;
+  justify-self: start;
+  margin-top: 4px;
+}

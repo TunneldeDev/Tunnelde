@@ -463,6 +463,15 @@ export function HostTree() {
   return (
     <div className="sidebar">
       <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
+        <span className="sidebar__title">{t("sidebar.hosts")}</span>
+        <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
+          <Plus size={15} />
+        </IconButton>
+        <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
+          <FolderPlus size={15} />
+        </IconButton>
+      </div>
+      <div className="sidebar__search">
         <div className="sidebar__filter">
           <Search size={13} aria-hidden="true" />
           <Input
@@ -473,12 +482,6 @@ export function HostTree() {
             spellCheck={false}
           />
         </div>
-        <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
-          <Plus size={15} />
-        </IconButton>
-        <IconButton size="sm" label={t("sidebar.newGroup")} onClick={() => openGroupDialog()}>
-          <FolderPlus size={15} />
-        </IconButton>
       </div>
 
       {tags.length > 0 ? (

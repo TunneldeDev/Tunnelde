@@ -36,6 +36,8 @@ export const isTauri = (): boolean =>
 
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
+  clipboardReadText: () => invoke<string>("clipboard_read_text"),
+  clipboardWriteText: (text: string) => invoke<void>("clipboard_write_text", { text }),
   settings: () => invoke<Settings>("settings_get"),
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("settings_update", { patch }),
   resetSettings: () => invoke<Settings>("settings_reset"),
@@ -72,6 +74,7 @@ export const api = {
   sshProbe: (hostId: string) => invoke<HostKeyInfo>("ssh_probe", { hostId }),
   sshTrust: (hostId: string) => invoke<HostKeyInfo>("ssh_trust", { hostId }),
   sshConnect: (request: SshConnectRequest) => invoke<SshSession>("ssh_connect", { request }),
+  sshAttach: (sessionId: string) => invoke<void>("ssh_attach", { sessionId }),
   sshWrite: (sessionId: string, data: string) => invoke<void>("ssh_write", { sessionId, data }),
   sshResize: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("ssh_resize", { sessionId, cols, rows }),

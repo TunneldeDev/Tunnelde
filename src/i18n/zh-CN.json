@@ -250,7 +250,11 @@
   },
   "terminal": {
     "connect": "连接",
-    "disconnect": "断开"
+    "disconnect": "断开",
+    "copy": "复制",
+    "paste": "粘贴",
+    "selectAll": "全选",
+    "pasteFailed": "无法读取剪贴板"
   },
   "ssh": {
     "closed": "会话已关闭",
@@ -265,6 +269,10 @@
     "keyLoad": "无法读取私钥",
     "sessionMissing": "会话不存在",
     "sessionBusy": "会话繁忙",
+    "ptyRejected": "服务器拒绝分配交互终端",
+    "shellRejected": "服务器拒绝启动 Shell",
+    "channelClosed": "服务器已关闭终端通道",
+    "startupOutputLimit": "终端启动输出超出限制",
     "invalidPayload": "终端输入无效",
     "noHostKey": "服务器未提供主机密钥",
     "agentUnsupported": "暂不支持 Agent 认证"
@@ -358,6 +366,8 @@
     "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？"
   },
   "plugins": {
+    "search": "搜索插件",
+    "installedTab": "已安装",
     "reload": "重新扫描",
     "openFolder": "打开目录",
     "empty": "未安装插件",
@@ -413,6 +423,9 @@
     "title": "插件",
     "refresh": "刷新",
     "empty": "暂无内容"
+  },
+  "clipboard": {
+    "unavailable": "无法访问系统剪贴板"
   },
   "menu": {
     "edit": "编辑",

@@ -61,4 +61,28 @@ describe("KnownHostsList", () => {
     expect(await screen.findByText("example.com:22")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it("refreshes on returning to a side view while preserving its search", async () => {
+    const { rerender } = render(<KnownHostsList active />);
+    await screen.findByText("example.com:22");
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "example" } });
+    rerender(<KnownHostsList active={false} />);
+    apiMock.knownHostsList.mockResolvedValue([{ ...entry, host: "new-example.com" }]);
+    rerender(<KnownHostsList active />);
+    expect(await screen.findByText("new-example.com:22")).toBeTruthy();
+    expect((screen.getByRole("searchbox") as HTMLInputElement).value).toBe("example");
+    expect(screen.queryByText("example.com:22")).toBeNull();
+  });
+
+  it("keeps sidebar controls outside the scrolling trusted-key list", async () => {
+    const { container } = render(<KnownHostsList variant="sidebar" />);
+    const address = await screen.findByText("example.com:22");
+    const head = container.querySelector(".sidebar__head")!;
+    const search = container.querySelector(".sidebar__search")!;
+    const body = container.querySelector(".sidebar__body")!;
+    expect(head.contains(screen.getByRole("button", { name: "Refresh" }))).toBe(true);
+    expect(search.contains(screen.getByRole("searchbox"))).toBe(true);
+    expect(body.contains(address)).toBe(true);
+    expect(body.contains(search)).toBe(false);
+  });
 });

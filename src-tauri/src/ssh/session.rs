@@ -9,7 +9,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
 use russh::client::{self, Handle};
 use russh::keys::{HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
-use russh::ChannelMsg;
+use russh::{Channel, ChannelMsg};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::mpsc;
@@ -25,6 +25,7 @@ pub const CLOSED_EVENT: &str = "ssh://closed";
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const TERM: &str = "xterm-256color";
+const MAX_EARLY_OUTPUT: usize = 1024 * 1024;
 
 fn default_cols() -> u32 {
     120
@@ -125,6 +126,7 @@ impl client::Handler for ClientHandler {
 }
 
 enum WriterMsg {
+    Attach,
     Data(Vec<u8>),
     Resize { cols: u32, rows: u32 },
     Close,
@@ -191,6 +193,20 @@ impl SshManager {
         handle
             .writer
             .try_send(WriterMsg::Data(data))
+            .map_err(|_| AppError::Ssh("ssh.sessionBusy".into()))
+    }
+
+    pub fn attach(&self, session_id: &str) -> AppResult<()> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let handle = sessions
+            .get(session_id)
+            .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
+        handle
+            .writer
+            .try_send(WriterMsg::Attach)
             .map_err(|_| AppError::Ssh("ssh.sessionBusy".into()))
     }
 
@@ -302,6 +318,111 @@ fn emit_data(app: &AppHandle, session_id: &str, data: &[u8]) {
     );
 }
 
+async fn wait_for_reply(
+    channel: &mut Channel<client::Msg>,
+    startup: &mut Vec<u8>,
+    rejected: &'static str,
+) -> AppResult<()> {
+    tokio::time::timeout(CONNECT_TIMEOUT, async {
+        loop {
+            match channel.wait().await {
+                Some(ChannelMsg::Success) => return Ok(()),
+                Some(ChannelMsg::Failure) => return Err(AppError::Ssh(rejected.into())),
+                Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => {
+                    if startup.len().saturating_add(data.len()) > MAX_EARLY_OUTPUT {
+                        return Err(AppError::Ssh("ssh.startupOutputLimit".into()));
+                    }
+                    startup.extend_from_slice(&data);
+                }
+                Some(ChannelMsg::Close | ChannelMsg::Eof) | None => {
+                    return Err(AppError::Ssh("ssh.channelClosed".into()));
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .map_err(|_| AppError::Ssh("ssh.timeout".into()))?
+}
+
+async fn open_terminal_channel(
+    handle: &Handle<ClientHandler>,
+    cols: u32,
+    rows: u32,
+) -> AppResult<(Channel<client::Msg>, Vec<u8>)> {
+    let mut channel = handle.channel_open_session().await.map_err(map_ssh_error)?;
+    // PTY is the authoritative TERM negotiation. Optional env requests may be
+    // ignored by AcceptEnv; do not substitute them for a successful PTY reply.
+    for (name, value) in [
+        ("TERM", TERM),
+        ("LANG", "en_US.UTF-8"),
+        ("COLORTERM", "truecolor"),
+        ("TERM_PROGRAM", "Tunnelde"),
+    ] {
+        channel
+            .set_env(false, name, value)
+            .await
+            .map_err(map_ssh_error)?;
+    }
+    let mut startup = Vec::new();
+    channel
+        .request_pty(true, TERM, cols, rows, 0, 0, &[])
+        .await
+        .map_err(map_ssh_error)?;
+    // russh request_* futures confirm that the request was sent, not accepted.
+    wait_for_reply(&mut channel, &mut startup, "ssh.ptyRejected").await?;
+    channel.request_shell(true).await.map_err(map_ssh_error)?;
+    wait_for_reply(&mut channel, &mut startup, "ssh.shellRejected").await?;
+    Ok((channel, startup))
+}
+
+async fn pump_terminal(
+    channel: Channel<client::Msg>,
+    mut outgoing: mpsc::Receiver<WriterMsg>,
+    mut startup: Vec<u8>,
+    mut emit: impl FnMut(&[u8]),
+) {
+    let (mut reader, writer) = channel.split();
+    let mut attached = false;
+    loop {
+        tokio::select! {
+            // Until both frontend listeners exist, SSH's channel queue/window
+            // buffers output without losing a prompt's first ANSI bytes.
+            incoming = reader.wait(), if attached => {
+                match incoming {
+                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => emit(&data),
+                    Some(ChannelMsg::Close) | None => break,
+                    _ => {}
+                }
+            }
+            message = outgoing.recv() => {
+                match message {
+                    Some(WriterMsg::Attach) => {
+                        if !attached {
+                            attached = true;
+                            if !startup.is_empty() {
+                                emit(&startup);
+                                startup.clear();
+                            }
+                        }
+                    }
+                    Some(WriterMsg::Data(bytes)) => {
+                        if writer.data_bytes(bytes).await.is_err() { break; }
+                    }
+                    Some(WriterMsg::Resize { cols, rows }) => {
+                        let _ = writer.window_change(cols, rows, 0, 0).await;
+                    }
+                    Some(WriterMsg::Close) | None => {
+                        let _ = writer.eof().await;
+                        let _ = writer.close().await;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub async fn probe(app: &AppHandle, host_id: &str) -> AppResult<HostKeyInfo> {
     let state = app.state::<AppState>();
     let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
@@ -389,24 +510,7 @@ async fn connect_for_auth(
 
     authenticate(&mut handle, &host, &request).await?;
 
-    let channel = handle.channel_open_session().await.map_err(map_ssh_error)?;
-    // Color-aware tools look at these first; servers that do not accept them
-    // simply ignore the request.
-    for (name, value) in [
-        ("TERM", TERM),
-        ("LANG", "en_US.UTF-8"),
-        ("COLORTERM", "truecolor"),
-        ("TERM_PROGRAM", "Tunnelde"),
-    ] {
-        let _ = channel.set_env(false, name, value).await;
-    }
-    channel
-        .request_pty(true, TERM, request.cols, request.rows, 0, 0, &[])
-        .await
-        .map_err(map_ssh_error)?;
-    channel.request_shell(true).await.map_err(map_ssh_error)?;
-
-    let (mut reader, writer) = channel.split();
+    let (channel, startup) = open_terminal_channel(&handle, request.cols, request.rows).await?;
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let info = SessionInfo {
@@ -420,44 +524,17 @@ async fn connect_for_auth(
     };
 
     let shared_handle = Arc::new(handle);
-    let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
+    let (tx, rx) = mpsc::channel::<WriterMsg>(64);
     let task_app = app.clone();
     let task_session = session_id.clone();
 
     let task_handle = Arc::clone(&shared_handle);
     let task = tokio::spawn(async move {
         let _session = task_handle;
-        loop {
-            tokio::select! {
-                incoming = reader.wait() => {
-                    match incoming {
-                        Some(ChannelMsg::Data { data }) => emit_data(&task_app, &task_session, &data),
-                        Some(ChannelMsg::ExtendedData { data, .. }) => {
-                            emit_data(&task_app, &task_session, &data)
-                        }
-                        Some(ChannelMsg::Close) | None => break,
-                        _ => {}
-                    }
-                }
-                outgoing = rx.recv() => {
-                    match outgoing {
-                        Some(WriterMsg::Data(bytes)) => {
-                            if writer.data_bytes(bytes).await.is_err() {
-                                break;
-                            }
-                        }
-                        Some(WriterMsg::Resize { cols, rows }) => {
-                            let _ = writer.window_change(cols, rows, 0, 0).await;
-                        }
-                        Some(WriterMsg::Close) | None => {
-                            let _ = writer.eof().await;
-                            let _ = writer.close().await;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
+        pump_terminal(channel, rx, startup, |data| {
+            emit_data(&task_app, &task_session, data)
+        })
+        .await;
 
         let _ = task_app.emit(
             CLOSED_EVENT,
@@ -489,6 +566,10 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
     Ok(())
 }
 
+pub fn attach(app: &AppHandle, session_id: &str) -> AppResult<()> {
+    app.state::<AppState>().ssh.attach(session_id)
+}
+
 pub fn write(app: &AppHandle, session_id: &str, data: &str) -> AppResult<()> {
     let bytes = BASE64
         .decode(data)
@@ -500,4 +581,172 @@ pub fn write(app: &AppHandle, session_id: &str, data: &str) -> AppResult<()> {
 pub fn resize(app: &AppHandle, session_id: &str, cols: u32, rows: u32) -> AppResult<()> {
     let state = app.state::<AppState>();
     state.ssh.resize(session_id, cols, rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use russh::server::{self, Server as _, Session};
+    use russh::{ChannelId, Pty};
+
+    const PROMPT: &[u8] = b"\x1b[01;32muser@server\x1b[0m:\x1b[01;34m~\x1b[0m$ ";
+
+    #[derive(Clone)]
+    struct TestServer {
+        reject_pty: bool,
+        reject_shell: bool,
+        requests: Arc<StdMutex<Vec<String>>>,
+    }
+
+    impl server::Server for TestServer {
+        type Handler = Self;
+
+        fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self {
+            self.clone()
+        }
+    }
+
+    impl server::Handler for TestServer {
+        type Error = russh::Error;
+
+        async fn auth_none(&mut self, _: &str) -> Result<server::Auth, Self::Error> {
+            Ok(server::Auth::Accept)
+        }
+
+        async fn channel_open_session(
+            &mut self,
+            _: Channel<server::Msg>,
+            reply: server::ChannelOpenHandle,
+            _: &mut Session,
+        ) -> Result<(), Self::Error> {
+            reply.accept().await;
+            Ok(())
+        }
+
+        async fn pty_request(
+            &mut self,
+            channel: ChannelId,
+            term: &str,
+            cols: u32,
+            rows: u32,
+            _: u32,
+            _: u32,
+            _: &[(Pty, u32)],
+            session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(format!("pty:{term}:{cols}x{rows}"));
+            if self.reject_pty {
+                session.channel_failure(channel)?;
+            } else {
+                session.channel_success(channel)?;
+            }
+            Ok(())
+        }
+
+        async fn shell_request(
+            &mut self,
+            channel: ChannelId,
+            session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            self.requests.lock().unwrap().push("shell".into());
+            if self.reject_shell {
+                session.channel_failure(channel)?;
+            } else {
+                // Some servers can send output before the request ACK. The
+                // negotiation must retain even its initial SGR prefix intact.
+                session.data(channel, PROMPT.to_vec())?;
+                session.channel_success(channel)?;
+            }
+            Ok(())
+        }
+    }
+
+    async fn server(
+        reject_pty: bool,
+        reject_shell: bool,
+    ) -> (
+        Handle<ClientHandler>,
+        Arc<StdMutex<Vec<String>>>,
+        JoinHandle<()>,
+    ) {
+        let socket = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let port = socket.local_addr().unwrap().port();
+        let requests = Arc::new(StdMutex::new(Vec::new()));
+        let mut server = TestServer {
+            reject_pty,
+            reject_shell,
+            requests: requests.clone(),
+        };
+        let config = server::Config {
+            keys: vec![russh::keys::PrivateKey::random(
+                &mut rand::rng(),
+                russh::keys::Algorithm::Ed25519,
+            )
+            .unwrap()],
+            ..server::Config::default()
+        };
+        let task = tokio::spawn(async move {
+            let _ = server.run_on_socket(Arc::new(config), &socket).await;
+        });
+        let (mut client, _) = open("127.0.0.1".into(), port, None).await.unwrap();
+        assert!(client.authenticate_none("qa").await.unwrap().success());
+        (client, requests, task)
+    }
+
+    #[tokio::test]
+    async fn rejects_denied_pty_before_requesting_a_shell() {
+        let (client, requests, server) = server(true, false).await;
+        let error = open_terminal_channel(&client, 120, 32).await.unwrap_err();
+        assert_eq!(error.to_string(), "ssh.ptyRejected");
+        assert_eq!(*requests.lock().unwrap(), ["pty:xterm-256color:120x32"]);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn rejects_a_denied_shell_instead_of_showing_a_dead_terminal() {
+        let (client, requests, server) = server(false, true).await;
+        let error = open_terminal_channel(&client, 80, 24).await.unwrap_err();
+        assert_eq!(error.to_string(), "ssh.shellRejected");
+        assert_eq!(
+            *requests.lock().unwrap(),
+            ["pty:xterm-256color:80x24", "shell"]
+        );
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn keeps_early_ansi_bytes_until_attach_and_does_not_replay_on_duplicate_attach() {
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        assert_eq!(startup, PROMPT);
+        let (tx, rx) = mpsc::channel(8);
+        let (output, mut received) = mpsc::unbounded_channel();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |bytes| {
+                output.send(bytes.to_vec()).unwrap();
+            })
+            .await;
+        });
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), received.recv())
+                .await
+                .is_err()
+        );
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert_eq!(received.recv().await.unwrap(), PROMPT);
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(30), received.recv())
+                .await
+                .is_err()
+        );
+        tx.send(WriterMsg::Close).await.unwrap();
+        task.await.unwrap();
+        server.abort();
+    }
 }

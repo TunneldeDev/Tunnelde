@@ -196,9 +196,23 @@
   border-bottom: 1px solid var(--td-border);
 }
 
+.sidebar__title {
+  flex: 1;
+  min-width: 0;
+  padding-left: 6px;
+  color: var(--td-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
 .sidebar__head .td-icon-btn {
   width: 25px;
   height: 25px;
+}
+
+.sidebar__search {
+  flex: none;
+  padding: 8px 10px 6px;
 }
 
 .sidebar__filter {
@@ -218,9 +232,10 @@
 
 .sidebar__filter .td-input {
   min-width: 0;
-  height: 25px;
+  height: 28px;
   padding-left: 26px;
-  font-size: 11.5px;
+  border-radius: 4px;
+  font-size: 12px;
   background: var(--td-bg);
 }
 
@@ -436,17 +451,25 @@
 /* ---------- resizer ---------- */
 
 .td-resizer {
-  width: 4px;
-  flex: 0 0 4px;
+  position: relative;
+  width: 0;
+  flex: 0 0 0;
   cursor: col-resize;
-  background: transparent;
-  transition: background var(--td-ease);
+  touch-action: none;
   z-index: 4;
 }
 
-.td-resizer:hover,
-.td-resizer:active {
-  background: var(--td-accent-soft);
+.td-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 -3px;
+  width: 6px;
+  transition: background var(--td-ease);
+}
+
+.td-resizer:hover::before,
+.td-resizer:active::before {
+  background: var(--td-accent);
 }
 
 /* ---------- right panel ---------- */
@@ -1925,29 +1948,6 @@
 
 .terminal-host .xterm {
   height: 100%;
-}
-
-/*
- * xterm injects these rules at runtime; repeating them keeps the monospace
- * grid, kerning and cursor intact even when that stylesheet does not apply.
- */
-.terminal-host .xterm-rows {
-  font-family: var(--td-mono) !important;
-  font-size: var(--td-mono-size) !important;
-  font-kerning: none !important;
-  font-variant-ligatures: none !important;
-  letter-spacing: 0 !important;
-  white-space: pre !important;
-  text-rendering: auto !important;
-}
-
-.terminal-host .xterm-rows .xterm-cursor.xterm-cursor-block {
-  background-color: var(--td-cyan) !important;
-  color: var(--td-bg) !important;
-}
-
-.terminal-host .xterm-viewport {
-  background: transparent !important;
 }
 
 /* ---------- connect dialog ---------- */

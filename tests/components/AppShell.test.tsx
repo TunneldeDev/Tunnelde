@@ -1,13 +1,24 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Keep the real pane layout, tab handlers and workspace store. Surrounding
 // panels do not participate in workspace drag routing.
-vi.mock("@/components/layout/HostTree", () => ({ HostTree: () => null }));
-vi.mock("@/components/layout/CommandPalette", () => ({ CommandPalette: () => null }));
+vi.mock("@/components/layout/HostTree", () => ({
+  HostTree: () => <input aria-label="Host view search" defaultValue="" />,
+}));
+vi.mock("@/features/settings/TrustedHostsSidebar", () => ({
+  TrustedHostsSidebar: () => <input aria-label="Trusted view search" defaultValue="" />,
+}));
+vi.mock("@/features/plugins/PluginsSidebar", () => ({
+  PluginsSidebar: () => <input aria-label="Plugin view search" defaultValue="" />,
+}));
+vi.mock("@/components/layout/CommandPalette", () => ({
+  CommandPalette: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="command-palette" /> : null,
+}));
 vi.mock("@/components/layout/ActivityBar", () => ({ ActivityBar: () => null }));
 vi.mock("@/components/layout/RemotePanel", () => ({ RemotePanel: () => null }));
 vi.mock("@/components/layout/StatusBar", () => ({ StatusBar: () => null }));
@@ -23,6 +34,10 @@ vi.mock("@/components/layout/TabContent", () => ({
 import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { useWorkspace } from "@/store/workspace";
+import { useNavigation } from "@/store/navigation";
+import { useDialogs } from "@/store/dialogs";
+import { useSettings } from "@/store/settings";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 function rectangle(left: number, top: number, width: number, height: number): DOMRect {
   return {
@@ -78,6 +93,13 @@ function renderWorkspace() {
 }
 
 beforeEach(() => {
+  useDialogs.getState().close();
+  useSettings.setState({ settings: DEFAULT_SETTINGS, update: vi.fn().mockResolvedValue(true) });
+  useNavigation.setState({
+    activeSidebar: "hosts",
+    sidebarVisible: true,
+    visitedSidebars: ["hosts"],
+  });
   useWorkspace.setState({
     tabs: [
       { id: "terminal:a", kind: "terminal", title: "A", hostId: "a", pinned: false },
@@ -99,6 +121,124 @@ beforeEach(() => {
       first: { kind: "pane", paneId: "pane-1" },
       second: { kind: "pane", paneId: "pane-2" },
     },
+  });
+});
+
+describe("AppShell terminal shortcut ownership", () => {
+  function terminal() {
+    const { container } = render(<AppShell />);
+    const host = document.createElement("div");
+    host.className = "terminal-host";
+    const input = document.createElement("textarea");
+    host.append(input);
+    container.append(host);
+    return input;
+  }
+
+  it("passes shell editing, tmux, SIGQUIT, remote control chords and AltGr through", () => {
+    const input = terminal();
+    const keys: KeyboardEventInit[] = [
+      ...["k", "n", "b", "w", "\\", "1", "2"].map((key) => ({ key })),
+      { key: "K", shiftKey: true },
+      { key: "|", shiftKey: true },
+      { key: "n", altKey: true },
+      { key: "1", altKey: true },
+    ];
+    for (const key of keys) {
+      const event = new KeyboardEvent("keydown", {
+        bubbles: true,
+        cancelable: true,
+        ctrlKey: true,
+        ...key,
+      });
+      fireEvent(input, event);
+      expect(event.defaultPrevented, `Ctrl chord ${key.key}`).toBe(false);
+    }
+    expect(useWorkspace.getState().tabs).toHaveLength(3);
+    expect(useWorkspace.getState().panes).toHaveLength(2);
+    expect(useNavigation.getState().sidebarVisible).toBe(true);
+    expect(useDialogs.getState().dialog.kind).toBe("none");
+    expect(screen.queryByTestId("command-palette")).toBeNull();
+  });
+
+  it("keeps deliberate workspace commands available from the terminal", () => {
+    const input = terminal();
+    fireEvent.keyDown(input, { key: "Tab", ctrlKey: true });
+    expect(useWorkspace.getState().activeId).toBe("terminal:b");
+    fireEvent.keyDown(input, { key: "Tab", ctrlKey: true, shiftKey: true });
+    expect(useWorkspace.getState().activeId).toBe("terminal:a");
+    fireEvent.keyDown(input, { key: "+", ctrlKey: true });
+    expect(useSettings.getState().update).toHaveBeenCalledWith({ monoFontSize: 14 });
+    fireEvent.keyDown(input, { key: "N", ctrlKey: true, shiftKey: true });
+    expect(useDialogs.getState().dialog.kind).toBe("host");
+    useDialogs.getState().close();
+    fireEvent.keyDown(input, { key: "W", ctrlKey: true, shiftKey: true });
+    expect(useWorkspace.getState().panes).toHaveLength(1);
+    fireEvent.keyDown(input, { key: "P", ctrlKey: true, shiftKey: true });
+    expect(screen.getByTestId("command-palette")).toBeTruthy();
+  });
+
+  it("routes workspace keys before xterm target capture while shell keys reach it", () => {
+    const input = terminal();
+    const xtermKey = vi.fn();
+    input.addEventListener("keydown", xtermKey, true);
+    for (const key of ["k", "n", "\\"]) {
+      fireEvent.keyDown(input, { key, ctrlKey: true });
+    }
+    expect(xtermKey).toHaveBeenCalledTimes(3);
+    expect(screen.queryByTestId("command-palette")).toBeNull();
+
+    for (const key of ["+", "-", "0"]) {
+      fireEvent.keyDown(input, { key, ctrlKey: true });
+    }
+    expect(useSettings.getState().update).toHaveBeenCalledTimes(2);
+    expect(xtermKey).toHaveBeenCalledTimes(3);
+
+    fireEvent.keyDown(input, { key: "P", ctrlKey: true, shiftKey: true });
+    expect(screen.getByTestId("command-palette")).toBeTruthy();
+    expect(xtermKey).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps macOS Command workspace bindings while Control remains available to SSH", () => {
+    const input = terminal();
+    fireEvent.keyDown(input, { key: "b", metaKey: true });
+    expect(useNavigation.getState().sidebarVisible).toBe(false);
+    fireEvent.keyDown(input, { key: "w", metaKey: true });
+    expect(useWorkspace.getState().tabs.map((tab) => tab.id)).not.toContain("terminal:a");
+    fireEvent.keyDown(input, { key: "k", metaKey: true });
+    expect(screen.getByTestId("command-palette")).toBeTruthy();
+  });
+});
+
+describe("AppShell side view persistence", () => {
+  it("lazily mounts side views and retains their DOM state when switching and collapsing", () => {
+    const { container } = render(<AppShell />);
+    const hosts = screen.getByRole("textbox", { name: "Host view search" });
+    fireEvent.change(hosts, { target: { value: "production" } });
+    expect(screen.queryByRole("textbox", { name: "Plugin view search" })).toBeNull();
+    act(() => useNavigation.getState().selectSidebar("plugins"));
+    const plugins = screen.getByRole("textbox", { name: "Plugin view search" });
+    fireEvent.change(plugins, { target: { value: "theme" } });
+    expect(container.querySelector("#sidebar-hosts")?.hasAttribute("hidden")).toBe(true);
+    act(() => useNavigation.getState().selectSidebar("hosts"));
+    expect(screen.getByRole("textbox", { name: "Host view search" })).toBe(hosts);
+    expect((hosts as HTMLInputElement).value).toBe("production");
+    act(() => useNavigation.getState().selectSidebar("plugins"));
+    expect(screen.getByRole("textbox", { name: "Plugin view search" })).toBe(plugins);
+    expect((plugins as HTMLInputElement).value).toBe("theme");
+    const terminal = document.createElement("div");
+    terminal.className = "terminal-host";
+    container.appendChild(terminal);
+    fireEvent.keyDown(terminal, { key: "b", ctrlKey: true });
+    expect(useNavigation.getState().sidebarVisible).toBe(true);
+    terminal.remove();
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(useNavigation.getState().sidebarVisible).toBe(false);
+    expect(container.querySelector("#sidebar-plugins")?.hasAttribute("hidden")).toBe(true);
+    expect(container.querySelector('[aria-label="Sidebar width"]')).toBeNull();
+    fireEvent.keyDown(window, { key: "b", ctrlKey: true });
+    expect(screen.getByRole("textbox", { name: "Plugin view search" })).toBe(plugins);
+    expect((plugins as HTMLInputElement).value).toBe("theme");
   });
 });
 

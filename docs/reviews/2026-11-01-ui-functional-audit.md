@@ -61,3 +61,20 @@
 操作系统桌面文件拖入以及 macOS/Linux 原生窗口交互仍需对应环境实机验证；外部拖入路由有组件回归，macOS/Linux 构建由发布 CI 验证。SFTP 协议 mock 另覆盖短/空文本截断、已删除文件不重建、写入/关闭失败以及等待关闭确认。
 
 自动检查通过：230 项前端测试、71 项 Rust 测试，以及 `pnpm typecheck`、`pnpm lint`、`pnpm build`、`pnpm i18n:check`、Clippy、变更文件格式检查与 `git diff --check`。生产构建无 CSS 语法警告。发布前校验 Cargo.lock，所有平台资产和更新清单齐备后再公开版本。
+
+## 0.19.1 正式构建复查
+
+上轮终端颜色验证使用开发模式和事件夹具，未覆盖打包后的 CSP；该验证范围不足以支持正式构建颜色正常的结论。本轮使用 `tauri build --debug --no-bundle` 构建带 `custom-protocol` 的真实嵌入资源，通过 `http://tauri.localhost/` 运行，使用独立的数据目录、插件目录和应用标识。
+
+- 实际连接测试服务器，确认未经修改的自然提示符包含绿色用户名和蓝色路径，后端收到完整 SGR。旧打包配置触发 `style-src-elem` 的 inline CSP violation，xterm 三个运行时 style 的 `sheet` 全为 null；彩色 span 为 `display:inline`，颜色全部回落为前景色。
+- 仅禁止 Tauri 对 `style-src` 自动添加 nonce/hash，保留严格 `script-src` 及其他 CSP。修复后全部 xterm 样式表生效，无样式 CSP violation；真实提示符绿/蓝、256 色橙及 RGB 紫均与实际输出一致，span 恢复 `inline-block` 和正确字符高度。移除覆盖字符间距与光标动画的 `!important` 补丁。
+- 使用真实 SSH 输出 180 行含中文、线框、基础色、256 色与真彩色的内容，实际滚轮反复上下滚动并截图。修复后滚动条有独立滑块，滚回底部仅一个光标，测试中未见截图所示密集竖线。该结果针对当前 Windows WebView2 环境，不能推断所有 TUI 和显卡组合均已覆盖。
+- 启用官方 WebGL 渲染器，真实 SSH 全屏 alternate buffer 测试验证中英文、基础色/256 色/RGB 与四边框；连续滚轮输入后画面保持，框线连续。通过 `WEBGL_lose_context` 人为触发上下文丢失，等待官方恢复窗口后自动回退 DOM，原有输出、会话和颜色样式保留；没有重连。
+- 实际 Windows 原生剪贴板验证 Ctrl+V、Ctrl+Shift+V、右键粘贴、中文和多行 bracketed paste；抓取发送到 SSH 的真实输入，确认每次只发送一次。Ctrl+C 有选区复制到系统剪贴板且不发送中断，无选区发送 `0x03`。测试在结束时恢复原剪贴板文本，不保存原剪贴板内容。
+- Ctrl+K/N/B/W 在真实会话中分别透传相应控制码，不弹命令面板、不新建主机、不收起侧栏、不关闭标签。新增 Windows/Linux Shift+Insert 粘贴和 Ctrl+Insert 复制；macOS Cmd+V/Cmd+Shift+V/Cmd+C 由前端回归覆盖，未做 macOS 实机验证。
+- 原生构建验证 Ctrl+Shift+P 只打开命令面板，字体大小快捷键只调整字号且不发送 SSH 输入，包含字号已经为默认值时的 Ctrl+0；这些快捷键在 xterm 处理之前由终端区域的捕获监听路由，文件区域仍保留其原有冒泡顺序。
+- SSH 握手等待服务器确认 PTY/shell 请求；前端两个事件监听器就绪后再 attach 输出。真实本机 russh 服务端测试覆盖拒绝 PTY、拒绝 shell、ACK 之前的 ANSI 输出保留和重复 attach 不重放。
+- 活动栏上方统一切换 Hosts、Trusted Hosts、Plugins 侧栏；重复点击收起但保留选中项，切换保持搜索且不打开编辑标签。Settings 位于底部；移除重复 Home 与设置内插件/受信任主机入口。原生界面验证侧栏边缘与编辑区间距为 0，实际指针拖动从 272 调到 320 并持久化。
+- 从正式 marketplace 移除 SDK Hello 示例，并精确过滤历史官方 catalog 中相同示例。重复选择同一插件包重新检查；市场安装成功立即应用结果，随后刷新失败也不会错误允许重装。
+
+本轮自动检查：270 项前端测试、74 项 Rust 测试通过，类型检查、ESLint、439 项翻译键一致性、版本一致性、生产前端构建、Clippy、Rust 格式与变更文件格式检查通过。

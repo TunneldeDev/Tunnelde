@@ -4,6 +4,7 @@
 | ------------------------------ | ----------------------------------------------------- |
 | `Ctrl+K`, `Ctrl+Shift+P`       | Command palette                                       |
 | `Ctrl+N`                       | New host                                              |
+| `Ctrl+B`                       | Show / hide the current sidebar                       |
 | `Ctrl+,`                       | Settings                                              |
 | `Ctrl+W`                       | Close the active tab (asks first for unsaved editors) |
 | `Ctrl+Shift+W`                 | Close the focused pane when split                     |
@@ -16,9 +17,27 @@
 | `Ctrl+S`                       | Save the open remote file                             |
 
 On macOS, the Command key also works for these actions. In a terminal,
-`Ctrl+W` stays available to the shell; use `Cmd+W` on macOS or `Ctrl+Shift+W`
-to close the terminal tab/group. Dialogs and input composition take precedence
-over workspace shortcuts.
+ordinary Control shortcuts stay available to the shell, including `Ctrl+K`,
+`Ctrl+N`, `Ctrl+B`, `Ctrl+W`, `Ctrl+\` and Control with a number. Use
+`Ctrl+Shift+P` for the command palette, `Ctrl+Shift+N` for a new host,
+`Cmd+W` on macOS or `Ctrl+Shift+W` to close the terminal tab/group.
+Tab switching and font-size shortcuts remain available in terminals.
+Dialogs and input composition take precedence over workspace shortcuts.
+
+Terminal clipboard:
+
+| Keys                           | Action                                                         |
+| ------------------------------ | -------------------------------------------------------------- |
+| `Ctrl+V` / `Ctrl+Shift+V`      | Paste on Windows and Linux                                     |
+| `Cmd+V` / `Cmd+Shift+V`        | Paste on macOS                                                 |
+| `Shift+Insert`                 | Paste on Windows and Linux                                     |
+| `Ctrl+C`                       | Windows/Linux: copy selected text; otherwise send an interrupt |
+| `Ctrl+Shift+C` / `Ctrl+Insert` | Copy selected text on Windows and Linux                        |
+| `Cmd+C`                        | Copy selected text on macOS                                    |
+
+Right-click opens Copy, Paste and Select All. Paste uses the native clipboard
+and xterm's bracketed-paste handling so multiline input follows the remote
+program's paste mode.
 
 File panes:
 

@@ -43,10 +43,10 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
-  it("puts search and creation actions together without repeating the app title or footer", () => {
+  it("keeps creation actions in the header and search below without repeating app branding", () => {
     const { container } = render(<HostTree />);
     const toolbar = screen.getByRole("toolbar", { name: "Hosts" });
-    expect(toolbar.contains(screen.getByRole("textbox"))).toBe(true);
+    expect(toolbar.contains(screen.getByRole("textbox"))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "New host" }));
     expect(useDialogs.getState().openHost).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "New group" }));

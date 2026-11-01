@@ -7,6 +7,7 @@ import { useTranslation } from "react-i18next";
 
 import { cn } from "@/lib/text/format";
 import { useDialogs } from "@/store/dialogs";
+import { useNavigation } from "@/store/navigation";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
@@ -59,7 +60,16 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       { id: "page.settings", title: t("nav.settings"), run: () => openPage("settings") },
       { id: "page.welcome", title: t("nav.welcome"), run: () => openPage("welcome") },
       { id: "page.about", title: t("nav.about"), run: () => openPage("about") },
-      { id: "page.knownHosts", title: t("settings.knownHosts"), run: () => openPage("knownHosts") },
+      {
+        id: "sidebar.knownHosts",
+        title: t("settings.knownHosts"),
+        run: () => useNavigation.getState().showSidebar("knownHosts"),
+      },
+      {
+        id: "sidebar.plugins",
+        title: t("settings.plugins"),
+        run: () => useNavigation.getState().showSidebar("plugins"),
+      },
       { id: "update.check", title: t("updates.check"), run: () => void checkUpdates(true) },
       {
         id: "panel.toggle",

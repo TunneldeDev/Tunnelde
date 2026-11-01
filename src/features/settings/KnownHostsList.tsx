@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { RefreshCw, Trash2 } from "lucide-react";
+import { RefreshCw, Search, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -12,7 +12,13 @@ import type { KnownHostEntry } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { toast } from "@/store/toasts";
 
-export function KnownHostsList() {
+export function KnownHostsList({
+  active = true,
+  variant = "page",
+}: {
+  active?: boolean;
+  variant?: "page" | "sidebar";
+} = {}) {
   const { t } = useTranslation();
   const confirm = useDialogs((state) => state.confirm);
   const [entries, setEntries] = useState<KnownHostEntry[] | null>(null);
@@ -33,9 +39,14 @@ export function KnownHostsList() {
     }
   };
   useEffect(() => {
+    if (!active) return;
     let alive = true;
     queueMicrotask(() => {
-      if (alive) void load();
+      if (alive) {
+        setLoading(true);
+        setError(null);
+        void load();
+      }
     });
     const invalidate = () => {
       request.current++;
@@ -44,7 +55,7 @@ export function KnownHostsList() {
       alive = false;
       invalidate();
     };
-  }, []);
+  }, [active]);
 
   const forget = (entry: KnownHostEntry) => {
     confirm({
@@ -76,29 +87,32 @@ export function KnownHostsList() {
       .toLocaleLowerCase()
       .includes(search),
   );
-  return (
-    <div className="known-hosts" aria-busy={loading}>
-      <div className="known-hosts-toolbar">
-        <input
-          className="td-input"
-          type="search"
-          aria-label={t("settings.knownHostsSearch")}
-          placeholder={t("settings.knownHostsSearch")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        <IconButton
-          label={t("common.refresh")}
-          disabled={loading}
-          onClick={() => {
-            setLoading(true);
-            setError(null);
-            void load();
-          }}
-        >
-          <RefreshCw size={14} />
-        </IconButton>
-      </div>
+  const sidebar = variant === "sidebar";
+  const searchInput = (
+    <input
+      className="td-input"
+      type="search"
+      aria-label={t("settings.knownHostsSearch")}
+      placeholder={t("settings.knownHostsSearch")}
+      value={query}
+      onChange={(event) => setQuery(event.target.value)}
+    />
+  );
+  const refresh = (
+    <IconButton
+      label={t("common.refresh")}
+      disabled={loading}
+      onClick={() => {
+        setLoading(true);
+        setError(null);
+        void load();
+      }}
+    >
+      <RefreshCw size={14} />
+    </IconButton>
+  );
+  const content = (
+    <>
       {loading ? (
         <p role="status" className="settings-hint">
           {t("common.loading")}
@@ -133,6 +147,28 @@ export function KnownHostsList() {
           </IconButton>
         </div>
       ))}
+    </>
+  );
+  return (
+    <div className={sidebar ? "trusted-hosts-sidebar" : "known-hosts"} aria-busy={loading}>
+      {sidebar ? (
+        <div className="sidebar__head">
+          <span className="sidebar__title">{t("settings.knownHosts")}</span>
+          {refresh}
+        </div>
+      ) : null}
+      <div className={sidebar ? "sidebar__search" : "known-hosts-toolbar"}>
+        {sidebar ? (
+          <div className="sidebar__filter">
+            <Search size={13} aria-hidden="true" />
+            {searchInput}
+          </div>
+        ) : (
+          searchInput
+        )}
+        {!sidebar ? refresh : null}
+      </div>
+      {sidebar ? <div className="sidebar__body">{content}</div> : content}
     </div>
   );
 }

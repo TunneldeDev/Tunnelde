@@ -6,6 +6,18 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-01
+
+### Fixed
+
+- Packaged terminals now load xterm's runtime styles correctly. Tauri's generated style nonce previously blocked ANSI colors, character-grid styles, cursor rendering and scrollbar colors in production while development builds appeared normal.
+- Terminals use xterm's WebGL renderer for accelerated drawing and continuous box graphics, with automatic DOM fallback when WebGL is unavailable or its context is lost.
+- Terminal copy and paste use the native clipboard, including right-click actions, Ctrl/Cmd+V, Ctrl/Cmd+Shift+V and Windows/Linux Insert shortcuts. Multiline paste respects bracketed-paste mode; Ctrl+C copies a selection and still interrupts the shell without one.
+- Shell shortcuts such as Ctrl+K, Ctrl+N, Ctrl+B, Ctrl+W and Ctrl+\ remain available inside terminals. SSH output waits for both frontend listeners, and rejected PTY or shell requests report a connection error.
+- Activity-bar entries consistently switch between persistent Hosts, Trusted Hosts and Plugins sidebars without changing editor tabs. Settings remains a separate bottom entry; redundant Home and settings subpages have been removed.
+- Sidebar headings, search fields and editor borders align without a spacer gap. Divider drags persist their final size and handle cancelled or lost pointer capture correctly.
+- The official SDK Hello example is removed from the production marketplace, including stale remote catalogs. Plugin installation can recheck the same package and immediately reflects successful installs even if a subsequent refresh fails.
+
 ## [0.19.0] - 2026-11-01
 
 ### Added

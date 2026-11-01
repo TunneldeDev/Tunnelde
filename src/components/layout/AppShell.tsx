@@ -4,6 +4,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { HostTree } from "@/components/layout/HostTree";
+import { TrustedHostsSidebar } from "@/features/settings/TrustedHostsSidebar";
+import { PluginsSidebar } from "@/features/plugins/PluginsSidebar";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { PaneLayout } from "@/components/layout/PaneLayout";
@@ -46,6 +48,8 @@ export function AppShell() {
   const openPage = useWorkspace((state) => state.openPage);
   const tabs = useWorkspace((state) => state.tabs);
   const sidebarVisible = useNavigation((state) => state.sidebarVisible);
+  const activeSidebar = useNavigation((state) => state.activeSidebar);
+  const visitedSidebars = useNavigation((state) => state.visitedSidebars);
   const activeId = useWorkspace((state) => state.activeId);
   const sessions = useSsh((state) => state.sessions);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -140,7 +144,29 @@ export function AppShell() {
       if (!mod) {
         return;
       }
+      // AltGr and terminal escape chords belong to the focused application.
+      if (event.altKey || (event.ctrlKey && event.metaKey)) return;
       const key = event.key.toLowerCase();
+      const terminalControl =
+        event.ctrlKey &&
+        !event.metaKey &&
+        event.target instanceof Element &&
+        !!event.target.closest(".terminal-host");
+      if (terminalControl) {
+        const workspaceShortcut =
+          (event.shiftKey && ["p", "n", "w"].includes(key)) ||
+          key === "tab" ||
+          ["=", "+", "-", "0"].includes(key);
+        // Preserve shell editing (Ctrl+K/N/W), tmux (Ctrl+B), SIGQUIT
+        // (Ctrl+\\) and remote application chords. Explicit workspace commands
+        // use Ctrl+Shift, while tab switching and font sizing stay available.
+        if (!workspaceShortcut) return;
+      }
+      if (key === "b" && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        useNavigation.getState().toggleSidebar();
+        return;
+      }
       if (key === "k" || (event.shiftKey && key === "p")) {
         event.preventDefault();
         setPalette(true);
@@ -161,8 +187,10 @@ export function AppShell() {
         const delta = key === "-" ? -1 : 1;
         const next =
           key === "0" ? 13 : Math.min(20, Math.max(11, settings.settings.monoFontSize + delta));
+        // A reserved shortcut remains consumed even at the default or limit;
+        // otherwise Ctrl+0 can unexpectedly send NUL to the remote terminal.
+        event.preventDefault();
         if (next !== settings.settings.monoFontSize) {
-          event.preventDefault();
           void settings.update({ monoFontSize: next });
         }
         return;
@@ -170,13 +198,6 @@ export function AppShell() {
 
       const workspace = useWorkspace.getState();
       if (key === "w") {
-        if (
-          !event.metaKey &&
-          !event.shiftKey &&
-          event.target instanceof Element &&
-          event.target.closest(".terminal-host")
-        )
-          return;
         if (event.shiftKey && workspace.panes.length > 1) {
           event.preventDefault();
           workspace.closePane(workspace.activePaneId);
@@ -224,8 +245,20 @@ export function AppShell() {
       }
     };
 
+    const onTerminalKeyDown = (event: KeyboardEvent) => {
+      if (!(event.target instanceof Element) || !event.target.closest(".terminal-host")) return;
+      // xterm handles keys at its target. Route only actual workspace commands
+      // before they reach it, so one shortcut cannot also send SSH input.
+      if (event.defaultPrevented) return;
+      onKeyDown(event);
+      if (event.defaultPrevented) event.stopPropagation();
+    };
+    window.addEventListener("keydown", onTerminalKeyDown, true);
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onTerminalKeyDown, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, [openHostDialog, openPage, palette]);
 
   const activeTab = tabs.find((tab) => tab.id === activeId) ?? null;
@@ -265,7 +298,20 @@ export function AppShell() {
       <WindowTitleBar />
       <div className="app__body">
         <ActivityBar />
-        {sidebarVisible ? <HostTree /> : null}
+        {visitedSidebars.map((view) => (
+          <div
+            className="sidebar-view"
+            id={`sidebar-${view}`}
+            key={view}
+            hidden={!sidebarVisible || view !== activeSidebar}
+          >
+            {view === "hosts" ? <HostTree /> : null}
+            {view === "knownHosts" ? (
+              <TrustedHostsSidebar active={sidebarVisible && view === activeSidebar} />
+            ) : null}
+            {view === "plugins" ? <PluginsSidebar /> : null}
+          </div>
+        ))}
         {sidebarVisible ? (
           <Resizer
             value={sidebarWidth}

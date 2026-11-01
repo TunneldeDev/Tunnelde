@@ -8,6 +8,7 @@ import "@/i18n/i18n";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useHosts } from "@/store/hosts";
+import { useNavigation } from "@/store/navigation";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 
@@ -21,6 +22,11 @@ beforeEach(() => {
   });
   useSettings.setState({ settings: DEFAULT_SETTINGS });
   useHosts.setState({ hosts: [] });
+  useNavigation.setState({
+    activeSidebar: "hosts",
+    sidebarVisible: false,
+    visitedSidebars: ["hosts"],
+  });
 });
 
 describe("CommandPalette", () => {
@@ -50,5 +56,15 @@ describe("CommandPalette", () => {
       target: { value: "zzzz" },
     });
     expect(screen.getByText("No command matches")).toBeTruthy();
+  });
+
+  it("opens the trusted-host sidebar without creating a tab", () => {
+    render(<CommandPalette open onClose={() => undefined} />);
+    const input = screen.getByPlaceholderText("Type a command");
+    fireEvent.change(input, { target: { value: "Trusted hosts" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(useNavigation.getState().activeSidebar).toBe("knownHosts");
+    expect(useNavigation.getState().sidebarVisible).toBe(true);
+    expect(useWorkspace.getState().tabs).toEqual([]);
   });
 });

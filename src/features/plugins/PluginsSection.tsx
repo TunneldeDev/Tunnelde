@@ -1,13 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
-import { FolderOpen, LayoutPanelLeft, Play, Plus, RefreshCw, Square, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ChevronRight,
+  FolderOpen,
+  LayoutPanelLeft,
+  Package,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Square,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
+import { Input } from "@/components/ui/form/Field";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { StatusDot } from "@/components/ui/display/Misc";
 import { translateError } from "@/lib/api/errors";
@@ -28,7 +40,7 @@ const STATUS_LABEL = {
   failed: "plugins.failed",
 } as const;
 
-export function PluginsSection() {
+export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
   const { t } = useTranslation();
   const items = usePlugins((state) => state.items);
   const busyIds = usePlugins((state) => state.busyIds);
@@ -40,12 +52,14 @@ export function PluginsSection() {
   const run = usePlugins((state) => state.run);
   const reload = usePlugins((state) => state.reload);
   const install = usePlugins((state) => state.install);
+  const apply = usePlugins((state) => state.apply);
   const confirm = useDialogs((state) => state.confirm);
   const [path, setPath] = useState<string | null>(null);
   const [preview, setPreview] = useState<Awaited<ReturnType<typeof api.pluginInspect>> | null>(
     null,
   );
   const [inspectError, setInspectError] = useState<string | null>(null);
+  const [inspectEpoch, setInspectEpoch] = useState(0);
   const [localInstalling, setLocalInstalling] = useState(false);
   const localInstallLock = useRef(false);
   const sectionRef = useRef<HTMLElement>(null);
@@ -54,14 +68,37 @@ export function PluginsSection() {
   const [installing, setInstalling] = useState<string[]>([]);
   const marketInstallLocks = useRef(new Set<string>());
   const openPluginView = useWorkspace((state) => state.openPluginView);
+  const [query, setQuery] = useState("");
+  const [scope, setScope] = useState<"installed" | "market">("installed");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [marketEpoch, setMarketEpoch] = useState(0);
+  const tabsId = useId();
+  const search = query.trim().toLocaleLowerCase();
+  const matches = (entry: { id: string; name: string; description?: string | null }) =>
+    !search ||
+    `${entry.id} ${entry.name} ${entry.description ?? ""}`.toLocaleLowerCase().includes(search);
+  const visibleItems = sidebar ? items.filter(matches) : items;
+  const visibleMarket = sidebar ? (market ?? []).filter(matches) : (market ?? []);
   const choosePath = (value: string | null) => {
     setPreview(null);
     setInspectError(null);
     setPath(value);
+    setInspectEpoch((current) => current + 1);
+  };
+  const refreshMarket = () => {
+    setMarketError(false);
+    setMarketEpoch((value) => value + 1);
   };
 
   useEffect(() => {
-    void load();
+    let alive = true;
+    void load().finally(() => {
+      if (alive) setLoaded(true);
+    });
+    return () => {
+      alive = false;
+    };
   }, [load]);
 
   useEffect(() => {
@@ -80,14 +117,14 @@ export function PluginsSection() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [marketEpoch]);
 
   const installFromMarket = async (entry: MarketEntry) => {
     if (marketInstallLocks.current.has(entry.id)) return;
     marketInstallLocks.current.add(entry.id);
     setInstalling([...marketInstallLocks.current]);
     try {
-      await installMarketplaceEntry(entry);
+      apply(await installMarketplaceEntry(entry));
       await load();
       toast(t("plugins.installed"), "success");
     } catch (error) {
@@ -113,7 +150,7 @@ export function PluginsSection() {
     return () => {
       alive = false;
     };
-  }, [path]);
+  }, [path, inspectEpoch]);
 
   const pickLocal = async (archive: boolean) => {
     try {
@@ -160,7 +197,7 @@ export function PluginsSection() {
             x / window.devicePixelRatio,
             y / window.devicePixelRatio,
           );
-          if (!hit?.closest(".plugins-section, .plugin-install-dialog")) return;
+          if (!hit?.closest(".plugins-section, .plugins-sidebar, .plugin-install-dialog")) return;
           const first = event.payload.paths[0];
           if (first) {
             choosePath(first);
@@ -199,116 +236,325 @@ export function PluginsSection() {
   };
 
   return (
-    <section className="settings-section plugins-section" ref={sectionRef}>
-      <div className="settings-section__head">
-        <h2 className="settings-section__title">{t("settings.plugins")}</h2>
-        <div className="settings-actions settings-actions--inline">
-          <Button
-            variant="primary"
-            size="sm"
-            leading={<Plus size={13} />}
-            onClick={() => choosePath("")}
+    <section
+      className={sidebar ? "plugins-sidebar" : "settings-section plugins-section"}
+      ref={sectionRef}
+      aria-label={t("settings.plugins")}
+    >
+      {sidebar ? (
+        <>
+          <header className="sidebar__head plugins-sidebar__head">
+            <h2 className="sidebar__title">{t("settings.plugins")}</h2>
+            <IconButton label={t("plugins.installTitle")} size="sm" onClick={() => choosePath("")}>
+              <Plus size={14} />
+            </IconButton>
+            <IconButton
+              label={t("plugins.reload")}
+              size="sm"
+              disabled={reloading}
+              onClick={() => {
+                void reload();
+                refreshMarket();
+              }}
+            >
+              <RefreshCw size={13} />
+            </IconButton>
+            <IconButton
+              label={t("plugins.openFolder")}
+              size="sm"
+              onClick={() =>
+                void api.pluginOpenDir().catch((error) => toast(translateError(error), "error"))
+              }
+            >
+              <FolderOpen size={14} />
+            </IconButton>
+          </header>
+          <div className="sidebar__search">
+            <div className="sidebar__filter">
+              <Search size={13} aria-hidden="true" />
+              <Input
+                aria-label={t("plugins.search")}
+                placeholder={t("plugins.search")}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </div>
+          </div>
+          <div
+            className="plugins-sidebar__tabs"
+            role="tablist"
+            aria-label={t("settings.plugins")}
+            onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              const next =
+                event.key === "Home"
+                  ? "installed"
+                  : event.key === "End"
+                    ? "market"
+                    : scope === "installed"
+                      ? "market"
+                      : "installed";
+              setScope(next);
+              event.currentTarget
+                .querySelector<HTMLButtonElement>(`[data-scope="${next}"]`)
+                ?.focus();
+            }}
           >
-            {t("plugins.install")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            leading={<RefreshCw size={13} />}
-            disabled={reloading}
-            onClick={() => void reload()}
-          >
-            {t("plugins.reload")}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            leading={<FolderOpen size={13} />}
-            onClick={() => void api.pluginOpenDir().catch(() => undefined)}
-          >
-            {t("plugins.openFolder")}
-          </Button>
+            <button
+              id={`${tabsId}-installed`}
+              type="button"
+              role="tab"
+              data-scope="installed"
+              aria-selected={scope === "installed"}
+              aria-controls={`${tabsId}-installed-panel`}
+              tabIndex={scope === "installed" ? 0 : -1}
+              onClick={() => setScope("installed")}
+            >
+              {t("plugins.installedTab")}
+              <span>{items.length}</span>
+            </button>
+            <button
+              id={`${tabsId}-market`}
+              type="button"
+              role="tab"
+              data-scope="market"
+              aria-selected={scope === "market"}
+              aria-controls={`${tabsId}-market-panel`}
+              tabIndex={scope === "market" ? 0 : -1}
+              onClick={() => setScope("market")}
+            >
+              {t("plugins.marketplace")}
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="settings-section__head">
+          <h2 className="settings-section__title">{t("settings.plugins")}</h2>
+          <div className="settings-actions settings-actions--inline">
+            <Button
+              variant="primary"
+              size="sm"
+              leading={<Plus size={13} />}
+              onClick={() => choosePath("")}
+            >
+              {t("plugins.install")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              leading={<RefreshCw size={13} />}
+              disabled={reloading}
+              onClick={() => void reload()}
+            >
+              {t("plugins.reload")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              leading={<FolderOpen size={13} />}
+              onClick={() => void api.pluginOpenDir().catch(() => undefined)}
+            >
+              {t("plugins.openFolder")}
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
 
-      <div className="plugin-list">
-        {items.length === 0 ? <p className="plugin-empty">{t("plugins.empty")}</p> : null}
+      {!sidebar || scope === "installed" ? (
+        <div
+          className="plugin-list"
+          role={sidebar ? "tabpanel" : undefined}
+          id={`${tabsId}-installed-panel`}
+          aria-labelledby={sidebar ? `${tabsId}-installed` : undefined}
+          aria-label={sidebar ? undefined : t("plugins.installedTab")}
+          aria-busy={!loaded || reloading}
+        >
+          {sidebar && !loaded ? (
+            <p className="plugins-sidebar__empty" role="status">
+              {t("common.loading")}…
+            </p>
+          ) : null}
+          {loaded && visibleItems.length === 0 ? (
+            <p className={sidebar ? "plugins-sidebar__empty" : "plugin-empty"}>
+              {t(search ? "common.noResults" : "plugins.empty")}
+            </p>
+          ) : null}
 
-        {items.map((plugin) => {
-          const output = outputs[plugin.id];
-          const running = plugin.status === "running";
-          return (
-            <article className="plugin-card" key={plugin.id}>
-              <header className="plugin-card__head">
-                <StatusDot tone={STATUS_TONE[plugin.status]} />
-                <span className="plugin-card__name">{plugin.name}</span>
-                <span className="plugin-card__version">{plugin.version}</span>
-                <span className="plugin-card__status">{t(STATUS_LABEL[plugin.status])}</span>
-                <Button
-                  variant={running ? "secondary" : "primary"}
-                  size="sm"
-                  leading={running ? <Square size={11} /> : <Play size={11} />}
-                  disabled={busyIds.includes(plugin.id)}
-                  onClick={() => void (running ? stop(plugin.id) : start(plugin.id))}
-                >
-                  {running ? t("plugins.stop") : t("plugins.start")}
-                </Button>
-                <IconButton
-                  label={t("plugins.uninstall")}
-                  size="sm"
-                  danger
-                  disabled={busyIds.includes(plugin.id)}
-                  onClick={() => uninstall(plugin)}
-                >
-                  <Trash2 size={12} />
-                </IconButton>
-              </header>
-
-              {plugin.description ? (
-                <p className="plugin-card__desc">{plugin.description}</p>
-              ) : null}
-              {plugin.error ? <p className="plugin-card__error">{plugin.error}</p> : null}
-
-              {plugin.commands.length > 0 || plugin.permissions.length > 0 ? (
-                <div className="plugin-card__row">
-                  {plugin.views.map((view) => (
-                    <Button
-                      key={view.id}
-                      variant="ghost"
-                      size="sm"
-                      leading={<LayoutPanelLeft size={12} />}
-                      disabled={!running}
-                      onClick={() => openPluginView(plugin.id, view.id, view.title)}
-                    >
-                      {view.title}
-                    </Button>
-                  ))}
-                  {plugin.commands.map((command) => (
-                    <Button
-                      key={command.id}
-                      variant="ghost"
-                      size="sm"
-                      disabled={!running || busyIds.includes(plugin.id)}
-                      onClick={() => void run(plugin.id, command.id)}
-                    >
-                      {command.title}
-                    </Button>
-                  ))}
-                  {plugin.permissions.length > 0 ? (
-                    <span className="plugin-card__permissions">
-                      {plugin.permissions.join(" · ")}
+          {visibleItems.map((plugin) => {
+            const output = outputs[plugin.id];
+            const running = plugin.status === "running";
+            const busy = busyIds.includes(plugin.id);
+            if (sidebar)
+              return (
+                <article className="plugins-sidebar__plugin" key={plugin.id}>
+                  <button
+                    type="button"
+                    className="plugins-sidebar__plugin-row"
+                    aria-expanded={selected === plugin.id}
+                    onClick={() => setSelected(selected === plugin.id ? null : plugin.id)}
+                  >
+                    <Package size={23} className="plugins-sidebar__package" aria-hidden="true" />
+                    <span className="plugins-sidebar__identity">
+                      <strong title={plugin.name}>{plugin.name}</strong>
+                      <span>
+                        {plugin.version}
+                        <span className="plugins-sidebar__status">
+                          <StatusDot tone={STATUS_TONE[plugin.status]} />
+                          {t(STATUS_LABEL[plugin.status])}
+                        </span>
+                      </span>
                     </span>
+                    <ChevronRight
+                      size={13}
+                      className={selected === plugin.id ? "is-open" : undefined}
+                      aria-hidden="true"
+                    />
+                  </button>
+                  {selected === plugin.id ? (
+                    <div className="plugins-sidebar__details">
+                      {plugin.description ? (
+                        <p className="plugins-sidebar__description">{plugin.description}</p>
+                      ) : null}
+                      {plugin.error ? (
+                        <p className="plugin-card__error" role="alert">
+                          {plugin.error}
+                        </p>
+                      ) : null}
+                      <div className="plugins-sidebar__actions">
+                        <Button
+                          size="sm"
+                          variant={running ? "secondary" : "primary"}
+                          leading={running ? <Square size={11} /> : <Play size={11} />}
+                          disabled={busy}
+                          onClick={() => void (running ? stop(plugin.id) : start(plugin.id))}
+                        >
+                          {t(running ? "plugins.stop" : "plugins.start")}
+                        </Button>
+                        <IconButton
+                          label={t("plugins.uninstall")}
+                          size="sm"
+                          disabled={busy}
+                          danger
+                          onClick={() => uninstall(plugin)}
+                        >
+                          <Trash2 size={12} />
+                        </IconButton>
+                      </div>
+                      {plugin.views.map((view) => (
+                        <Button
+                          key={view.id}
+                          variant="ghost"
+                          size="sm"
+                          leading={<LayoutPanelLeft size={12} />}
+                          disabled={!running || busy}
+                          onClick={() => openPluginView(plugin.id, view.id, view.title)}
+                        >
+                          {view.title}
+                        </Button>
+                      ))}
+                      {plugin.commands.map((command) => (
+                        <Button
+                          key={command.id}
+                          variant="ghost"
+                          size="sm"
+                          disabled={!running || busy}
+                          onClick={() => void run(plugin.id, command.id)}
+                        >
+                          {command.title}
+                        </Button>
+                      ))}
+                      {plugin.permissions.length ? (
+                        <p className="plugins-sidebar__permissions">
+                          {t("plugins.permissions")}: {plugin.permissions.join(" · ")}
+                        </p>
+                      ) : null}
+                      {output ? (
+                        <pre className={cn("plugin-output", output.error && "is-error")}>
+                          {output.text}
+                        </pre>
+                      ) : null}
+                    </div>
                   ) : null}
-                </div>
-              ) : null}
+                </article>
+              );
+            return (
+              <article className="plugin-card" key={plugin.id}>
+                <header className="plugin-card__head">
+                  <StatusDot tone={STATUS_TONE[plugin.status]} />
+                  <span className="plugin-card__name">{plugin.name}</span>
+                  <span className="plugin-card__version">{plugin.version}</span>
+                  <span className="plugin-card__status">{t(STATUS_LABEL[plugin.status])}</span>
+                  <Button
+                    variant={running ? "secondary" : "primary"}
+                    size="sm"
+                    leading={running ? <Square size={11} /> : <Play size={11} />}
+                    disabled={busyIds.includes(plugin.id)}
+                    onClick={() => void (running ? stop(plugin.id) : start(plugin.id))}
+                  >
+                    {running ? t("plugins.stop") : t("plugins.start")}
+                  </Button>
+                  <IconButton
+                    label={t("plugins.uninstall")}
+                    size="sm"
+                    danger
+                    disabled={busyIds.includes(plugin.id)}
+                    onClick={() => uninstall(plugin)}
+                  >
+                    <Trash2 size={12} />
+                  </IconButton>
+                </header>
 
-              {output ? (
-                <pre className={cn("plugin-output", output.error && "is-error")}>{output.text}</pre>
-              ) : null}
-            </article>
-          );
-        })}
-      </div>
+                {plugin.description ? (
+                  <p className="plugin-card__desc">{plugin.description}</p>
+                ) : null}
+                {plugin.error ? <p className="plugin-card__error">{plugin.error}</p> : null}
+
+                {plugin.commands.length > 0 ||
+                plugin.views.length > 0 ||
+                plugin.permissions.length > 0 ? (
+                  <div className="plugin-card__row">
+                    {plugin.views.map((view) => (
+                      <Button
+                        key={view.id}
+                        variant="ghost"
+                        size="sm"
+                        leading={<LayoutPanelLeft size={12} />}
+                        disabled={!running}
+                        onClick={() => openPluginView(plugin.id, view.id, view.title)}
+                      >
+                        {view.title}
+                      </Button>
+                    ))}
+                    {plugin.commands.map((command) => (
+                      <Button
+                        key={command.id}
+                        variant="ghost"
+                        size="sm"
+                        disabled={!running || busyIds.includes(plugin.id)}
+                        onClick={() => void run(plugin.id, command.id)}
+                      >
+                        {command.title}
+                      </Button>
+                    ))}
+                    {plugin.permissions.length > 0 ? (
+                      <span className="plugin-card__permissions">
+                        {plugin.permissions.join(" · ")}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {output ? (
+                  <pre className={cn("plugin-output", output.error && "is-error")}>
+                    {output.text}
+                  </pre>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
 
       {path !== null ? (
         <Dialog
@@ -379,30 +625,62 @@ export function PluginsSection() {
         </Dialog>
       ) : null}
 
-      <div className="settings-subsection">
-        <h3 className="settings-subtitle">{t("plugins.marketplace")}</h3>
-        {marketError ? (
-          <p className="settings-hint">{t("plugins.marketplaceUnavailable")}</p>
-        ) : null}
-        {market && market.length === 0 && !marketError ? (
-          <p className="settings-hint">{t("plugins.marketplaceEmpty")}</p>
-        ) : null}
-        {(market ?? []).map((entry) => (
-          <div className="market-row" key={entry.id}>
-            <span className="market-row__name">{entry.name}</span>
-            <span className="market-row__version">{entry.version}</span>
-            <span className="market-row__desc">{entry.description ?? ""}</span>
-            <Button
-              variant="secondary"
-              size="sm"
-              disabled={installing.includes(entry.id)}
-              onClick={() => void installFromMarket(entry)}
-            >
-              {t("plugins.install")}
-            </Button>
-          </div>
-        ))}
-      </div>
+      {!sidebar || scope === "market" ? (
+        <div
+          className={sidebar ? "plugins-sidebar__market" : "settings-subsection"}
+          role={sidebar ? "tabpanel" : undefined}
+          id={`${tabsId}-market-panel`}
+          aria-labelledby={sidebar ? `${tabsId}-market` : undefined}
+          aria-label={sidebar ? undefined : t("plugins.marketplace")}
+        >
+          {!sidebar ? <h3 className="settings-subtitle">{t("plugins.marketplace")}</h3> : null}
+          {sidebar && !market && !marketError ? (
+            <p className="plugins-sidebar__empty" role="status">
+              {t("common.loading")}…
+            </p>
+          ) : null}
+          {marketError ? (
+            <div className={sidebar ? "plugins-sidebar__empty" : "settings-hint"}>
+              <p>{t("plugins.marketplaceUnavailable")}</p>
+              <Button size="sm" variant="ghost" onClick={refreshMarket}>
+                {t("common.retry")}
+              </Button>
+            </div>
+          ) : null}
+          {market && market.length === 0 && !marketError ? (
+            <p className={sidebar ? "plugins-sidebar__empty" : "settings-hint"}>
+              {t("plugins.marketplaceEmpty")}
+            </p>
+          ) : null}
+          {market && market.length > 0 && visibleMarket.length === 0 ? (
+            <p className="plugins-sidebar__empty">{t("common.noResults")}</p>
+          ) : null}
+          {!marketError &&
+            visibleMarket.map((entry) => (
+              <div className="market-row" key={entry.id}>
+                <span className="market-row__name">{entry.name}</span>
+                <span className="market-row__version">{entry.version}</span>
+                <span className="market-row__desc">{entry.description ?? ""}</span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={
+                    installing.includes(entry.id) || items.some((item) => item.id === entry.id)
+                  }
+                  onClick={() => void installFromMarket(entry)}
+                >
+                  {t(
+                    items.some((item) => item.id === entry.id)
+                      ? "plugins.installedTab"
+                      : installing.includes(entry.id)
+                        ? "plugins.installing"
+                        : "plugins.install",
+                  )}
+                </Button>
+              </div>
+            ))}
+        </div>
+      ) : null}
     </section>
   );
 }

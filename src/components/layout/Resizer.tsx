@@ -20,23 +20,25 @@ interface ResizerProps {
  * are persisted once on release.
  */
 export function Resizer({ value, min, max, edge, label, onChange, onCommit }: ResizerProps) {
-  const drag = useRef({ startX: 0, startValue: 0, latest: 0, active: false });
+  const drag = useRef({ startX: 0, startValue: 0, latest: 0, active: false, pointerId: -1 });
 
   const clamp = (next: number) => Math.round(Math.min(max, Math.max(min, next)));
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || drag.current.active) return;
     event.preventDefault();
     drag.current = {
       startX: event.clientX,
       startValue: value,
       latest: value,
       active: true,
+      pointerId: event.pointerId,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
   const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current.active) {
+    if (!drag.current.active || event.pointerId !== drag.current.pointerId) {
       return;
     }
     // A scaled display reports fractional client coordinates; keep whole pixels
@@ -51,11 +53,13 @@ export function Resizer({ value, min, max, edge, label, onChange, onCommit }: Re
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current.active) {
+    if (!drag.current.active || event.pointerId !== drag.current.pointerId) {
       return;
     }
     drag.current.active = false;
-    event.currentTarget.releasePointerCapture(event.pointerId);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
     // Commit what the drag ended on, not the value the render started with.
     onCommit(drag.current.latest);
   };
@@ -73,6 +77,7 @@ export function Resizer({ value, min, max, edge, label, onChange, onCommit }: Re
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={onPointerUp}
+      onLostPointerCapture={onPointerUp}
     />
   );
 }

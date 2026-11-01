@@ -123,6 +123,56 @@
 .activitybar__spacer {
   flex: 1;
 }
+.sidebar-view {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--td-sidebar-w);
+  width: var(--td-sidebar-w);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--td-panel);
+  border-right: 1px solid var(--td-border);
+}
+.sidebar-view[hidden] {
+  display: none;
+}
+.sidebar-view > .sidebar {
+  flex: 1 1 auto;
+  width: 100%;
+  border-right: 0;
+}
+.trusted-hosts-sidebar {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.trusted-hosts-sidebar .sidebar__body {
+  padding-inline: 8px;
+}
+.trusted-hosts-sidebar .known-host {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 6px;
+  height: auto;
+  padding: 8px 4px;
+}
+.trusted-hosts-sidebar .known-host__address {
+  grid-area: 1 / 1;
+}
+.trusted-hosts-sidebar .known-host__algorithm {
+  grid-area: 2 / 1;
+}
+.trusted-hosts-sidebar .known-host__fingerprint {
+  grid-area: 3 / 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trusted-hosts-sidebar .known-host > .td-icon-btn {
+  grid-area: 1 / 2;
+}
 .workspace > .pane,
 .workspace > .pane-layout {
   flex: 1;

@@ -250,7 +250,11 @@
   },
   "terminal": {
     "connect": "Connect",
-    "disconnect": "Disconnect"
+    "disconnect": "Disconnect",
+    "copy": "Copy",
+    "paste": "Paste",
+    "selectAll": "Select all",
+    "pasteFailed": "Could not read the clipboard"
   },
   "ssh": {
     "closed": "session closed",
@@ -265,6 +269,10 @@
     "keyLoad": "The private key could not be read",
     "sessionMissing": "Session is gone",
     "sessionBusy": "The session is busy",
+    "ptyRejected": "The server refused an interactive terminal",
+    "shellRejected": "The server refused to start a shell",
+    "channelClosed": "The server closed the terminal channel",
+    "startupOutputLimit": "Terminal startup output exceeded the limit",
     "invalidPayload": "Invalid terminal input",
     "noHostKey": "The server did not present a host key",
     "agentUnsupported": "Agent authentication is not available yet"
@@ -358,6 +366,8 @@
     "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?"
   },
   "plugins": {
+    "search": "Search plugins",
+    "installedTab": "Installed",
     "reload": "Reload",
     "openFolder": "Open folder",
     "empty": "No plugins installed",
@@ -413,6 +423,9 @@
     "title": "Plugin",
     "refresh": "Refresh",
     "empty": "No content"
+  },
+  "clipboard": {
+    "unavailable": "Could not access the system clipboard"
   },
   "menu": {
     "edit": "Edit",

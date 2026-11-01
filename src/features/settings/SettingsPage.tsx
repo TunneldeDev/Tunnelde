@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/form/Button";
 import { Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { Segmented, Stepper, SwatchPicker } from "@/components/ui/form/Segmented";
-import { PluginsSection } from "@/features/plugins/PluginsSection";
 import { validateUserCss } from "@/lib/prefs/appearance";
 import { MONO_FONT_OPTIONS } from "@/lib/prefs/defaults";
 import { translateError } from "@/lib/api/errors";
@@ -21,17 +20,12 @@ import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
-import { useNavigation } from "@/store/navigation";
+import { useNavigation, type SettingsSection } from "@/store/navigation";
 
-type Section =
-  "general" | "appearance" | "files" | "plugins" | "hosts" | "css" | "updates" | "advanced";
-
-const SECTIONS: Section[] = [
+const SECTIONS: SettingsSection[] = [
   "general",
   "appearance",
   "files",
-  "plugins",
-  "hosts",
   "css",
   "updates",
   "advanced",
@@ -41,8 +35,6 @@ const SECTION_KEYS = {
   general: "settings.general",
   appearance: "settings.appearance",
   files: "settings.files",
-  plugins: "settings.plugins",
-  hosts: "settings.knownHosts",
   css: "settings.css",
   updates: "settings.updatesSection",
   advanced: "settings.advanced",
@@ -469,19 +461,6 @@ function AdvancedSection() {
   );
 }
 
-function TrustedHostsSection() {
-  const { t } = useTranslation();
-  const openPage = useWorkspace((state) => state.openPage);
-
-  return (
-    <Section title={t("settings.knownHosts")}>
-      <Button variant="secondary" onClick={() => openPage("knownHosts")}>
-        {t("settings.knownHosts")}
-      </Button>
-    </Section>
-  );
-}
-
 export function SettingsPage() {
   const { t } = useTranslation();
   const section = useNavigation((state) => state.settingsSection);
@@ -505,8 +484,6 @@ export function SettingsPage() {
         {section === "general" ? <GeneralSection /> : null}
         {section === "appearance" ? <AppearanceSection /> : null}
         {section === "files" ? <FilesSection /> : null}
-        {section === "plugins" ? <PluginsSection /> : null}
-        {section === "hosts" ? <TrustedHostsSection /> : null}
         {section === "css" ? <CssSection /> : null}
         {section === "updates" ? <UpdatesSection /> : null}
         {section === "advanced" ? <AdvancedSection /> : null}

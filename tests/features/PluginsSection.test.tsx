@@ -37,13 +37,21 @@ const { plugin, apiMock } = vi.hoisted(() => {
 });
 
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock, isTauri: () => false }));
+vi.mock("@/lib/plugins/marketplace", () => ({
+  fetchMarketplace: vi.fn().mockResolvedValue([]),
+  installMarketplaceEntry: vi.fn(),
+}));
 
 import "@/i18n/i18n";
 import { PluginsSection } from "@/features/plugins/PluginsSection";
+import { PluginsSidebar } from "@/features/plugins/PluginsSidebar";
 import { usePlugins } from "@/store/plugins";
+import { useWorkspace } from "@/store/workspace";
+import { fetchMarketplace } from "@/lib/plugins/marketplace";
 
 beforeEach(() => {
-  usePlugins.setState({ items: [], busy: null, outputs: {} });
+  vi.mocked(fetchMarketplace).mockResolvedValue([]);
+  usePlugins.setState({ items: [], busy: null, busyIds: [], reloading: false, outputs: {} });
   apiMock.pluginsList.mockResolvedValue([plugin as PluginInfo]);
   apiMock.pluginStart.mockResolvedValue({ ...plugin, status: "running" } as PluginInfo);
   apiMock.pluginStop.mockResolvedValue(plugin as PluginInfo);
@@ -53,6 +61,63 @@ beforeEach(() => {
   apiMock.pluginPickFolder.mockResolvedValue(null);
   apiMock.pluginInspect.mockResolvedValue(plugin);
   apiMock.pluginInstall.mockResolvedValue(plugin);
+});
+
+describe("PluginsSidebar", () => {
+  it("searches installed plugins in its own sidebar and keeps details collapsed", async () => {
+    const { container } = render(<PluginsSidebar />);
+    expect(await screen.findByText("Hello")).toBeTruthy();
+    expect(container.querySelector(".plugins-sidebar")).toBeTruthy();
+    expect(container.querySelector(".settings-section")).toBeNull();
+    expect(screen.queryByText("Say hello")).toBeNull();
+    const search = screen.getByRole("textbox", { name: "Search plugins" });
+    fireEvent.change(search, { target: { value: "not-installed" } });
+    expect(screen.queryByText("Hello")).toBeNull();
+    expect(screen.getByText("No matches")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "minimal" } });
+    expect(screen.getByText("Hello")).toBeTruthy();
+  });
+
+  it("starts the selected plugin and opens its view in the workspace", async () => {
+    const openView = vi.fn();
+    useWorkspace.setState({ openPluginView: openView });
+    render(<PluginsSidebar />);
+    fireEvent.click((await screen.findByText("Hello")).closest("button")!);
+    const view = screen.getByRole("button", { name: "Hello panel" }) as HTMLButtonElement;
+    expect(view.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Start" }));
+    await waitFor(() => expect(view.disabled).toBe(false));
+    fireEvent.click(view);
+    expect(openView).toHaveBeenCalledWith("hello", "hello", "Hello panel");
+    expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  });
+
+  it("offers installation through the package preview dialog", async () => {
+    render(<PluginsSidebar />);
+    await screen.findByText("Hello");
+    fireEvent.click(screen.getByRole("button", { name: "Install plugin" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: /archive/i }));
+    expect(await within(dialog).findByText("Hello")).toBeTruthy();
+    expect(apiMock.pluginInspect).toHaveBeenCalledWith("C:/plugins/hello.zip");
+  });
+
+  it("switches to the empty marketplace with standard tab keyboard navigation", async () => {
+    render(<PluginsSidebar />);
+    await screen.findByText("Hello");
+    const installed = screen.getByRole("tab", { name: /Installed/ });
+    installed.focus();
+    fireEvent.keyDown(installed, { key: "ArrowRight" });
+    const market = screen.getByRole("tab", { name: "Marketplace" });
+    expect(document.activeElement).toBe(market);
+    expect(market.getAttribute("aria-selected")).toBe("true");
+    expect(await screen.findByText("No plugins published yet")).toBeTruthy();
+    expect(screen.queryByText("Hello")).toBeNull();
+    fireEvent.keyDown(market, { key: "Home" });
+    expect(screen.getByText("Hello")).toBeTruthy();
+    expect(installed.getAttribute("aria-selected")).toBe("true");
+  });
 });
 
 describe("PluginsSection", () => {
@@ -98,5 +163,20 @@ describe("PluginsSection", () => {
     expect(
       (within(dialog).getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled,
     ).toBe(true);
+  });
+
+  it("rechecks a package when the same archive is selected again", async () => {
+    render(<PluginsSection />);
+    fireEvent.click(screen.getByRole("button", { name: "Install" }));
+    const dialog = screen.getByRole("dialog");
+    const browse = within(dialog).getByRole("button", { name: /archive/i });
+    fireEvent.click(browse);
+    expect(await within(dialog).findByText("Hello")).toBeTruthy();
+    fireEvent.click(browse);
+    await waitFor(() => expect(apiMock.pluginInspect).toHaveBeenCalledTimes(2));
+    expect(await within(dialog).findByText("Hello")).toBeTruthy();
+    expect(
+      (within(dialog).getByRole("button", { name: "Install" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
   });
 });

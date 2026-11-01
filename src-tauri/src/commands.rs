@@ -4,6 +4,7 @@
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -36,6 +37,28 @@ const TAB_KINDS: [&str; 12] = [
 ];
 const MAX_TABS: usize = 40;
 const MAX_USER_CSS: usize = 200_000;
+
+#[tauri::command]
+pub async fn clipboard_read_text(app: AppHandle) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.clipboard()
+            .read_text()
+            .map_err(|_| AppError::internal("clipboard.unavailable"))
+    })
+    .await
+    .map_err(|_| AppError::internal("clipboard.unavailable"))?
+}
+
+#[tauri::command]
+pub async fn clipboard_write_text(app: AppHandle, text: String) -> AppResult<()> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.clipboard()
+            .write_text(text)
+            .map_err(|_| AppError::internal("clipboard.unavailable"))
+    })
+    .await
+    .map_err(|_| AppError::internal("clipboard.unavailable"))?
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -419,6 +442,11 @@ pub async fn ssh_trust(app: AppHandle, host_id: String) -> AppResult<HostKeyInfo
 #[tauri::command]
 pub async fn ssh_connect(app: AppHandle, request: SshConnectRequest) -> AppResult<SessionInfo> {
     ssh::connect(app, request).await
+}
+
+#[tauri::command]
+pub fn ssh_attach(app: AppHandle, session_id: String) -> AppResult<()> {
+    ssh::session::attach(&app, &session_id)
 }
 
 #[tauri::command]

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
-import { Blocks, Home, Server, Settings, ShieldCheck } from "lucide-react";
+import { Blocks, Server, Settings, ShieldCheck } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { useNavigation } from "@/store/navigation";
@@ -9,35 +9,36 @@ import { useWorkspace } from "@/store/workspace";
 export function ActivityBar() {
   const { t } = useTranslation();
   const visible = useNavigation((state) => state.sidebarVisible);
-  const toggle = useNavigation((state) => state.toggleSidebar);
-  const select = useNavigation((state) => state.selectSettings);
+  const activeSidebar = useNavigation((state) => state.activeSidebar);
+  const select = useNavigation((state) => state.selectSidebar);
   const openPage = useWorkspace((state) => state.openPage);
   const kind = useWorkspace((state) => state.tabs.find((tab) => tab.id === state.activeId)?.kind);
   return (
     <nav className="activitybar" aria-label={t("nav.workspace")}>
-      <IconButton label={t("sidebar.hosts")} active={visible} onClick={toggle}>
+      <IconButton
+        label={t("sidebar.hosts")}
+        active={activeSidebar === "hosts"}
+        aria-expanded={visible && activeSidebar === "hosts"}
+        aria-controls="sidebar-hosts"
+        onClick={() => select("hosts")}
+      >
         <Server size={21} />
       </IconButton>
       <IconButton
-        label={t("nav.welcome")}
-        active={kind === "welcome"}
-        onClick={() => openPage("welcome")}
-      >
-        <Home size={21} />
-      </IconButton>
-      <IconButton
         label={t("settings.knownHosts")}
-        active={kind === "knownHosts"}
-        onClick={() => openPage("knownHosts")}
+        active={activeSidebar === "knownHosts"}
+        aria-expanded={visible && activeSidebar === "knownHosts"}
+        aria-controls="sidebar-knownHosts"
+        onClick={() => select("knownHosts")}
       >
         <ShieldCheck size={21} />
       </IconButton>
       <IconButton
         label={t("settings.plugins")}
-        onClick={() => {
-          select("plugins");
-          openPage("settings");
-        }}
+        active={activeSidebar === "plugins"}
+        aria-expanded={visible && activeSidebar === "plugins"}
+        aria-controls="sidebar-plugins"
+        onClick={() => select("plugins")}
       >
         <Blocks size={21} />
       </IconButton>

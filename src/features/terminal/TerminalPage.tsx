@@ -2,6 +2,7 @@
 // Copyright (C) 2026 quyansiyuanwang (TunneldeDev)
 
 import { FitAddon } from "@xterm/addon-fit";
+import { WebglAddon } from "@xterm/addon-webgl";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { Clock, FolderTree, X } from "lucide-react";
@@ -17,12 +18,14 @@ import type { MonoFont } from "@/lib/api/types";
 import { translateError } from "@/lib/api/errors";
 import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
 import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
+import { copyText } from "@/lib/session/clipboard";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
+import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
 
 interface TerminalPageProps {
@@ -87,6 +90,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
+  const clipboardRef = useRef<{
+    copy: () => void;
+    paste: () => void;
+    selectAll: () => void;
+    hasSelection: () => boolean;
+    canPaste: () => boolean;
+  } | null>(null);
   const [closed, setClosed] = useState(false);
   const capture = useRef<CommandCapture>({ text: "", escape: 0 });
   useEffect(() => {
@@ -139,8 +149,19 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
 
     let disposed = false;
     let ended = false;
+    let registrationFailed = false;
+    setClosed(false);
     let terminal: Terminal | null = null;
     let addon: FitAddon | null = null;
+    let webgl: WebglAddon | null = null;
+    let contextLossListener: { dispose: () => void } | null = null;
+    const disposeWebgl = () => {
+      contextLossListener?.dispose();
+      contextLossListener = null;
+      const renderer = webgl;
+      webgl = null;
+      renderer?.dispose();
+    };
     let dataListener: { dispose: () => void } | null = null;
     const subscriptions: UnlistenFn[] = [];
     const pending: Uint8Array[] = [];
@@ -186,6 +207,94 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       instance.open(element);
       terminalRef.current = instance;
       fitRef.current = addon;
+      try {
+        webgl = new WebglAddon();
+        contextLossListener = webgl.onContextLoss(() => {
+          if (disposed || !webgl) {
+            return;
+          }
+          // Disposing the official addon restores xterm's DOM renderer.
+          disposeWebgl();
+          fit();
+          instance.refresh(0, Math.max(0, instance.rows - 1));
+        });
+        instance.loadAddon(webgl);
+      } catch {
+        // Remote desktops and older GPUs can lack WebGL2; keep the DOM terminal.
+        disposeWebgl();
+      }
+      const copy = () => {
+        if (!disposed && instance.hasSelection()) {
+          copyText(instance.getSelection());
+          instance.focus();
+        }
+      };
+      const paste = () => {
+        if (disposed || ended) {
+          return;
+        }
+        void (isTauri() ? api.clipboardReadText() : navigator.clipboard.readText()).then(
+          (text) => {
+            if (!disposed && !ended) {
+              // xterm preserves bracketed-paste mode and normalizes newlines.
+              instance.paste(text);
+              instance.focus();
+            }
+          },
+          () => !disposed && toast(t("terminal.pasteFailed"), "error"),
+        );
+      };
+      clipboardRef.current = {
+        copy,
+        paste,
+        selectAll: () => {
+          if (!disposed) {
+            instance.selectAll();
+            instance.focus();
+          }
+        },
+        hasSelection: () => !disposed && instance.hasSelection(),
+        canPaste: () => !disposed && !ended,
+      };
+      const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+      instance.attachCustomKeyEventHandler((event) => {
+        if (
+          event.type !== "keydown" ||
+          event.isComposing ||
+          event.keyCode === 229 ||
+          event.altKey
+        ) {
+          return true;
+        }
+        const key = event.key.toLowerCase();
+        if (!mac && !event.metaKey && key === "insert") {
+          if (event.shiftKey && !event.ctrlKey) {
+            event.preventDefault();
+            paste();
+            return false;
+          }
+          if (event.ctrlKey && !event.shiftKey) {
+            event.preventDefault();
+            copy();
+            return false;
+          }
+        }
+        const primary = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+        if (!primary) {
+          return true;
+        }
+        if (key === "v") {
+          event.preventDefault();
+          paste();
+          return false;
+        }
+        if (key === "c" && (event.shiftKey || mac || instance.hasSelection())) {
+          event.preventDefault();
+          copy();
+          return false;
+        }
+        return true;
+      });
       // Re-apply after open: a theme or font measured before the first frame
       // otherwise keeps the fallback colours and glyph metrics.
       instance.options.theme = terminalTheme(currentTheme);
@@ -226,16 +335,40 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
 
     // Listen before the terminal exists so early output is buffered, not lost.
     if (isTauri()) {
-      void events
+      const retain = (unlisten: UnlistenFn) => {
+        if (disposed || registrationFailed) {
+          unlisten();
+        } else {
+          subscriptions.push(unlisten);
+        }
+      };
+      const fail = (error: unknown) => {
+        if (disposed || registrationFailed) {
+          return;
+        }
+        registrationFailed = true;
+        ended = true;
+        setClosed(true);
+        subscriptions.splice(0).forEach((unlisten) => unlisten());
+        const message = translateError(error);
+        toast(message, "error");
+        write(new TextEncoder().encode(`\r\n[${message}]\r\n`));
+        // Keep the failed terminal visible, but release its remote PTY.
+        void api.sshDisconnect(sessionId).catch(() => undefined);
+      };
+      const dataReady = events
         .onSshData((payload) => {
           if (!disposed && payload.sessionId === sessionId) {
             write(decodeBase64(payload.data));
           }
         })
-        .then((unlisten) => (disposed ? unlisten() : subscriptions.push(unlisten)))
-        .catch((error: unknown) => !disposed && toast(translateError(error), "error"));
+        .then(retain)
+        .catch((error: unknown) => {
+          fail(error);
+          throw error;
+        });
 
-      void events
+      const closedReady = events
         .onSshClosed((payload) => {
           if (disposed || payload.sessionId !== sessionId) {
             return;
@@ -244,8 +377,18 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           setClosed(true);
           write(new TextEncoder().encode(`\r\n\x1b[38;5;245m[${t("ssh.closed")}]\x1b[0m\r\n`));
         })
-        .then((unlisten) => (disposed ? unlisten() : subscriptions.push(unlisten)))
-        .catch((error: unknown) => !disposed && toast(translateError(error), "error"));
+        .then(retain)
+        .catch((error: unknown) => {
+          fail(error);
+          throw error;
+        });
+      void Promise.all([dataReady, closedReady])
+        .then(async () => {
+          if (!disposed && !registrationFailed && !ended) {
+            await api.sshAttach(sessionId);
+          }
+        })
+        .catch(fail);
     }
 
     observer = new ResizeObserver(() => {
@@ -270,9 +413,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       observer?.disconnect();
       subscriptions.forEach((unlisten) => unlisten());
       dataListener?.dispose();
+      disposeWebgl();
       terminal?.dispose();
       terminalRef.current = null;
       fitRef.current = null;
+      clipboardRef.current = null;
       pending.length = 0;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -358,7 +503,27 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <X size={15} />
         </IconButton>
       </header>
-      <div className="terminal-host" ref={containerRef} />
+      <div
+        className="terminal-host"
+        ref={containerRef}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const actions = clipboardRef.current;
+          if (!actions) {
+            return;
+          }
+          useContextMenu.getState().open(event.clientX, event.clientY, [
+            {
+              label: t("terminal.copy"),
+              disabled: !actions.hasSelection(),
+              onSelect: actions.copy,
+            },
+            { label: t("terminal.paste"), disabled: !actions.canPaste(), onSelect: actions.paste },
+            { label: t("terminal.selectAll"), onSelect: actions.selectAll },
+          ]);
+        }}
+      />
     </div>
   );
 }

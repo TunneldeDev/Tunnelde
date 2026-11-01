@@ -30,6 +30,7 @@ vi.mock("@/lib/plugins/marketplace", () => marketMock);
 
 import "@/i18n/i18n";
 import { PluginsSection } from "@/features/plugins/PluginsSection";
+import { PluginsSidebar } from "@/features/plugins/PluginsSidebar";
 import { usePlugins } from "@/store/plugins";
 
 const entry = {
@@ -41,14 +42,77 @@ const entry = {
   sha256: "997c8382c9240692c6edaafbf4e2c34c4b1388d76a1b255ea97d6ba5bc6d5113",
 };
 
+const installedInfo = (item = entry) => ({
+  ...item,
+  apiVersion: 1,
+  commands: [],
+  views: [],
+  permissions: [],
+  status: "stopped" as const,
+  error: null,
+  path: `plugins/${item.id}`,
+});
+
 beforeEach(() => {
   usePlugins.setState({ items: [], busy: null, outputs: {} });
   apiMock.pluginsList.mockResolvedValue([]);
   marketMock.fetchMarketplace.mockReset().mockResolvedValue([entry]);
-  marketMock.installMarketplaceEntry.mockReset().mockResolvedValue({ id: "hello" });
+  marketMock.installMarketplaceEntry.mockReset().mockResolvedValue(installedInfo());
 });
 
 describe("Plugin marketplace", () => {
+  it("keeps a successful installation visible when refreshing the installed list fails", async () => {
+    const { container } = render(<PluginsSection />);
+    const row = (await screen.findByText("Hello")).closest(".market-row") as HTMLElement;
+    apiMock.pluginsList.mockRejectedValueOnce(new Error("list unavailable"));
+    fireEvent.click(within(row).getByRole("button", { name: "Install" }));
+    await waitFor(() => expect(usePlugins.getState().items[0]?.id).toBe("hello"));
+    const installed = container.querySelector(".plugin-list") as HTMLElement;
+    expect(within(installed).getByText("Hello")).toBeTruthy();
+    expect(
+      (within(row).getByRole("button", { name: "Installed" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("filters marketplace search results and prevents reinstalling an installed plugin", async () => {
+    const installed = {
+      ...entry,
+      apiVersion: 1,
+      commands: [],
+      views: [],
+      permissions: [],
+      status: "stopped",
+      error: null,
+      path: "plugins/hello",
+    };
+    apiMock.pluginsList.mockResolvedValue([installed]);
+    render(<PluginsSidebar />);
+    await screen.findByText("Hello");
+    fireEvent.click(screen.getByRole("tab", { name: "Marketplace" }));
+    const row = (await screen.findByText("Hello")).closest(".market-row") as HTMLElement;
+    expect(
+      (within(row).getByRole("button", { name: "Installed" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    fireEvent.change(screen.getByRole("textbox", { name: "Search plugins" }), {
+      target: { value: "no-such-plugin" },
+    });
+    expect(screen.queryByText("Hello")).toBeNull();
+    expect(screen.getByText("No matches")).toBeTruthy();
+    expect(marketMock.installMarketplaceEntry).not.toHaveBeenCalled();
+  });
+
+  it("retries an unavailable marketplace from the sidebar", async () => {
+    marketMock.fetchMarketplace
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce([]);
+    render(<PluginsSidebar />);
+    fireEvent.click(screen.getByRole("tab", { name: "Marketplace" }));
+    expect(await screen.findByText("Marketplace unavailable")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("No plugins published yet")).toBeTruthy();
+    expect(marketMock.fetchMarketplace).toHaveBeenCalledTimes(2);
+  });
+
   it("lists catalogue entries and installs one", async () => {
     render(<PluginsSection />);
 
@@ -76,9 +140,9 @@ describe("Plugin marketplace", () => {
     let finishSecond!: () => void;
     marketMock.installMarketplaceEntry.mockImplementation(
       (item: { id: string }) =>
-        new Promise<void>((resolve) => {
-          if (item.id === entry.id) finishFirst = resolve;
-          else finishSecond = resolve;
+        new Promise<ReturnType<typeof installedInfo>>((resolve) => {
+          if (item.id === entry.id) finishFirst = () => resolve(installedInfo(entry));
+          else finishSecond = () => resolve(installedInfo(second));
         }),
     );
     render(<PluginsSection />);

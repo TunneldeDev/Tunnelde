@@ -22,6 +22,7 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
@@ -48,6 +49,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
+            commands::clipboard_read_text,
+            commands::clipboard_write_text,
             commands::settings_get,
             commands::settings_update,
             commands::settings_reset,
@@ -78,6 +81,7 @@ pub fn run() {
             commands::ssh_probe,
             commands::ssh_trust,
             commands::ssh_connect,
+            commands::ssh_attach,
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,

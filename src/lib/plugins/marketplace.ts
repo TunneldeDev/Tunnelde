@@ -27,13 +27,31 @@ function isEntry(value: unknown): value is MarketEntry {
   );
 }
 
+function isProductionEntry(entry: MarketEntry): boolean {
+  let source: URL;
+  try {
+    source = new URL(entry.url);
+  } catch {
+    return false;
+  }
+  // Older catalogues advertised the SDK example as a marketplace release.
+  // Match only our example artifact; users may publish unrelated "Hello" plugins.
+  return !(
+    entry.id === "hello" &&
+    source.hostname === "github.com" &&
+    /^\/TunneldeDev\/Tunnelde\/releases\/download\/[^/]+\/hello-plugin\.zip$/.test(source.pathname)
+  );
+}
+
 export async function fetchMarketplace(): Promise<MarketEntry[]> {
   const response = await fetch(MARKETPLACE_INDEX_URL, { cache: "no-cache" });
   if (!response.ok) {
     throw new Error(`marketplace.index: ${response.status}`);
   }
   const payload = (await response.json()) as { plugins?: unknown };
-  return Array.isArray(payload.plugins) ? payload.plugins.filter(isEntry) : [];
+  return Array.isArray(payload.plugins)
+    ? payload.plugins.filter(isEntry).filter(isProductionEntry)
+    : [];
 }
 
 /** Downloads an archive and lets Rust verify the checksum before installing. */
