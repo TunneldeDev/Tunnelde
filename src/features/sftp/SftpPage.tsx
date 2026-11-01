@@ -3,7 +3,8 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
-  Check,
+  ChevronRight,
+  Search,
   File as FileIcon,
   FilePlus,
   Folder,
@@ -19,7 +20,7 @@ import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
-import { Menu } from "@/components/ui/overlay/Menu";
+import { FileViewMenu } from "./FileViewMenu";
 import { translateError } from "@/lib/api/errors";
 import { isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
@@ -40,9 +41,19 @@ import {
 } from "@/lib/files/dnd";
 import { fs, LOCAL_SOURCE } from "@/lib/files/fs";
 import { createPrefetchQueue } from "@/lib/files/prefetch";
-import { createFileViewSelector, visibleFiles } from "@/lib/files/view";
+import {
+  createGroupedFileViewSelector,
+  fileExtension,
+  type FileViewPreferences,
+  type FileKindFilter,
+} from "@/lib/files/view";
+import {
+  fileViewPreferenceKey,
+  readFileViewPreferences,
+  writeFileViewPreferences,
+} from "@/lib/files/preferences";
 import { copyText } from "@/lib/session/clipboard";
-import { cn, formatBytes, formatDate } from "@/lib/text/format";
+import { cn, formatBytes } from "@/lib/text/format";
 import { useContextMenu } from "@/store/contextMenu";
 import { useDialogs } from "@/store/dialogs";
 import { useFileClipboard } from "@/store/fileClipboard";
@@ -81,11 +92,16 @@ interface PaneState {
   renaming: RenameState | null;
   creating: CreateState | null;
   revealedPaths: string[];
+  filterOpen: boolean;
+  filter: string;
+  filterKind: FileKindFilter;
+  collapsedGroups: string[];
 }
 
 interface PaneModel {
   source: FsSource;
   state: PaneState;
+  view: FileViewPreferences;
 }
 
 const EMPTY: PaneState = {
@@ -101,6 +117,10 @@ const EMPTY: PaneState = {
   renaming: null,
   creating: null,
   revealedPaths: [],
+  filterOpen: false,
+  filter: "",
+  filterKind: "all",
+  collapsedGroups: [],
 };
 const NO_ENTRIES: FileEntry[] = [];
 
@@ -141,8 +161,52 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const setClip = useFileClipboard((state) => state.set);
   const openMenu = useContextMenu((state) => state.open);
   const settings = useSettings((state) => state.settings);
-  const updateSettings = useSettings((state) => state.update);
+  const [preferenceCache] = useState(() => new Map<string, FileViewPreferences>());
+  const preferenceKey = useCallback(
+    (id: PaneId, source: FsSource) => {
+      const currentSessions = useSsh.getState().sessions;
+      const ownerFor = (remoteId: string) => {
+        const hostId = currentSessions.find((item) => item.id === remoteId)?.hostId;
+        return hostId ? `host:${hostId}` : `session:${remoteId}`;
+      };
+      let windowLabel = "main";
+      try {
+        if (isTauri()) windowLabel = getCurrentWebview().label;
+      } catch {
+        /* Browser preview. */
+      }
+      return fileViewPreferenceKey(
+        windowLabel,
+        ownerFor(sessionId),
+        id,
+        source.kind === "local" ? "local" : ownerFor(source.sessionId),
+      );
+    },
+    [sessionId],
+  );
+  const preferencesFor = useCallback(
+    (id: PaneId, source: FsSource) => {
+      const key = preferenceKey(id, source);
+      let value = preferenceCache.get(key);
+      if (!value) {
+        const defaults = useSettings.getState().settings;
+        value = readFileViewPreferences(key, {
+          filesShowHidden: defaults.filesShowHidden,
+          filesFoldersFirst: defaults.filesFoldersFirst,
+          filesSortBy: defaults.filesSortBy,
+          filesSortDirection: defaults.filesSortDirection,
+        });
+        preferenceCache.set(key, value);
+      }
+      return value;
+    },
+    [preferenceKey, preferenceCache],
+  );
   const locale = i18n.resolvedLanguage ?? "en-US";
+  const dateFormatter = useMemo(
+    () => new Intl.DateTimeFormat(locale, { dateStyle: "medium" }),
+    [locale],
+  );
   const collator = useMemo(
     () => new Intl.Collator(locale, { numeric: true, sensitivity: "base" }),
     [locale],
@@ -152,13 +216,17 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     prefetchCollator.current = collator;
   }, [collator]);
   const viewSelectors = useMemo(
-    () => ({ a: createFileViewSelector(), b: createFileViewSelector() }),
+    () => ({ a: createGroupedFileViewSelector(), b: createGroupedFileViewSelector() }),
     [],
   );
 
   const [panes, setPanes] = useState<Record<PaneId, PaneModel>>(() => ({
-    a: { source: LOCAL_SOURCE, state: EMPTY },
-    b: { source: { kind: "remote", sessionId }, state: EMPTY },
+    a: { source: LOCAL_SOURCE, state: EMPTY, view: preferencesFor("a", LOCAL_SOURCE) },
+    b: {
+      source: { kind: "remote", sessionId },
+      state: EMPTY,
+      view: preferencesFor("b", { kind: "remote", sessionId }),
+    },
   }));
   const [active, setActive] = useState<PaneId>("a");
   const [dropTarget, setDropTarget] = useState<{ pane: PaneId; path: string } | null>(null);
@@ -170,6 +238,11 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const bodies = useRef<Record<PaneId, HTMLDivElement | null>>({ a: null, b: null });
   const pending = useRef(new Map<string, (() => void) | undefined>());
   const requests = useRef({ a: 0, b: 0 });
+  // A refresh must follow an in-flight navigation, whose listing can still show the old path.
+  const requested = useRef<Record<PaneId, { path: string | null; historyIndex?: number }>>({
+    a: { path: null },
+    b: { path: null },
+  });
   const mounted = useRef(true);
   const mutations = useRef(new Set<PaneId>());
   const dragOrigin = useRef<PaneId | null>(null);
@@ -206,7 +279,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       if (row && typeof row.scrollIntoView === "function") {
         row.scrollIntoView({ block: "nearest" });
       }
-      if (editing) row?.querySelector<HTMLInputElement>("input")?.focus();
+      if (editing) row?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
     });
   }, []);
 
@@ -246,13 +319,15 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       const count = preferences.preloadCount;
       const targets = [
         parentOf(listing.path),
-        ...visibleFiles(
+        ...viewSelectors[id](
           listing.entries,
-          preferences,
+          panesRef.current[id].view,
           prefetchCollator.current,
           panesRef.current[id].state.revealedPaths,
+          { query: panesRef.current[id].state.filter, kind: panesRef.current[id].state.filterKind },
+          panesRef.current[id].state.collapsedGroups,
         )
-          .filter((entry) => entry.isDir)
+          .entries.filter((entry) => entry.isDir)
           .slice(0, count)
           .map((entry) => entry.path),
       ];
@@ -265,7 +340,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         })),
       );
     },
-    [preloader, remember],
+    [preloader, remember, viewSelectors],
   );
 
   useEffect(() => {
@@ -277,17 +352,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       const pane = panesRef.current[id];
       if (pane.state.listing && !pane.state.busy) prefetch(id, pane.source, pane.state.listing);
     }
-  }, [
-    settings.preloadDirs,
-    settings.preloadCount,
-    settings.filesShowHidden,
-    settings.filesFoldersFirst,
-    settings.filesSortBy,
-    settings.filesSortDirection,
-    collator,
-    prefetch,
-    preloader,
-  ]);
+  }, [settings.preloadDirs, settings.preloadCount, collator, prefetch, preloader]);
 
   const load = useCallback(
     async (
@@ -298,6 +363,14 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       historyIndex?: number,
     ): Promise<Listing | null> => {
       const source = override ?? panesRef.current[id].source;
+      const previousPath = panesRef.current[id].state.listing?.path;
+      const destination = path ?? null;
+      const targetHistoryIndex =
+        historyIndex ??
+        (panesRef.current[id].state.busy && requested.current[id].path === destination
+          ? requested.current[id].historyIndex
+          : undefined);
+      requested.current[id] = { path: destination, historyIndex: targetHistoryIndex };
       const version = ++requests.current[id];
       const release = preloader.current?.foreground(id, path ? cacheKey(source, path) : undefined);
       const cached = path ? cache.current.get(cacheKey(source, path)) : undefined;
@@ -315,9 +388,10 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         )
           return null;
         remember(source, listing);
+        requested.current[id] = { path: listing.path };
         const current = panesRef.current[id].state;
         const history =
-          historyIndex !== undefined
+          targetHistoryIndex !== undefined
             ? current.history
             : current.history[current.historyIndex] === listing.path
               ? current.history
@@ -329,10 +403,13 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           anchor: selected?.path ?? null,
           cursor: selected?.path ?? null,
           history,
-          historyIndex: historyIndex ?? history.length - 1,
+          historyIndex: targetHistoryIndex ?? history.length - 1,
           busy: false,
           draft: null,
-          revealedPaths: current.listing?.path === listing.path ? current.revealedPaths : [],
+          revealedPaths: previousPath === listing.path ? current.revealedPaths : [],
+          ...(previousPath !== listing.path
+            ? { filter: "", filterKind: "all" as const, collapsedGroups: [] }
+            : {}),
         });
         if (selected) {
           reveal(id);
@@ -341,6 +418,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         return listing;
       } catch (error) {
         if (!mounted.current || requests.current[id] !== version) return null;
+        requested.current[id] = { path: panesRef.current[id].state.listing?.path ?? null };
         patch(id, { busy: false, error: translateError(error) });
         return null;
       } finally {
@@ -367,7 +445,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       cache.current.clear();
       for (const id of PANE_IDS) {
         if (sameSource(source, panesRef.current[id].source))
-          void load(id, panesRef.current[id].state.listing?.path ?? null);
+          void load(id, requested.current[id].path);
       }
     };
     window.addEventListener(FILES_CHANGED, onChanged);
@@ -386,7 +464,8 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         return;
       }
       const next = { ...panesRef.current };
-      for (const id of stale) next[id] = { source: LOCAL_SOURCE, state: EMPTY };
+      for (const id of stale)
+        next[id] = { source: LOCAL_SOURCE, state: EMPTY, view: preferencesFor(id, LOCAL_SOURCE) };
       panesRef.current = next;
       setPanes(next);
       for (const id of stale) {
@@ -394,7 +473,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [sessions, load]);
+  }, [sessions, load, preferencesFor]);
 
   // Both panels refresh once a transfer they started has settled.
   useEffect(() => {
@@ -414,7 +493,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       for (const id of PANE_IDS) {
         preloader.current?.invalidate();
         cache.current.clear();
-        void load(id, panesRef.current[id].state.listing?.path ?? null);
+        void load(id, requested.current[id].path);
         window.dispatchEvent(
           new CustomEvent(FILES_CHANGED, {
             detail: { source: panesRef.current[id].source, origin: instanceId },
@@ -460,28 +539,84 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     () => ({
       a: viewSelectors.a(
         panes.a.state.listing?.entries ?? NO_ENTRIES,
-        settings,
+        panes.a.view,
         collator,
         panes.a.state.revealedPaths,
+        { query: panes.a.state.filter, kind: panes.a.state.filterKind },
+        panes.a.state.collapsedGroups,
       ),
       b: viewSelectors.b(
         panes.b.state.listing?.entries ?? NO_ENTRIES,
-        settings,
+        panes.b.view,
         collator,
         panes.b.state.revealedPaths,
+        { query: panes.b.state.filter, kind: panes.b.state.filterKind },
+        panes.b.state.collapsedGroups,
       ),
     }),
-    [panes, settings, collator, viewSelectors],
+    [panes, collator, viewSelectors],
   );
 
   const visibleEntries = (id: PaneId): FileEntry[] => {
     const state = panesRef.current[id].state;
     return viewSelectors[id](
       state.listing?.entries ?? NO_ENTRIES,
-      useSettings.getState().settings,
+      panesRef.current[id].view,
       collator,
       state.revealedPaths,
-    );
+      { query: state.filter, kind: state.filterKind },
+      state.collapsedGroups,
+    ).entries;
+  };
+
+  const updateView = useCallback(
+    (id: PaneId, change: Partial<FileViewPreferences>, stateChange: Partial<PaneState> = {}) => {
+      const current = panesRef.current[id];
+      const view = { ...current.view, ...change };
+      const state = { ...current.state, revealedPaths: [], ...stateChange };
+      const entries = viewSelectors[id](
+        state.listing?.entries ?? NO_ENTRIES,
+        view,
+        collator,
+        state.revealedPaths,
+        { query: state.filter, kind: state.filterKind },
+        state.collapsedGroups,
+      ).entries;
+      const visible = new Set(entries.map((entry) => entry.path));
+      const next = {
+        ...panesRef.current,
+        [id]: {
+          ...current,
+          view,
+          state: {
+            ...state,
+            selectedPaths: state.selectedPaths.filter((path) => visible.has(path)),
+            cursor: state.cursor && visible.has(state.cursor) ? state.cursor : null,
+            anchor: state.anchor && visible.has(state.anchor) ? state.anchor : null,
+          },
+        },
+      };
+      panesRef.current = next;
+      setPanes(next);
+      if (state.listing && !state.busy) prefetch(id, current.source, state.listing);
+      if (Object.keys(change).length) {
+        const key = preferenceKey(id, current.source);
+        preferenceCache.set(key, view);
+        writeFileViewPreferences(key, view);
+      }
+    },
+    [collator, viewSelectors, prefetch, preferenceKey, preferenceCache],
+  );
+
+  const focusFilter = (id: PaneId) => {
+    patch(id, { filterOpen: true });
+    requestAnimationFrame(() => {
+      const input = pageRef.current?.querySelector<HTMLInputElement>(
+        `[data-pane="${id}"] .sftp-pane__filter input`,
+      );
+      input?.focus();
+      input?.select();
+    });
   };
 
   const selectedEntries = (id: PaneId): FileEntry[] => {
@@ -520,7 +655,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       cursor: entry.path,
       anchor: mode === "range" ? state.anchor : entry.path,
     });
-    bodies.current[id]?.focus();
+    bodies.current[id]?.focus({ preventScroll: true });
     reveal(id);
   };
 
@@ -534,7 +669,14 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   };
 
   const navigate = (id: PaneId, path: string) => {
-    patch(id, { creating: null, renaming: null, revealedPaths: [] });
+    patch(id, {
+      creating: null,
+      renaming: null,
+      revealedPaths: [],
+      filter: "",
+      filterKind: "all",
+      collapsedGroups: [],
+    });
     void load(id, path);
   };
 
@@ -543,7 +685,14 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     const index = state.historyIndex + delta;
     const path = state.history[index];
     if (path) {
-      patch(id, { creating: null, renaming: null, revealedPaths: [] });
+      patch(id, {
+        creating: null,
+        renaming: null,
+        revealedPaths: [],
+        filter: "",
+        filterKind: "all",
+        collapsedGroups: [],
+      });
       void load(id, path, null, undefined, index);
     }
   };
@@ -574,7 +723,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     );
     await Promise.all(
       PANE_IDS.filter((id) => sameSource(panesRef.current[id].source, source)).map((id) =>
-        load(id, panesRef.current[id].state.listing?.path ?? null),
+        load(id, requested.current[id].path),
       ),
     );
   };
@@ -844,18 +993,31 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     patch(id, { busy: true });
     try {
       await fs.rename(source, entry.path, target);
-      patch(id, { renaming: null, revealedPaths: [...state.revealedPaths, target] });
+      if (
+        sameSource(source, panesRef.current[id].source) &&
+        panesRef.current[id].state.listing?.path === state.listing?.path &&
+        requested.current[id].path === state.listing?.path
+      )
+        patch(id, {
+          renaming: null,
+          revealedPaths: [...panesRef.current[id].state.revealedPaths, target],
+        });
       await refreshSource(source);
       if (
         !sameSource(source, panesRef.current[id].source) ||
-        panesRef.current[id].state.listing?.path !== state.listing?.path
+        panesRef.current[id].state.listing?.path !== state.listing?.path ||
+        requested.current[id].path !== state.listing?.path
       )
         return;
       patch(id, { selectedPaths: [target], cursor: target, anchor: target });
       reveal(id, target);
-      bodies.current[id]?.focus();
+      bodies.current[id]?.focus({ preventScroll: true });
     } catch (error) {
-      if (sameSource(source, panesRef.current[id].source))
+      if (
+        sameSource(source, panesRef.current[id].source) &&
+        panesRef.current[id].state.listing?.path === state.listing?.path &&
+        requested.current[id].path === state.listing?.path
+      )
         patch(id, { error: translateError(error), busy: false });
     } finally {
       mutations.current.delete(id);
@@ -898,18 +1060,31 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       } else {
         await fs.createFile(source, target);
       }
-      patch(id, { creating: null, revealedPaths: [...state.revealedPaths, target] });
+      if (
+        sameSource(source, panesRef.current[id].source) &&
+        panesRef.current[id].state.listing?.path === directory &&
+        requested.current[id].path === directory
+      )
+        patch(id, {
+          creating: null,
+          revealedPaths: [...panesRef.current[id].state.revealedPaths, target],
+        });
       await refreshSource(source);
       if (
         !sameSource(source, panesRef.current[id].source) ||
-        panesRef.current[id].state.listing?.path !== directory
+        panesRef.current[id].state.listing?.path !== directory ||
+        requested.current[id].path !== directory
       )
         return;
       patch(id, { selectedPaths: [target], cursor: target, anchor: target });
       reveal(id, target);
-      bodies.current[id]?.focus();
+      bodies.current[id]?.focus({ preventScroll: true });
     } catch (error) {
-      if (sameSource(source, panesRef.current[id].source))
+      if (
+        sameSource(source, panesRef.current[id].source) &&
+        panesRef.current[id].state.listing?.path === directory &&
+        requested.current[id].path === directory
+      )
         patch(id, { error: translateError(error), busy: false });
     } finally {
       mutations.current.delete(id);
@@ -962,10 +1137,8 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     copyText(entry.path);
   };
 
-  const toggleHidden = () => {
-    for (const pane of PANE_IDS) patch(pane, { revealedPaths: [] });
-    void updateSettings({ filesShowHidden: !useSettings.getState().settings.filesShowHidden });
-  };
+  const toggleHidden = (id: PaneId) =>
+    updateView(id, { filesShowHidden: !panesRef.current[id].view.filesShowHidden });
 
   const openEntryMenu = (event: React.MouseEvent, id: PaneId, entry: FileEntry | null) => {
     event.preventDefault();
@@ -983,8 +1156,8 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
 
     if (entry) {
       if (!panesRef.current[id].state.selectedPaths.includes(entry.path)) {
-        patch(id, { selectedPaths: [entry.path], anchor: entry.path });
-      }
+        patch(id, { selectedPaths: [entry.path], anchor: entry.path, cursor: entry.path });
+      } else patch(id, { cursor: entry.path });
       if (entry.isDir) {
         items.push({ label: t("sftp.open"), onSelect: () => navigate(id, entry.path) });
       } else {
@@ -1048,10 +1221,23 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     const index = primary ? entries.findIndex((item) => item.path === primary.path) : -1;
     const mod = event.ctrlKey || event.metaKey;
 
+    if (
+      event.metaKey &&
+      event.shiftKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      (event.key === "." || event.key === ">" || event.code === "Period")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      toggleHidden(id);
+      return;
+    }
+
     if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "h") {
       event.preventDefault();
       event.stopPropagation();
-      toggleHidden();
+      toggleHidden(id);
       return;
     }
 
@@ -1064,10 +1250,31 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     if (event.key === "F5") {
       event.preventDefault();
       event.stopPropagation();
-      void load(id, state.listing?.path ?? null, state.cursor);
+      void load(id, requested.current[id].path, state.cursor);
       return;
     }
     if (state.busy) return;
+
+    if (
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      (event.key === "ArrowUp" || event.key === "ArrowDown")
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "ArrowUp" && state.listing) navigate(id, parentOf(state.listing.path));
+      else if (event.key === "ArrowDown") {
+        const selected = selectedEntries(id);
+        if (selected.length === 1) {
+          const entry = selected[0]!;
+          if (entry.isDir) navigate(id, entry.path);
+          else applyEntry(id, entry);
+        }
+      }
+      return;
+    }
 
     if (mod) {
       const key = event.key.toLowerCase();
@@ -1095,7 +1302,11 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       return;
     }
 
-    if (event.key === "ArrowDown") {
+    if (event.altKey && event.key === "ArrowUp") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (state.listing) navigate(id, parentOf(state.listing.path));
+    } else if (event.key === "ArrowDown") {
       event.preventDefault();
       selectAt(id, Math.min(entries.length - 1, index + 1), event.shiftKey);
     } else if (event.key === "ArrowUp") {
@@ -1111,14 +1322,14 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     } else if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       selectAt(id, event.key === "Home" ? 0 : entries.length - 1, event.shiftKey);
-    } else if (event.key === "Backspace" || (event.altKey && event.key === "ArrowUp")) {
+    } else if (event.key === "Backspace") {
       event.preventDefault();
       if (state.listing) {
         navigate(id, parentOf(state.listing.path));
       }
-    } else if (event.key === "F2" && primary && selectedEntries(id).length === 1) {
+    } else if (event.key === "F2" && selectedEntries(id).length === 1) {
       event.preventDefault();
-      startRename(id, primary);
+      startRename(id, selectedEntries(id)[0]!);
     } else if (event.key === "Delete" && selectedEntries(id).length > 0) {
       event.preventDefault();
       removeSelection(id);
@@ -1132,11 +1343,18 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
       value === "local"
         ? LOCAL_SOURCE
         : { kind: "remote", sessionId: value.slice("remote:".length) };
-    const next = { ...panesRef.current, [id]: { source, state: EMPTY } };
+    const next = {
+      ...panesRef.current,
+      [id]: { source, state: EMPTY, view: preferencesFor(id, source) },
+    };
     panesRef.current = next;
     setPanes(next);
     void load(id, null, null, source);
     setActive(id);
+  };
+
+  const refreshPane = (id: PaneId, keep?: string | null) => {
+    void load(id, requested.current[id].path, keep);
   };
 
   if (!session) {
@@ -1161,7 +1379,25 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
     const model = panes[id];
     const state = model.state;
     const source = model.source;
-    const entries = renderedEntries[id];
+    const view = model.view;
+    const fileView = renderedEntries[id];
+    const entries = fileView.entries;
+    const positions = new Map(entries.map((entry, index) => [entry.path, index]));
+    const groupLabel = (key: string) => {
+      if (view.filesGroupBy === "type")
+        return key === "folders"
+          ? t("sftp.groupFolders")
+          : key === "files"
+            ? t("sftp.groupFiles")
+            : t("sftp.extensionType", {
+                extension: key.slice("extension:".length).toLocaleUpperCase(locale),
+              });
+      if (view.filesGroupBy === "modified")
+        return key === "unknown"
+          ? t("sftp.unknownDate")
+          : dateFormatter.format(new Date(`${key}T12:00:00`));
+      return key;
+    };
     const draft = state.draft ?? state.listing?.path ?? "";
     const renaming = state.renaming;
     const creating = state.creating;
@@ -1184,6 +1420,19 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         data-pane={id}
         onMouseDown={() => setActive(id)}
         onKeyDownCapture={(event) => {
+          if (
+            (event.ctrlKey || event.metaKey) &&
+            !event.altKey &&
+            !event.shiftKey &&
+            event.key.toLowerCase() === "f" &&
+            !event.nativeEvent.isComposing
+          ) {
+            event.preventDefault();
+            event.stopPropagation();
+            setActive(id);
+            focusFilter(id);
+            return;
+          }
           if (
             (event.ctrlKey || event.metaKey) &&
             !event.altKey &&
@@ -1239,11 +1488,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
               label={t("sftp.refresh")}
               size="sm"
               onClick={() =>
-                void load(
-                  id,
-                  state.listing?.path ?? null,
-                  state.selectedPaths[state.selectedPaths.length - 1] ?? null,
-                )
+                refreshPane(id, state.selectedPaths[state.selectedPaths.length - 1] ?? null)
               }
             >
               <RotateCw size={13} />
@@ -1277,57 +1522,42 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
             >
               <ArrowLeftRight size={13} />
             </IconButton>
-            <Menu
-              label={t("sftp.viewOptions")}
-              items={[
-                {
-                  label: t("sftp.showHidden"),
-                  icon: (
-                    <Check size={13} visibility={settings.filesShowHidden ? "visible" : "hidden"} />
-                  ),
-                  onSelect: toggleHidden,
-                },
-                {
-                  label: t("sftp.foldersFirst"),
-                  icon: (
-                    <Check
-                      size={13}
-                      visibility={settings.filesFoldersFirst ? "visible" : "hidden"}
-                    />
-                  ),
-                  onSelect: () =>
-                    void updateSettings({ filesFoldersFirst: !settings.filesFoldersFirst }),
-                },
-                ...(["name", "size", "modified"] as const).map((sort) => ({
-                  separatorBefore: sort === "name",
-                  label: t(
-                    sort === "name"
-                      ? "sftp.sortName"
-                      : sort === "size"
-                        ? "sftp.sortSize"
-                        : "sftp.sortModified",
-                  ),
-                  icon: (
-                    <Check
-                      size={13}
-                      visibility={settings.filesSortBy === sort ? "visible" : "hidden"}
-                    />
-                  ),
-                  onSelect: () => void updateSettings({ filesSortBy: sort }),
-                })),
-                ...(["asc", "desc"] as const).map((direction) => ({
-                  separatorBefore: direction === "asc",
-                  label: t(direction === "asc" ? "sftp.sortAscending" : "sftp.sortDescending"),
-                  icon: (
-                    <Check
-                      size={13}
-                      visibility={settings.filesSortDirection === direction ? "visible" : "hidden"}
-                    />
-                  ),
-                  onSelect: () => void updateSettings({ filesSortDirection: direction }),
-                })),
-              ]}
+            <FileViewMenu
+              view={view}
+              onChange={(change) =>
+                updateView(
+                  id,
+                  change,
+                  change.filesGroupBy !== undefined ? { collapsedGroups: [] } : {},
+                )
+              }
+              onReset={() => {
+                const defaults = useSettings.getState().settings;
+                updateView(
+                  id,
+                  {
+                    filesShowHidden: defaults.filesShowHidden,
+                    filesFoldersFirst: defaults.filesFoldersFirst,
+                    filesSortBy: defaults.filesSortBy,
+                    filesSortDirection: defaults.filesSortDirection,
+                    filesGroupBy: "none",
+                  },
+                  { filter: "", filterKind: "all", filterOpen: false, collapsedGroups: [] },
+                );
+              }}
             />
+            <IconButton
+              label={t("sftp.filterFiles")}
+              size="sm"
+              active={state.filterOpen}
+              onClick={() =>
+                state.filterOpen
+                  ? updateView(id, {}, { filterOpen: false, filter: "", filterKind: "all" })
+                  : focusFilter(id)
+              }
+            >
+              <Search size={13} />
+            </IconButton>
           </div>
         </header>
 
@@ -1346,182 +1576,172 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
           />
         </div>
 
-        <div
-          ref={(element) => {
-            bodies.current[id] = element;
-          }}
-          className={cn(
-            "sftp-pane__body",
-            dropTarget?.pane === id && dropTarget.path === "" && "is-drop",
-          )}
-          tabIndex={0}
-          role="listbox"
-          aria-multiselectable="true"
-          aria-busy={state.busy}
-          aria-label={t("sftp.title")}
-          aria-activedescendant={
-            primary
-              ? `${instanceId}-${id}-row-${entries.findIndex((item) => item.path === primary.path)}`
-              : undefined
-          }
-          onKeyDown={(event) => onKeyDown(event, id)}
-          onContextMenu={(event) => {
-            if (!(event.target as HTMLElement).closest(".sftp-row")) {
-              openEntryMenu(event, id, null);
-            }
-          }}
-          onDragOver={(event) => {
-            if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) {
-              return;
-            }
-            event.preventDefault();
-            event.dataTransfer.dropEffect = dragOrigin.current === id ? "move" : "copy";
-            setDropTarget({ pane: id, path: "" });
-          }}
-          onDragLeave={() => setDropTarget(null)}
-          onDrop={(event) => {
-            event.preventDefault();
-            const payload = readDragPayload(event.dataTransfer);
-            setDropTarget(null);
-            if (payload && state.listing) {
-              handleDrop(id, state.listing.path, payload);
-            }
-          }}
-        >
-          {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
-          {state.busy ? (
-            <p className="sftp-pane__empty" role="status">
-              {t("sftp.loading")}
-            </p>
-          ) : null}
-          {state.listing && entries.length === 0 && !creating ? (
-            <p className="sftp-pane__empty">{t("sftp.empty")}</p>
-          ) : null}
-
-          {creating ? (
-            <div className="sftp-row is-creating">
-              <span className="sftp-row__icon">
-                {creating.kind === "folder" ? <Folder size={13} /> : <FileIcon size={13} />}
-              </span>
-              <Input
-                autoFocus
-                className="sftp-row__name"
-                value={creating.value}
-                spellCheck={false}
-                placeholder={creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")}
-                onChange={(event) =>
-                  patch(id, { creating: { kind: creating.kind, value: event.target.value } })
-                }
-                onBlur={() => patch(id, { creating: null })}
-                onClick={(event) => event.stopPropagation()}
-                onDoubleClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  event.stopPropagation();
-                  if (event.nativeEvent.isComposing) return;
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void commitCreate(id);
-                  }
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    patch(id, { creating: null });
-                  }
-                }}
-              />
-            </div>
-          ) : null}
-
-          {entries.map((entry, position) => (
-            <div
-              key={entry.path}
-              id={`${instanceId}-${id}-row-${position}`}
-              data-path={entry.path}
-              role="option"
-              aria-selected={selectedSet.has(entry.path)}
-              className={cn(
-                "sftp-row",
-                selectedSet.has(entry.path) && "is-selected",
-                dropTarget?.pane === id && dropTarget.path === entry.path && "is-drop",
-                cutSet.has(entry.path) && "is-cut",
-              )}
-              draggable={!state.busy && renaming?.path !== entry.path}
-              onDragStart={(event) => {
-                dragOrigin.current = id;
-                const chosen = selectedEntries(id);
-                const items = chosen.some((item) => item.path === entry.path) ? chosen : [entry];
-                if (!chosen.some((item) => item.path === entry.path)) {
-                  patch(id, { selectedPaths: [entry.path], anchor: entry.path });
-                }
-                setDragPayload(event.dataTransfer, {
-                  source,
-                  paneId: `${instanceId}:${id}`,
-                  items: items.map((item) => ({
-                    path: item.path,
-                    name: item.name,
-                    isDir: item.isDir,
-                  })),
-                });
-              }}
-              onDragEnd={() => {
-                dragOrigin.current = null;
-                setDropTarget(null);
-              }}
-              onDragOver={(event) => {
-                if (state.busy || !entry.isDir || !event.dataTransfer.types.includes(DRAG_MIME)) {
-                  return;
-                }
+        {state.filterOpen ? (
+          <div
+            className="sftp-pane__filter"
+            onKeyDown={(event) => {
+              if (event.key === "Escape" && !event.nativeEvent.isComposing) {
                 event.preventDefault();
                 event.stopPropagation();
-                setDropTarget({ pane: id, path: entry.path });
+                updateView(id, {}, { filter: "", filterKind: "all", filterOpen: false });
+                bodies.current[id]?.focus();
+              }
+            }}
+          >
+            <Input
+              aria-label={t("sftp.filterFiles")}
+              placeholder={t("sftp.filterPlaceholder")}
+              spellCheck={false}
+              value={state.filter}
+              onChange={(event) => updateView(id, {}, { filter: event.target.value })}
+            />
+            <Select
+              label={t("sftp.filterKind")}
+              value={state.filterKind}
+              options={[
+                { value: "all", label: t("sftp.filterAll") },
+                { value: "files", label: t("sftp.filterOnlyFiles") },
+                { value: "folders", label: t("sftp.filterOnlyFolders") },
+              ]}
+              onChange={(value) => updateView(id, {}, { filterKind: value as FileKindFilter })}
+            />
+            <IconButton
+              label={t("sftp.closeFilter")}
+              size="sm"
+              onClick={() => {
+                updateView(id, {}, { filter: "", filterKind: "all", filterOpen: false });
+                bodies.current[id]?.focus();
               }}
-              onDrop={(event) => {
-                if (!entry.isDir) {
-                  return;
-                }
-                event.preventDefault();
-                event.stopPropagation();
-                const payload = readDragPayload(event.dataTransfer);
-                setDropTarget(null);
-                if (payload) {
-                  handleDrop(id, entry.path, payload);
-                }
-              }}
-              onClick={(event) => {
-                if (state.busy || renaming?.path === entry.path) return;
-                const mode = event.shiftKey
-                  ? "range"
-                  : event.ctrlKey || event.metaKey
-                    ? "toggle"
-                    : "single";
-                selectEntry(id, entry, mode);
-              }}
-              onDoubleClick={() => {
-                if (state.busy || renaming?.path === entry.path) return;
-                if (entry.isDir) {
-                  navigate(id, entry.path);
-                } else {
-                  applyEntry(id, entry);
-                }
-              }}
-              onContextMenu={(event) => openEntryMenu(event, id, entry)}
             >
-              <span className={cn("sftp-row__icon", entry.isDir && "is-dir")}>
-                {entry.isDir ? <Folder size={13} /> : <FileIcon size={13} />}
-              </span>
-              {renaming?.path === entry.path ? (
+              <X size={12} />
+            </IconButton>
+          </div>
+        ) : null}
+        <div className="sftp-pane__scroll">
+          <table className="sftp-columns" aria-label={t("sftp.sortColumns")}>
+            <thead>
+              <tr>
+                {(["name", "type", "size", "modified"] as const).map((sort) => (
+                  <th
+                    key={sort}
+                    className={`sftp-columns__${sort}`}
+                    scope="col"
+                    aria-sort={
+                      view.filesSortBy === sort
+                        ? view.filesSortDirection === "asc"
+                          ? "ascending"
+                          : "descending"
+                        : "none"
+                    }
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateView(id, {
+                          filesSortBy: sort,
+                          filesSortDirection:
+                            view.filesSortBy === sort && view.filesSortDirection === "asc"
+                              ? "desc"
+                              : "asc",
+                        })
+                      }
+                    >
+                      <span>
+                        {t(
+                          sort === "name"
+                            ? "sftp.sortName"
+                            : sort === "type"
+                              ? "sftp.sortType"
+                              : sort === "size"
+                                ? "sftp.sortSize"
+                                : "sftp.sortModified",
+                        )}
+                      </span>
+                      {view.filesSortBy === sort ? (
+                        <ArrowUp
+                          size={11}
+                          className={view.filesSortDirection === "desc" ? "is-desc" : undefined}
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                    </button>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+          </table>
+
+          <div
+            ref={(element) => {
+              bodies.current[id] = element;
+            }}
+            className={cn(
+              "sftp-pane__body",
+              dropTarget?.pane === id && dropTarget.path === "" && "is-drop",
+            )}
+            tabIndex={0}
+            role="listbox"
+            aria-multiselectable="true"
+            aria-busy={state.busy}
+            aria-label={t("sftp.title")}
+            aria-activedescendant={
+              primary
+                ? `${instanceId}-${id}-row-${entries.findIndex((item) => item.path === primary.path)}`
+                : undefined
+            }
+            onKeyDown={(event) => onKeyDown(event, id)}
+            onContextMenu={(event) => {
+              if (!(event.target as HTMLElement).closest(".sftp-row")) {
+                openEntryMenu(event, id, null);
+              }
+            }}
+            onDragOver={(event) => {
+              if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) {
+                return;
+              }
+              event.preventDefault();
+              event.dataTransfer.dropEffect = dragOrigin.current === id ? "move" : "copy";
+              setDropTarget({ pane: id, path: "" });
+            }}
+            onDragLeave={() => setDropTarget(null)}
+            onDrop={(event) => {
+              event.preventDefault();
+              const payload = readDragPayload(event.dataTransfer);
+              setDropTarget(null);
+              if (payload && state.listing) {
+                handleDrop(id, state.listing.path, payload);
+              }
+            }}
+          >
+            {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
+            {state.busy ? (
+              <p className="sftp-pane__empty" role="status">
+                {t("sftp.loading")}
+              </p>
+            ) : null}
+            {state.listing && fileView.total === 0 && !creating ? (
+              <p className="sftp-pane__empty">
+                {t(state.filter || state.filterKind !== "all" ? "sftp.noMatches" : "sftp.empty")}
+              </p>
+            ) : null}
+
+            {creating ? (
+              <div className="sftp-row is-creating">
+                <span className="sftp-row__icon">
+                  {creating.kind === "folder" ? <Folder size={13} /> : <FileIcon size={13} />}
+                </span>
                 <Input
                   autoFocus
                   className="sftp-row__name"
-                  value={renaming.value}
+                  value={creating.value}
                   spellCheck={false}
-                  onFocus={(event) => {
-                    const dot = entry.isDir ? -1 : event.target.value.lastIndexOf(".");
-                    event.target.setSelectionRange(0, dot > 0 ? dot : event.target.value.length);
-                  }}
-                  onChange={(event) =>
-                    patch(id, { renaming: { path: entry.path, value: event.target.value } })
+                  placeholder={
+                    creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
                   }
-                  onBlur={() => patch(id, { renaming: null })}
+                  onChange={(event) =>
+                    patch(id, { creating: { kind: creating.kind, value: event.target.value } })
+                  }
+                  onBlur={() => patch(id, { creating: null })}
                   onClick={(event) => event.stopPropagation()}
                   onDoubleClick={(event) => event.stopPropagation()}
                   onKeyDown={(event) => {
@@ -1529,29 +1749,208 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
                     if (event.nativeEvent.isComposing) return;
                     if (event.key === "Enter") {
                       event.preventDefault();
-                      void commitRename(id);
+                      void commitCreate(id);
                     }
                     if (event.key === "Escape") {
                       event.preventDefault();
-                      patch(id, { renaming: null });
+                      patch(id, { creating: null });
                     }
                   }}
                 />
-              ) : (
-                <span className="sftp-row__name" title={entry.name}>
-                  {entry.name}
-                </span>
-              )}
-              <span className="sftp-row__size">{entry.isDir ? "" : formatBytes(entry.size)}</span>
-              <span className="sftp-row__time">
-                {entry.modified !== null ? formatDate(entry.modified, locale) : ""}
-              </span>
-            </div>
-          ))}
+              </div>
+            ) : null}
+
+            {fileView.groups.map((group) => (
+              <div key={group.key} role="presentation">
+                {view.filesGroupBy && view.filesGroupBy !== "none" ? (
+                  <button
+                    type="button"
+                    className="sftp-group"
+                    aria-expanded={!group.collapsed}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                    }}
+                    onClick={() =>
+                      updateView(
+                        id,
+                        {},
+                        {
+                          collapsedGroups: group.collapsed
+                            ? state.collapsedGroups.filter((key) => key !== group.key)
+                            : [...state.collapsedGroups, group.key],
+                        },
+                      )
+                    }
+                  >
+                    <ChevronRight
+                      size={12}
+                      className={!group.collapsed ? "is-expanded" : undefined}
+                    />
+                    <span>{groupLabel(group.key)}</span>
+                    <span className="sftp-group__count">{group.entries.length}</span>
+                  </button>
+                ) : null}
+                {!group.collapsed
+                  ? group.entries.map((entry) => (
+                      <div
+                        key={entry.path}
+                        id={`${instanceId}-${id}-row-${positions.get(entry.path)}`}
+                        data-path={entry.path}
+                        role="option"
+                        aria-selected={selectedSet.has(entry.path)}
+                        className={cn(
+                          "sftp-row",
+                          selectedSet.has(entry.path) && "is-selected",
+                          dropTarget?.pane === id && dropTarget.path === entry.path && "is-drop",
+                          cutSet.has(entry.path) && "is-cut",
+                        )}
+                        draggable={!state.busy && renaming?.path !== entry.path}
+                        onDragStart={(event) => {
+                          dragOrigin.current = id;
+                          const chosen = selectedEntries(id);
+                          const items = chosen.some((item) => item.path === entry.path)
+                            ? chosen
+                            : [entry];
+                          if (!chosen.some((item) => item.path === entry.path)) {
+                            patch(id, {
+                              selectedPaths: [entry.path],
+                              anchor: entry.path,
+                              cursor: entry.path,
+                            });
+                          }
+                          setDragPayload(event.dataTransfer, {
+                            source,
+                            paneId: `${instanceId}:${id}`,
+                            items: items.map((item) => ({
+                              path: item.path,
+                              name: item.name,
+                              isDir: item.isDir,
+                            })),
+                          });
+                        }}
+                        onDragEnd={() => {
+                          dragOrigin.current = null;
+                          setDropTarget(null);
+                        }}
+                        onDragOver={(event) => {
+                          if (
+                            state.busy ||
+                            !entry.isDir ||
+                            !event.dataTransfer.types.includes(DRAG_MIME)
+                          ) {
+                            return;
+                          }
+                          event.preventDefault();
+                          event.stopPropagation();
+                          setDropTarget({ pane: id, path: entry.path });
+                        }}
+                        onDrop={(event) => {
+                          if (!entry.isDir) {
+                            return;
+                          }
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const payload = readDragPayload(event.dataTransfer);
+                          setDropTarget(null);
+                          if (payload) {
+                            handleDrop(id, entry.path, payload);
+                          }
+                        }}
+                        onClick={(event) => {
+                          if (state.busy || renaming?.path === entry.path) return;
+                          const mode = event.shiftKey
+                            ? "range"
+                            : event.ctrlKey || event.metaKey
+                              ? "toggle"
+                              : "single";
+                          selectEntry(id, entry, mode);
+                        }}
+                        onDoubleClick={() => {
+                          if (state.busy || renaming?.path === entry.path) return;
+                          if (entry.isDir) {
+                            navigate(id, entry.path);
+                          } else {
+                            applyEntry(id, entry);
+                          }
+                        }}
+                        onContextMenu={(event) => openEntryMenu(event, id, entry)}
+                      >
+                        <span className={cn("sftp-row__icon", entry.isDir && "is-dir")}>
+                          {entry.isDir ? <Folder size={13} /> : <FileIcon size={13} />}
+                        </span>
+                        {renaming?.path === entry.path ? (
+                          <Input
+                            autoFocus
+                            className="sftp-row__name"
+                            value={renaming.value}
+                            spellCheck={false}
+                            onFocus={(event) => {
+                              const dot = entry.isDir ? -1 : event.target.value.lastIndexOf(".");
+                              event.target.setSelectionRange(
+                                0,
+                                dot > 0 ? dot : event.target.value.length,
+                              );
+                            }}
+                            onChange={(event) =>
+                              patch(id, {
+                                renaming: { path: entry.path, value: event.target.value },
+                              })
+                            }
+                            onBlur={() => patch(id, { renaming: null })}
+                            onClick={(event) => event.stopPropagation()}
+                            onDoubleClick={(event) => event.stopPropagation()}
+                            onKeyDown={(event) => {
+                              event.stopPropagation();
+                              if (event.nativeEvent.isComposing) return;
+                              if (event.key === "Enter") {
+                                event.preventDefault();
+                                void commitRename(id);
+                              }
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                patch(id, { renaming: null });
+                              }
+                            }}
+                          />
+                        ) : (
+                          <span className="sftp-row__name" title={entry.name}>
+                            {entry.name}
+                          </span>
+                        )}
+                        <span
+                          className="sftp-row__type"
+                          title={
+                            entry.isDir
+                              ? t("sftp.groupFolders")
+                              : fileExtension(entry).toLocaleUpperCase(locale)
+                          }
+                        >
+                          {entry.isDir
+                            ? t("sftp.groupFolders")
+                            : fileExtension(entry).toLocaleUpperCase(locale) || "—"}
+                        </span>
+                        <span className="sftp-row__size">
+                          {entry.isDir ? "" : formatBytes(entry.size)}
+                        </span>
+                        <span className="sftp-row__time">
+                          {entry.modified !== null &&
+                          Number.isFinite(entry.modified) &&
+                          !Number.isNaN(new Date(entry.modified).getTime())
+                            ? dateFormatter.format(entry.modified)
+                            : ""}
+                        </span>
+                      </div>
+                    ))
+                  : null}
+              </div>
+            ))}
+          </div>
         </div>
 
         <footer className="sftp-pane__foot">
-          <span>{state.listing ? t("sftp.itemCount", { count: entries.length }) : "—"}</span>
+          <span>{state.listing ? t("sftp.itemCount", { count: fileView.total }) : "—"}</span>
           {selectedCount > 1 ? (
             <span className="sftp-pane__selection">
               {t("sftp.selectedCount", { count: selectedCount })}

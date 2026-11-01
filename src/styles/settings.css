@@ -127,6 +127,12 @@
 .settings-section__body {
   max-width: none;
 }
+.settings-section__intro {
+  margin: 0 0 18px;
+  color: var(--td-muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
 .settings-row {
   padding: 14px 0;
   gap: 18px;
@@ -262,8 +268,29 @@
 .settings-location > button {
   flex-shrink: 0;
 }
-.terminal-preview {
+.settings-preview {
+  min-width: 0;
+  margin-block: 0 16px;
+}
+.settings-preview__head {
   margin-bottom: 8px;
+}
+.settings-preview__title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--td-text);
+}
+.settings-preview__hint {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--td-muted);
+  overflow-wrap: anywhere;
+}
+.settings-preview .terminal-preview {
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--td-border);
   border-radius: var(--td-radius-sm);

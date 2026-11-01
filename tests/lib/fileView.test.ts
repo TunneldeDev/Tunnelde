@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { FileEntry } from "@/lib/api/types";
-import { createFileViewSelector, visibleFiles, type FileViewPreferences } from "@/lib/files/view";
+import {
+  createFileViewSelector,
+  createGroupedFileViewSelector,
+  visibleFiles,
+  type FileViewPreferences,
+} from "@/lib/files/view";
 
 const collator = new Intl.Collator("en", { numeric: true, sensitivity: "base" });
 const preferences: FileViewPreferences = {
@@ -104,5 +109,71 @@ describe("file list views", () => {
     expect(select(entries, { ...preferences, filesSortDirection: "desc" }, collator)).not.toBe(
       first,
     );
+  });
+
+  it("combines Chinese and case insensitive name matching with item type", () => {
+    const entries = [
+      entry("中文Report.TXT"),
+      entry("中文report", { isDir: true }),
+      entry("else.txt"),
+    ];
+    expect(
+      names(
+        visibleFiles(entries, preferences, collator, [], { query: "中文rEpOrT", kind: "files" }),
+      ),
+    ).toEqual(["中文Report.TXT"]);
+    expect(
+      names(visibleFiles(entries, preferences, collator, [], { query: "中文", kind: "folders" })),
+    ).toEqual(["中文report"]);
+  });
+
+  it("folds complete type groups and reveals a changed file despite type and name filters", () => {
+    const select = createGroupedFileViewSelector();
+    const entries = [
+      entry("file10.txt"),
+      entry("file2.txt"),
+      entry("folder", { isDir: true }),
+      entry(".env"),
+    ];
+    const view = { ...preferences, filesGroupBy: "type" as const };
+    const folded = select(entries, view, collator, [], { query: "", kind: "all" }, [
+      "extension:txt",
+    ]);
+    expect(folded.groups.map((group) => [group.key, group.entries.length])).toEqual([
+      ["folders", 1],
+      ["extension:txt", 2],
+    ]);
+    expect(names(folded.entries)).toEqual(["folder"]);
+    const revealed = select(
+      entries,
+      view,
+      collator,
+      ["/work/file2.txt"],
+      { query: "none", kind: "folders" },
+      ["extension:txt"],
+    );
+    expect(names(revealed.entries)).toEqual(["file2.txt"]);
+    expect(revealed.groups[0]?.collapsed).toBe(false);
+  });
+
+  it("groups local calendar dates newest first, keeps unknown last and first characters Unicode aware", () => {
+    const select = createGroupedFileViewSelector();
+    const entries = [
+      entry("中文", { modified: new Date(2026, 10, 2, 2).getTime() }),
+      entry("2file", { modified: new Date(2026, 10, 1, 23).getTime() }),
+      entry("#file"),
+    ];
+    expect(
+      select(entries, { ...preferences, filesGroupBy: "modified" }, collator).groups.map(
+        (group) => group.key,
+      ),
+    ).toEqual(["2026-11-02", "2026-11-01", "unknown"]);
+    expect(
+      new Set(
+        select(entries, { ...preferences, filesGroupBy: "initial" }, collator).groups.map(
+          (group) => group.key,
+        ),
+      ),
+    ).toEqual(new Set(["中", "0–9", "#"]));
   });
 });

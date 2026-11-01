@@ -490,12 +490,10 @@ export function SettingsPage() {
                 ) : null}
               </div>
               <div className="settings-section__body">
-                {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
-                {item === "terminal" && !filtering ? (
-                  <Suspense fallback={<p className="settings-row__hint">{t("common.loading")}</p>}>
-                    <TerminalPreview />
-                  </Suspense>
+                {item === "files" && !filtering ? (
+                  <p className="settings-section__intro">{t("settings.filePaneDefaultsHint")}</p>
                 ) : null}
+                {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
                 {groupSettings(
                   item,
                   visible.filter((definition) => definition.section === item),
@@ -510,6 +508,34 @@ export function SettingsPage() {
                       <h3 className="settings-preference-group__title">{t(group.label)}</h3>
                     ) : null}
                     <div className={group.label ? "settings-preference-group__body" : undefined}>
+                      {group.preview === "terminal" && !filtering ? (
+                        <div
+                          className="settings-preview"
+                          role="group"
+                          aria-labelledby={`${settingsId}-${group.id}-preview-title`}
+                          aria-describedby={`${settingsId}-${group.id}-preview-hint`}
+                        >
+                          <div className="settings-preview__head">
+                            <h4
+                              className="settings-preview__title"
+                              id={`${settingsId}-${group.id}-preview-title`}
+                            >
+                              {t("terminal.previewLabel")}
+                            </h4>
+                            <p
+                              className="settings-preview__hint"
+                              id={`${settingsId}-${group.id}-preview-hint`}
+                            >
+                              {t("terminal.previewHint")}
+                            </p>
+                          </div>
+                          <Suspense
+                            fallback={<p className="settings-row__hint">{t("common.loading")}</p>}
+                          >
+                            <TerminalPreview />
+                          </Suspense>
+                        </div>
+                      ) : null}
                       {group.definitions.map((definition) =>
                         definition.kind === "css" ? (
                           <div

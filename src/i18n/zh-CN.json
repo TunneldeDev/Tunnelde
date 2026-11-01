@@ -139,6 +139,7 @@
     "deleteBody": "删除“{{name}}”及其中的全部内容？组内主机保留并移到未分组。"
   },
   "settings": {
+    "filePaneDefaultsHint": "这里设置新文件面板的默认值。已打开的本地、远端面板各自保存视图偏好；可在对应面板的“视图选项”菜单中恢复默认视图，以应用这些默认值。",
     "groups": {
       "theme": "主题",
       "typography": "字体",
@@ -396,7 +397,8 @@
     "paste": "粘贴",
     "selectAll": "全选",
     "pasteFailed": "无法读取剪贴板",
-    "previewLabel": "终端预览"
+    "previewLabel": "终端预览",
+    "previewHint": "预览当前字体、配色、行高与光标效果。修改相关设置后会实时更新。"
   },
   "ssh": {
     "closed": "会话已关闭",
@@ -484,6 +486,25 @@
     "showHidden": "显示隐藏文件",
     "foldersFirst": "文件夹优先",
     "sortName": "名称",
+    "sortType": "类型",
+    "sortColumns": "文件排序",
+    "filterFiles": "筛选文件",
+    "filterPlaceholder": "按名称筛选…",
+    "filterKind": "项目类型",
+    "filterAll": "所有项目",
+    "filterOnlyFiles": "文件",
+    "filterOnlyFolders": "文件夹",
+    "closeFilter": "关闭筛选",
+    "noMatches": "没有匹配的项目",
+    "groupNone": "不分组",
+    "groupType": "按类型分组",
+    "groupModified": "按修改日期分组",
+    "groupInitial": "按首字母分组",
+    "groupFolders": "文件夹",
+    "groupFiles": "无扩展名文件",
+    "extensionType": "{{extension}} 文件",
+    "unknownDate": "未知日期",
+    "resetView": "恢复面板默认视图",
     "sortSize": "大小",
     "sortModified": "修改时间",
     "sortAscending": "升序",

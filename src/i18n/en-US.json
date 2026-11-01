@@ -139,6 +139,7 @@
     "deleteBody": "Delete “{{name}}” and everything inside it? Hosts inside stay and move to Ungrouped."
   },
   "settings": {
+    "filePaneDefaultsHint": "These are the defaults for new file panels. Open local and remote panels keep their own view preferences; use Reset view in each panel’s View options menu to apply these defaults.",
     "groups": {
       "theme": "Theme",
       "typography": "Typography",
@@ -396,7 +397,8 @@
     "paste": "Paste",
     "selectAll": "Select all",
     "pasteFailed": "Could not read the clipboard",
-    "previewLabel": "Terminal preview"
+    "previewLabel": "Terminal preview",
+    "previewHint": "Preview the current font, colors, line spacing and cursor. Changes to these settings appear here immediately."
   },
   "ssh": {
     "closed": "session closed",
@@ -484,6 +486,25 @@
     "showHidden": "Show hidden files",
     "foldersFirst": "Folders first",
     "sortName": "Name",
+    "sortType": "Type",
+    "sortColumns": "File sorting",
+    "filterFiles": "Filter files",
+    "filterPlaceholder": "Filter by name…",
+    "filterKind": "Item type",
+    "filterAll": "All items",
+    "filterOnlyFiles": "Files",
+    "filterOnlyFolders": "Folders",
+    "closeFilter": "Close filter",
+    "noMatches": "No matching items",
+    "groupNone": "No grouping",
+    "groupType": "Group by type",
+    "groupModified": "Group by modified date",
+    "groupInitial": "Group by first letter",
+    "groupFolders": "Folders",
+    "groupFiles": "Files without extension",
+    "extensionType": "{{extension}} files",
+    "unknownDate": "Unknown date",
+    "resetView": "Reset panel view",
     "sortSize": "Size",
     "sortModified": "Modified",
     "sortAscending": "Ascending",

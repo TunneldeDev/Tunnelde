@@ -3,8 +3,26 @@ import type { FileEntry } from "@/lib/api/types";
 export interface FileViewPreferences {
   filesShowHidden: boolean;
   filesFoldersFirst: boolean;
-  filesSortBy: "name" | "size" | "modified";
+  filesSortBy: "name" | "size" | "modified" | "type";
   filesSortDirection: "asc" | "desc";
+  filesGroupBy?: "none" | "type" | "modified" | "initial";
+}
+
+export type FileKindFilter = "all" | "files" | "folders";
+export interface FileFilter {
+  query: string;
+  kind: FileKindFilter;
+}
+const NO_FILTER: FileFilter = { query: "", kind: "all" };
+export function fileExtension(entry: FileEntry): string {
+  if (entry.isDir) return "";
+  const dot = entry.name.lastIndexOf(".");
+  return dot > 0 && dot < entry.name.length - 1
+    ? entry.name
+        .slice(dot + 1)
+        .normalize("NFKC")
+        .toLowerCase()
+    : "";
 }
 
 const NONE: readonly string[] = [];
@@ -14,6 +32,7 @@ export function visibleFiles(
   preferences: FileViewPreferences,
   collator: Intl.Collator,
   revealed: readonly string[] = NONE,
+  filter: FileFilter = NO_FILTER,
 ): FileEntry[] {
   const forced = new Set(revealed);
   const direction = preferences.filesSortDirection === "desc" ? -1 : 1;
@@ -21,16 +40,26 @@ export function visibleFiles(
     collator.compare(left.name, right.name) ||
     (left.name < right.name ? -1 : left.name > right.name ? 1 : 0) ||
     (left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
+  const locale = collator.resolvedOptions().locale;
+  const query = filter.query.normalize("NFKC").toLocaleLowerCase(locale);
   return entries
     .filter(
       (entry) =>
-        preferences.filesShowHidden ||
-        !(entry.isHidden || entry.name.startsWith(".")) ||
-        forced.has(entry.path),
+        forced.has(entry.path) ||
+        ((preferences.filesShowHidden || !(entry.isHidden || entry.name.startsWith("."))) &&
+          (filter.kind === "all" || entry.isDir === (filter.kind === "folders")) &&
+          entry.name.normalize("NFKC").toLocaleLowerCase(locale).includes(query)),
     )
     .sort((left, right) => {
       if (preferences.filesFoldersFirst && left.isDir !== right.isDir) return left.isDir ? -1 : 1;
       if (preferences.filesSortBy === "name") return direction * byName(left, right);
+      if (preferences.filesSortBy === "type") {
+        if (left.isDir !== right.isDir) return direction * (left.isDir ? -1 : 1);
+        return (
+          direction * collator.compare(fileExtension(left), fileExtension(right)) ||
+          byName(left, right)
+        );
+      }
       if (preferences.filesSortBy === "modified") {
         // Unknown timestamps stay last in either direction.
         if (left.modified === null && right.modified !== null) return 1;
@@ -58,8 +87,16 @@ export function createFileViewSelector() {
     preferences: FileViewPreferences,
     collator: Intl.Collator,
     revealed: readonly string[] = NONE,
+    filter: FileFilter = NO_FILTER,
   ): FileEntry[] => {
-    const key = `${preferences.filesShowHidden}|${preferences.filesFoldersFirst}|${preferences.filesSortBy}|${preferences.filesSortDirection}`;
+    const key = JSON.stringify([
+      preferences.filesShowHidden,
+      preferences.filesFoldersFirst,
+      preferences.filesSortBy,
+      preferences.filesSortDirection,
+      filter.query,
+      filter.kind,
+    ]);
     if (
       previous?.entries === entries &&
       previous.preferences === key &&
@@ -67,8 +104,112 @@ export function createFileViewSelector() {
       previous.revealed === revealed
     )
       return previous.result;
-    const result = visibleFiles(entries, preferences, collator, revealed);
+    const result = visibleFiles(entries, preferences, collator, revealed, filter);
     previous = { entries, preferences: key, collator, revealed, result };
+    return result;
+  };
+}
+
+export interface FileGroup {
+  key: string;
+  entries: FileEntry[];
+  collapsed: boolean;
+}
+export interface FileView {
+  groups: FileGroup[];
+  entries: FileEntry[];
+  total: number;
+}
+export function fileGroupKey(entry: FileEntry, mode: FileViewPreferences["filesGroupBy"]): string {
+  if (mode === "type")
+    return entry.isDir
+      ? "folders"
+      : fileExtension(entry)
+        ? `extension:${fileExtension(entry)}`
+        : "files";
+  if (mode === "modified") {
+    if (entry.modified === null || !Number.isFinite(entry.modified)) return "unknown";
+    const date = new Date(entry.modified);
+    if (Number.isNaN(date.getTime())) return "unknown";
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+  if (mode === "initial") {
+    const first = Array.from(entry.name.normalize("NFKC"))[0] ?? "#";
+    return /\p{N}/u.test(first) ? "0–9" : /\p{L}/u.test(first) ? first.toLocaleUpperCase() : "#";
+  }
+  return "";
+}
+
+/** Sorting/filtering is cached independently from selection and group folding. */
+export function createGroupedFileViewSelector() {
+  const select = createFileViewSelector();
+  let previous:
+    | {
+        sorted: FileEntry[];
+        mode: FileViewPreferences["filesGroupBy"];
+        collator: Intl.Collator;
+        groups: Map<string, FileEntry[]>;
+      }
+    | undefined;
+  let last:
+    | {
+        groups: Map<string, FileEntry[]>;
+        collapsed: readonly string[];
+        revealed: readonly string[];
+        result: FileView;
+      }
+    | undefined;
+  return (
+    entries: readonly FileEntry[],
+    preferences: FileViewPreferences,
+    collator: Intl.Collator,
+    revealed: readonly string[] = NONE,
+    filter: FileFilter = NO_FILTER,
+    collapsed: readonly string[] = NONE,
+  ): FileView => {
+    const sorted = select(entries, preferences, collator, revealed, filter);
+    const mode = preferences.filesGroupBy ?? "none";
+    if (previous?.sorted !== sorted || previous.mode !== mode || previous.collator !== collator) {
+      const buckets = new Map<string, FileEntry[]>();
+      for (const entry of sorted) {
+        const key = fileGroupKey(entry, mode);
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(entry);
+        else buckets.set(key, [entry]);
+      }
+      const keys = [...buckets.keys()].sort((a, b) => {
+        if (mode === "modified")
+          return a === "unknown" ? 1 : b === "unknown" ? -1 : b.localeCompare(a);
+        if (mode === "type")
+          return a === "folders" ? -1 : b === "folders" ? 1 : collator.compare(a, b);
+        return collator.compare(a, b);
+      });
+      previous = {
+        sorted,
+        mode,
+        collator,
+        groups: new Map(keys.map((key) => [key, buckets.get(key)!])),
+      };
+    }
+    if (
+      last?.groups === previous.groups &&
+      last.collapsed === collapsed &&
+      last.revealed === revealed
+    )
+      return last.result;
+    const folded = new Set(collapsed),
+      forced = new Set(revealed);
+    const groups = [...previous.groups].map(([key, items]) => ({
+      key,
+      entries: items,
+      collapsed: mode !== "none" && folded.has(key) && !items.some((item) => forced.has(item.path)),
+    }));
+    const result = {
+      groups,
+      entries: groups.flatMap((group) => (group.collapsed ? [] : group.entries)),
+      total: sorted.length,
+    };
+    last = { groups: previous.groups, collapsed, revealed, result };
     return result;
   };
 }

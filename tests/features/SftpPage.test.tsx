@@ -92,6 +92,7 @@ const remoteListing = {
 const listingFor = (source: FsSource) => (source.kind === "local" ? localListing : remoteListing);
 
 beforeEach(() => {
+  localStorage.clear();
   fsMock.list.mockReset();
   fsMock.rename.mockReset().mockResolvedValue(undefined);
   fsMock.createFile.mockReset().mockResolvedValue(undefined);
@@ -278,6 +279,69 @@ describe("SftpPage", () => {
 });
 
 describe("SftpPage asynchronous interactions", () => {
+  it("refreshes an in-flight navigation destination and discards the superseded response", async () => {
+    const pending: Array<(value: typeof localListing) => void> = [];
+    fsMock.list.mockImplementation((source: FsSource, path?: string | null) => {
+      if (source.kind === "local" && path === "C:\\next")
+        return new Promise((resolve) => pending.push(resolve));
+      return Promise.resolve(listingFor(source));
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    fireEvent.change(path, { target: { value: "C:\\next" } });
+    fireEvent.keyDown(path, { key: "Enter" });
+    expect(pending).toHaveLength(1);
+    act(() =>
+      window.dispatchEvent(
+        new CustomEvent("tunnelde:files-changed", {
+          detail: { source: { kind: "local" }, origin: "other-tab" },
+        }),
+      ),
+    );
+    expect(pending).toHaveLength(2);
+    await act(async () => pending[1]!({ ...localListing, path: "C:\\next", entries: [] }));
+    await act(async () =>
+      pending[0]!({ ...localListing, path: "C:\\obsolete", entries: localListing.entries }),
+    );
+    expect((path as HTMLInputElement).value).toBe("C:\\next");
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+  });
+
+  it("does not clear a new directory's inline draft when an earlier create operation completes", async () => {
+    let finish!: () => void;
+    fsMock.createFile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "New file" })[0]!);
+    const oldInput = document.querySelector(".sftp-row.is-creating input")!;
+    fireEvent.change(oldInput, { target: { value: "first.txt" } });
+    fireEvent.keyDown(oldInput, { key: "Enter" });
+    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    fireEvent.change(path, { target: { value: "C:\\elsewhere" } });
+    fireEvent.keyDown(path, { key: "Enter" });
+    await waitFor(() =>
+      expect(screen.getAllByRole("button", { name: "New file" })[0]!.hasAttribute("disabled")).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getAllByRole("button", { name: "New file" })[0]!);
+    const newInput = document.querySelector(".sftp-row.is-creating input")!;
+    fireEvent.change(newInput, { target: { value: "second.txt" } });
+    await act(async () => finish());
+    await waitFor(() =>
+      expect(
+        (document.querySelector(".sftp-row.is-creating input") as HTMLInputElement)?.value,
+      ).toBe("second.txt"),
+    );
+    expect((path as HTMLInputElement).value).toBe("C:\\elsewhere");
+  });
+
   it("refreshes both panels when completion arrives before the transfer id response", async () => {
     fsMock.transfer.mockImplementation(async () => {
       useTransfers.getState().apply({
@@ -510,11 +574,8 @@ describe("SftpPage preloading", () => {
       );
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
       expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10");
-      await act(async () =>
-        useSettings.setState((state) => ({
-          settings: { ...state.settings, filesSortDirection: "desc" },
-        })),
-      );
+      fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+      fireEvent.click(await screen.findByRole("menuitem", { name: "Descending" }));
       await waitFor(() =>
         expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder10"),
       );
@@ -531,9 +592,7 @@ describe("SftpPage preloading", () => {
       expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\folder2"),
     );
     expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret");
-    await act(async () =>
-      useSettings.setState((state) => ({ settings: { ...state.settings, filesShowHidden: true } })),
-    );
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "h", ctrlKey: true });
     await waitFor(() =>
       expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\.secret"),
     );
@@ -624,9 +683,7 @@ describe("SftpPage visible file interactions", () => {
     const body = screen.getAllByRole("listbox")[0]!;
     fireEvent.keyDown(body, { key: "h", ctrlKey: true });
     fireEvent.click((await within(body).findByText(".env")).closest(".sftp-row")!);
-    await act(async () => {
-      await useSettings.getState().update({ filesShowHidden: false });
-    });
+    fireEvent.keyDown(body, { key: "h", ctrlKey: true });
     expect(within(body).queryByText(".env")).toBeNull();
     fireEvent.keyDown(body, { key: "Delete" });
     expect(useDialogs.getState().confirm).not.toHaveBeenCalled();
@@ -732,5 +789,148 @@ describe("SftpPage visible file interactions", () => {
       .menu!.items.find((item) => item.label === "Copy path")!
       .onSelect();
     expect(copy).toHaveBeenCalledExactlyOnceWith("C:\\work\\notes.txt");
+  });
+
+  it("keeps two panels and simultaneous tabs independent and restores a saved host after reconnect", async () => {
+    withHidden();
+    const rendered = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.keyDown(local, { key: "h", ctrlKey: true });
+    expect(within(local).getByText(".env")).toBeTruthy();
+    expect(useSettings.getState().settings.filesShowHidden).toBe(DEFAULT_SETTINGS.filesShowHidden);
+    const localPane = local.closest(".sftp-pane")!;
+    const remotePane = screen.getAllByRole("listbox")[1]!.closest(".sftp-pane")!;
+    fireEvent.click(within(localPane as HTMLElement).getByRole("button", { name: "Size" }));
+    expect(
+      within(localPane as HTMLElement)
+        .getByRole("columnheader", { name: "Size" })
+        .getAttribute("aria-sort"),
+    ).toBe("ascending");
+    expect(
+      within(remotePane as HTMLElement)
+        .getByRole("columnheader", { name: "Name" })
+        .getAttribute("aria-sort"),
+    ).toBe("ascending");
+    const second = render(<SftpPage sessionId="session-1" />);
+    await waitFor(() => expect(screen.getAllByRole("listbox")).toHaveLength(4));
+    await waitFor(() =>
+      expect(within(screen.getAllByRole("listbox")[2]!).getByText(".env")).toBeTruthy(),
+    );
+    fireEvent.keyDown(local, { key: "h", ctrlKey: true });
+    expect(within(local).queryByText(".env")).toBeNull();
+    expect(within(screen.getAllByRole("listbox")[2]!).getByText(".env")).toBeTruthy();
+    fireEvent.keyDown(local, { key: "h", ctrlKey: true });
+    second.unmount();
+    rendered.unmount();
+    useSsh.setState({ sessions: [{ ...session, id: "session-reconnected" }] });
+    render(<SftpPage sessionId="session-reconnected" />);
+    expect(await screen.findByText(".env")).toBeTruthy();
+    expect(
+      screen.getAllByRole("columnheader", { name: "Size" })[0]!.getAttribute("aria-sort"),
+    ).toBe("ascending");
+  });
+
+  it.each([{ ctrlKey: true }, { metaKey: true }])(
+    "filters only the current panel with Ctrl/Cmd+F and clears on Escape (%j)",
+    async (modifier) => {
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      await screen.findByText("readme.md");
+      const local = screen.getAllByRole("listbox")[0]!;
+      fireEvent.click(within(local).getByText("src"));
+      fireEvent.keyDown(local, { key: "f", ...modifier });
+      const filter = screen.getByRole("textbox", { name: "Filter files" });
+      await waitFor(() => expect(document.activeElement).toBe(filter));
+      fireEvent.change(filter, { target: { value: "NOTES" } });
+      expect(within(local).queryByText("src")).toBeNull();
+      expect(within(local).getByText("notes.txt")).toBeTruthy();
+      expect(screen.getByText("readme.md")).toBeTruthy();
+      fireEvent.keyDown(local, { key: "Delete" });
+      expect(useDialogs.getState().confirm).not.toHaveBeenCalled();
+      fireEvent.keyDown(local, { key: "a", ctrlKey: true });
+      fireEvent.keyDown(local, { key: "c", ctrlKey: true });
+      expect(useFileClipboard.getState().clip?.items.map((item) => item.name)).toEqual([
+        "notes.txt",
+      ]);
+      fireEvent.keyDown(filter, { key: "Escape" });
+      expect(screen.queryByRole("textbox", { name: "Filter files" })).toBeNull();
+      expect(document.activeElement).toBe(local);
+      expect(within(local).getByText("src")).toBeTruthy();
+    },
+  );
+
+  it("folds groups without retaining invisible selections or forwarding group keyboard events", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Group by type" }));
+    fireEvent.click(within(local).getByText("src"));
+    const group = within(local).getByRole("button", { name: /Folders 1/ });
+    const before = fsMock.list.mock.calls.length;
+    fireEvent.keyDown(group, { key: "Enter" });
+    expect(fsMock.list).toHaveBeenCalledTimes(before);
+    fireEvent.click(group);
+    expect(group.getAttribute("aria-expanded")).toBe("false");
+    expect(within(local).queryByText("src")).toBeNull();
+    fireEvent.keyDown(local, { key: "Delete" });
+    expect(useDialogs.getState().confirm).not.toHaveBeenCalled();
+    fireEvent.keyDown(local, { key: "a", ctrlKey: true });
+    expect(
+      within(local)
+        .getAllByRole("option", { selected: true })
+        .map((row) => row.dataset.path),
+    ).toEqual(["C:\\work\\notes.txt"]);
+    fireEvent.click(group);
+    expect(within(local).getByText("src")).toBeTruthy();
+  });
+
+  it("updates the keyboard cursor when a different entry is selected by its context menu", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.click(within(local).getByText("src"));
+    fireEvent.contextMenu(within(local).getByText("notes.txt").closest(".sftp-row")!);
+    fireEvent.keyDown(local, { key: "F2" });
+    expect((local.querySelector(".sftp-row input") as HTMLInputElement).value).toBe("notes.txt");
+  });
+
+  it("renames the sole selected item after Ctrl-click deselects the keyboard cursor item", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.click(within(local).getByText("notes.txt"));
+    fireEvent.click(within(local).getByText("src"), { ctrlKey: true });
+    fireEvent.click(within(local).getByText("src"), { ctrlKey: true });
+    expect(within(local).getAllByRole("option", { selected: true })[0]!.dataset.path).toBe(
+      "C:\\work\\notes.txt",
+    );
+    fireEvent.keyDown(local, { key: "F2" });
+    expect((local.querySelector(".sftp-row input") as HTMLInputElement).value).toBe("notes.txt");
+  });
+
+  it("navigates to the parent directory with Alt+Up instead of moving the selection", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.keyDown(local, { key: "ArrowUp", altKey: true });
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
+  });
+
+  it("supports Finder command navigation and hidden file shortcuts without changing Ctrl+Up", async () => {
+    withHidden();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.keyDown(local, { key: "ArrowUp", ctrlKey: true });
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
+    fireEvent.keyDown(local, { key: ".", code: "Period", metaKey: true, shiftKey: true });
+    expect(within(local).getByText(".env")).toBeTruthy();
+    fireEvent.click(within(local).getByText("notes.txt"));
+    fireEvent.keyDown(local, { key: "ArrowDown", metaKey: true });
+    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    fireEvent.keyDown(local, { key: "ArrowUp", metaKey: true });
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
   });
 });

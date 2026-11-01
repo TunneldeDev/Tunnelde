@@ -6,6 +6,19 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.1] - 2026-11-02
+
+### Added
+
+- Independent local and remote file-pane display preferences, clickable details headers, name and file/folder filters, and collapsible groups by type, modification date or initial. Each pane remembers its view and can restore the defaults.
+- Pane-scoped Ctrl/Cmd+F filtering and Finder-style Command+Up/Down navigation and Command+Shift+Period hidden-file toggling.
+
+### Fixed
+
+- File selection, keyboard navigation and transfer targets follow the visible filtered and expanded list. Inline create/rename operations reveal their target without changing the other pane; fixed headers stay aligned with scrolling rows.
+- Background refreshes preserve pending directory navigation, and asynchronous create/rename completion cannot overwrite another source or directory's edit state. F2 uses the selected item after deselection or context-menu changes.
+- Terminal settings place the live preview inside its display/rendering subgroup, with explicit preview labeling and clearer category/subgroup hierarchy.
+
 ## [0.22.0] - 2026-11-02
 
 ### Added
@@ -19,7 +32,6 @@ All notable changes to Tunnelde are documented here. The format follows
 
 - Plugin view contributions can declare sidebar placement, controlled chat rendering and activity icons. Namespaced command IDs and minimum Tunnelde version requirements are validated.
 - Plugin tool approvals preserve complete operation details with scrollable monospace previews; password fields hide provider credentials.
-
 
 ## [0.21.1] - 2026-11-02
 

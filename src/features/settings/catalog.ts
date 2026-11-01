@@ -58,6 +58,7 @@ export interface SettingsGroup {
   id: string;
   label: MessageKey;
   keys: readonly SettingKey[];
+  preview?: "terminal";
 }
 
 /** Navigation and inline headings share the same groups; no extra settings pages. */
@@ -88,6 +89,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
       id: "rendering",
       label: "settings.groups.rendering",
       keys: ["terminalLineHeight", "terminalRenderer"],
+      preview: "terminal",
     },
     {
       id: "cursor",
@@ -141,7 +143,7 @@ export function groupSettings(section: SettingsSection, definitions: SettingDefi
         definitions.filter((definition) => definition.key === key),
       ),
     })),
-    { id: "ungrouped", label: null, definitions: ungrouped },
+    { id: "ungrouped", label: null, definitions: ungrouped, preview: undefined },
   ].filter((group) => group.definitions.length);
 }
 const choice = (value: string | number, label: MessageKey): SettingOption => ({ value, label });

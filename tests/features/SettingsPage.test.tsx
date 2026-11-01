@@ -42,6 +42,55 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("places the labelled terminal preview inside display settings and navigates to that parent", async () => {
+    useNavigation.setState({ settingsSection: "terminal" });
+    await act(async () => {
+      render(<SettingsPage />);
+    });
+    const category = screen
+      .getByRole("heading", { name: "Terminal", level: 2 })
+      .closest("section")!;
+    const rendering = screen.getByRole("heading", {
+      name: "Display and rendering",
+      level: 3,
+    }).parentElement!;
+    const preview = screen.getByRole("group", { name: "Terminal preview" });
+    expect(category.contains(rendering)).toBe(true);
+    expect(rendering.contains(preview)).toBe(true);
+    expect(
+      within(preview).getByRole("heading", { name: "Terminal preview", level: 4 }),
+    ).toBeTruthy();
+    expect(preview.getAttribute("aria-describedby")).toBeTruthy();
+    expect(
+      document.getElementById(preview.getAttribute("aria-describedby")!)?.textContent,
+    ).toContain("line spacing");
+    expect(rendering.querySelector('[data-setting="terminalLineHeight"]')).toBeTruthy();
+    expect(rendering.querySelector('[data-setting="terminalCursorStyle"]')).toBeNull();
+    const scroll = vi.fn();
+    rendering.scrollIntoView = scroll;
+    fireEvent.click(screen.getByRole("button", { name: "Display and rendering" }));
+    expect(scroll).toHaveBeenCalledWith({ block: "start" });
+    expect(useNavigation.getState().settingsSection).toBe("terminal");
+  });
+
+  it("keeps terminal search and modified-only results focused on matching preferences", () => {
+    useSettings.setState({ settings: { ...defaults, terminalLineHeight: 1.5 } });
+    useNavigation.setState({ settingsSection: "terminal" });
+    render(<SettingsPage />);
+    const search = screen.getByRole("textbox", { name: "Search settings" });
+    fireEvent.change(search, { target: { value: "显示与渲染" } });
+    expect(screen.getByRole("heading", { name: "Display and rendering", level: 3 })).toBeTruthy();
+    expect(row("terminalLineHeight")).toBeTruthy();
+    expect(row("terminalRenderer")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Terminal preview" })).toBeNull();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.getByRole("group", { name: "Terminal preview" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(document.querySelectorAll("[data-setting]")).toHaveLength(1);
+    expect(row("terminalLineHeight")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: "Terminal preview" })).toBeNull();
+  });
+
   it("keeps related settings in inline groups and navigates within the current category", () => {
     useNavigation.setState({ settingsSection: "files" });
     render(<SettingsPage />);
