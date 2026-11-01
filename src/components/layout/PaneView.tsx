@@ -29,7 +29,7 @@ import { useNavigation } from "@/store/navigation";
 import { isTauri } from "@/lib/api/ipc";
 import { useEditors } from "@/store/editors";
 import {
-  SIDEBAR_LABELS,
+  sidebarLabel,
   SIDEBAR_MIME,
   sidebarTabId,
   sidebarViewOf,
@@ -96,7 +96,7 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
     return !!entry && !entry.loading && entry.content !== entry.baseline;
   });
   const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
-  if (sidebar) return <>{t(SIDEBAR_LABELS[sidebar])}</>;
+  if (sidebar) return <>{sidebarLabel(sidebar, t)}</>;
   if (NAMED.includes(tab.kind)) {
     return (
       <>
@@ -210,7 +210,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
             aria-selected={active}
             title={
               tab.kind === "sidebar"
-                ? t(SIDEBAR_LABELS[sidebarViewOf(tab.id) ?? "hosts"])
+                ? sidebarLabel(sidebarViewOf(tab.id) ?? "hosts", t)
                 : NAMED.includes(tab.kind)
                   ? tab.title
                   : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])

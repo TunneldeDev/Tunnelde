@@ -14,6 +14,15 @@ function fixture(notes = "- Fix a reproducible bug.") {
   temporary.push(root);
   mkdirSync(join(root, "scripts/release"), { recursive: true });
   mkdirSync(join(root, "src-tauri"));
+  mkdirSync(join(root, "native-helpers"));
+  writeFileSync(
+    join(root, "native-helpers/Cargo.toml"),
+    '[package]\nname = "tunnelde-agent"\nversion = "0.18.1"\n',
+  );
+  writeFileSync(
+    join(root, "native-helpers/Cargo.lock"),
+    '[[package]]\nname = "tunnelde-agent"\nversion = "0.18.1"\n',
+  );
   for (const name of ["version", "changelog", "release", "verify-assets"]) {
     copyFileSync(
       join(process.cwd(), `scripts/release/${name}.mjs`),
@@ -53,6 +62,8 @@ describe("release preparation", () => {
       "src-tauri/Cargo.toml",
       "src-tauri/Cargo.lock",
       "src-tauri/tauri.conf.json",
+      "native-helpers/Cargo.toml",
+      "native-helpers/Cargo.lock",
       "CHANGELOG.md",
     ];
     const before = names.map(f.read);
@@ -64,6 +75,8 @@ describe("release preparation", () => {
     const f = fixture();
     expect(f.run("release", "--part", "minor").status).toBe(0);
     expect(f.run("version", "check", "v0.19.0").status).toBe(0);
+    expect(f.read("native-helpers/Cargo.toml")).toContain('version = "0.19.0"');
+    expect(f.read("native-helpers/Cargo.lock")).toContain('version = "0.19.0"');
     expect(f.read("CHANGELOG.md")).toContain("## [0.19.0] - ");
     expect(f.run("changelog", "notes", "0.19.0").stdout.trim()).toBe("- Fix a reproducible bug.");
   });
@@ -100,7 +113,7 @@ describe("release publishing", () => {
     ].map((name) => ({ name, size: 100 }));
     writeFileSync(join(f.root, "manifest.json"), JSON.stringify(manifest));
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
-    const run = () =>
+    const run = (...extra: string[]) =>
       f.run(
         "verify-assets",
         "--tag",
@@ -109,11 +122,25 @@ describe("release publishing", () => {
         "manifest.json",
         "--assets",
         "assets.json",
+        ...extra,
       );
     expect(run().status).toBe(1);
     assets.push({ name: "Tunnelde_0.19.0_x64-setup.exe.sig", size: 100 });
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
     expect(run().status).toBe(0);
+    expect(run("--helpers").status).toBe(1);
+    for (const platform of [
+      "windows-x86_64",
+      "macos-aarch64",
+      "macos-x86_64",
+      "linux-x86_64",
+      "linux-aarch64",
+    ]) {
+      const name = `tunnelde-agent-${platform}${platform.startsWith("windows-") ? ".exe" : ""}`;
+      assets.push({ name, size: 100 }, { name: `${name}.sha256`, size: 100 });
+    }
+    writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
+    expect(run("--helpers").status).toBe(0);
     assets[3]!.size = 0;
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
     expect(run().status).toBe(1);

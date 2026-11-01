@@ -1,6 +1,8 @@
+import { normalizeChatBlock, type PluginChatBlock } from "./pluginChat";
+
 export interface PluginField {
   id: string;
-  type: "text" | "textarea" | "select";
+  type: "text" | "password" | "textarea" | "select";
   label: string;
   value: string;
   placeholder: string;
@@ -19,7 +21,8 @@ export type PluginBlock =
   | { type: "text"; text: string }
   | { type: "kv"; items: { label: string; value: string }[] }
   | { type: "table"; columns: string[]; rows: string[][] }
-  | PluginFormBlock;
+  | PluginFormBlock
+  | PluginChatBlock;
 
 export const PLUGIN_INPUT_MAX_BYTES = 256 * 1024;
 export const PLUGIN_RESULT_MAX_BYTES = 1024 * 1024;
@@ -78,6 +81,12 @@ export function normalizeBlocks(value: unknown): PluginBlock[] {
     }
     const record = raw as Record<string, unknown>;
 
+    if (record.type === "chat") {
+      const chat = normalizeChatBlock(record);
+      if (chat && !blocks.some((block) => block.type === "chat")) blocks.push(chat);
+      continue;
+    }
+
     if (record.type === "form") {
       const id = identifier(record.id);
       if (!id || formIds.has(id)) continue;
@@ -91,7 +100,7 @@ export function normalizeBlocks(value: unknown): PluginBlock[] {
           !fieldId ||
           fieldIds.has(fieldId) ||
           !text(field.label) ||
-          !["text", "textarea", "select"].includes(String(field.type))
+          !["text", "password", "textarea", "select"].includes(String(field.type))
         )
           continue;
         const optionValues = new Set<string>();

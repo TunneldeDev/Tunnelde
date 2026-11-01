@@ -26,6 +26,34 @@ beforeEach(() => {
 });
 
 describe("PluginViewPage", () => {
+  it("keeps password form fields masked and sends them only after explicit submission", async () => {
+    apiMock.pluginRenderView.mockResolvedValue({
+      blocks: [
+        {
+          type: "form",
+          id: "credentials",
+          fields: [{ id: "token", type: "password", label: "API token", value: "" }],
+          actions: [{ id: "save", label: "Save token", command: "configure" }],
+        },
+      ],
+    });
+    apiMock.pluginRun.mockClear().mockResolvedValue({ text: "Saved" });
+    render(<PluginViewPage pluginId="example" viewId="config" />);
+    const token = (await screen.findByLabelText("API token")) as HTMLInputElement;
+    expect(token.type).toBe("password");
+    expect(token.autocomplete).toBe("off");
+    fireEvent.change(token, { target: { value: "example-private-token" } });
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
+    await waitFor(() =>
+      expect(apiMock.pluginRun).toHaveBeenCalledWith(
+        "example",
+        "configure",
+        expect.objectContaining({ token: "example-private-token" }),
+      ),
+    );
+  });
+
   it("renders heading, key/value and table blocks", async () => {
     apiMock.pluginRenderView.mockResolvedValue({
       title: "Hello plugin",

@@ -6,7 +6,7 @@ import { fileName, useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
 import { useNavigation, type SidebarView } from "@/store/navigation";
-import { SIDEBAR_LABELS, sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
+import { sidebarTitle, sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
 
 export interface WorkspaceTab {
   id: string;
@@ -277,7 +277,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       ...insert(state, {
         id,
         kind: "sidebar",
-        title: SIDEBAR_LABELS[view],
+        title: sidebarTitle(view),
         hostId: null,
         pinned: false,
       }),

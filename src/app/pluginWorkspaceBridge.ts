@@ -3,7 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import i18n from "@/i18n/i18n";
 import { api } from "@/lib/api/ipc";
 import { closeTab } from "@/lib/session/tabActions";
-import { SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
+import { sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { useHosts } from "@/store/hosts";
@@ -31,7 +31,7 @@ function optionalText(params: Record<string, unknown>, key: string): string | un
 }
 function sidebar(params: Record<string, unknown>) {
   const view = text(params, "view");
-  const result = SIDEBAR_VIEWS.find((item) => item === view);
+  const result = sidebarViewOf(sidebarTabId(view as Parameters<typeof sidebarTabId>[0]));
   if (!result) throw new Error("invalid:view");
   return result;
 }
@@ -138,7 +138,11 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       return null;
     }
     case "ui.confirm":
-      return confirmPlugin(request.requestId, request.pluginId, text(params, "message", 4000));
+      return confirmPlugin(
+        request.requestId,
+        request.pluginId,
+        text(params, "message", 220 * 1024),
+      );
     default:
       throw new Error("unknownMethod");
   }
@@ -167,6 +171,7 @@ function confirmPlugin(requestId: string, pluginId: string, message: string): Pr
     useDialogs.getState().confirm({
       title: i18n.t("pluginApi.confirmTitle", { name }),
       body: message,
+      preformatted: true,
       confirmLabel: i18n.t("pluginApi.confirm"),
       onConfirm: () => finish(true),
     });

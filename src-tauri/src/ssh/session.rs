@@ -554,6 +554,10 @@ async fn connect_for_auth(
     });
 
     tracing::info!(host = %host.name, session = %session_id, "ssh session opened");
+    let runner_app = app.clone();
+    tokio::spawn(async move {
+        crate::plugins::runners::on_reconnect(&runner_app).await;
+    });
     Ok(info)
 }
 

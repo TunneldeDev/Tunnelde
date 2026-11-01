@@ -11,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   settings: { theme: "dark", motion: "system", restoreWorkspace: true },
   updateRefresh: vi.fn(),
   securityLoad: vi.fn(),
+  pluginLoad: vi.fn(),
+  pluginStart: vi.fn(),
   hosts: [] as { id: string }[],
   events: {
     onSettingsChanged: vi.fn(),
@@ -45,7 +47,11 @@ vi.mock("@/store/updates", () => ({
   useUpdates: { getState: () => ({ refresh: mocks.updateRefresh, apply: vi.fn() }) },
 }));
 vi.mock("@/store/monitor", () => ({ useMonitor: { getState: () => ({ forget: vi.fn() }) } }));
-vi.mock("@/store/plugins", () => ({ usePlugins: { getState: () => ({ apply: vi.fn() }) } }));
+vi.mock("@/store/plugins", () => ({
+  usePlugins: {
+    getState: () => ({ apply: vi.fn(), load: mocks.pluginLoad, start: mocks.pluginStart }),
+  },
+}));
 vi.mock("@/store/pluginSecurity", () => ({
   reportPluginExecutionFailure: vi.fn(),
   usePluginSecurity: {
@@ -92,6 +98,8 @@ beforeEach(() => {
   mocks.settingsLoad.mockReset().mockResolvedValue(undefined);
   mocks.updateRefresh.mockReset().mockResolvedValue(undefined);
   mocks.securityLoad.mockReset().mockResolvedValue(undefined);
+  mocks.pluginLoad.mockReset().mockResolvedValue(undefined);
+  mocks.pluginStart.mockReset();
   mocks.toast.mockReset();
   mocks.hosts = [];
   mocks.settings = { theme: "dark", motion: "system", restoreWorkspace: true };
@@ -103,6 +111,22 @@ afterEach(() => {
 });
 
 describe("workspace startup and persistence", () => {
+  it("discovers plugin contributions before restoring tabs without starting executable plugins", async () => {
+    const discovered = deferred<void>();
+    mocks.pluginLoad.mockReturnValueOnce(discovered.promise);
+    mocks.tabs.mockResolvedValue([{ ...record("sidebar:plugin:assistant:chat"), kind: "sidebar" }]);
+    const { bootstrap, useWorkspace } = await fresh();
+    const startup = bootstrap();
+    await vi.waitFor(() => expect(mocks.pluginLoad).toHaveBeenCalledOnce());
+    expect(mocks.tabs).not.toHaveBeenCalled();
+    discovered.resolve();
+    await startup;
+    expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toContain(
+      "sidebar:plugin:assistant:chat",
+    );
+    expect(mocks.pluginStart).not.toHaveBeenCalled();
+  });
+
   it("skips restoring on the next startup without immediately replacing the saved snapshot", async () => {
     mocks.settings.restoreWorkspace = false;
     const { bootstrap, useWorkspace } = await fresh();

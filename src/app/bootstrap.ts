@@ -38,7 +38,8 @@ async function start(): Promise<void> {
   }
 
   await wireEvents();
-  await usePluginSecurity.getState().load();
+  // Discover view contributions before restoring their tabs; discovery does not execute plugins.
+  await Promise.all([usePluginSecurity.getState().load(), usePlugins.getState().load()]);
   let restored = false;
   try {
     const records = await api.tabs();

@@ -29,6 +29,7 @@ pub struct HostContext {
     pub fingerprint: String,
     pub permissions: Vec<String>,
     pub generation: u64,
+    pub tool_client: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -46,6 +47,27 @@ macro_rules! method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("runners.deploy", ["ssh.exec", "fs.read", "sftp.write"], "{sessionId:string,platform:posix|windows,directory:string,runnerPath:string,executable:string}", "After explicit confirmation, deploy an optional selected native helper and this plugin into a fresh user directory. Never install Node or modify services."),
+    method!("runners.start", ["ssh.exec"], "{sessionId:string,directory:string,config:object,secrets?:object}", "Start a durable plugin runner using a previously approved deployment; secrets travel over SSH stdin, not files or argv."),
+    method!("runners.list", ["ssh.exec"], "{}", "Read this plugin's durable runner records, including stopPending for unreachable revoked tasks."),
+    method!("runners.send", ["ssh.exec"], "{sessionId:string,runnerId:string,message:object}", "Enqueue an RPC request or approval response for this plugin's own remote runner."),
+    method!("runners.poll", ["ssh.exec"], "{sessionId:string,runnerId:string,afterSeq?:number}", "Read sequenced durable runner events and pending approvals after reconnect."),
+    method!("runners.status", ["ssh.exec"], "{sessionId:string,runnerId:string}", "Read this plugin's remote runner status."),
+    method!("runners.stop", ["ssh.exec"], "{sessionId:string,runnerId:string}", "Persist and request stopping a remote runner; does not claim that an unreachable process has stopped."),
+    method!("events.publish", [], "{event:string,payload:JSON}", "Publish a bounded plugin-identified UI event; the host supplies identity and runtime generation."),
+    method!("secrets.get", ["secrets"], "{key:string}", "Read this plugin's own OS-keyring secret; return string or null. Never exposes SSH credentials."),
+    method!("secrets.set", ["secrets"], "{key:string,value:string}", "Store this plugin's own secret in the operating system keyring, at most 16KiB."),
+    method!("secrets.delete", ["secrets"], "{key:string}", "Delete this plugin's own keyring secret."),
+    method!("tasks.start", [], "{executable:string,args?:string[],cwd?:string,sessionId?:string,platform?:posix|windows,timeoutMs?:number}", "Start an explicitly selected executable; requires process.exec locally or ssh.exec remotely. Return taskId. Separate bounded stdout/stderr; default 30 minutes, maximum 24 hours."),
+    method!("tasks.list", [], "{}", "List this runtime's own background processes."),
+    method!("tasks.status", [], "{taskId:string}", "Read this runtime's own process status and exit code."),
+    method!("tasks.readOutput", [], "{taskId:string,afterSeq?:number}", "Read bounded sequenced stdout/stderr events; truncated reports expired output."),
+    method!("tasks.write", [], "{taskId:string,data:string}", "Write UTF-8 to this runtime's own process stdin; at most 128KiB."),
+    method!("tasks.closeInput", [], "{taskId:string}", "Close this runtime's own process stdin."),
+    method!("tasks.cancel", [], "{taskId:string}", "Stop this runtime's own process; local process trees are terminated, remote server signal support may vary."),
+    method!("tools.invoke", [], "{method:string,params:object,mode:ask|approve|full|readOnly,scope:{sessionIds?:string[],hostIds?:string[],localRoots?:string[],remoteRoots?:{sessionId:string,path:string}[]},review?:{approved:boolean,reason:string},clientId?:string,requestId?:string}", "Execute an allowlisted AI/MCP tool after permission, target scope and approval checks. ReadOnly rejects every command and mutation. Review may only be supplied by a trusted plugin's independent reviewer."),
+    method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation; already completed operations cannot be rolled back."),
+    method!("tools.revokeClient", [], "{clientId:string}", "Cancel pending tool invocations owned by this plugin runtime's client."),
     method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization."),
     method!("log", ["log"], "{message:string,level?:string}", "Write a bounded plugin-tagged log message."),
     method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
@@ -120,7 +142,7 @@ pub fn method_info(name: &str) -> Option<&'static ApiMethod> {
     METHODS.iter().find(|entry| entry.name == name)
 }
 
-fn authorize(context: &HostContext, permissions: &[&str]) -> AppResult<()> {
+pub(super) fn authorize(context: &HostContext, permissions: &[&str]) -> AppResult<()> {
     let state = context.app.state::<AppState>();
     state.plugins.security.authorize(
         &context.id,
@@ -141,7 +163,7 @@ fn authorize(context: &HostContext, permissions: &[&str]) -> AppResult<()> {
     Ok(())
 }
 
-fn field<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<T> {
+pub(super) fn field<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<T> {
     serde_json::from_value(
         params
             .get(key)
@@ -151,7 +173,7 @@ fn field<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<T> {
     .map_err(|_| AppError::validation(format!("plugin.api.invalid:{key}")))
 }
 
-fn optional<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<Option<T>> {
+pub(super) fn optional<T: DeserializeOwned>(params: &Value, key: &str) -> AppResult<Option<T>> {
     match params.get(key) {
         None | Some(Value::Null) => Ok(None),
         Some(value) => serde_json::from_value(value.clone())
@@ -188,6 +210,28 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         .and_then(Value::as_str)
         .map(str::to_owned);
     let result = match method {
+        "events.publish" => {
+            let event: String = field(&params, "event")?;
+            if event.is_empty()
+                || event.len() > 128
+                || !event
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
+            {
+                return Err(AppError::validation("plugin.api.invalidEvent"));
+            }
+            app.emit("plugin://event", json!({"pluginId":context.id,"generation":context.generation,"event":event,"payload":params.get("payload").cloned().unwrap_or(Value::Null)}))?;
+            Ok(Value::Null)
+        }
+        name if name.starts_with("secrets.") => secret(context, name, &params).await,
+        name if name.starts_with("tasks.") => super::tasks::dispatch(context, name, params).await,
+        name if name.starts_with("runners.") => {
+            super::runners::dispatch(context, name, params).await
+        }
+        "tools.invoke" => super::tools::invoke(context, params).await,
+        "tools.cancel" | "tools.revokeClient" => {
+            super::tools::cancel(context, method, &params).await
+        }
         "api.describe" => encode(json!({"version":1,"methods":METHODS})),
         "log" => {
             let message: String = field(&params, "message")?;
@@ -416,6 +460,12 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                     generation: context.generation,
                 },
             )?;
+            if !super::tools::register_resource(context, &transfer_id, true) {
+                state
+                    .transfers
+                    .cancel_owned(&transfer_id, &context.id, context.generation);
+                return Err(AppError::validation("plugin.tools.cancelled"));
+            }
             encode(transfer_id)
         }
         "files.cancelTransfer" => encode(state.transfers.cancel_owned(
@@ -607,6 +657,38 @@ fn storage_key(params: &Value) -> AppResult<String> {
     Ok(key)
 }
 
+async fn secret(context: &HostContext, method: &str, params: &Value) -> AppResult<Value> {
+    let key = storage_key(params)?;
+    let identity = format!("plugin:{}:{}", context.id, key);
+    let value: Option<String> = if method == "secrets.set" {
+        Some(field(params, "value")?)
+    } else {
+        None
+    };
+    if value.as_ref().is_some_and(|value| value.len() > 16 * 1024) {
+        return Err(AppError::validation("plugin.api.secretTooLarge"));
+    }
+    let method = method.to_owned();
+    let context = context.clone();
+    tokio::task::spawn_blocking(move || {
+        authorize(&context, &["secrets"])?;
+        match method.as_str() {
+            "secrets.get" => encode(crate::vault::load(&identity)?),
+            "secrets.set" => {
+                crate::vault::save(&identity, value.as_deref().unwrap_or_default())?;
+                Ok(Value::Null)
+            }
+            "secrets.delete" => {
+                crate::vault::forget(&identity)?;
+                Ok(Value::Null)
+            }
+            _ => Err(AppError::validation("plugin.api.unknownMethod")),
+        }
+    })
+    .await
+    .map_err(|_| AppError::internal("plugin.api.keyringFailed"))?
+}
+
 async fn storage(context: &HostContext, method: &str, params: &Value) -> AppResult<Value> {
     static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     let key = storage_key(params)?;
@@ -689,7 +771,11 @@ fn pending_frontend() -> &'static Mutex<HashMap<String, PendingFrontend>> {
     PENDING.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-async fn frontend_request(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
+pub(super) async fn frontend_request(
+    context: &HostContext,
+    method: &str,
+    params: Value,
+) -> AppResult<Value> {
     let entry =
         method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
     let request_id = uuid::Uuid::new_v4().to_string();

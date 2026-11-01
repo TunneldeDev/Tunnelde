@@ -7,7 +7,9 @@ import { useMarketplace, boundTo, newerVersion } from "@/store/marketplace";
 import { usePlugins } from "@/store/plugins";
 import { useDialogs } from "@/store/dialogs";
 import { useWorkspace } from "@/store/workspace";
-import type { MarketEntry, MarketSource } from "@/lib/api/types";
+import type { MarketEntry, MarketSource, PluginView } from "@/lib/api/types";
+import { useNavigation } from "@/store/navigation";
+import { pluginSidebarId } from "@/lib/plugins/sidebars";
 import i18n from "@/i18n/i18n";
 import { PluginError } from "./PluginError";
 import { PluginThemes } from "./PluginThemes";
@@ -77,12 +79,15 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
         <EmptyState title={t(loading.length ? "common.loading" : "market.notFound")} />
       </div>
     );
-  const openView = async (view: { id: string; title: string }) => {
+  const openView = async (view: PluginView) => {
     if (!installed) return;
     if (usePlugins.getState().items.find((p) => p.id === pluginId)?.status !== "running")
       await usePlugins.getState().start(pluginId);
-    if (usePlugins.getState().items.find((p) => p.id === pluginId)?.status === "running")
-      useWorkspace.getState().openPluginView(pluginId, view.id, view.title);
+    if (usePlugins.getState().items.find((p) => p.id === pluginId)?.status === "running") {
+      if (view.location === "sidebar")
+        useNavigation.getState().showSidebar(pluginSidebarId(pluginId, view.id));
+      else useWorkspace.getState().openPluginView(pluginId, view.id, view.title);
+    }
   };
   const compatible =
     entry?.apiVersion === undefined || entry.apiVersion === null || entry.apiVersion === 1;

@@ -344,6 +344,16 @@ export interface PluginCommand {
 export interface PluginView {
   id: string;
   title: string;
+  location?: "sidebar" | "workspace";
+  kind?: "chat" | "blocks";
+  icon?: string;
+}
+
+export interface PluginEvent {
+  pluginId: string;
+  generation: number;
+  event: string;
+  payload: unknown;
 }
 
 export interface MarketEntry {

@@ -323,7 +323,7 @@ pub fn home_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
-async fn session(app: &AppHandle, session_id: &str) -> AppResult<SftpSession> {
+pub(crate) async fn session(app: &AppHandle, session_id: &str) -> AppResult<SftpSession> {
     let handle = app.state::<AppState>().ssh.handle(session_id)?;
     let channel = handle
         .channel_open_session()
@@ -762,13 +762,57 @@ async fn is_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<bo
         }
         None => {
             let metadata = tokio::fs::symlink_metadata(&endpoint.path).await?;
-            (metadata.is_dir(), metadata.is_symlink())
+            (metadata.is_dir(), local_metadata_is_link(&metadata))
         }
     };
     if symlink {
         return Err(AppError::validation("sftp.symlinkUnsupported"));
     }
     Ok(directory)
+}
+
+fn local_metadata_is_link(metadata: &std::fs::Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        // Junctions and other reparse points may redirect traversal as well.
+        metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
+    }
+    #[cfg(not(windows))]
+    metadata.file_type().is_symlink()
+}
+
+fn reject_local_destination_link(path: &Path) -> AppResult<()> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if local_metadata_is_link(&metadata) => {
+            Err(AppError::validation("sftp.symlinkUnsupported"))
+        }
+        Ok(_) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}
+
+async fn reject_destination_link(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+    match sftp {
+        Some(sftp) => reject_remote_destination_link(sftp, &endpoint.path).await,
+        None => reject_local_destination_link(Path::new(&endpoint.path)),
+    }
+}
+
+async fn reject_remote_destination_link(sftp: &SftpSession, path: &str) -> AppResult<()> {
+    match sftp.symlink_metadata(path).await {
+        Ok(metadata) if metadata.is_symlink() => {
+            Err(AppError::validation("sftp.symlinkUnsupported"))
+        }
+        Ok(_) => Ok(()),
+        Err(russh_sftp::client::error::Error::Status(status))
+            if status.status_code == StatusCode::NoSuchFile =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(map_sftp(error)),
+    }
 }
 
 async fn children(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Vec<String>> {
@@ -791,6 +835,7 @@ async fn children(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<
 }
 
 async fn make_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+    reject_destination_link(endpoint, sftp).await?;
     match sftp {
         Some(handle) => {
             if remote_exists(handle, &endpoint.path).await? {
@@ -849,6 +894,7 @@ async fn open_writer(
     sftp: Option<&SftpSession>,
     overwrite: bool,
 ) -> AppResult<Writer> {
+    reject_destination_link(endpoint, sftp).await?;
     Ok(match sftp {
         Some(handle) => Writer::Remote(Box::new(
             handle
@@ -1250,13 +1296,15 @@ fn remove_local_entry(path: &Path) -> AppResult<()> {
 }
 
 fn copy_local_entry(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
-    if from.is_dir() {
+    let metadata = std::fs::symlink_metadata(from)?;
+    if local_metadata_is_link(&metadata) {
+        return Err(AppError::validation("sftp.symlinkUnsupported"));
+    }
+    reject_local_destination_link(to)?;
+    if metadata.is_dir() {
         std::fs::create_dir_all(to)?;
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;
-            if entry.file_type()?.is_symlink() {
-                return Err(AppError::validation("sftp.symlinkUnsupported"));
-            }
             copy_local_entry(&entry.path(), &to.join(entry.file_name()), overwrite)?;
         }
         return Ok(());
@@ -1282,6 +1330,7 @@ async fn copy_remote_entry(
     if metadata.is_symlink() {
         return Err(AppError::validation("sftp.symlinkUnsupported"));
     }
+    reject_remote_destination_link(sftp, to).await?;
     if metadata.is_dir() {
         if remote_exists(sftp, to).await? {
             if !overwrite {
@@ -1803,7 +1852,13 @@ mod tests {
             }
 
             async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
-                self.stat(id, path).await
+                let metadata =
+                    std::fs::symlink_metadata(self.root.join(path)).map_err(io_status)?;
+                let mut attrs = FileAttributes::from(&metadata);
+                if local_metadata_is_link(&metadata) {
+                    attrs.set_type(russh_sftp::protocol::FileMode::LNK);
+                }
+                Ok(Attrs { id, attrs })
             }
         }
 
@@ -1824,6 +1879,38 @@ mod tests {
                     .await
                     .expect("SFTP protocol handshake"),
             )
+        }
+
+        #[tokio::test]
+        async fn sftp_copy_and_transfer_reject_destination_links() {
+            let root = temp_root("sftp-destination-link");
+            let outside = root.join("outside");
+            std::fs::create_dir(&outside).unwrap();
+            std::fs::write(outside.join("preserved.txt"), "preserve").unwrap();
+            std::fs::write(root.join("source.txt"), "overwrite").unwrap();
+            let link = root.join("link");
+            directory_link(&outside, &link);
+            let sftp = client(&root, Arc::new(State::default())).await;
+            let error = copy_remote_entry(&sftp, "source.txt", "link", true)
+                .await
+                .unwrap_err();
+            assert!(error.to_string().contains("sftp.symlinkUnsupported"));
+            let endpoint = Endpoint {
+                session: Some("test".into()),
+                path: "link".into(),
+            };
+            assert!(make_dir(&endpoint, Some(&sftp)).await.is_err());
+            assert!(open_writer(&endpoint, Some(&sftp), true).await.is_err());
+            assert_eq!(
+                std::fs::read_to_string(outside.join("preserved.txt")).unwrap(),
+                "preserve"
+            );
+            sftp.close().await.unwrap();
+            #[cfg(windows)]
+            std::fs::remove_dir(link).unwrap();
+            #[cfg(unix)]
+            std::fs::remove_file(link).unwrap();
+            std::fs::remove_dir_all(root).unwrap();
         }
 
         #[tokio::test]
@@ -2000,6 +2087,75 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).expect("root");
         root
+    }
+
+    fn directory_link(target: &Path, link: &Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, link).unwrap();
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            let output = std::process::Command::new("cmd.exe")
+                .args(["/C", "mklink", "/J"])
+                .arg(link)
+                .arg(target)
+                .creation_flags(0x08000000)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+    }
+
+    #[test]
+    fn recursive_copy_rejects_destination_directory_links_without_touching_outside() {
+        let root = temp_root("destination-link");
+        let source = root.join("source");
+        let target = root.join("target");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(source.join("nested")).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(source.join("nested/existing.txt"), "overwrite").unwrap();
+        std::fs::write(source.join("nested/new.txt"), "create").unwrap();
+        std::fs::write(outside.join("existing.txt"), "preserve").unwrap();
+        let link = target.join("nested");
+        directory_link(&outside, &link);
+        assert!(local_copy(display_path(&source), display_path(&target), true).is_err());
+        assert_eq!(
+            std::fs::read_to_string(outside.join("existing.txt")).unwrap(),
+            "preserve"
+        );
+        assert!(!outside.join("new.txt").exists());
+        assert!(copy_local_entry(&link, &root.join("copy-of-link"), true).is_err());
+        #[cfg(windows)]
+        std::fs::remove_dir(link).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn transfer_writer_rejects_destination_directory_links() {
+        let root = temp_root("transfer-link");
+        let outside = root.join("outside");
+        std::fs::create_dir(&outside).unwrap();
+        let link = root.join("link");
+        directory_link(&outside, &link);
+        let endpoint = Endpoint {
+            session: None,
+            path: display_path(&link),
+        };
+        assert!(make_dir(&endpoint, None).await.is_err());
+        assert!(open_writer(&endpoint, None, true).await.is_err());
+        #[cfg(windows)]
+        std::fs::remove_dir(link).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

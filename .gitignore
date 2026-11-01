@@ -14,6 +14,7 @@ playwright-report/
 
 # Rust / Tauri build output and generated schemas
 src-tauri/target/
+native-helpers/target/
 src-tauri/gen/
 src-tauri/.cargo/
 

@@ -114,7 +114,7 @@ Executable Node plugins can send JSON-RPC requests back to the host while handli
 command. Replies use the same ID; both directions continue reading concurrently, so
 an awaited host call does not block the command response. The independent hub supplies
 a zero-dependency SDK in `sdk/tunnelde-plugin.mjs`, TypeScript declarations and the full
-68-method catalogue in `sdk/api.md` and `sdk/api.json`.
+89-method catalogue in `sdk/api.md` and `sdk/api.json`.
 
 ```js
 import { createPlugin } from "./tunnelde-plugin.mjs";
@@ -150,6 +150,29 @@ still mandatory. Unknown methods and permissions are rejected.
 | `clipboard.read`, `clipboard.write` | Explicit text clipboard access                                                                                                 |
 | `log`                               | Bounded logs tagged with the plugin's identity                                                                                 |
 | `network`                           | Declares network use by Node code; does not provide an OS network sandbox                                                      |
+| `process.exec`                      | Explicitly selected local streaming executables; no automatic runtime discovery                                                |
+| `secrets`                           | This plugin's own OS-keyring values; never SSH passwords or private keys                                                        |
+
+Tunnelde 0.22 adds `events.publish`, plugin-owned `tasks.*`, scoped `tools.*`, and durable
+`runners.*` transport. `tools.invoke` accepts `ask`, `approve`, `full` or `readOnly` and explicit
+local roots, SSH sessions/hosts and remote roots. ReadOnly rejects commands and mutations.
+Ask confirms changes and commands; Approve uses a trusted plugin's independent reviewer and
+falls back to human approval; Full skips individual approval. Canonical path checks and content
+hashes protect supported file tools. They do not sandbox arbitrary shell commands or trusted
+Node plugins. Client revocation cancels pending requests and owned tasks/transfers.
+
+Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity `icon` to
+contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
+model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
+The UI preserves drafts when a panel is moved. Secrets belong in `secrets.*`, never view data
+or plugin storage. See the hub SDK and Tunnelde AI source for the complete schema.
+
+Remote runners require explicit confirmation, a separately selected native helper, a fresh
+private remote directory and an explicitly chosen remote runtime. No service or Node runtime
+is installed. Closing the app preserves remote tasks; stopping a plugin or entering restricted
+mode records stop requests and retries unreachable hosts on SSH reconnect. Runner records bind
+to a saved host, so reconnecting with a new session ID can recover the same task. See
+[native helper setup](../native-helpers/README.md).
 
 Host/session snapshots never return passwords or private keys. There is no generic
 Tauri command invocation, vault access, host-key auto-trust, self-approval or API for

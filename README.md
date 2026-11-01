@@ -102,8 +102,19 @@ scripts/ci/           Repository hygiene checks
 
 Plugins live in the app data `plugins` folder and speak JSON-RPC 2.0 over stdio, one JSON object
 per line. A minimal example ships in `examples/plugins/hello`; copy that folder into the plugins
-directory and start it from Settings → Plugins. Plugins can also declare `views` and answer
-`view.render` with JSON blocks that the host renders as a read-only page.
+directory and start it from Settings → Plugins. Plugins can declare workspace or dockable sidebar
+views, including controlled chat, and publish sequenced updates through the host API.
+
+The independent [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) includes **Tunnelde MCP**
+for authenticated local AI tools and **Tunnelde AI** for chat, API providers and structured coding
+CLIs. Both require Tunnelde 0.22.0 or newer. Their four permission modes are Ask for approval,
+Approve for me, Full Access and ReadOnly; the default asks before changes or commands.
+
+Node is optional and is not bundled. Using an existing runtime requires consent or explicit
+selection. API keys use the operating system keyring. Remote agent execution requires a matching
+optional native helper, an explicitly configured remote runtime, and confirmation before deploying
+into a fresh user directory. See [native helper setup](native-helpers/README.md) and the plugins'
+READMEs for their boundaries and supported CLI permission modes.
 
 ## Platforms
 

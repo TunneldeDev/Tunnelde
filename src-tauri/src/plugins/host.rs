@@ -263,6 +263,7 @@ async fn read_loop(
 
     requests.abort_all();
     if let Some(context) = &context {
+        super::tasks::cancel_plugin(&context.id, Some(context.generation));
         context
             .app
             .state::<crate::state::AppState>()

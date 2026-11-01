@@ -7,7 +7,9 @@ import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDo
 import { ActivityBar } from "@/components/layout/ActivityBar";
 import { PaneLayout } from "@/components/layout/PaneLayout";
 import { WorkspaceContents } from "@/components/layout/TabContent";
-import { useNavigation } from "@/store/navigation";
+import { useNavigation, type SidebarView } from "@/store/navigation";
+import { usePlugins } from "@/store/plugins";
+import { plugin } from "../fixtures/plugins";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { SIDEBAR_MIME, TAB_MIME } from "@/lib/session/sidebarDock";
 vi.mock("@/features/terminal/TerminalPage", () => ({ TerminalPage: () => null }));
@@ -17,12 +19,15 @@ vi.mock("@/components/layout/HostTree", () => ({ HostTree: () => <List view="hos
 vi.mock("@/features/plugins/PluginsSidebar", () => ({
   PluginsSidebar: () => <List view="plugins" />,
 }));
+vi.mock("@/features/plugins/PluginSidebarPanel", () => ({
+  PluginSidebarPanel: ({ view }: { view: SidebarView }) => <List view={view} />,
+}));
 vi.mock("@/features/settings/TrustedHostsSidebar", () => ({
   TrustedHostsSidebar: () => <List view="knownHosts" />,
 }));
 vi.mock("@/features/welcome/WelcomePage", () => ({ WelcomePage: () => <div>Workspace page</div> }));
 
-function List({ view }: { view: "hosts" | "plugins" | "knownHosts" }) {
+function List({ view }: { view: SidebarView }) {
   const [query, setQuery] = useState("");
   useEffect(() => {
     mounted(view);
@@ -79,6 +84,7 @@ function drop(target: Element, x: number, y: number, id = "sidebar:hosts") {
 beforeEach(async () => {
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
+  usePlugins.setState({ items: [] });
   useNavigation.setState({
     activeSidebar: "hosts",
     sidebarVisible: true,
@@ -96,6 +102,37 @@ beforeEach(async () => {
 });
 
 describe("sidebar panel docking", () => {
+  it("discovers contributed chat sidebars and preserves their live draft when docked and restored", () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          status: "running",
+          views: [
+            { id: "chat", title: "AI assistant", location: "sidebar", kind: "chat", icon: "bot" },
+          ],
+        },
+      ],
+    });
+    render(<Shell />);
+    fireEvent.click(screen.getByRole("button", { name: "AI assistant" }));
+    const view = "plugin:formatter:chat";
+    const id = `sidebar:${view}`;
+    const input = screen.getByRole("textbox", { name: `${view} search` });
+    fireEvent.change(input, { target: { value: "Keep this conversation draft" } });
+    act(() => useWorkspace.getState().splitTab(id, "column", "after", "pane-1"));
+    expect(input.closest('[data-docked="true"]')).toBeTruthy();
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === id)?.title).toBe("AI assistant");
+    const records = workspaceRecords();
+    act(() => useWorkspace.getState().hydrate(records));
+    expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(true);
+    act(() => useWorkspace.getState().returnSidebar(view));
+    expect(screen.getByRole("textbox", { name: `${view} search` })).toBe(input);
+    expect((input as HTMLInputElement).value).toBe("Keep this conversation draft");
+    expect(mounted.mock.calls.filter(([name]) => name === view)).toHaveLength(1);
+    expect(unmounted).not.toHaveBeenCalled();
+  });
+
   it("leaves the sidebar in place when dragging its title is cancelled", () => {
     const view = render(<Shell />);
     const title = view.container.querySelector(".sidebar-drag-title")!;

@@ -323,6 +323,9 @@ pub async fn install_remote(
         task.check()?;
         task.progress("installing", 0, None);
         let info = state.plugins.install_market(&root, &source, update).await?;
+        if update {
+            state.plugins.revoke_background(app, &info.id);
+        }
         task.progress("done", bytes.len() as u64, Some(bytes.len() as u64));
         Ok(info)
     }

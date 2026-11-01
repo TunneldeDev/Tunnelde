@@ -38,6 +38,8 @@ pub const PERMISSIONS: &[&str] = &[
     "clipboard.write",
     "app.openExternal",
     "network",
+    "process.exec",
+    "secrets",
 ];
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

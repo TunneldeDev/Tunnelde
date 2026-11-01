@@ -19,11 +19,13 @@ import {
 import { copyText } from "@/lib/session/clipboard";
 import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/pluginSecurity";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
+import { PluginChat } from "./PluginChat";
 import "@/styles/pluginTools.css";
 
 interface PluginViewPageProps {
   pluginId: string;
   viewId: string;
+  embedded?: boolean;
 }
 
 interface RenderedView {
@@ -31,17 +33,18 @@ interface RenderedView {
   blocks: PluginBlock[];
 }
 
-export function PluginViewPage({ pluginId, viewId }: PluginViewPageProps) {
+export function PluginViewPage({ pluginId, viewId, embedded }: PluginViewPageProps) {
   return (
     <PluginViewContent
       key={JSON.stringify([pluginId, viewId])}
       pluginId={pluginId}
       viewId={viewId}
+      embedded={embedded}
     />
   );
 }
 
-function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
+function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) {
   const { t, i18n } = useTranslation();
   const [view, setView] = useState<RenderedView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,10 +91,14 @@ function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
   }, [invalidate, load]);
 
   return (
-    <div className="plugin-view">
+    <div className={`plugin-view${embedded ? " plugin-view--sidebar" : ""}`}>
       <header className="plugin-view__head">
-        <span className="plugin-view__title">{view?.title || t("pluginView.title")}</span>
-        <span className="plugin-view__plugin">{pluginId}</span>
+        {!embedded ? (
+          <>
+            <span className="plugin-view__title">{view?.title || t("pluginView.title")}</span>
+            <span className="plugin-view__plugin">{pluginId}</span>
+          </>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
@@ -125,6 +132,16 @@ function PluginViewContent({ pluginId, viewId }: PluginViewPageProps) {
           <EmptyState title={t("pluginView.empty")} />
         ) : (
           view.blocks.map((block, index) => {
+            if (block.type === "chat") {
+              return (
+                <PluginChat
+                  key={`chat:${block.id}`}
+                  pluginId={pluginId}
+                  viewId={viewId}
+                  block={block}
+                />
+              );
+            }
             if (block.type === "form") {
               return <PluginToolForm key={`form:${block.id}`} pluginId={pluginId} block={block} />;
             }
@@ -272,6 +289,8 @@ function PluginToolForm({ pluginId, block }: { pluginId: string; block: PluginFo
                 ) : (
                   <Input
                     id={fieldId}
+                    type={field.type === "password" ? "password" : "text"}
+                    autoComplete="off"
                     value={value}
                     placeholder={field.placeholder}
                     spellCheck={false}

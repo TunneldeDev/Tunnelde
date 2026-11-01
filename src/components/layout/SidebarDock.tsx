@@ -6,6 +6,8 @@ import { TrustedHostsSidebar } from "@/features/settings/TrustedHostsSidebar";
 import { SIDEBAR_MIME, sidebarTabId, sidebarViewOf, TAB_MIME } from "@/lib/session/sidebarDock";
 import { useNavigation, type SidebarView } from "@/store/navigation";
 import { useWorkspace } from "@/store/workspace";
+import { PluginSidebarPanel } from "@/features/plugins/PluginSidebarPanel";
+import { parsePluginSidebar, type PluginSidebarView } from "@/lib/plugins/sidebars";
 
 const containers = new Map<SidebarView, HTMLDivElement>();
 function containerFor(view: SidebarView): HTMLDivElement {
@@ -127,6 +129,8 @@ export function SidebarContents() {
         <HostTree />
       ) : view === "plugins" ? (
         <PluginsSidebar />
+      ) : parsePluginSidebar(view) ? (
+        <PluginSidebarPanel view={view as PluginSidebarView} />
       ) : (
         <TrustedHostsSidebar active={active} />
       ),

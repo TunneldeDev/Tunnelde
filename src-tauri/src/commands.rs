@@ -699,11 +699,21 @@ pub async fn plugin_run(
 
 /// Lets the user pick the folder that contains a plugin.
 #[tauri::command]
-pub async fn plugin_pick_folder(app: AppHandle) -> AppResult<Option<String>> {
+pub async fn plugin_pick_folder(
+    app: AppHandle,
+    title: Option<String>,
+) -> AppResult<Option<String>> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()
         .file()
-        .set_title("Plugin folder")
+        .set_title(
+            title
+                .as_deref()
+                .unwrap_or("Plugin folder")
+                .chars()
+                .take(120)
+                .collect::<String>(),
+        )
         .pick_folder(move |path| {
             let _ = tx.send(path);
         });
@@ -711,6 +721,32 @@ pub async fn plugin_pick_folder(app: AppHandle) -> AppResult<Option<String>> {
         .await
         .map_err(|_| AppError::internal("dialog.cancelled"))?;
     Ok(picked.map(|path| path.to_string()))
+}
+
+/// Choosing an executable does not run it or authorize its runtime.
+#[tauri::command]
+pub async fn plugin_pick_executable(
+    app: AppHandle,
+    title: Option<String>,
+) -> AppResult<Option<String>> {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title(
+            title
+                .as_deref()
+                .unwrap_or("Executable")
+                .chars()
+                .take(120)
+                .collect::<String>(),
+        )
+        .pick_file(move |path| {
+            let _ = tx.send(path);
+        });
+    Ok(rx
+        .await
+        .map_err(|_| AppError::internal("dialog.cancelled"))?
+        .map(|path| path.to_string()))
 }
 
 /// Lets the user pick a zipped plugin.
@@ -1013,6 +1049,7 @@ pub fn plugin_inspect(path: String) -> AppResult<plugins::manifest::PluginManife
 #[tauri::command]
 pub async fn plugin_uninstall(app: AppHandle, id: String) -> AppResult<()> {
     let state = app.state::<AppState>();
+    state.plugins.revoke_background(&app, &id);
     let result = state.plugins.uninstall(&id).await;
     plugins::security::emit_state(&app).await;
     result
@@ -1021,6 +1058,9 @@ pub async fn plugin_uninstall(app: AppHandle, id: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn plugin_reload(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>> {
     let state = app.state::<AppState>();
+    for plugin in state.plugins.list().await {
+        state.plugins.revoke_background(&app, &plugin.id);
+    }
     let result = state.plugins.reload().await;
     plugins::security::emit_state(&app).await;
     Ok(result)

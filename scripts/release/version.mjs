@@ -9,6 +9,8 @@ const files = {
   config: join(root, "src-tauri", "tauri.conf.json"),
   cargo: join(root, "src-tauri", "Cargo.toml"),
   lock: join(root, "src-tauri", "Cargo.lock"),
+  helper: join(root, "native-helpers", "Cargo.toml"),
+  helperLock: join(root, "native-helpers", "Cargo.lock"),
 };
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -83,6 +85,15 @@ export function setVersion(version) {
   }
   writeFileSync(files.lock, nextLock);
 
+  for (const file of [files.helper, files.helperLock]) {
+    const content = readFileSync(file, "utf8");
+    const pattern =
+      file === files.helper
+        ? /(\[package\][\s\S]*?\nversion = ")[^"]+(")/
+        : /(\[\[package\]\]\r?\nname = "tunnelde-agent"\r?\nversion = ")[^"]+(")/;
+    writeFileSync(file, content.replace(pattern, `$1${version}$2`));
+  }
+
   return version;
 }
 
@@ -97,6 +108,16 @@ export function checkVersion(tag) {
     readFileSync(files.lock, "utf8"),
   );
   const problems = [];
+  const helperVersion = /^version = "([^"]+)"$/m.exec(readFileSync(files.helper, "utf8"))?.[1];
+  const helperLockVersion =
+    /\[\[package\]\]\r?\nname = "tunnelde-agent"\r?\nversion = "([^"]+)"/.exec(
+      readFileSync(files.helperLock, "utf8"),
+    )?.[1];
+  if (helperVersion !== pkg || helperLockVersion !== pkg) {
+    problems.push(
+      `native helper versions ${helperVersion}/${helperLockVersion} != package.json ${pkg}`,
+    );
+  }
 
   if (!cargoMatch) {
     problems.push("src-tauri/Cargo.toml has no package version");

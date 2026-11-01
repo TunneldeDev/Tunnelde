@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { useWorkspace } from "@/store/workspace";
 import { sidebarTabId, SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
+import type { PluginSidebarView } from "@/lib/plugins/sidebars";
 
 export type SettingsSection =
   | "general"
@@ -13,7 +14,8 @@ export type SettingsSection =
   | "plugins"
   | "updates"
   | "advanced";
-export type SidebarView = "hosts" | "knownHosts" | "plugins";
+export type BuiltinSidebarView = "hosts" | "knownHosts" | "plugins";
+export type SidebarView = BuiltinSidebarView | PluginSidebarView;
 
 export const useNavigation = create<{
   sidebarVisible: boolean;

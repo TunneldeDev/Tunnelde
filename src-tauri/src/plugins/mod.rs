@@ -5,7 +5,10 @@ pub mod manifest;
 pub mod marketplace;
 pub mod network;
 pub mod node;
+pub mod runners;
 pub mod security;
+pub mod tasks;
+mod tools;
 pub mod wasm;
 
 use std::collections::HashMap;
@@ -109,6 +112,15 @@ impl Instance {
     }
 
     fn require_runtime(&self) -> AppResult<()> {
+        if let Some(range) = self.manifest.engines.get("tunnelde") {
+            let compatible = semver::VersionReq::parse(range)
+                .ok()
+                .zip(semver::Version::parse(env!("CARGO_PKG_VERSION")).ok())
+                .is_some_and(|(range, version)| range.matches(&version));
+            if !compatible {
+                return Err(AppError::validation("plugin.engine.unsupported"));
+            }
+        }
         if self.manifest.runtime.as_deref() == Some("theme") {
             return Err(AppError::validation("plugin.theme.noRuntime"));
         }
@@ -160,6 +172,32 @@ pub struct PluginsManager {
 }
 
 impl PluginsManager {
+    pub fn revoke_background(&self, app: &AppHandle, id: &str) {
+        tasks::cancel_plugin(id, None);
+        self.stop_remote_runners(app, id);
+    }
+    fn stop_remote_runners(&self, app: &AppHandle, id: &str) {
+        let info = self
+            .snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(id)
+            .cloned();
+        if let Some(info) = info {
+            let context = api::HostContext {
+                app: app.clone(),
+                id: info.id,
+                fingerprint: info.fingerprint,
+                permissions: info.permissions,
+                generation: 0,
+                tool_client: None,
+            };
+            tokio::spawn(async move {
+                runners::revoke(&context).await;
+            });
+        }
+    }
+
     pub fn initialize_security(&self, db: &crate::db::Database, locked: bool) -> AppResult<()> {
         self.security.initialize(db, locked)
     }
@@ -220,6 +258,8 @@ impl PluginsManager {
 
     pub async fn stop_immediately(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
         self.security.invalidate_runtime(id);
+        tasks::cancel_plugin(id, None);
+        self.stop_remote_runners(app, id);
         self.remember_source(id, None);
         let handle = self.instance(id).await?;
         let mut instance = handle.lock().await;
@@ -486,6 +526,7 @@ impl PluginsManager {
                         fingerprint: lease.fingerprint.clone(),
                         permissions: lease.permissions.clone(),
                         generation: lease.generation,
+                        tool_client: None,
                     }),
                 ),
             )
@@ -553,6 +594,8 @@ impl PluginsManager {
 
     pub async fn stop(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
         self.security.invalidate_runtime(id);
+        tasks::cancel_plugin(id, None);
+        self.stop_remote_runners(app, id);
         self.remember_source(id, None);
         let handle = self.instance(id).await?;
         let mut instance = handle.lock().await;
@@ -594,6 +637,7 @@ impl PluginsManager {
             .collect();
         for id in ids {
             self.security.invalidate_runtime(&id);
+            self.revoke_background(app, &id);
             self.remember_source(&id, None);
             let Ok(handle) = self.instance(&id).await else {
                 continue;

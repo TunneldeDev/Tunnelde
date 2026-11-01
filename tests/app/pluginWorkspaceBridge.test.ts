@@ -246,6 +246,22 @@ describe("plugin dialog and listener lifecycle", () => {
     await expect(pending).resolves.toBe(false);
   });
 
+  it("preserves complete multiline tool parameters for a scrollable manual review", async () => {
+    const message = `write file\n${"configuration line\n".repeat(9000)}`;
+    const pending = runPluginWorkspaceRequest(request("ui.confirm", { message }));
+    await settle();
+    expect(useDialogs.getState().dialog).toMatchObject({
+      kind: "confirm",
+      body: message,
+      preformatted: true,
+    });
+    useDialogs.getState().close();
+    await expect(pending).resolves.toBe(false);
+    await expect(
+      runPluginWorkspaceRequest(request("ui.confirm", { message: "x".repeat(220 * 1024 + 1) })),
+    ).rejects.toThrow("invalid:message");
+  });
+
   it("does not replace another dialog or remove a later unrelated dialog", async () => {
     useDialogs.getState().openHost();
     await expect(

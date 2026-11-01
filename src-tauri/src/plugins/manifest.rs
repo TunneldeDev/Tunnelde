@@ -20,6 +20,12 @@ pub struct PluginCommand {
 pub struct PluginView {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -128,9 +134,16 @@ impl PluginManifest {
         {
             return Err(AppError::validation("node.invalidRange"));
         }
+        if self
+            .engines
+            .get("tunnelde")
+            .is_some_and(|range| semver::VersionReq::parse(range).is_err())
+        {
+            return Err(AppError::validation("plugin.engine.invalidRange"));
+        }
         let mut command_ids = std::collections::HashSet::new();
         for command in &self.commands {
-            if !valid_id(&command.id)
+            if !valid_command_id(&command.id)
                 || command.title.trim().is_empty()
                 || !command_ids.insert(&command.id)
             {
@@ -139,7 +152,35 @@ impl PluginManifest {
         }
         let mut view_ids = std::collections::HashSet::new();
         for view in &self.views {
-            if !valid_id(&view.id) || view.title.trim().is_empty() || !view_ids.insert(&view.id) {
+            if !valid_id(&view.id)
+                || view.title.trim().is_empty()
+                || !view_ids.insert(&view.id)
+                || view
+                    .location
+                    .as_deref()
+                    .is_some_and(|v| !matches!(v, "sidebar" | "workspace"))
+                || view
+                    .kind
+                    .as_deref()
+                    .is_some_and(|v| !matches!(v, "chat" | "blocks"))
+                || view.icon.as_deref().is_some_and(|v| {
+                    !matches!(
+                        v,
+                        "bot"
+                            | "message-square"
+                            | "sparkles"
+                            | "blocks"
+                            | "network"
+                            | "wrench"
+                            | "message-circle"
+                            | "plug"
+                            | "terminal"
+                            | "server"
+                            | "folder"
+                            | "shield"
+                    )
+                })
+            {
                 return Err(AppError::validation("plugin.view.invalid"));
             }
         }
@@ -227,6 +268,10 @@ pub fn valid_id(value: &str) -> bool {
                 || character == '-'
                 || character == '_'
         })
+}
+
+pub fn valid_command_id(value: &str) -> bool {
+    value.len() <= 128 && !value.is_empty() && value.split('.').all(valid_id)
 }
 
 #[cfg(test)]

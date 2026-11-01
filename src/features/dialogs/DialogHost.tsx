@@ -440,6 +440,7 @@ function ConfirmDialog({
   body,
   confirmLabel,
   danger,
+  preformatted,
   onConfirm,
   onClose,
 }: {
@@ -447,6 +448,7 @@ function ConfirmDialog({
   body: string;
   confirmLabel: string;
   danger?: boolean;
+  preformatted?: boolean;
   onConfirm: () => void | Promise<void>;
   onClose: () => void;
 }) {
@@ -473,7 +475,7 @@ function ConfirmDialog({
       title={title}
       closeLabel={t("common.close")}
       onClose={onClose}
-      width={400}
+      width={preformatted ? 760 : 400}
       dismissible={!busy}
       footer={
         <>
@@ -490,7 +492,25 @@ function ConfirmDialog({
         </>
       }
     >
-      <p className="dialog-text">{body}</p>
+      {preformatted ? (
+        <pre
+          className="dialog-text"
+          tabIndex={0}
+          style={{
+            maxHeight: "55vh",
+            overflow: "auto",
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+            fontFamily: "var(--td-mono)",
+            fontSize: 12,
+            lineHeight: 1.6,
+          }}
+        >
+          {body}
+        </pre>
+      ) : (
+        <p className="dialog-text">{body}</p>
+      )}
     </Dialog>
   );
 }
@@ -528,6 +548,7 @@ export function DialogHost() {
           body={dialog.body}
           confirmLabel={dialog.confirmLabel}
           danger={dialog.danger}
+          preformatted={dialog.preformatted}
           onConfirm={dialog.onConfirm}
           onClose={close}
         />

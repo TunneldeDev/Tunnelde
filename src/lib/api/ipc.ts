@@ -14,6 +14,7 @@ import type {
   Listing,
   RemoteProcess,
   PluginInfo,
+  PluginEvent,
   PluginSecurityState,
   PluginConfig,
   MarketSource,
@@ -116,7 +117,10 @@ export const api = {
         "id" | "name" | "version" | "permissions" | "apiVersion" | "runtime" | "themes"
       >
     >("plugin_inspect", { path }),
-  pluginPickFolder: () => invoke<string | null>("plugin_pick_folder"),
+  pluginPickFolder: (title?: string) =>
+    invoke<string | null>("plugin_pick_folder", { title: title ?? null }),
+  pluginPickExecutable: (title?: string) =>
+    invoke<string | null>("plugin_pick_executable", { title: title ?? null }),
   pluginPickArchive: () => invoke<string | null>("plugin_pick_archive"),
   pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
@@ -211,6 +215,8 @@ export const api = {
 };
 
 export const events = {
+  onPluginEvent: (handler: (payload: PluginEvent) => void): Promise<UnlistenFn> =>
+    listen<PluginEvent>("plugin://event", (event) => handler(event.payload)),
   onPluginSecurity: (handler: (payload: PluginSecurityState) => void): Promise<UnlistenFn> =>
     listen<PluginSecurityState>("plugin:security-changed", (event) => handler(event.payload)),
   onPluginDownload: (handler: (payload: PluginDownload) => void): Promise<UnlistenFn> =>

@@ -6,6 +6,21 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-02
+
+### Added
+
+- Dockable plugin chat panels with streamed Markdown, conversation drafts, model and CLI profiles, task recovery, four approval modes and native file/folder pickers.
+- Scoped AI/MCP tool execution with plugin/client resource ownership, revocation, concurrent-edit checks, keyring secrets and bounded streaming local/SSH processes.
+- Optional native MCP stdio bridge and durable remote agent runner for Windows, macOS and Linux. Remote deployment requires explicit runtime selection and uses a fresh user directory without changing system services.
+- Host support for the independent Tunnelde MCP and Tunnelde AI marketplace plugins, including OpenAI-compatible Chat Completions, Responses, Anthropic, Gemini and structured Codex, Claude Code and Pi adapters.
+
+### Changed
+
+- Plugin view contributions can declare sidebar placement, controlled chat rendering and activity icons. Namespaced command IDs and minimum Tunnelde version requirements are validated.
+- Plugin tool approvals preserve complete operation details with scrollable monospace previews; password fields hide provider credentials.
+
+
 ## [0.21.1] - 2026-11-02
 
 ### Changed

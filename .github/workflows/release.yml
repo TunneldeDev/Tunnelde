@@ -64,7 +64,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json CHANGELOG.md
+          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json native-helpers/Cargo.toml native-helpers/Cargo.lock CHANGELOG.md
           git commit -m "chore(release): ${version}"
           git tag "v${version}"
           git push origin HEAD:main
@@ -170,9 +170,50 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+  helpers:
+    name: Native helper ${{ matrix.asset }}
+    needs: [prepare, build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: windows-x86_64
+          - os: macos-15
+            asset: macos-aarch64
+          - os: macos-15-intel
+            asset: macos-x86_64
+          - os: ubuntu-22.04
+            asset: linux-x86_64
+          - os: ubuntu-24.04-arm
+            asset: linux-aarch64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native-helpers
+      - run: cargo build --release --locked --manifest-path native-helpers/Cargo.toml
+      - name: Package native helper and checksum
+        env:
+          HELPER_ASSET: ${{ matrix.asset }}
+        run: node scripts/release/native-helper.mjs
+      - name: Publish optional helper assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: gh release upload "${TAG}" artifacts/helpers/* --repo "${GITHUB_REPOSITORY}"
+
   updater:
     name: Publish updater manifest
-    needs: [prepare, build]
+    needs: [prepare, build, helpers]
     if: needs.prepare.outputs.tag != ''
     runs-on: ubuntu-latest
     steps:
@@ -214,5 +255,5 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > assets.json
-          node scripts/release/verify-assets.mjs --tag "${TAG}" --manifest latest.json --assets assets.json
+          node scripts/release/verify-assets.mjs --tag "${TAG}" --manifest latest.json --assets assets.json --helpers
           gh release edit "${TAG}" --draft=false --latest --repo "${GITHUB_REPOSITORY}"
