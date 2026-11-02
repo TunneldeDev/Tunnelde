@@ -20,7 +20,9 @@ Use a Conventional Commit title; GitHub uses that title for the squash commit.
 Add `!` before the colon for a breaking change, for example `feat(api)!: replace task transport`.
 Breaking changes increase the minor version while the project is below 1.0, and the major version
 after 1.0. Use `fix(deps)` for application dependency changes and `ci(deps)` for workflow dependencies.
-Describe user-visible effects and relevant validation in the PR body. Do not include credentials.
+Keep the PR body to 1–3 sentences describing the change and its purpose, with one short validation
+sentence when relevant. GitHub uses it directly as the squash commit body; leave detailed logs in CI.
+Do not include credentials.
 
 ## Checks
 
@@ -41,8 +43,10 @@ and applying its repository Ruleset.
 ## Releases
 
 Ordinary PRs do not need a version bump. Release Please gathers merged Conventional Commits into
-one release PR. Add any curated user-facing details under `## [Unreleased]` in `CHANGELOG.md`;
-automation carries those details into the proposed version. Merge the release PR when the group
-of changes is ready. Its installers are built into a draft for manual publication.
+one release PR. A script summarizes merged changes into highlights, categorized details, PR links
+and contributors in that release branch. Ordinary PRs do not need to edit `CHANGELOG.md`.
+Existing optional Unreleased notes are retained as highlights, and historical entries stay unchanged.
+Merge the release PR when the group of changes is ready. Its installers are built into a draft
+for manual publication.
 
 See [Release operations](docs/releases.md) for version overrides, credentials and failed-build recovery.

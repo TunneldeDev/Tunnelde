@@ -5,11 +5,17 @@ import {
   assertNoDrafts,
   checkPullRequest,
   ensureDraftTag,
-  foldCuratedNotes,
   isReleasePr,
+  releasePrNeedsRefresh,
   updateReleasePr,
   validateTitle,
 } from "../automation.mjs";
+import {
+  releasePrBody,
+  releaseSection,
+  renderRelease,
+  replacePendingRelease,
+} from "../release-notes.mjs";
 
 const context = {
   repo: { owner: "TunneldeDev", repo: "Tunnelde" },
@@ -17,6 +23,27 @@ const context = {
   serverUrl: "https://github.com",
 };
 const sha = "a".repeat(40);
+const baseSha = "b".repeat(40);
+const newSha = "c".repeat(40);
+const source = {
+  sha: "d".repeat(40),
+  commit: { message: "fix(terminal): restore paste" },
+  author: { login: "contributor" },
+};
+const baseChangelog =
+  "# Changelog\n\n## [Unreleased]\n\n## [0.26.0] - 2026-11-02\n\n- Historical content.\n";
+const generated =
+  "# Changelog\n\n## [0.26.1](url) (2026-11-03)\n\n- Original.\n\n## [Unreleased]\n\n## [0.26.0] - 2026-11-02\n\n- Historical content.\n";
+const summarized = replacePendingRelease(
+  baseChangelog,
+  renderRelease({
+    version: "0.26.1",
+    previousVersion: "0.26.0",
+    date: "2026-11-03",
+    repository: "TunneldeDev/Tunnelde",
+    commits: [source],
+  }),
+);
 const repo = { full_name: "TunneldeDev/Tunnelde" };
 function pullRequest(overrides = {}) {
   return {
@@ -24,34 +51,64 @@ function pullRequest(overrides = {}) {
     title: "fix(terminal): restore paste",
     state: "open",
     head: { ref: "fix/paste", sha, repo },
-    base: { ref: "main", repo },
+    base: { ref: "main", repo, sha: baseSha },
     ...overrides,
   };
 }
-function fixture({ pr = pullRequest(), releases = [], tag, notes } = {}) {
+function fixture({
+  pr = pullRequest(),
+  releases = [],
+  tag,
+  notes = generated,
+  moved = false,
+} = {}) {
   const calls = [];
   const github = {
-    paginate: async (method) => method(),
+    paginate: async (method, args) => method(args),
     rest: {
       pulls: {
-        get: async () => ({ data: pr }),
+        get: async () => ({ data: moved ? { ...pr, head: { ...pr.head, sha: newSha } } : pr }),
+        update: async (args) => calls.push({ body: args }),
         list: async () => [pr].filter(isReleasePr),
       },
       repos: {
         listReleases: async () => releases,
         createCommitStatus: async (args) => calls.push({ status: args }),
-        getContent: async ({ path }) => ({
+        getContent: async ({ path, ref }) => ({
           data: {
+            type: "file",
+            encoding: "base64",
             sha,
             content: Buffer.from(
-              path.endsWith(".json") ? JSON.stringify({ ".": "0.26.1" }) : notes,
+              path.endsWith(".json")
+                ? JSON.stringify({ ".": ref === baseSha ? "0.26.0" : "0.26.1" })
+                : ref === baseSha
+                  ? baseChangelog
+                  : notes,
             ).toString("base64"),
           },
         }),
-        createOrUpdateFileContents: async (args) => calls.push({ content: args }),
+        compareCommitsWithBasehead: async () => ({
+          data: { status: "ahead", total_commits: 1, commits: [{ ...source }] },
+        }),
+        listPullRequestsAssociatedWithCommit: async () => [],
+        updateRelease: async (args) => calls.push({ release: args }),
       },
       actions: { createWorkflowDispatch: async (args) => calls.push({ dispatch: args }) },
       git: {
+        getCommit: async () => ({ data: { tree: { sha } } }),
+        createTree: async (args) => {
+          calls.push({ tree: args });
+          return { data: { sha: newSha } };
+        },
+        createCommit: async (args) => {
+          calls.push({ commit: args });
+          return { data: { sha: newSha } };
+        },
+        updateRef: async (args) => {
+          calls.push({ ref: args });
+          pr.head.sha = args.sha;
+        },
         getRef: async () => {
           if (tag) return { data: { object: tag } };
           throw Object.assign(new Error("Not found"), { status: 404 });
@@ -116,37 +173,6 @@ test("blocks another draft while allowing recovery of the same tag", () => {
   assert.doesNotThrow(() => assertNoDrafts(releases.slice(1)));
 });
 
-const changelog =
-  "# Changelog\n\n## [Unreleased]\n\n### Build\n\n- Curated detail.\n\n## [0.26.1](https://github.com/a/b/compare/v0.26.0...v0.26.1) (2026-11-03)\n\n### Build\n\n* Generated entry\n\n## [0.26.0] - 2026-11-02\n\n- Historical content.\n";
-
-test("preserves curated notes inside the new release and keeps history untouched", () => {
-  const updated = foldCuratedNotes(changelog, "0.26.1");
-  assert.match(updated, /\[Unreleased\]\n\n## \[0\.26\.1\]/);
-  assert.match(updated, /Maintainer notes\n\n### Build\n\n- Curated detail/);
-  assert.equal(
-    updated.slice(updated.indexOf("## [0.26.0]")),
-    changelog.slice(changelog.indexOf("## [0.26.0]")),
-  );
-  assert.equal(foldCuratedNotes(updated, "0.26.1"), updated);
-});
-
-test("rejects unexpected changelog structure instead of attaching notes to an old version", () => {
-  assert.throws(() => foldCuratedNotes(changelog, "0.27.0"), /Missing first release/);
-  assert.throws(() => foldCuratedNotes("# Changelog", "0.26.1"), /Unreleased/);
-  assert.throws(() => foldCuratedNotes(changelog, "main"), /version/);
-});
-
-test("handles Release Please inserting the generated version above Unreleased", () => {
-  const input =
-    "# Changelog\n\n## [0.26.1](url) (2026-11-03)\n\n### Build\n\n* Generated.\n\n## [Unreleased]\n\n- Curated.\n\n## [0.26.0] - 2026-11-02\n\n- History.\n";
-  const result = foldCuratedNotes(input, "0.26.1");
-  assert.match(result, /^# Changelog\n\n## \[Unreleased\]\n\n## \[0\.26\.1\]/);
-  assert.match(result, /Maintainer notes\n\n- Curated\./);
-  assert.ok(result.includes("* Generated."));
-  assert.ok(result.endsWith("## [0.26.0] - 2026-11-02\n\n- History.\n"));
-  assert.equal(foldCuratedNotes(result, "0.26.1"), result);
-});
-
 test("publishes PR policy status on the PR head, including validation failures", async () => {
   const f = fixture();
   await checkPullRequest({ ...f, number: 12 });
@@ -169,30 +195,32 @@ test("draft release blocks the release PR but permits unrelated fixes", async ()
   assert.equal(normal.calls[0].status.state, "success");
 });
 
-test("updates curated notes before explicitly dispatching CI on the release branch", async () => {
+test("summarizes only on the release branch before dispatching its actual head", async () => {
   const f = fixture({
-    notes: changelog,
     pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
   });
   await updateReleasePr(f);
   assert.deepEqual(
     f.calls.map((call) => Object.keys(call)[0]),
-    ["content", "status", "dispatch"],
+    ["tree", "commit", "ref", "body", "status", "dispatch"],
   );
-  assert.equal(f.calls[2].dispatch.ref, "release-please--branches--main");
-  assert.equal(f.calls[2].dispatch.workflow_id, "ci.yml");
-  assert.equal(f.calls[0].content.sha, sha);
-  assert.equal(
-    Buffer.from(f.calls[0].content.content, "base64").toString(),
-    foldCuratedNotes(changelog, "0.26.1"),
-  );
+  assert.deepEqual(f.calls[0].tree.tree, [
+    { path: "CHANGELOG.md", mode: "100644", type: "blob", content: summarized },
+  ]);
+  assert.deepEqual(f.calls[1].commit.parents, [sha]);
+  assert.equal(f.calls[2].ref.ref, "heads/release-please--branches--main");
+  assert.equal(f.calls[2].ref.force, false);
+  assert.equal(f.calls[3].body.body, releasePrBody("0.26.1", 1, "TunneldeDev/Tunnelde", newSha));
+  assert.equal(f.calls[4].status.sha, newSha);
+  assert.equal(f.calls[5].dispatch.ref, "release-please--branches--main");
 });
 
-test("unchanged release notes do not create redundant commits", async () => {
-  const f = fixture({
-    notes: foldCuratedNotes(changelog, "0.26.1"),
-    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
+test("regeneration does not create redundant commits or edit the PR body", async () => {
+  const pr = pullRequest({
+    head: { ref: "release-please--branches--main", sha, repo },
+    body: releasePrBody("0.26.1", 1, "TunneldeDev/Tunnelde", sha),
   });
+  const f = fixture({ pr, notes: summarized });
   await updateReleasePr(f);
   assert.deepEqual(
     f.calls.map((call) => Object.keys(call)[0]),
@@ -200,12 +228,56 @@ test("unchanged release notes do not create redundant commits", async () => {
   );
 });
 
+test("unchanged source skips Release Please regeneration and preserves the summarized branch", async () => {
+  const f = fixture({
+    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
+  });
+  f.github.rest.git.getCommit = async () => ({
+    data: { message: `chore(main): release 0.26.1\n\nRelease-source: ${baseSha}` },
+  });
+  assert.equal(await releasePrNeedsRefresh(f), false);
+  f.github.rest.git.getCommit = async () => ({
+    data: { message: `chore(main): release 0.26.1\n\nRelease-source: ${sha}` },
+  });
+  assert.equal(await releasePrNeedsRefresh(f), true);
+  assert.equal(await releasePrNeedsRefresh(fixture()), true);
+  assert.deepEqual(f.calls, []);
+});
+
+test("a concurrently moved release PR is never overwritten", async () => {
+  const f = fixture({
+    moved: true,
+    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
+  });
+  await assert.rejects(updateReleasePr(f), /moved/);
+  assert.deepEqual(f.calls, []);
+});
+
+test("a non-fast-forward update failure prevents metadata updates and CI dispatch", async () => {
+  const f = fixture({
+    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
+  });
+  f.github.rest.git.updateRef = async () => {
+    throw new Error("Not a fast forward");
+  };
+  await assert.rejects(updateReleasePr(f), /fast forward/);
+  assert.deepEqual(
+    f.calls.map((call) => Object.keys(call)[0]),
+    ["tree", "commit"],
+  );
+});
+
 test("creates a source tag only for a single matching draft and immutable commit", async () => {
-  const releases = [{ tag_name: "v0.26.1", draft: true, target_commitish: sha }];
+  const releases = [{ id: 42, tag_name: "v0.26.1", draft: true, target_commitish: sha }];
   const f = fixture({ releases });
   await ensureDraftTag({ ...f, tag: "v0.26.1", sha });
-  assert.equal(f.calls[0].tag.sha, sha);
-  const existing = fixture({ releases, tag: { type: "commit", sha } });
+  assert.equal(f.calls[0].release.body, releaseSection(generated, "0.26.1").notes);
+  assert.equal(f.calls[0].release.release_id, 42);
+  assert.equal(f.calls[1].tag.sha, sha);
+  const existing = fixture({
+    releases: [{ ...releases[0], body: releaseSection(generated, "0.26.1").notes }],
+    tag: { type: "commit", sha },
+  });
   await ensureDraftTag({ ...existing, tag: "v0.26.1", sha });
   assert.equal(existing.calls.length, 0);
 });

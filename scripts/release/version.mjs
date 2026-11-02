@@ -12,6 +12,7 @@ const files = {
   helper: join(root, "native-helpers", "Cargo.toml"),
   helperLock: join(root, "native-helpers", "Cargo.lock"),
   manifest: join(root, ".release-please-manifest.json"),
+  citation: join(root, "CITATION.cff"),
 };
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -99,6 +100,15 @@ export function setVersion(version) {
   manifest["."] = version;
   writeFileSync(files.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
 
+  const citation = readFileSync(files.citation, "utf8");
+  if (!/^version: ["']?\d+\.\d+\.\d+["']?$/m.test(citation)) {
+    throw new Error("CITATION.cff has no version");
+  }
+  writeFileSync(
+    files.citation,
+    citation.replace(/^version: ["']?\d+\.\d+\.\d+["']?$/m, `version: ${version}`),
+  );
+
   return version;
 }
 
@@ -113,6 +123,11 @@ export function checkVersion(tag) {
     readFileSync(files.lock, "utf8"),
   );
   const problems = [];
+  const citationVersion = /^version: ["']?(\d+\.\d+\.\d+)["']?$/m.exec(
+    readFileSync(files.citation, "utf8"),
+  )?.[1];
+  if (citationVersion !== pkg)
+    problems.push(`CITATION.cff ${citationVersion} != package.json ${pkg}`);
   const manifestVersion = JSON.parse(readFileSync(files.manifest, "utf8"))["."];
   if (manifestVersion !== pkg) {
     problems.push(`release manifest ${manifestVersion} != package.json ${pkg}`);

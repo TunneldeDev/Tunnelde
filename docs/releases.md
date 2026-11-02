@@ -6,7 +6,9 @@
 2. Pass Web, Rust, Repository hygiene, the three Native helpers checks and PR policy; update the branch
    with `main` and resolve review threads. Squash merge.
 3. **Release PR** creates or updates one `release-please--branches--main` branch and PR. Its generated
-   changelog and every application/native version are reviewed together. No installers build yet.
+   changelog and every application/native version are reviewed together. The script groups changes
+   since the previous version tag into bilingual categories, with highlights, expandable details,
+   PR/commit links and contributors. It writes only to the release branch. No installers build yet.
 4. Merge the release PR. Automation creates a draft for the exact merge SHA, creates its immutable
    version tag, and explicitly invokes **Release**. The four desktop builds share the draft.
 5. Wait for **Verify completed draft** to succeed, inspect its notes/assets, then click **Publish release**
@@ -28,9 +30,23 @@ change marked with `!` or a `BREAKING CHANGE:` footer increases minor before 1.0
 The initial automated baseline is the existing `v0.26.0` tag; it is never changed.
 
 Release Please updates `package.json`, Tauri config, both Cargo manifests/lockfiles and
-`.release-please-manifest.json`. CI rejects mismatches. `CHANGELOG.md` keeps generated categories,
-links and manually written Unreleased notes. The next release PR may be refreshed as new work lands;
-put persistent curated additions on `main`, rather than editing the bot branch.
+`.release-please-manifest.json` and `CITATION.cff`. CI rejects mismatches. This repository has one
+root release; the empty release package name keeps component prefixes out of its branch/tag parsing.
+`scripts/release/release-notes.mjs` reads the
+exact main SHA and its previous version tag, groups Conventional Commits, combines duplicate titles
+and collects PR authors and GitHub coauthors. Tests/style-only changes and release commits are omitted.
+Build/CI changes remain visible. This process is deterministic and needs no AI service or extra token.
+
+`updateReleasePr` writes the resulting `CHANGELOG.md` only to `release-please--branches--main`, using
+a non-forced update based on the expected head. Historical version entries are preserved byte for byte.
+Ordinary development PRs need no changelog edits, and automation never commits directly to `main`.
+Optional existing Unreleased notes become highlights. The pending section is regenerated as main
+advances, so review the result in the release PR before merging.
+
+Keep normal PR bodies to a few sentences: the title becomes the squash subject and the body becomes
+its message. Release PR bodies contain a short version summary and a link to the changelog; their
+delimited version heading is required by Release Please. When that PR is merged, the draft receives
+the complete notes from the exact release commit's changelog rather than the short PR body.
 
 For an explicit version such as 1.0.0, set `release-as` in the root package entry of
 `release-please-config.json` through a reviewed PR. Inspect the resulting release PR and remove the
