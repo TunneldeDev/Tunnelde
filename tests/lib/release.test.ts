@@ -172,8 +172,12 @@ describe("release publishing", () => {
     );
     expect(helpers).toContain("actions/upload-artifact@v4");
     expect(helpers).toContain("if-no-files-found: error");
+    expect(helpers).toContain("key: ${{ matrix.os }}");
     expect(helpers).not.toContain("gh release upload");
     expect(workflow).not.toContain("--assets assets.json --helpers");
+    const updater = workflow.split("\n  updater:\n")[1]!;
+    expect(updater).toContain("needs: [prepare, build]");
+    expect(updater).not.toContain("needs: [prepare, build, helpers]");
   });
 
   it("creates one draft before parallel builders and shares its release ID", () => {

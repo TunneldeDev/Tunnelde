@@ -198,7 +198,7 @@ jobs:
 
   helpers:
     name: Native helper ${{ matrix.asset }}
-    needs: [prepare, build]
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
@@ -225,6 +225,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native-helpers
+          key: ${{ matrix.os }}
       - run: cargo test --locked --manifest-path native-helpers/Cargo.toml
       - run: cargo build --release --locked --manifest-path native-helpers/Cargo.toml
       - name: Package native helper and checksum
@@ -241,7 +242,7 @@ jobs:
 
   updater:
     name: Publish updater manifest
-    needs: [prepare, build, helpers]
+    needs: [prepare, build]
     if: needs.prepare.outputs.tag != ''
     runs-on: ubuntu-latest
     steps:

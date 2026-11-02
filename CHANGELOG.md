@@ -9,6 +9,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Fixed
 
 - Create one shared draft before parallel release builds and pass its ID to every platform, preventing downloads from being split across duplicate drafts.
+- Separate native helper caches by runner image to prevent incompatible Linux C libraries being restored across Ubuntu versions. Optional helper builds run independently of desktop publication.
 
 ## [0.23.0] - 2026-11-02
 
