@@ -175,4 +175,15 @@ describe("release publishing", () => {
     expect(helpers).not.toContain("gh release upload");
     expect(workflow).not.toContain("--assets assets.json --helpers");
   });
+
+  it("creates one draft before parallel builders and shares its release ID", () => {
+    const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
+    const prepare = workflow.split("\n  prepare:\n")[1]!.split("\n  build:\n")[0]!;
+    const build = workflow.split("\n  build:\n")[1]!.split("\n  helpers:\n")[0]!;
+    expect(prepare).toContain("Create shared draft release");
+    expect(prepare).toContain("release_id: ${{ steps.draft.outputs.id }}");
+    expect(prepare).toContain("duplicate releases for ${TAG}");
+    expect(build).toContain("needs: prepare");
+    expect(build).toContain("releaseId: ${{ needs.prepare.outputs.release_id }}");
+  });
 });

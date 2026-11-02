@@ -31,6 +31,7 @@ jobs:
       tag: ${{ steps.meta.outputs.tag }}
       version: ${{ steps.meta.outputs.version }}
       body: ${{ steps.meta.outputs.body }}
+      release_id: ${{ steps.draft.outputs.id }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,6 +94,30 @@ jobs:
             node scripts/release/changelog.mjs notes "${version}"
             echo "RELEASE_NOTES"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Create shared draft release
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases" > releases.json
+          count=$(jq --arg tag "${TAG}" '[.[][] | select(.tag_name == $tag)] | length' releases.json)
+          if [ "${count}" -gt 1 ]; then
+            echo "duplicate releases for ${TAG}; consolidate their assets before retrying" >&2
+            exit 1
+          elif [ "${count}" -eq 1 ]; then
+            id=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
+          else
+            node scripts/release/changelog.mjs notes "${VERSION}" > release-notes.md
+            jq -n --arg tag "${TAG}" --arg name "Tunnelde ${VERSION}" --rawfile body release-notes.md \
+              '{tag_name:$tag,name:$name,body:$body,draft:true,prerelease:false}' > release.json
+            id=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input release.json --jq '.id')
+          fi
+          echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
   build:
     name: Build ${{ matrix.platform }}
@@ -162,6 +187,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          releaseId: ${{ needs.prepare.outputs.release_id }}
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: Tunnelde ${{ needs.prepare.outputs.version }}
           releaseBody: ${{ needs.prepare.outputs.body }}

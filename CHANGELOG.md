@@ -6,6 +6,10 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Create one shared draft before parallel release builds and pass its ID to every platform, preventing downloads from being split across duplicate drafts.
+
 ## [0.23.0] - 2026-11-02
 
 ### Added
