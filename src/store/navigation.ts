@@ -8,6 +8,7 @@ export type SettingsSection =
   | "appearance"
   | "workspace"
   | "terminal"
+  | "shortcuts"
   | "files"
   | "editor"
   | "monitor"

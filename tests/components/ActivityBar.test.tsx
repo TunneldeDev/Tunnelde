@@ -75,6 +75,25 @@ describe("activity sidebar navigation", () => {
     expect(useNavigation.getState().sidebarVisible).toBe(true);
   });
 
+  it("keeps a visible docked panel highlighted while another group has focus", () => {
+    useWorkspace.getState().openPage("welcome");
+    const welcome = useWorkspace.getState().activeId!;
+    const mainPane = useWorkspace.getState().activePaneId;
+    useWorkspace.getState().splitTab("sidebar:hosts", "row", "after", mainPane);
+    render(<ActivityBar />);
+    const hosts = screen.getByRole("button", { name: "Hosts" });
+    expect(hosts.getAttribute("aria-pressed")).toBe("true");
+    act(() => useWorkspace.getState().activate(welcome));
+    expect(hosts.getAttribute("aria-pressed")).toBe("true");
+    expect(hosts.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(hosts);
+    expect(hosts.getAttribute("aria-pressed")).toBeNull();
+    expect(hosts.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(hosts);
+    expect(hosts.getAttribute("aria-pressed")).toBe("true");
+    expect(hosts.getAttribute("aria-expanded")).toBe("true");
+  });
+
   it("shows a requested sidebar idempotently and exposes plugin configuration in Settings", () => {
     useNavigation.getState().showSidebar("knownHosts");
     useNavigation.getState().showSidebar("knownHosts");

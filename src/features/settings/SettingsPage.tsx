@@ -42,14 +42,9 @@ import { COLOR_REGIONS, previewColors, resolveAccent } from "@/lib/prefs/colors"
 import type { ResolvedTheme } from "@/lib/prefs/appearance";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
-
-const samePreference = (left: unknown, right: unknown) =>
-  typeof left === "object" && left !== null && typeof right === "object" && right !== null
-    ? Object.keys(left).length === Object.keys(right).length &&
-      Object.entries(left).every(
-        ([key, value]) => (right as Record<string, unknown>)[key] === value,
-      )
-    : left === right;
+import { KeyboardShortcuts } from "./KeyboardShortcuts";
+import { SettingsProfiles } from "./SettingsProfiles";
+import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
 const TerminalPreview = lazy(() =>
   import("@/features/terminal/TerminalPreview").then((module) => ({
@@ -392,6 +387,13 @@ export function SettingsPage() {
   const locale = i18n.resolvedLanguage ?? "en-US";
   return (
     <div className="page settings">
+      <SettingsProfiles
+        hasDraft={cssDraft !== null && cssDraft !== settings.userCss}
+        onApplied={() => {
+          setCssDraft(null);
+          clearNumberDrafts(definitions.map((definition) => definition.key));
+        }}
+      />
       <div className="settings-toolbar">
         <div className="settings-search">
           <Search size={15} aria-hidden="true" />
@@ -473,7 +475,7 @@ export function SettingsPage() {
             <section className="settings-section" key={item} aria-label={t(SECTION_LABELS[item])}>
               <div className="settings-section__head">
                 <h2 className="settings-section__title">{t(SECTION_LABELS[item])}</h2>
-                {item !== "plugins" ? (
+                {item !== "plugins" && item !== "shortcuts" ? (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -537,7 +539,11 @@ export function SettingsPage() {
                         </div>
                       ) : null}
                       {group.definitions.map((definition) =>
-                        definition.kind === "css" ? (
+                        definition.kind === "shortcuts" ? (
+                          <div key={definition.key} data-setting="keyboardShortcuts">
+                            <KeyboardShortcuts />
+                          </div>
+                        ) : definition.kind === "css" ? (
                           <div
                             key={definition.key}
                             className="settings-css-group"

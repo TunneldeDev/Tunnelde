@@ -5,6 +5,7 @@ mod models;
 mod platform;
 mod plugins;
 mod settings;
+mod settings_profiles;
 mod ssh;
 mod state;
 mod update;
@@ -62,6 +63,11 @@ pub fn run() {
             commands::settings_get,
             commands::settings_update,
             commands::settings_reset,
+            settings_profiles::settings_profiles_list,
+            settings_profiles::settings_profile_save,
+            settings_profiles::settings_profile_delete,
+            settings_profiles::settings_file_import,
+            settings_profiles::settings_file_export,
             commands::set_locale,
             commands::hosts_snapshot,
             commands::host_create,

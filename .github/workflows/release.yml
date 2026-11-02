@@ -199,17 +199,19 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native-helpers
+      - run: cargo test --locked --manifest-path native-helpers/Cargo.toml
       - run: cargo build --release --locked --manifest-path native-helpers/Cargo.toml
       - name: Package native helper and checksum
         env:
           HELPER_ASSET: ${{ matrix.asset }}
         run: node scripts/release/native-helper.mjs
-      - name: Publish optional helper assets
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.prepare.outputs.tag }}
-        run: gh release upload "${TAG}" artifacts/helpers/* --repo "${GITHUB_REPOSITORY}"
+      - name: Upload optional helper build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tunnelde-agent-${{ matrix.asset }}
+          path: artifacts/helpers/*
+          if-no-files-found: error
+          retention-days: 30
 
   updater:
     name: Publish updater manifest
@@ -255,5 +257,5 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > assets.json
-          node scripts/release/verify-assets.mjs --tag "${TAG}" --manifest latest.json --assets assets.json --helpers
+          node scripts/release/verify-assets.mjs --tag "${TAG}" --manifest latest.json --assets assets.json
           gh release edit "${TAG}" --draft=false --latest --repo "${GITHUB_REPOSITORY}"

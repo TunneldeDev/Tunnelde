@@ -94,7 +94,7 @@ describe("release preparation", () => {
 });
 
 describe("release publishing", () => {
-  it("refuses to publish when an updater download or signature is absent", () => {
+  function publishingFixture() {
     const f = fixture();
     const manifest = {
       version: "0.19.0",
@@ -124,25 +124,55 @@ describe("release publishing", () => {
         "assets.json",
         ...extra,
       );
+    return { f, assets, run };
+  }
+
+  it("refuses to publish when an updater download or signature is absent", () => {
+    const { f, assets, run } = publishingFixture();
     expect(run().status).toBe(1);
     assets.push({ name: "Tunnelde_0.19.0_x64-setup.exe.sig", size: 100 });
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
     expect(run().status).toBe(0);
-    expect(run("--helpers").status).toBe(1);
-    for (const platform of [
-      "windows-x86_64",
-      "macos-aarch64",
-      "macos-x86_64",
-      "linux-x86_64",
-      "linux-aarch64",
-    ]) {
-      const name = `tunnelde-agent-${platform}${platform.startsWith("windows-") ? ".exe" : ""}`;
-      assets.push({ name, size: 100 }, { name: `${name}.sha256`, size: 100 });
-    }
-    writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
-    expect(run("--helpers").status).toBe(0);
     assets[3]!.size = 0;
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
     expect(run().status).toBe(1);
+  });
+
+  it.each([
+    ["tunnelde-agent-windows-x86_64.exe", 100],
+    ["tunnelde-agent-macos-aarch64", 100],
+    ["tunnelde-agent-macos-x86_64", 100],
+    ["tunnelde-agent-linux-x86_64", 100],
+    ["tunnelde-agent-linux-aarch64", 100],
+    ["tunnelde-agent-linux-aarch64.sha256", 100],
+    ["tunnelde-agent-windows-x86_64.exe", 0],
+  ])("refuses native helper asset %s of size %s in a desktop release", (name, size) => {
+    const { f, assets, run } = publishingFixture();
+    assets.push({ name: "Tunnelde_0.19.0_x64-setup.exe.sig", size: 100 }, { name, size });
+    writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("native helpers belong in Actions artifacts");
+    expect(result.stderr).toContain(name);
+  });
+
+  it("rejects the obsolete helper-release flag", () => {
+    const { run } = publishingFixture();
+    const result = run("--helpers");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("--helpers is no longer supported");
+  });
+
+  it("builds helpers as Actions artifacts and gates the desktop release separately", () => {
+    const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
+    const helpers = workflow.split("\n  helpers:\n")[1]!.split("\n  updater:\n")[0]!;
+    expect(helpers).toContain("cargo test --locked --manifest-path native-helpers/Cargo.toml");
+    expect(helpers).toContain(
+      "cargo build --release --locked --manifest-path native-helpers/Cargo.toml",
+    );
+    expect(helpers).toContain("actions/upload-artifact@v4");
+    expect(helpers).toContain("if-no-files-found: error");
+    expect(helpers).not.toContain("gh release upload");
+    expect(workflow).not.toContain("--assets assets.json --helpers");
   });
 });

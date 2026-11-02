@@ -32,6 +32,8 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
     "workspace.write": "pluginSecurity.permission.workspaceWrite",
     "app.openExternal": "pluginSecurity.permission.openExternal",
     network: "pluginSecurity.permission.network",
+    "process.exec": "pluginSecurity.permission.processExec",
+    secrets: "pluginSecurity.permission.secrets",
   } as const;
   return permissions.length ? (
     <ul className="plugin-permissions">

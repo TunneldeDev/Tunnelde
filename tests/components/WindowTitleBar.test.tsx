@@ -137,10 +137,12 @@ describe("compact window controls", () => {
     expect(screen.queryByRole("toolbar")).toBeNull();
   });
 
-  it("offers only system and compact title bar choices in Settings", () => {
+  it("offers only system and compact title bar choices in Settings", async () => {
     const update = vi.fn().mockResolvedValue(true);
     useSettings.setState({ update });
-    render(<SettingsPage />);
+    await act(async () => {
+      render(<SettingsPage />);
+    });
     fireEvent.click(screen.getByRole("button", { name: "Window title bar" }));
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "System title bar",

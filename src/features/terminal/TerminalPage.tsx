@@ -1,3 +1,4 @@
+import { matchesCommand } from "@/lib/keyboard/registry";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -225,29 +226,19 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         ) {
           return true;
         }
-        const key = event.key.toLowerCase();
-        if (!mac && !event.metaKey && key === "insert") {
-          if (event.shiftKey && !event.ctrlKey) {
-            event.preventDefault();
-            paste();
-            return false;
-          }
-          if (event.ctrlKey && !event.shiftKey) {
-            event.preventDefault();
-            copy();
-            return false;
-          }
-        }
-        const primary = mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
-        if (!primary) {
-          return true;
-        }
-        if (key === "v") {
+        const bindings = useSettings.getState().settings.keyboardShortcuts;
+        if (matchesCommand(event, "terminal.paste", bindings)) {
           event.preventDefault();
           paste();
           return false;
         }
-        if (key === "c" && (event.shiftKey || mac || instance.hasSelection())) {
+        // Keep the shell's SIGINT on ordinary Ctrl+C when nothing is selected.
+        const plainControlC =
+          event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === "c";
+        if (
+          matchesCommand(event, "terminal.copy", bindings) &&
+          (!plainControlC || mac || instance.hasSelection())
+        ) {
           event.preventDefault();
           copy();
           return false;

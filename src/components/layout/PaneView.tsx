@@ -7,6 +7,8 @@ import {
   FolderTree,
   History,
   Info,
+  LockKeyhole,
+  LockKeyholeOpen,
   Pin,
   PanelLeft,
   Server,
@@ -41,6 +43,7 @@ import {
 } from "@/lib/session/sidebarDock";
 import {
   useWorkspace,
+  visibleWorkspaceLayout,
   type SplitDirection,
   type WorkspacePane,
   type WorkspaceTab,
@@ -124,8 +127,10 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const panes = useWorkspace((state) => state.panes);
   const openMenu = useContextMenu((state) => state.open);
   const closePane = useWorkspace((state) => state.closePane);
+  const togglePaneLock = useWorkspace((state) => state.togglePaneLock);
   const paneCount = panes.length;
-  const layout = useWorkspace((state) => state.layout);
+  const storedLayout = useWorkspace((state) => state.layout);
+  const layout = visibleWorkspaceLayout(storedLayout, panes, tabs);
   const compact = useSettings((state) => state.settings.titleBarStyle === "compact");
   const panelOpen = useSettings((state) => state.settings.rightPanel);
   const mac = useSettings((state) => state.info?.os === "macos");
@@ -141,14 +146,35 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const strip = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    strip.current
-      ?.querySelector<HTMLElement>('[aria-selected="true"]')
-      ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    const element = strip.current;
+    if (!element) return;
+    const reveal = () =>
+      element
+        .querySelector<HTMLElement>('[aria-selected="true"]')
+        ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    reveal();
+    if (typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(reveal);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
   }, [pane.activeId]);
 
   const items = pane.tabIds
     .map((id) => tabs.find((tab) => tab.id === id))
-    .filter((tab): tab is WorkspaceTab => Boolean(tab));
+    .filter((tab): tab is WorkspaceTab => Boolean(tab && !tab.hidden));
+  const tabTitle = (tab: WorkspaceTab) =>
+    tab.kind === "sidebar"
+      ? sidebarLabel(sidebarViewOf(tab.id) ?? "hosts", t)
+      : NAMED.includes(tab.kind)
+        ? tab.title
+        : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS]);
 
   const requestClose = (tab: WorkspaceTab) => closeTab(tab);
   const activeTab = items.find((tab) => tab.id === pane.activeId);
@@ -233,13 +259,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               data-tab-id={tab.id}
               role="tab"
               aria-selected={active}
-              title={
-                tab.kind === "sidebar"
-                  ? sidebarLabel(sidebarViewOf(tab.id) ?? "hosts", t)
-                  : NAMED.includes(tab.kind)
-                    ? tab.title
-                    : t(NAV_KEYS[tab.kind as keyof typeof NAV_KEYS])
-              }
+              title={tabTitle(tab)}
               tabIndex={active ? 0 : -1}
               draggable
               className={cn(
@@ -340,16 +360,38 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
         })}
       </div>
       <div className="pane__actions">
+        <IconButton
+          label={t(pane.locked ? "tab.unlockPane" : "tab.lockPane")}
+          size="sm"
+          className={pane.locked ? "is-locked" : undefined}
+          aria-pressed={!!pane.locked}
+          onClick={() => togglePaneLock(pane.id)}
+        >
+          {pane.locked ? <LockKeyhole size={13} /> : <LockKeyholeOpen size={13} />}
+        </IconButton>
         {items.length > 1 ? (
-          <IconButton label={t("tab.splitRight")} size="sm" onClick={() => splitActive("row")}>
+          <IconButton
+            label={t("tab.splitRight")}
+            size="sm"
+            className="pane__split"
+            onClick={() => splitActive("row")}
+          >
             <Columns2 size={14} />
           </IconButton>
         ) : null}
         <Menu
           label={t("common.more")}
           items={[
+            ...(items.length > 1
+              ? items.map((tab) => ({
+                  label: tabTitle(tab),
+                  checked: tab.id === pane.activeId,
+                  onSelect: () => activate(tab.id),
+                }))
+              : []),
             {
               label: t("tab.close"),
+              separatorBefore: items.length > 1,
               disabled: !activeTab,
               onSelect: () => {
                 if (activeTab) requestClose(activeTab);
@@ -373,6 +415,11 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               onSelect: () => {
                 if (activeTab) closeOthers(activeTab.id);
               },
+            },
+            {
+              label: t(pane.locked ? "tab.unlockPane" : "tab.lockPane"),
+              separatorBefore: true,
+              onSelect: () => togglePaneLock(pane.id),
             },
             ...(activeSidebarView
               ? sidebarMoveActions(activeSidebarView, t).map((action, index) => ({
@@ -466,6 +513,7 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
   return (
     <section
       className={cn("pane", active && "is-active")}
+      data-pane-id={pane.id}
       onMouseDown={() => activatePane(pane.id)}
       onFocusCapture={() => activatePane(pane.id)}
     >

@@ -143,6 +143,18 @@ describe("settings discovery and scoped resets", () => {
     }
   });
 
+  it("discovers the dedicated shortcuts editor through settings search and navigation", () => {
+    render(<SettingsPage />);
+    fireEvent.click(screen.getByRole("button", { name: i18n.t("shortcuts.title") }));
+    expect(document.querySelector('[data-setting="keyboardShortcuts"]')).not.toBeNull();
+    expect(screen.getByRole("textbox", { name: "Search commands or shortcuts" })).toBeTruthy();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "keyboardShortcuts" },
+    });
+    expect(document.querySelector('[data-setting="keyboardShortcuts"]')).not.toBeNull();
+    expect(document.querySelector('[data-setting="theme"]')).toBeNull();
+  });
+
   it("searches Chinese and English across categories and raw preference names", () => {
     render(<SettingsPage />);
     const search = screen.getByRole("textbox", { name: "Search settings" });

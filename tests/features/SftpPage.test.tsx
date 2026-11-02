@@ -116,6 +116,30 @@ beforeEach(() => {
 });
 
 describe("SftpPage", () => {
+  it("uses customized file bindings and consumes them before global workbench commands", async () => {
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        preloadDirs: false,
+        keyboardShortcuts: { "files.newFile": ["Mod+Y"], "host.new": ["Mod+Y"] },
+      },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    const workbench = vi.fn();
+    window.addEventListener("keydown", workbench);
+    try {
+      fireEvent.keyDown(local, { key: "y", ctrlKey: true });
+      expect(screen.getByRole("textbox", { name: "File name" })).toBeTruthy();
+      expect(workbench).not.toHaveBeenCalled();
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "File name" }), { key: "Escape" });
+      fireEvent.keyDown(local, { key: "n", ctrlKey: true });
+      expect(screen.queryByRole("textbox", { name: "File name" })).toBeNull();
+    } finally {
+      window.removeEventListener("keydown", workbench);
+    }
+  });
   it.each([{ ctrlKey: true }, { metaKey: true }])(
     "focuses and selects the current panel path with Ctrl/Cmd+L (%j)",
     async (modifier) => {

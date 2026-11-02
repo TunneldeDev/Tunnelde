@@ -6,7 +6,15 @@ import { fileName, useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
 import { useNavigation, type SidebarView } from "@/store/navigation";
-import { sidebarTitle, sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
+import {
+  sidebarTitle,
+  sidebarTabId,
+  sidebarViewOf,
+  measureSidebar,
+  measureWorkspace,
+  measurePane,
+  type LayoutSize,
+} from "@/lib/session/sidebarDock";
 
 export interface WorkspaceTab {
   id: string;
@@ -14,12 +22,15 @@ export interface WorkspaceTab {
   title: string;
   hostId: string | null;
   pinned: boolean;
+  /** Collapsed docked sidebars remain in their original group and layout. */
+  hidden?: boolean;
 }
 
 export interface WorkspacePane {
   id: string;
   tabIds: string[];
   activeId: string | null;
+  locked?: boolean;
 }
 
 export type SplitDirection = "row" | "column";
@@ -57,6 +68,8 @@ const SUPPORTED_KINDS: TabKind[] = [
 ];
 
 export const FIRST_PANE = "pane-1";
+// Persist an empty default group without exposing a synthetic workspace tab.
+const WORKSPACE_LAYOUT_RECORD_ID = "workspace:layout";
 
 interface WorkspaceStore {
   tabs: WorkspaceTab[];
@@ -67,6 +80,7 @@ interface WorkspaceStore {
   layout: WorkspaceLayout;
   openPage: (kind: PageKind) => void;
   openSidebar: (view: SidebarView) => void;
+  toggleDockedSidebar: (view: SidebarView) => void;
   returnSidebar: (view: SidebarView) => void;
   openHost: (host: Host) => void;
   openTerminal: (session: SshSession) => void;
@@ -81,6 +95,7 @@ interface WorkspaceStore {
   closeOthers: (id: string) => void;
   activate: (id: string) => void;
   activatePane: (paneId: string) => void;
+  togglePaneLock: (paneId: string) => void;
   togglePin: (id: string) => void;
   reorder: (from: number, to: number) => void;
   splitTab: (
@@ -113,15 +128,17 @@ function settle(
   panes: WorkspacePane[],
   preferred: string,
   split: SplitDirection | null,
-  layout?: WorkspaceLayout,
+  layout: WorkspaceLayout | undefined,
+  tabs: readonly WorkspaceTab[],
 ): PanesState {
-  const nonEmpty = panes.filter((item) => item.tabIds.length > 0);
+  const hidden = new Set(tabs.filter((tab) => tab.hidden).map((tab) => tab.id));
+  const nonEmpty = panes.filter((item) => item.tabIds.length > 0 || item.locked);
   const finalPanes = (nonEmpty.length > 0 ? nonEmpty : panes.slice(0, 1)).map((item) => ({
     ...item,
     activeId:
-      item.activeId && item.tabIds.includes(item.activeId)
+      item.activeId && item.tabIds.includes(item.activeId) && !hidden.has(item.activeId)
         ? item.activeId
-        : (item.tabIds[0] ?? null),
+        : (item.tabIds.find((id) => !hidden.has(id)) ?? null),
   }));
   const pruned = pruneLayout(layout, new Set(finalPanes.map((item) => item.id)));
   const normalizedLayout =
@@ -130,9 +147,15 @@ function settle(
       : linearLayout(finalPanes, split ?? "row");
   const order = layoutPanes(normalizedLayout);
   finalPanes.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-  const activePaneId = finalPanes.some((item) => item.id === preferred)
+  const visiblePanes = finalPanes.filter(
+    (item) => item.tabIds.length === 0 || item.tabIds.some((id) => !hidden.has(id)),
+  );
+  const activePaneId = visiblePanes.some((item) => item.id === preferred)
     ? preferred
-    : (finalPanes[0]?.id ?? FIRST_PANE);
+    : (visiblePanes.find((item) => item.locked)?.id ??
+      visiblePanes[0]?.id ??
+      finalPanes[0]?.id ??
+      FIRST_PANE);
   const active = finalPanes.find((item) => item.id === activePaneId);
   return {
     panes: finalPanes,
@@ -158,6 +181,44 @@ function pruneLayout(
   const first = pruneLayout(layout.first, valid);
   const second = pruneLayout(layout.second, valid);
   return first && second ? { ...layout, first, second } : (first ?? second);
+}
+
+/** Project the saved layout without changing its split ratios or collapsed sidebar slots. */
+export function visibleWorkspaceLayout(
+  layout: WorkspaceLayout,
+  panes: readonly WorkspacePane[],
+  tabs: readonly WorkspaceTab[],
+): WorkspaceLayout {
+  const hidden = new Set(tabs.filter((tab) => tab.hidden).map((tab) => tab.id));
+  const visible = new Set(
+    panes
+      .filter((item) => item.tabIds.length === 0 || item.tabIds.some((id) => !hidden.has(id)))
+      .map((item) => item.id),
+  );
+  return (
+    pruneLayout(layout, visible) ?? {
+      kind: "pane",
+      paneId: panes.find((item) => item.locked)?.id ?? panes[0]?.id ?? FIRST_PANE,
+    }
+  );
+}
+
+function paneSizeInLayout(
+  layout: WorkspaceLayout,
+  paneId: string,
+  size: LayoutSize,
+): LayoutSize | null {
+  if (layout.kind === "pane") return layout.paneId === paneId ? size : null;
+  const horizontal = layout.direction === "row";
+  const available = Math.max(0, (horizontal ? size.width : size.height) - 4);
+  const childSize = (ratio: number): LayoutSize =>
+    horizontal
+      ? { width: available * ratio, height: size.height }
+      : { width: size.width, height: available * ratio };
+  return (
+    paneSizeInLayout(layout.first, paneId, childSize(layout.ratio)) ??
+    paneSizeInLayout(layout.second, paneId, childSize(1 - layout.ratio))
+  );
 }
 
 function linearLayout(panes: WorkspacePane[], direction: SplitDirection): WorkspaceLayout {
@@ -262,16 +323,21 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       ? state.tabs.map((item) => (item.id === tab.id ? { ...tab, pinned: item.pinned } : item))
       : [...state.tabs, tab];
     const placed = state.panes.find((item) => item.tabIds.includes(tab.id));
-    const ownerId = placed?.id ?? state.activePaneId;
+    const ownerId = placed?.id ?? state.panes.find((item) => item.locked)?.id ?? state.activePaneId;
     const panes = placed
       ? withActiveTab(state.panes, ownerId, tab.id)
-      : addTabTo(state.panes, state.activePaneId, tab.id);
-    return { tabs, ...settle(panes, ownerId, state.split, state.layout) };
+      : addTabTo(state.panes, ownerId, tab.id);
+    return { tabs, ...settle(panes, ownerId, state.split, state.layout, tabs) };
   };
 
   const materializeSidebar = (state: WorkspaceStore, id: string): WorkspaceStore => {
     const view = sidebarViewOf(id);
-    if (!view || state.tabs.some((tab) => tab.id === id)) return state;
+    if (!view) return state;
+    const existing = state.tabs.find((tab) => tab.id === id);
+    if (existing)
+      return existing.hidden
+        ? { ...state, ...insert(state, { ...existing, hidden: false }) }
+        : state;
     return {
       ...state,
       ...insert(state, {
@@ -301,9 +367,36 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         return owner
           ? {
               ...next,
-              ...settle(withActiveTab(next.panes, owner.id, id), owner.id, next.split, next.layout),
+              ...settle(
+                withActiveTab(next.panes, owner.id, id),
+                owner.id,
+                next.split,
+                next.layout,
+                next.tabs,
+              ),
             }
           : state;
+      });
+    },
+
+    toggleDockedSidebar: (view) => {
+      const id = sidebarTabId(view);
+      const state = useWorkspace.getState();
+      const tab = state.tabs.find((item) => item.id === id);
+      const owner = state.panes.find((item) => item.tabIds.includes(id));
+      if (!tab || !owner) return;
+      if (tab.hidden || owner.activeId !== id) {
+        state.activate(id);
+        return;
+      }
+      set((current) => {
+        const tabs = current.tabs.map((item) =>
+          item.id === id ? { ...item, hidden: true } : item,
+        );
+        return {
+          tabs,
+          ...settle(current.panes, current.activePaneId, current.split, current.layout, tabs),
+        };
       });
     },
 
@@ -459,7 +552,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             item.activeId && removedIds.has(item.activeId) ? (tabIds[0] ?? null) : item.activeId;
           return { ...item, tabIds, activeId };
         });
-        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
+        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout, tabs) };
       });
     },
 
@@ -470,7 +563,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         }
         const tabs = state.tabs.filter((tab) => tab.id !== id);
         const panes = dropTab(state.panes, id);
-        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
+        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout, tabs) };
       });
       const view = sidebarViewOf(id);
       if (view) useNavigation.getState().showSidebar(view);
@@ -481,7 +574,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       const origin = state.panes.find((item) => item.tabIds.includes(id));
       if (!origin) return;
       const removed = state.tabs.filter(
-        (tab) => origin.tabIds.includes(tab.id) && tab.id !== id && !tab.pinned,
+        (tab) => origin.tabIds.includes(tab.id) && tab.id !== id && !tab.pinned && !tab.hidden,
       );
       const commit = () => {
         const removedIds = new Set(removed.map((tab) => tab.id));
@@ -497,7 +590,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
                 }
               : item,
           );
-          return { tabs, ...settle(panes, origin.id, current.split, current.layout) };
+          return { tabs, ...settle(panes, origin.id, current.split, current.layout, tabs) };
         });
       };
       const dirty = removed.filter(
@@ -523,6 +616,9 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           return state;
         }
         return {
+          tabs: state.tabs.map((tab) =>
+            tab.id === id && tab.hidden ? { ...tab, hidden: false } : tab,
+          ),
           panes: withActiveTab(state.panes, target.id, id),
           activePaneId: target.id,
           activeId: id,
@@ -533,7 +629,11 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     activatePane: (paneId) => {
       set((state) => {
         const target = state.panes.find((item) => item.id === paneId);
-        if (!target) {
+        if (
+          !target ||
+          (target.tabIds.length > 0 &&
+            !target.tabIds.some((id) => !state.tabs.find((tab) => tab.id === id)?.hidden))
+        ) {
           return state;
         }
         return {
@@ -542,6 +642,17 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
       });
     },
+
+    togglePaneLock: (paneId) =>
+      set((state) => {
+        const target = state.panes.find((item) => item.id === paneId);
+        if (!target) return state;
+        const panes = state.panes.map((item) => ({
+          ...item,
+          locked: item.id === paneId && !target.locked,
+        }));
+        return settle(panes, state.activePaneId, state.split, state.layout, state.tabs);
+      }),
 
     togglePin: (id) =>
       set((state) => ({
@@ -590,6 +701,37 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           activeId: tabId,
         };
         const panes = [...dropTab(state.panes, tabId), created];
+        let ratio = 0.5;
+        if (view) {
+          const size = measureSidebar(view);
+          const workspaceSize = measureWorkspace();
+          if (size) {
+            const rootSize = workspaceSize
+              ? {
+                  width: workspaceSize.width + (size.fromSidebar ? size.width : 0),
+                  height: workspaceSize.height,
+                }
+              : null;
+            const surviving = state.panes.filter(
+              (item) => item.id !== source.id || source.tabIds.length > 1 || source.locked,
+            );
+            const futureLayout = visibleWorkspaceLayout(state.layout, surviving, state.tabs);
+            const targetSize =
+              targetPaneId === "root"
+                ? rootSize
+                : rootSize && target
+                  ? paneSizeInLayout(futureLayout, target.id, rootSize)
+                  : target
+                    ? measurePane(target.id)
+                    : null;
+            const total = direction === "row" ? targetSize?.width : targetSize?.height;
+            const requestedSize = direction === "row" ? size.width : size.height;
+            if (total && total > 4) {
+              const fraction = Math.max(0.15, Math.min(0.85, requestedSize / (total - 4)));
+              ratio = position === "before" ? fraction : 1 - fraction;
+            }
+          }
+        }
         let layout =
           pruneLayout(state.layout, new Set(state.panes.map((item) => item.id))) ??
           linearLayout(state.panes, state.split ?? "row");
@@ -597,7 +739,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           kind: "split",
           id: crypto.randomUUID(),
           direction,
-          ratio: 0.5,
+          ratio,
           first: position === "before" ? { kind: "pane", paneId: created.id } : node,
           second: position === "before" ? node : { kind: "pane", paneId: created.id },
         });
@@ -607,7 +749,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             : mapLayout(layout, (node) =>
                 node.kind === "pane" && node.paneId === target?.id ? wrap(node) : node,
               );
-        return { tabs: state.tabs, ...settle(panes, created.id, direction, layout) };
+        return { tabs: state.tabs, ...settle(panes, created.id, direction, layout, state.tabs) };
       });
     },
 
@@ -641,7 +783,10 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               }
             : item,
         );
-        return { tabs: state.tabs, ...settle(panes, targetPaneId, state.split, state.layout) };
+        return {
+          tabs: state.tabs,
+          ...settle(panes, targetPaneId, state.split, state.layout, state.tabs),
+        };
       });
     },
 
@@ -676,13 +821,14 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         const panes = remaining.map((item) =>
           item.id === target.id ? { ...item, tabIds: [...item.tabIds, ...closing.tabIds] } : item,
         );
-        return settle(panes, target.id, state.split, state.layout);
+        return settle(panes, target.id, state.split, state.layout, state.tabs);
       });
     },
 
     hydrate: (records) => {
       const tabs: WorkspaceTab[] = [];
       for (const record of records) {
+        if (record.id === WORKSPACE_LAYOUT_RECORD_ID && record.kind === "welcome") continue;
         if (!SUPPORTED_KINDS.includes(record.kind)) {
           continue;
         }
@@ -708,10 +854,16 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               layout?: unknown;
               panes?: WorkspacePane[];
               activePaneId?: string;
+              hiddenTabIds?: unknown;
             })
           : null;
         const layout = readLayout(snapshot?.layout);
         if (snapshot?.version === 1 && layout && Array.isArray(snapshot.panes)) {
+          const hidden = new Set(
+            Array.isArray(snapshot.hiddenTabIds)
+              ? snapshot.hiddenTabIds.filter((id): id is string => typeof id === "string")
+              : [],
+          );
           const seen = new Set<string>();
           const paneIds = new Set<string>();
           const valid = new Set(tabs.map((tab) => tab.id));
@@ -734,6 +886,9 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               id: item.id,
               tabIds,
               activeId: tabIds.includes(item.activeId ?? "") ? item.activeId : (tabIds[0] ?? null),
+              ...(typeof item.locked === "boolean"
+                ? { locked: item.locked && !panes.some((entry) => entry.locked) }
+                : {}),
             });
           }
           if (panes.length) {
@@ -743,7 +898,9 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               new Set(layoutIds).size === layoutIds.length &&
               panes.every((item) => layoutIds.includes(item.id))
             ) {
-              restored = settle(panes, snapshot.activePaneId ?? panes[0]!.id, null, layout);
+              for (const tab of tabs)
+                if (tab.kind === "sidebar" && hidden.has(tab.id)) tab.hidden = true;
+              restored = settle(panes, snapshot.activePaneId ?? panes[0]!.id, null, layout, tabs);
             }
           }
         }
@@ -771,7 +928,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         }
         const tabs = state.tabs.filter((tab) => tab.id !== id);
         const panes = dropTab(state.panes, id);
-        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout) };
+        return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout, tabs) };
       });
     },
 
@@ -792,14 +949,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           hostId: null,
           pinned: false,
         };
-        return {
-          tabs: [tab],
-          panes: [{ id: FIRST_PANE, tabIds: [tab.id], activeId: tab.id }],
-          activePaneId: FIRST_PANE,
-          activeId: tab.id,
-          split: null,
-          layout: { kind: "pane", paneId: FIRST_PANE },
-        };
+        return insert(state, tab);
       }),
   };
 });
@@ -814,7 +964,25 @@ export function workspaceRecords(): TabRecord[] {
     .flatMap((item) => item.tabIds)
     .map((id) => tabs.find((tab) => tab.id === id))
     .filter((tab): tab is WorkspaceTab => !!tab);
-  const snapshot = JSON.stringify({ version: 1, panes, layout, activePaneId });
+  const snapshot = JSON.stringify({
+    version: 1,
+    panes,
+    layout,
+    activePaneId,
+    hiddenTabIds: tabs.filter((tab) => tab.kind === "sidebar" && tab.hidden).map((tab) => tab.id),
+  });
+  if (ordered.length === 0 && panes.some((pane) => pane.locked))
+    return [
+      {
+        id: WORKSPACE_LAYOUT_RECORD_ID,
+        kind: "welcome",
+        title: "Tunnelde",
+        hostId: null,
+        sortOrder: 0,
+        pinned: false,
+        state: snapshot,
+      },
+    ];
   return ordered.map((tab, index) => ({
     id: tab.id,
     kind: tab.kind,

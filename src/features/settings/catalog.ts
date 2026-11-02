@@ -18,7 +18,7 @@ export interface SettingDefinition {
   key: SettingKey;
   section: SettingsSection;
   label: MessageKey;
-  kind: "toggle" | "number" | "select" | "accent" | "colors" | "css";
+  kind: "toggle" | "number" | "select" | "accent" | "colors" | "css" | "shortcuts";
   hint?: MessageKey;
   options?: SettingOption[];
   min?: number;
@@ -34,6 +34,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "appearance",
   "workspace",
   "terminal",
+  "shortcuts",
   "files",
   "editor",
   "monitor",
@@ -46,6 +47,7 @@ export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   appearance: "settings.appearance",
   workspace: "settings.workspace",
   terminal: "settings.terminal",
+  shortcuts: "shortcuts.title",
   files: "settings.files",
   editor: "settings.editor",
   monitor: "settings.monitor",
@@ -196,6 +198,13 @@ const cursorOptions = [
 
 /** Every editable preference appears here once: rendering, search and scoped reset share it. */
 export const SETTINGS_CATALOG: SettingDefinition[] = [
+  {
+    key: "keyboardShortcuts",
+    section: "shortcuts",
+    kind: "shortcuts",
+    label: "shortcuts.title",
+    hint: "shortcuts.hint",
+  },
   select("language", "general", [
     choice("system", "settings.languageSystem"),
     { value: "zh-CN", label: "简体中文", literal: true },

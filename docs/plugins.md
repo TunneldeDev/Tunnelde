@@ -183,6 +183,12 @@ mode records stop requests and retries unreachable hosts on SSH reconnect. Runne
 to a saved host, so reconnecting with a new session ID can recover the same task. See
 [native helper setup](../native-helpers/README.md).
 
+The optional `tunnelde-agent` executable supports MCP stdio and remote runners. Ordinary SSH,
+SFTP, terminal and local API chat use does not require it. Helper binaries and checksums are
+provided as platform-specific artifacts of successful **Release** workflow runs in GitHub
+**Actions**, with 30-day retention, or can be built from `native-helpers/`. They are not included
+in desktop installers or the main GitHub Release downloads.
+
 Host/session snapshots never return passwords or private keys. There is no generic
 Tauri command invocation, vault access, host-key auto-trust, self-approval or API for
 disabling restricted mode. Existing application validation and overwrite rules remain

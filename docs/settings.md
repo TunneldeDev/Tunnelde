@@ -37,23 +37,41 @@ writes and failures appear above the category list. Each item has a reset action
 category and full resets require confirmation. Resetting preferences preserves
 hosts, credentials, plugins, open tabs and unsaved editor text.
 
+The Profile selector above Settings switches between saved preference snapshots in one action.
+Choose **Save as profile…** to name the current applied preferences. Later edits mark the selected
+profile as modified; **Update profile** explicitly replaces its snapshot after confirmation.
+Manage profiles provides rename, apply, per-profile export and delete. Deleting a snapshot keeps
+the current preferences. Names are unique, 1–64 characters, with up to 32 profiles stored locally.
+
+Import and export use native JSON file pickers. Export includes appearance, custom CSS, behavior,
+terminal, editor, file view and keyboard preferences. It excludes hosts, passwords, SSH keys,
+plugin configuration and credentials, history, open tabs and update records. Import checks the
+format/version, size (512 KB maximum), setting names, types and supported ranges, then previews
+the profile name and number of changed preferences before Apply. Cancellation changes nothing.
+Applying uses the same ordered save and cross-window synchronization as ordinary settings,
+including native title bars, live terminal appearance and custom shortcuts. Existing update
+records remain intact. An unapplied CSS draft requires confirmation before being discarded;
+successful application resets numeric preference and CSS drafts. Imported settings can then be saved as a
+named profile. Profiles do not change plugin grants, Node runtimes, SSH sessions or editor text.
+
 Fresh installations use the operating system language and theme, comfortable
 13 px interface text, bundled Fira Code at 14 px, a visible status bar and a closed
 monitor panel. Windows uses compact window controls; macOS and Linux use the
 system title bar. Updates retain previously saved preferences. New fields receive
 their defaults without overwriting existing choices.
 
-| Category    | Controls                                                                                                |
-| ----------- | ------------------------------------------------------------------------------------------------------- |
-| General     | Language, window title bar, close to tray where supported                                               |
-| Appearance  | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                 |
-| Workspace   | Status bar, monitor panel, panel widths, startup restoration, host activation                           |
-| Terminal    | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history |
-| Files       | Hidden entries, folders first, sort field/direction, directory preloading                               |
-| Text editor | Word wrap, tab width, spellcheck                                                                        |
-| Monitoring  | Local and remote refresh interval                                                                       |
-| Updates     | Automatic checks and access to the update page                                                          |
-| Advanced    | Custom CSS, data/log folders, full preference reset                                                     |
+| Category           | Controls                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| General            | Language, window title bar, close to tray where supported                                               |
+| Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                 |
+| Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                           |
+| Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history |
+| Keyboard shortcuts | Search commands, record bindings, detect conflicts, disable bindings and restore defaults               |
+| Files              | Hidden entries, folders first, sort field/direction, directory preloading                               |
+| Text editor        | Word wrap, tab width, spellcheck                                                                        |
+| Monitoring         | Local and remote refresh interval                                                                       |
+| Updates            | Automatic checks and access to the update page                                                          |
+| Advanced           | Custom CSS, data/log folders, full preference reset                                                     |
 
 Host rows select on a single click or Space. Double click or Enter runs the chosen
 activation action: open a terminal (default), show details, or edit the host.

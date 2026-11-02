@@ -27,6 +27,7 @@ export type ColorRegion =
 export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 
 export interface Settings {
+  keyboardShortcuts: Record<string, string[]>;
   language: Language;
   theme: ThemeMode;
   accent: Accent | string;

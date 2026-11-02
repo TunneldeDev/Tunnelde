@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-02
+
+### Added
+
+- Named settings profiles with one-click switching, snapshot updates, renaming and removal, plus native JSON import/export with validation and an import preview. Portable preferences include keyboard bindings and exclude hosts, credentials, plugin data, history and open tabs.
+- A searchable keyboard shortcuts editor with key recording, context-aware conflict checks, unbinding and per-command or global reset. Workbench, file, editor and terminal commands share the same registry as the command palette.
+- A lock button on each pane selects the default destination for newly opened pages while existing pages retain their location.
+
+### Changed
+
+- Approved plugins use a collapsed collection with nested permission groups and a bounded scrolling list.
+- Native MCP/remote-runner helpers are distributed as separate Actions artifacts. Desktop releases contain application downloads and updater files; publication checks reject accidentally attached helpers.
+
+### Fixed
+
+- Ctrl/Cmd+Comma opens settings from terminal and text-input focus. Configurable shortcuts respect file-pane priority, input composition, native clipboard handling and terminal Control keys.
+- Narrow pane headers keep tab close buttons reachable, place tabs below Windows window controls when necessary and reveal the active tab on resize.
+- Activity icons toggle docked panels, retaining their location, split proportions and live view state. Moving sidebar panels preserves their width or height within available space instead of assigning an equal split.
+
 ## [0.22.2] - 2026-11-02
 
 ### Changed

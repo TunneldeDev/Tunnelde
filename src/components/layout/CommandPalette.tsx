@@ -1,15 +1,16 @@
 import { Search } from "lucide-react";
+import "@/styles/shortcuts.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { ParseKeys } from "i18next";
+import { runWorkbenchCommand } from "@/lib/keyboard/actions";
+import { SHORTCUT_COMMANDS, bindingsFor, displayShortcut } from "@/lib/keyboard/registry";
 
 import { cn } from "@/lib/text/format";
 import { useDialogs } from "@/store/dialogs";
-import { useNavigation } from "@/store/navigation";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
-import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
-import { closeTab } from "@/lib/session/tabActions";
 
 interface Command {
   id: string;
@@ -20,15 +21,9 @@ interface Command {
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const hosts = useHosts((state) => state.hosts);
-  const openPage = useWorkspace((state) => state.openPage);
   const openHost = useWorkspace((state) => state.openHost);
-  const splitTab = useWorkspace((state) => state.splitTab);
-  const activeId = useWorkspace((state) => state.activeId);
   const settings = useSettings((state) => state.settings);
-  const updateSettings = useSettings((state) => state.update);
-  const openHostDialog = useDialogs((state) => state.openHost);
   const openConnect = useDialogs((state) => state.openConnect);
-  const checkUpdates = useUpdates((state) => state.check);
   const [query, setQuery] = useState("");
   const [index, setIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -52,55 +47,20 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
         : settings.theme === "light"
           ? t("settings.themeLight")
           : t("settings.themeSystem");
-    const list: Command[] = [
-      { id: "host.new", title: t("sidebar.newHost"), run: () => openHostDialog() },
-      { id: "page.settings", title: t("nav.settings"), run: () => openPage("settings") },
-      { id: "page.welcome", title: t("nav.welcome"), run: () => openPage("welcome") },
-      { id: "page.about", title: t("nav.about"), run: () => openPage("about") },
-      {
-        id: "sidebar.knownHosts",
-        title: t("settings.knownHosts"),
-        run: () => useNavigation.getState().showSidebar("knownHosts"),
+    const list: Command[] = SHORTCUT_COMMANDS.filter(
+      (item) => item.scope === "workbench" && item.id !== "palette.open",
+    ).map((item) => ({
+      id: item.id,
+      title:
+        item.id === "panel.toggle"
+          ? t(settings.rightPanel ? "panel.hide" : "panel.show")
+          : item.id === "theme.cycle"
+            ? `${t("settings.theme")}: ${themeLabel}`
+            : t(item.label as ParseKeys, { number: item.id.slice(-1) }),
+      run: () => {
+        runWorkbenchCommand(item.id);
       },
-      {
-        id: "sidebar.plugins",
-        title: t("settings.plugins"),
-        run: () => useNavigation.getState().showSidebar("plugins"),
-      },
-      { id: "update.check", title: t("updates.check"), run: () => void checkUpdates(true) },
-      {
-        id: "panel.toggle",
-        title: settings.rightPanel ? t("panel.hide") : t("panel.show"),
-        run: () => void updateSettings({ rightPanel: !settings.rightPanel }),
-      },
-      {
-        id: "theme.cycle",
-        title: `${t("settings.theme")}: ${themeLabel}`,
-        run: () =>
-          void updateSettings({
-            theme:
-              settings.theme === "dark" ? "light" : settings.theme === "light" ? "system" : "dark",
-          }),
-      },
-      {
-        id: "tab.splitRight",
-        title: t("tab.splitRight"),
-        run: () => activeId && splitTab(activeId, "row"),
-      },
-      {
-        id: "tab.splitDown",
-        title: t("tab.splitDown"),
-        run: () => activeId && splitTab(activeId, "column"),
-      },
-      {
-        id: "tab.close",
-        title: t("tab.close"),
-        run: () => {
-          const tab = useWorkspace.getState().tabs.find((item) => item.id === activeId);
-          if (tab) closeTab(tab);
-        },
-      },
-    ];
+    }));
 
     for (const host of hosts) {
       list.push({
@@ -115,28 +75,21 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       });
     }
     return list;
-  }, [
-    activeId,
-    checkUpdates,
-    hosts,
-    openConnect,
-    openHost,
-    openHostDialog,
-    openPage,
-    settings.rightPanel,
-    settings.theme,
-    splitTab,
-    t,
-    updateSettings,
-  ]);
+  }, [hosts, openConnect, openHost, settings.rightPanel, settings.theme, t]);
 
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) {
       return commands;
     }
-    return commands.filter((command) => command.title.toLowerCase().includes(needle));
-  }, [commands, query]);
+    return commands.filter((command) =>
+      `${command.title} ${command.id} ${bindingsFor(command.id, settings.keyboardShortcuts)
+        .map((key) => displayShortcut(key))
+        .join(" ")}`
+        .toLowerCase()
+        .includes(needle),
+    );
+  }, [commands, query, settings.keyboardShortcuts]);
 
   if (!open) {
     return null;
@@ -202,7 +155,12 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
               onMouseEnter={() => setIndex(position)}
               onClick={() => run(command)}
             >
-              {command.title}
+              <span>{command.title}</span>
+              {bindingsFor(command.id, settings.keyboardShortcuts)[0] && (
+                <kbd aria-hidden="true" className="td-palette__shortcut">
+                  {displayShortcut(bindingsFor(command.id, settings.keyboardShortcuts)[0]!)}
+                </kbd>
+              )}
             </button>
           ))}
         </div>

@@ -3120,6 +3120,22 @@
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
+  container: tab-strip / inline-size;
+}
+
+.pane__tabs > .td-tab {
+  min-width: min(96px, 100%);
+  max-width: min(208px, 100%);
+}
+
+@container tab-strip (max-width: 90px) {
+  .td-tab {
+    gap: 4px;
+    padding-inline: 4px;
+  }
+  .td-tab > svg {
+    display: none;
+  }
 }
 
 .pane__tabs::-webkit-scrollbar {
@@ -3145,6 +3161,21 @@
 
 .pane__actions > .td-icon-btn > svg {
   display: block;
+}
+
+.pane__actions > .is-locked {
+  color: var(--td-accent);
+  background: var(--td-accent-soft);
+}
+
+.pane {
+  container: workspace-pane / inline-size;
+}
+
+@container workspace-pane (max-width: 360px) {
+  .pane__actions > .pane__split {
+    display: none;
+  }
 }
 
 .pane__body {

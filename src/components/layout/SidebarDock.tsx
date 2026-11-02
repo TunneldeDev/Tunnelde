@@ -115,14 +115,15 @@ export function SidebarContents() {
       const id = sidebarTabId(view);
       const owner = panes.find((pane) => pane.tabIds.includes(id));
       containerFor(view).hidden = owner
-        ? owner.activeId !== id
+        ? owner.activeId !== id || !!tabs.find((tab) => tab.id === id)?.hidden
         : !sidebarVisible || activeSidebar !== view;
     }
   });
   return views.map((view) => {
     const owner = panes.find((pane) => pane.tabIds.includes(sidebarTabId(view)));
     const active = owner
-      ? owner.activeId === sidebarTabId(view)
+      ? owner.activeId === sidebarTabId(view) &&
+        !tabs.find((tab) => tab.id === sidebarTabId(view))?.hidden
       : sidebarVisible && activeSidebar === view;
     return createPortal(
       view === "hosts" ? (

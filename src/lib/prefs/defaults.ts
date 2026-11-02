@@ -7,6 +7,7 @@ export const UI_FONT_SIZE_MAX = 20;
 
 export function createDefaultSettings(platform = "unknown"): Settings {
   return {
+    keyboardShortcuts: {},
     language: "system",
     theme: "system",
     accent: "blue",

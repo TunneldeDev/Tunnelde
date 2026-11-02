@@ -102,6 +102,44 @@ beforeEach(async () => {
 });
 
 describe("sidebar panel docking", () => {
+  it("collapses and restores a docked AI panel through its activity icon while preserving its DOM, draft and split", () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          status: "running",
+          views: [
+            { id: "chat", title: "AI assistant", location: "sidebar", kind: "chat", icon: "bot" },
+          ],
+        },
+      ],
+    });
+    render(<Shell />);
+    fireEvent.click(screen.getByRole("button", { name: "AI assistant" }));
+    const view = "plugin:formatter:chat";
+    const input = screen.getByRole("textbox", { name: `${view} search` });
+    fireEvent.change(input, { target: { value: "Keep this draft and live session" } });
+    act(() => useWorkspace.getState().splitTab(`sidebar:${view}`, "row", "after", "pane-1"));
+    const initial = useWorkspace.getState().layout;
+    if (initial.kind === "split") act(() => useWorkspace.getState().resizeSplit(initial.id, 0.7));
+    const layout = useWorkspace.getState().layout;
+    const icon = screen.getByRole("button", { name: "AI assistant" });
+    expect(icon.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.click(icon);
+    expect(icon.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("textbox", { name: `${view} search` })).toBeNull();
+    expect(document.querySelectorAll(".pane")).toHaveLength(1);
+    expect(useWorkspace.getState().layout).toEqual(layout);
+    fireEvent.click(icon);
+    expect(screen.getByRole("textbox", { name: `${view} search` })).toBe(input);
+    expect((input as HTMLInputElement).value).toBe("Keep this draft and live session");
+    expect(icon.getAttribute("aria-expanded")).toBe("true");
+    expect(document.querySelectorAll(".pane")).toHaveLength(2);
+    expect(useWorkspace.getState().layout).toEqual(layout);
+    expect(mounted.mock.calls.filter(([name]) => name === view)).toHaveLength(1);
+    expect(unmounted).not.toHaveBeenCalled();
+  });
+
   it("discovers contributed chat sidebars and preserves their live draft when docked and restored", () => {
     usePlugins.setState({
       items: [

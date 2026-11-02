@@ -25,6 +25,7 @@ pub const COLOR_REGIONS: [&str; 11] = [
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
     /// "system" | "zh-CN" | "en-US"
     pub language: String,
     /// "dark" | "light" | "system"
@@ -81,6 +82,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            keyboard_shortcuts: BTreeMap::new(),
             language: "system".into(),
             theme: "system".into(),
             accent: "blue".into(),
@@ -138,10 +140,87 @@ fn is_hex_color(value: &str) -> bool {
     bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(|b| b.is_ascii_hexdigit())
 }
 
+fn is_keyboard_shortcut(value: &str) -> bool {
+    if value.is_empty() || value.len() > 64 || !value.is_ascii() {
+        return false;
+    }
+    let mut parts: Vec<&str> = value.split('+').collect();
+    let key = parts.pop().unwrap_or_default();
+    let allowed = ["Mod", "Ctrl", "Meta", "Alt", "Shift"];
+    if parts.iter().any(|part| !allowed.contains(part))
+        || parts
+            .iter()
+            .enumerate()
+            .any(|(index, part)| parts[..index].contains(part))
+        || (parts.contains(&"Mod") && (parts.contains(&"Ctrl") || parts.contains(&"Meta")))
+        || (parts.contains(&"Ctrl") && parts.contains(&"Meta"))
+    {
+        return false;
+    }
+    (key.len() == 1 && key.bytes().all(|byte| byte.is_ascii_alphanumeric()))
+        || key
+            .strip_prefix('F')
+            .and_then(|suffix| suffix.parse::<u8>().ok())
+            .is_some_and(|number| (1..=24).contains(&number))
+        || [
+            "Comma",
+            "Period",
+            "Backslash",
+            "Equal",
+            "Plus",
+            "Minus",
+            "Space",
+            "Escape",
+            "Tab",
+            "Enter",
+            "Backspace",
+            "Delete",
+            "Insert",
+            "Home",
+            "End",
+            "PageUp",
+            "PageDown",
+            "ArrowUp",
+            "ArrowDown",
+            "ArrowLeft",
+            "ArrowRight",
+        ]
+        .contains(&key)
+}
+
 impl Settings {
     /// Clamp and whitelist every field so a bad patch can never persist
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
+        let mut shortcut_count = 0;
+        self.keyboard_shortcuts.retain(|id, bindings| {
+            let valid = id.len() <= 64
+                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.')
+                && [
+                    "palette.",
+                    "page.",
+                    "keyboard.",
+                    "host.",
+                    "sidebar.",
+                    "update.",
+                    "panel.",
+                    "theme.",
+                    "font.",
+                    "tab.",
+                    "pane.",
+                    "editor.",
+                    "terminal.",
+                    "files.",
+                ]
+                .iter()
+                .any(|prefix| id.starts_with(prefix))
+                && bindings.len() <= 4
+                && bindings.iter().all(|binding| is_keyboard_shortcut(binding));
+            if valid {
+                shortcut_count += 1;
+            }
+            valid && shortcut_count <= 128
+        });
         let defaults = Self::default();
         if !TITLE_BAR_STYLES.contains(&self.title_bar_style.as_str()) {
             self.title_bar_style = defaults.title_bar_style;
@@ -272,6 +351,43 @@ mod tests {
         settings.sanitize();
         assert_eq!(settings.user_css.len(), 199_998);
         assert!(settings.user_css.chars().all(|value| value == '中'));
+    }
+
+    #[test]
+    fn keyboard_shortcuts_preserve_disable_and_bound_untrusted_imports() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({
+            "keyboardShortcuts": {
+                "page.settings": ["Mod+Shift+Y"],
+                "terminal.copy": [],
+                "files.rename": ["F2", "F3", "F4", "F5", "F6"],
+                "page.about": ["Mod+\nA"],
+                "page.fake": ["Garbage"],
+                "page.bad": ["Ctrl+Ctrl+A"],
+                "unknown.command": ["Mod+X"]
+            }
+        }))
+        .unwrap();
+        settings.sanitize();
+        assert_eq!(settings.keyboard_shortcuts.len(), 2);
+        assert_eq!(
+            settings.keyboard_shortcuts["page.settings"],
+            vec!["Mod+Shift+Y"]
+        );
+        assert!(settings.keyboard_shortcuts["terminal.copy"].is_empty());
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(restored.keyboard_shortcuts, settings.keyboard_shortcuts);
+        assert!(serde_json::from_str::<Settings>("{}")
+            .unwrap()
+            .keyboard_shortcuts
+            .is_empty());
+        for index in 0..150 {
+            settings
+                .keyboard_shortcuts
+                .insert(format!("page.future{index}"), vec!["Mod+M".into()]);
+        }
+        settings.sanitize();
+        assert_eq!(settings.keyboard_shortcuts.len(), 128);
     }
 
     #[test]

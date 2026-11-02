@@ -54,7 +54,6 @@ export function ActivityBar() {
   const openPage = useWorkspace((state) => state.openPage);
   const kind = useWorkspace((state) => state.tabs.find((tab) => tab.id === state.activeId)?.kind);
   const tabs = useWorkspace((state) => state.tabs);
-  const activeId = useWorkspace((state) => state.activeId);
   const panes = useWorkspace((state) => state.panes);
   const plugins = usePlugins((state) => state.items);
   const views = [
@@ -69,6 +68,16 @@ export function ActivityBar() {
     })),
   ] satisfies { view: SidebarView; Icon: typeof Server }[];
   const selectView = async (view: SidebarView) => {
+    const current = useWorkspace.getState();
+    const currentTab = current.tabs.find((tab) => tab.id === sidebarTabId(view));
+    if (
+      currentTab &&
+      !currentTab.hidden &&
+      current.panes.some((pane) => pane.activeId === currentTab.id)
+    ) {
+      current.toggleDockedSidebar(view);
+      return;
+    }
     const contribution = pluginSidebars(usePlugins.getState().items).find(
       (item) => item.view === view,
     );
@@ -84,7 +93,10 @@ export function ActivityBar() {
       )
         return;
     }
-    select(view);
+    const workspace = useWorkspace.getState();
+    if (workspace.tabs.some((tab) => tab.id === sidebarTabId(view)))
+      workspace.toggleDockedSidebar(view);
+    else select(view);
   };
   return (
     <nav
@@ -111,17 +123,17 @@ export function ActivityBar() {
     >
       {views.map(({ view, Icon }) => {
         const id = sidebarTabId(view);
-        const docked = tabs.some((tab) => tab.id === id);
+        const tab = tabs.find((tab) => tab.id === id);
+        const docked = !!tab;
+        const expanded = docked
+          ? !tab.hidden && panes.some((pane) => pane.activeId === id)
+          : visible && activeSidebar === view;
         return (
           <IconButton
             key={view}
             label={sidebarLabel(view, t)}
-            active={docked ? activeId === id : activeSidebar === view}
-            aria-expanded={
-              docked
-                ? panes.some((pane) => pane.activeId === id)
-                : visible && activeSidebar === view
-            }
+            active={docked ? expanded : activeSidebar === view}
+            aria-expanded={expanded}
             aria-controls={`sidebar-${view}`}
             onClick={() => void selectView(view)}
             onContextMenu={(event) => {

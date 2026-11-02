@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import {
@@ -141,8 +141,41 @@ describe("plugin security interactions", () => {
       (screen.getByRole("switch", { name: "Restricted mode" }) as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(screen.getByText(/Restart without that argument/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Approved plugins"));
     fireEvent.click(screen.getByRole("button", { name: "Revoke approval" }));
     expect(revoke).toHaveBeenCalledWith("formatter");
+  });
+  it("collapses approvals and groups plugin permissions without omitting unknown capabilities", async () => {
+    usePluginSecurity.setState({
+      state: {
+        restricted: false,
+        cliLocked: false,
+        recoverySuggested: false,
+        reason: null,
+        grants: { formatter: ["fs.read", "ssh.exec", "process.exec", "secrets", "future.unknown"] },
+      },
+    });
+    const { container } = render(<PluginSecuritySection />);
+    const collection = container.querySelector<HTMLDetailsElement>(".plugin-security__approvals")!;
+    expect(collection.open).toBe(false);
+    expect(screen.queryByText("fs.read")).toBeNull();
+    fireEvent.click(screen.getByText("Approved plugins"));
+    expect(collection.open).toBe(true);
+    fireEvent.click(container.querySelector(".plugin-security__grant summary")!);
+    await waitFor(() => expect(screen.getByText("fs.read")).toBeTruthy());
+    expect(screen.getByText("Local files")).toBeTruthy();
+    expect(screen.getByText("Remote machines")).toBeTruthy();
+    expect(screen.getByText("Execution and network")).toBeTruthy();
+    expect(screen.getByText("Other capabilities")).toBeTruthy();
+    expect(screen.getByText("future.unknown")).toBeTruthy();
+    expect(screen.getByText("Launch and control executable processes.")).toBeTruthy();
+    expect(
+      [...container.querySelectorAll<HTMLDetailsElement>(".plugin-security__group")].every(
+        (group) => !group.open,
+      ),
+    ).toBe(true);
+    fireEvent.click(container.querySelector(".plugin-security__grant summary")!);
+    await waitFor(() => expect(screen.queryByText("fs.read")).toBeNull());
   });
   it("shows recoverable failures without opening a modal and makes safety settings discoverable", () => {
     const open = vi.fn(),

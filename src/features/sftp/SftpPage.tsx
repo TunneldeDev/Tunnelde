@@ -1,3 +1,4 @@
+import { matchesCommand, isTextTarget } from "@/lib/keyboard/registry";
 import {
   ArrowLeftRight,
   ArrowLeft,
@@ -1212,127 +1213,72 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   };
 
   const onKeyDown = (event: React.KeyboardEvent, id: PaneId) => {
-    if (event.target instanceof HTMLInputElement) {
+    if (
+      isTextTarget(event.target) ||
+      event.nativeEvent.isComposing ||
+      event.nativeEvent.keyCode === 229
+    )
       return;
-    }
     const state = panesRef.current[id].state;
     const entries = visibleEntries(id);
     const primary = primaryEntry(id);
     const index = primary ? entries.findIndex((item) => item.path === primary.path) : -1;
-    const mod = event.ctrlKey || event.metaKey;
-
-    if (
-      event.metaKey &&
-      event.shiftKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      (event.key === "." || event.key === ">" || event.code === "Period")
-    ) {
+    const overrides = useSettings.getState().settings.keyboardShortcuts;
+    const matches = (id: string) => matchesCommand(event.nativeEvent, id, overrides);
+    const action = [
+      "hidden",
+      "back",
+      "forward",
+      "parent",
+      "refresh",
+      "selectAll",
+      "copy",
+      "cut",
+      "paste",
+      "newFile",
+      "newFolder",
+      "open",
+      "rename",
+      "delete",
+    ].find((id) => matches(`files.${id}`));
+    if (action) {
       event.preventDefault();
       event.stopPropagation();
-      toggleHidden(id);
-      return;
-    }
-
-    if (mod && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "h") {
-      event.preventDefault();
-      event.stopPropagation();
-      toggleHidden(id);
-      return;
-    }
-
-    if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
-      event.preventDefault();
-      event.stopPropagation();
-      travel(id, event.key === "ArrowLeft" ? -1 : 1);
-      return;
-    }
-    if (event.key === "F5") {
-      event.preventDefault();
-      event.stopPropagation();
-      void load(id, requested.current[id].path, state.cursor);
-      return;
-    }
-    if (state.busy) return;
-
-    if (
-      event.metaKey &&
-      !event.ctrlKey &&
-      !event.altKey &&
-      !event.shiftKey &&
-      (event.key === "ArrowUp" || event.key === "ArrowDown")
-    ) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.key === "ArrowUp" && state.listing) navigate(id, parentOf(state.listing.path));
-      else if (event.key === "ArrowDown") {
-        const selected = selectedEntries(id);
-        if (selected.length === 1) {
-          const entry = selected[0]!;
-          if (entry.isDir) navigate(id, entry.path);
-          else applyEntry(id, entry);
-        }
+      if (action === "hidden") toggleHidden(id);
+      else if (action === "back" || action === "forward") travel(id, action === "back" ? -1 : 1);
+      else if (action === "refresh") void load(id, requested.current[id].path, state.cursor);
+      else if (!state.busy) {
+        if (action === "parent" && state.listing) navigate(id, parentOf(state.listing.path));
+        else if (action === "selectAll")
+          patch(id, {
+            selectedPaths: entries.map((item) => item.path),
+            anchor: entries[0]?.path ?? null,
+            cursor: entries[entries.length - 1]?.path ?? null,
+          });
+        else if ((action === "copy" || action === "cut") && selectedEntries(id).length > 0)
+          clipSelection(id, action);
+        else if (action === "paste") pasteInto(id, state.listing?.path ?? "");
+        else if (action === "newFile" || action === "newFolder")
+          startCreate(id, action === "newFile" ? "file" : "folder");
+        else if (action === "open" && primary) {
+          if (primary.isDir) navigate(id, primary.path);
+          else applyEntry(id, primary);
+        } else if (action === "rename" && selectedEntries(id).length === 1)
+          startRename(id, selectedEntries(id)[0]!);
+        else if (action === "delete" && selectedEntries(id).length > 0) removeSelection(id);
       }
       return;
     }
-
-    if (mod) {
-      const key = event.key.toLowerCase();
-      if (key === "a") {
-        event.preventDefault();
-        patch(id, {
-          selectedPaths: entries.map((item) => item.path),
-          anchor: entries[0]?.path ?? null,
-          cursor: entries[entries.length - 1]?.path ?? null,
-        });
-      } else if (key === "c" && selectedEntries(id).length > 0) {
-        event.preventDefault();
-        clipSelection(id, "copy");
-      } else if (key === "x" && selectedEntries(id).length > 0) {
-        event.preventDefault();
-        clipSelection(id, "cut");
-      } else if (key === "v") {
-        event.preventDefault();
-        pasteInto(id, state.listing?.path ?? "");
-      } else if (key === "n") {
-        event.preventDefault();
-        startCreate(id, event.shiftKey ? "folder" : "file");
-      }
-      if (event.defaultPrevented) event.stopPropagation();
-      return;
-    }
-
-    if (event.altKey && event.key === "ArrowUp") {
-      event.preventDefault();
-      event.stopPropagation();
-      if (state.listing) navigate(id, parentOf(state.listing.path));
-    } else if (event.key === "ArrowDown") {
+    if (state.busy || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key === "ArrowDown") {
       event.preventDefault();
       selectAt(id, Math.min(entries.length - 1, index + 1), event.shiftKey);
     } else if (event.key === "ArrowUp") {
       event.preventDefault();
       selectAt(id, Math.max(0, index - 1), event.shiftKey);
-    } else if (event.key === "Enter" && primary) {
-      event.preventDefault();
-      if (primary.isDir) {
-        navigate(id, primary.path);
-      } else {
-        applyEntry(id, primary);
-      }
     } else if (event.key === "Home" || event.key === "End") {
       event.preventDefault();
       selectAt(id, event.key === "Home" ? 0 : entries.length - 1, event.shiftKey);
-    } else if (event.key === "Backspace") {
-      event.preventDefault();
-      if (state.listing) {
-        navigate(id, parentOf(state.listing.path));
-      }
-    } else if (event.key === "F2" && selectedEntries(id).length === 1) {
-      event.preventDefault();
-      startRename(id, selectedEntries(id)[0]!);
-    } else if (event.key === "Delete" && selectedEntries(id).length > 0) {
-      event.preventDefault();
-      removeSelection(id);
     } else if (event.key === "Escape") {
       patch(id, { creating: null, renaming: null, selectedPaths: [], anchor: null, cursor: null });
     }
@@ -1420,26 +1366,15 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         data-pane={id}
         onMouseDown={() => setActive(id)}
         onKeyDownCapture={(event) => {
-          if (
-            (event.ctrlKey || event.metaKey) &&
-            !event.altKey &&
-            !event.shiftKey &&
-            event.key.toLowerCase() === "f" &&
-            !event.nativeEvent.isComposing
-          ) {
+          const overrides = useSettings.getState().settings.keyboardShortcuts;
+          if (matchesCommand(event.nativeEvent, "files.filter", overrides)) {
             event.preventDefault();
             event.stopPropagation();
             setActive(id);
             focusFilter(id);
             return;
           }
-          if (
-            (event.ctrlKey || event.metaKey) &&
-            !event.altKey &&
-            !event.shiftKey &&
-            event.key.toLowerCase() === "l" &&
-            !event.nativeEvent.isComposing
-          ) {
+          if (matchesCommand(event.nativeEvent, "files.path", overrides)) {
             event.preventDefault();
             event.stopPropagation();
             setActive(id);
@@ -1735,6 +1670,9 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
                   className="sftp-row__name"
                   value={creating.value}
                   spellCheck={false}
+                  aria-label={
+                    creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
+                  }
                   placeholder={
                     creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
                   }

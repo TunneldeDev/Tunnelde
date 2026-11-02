@@ -1,4 +1,5 @@
 import { Save } from "lucide-react";
+import { matchesCommand } from "@/lib/keyboard/registry";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -55,7 +56,8 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+      if (event.target instanceof Element && !event.target.closest(".editor-page")) return;
+      if (matchesCommand(event, "editor.save", useSettings.getState().settings.keyboardShortcuts)) {
         event.preventDefault();
         void save(tabId);
       }

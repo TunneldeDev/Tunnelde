@@ -1,11 +1,29 @@
 # Shortcuts
 
+Open **Settings → Keyboard Shortcuts**, use `Ctrl/Cmd+Shift+F12`, or search for
+“Keyboard Shortcuts” in the command palette. Search by command name, command id,
+context or key. Click a binding to replace it, or **+** to add an alternative;
+press the keys and choose Save. Conflicting commands in the same context cannot
+be assigned the same shortcut. Escape cancels recording.
+
+Changes save automatically and follow settings profiles, including profile
+imports and exports. Remove every binding to disable a command, reset an
+individual command with its reset button, or choose **Reset all shortcuts**.
+File, editor and terminal commands apply within their respective views and take
+precedence over workbench commands. Ordinary text inputs retain editing keys;
+Settings and the command palette remain accessible. Input method composition
+and AltGr are preserved. Widget navigation such as arrow keys, Tab and Escape
+is not remapped by the application shortcut editor.
+
+The following tables show the default bindings.
+
 | Keys                           | Action                                                |
 | ------------------------------ | ----------------------------------------------------- |
 | `Ctrl+K`, `Ctrl+Shift+P`       | Command palette                                       |
 | `Ctrl+N`                       | New host                                              |
 | `Ctrl+B`                       | Show / hide the current sidebar                       |
 | `Ctrl+,`                       | Settings                                              |
+| `Ctrl+Shift+F12`               | Keyboard Shortcuts settings                           |
 | `Ctrl+W`                       | Close the active tab (asks first for unsaved editors) |
 | `Ctrl+Shift+W`                 | Close the focused pane when split                     |
 | `Ctrl+\`                       | Split the active tab to the right                     |
@@ -21,7 +39,9 @@ ordinary Control shortcuts stay available to the shell, including `Ctrl+K`,
 `Ctrl+N`, `Ctrl+B`, `Ctrl+W`, `Ctrl+\` and Control with a number. Use
 `Ctrl+Shift+P` for the command palette, `Ctrl+Shift+N` for a new host,
 `Cmd+W` on macOS or `Ctrl+Shift+W` to close the terminal tab/group.
-Tab switching and font-size shortcuts remain available in terminals.
+Settings, tab switching and font-size shortcuts remain available in terminals.
+Custom workbench Control shortcuts in terminals require Shift unless the
+command is Settings, Keyboard Shortcuts, tab switching or font sizing.
 Dialogs and input composition take precedence over workspace shortcuts.
 
 Terminal clipboard:

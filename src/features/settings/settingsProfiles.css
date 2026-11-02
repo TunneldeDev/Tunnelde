@@ -1,0 +1,56 @@
+.settings-profiles {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 18px 4px;
+  min-width: 0;
+}
+.settings-profiles__label {
+  color: var(--td-muted);
+  font-size: 12px;
+  margin-right: 2px;
+}
+.settings-profiles .td-select {
+  width: clamp(130px, 23vw, 240px);
+  min-width: 0;
+}
+.settings-profiles__spacer {
+  flex: 1;
+}
+.settings-profiles__error {
+  padding: 4px 18px;
+  color: var(--td-red);
+  font-size: 12px;
+}
+.settings-profiles__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 14px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+.settings-profiles__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 0;
+}
+.settings-profiles__name {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-profiles__input-label {
+  display: block;
+  margin-bottom: 8px;
+}
+.settings-profiles__preview-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}

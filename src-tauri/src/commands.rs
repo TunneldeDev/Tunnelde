@@ -128,9 +128,13 @@ pub fn settings_update(
     let previous = state.settings();
     let mut base = serde_json::to_value(&previous)?;
     let colors = patch.get("colors").cloned();
+    let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
     merge_json(&mut base, patch);
     if let Some(colors) = colors {
         base["colors"] = colors;
+    }
+    if let Some(keyboard_shortcuts) = keyboard_shortcuts {
+        base["keyboardShortcuts"] = keyboard_shortcuts;
     }
     let mut next: Settings = serde_json::from_value(base)
         .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;

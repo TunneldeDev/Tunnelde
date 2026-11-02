@@ -88,6 +88,29 @@
 .pane__header.has-native-window-controls {
   padding-left: 34px;
 }
+@container workspace-pane (max-width: 319px) {
+  .pane__header.has-window-controls {
+    height: 68px;
+    padding: 34px 0 0;
+  }
+}
+@container workspace-pane (max-width: 159px) {
+  .pane__header {
+    height: auto;
+    flex-wrap: wrap;
+  }
+  .pane__header.has-window-controls {
+    height: auto;
+  }
+  .pane__tabs {
+    flex-basis: 100%;
+    height: 33px;
+  }
+  .pane__actions {
+    height: 28px;
+    margin-left: auto;
+  }
+}
 .is-compact-chrome.is-macos .activitybar {
   padding-top: 38px;
 }

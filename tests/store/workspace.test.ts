@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Host, SshSession, TabRecord } from "@/lib/api/types";
-import { useWorkspace, workspaceRecords } from "@/store/workspace";
+import { useWorkspace, workspaceRecords, visibleWorkspaceLayout } from "@/store/workspace";
 import { useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import { useNavigation } from "@/store/navigation";
@@ -63,6 +63,269 @@ beforeEach(() => {
 });
 
 describe("workspace tabs", () => {
+  it("collapses docked sidebars without changing their saved groups, position or ratios", () => {
+    state().openPage("welcome");
+    state().splitTab("sidebar:plugins", "row", "after", "pane-1");
+    const pluginPane = state().panes.find((pane) => pane.tabIds.includes("sidebar:plugins"))!;
+    const initialLayout = state().layout;
+    if (initialLayout.kind === "split") state().resizeSplit(initialLayout.id, 0.72);
+    const layout = state().layout;
+    const tabIds = pluginPane.tabIds;
+    state().toggleDockedSidebar("plugins");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).toBe(true);
+    expect(state().panes.find((pane) => pane.id === pluginPane.id)?.tabIds).toEqual(tabIds);
+    expect(state().layout).toEqual(layout);
+    expect(visibleWorkspaceLayout(state().layout, state().panes, state().tabs)).toEqual({
+      kind: "pane",
+      paneId: "pane-1",
+    });
+    expect(state().activeId).toBe("page:welcome");
+    state().toggleDockedSidebar("plugins");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).toBe(false);
+    expect(state().activePaneId).toBe(pluginPane.id);
+    expect(state().activeId).toBe("sidebar:plugins");
+    expect(visibleWorkspaceLayout(state().layout, state().panes, state().tabs)).toEqual(layout);
+  });
+
+  it("programmatic opens reveal only the requested sidebar and persist other collapsed slots", () => {
+    state().openPage("welcome");
+    state().splitTab("sidebar:plugins", "row", "after", "pane-1");
+    state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
+    state().toggleDockedSidebar("plugins");
+    state().toggleDockedSidebar("knownHosts");
+    state().openPage("about");
+    expect(
+      state()
+        .tabs.filter((tab) => tab.hidden)
+        .map((tab) => tab.id)
+        .sort(),
+    ).toEqual(["sidebar:knownHosts", "sidebar:plugins"]);
+    const layout = state().layout;
+    state().hydrate(workspaceRecords());
+    expect(state().layout).toEqual(layout);
+    expect(state().tabs.filter((tab) => tab.hidden)).toHaveLength(2);
+    useNavigation.getState().showSidebar("plugins");
+    state().openSidebar("plugins");
+    expect(state().activeId).toBe("sidebar:plugins");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).toBe(false);
+    expect(state().tabs.find((tab) => tab.id === "sidebar:knownHosts")?.hidden).toBe(true);
+  });
+
+  it("activates a docked background tab before collapsing it and preserves hidden tabs on Close others", () => {
+    state().openSidebar("plugins");
+    state().openPage("welcome");
+    state().toggleDockedSidebar("plugins");
+    expect(state().activeId).toBe("sidebar:plugins");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).not.toBe(true);
+    state().toggleDockedSidebar("plugins");
+    state().openPage("about");
+    state().closeOthers("page:about");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["sidebar:plugins", "page:about"]);
+    expect(state().tabs[0]?.hidden).toBe(true);
+    state().activate("sidebar:plugins");
+    expect(state().tabs[0]?.hidden).toBe(false);
+  });
+
+  it("keeps exactly one default group and sends ordinary new pages there without moving existing tabs", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().splitTab("page:settings", "row");
+    const second = state().activePaneId;
+    state().togglePaneLock("pane-1");
+    state().openPage("about");
+    expect(state().activePaneId).toBe("pane-1");
+    state().openPage("settings");
+    expect(state().activePaneId).toBe(second);
+    expect(state().panes.find((pane) => pane.id === second)?.tabIds).toEqual(["page:settings"]);
+    state().togglePaneLock(second);
+    expect(
+      state()
+        .panes.filter((pane) => pane.locked)
+        .map((pane) => pane.id),
+    ).toEqual([second]);
+    state().togglePaneLock(second);
+    expect(state().panes.some((pane) => pane.locked)).toBe(false);
+  });
+
+  it("keeps an empty locked default group through close, persistence and welcome recovery", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().splitTab("page:settings", "row");
+    state().togglePaneLock("pane-1");
+    state().close("page:welcome");
+    expect(state().panes.find((pane) => pane.id === "pane-1")).toMatchObject({
+      locked: true,
+      tabIds: [],
+      activeId: null,
+    });
+    const layout = state().layout;
+    state().hydrate(workspaceRecords());
+    expect(state().layout).toEqual(layout);
+    expect(state().panes.find((pane) => pane.id === "pane-1")?.locked).toBe(true);
+    state().close("page:settings");
+    state().ensureWelcome();
+    expect(state().activePaneId).toBe("pane-1");
+    expect(state().panes[0]?.tabIds).toEqual(["page:welcome"]);
+    expect(state().panes[0]?.locked).toBe(true);
+  });
+
+  it("restores an entirely empty locked group without exposing its metadata as a tab", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().splitTab("page:settings", "row");
+    const lockedPane = state().activePaneId;
+    state().togglePaneLock(lockedPane);
+    state().close("page:welcome");
+    state().close("page:settings");
+    const panes = state().panes;
+    const layout = state().layout;
+    const records = workspaceRecords();
+    expect(state().tabs).toEqual([]);
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      id: "workspace:layout",
+      kind: "welcome",
+      title: "Tunnelde",
+    });
+    expect(records[0]?.state).toBeTruthy();
+    state().hydrate([]);
+    state().hydrate(records);
+    expect(state().tabs).toEqual([]);
+    expect(state().panes).toEqual(panes);
+    expect(state().layout).toEqual(layout);
+    expect(workspaceRecords()).toEqual(records);
+    state().ensureWelcome();
+    expect(state().activePaneId).toBe(lockedPane);
+    expect(state().panes).toEqual([
+      { id: lockedPane, locked: true, tabIds: ["page:welcome"], activeId: "page:welcome" },
+    ]);
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+    expect(workspaceRecords().map((record) => record.id)).toEqual(["page:welcome"]);
+  });
+
+  it("keeps an unlocked empty workspace free of metadata records", () => {
+    expect(workspaceRecords()).toEqual([]);
+    state().openPage("welcome");
+    state().togglePaneLock("pane-1");
+    state().close("page:welcome");
+    state().togglePaneLock("pane-1");
+    expect(workspaceRecords()).toEqual([]);
+  });
+
+  it("never displays a reserved layout record when its metadata is invalid", () => {
+    state().hydrate([{ ...record("workspace:layout", "welcome"), state: "invalid" }]);
+    expect(state().tabs).toEqual([]);
+    state().ensureWelcome();
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+  });
+
+  it("closing a locked group keeps its tabs while removing the closed default destination", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().splitTab("page:settings", "row");
+    state().togglePaneLock("pane-1");
+    state().closePane("pane-1");
+    expect(state().panes).toHaveLength(1);
+    expect(state().tabs).toHaveLength(2);
+    expect(state().panes.some((pane) => pane.locked)).toBe(false);
+    state().openPage("about");
+    expect(state().panes[0]?.tabIds).toContain("page:about");
+  });
+
+  it("opens ordinary content in a collapsed default group while keeping its sidebar collapsed", () => {
+    state().openPage("welcome");
+    state().splitTab("sidebar:plugins", "row", "after", "pane-1");
+    const defaultPane = state().activePaneId;
+    state().togglePaneLock(defaultPane);
+    const layout = state().layout;
+    state().toggleDockedSidebar("plugins");
+    state().openPage("settings");
+    expect(state().activePaneId).toBe(defaultPane);
+    expect(state().activeId).toBe("page:settings");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).toBe(true);
+    expect(state().panes.find((pane) => pane.id === defaultPane)?.tabIds).toEqual([
+      "sidebar:plugins",
+      "page:settings",
+    ]);
+    expect(visibleWorkspaceLayout(state().layout, state().panes, state().tabs)).toEqual(layout);
+    state().closeOthers("page:settings");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).toBe(true);
+    state().openSidebar("plugins");
+    expect(state().activePaneId).toBe(defaultPane);
+    expect(state().activeId).toBe("sidebar:plugins");
+    state().toggleDockedSidebar("plugins");
+    expect(state().activeId).toBe("page:settings");
+  });
+
+  it.each(["before", "after"] as const)(
+    "preserves sidebar width when docking %s a workspace that expands after its sidebar closes",
+    (position) => {
+      state().openPage("welcome");
+      const workspace = document.createElement("div");
+      workspace.className = "workspace";
+      const sidebar = document.createElement("div");
+      sidebar.className = "sidebar-view";
+      const panel = document.createElement("div");
+      panel.dataset.sidebarPanel = "hosts";
+      sidebar.append(panel);
+      document.body.append(workspace, sidebar);
+      vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({
+        width: 740,
+        height: 700,
+      } as DOMRect);
+      vi.spyOn(sidebar, "getBoundingClientRect").mockReturnValue({
+        width: 260,
+        height: 700,
+      } as DOMRect);
+      try {
+        state().splitTab("sidebar:hosts", "row", position, "root");
+        const layout = state().layout;
+        expect(layout.kind).toBe("split");
+        if (layout.kind === "split")
+          expect((position === "before" ? layout.ratio : 1 - layout.ratio) * 996).toBeCloseTo(260);
+      } finally {
+        workspace.remove();
+        sidebar.remove();
+      }
+    },
+  );
+
+  it.each(["row", "column"] as const)(
+    "preserves a docked panel's %s size when moving it beside the surviving group",
+    (direction) => {
+      state().openPage("welcome");
+      state().splitTab("sidebar:plugins", direction, "after", "pane-1");
+      const workspace = document.createElement("div");
+      workspace.className = "workspace";
+      const source = document.createElement("section");
+      source.className = "pane";
+      const panel = document.createElement("div");
+      panel.dataset.sidebarPanel = "plugins";
+      source.append(panel);
+      workspace.append(source);
+      document.body.append(workspace);
+      vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({
+        width: 1000,
+        height: 700,
+      } as DOMRect);
+      vi.spyOn(source, "getBoundingClientRect").mockReturnValue({
+        width: 260,
+        height: 210,
+      } as DOMRect);
+      try {
+        state().splitTab("sidebar:plugins", direction, "after", "pane-1");
+        const layout = state().layout;
+        expect(layout.kind).toBe("split");
+        if (layout.kind === "split")
+          expect((1 - layout.ratio) * (direction === "row" ? 996 : 696)).toBeCloseTo(
+            direction === "row" ? 260 : 210,
+          );
+      } finally {
+        workspace.remove();
+      }
+    },
+  );
+
   it("materializes a sidebar only after a valid drop, and opens each view once", () => {
     state().openPage("welcome");
     state().moveTab("sidebar:plugins", "missing-pane");

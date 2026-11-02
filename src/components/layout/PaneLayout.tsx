@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useTranslation } from "react-i18next";
 
 import { PaneView } from "@/components/layout/PaneView";
-import { useWorkspace, type WorkspaceLayout } from "@/store/workspace";
+import { useWorkspace, visibleWorkspaceLayout, type WorkspaceLayout } from "@/store/workspace";
 
 function LayoutNode({ node }: { node: WorkspaceLayout }) {
   const { t } = useTranslation();
@@ -110,5 +110,7 @@ function LayoutNode({ node }: { node: WorkspaceLayout }) {
 
 export function PaneLayout() {
   const layout = useWorkspace((state) => state.layout);
-  return <LayoutNode node={layout} />;
+  const panes = useWorkspace((state) => state.panes);
+  const tabs = useWorkspace((state) => state.tabs);
+  return <LayoutNode node={visibleWorkspaceLayout(layout, panes, tabs)} />;
 }

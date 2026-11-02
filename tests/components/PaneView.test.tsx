@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/layout/TabContent", () => ({ TabContent: () => null }));
@@ -38,6 +38,37 @@ beforeEach(() => {
 });
 
 describe("workspace group actions", () => {
+  it("marks the locked destination and routes a new page there after another pane is focused", () => {
+    const { container } = render(<PaneLayout />);
+    const first = container.querySelector('[data-pane-id="first"]') as HTMLElement;
+    fireEvent.click(
+      within(first).getByRole("button", { name: "Lock as the default pane for new pages" }),
+    );
+    expect(
+      within(first)
+        .getByRole("button", { name: "Unlock the default pane for new pages" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("tab", { name: "C" }));
+    act(() => {
+      useWorkspace.getState().openPage("settings");
+    });
+    expect(useWorkspace.getState().panes.find((pane) => pane.id === "first")?.tabIds).toContain(
+      "page:settings",
+    );
+  });
+
+  it("offers all tabs in the More menu so overflow tabs remain reachable", () => {
+    const { container } = render(<PaneLayout />);
+    fireEvent.click(
+      within(container.querySelector('[data-pane-id="first"]') as HTMLElement).getByRole("button", {
+        name: "More",
+      }),
+    );
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "B" }));
+    expect(useWorkspace.getState().activeId).toBe("b");
+  });
+
   it("keeps group actions outside the scrolling tablist and exposes group close through More", () => {
     const { container } = render(<PaneLayout />);
     const headers = [...container.querySelectorAll<HTMLElement>(".pane__header")];

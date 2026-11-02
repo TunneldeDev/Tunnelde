@@ -86,7 +86,7 @@ export function TabContent({ paneId }: { paneId?: string }) {
     for (const id of pane.tabIds) {
       const container = tabContainer(id);
       if (container.parentElement !== target) target.appendChild(container);
-      container.hidden = id !== pane.activeId;
+      container.hidden = id !== pane.activeId || !!tabs.find((tab) => tab.id === id)?.hidden;
     }
   }, [pane, tabs]);
 
@@ -155,7 +155,7 @@ export function WorkspaceContents() {
 
   return tabs.map((tab) => {
     const owner = panes.find((pane) => pane.tabIds.includes(tab.id));
-    const visible = owner?.activeId === tab.id;
+    const visible = owner?.activeId === tab.id && !tab.hidden;
     return createPortal(
       <TabBody tab={tab} visible={visible} active={visible && owner?.id === activePaneId} />,
       tabContainer(tab.id),

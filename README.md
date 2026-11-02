@@ -113,7 +113,10 @@ Approve for me, Full Access and ReadOnly; the default asks before changes or com
 Node is optional and is not bundled. Using an existing runtime requires consent or explicit
 selection. API keys use the operating system keyring. Remote agent execution requires a matching
 optional native helper, an explicitly configured remote runtime, and confirmation before deploying
-into a fresh user directory. See [native helper setup](native-helpers/README.md) and the plugins'
+into a fresh user directory. The helper supports MCP stdio and remote agent integrations; ordinary
+SSH, SFTP, terminal and local API chat use does not require it. It is available as a Release workflow
+artifact in GitHub Actions or can be built from source, and is not part of the desktop Release
+downloads. See [native helper setup](native-helpers/README.md) and the plugins'
 READMEs for their boundaries and supported CLI permission modes.
 
 ## Platforms

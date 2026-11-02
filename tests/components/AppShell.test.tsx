@@ -134,6 +134,40 @@ describe("AppShell terminal shortcut ownership", () => {
     return input;
   }
 
+  it.each([
+    { key: ",", ctrlKey: true },
+    { key: "，", code: "Comma", ctrlKey: true },
+    { key: "，", code: "Comma", metaKey: true },
+  ])("opens settings before xterm receives the comma shortcut (%j)", (options) => {
+    const input = terminal();
+    const xterm = vi.fn();
+    input.addEventListener("keydown", xterm);
+    fireEvent.keyDown(input, options);
+    expect(useWorkspace.getState().tabs.some((tab) => tab.kind === "settings")).toBe(true);
+    expect(xterm).not.toHaveBeenCalled();
+  });
+
+  it("opens settings from a normal input while preserving typing and editing shortcuts", () => {
+    const { container } = render(<AppShell />);
+    const input = document.createElement("input");
+    container.append(input);
+    fireEvent.keyDown(input, { key: "n", ctrlKey: true });
+    expect(useDialogs.getState().dialog.kind).toBe("none");
+    fireEvent.keyDown(input, { key: "，", code: "Comma", ctrlKey: true });
+    expect(useWorkspace.getState().tabs.some((tab) => tab.kind === "settings")).toBe(true);
+  });
+
+  it("uses customized global shortcuts immediately and disables the previous default", () => {
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, keyboardShortcuts: { "page.settings": ["Mod+Shift+Y"] } },
+    });
+    const input = terminal();
+    fireEvent.keyDown(input, { key: ",", ctrlKey: true });
+    expect(useWorkspace.getState().tabs.some((tab) => tab.kind === "settings")).toBe(false);
+    fireEvent.keyDown(input, { key: "Y", ctrlKey: true, shiftKey: true });
+    expect(useWorkspace.getState().tabs.some((tab) => tab.kind === "settings")).toBe(true);
+  });
+
   it("passes shell editing, tmux, SIGQUIT, remote control chords and AltGr through", () => {
     const input = terminal();
     const keys: KeyboardEventInit[] = [

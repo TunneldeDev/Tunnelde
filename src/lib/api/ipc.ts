@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
 
 import type {
   AppInfo,
@@ -45,6 +46,14 @@ export const api = {
   settings: () => invoke<Settings>("settings_get"),
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("settings_update", { patch }),
   resetSettings: () => invoke<Settings>("settings_reset"),
+  settingsProfiles: () => invoke<SettingsProfile[]>("settings_profiles_list"),
+  saveSettingsProfile: (id: string | null, name: string, settings: PortableSettings) =>
+    invoke<SettingsProfile[]>("settings_profile_save", { id, name, settings }),
+  deleteSettingsProfile: (id: string) =>
+    invoke<SettingsProfile[]>("settings_profile_delete", { id }),
+  importSettingsFile: () => invoke<SettingsDocument | null>("settings_file_import"),
+  exportSettingsFile: (name: string, settings: PortableSettings) =>
+    invoke<string | null>("settings_file_export", { name, settings }),
   setLocale: (locale: string) => invoke<void>("set_locale", { locale }),
 
   hostsSnapshot: () => invoke<HostsSnapshot>("hosts_snapshot"),
