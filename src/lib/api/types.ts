@@ -53,6 +53,7 @@ export interface Settings {
   showStatusBar: boolean;
   restoreWorkspace: boolean;
   hostActivation: HostActivation;
+  hostDirectConnect: boolean;
   terminalScrollback: number;
   terminalLineHeight: number;
   terminalCursorStyle: TerminalCursorStyle;

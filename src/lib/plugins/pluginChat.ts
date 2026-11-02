@@ -138,6 +138,8 @@ export interface PluginChatBlock {
     approve?: string;
     recover?: string;
     target?: string;
+    prepare?: string;
+    install?: string;
   };
   sessions: ChatSession[];
   activeSessionId: string;
@@ -156,6 +158,12 @@ export interface PluginChatBlock {
   notice: string;
   config?: PluginChatConfig;
   execution?: ChatExecution | null;
+  readiness?: {
+    status: "required" | "checking" | "ready" | "error";
+    profileId: string;
+    targetKey: string;
+    detail: string;
+  };
 }
 
 export interface ChatSession {
@@ -187,6 +195,15 @@ export interface ChatExecution {
   executable?: string;
   runtime?: string;
 }
+export const chatExecutionKey = (execution?: ChatExecution | null) =>
+  JSON.stringify([
+    execution?.kind || "local",
+    execution?.sessionId || "",
+    execution?.hostId || "",
+    execution?.cwd || "",
+    execution?.runtime || "",
+    execution?.executable || "",
+  ]);
 
 export function chatRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -314,8 +331,8 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
       send: id(commands.send),
       stop: id(commands.stop),
       ...Object.fromEntries(
-        ["configure", "session", "approve", "recover", "target"].flatMap((key) =>
-          id(commands[key]) ? [[key, id(commands[key])]] : [],
+        ["configure", "session", "approve", "recover", "target", "prepare", "install"].flatMap(
+          (key) => (id(commands[key]) ? [[key, id(commands[key])]] : []),
         ),
       ),
     },
@@ -442,6 +459,20 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
     configured: raw.configured === true,
     notice: text(raw.notice),
     config: normalizeChatConfig(raw.config),
+    ...(["required", "checking", "ready", "error"].includes(
+      String(chatRecord(raw.readiness).status),
+    )
+      ? {
+          readiness: {
+            status: chatRecord(raw.readiness).status as NonNullable<
+              PluginChatBlock["readiness"]
+            >["status"],
+            profileId: id(chatRecord(raw.readiness).profileId),
+            targetKey: text(chatRecord(raw.readiness).targetKey, 16000),
+            detail: text(chatRecord(raw.readiness).detail),
+          },
+        }
+      : {}),
     ...(raw.execution === null ? { execution: null } : {}),
     ...(chatRecord(raw.execution).kind === "local" || chatRecord(raw.execution).kind === "remote"
       ? {

@@ -60,6 +60,7 @@ pub struct Settings {
     pub show_status_bar: bool,
     pub restore_workspace: bool,
     pub host_activation: String,
+    pub host_direct_connect: bool,
     pub terminal_scrollback: u32,
     pub terminal_line_height: f64,
     pub terminal_cursor_style: String,
@@ -115,6 +116,7 @@ impl Default for Settings {
             show_status_bar: true,
             restore_workspace: true,
             host_activation: "terminal".into(),
+            host_direct_connect: true,
             terminal_scrollback: 10_000,
             terminal_line_height: 1.2,
             terminal_cursor_style: "block".into(),
@@ -563,6 +565,7 @@ mod tests {
             "showStatusBar",
             "restoreWorkspace",
             "hostActivation",
+            "hostDirectConnect",
             "terminalScrollback",
             "terminalLineHeight",
             "terminalCursorStyle",
@@ -593,7 +596,7 @@ mod tests {
     fn new_preferences_survive_sanitize_and_json_round_trip() {
         let input = serde_json::json!({
             "motion": "full", "showStatusBar": false, "restoreWorkspace": false,
-            "hostActivation": "edit", "terminalScrollback": 100_000,
+            "hostActivation": "edit", "hostDirectConnect": false, "terminalScrollback": 100_000,
             "terminalLineHeight": 1.5, "terminalCursorStyle": "underline",
             "terminalCursorBlink": false, "terminalInactiveCursorStyle": "none",
             "terminalScrollSensitivity": 5, "terminalSmoothScrolling": true,

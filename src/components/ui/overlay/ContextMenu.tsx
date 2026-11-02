@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useContextMenu } from "@/store/contextMenu";
 import { focusMenuItem, handleMenuKeyDown } from "./menuKeyboard";
+import { MenuItems } from "./MenuItems";
 import "@/styles/menus.css";
 
 export function ContextMenuHost() {
@@ -64,34 +65,20 @@ export function ContextMenuHost() {
   return (
     <div
       ref={ref}
-      className="context-menu"
+      className="td-menu context-menu"
       role="menu"
       tabIndex={-1}
       style={{ left: position.x, top: position.y }}
       onContextMenu={(event) => event.preventDefault()}
       onKeyDown={(event) => handleMenuKeyDown(event, ref.current, () => close())}
     >
-      {menu.items.map((item, index) => (
-        <Fragment key={index}>
-          {index > 0 && item.separatorBefore ? (
-            <div className="td-menu__separator" role="separator" />
-          ) : null}
-          <button
-            type="button"
-            role="menuitem"
-            className="context-menu__item"
-            data-danger={item.danger ? "true" : undefined}
-            disabled={item.disabled}
-            tabIndex={-1}
-            onClick={() => {
-              close();
-              item.onSelect();
-            }}
-          >
-            {item.label}
-          </button>
-        </Fragment>
-      ))}
+      <MenuItems
+        items={menu.items}
+        onSelect={(item) => {
+          close();
+          item.onSelect();
+        }}
+      />
     </div>
   );
 }

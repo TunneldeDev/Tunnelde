@@ -8,7 +8,7 @@ import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { cn } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
-import type { Host, HostKeyInfo } from "@/lib/api/types";
+import { isIpcError, type Host, type HostKeyInfo } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
@@ -25,6 +25,7 @@ interface ConnectDialogProps {
   host: Host;
   after?: "terminal" | "sftp";
   intent?: "connect" | "installKey";
+  initialError?: string;
   onClose: () => void;
 }
 
@@ -32,6 +33,7 @@ export function ConnectDialog({
   host,
   after = "terminal",
   intent = "connect",
+  initialError,
   onClose,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
@@ -48,7 +50,7 @@ export function ConnectDialog({
   const [saved, setSaved] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError ?? null);
   const alive = useRef(true);
   const pending = useRef(false);
 
@@ -103,26 +105,40 @@ export function ConnectDialog({
   const setup = intent === "installKey";
   const unsupported = !setup && host.authMethod === "agent";
   const interactive = setup || (host.authMethod !== "key" && !unsupported);
-  const canConnect =
-    trusted && !probing && !busy && !unsupported && (!interactive || password.length > 0 || saved);
+  const hasCredentials = !interactive || password.length > 0 || saved;
+  const canConnect = trusted && !probing && !busy && !unsupported && hasCredentials;
 
   const trust = async () => {
-    if (pending.current) {
+    if (pending.current || !probe) {
       return;
     }
     pending.current = true;
     setBusy(true);
     setError(null);
+    let approved = false;
     try {
-      const info = await api.sshTrust(host.id);
+      const info = await api.sshTrust(host.id, probe.fingerprint);
       if (!alive.current) {
         return;
       }
       setProbe(info);
       setTrusted(true);
+      approved = true;
     } catch (cause) {
       if (alive.current) {
         setError(translateError(cause));
+        if (isIpcError(cause) && cause.message === "ssh.hostKeyChanged") {
+          try {
+            const info = await api.sshProbe(host.id);
+            if (alive.current) {
+              setProbe(info);
+              setTrusted(info.status === "known");
+            }
+          } catch {
+            // Keep the old fingerprint untrusted until the dialog is reopened.
+            if (alive.current) setTrusted(false);
+          }
+        }
       }
     } finally {
       pending.current = false;
@@ -130,22 +146,29 @@ export function ConnectDialog({
         setBusy(false);
       }
     }
+    if (approved && alive.current && !setup && hasCredentials) await submit(true);
   };
 
-  const submit = async () => {
-    if (!canConnect || pending.current) {
+  const submit = async (justApproved = false) => {
+    const ready = justApproved ? !probing && !unsupported && hasCredentials : canConnect;
+    if (!ready || pending.current) {
       return;
     }
     pending.current = true;
     setBusy(true);
     setError(null);
-    const session = await connect({
-      hostId: host.id,
-      password: interactive ? password || null : null,
-      passphrase: interactive ? null : passphrase || null,
-      cols: 120,
-      rows: 32,
-    });
+    const session = await connect(
+      {
+        hostId: host.id,
+        password: interactive ? password || null : null,
+        passphrase: interactive ? null : passphrase || null,
+        cols: 120,
+        rows: 32,
+      },
+      (cause) => {
+        if (alive.current) setError(translateError(cause));
+      },
+    );
     if (!session) {
       pending.current = false;
       if (alive.current) {

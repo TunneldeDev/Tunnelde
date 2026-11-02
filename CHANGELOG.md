@@ -6,6 +6,20 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-02
+
+### Added
+
+- Save, replace or remove a host password directly in the host editor using the operating system credential store. Blank fields preserve existing credentials; failed vault saves retain the draft for retry without creating duplicate hosts.
+- Connect directly on host double click or Enter by default, with a Workspace preference to show the connection dialog every time. Missing credentials and untrusted or changed server keys still open the connection dialog.
+- Require assistant initialization on the selected machine before showing Send. Remote runtime installation and agent preparation have explicit consent, protocol checks, available account/model-state checks and cancellation. Requires assistant packages 1.4.0.
+
+### Fixed
+
+- Bind host-key trust approval to the fingerprint actually displayed. A key that changes during approval is rejected and refreshed for review; approved keys with available credentials continue straight to connection.
+- Render right-click and ellipsis menus with the same menu items, icons, spacing and keyboard behavior while retaining their respective pointer/button anchors.
+- Select connected SSH hosts directly from the assistant location menu. Preparation errors no longer consume user messages or falsely mark a missing remote runtime as ready.
+
 ## [0.25.1] - 2026-11-02
 
 ### Fixed

@@ -85,7 +85,8 @@ export const api = {
   openExternal: (url: string) => invoke<void>("open_external", { url }),
 
   sshProbe: (hostId: string) => invoke<HostKeyInfo>("ssh_probe", { hostId }),
-  sshTrust: (hostId: string) => invoke<HostKeyInfo>("ssh_trust", { hostId }),
+  sshTrust: (hostId: string, fingerprint: string) =>
+    invoke<HostKeyInfo>("ssh_trust", { hostId, fingerprint }),
   sshConnect: (request: SshConnectRequest) => invoke<SshSession>("ssh_connect", { request }),
   sshAttach: (sessionId: string) => invoke<void>("ssh_attach", { sessionId }),
   sshWrite: (sessionId: string, data: string) => invoke<void>("ssh_write", { sessionId, data }),

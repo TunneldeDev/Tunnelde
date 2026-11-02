@@ -84,7 +84,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "startup",
       label: "settings.groups.startup",
-      keys: ["restoreWorkspace", "hostActivation"],
+      keys: ["restoreWorkspace", "hostActivation", "hostDirectConnect"],
     },
   ],
   terminal: [
@@ -275,6 +275,7 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     ],
     "settings.hostActivationHint",
   ),
+  toggle("hostDirectConnect", "workspace", "settings.hostDirectConnectHint"),
   {
     ...numeric("terminalScrollback", "terminal", 1000, 100000, 1000),
     hint: "settings.terminalScrollbackHint",

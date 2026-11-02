@@ -433,6 +433,11 @@ async fn pump_terminal(
 pub async fn probe(app: &AppHandle, host_id: &str) -> AppResult<HostKeyInfo> {
     let state = app.state::<AppState>();
     let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
+    probe_host(app, &host).await
+}
+
+async fn probe_host(app: &AppHandle, host: &Host) -> AppResult<HostKeyInfo> {
+    let state = app.state::<AppState>();
     let known = state
         .db
         .with(|conn| db::known_hosts::find(conn, &host.host, host.port as i64))?;
@@ -453,10 +458,14 @@ pub async fn probe(app: &AppHandle, host_id: &str) -> AppResult<HostKeyInfo> {
     })
 }
 
-pub async fn trust(app: &AppHandle, host_id: &str) -> AppResult<HostKeyInfo> {
+pub async fn trust(app: &AppHandle, host_id: &str, fingerprint: &str) -> AppResult<HostKeyInfo> {
     let state = app.state::<AppState>();
     let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
-    let info = probe(app, host_id).await?;
+    let info = probe_host(app, &host).await?;
+    // Record only the key the user actually reviewed, never a newly observed key.
+    if info.fingerprint != fingerprint {
+        return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
+    }
 
     state.db.with(|conn| {
         db::known_hosts::upsert(

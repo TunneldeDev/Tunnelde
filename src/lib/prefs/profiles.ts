@@ -25,6 +25,7 @@ export const PORTABLE_SETTING_KEYS = [
   "showStatusBar",
   "restoreWorkspace",
   "hostActivation",
+  "hostDirectConnect",
   "terminalScrollback",
   "terminalLineHeight",
   "terminalCursorStyle",

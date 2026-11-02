@@ -42,6 +42,17 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("offers direct host connection with an enabled default and persists turning it off", async () => {
+    useNavigation.setState({ settingsSection: "workspace" });
+    render(<SettingsPage />);
+    const toggle = row("hostDirectConnect").getByRole("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(update).toHaveBeenLastCalledWith({ hostDirectConnect: false });
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
   it.each(["windows", "linux", "macos"])(
     "shows the background Dock preference only on macOS (%s)",
     async (os) => {

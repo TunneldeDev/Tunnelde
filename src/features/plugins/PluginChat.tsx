@@ -29,6 +29,7 @@ import {
   applyChatEvent,
   chatRecord,
   chatSessionTitle,
+  chatExecutionKey,
   normalizeChatBlock,
   type PluginChatBlock,
 } from "@/lib/plugins/pluginChat";
@@ -143,6 +144,48 @@ export function PluginChat({
   }, [block.activeSessionId, block.messages, block.approvals, block.tasks]);
 
   const active = block.run?.status === "running" || block.run?.status === "waiting";
+  const preparing = block.readiness?.status === "checking";
+  useEffect(() => {
+    if (!preparing || !isTauri()) return;
+    let disposed = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = async () => {
+      try {
+        const result = chatRecord(
+          await api.pluginRenderView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language),
+        );
+        const candidate = Array.isArray(result.blocks)
+          ? result.blocks.find((item) => chatRecord(item).id === current.current.id)
+          : null;
+        const next = normalizeChatBlock(candidate);
+        const previous = current.current;
+        if (
+          !disposed &&
+          previous.readiness?.status === "checking" &&
+          next &&
+          next.activeSessionId === previous.activeSessionId &&
+          next.modelId === previous.modelId &&
+          next.execution?.kind === previous.execution?.kind &&
+          next.execution?.sessionId === previous.execution?.sessionId &&
+          next.execution?.hostId === previous.execution?.hostId &&
+          next.execution?.cwd === previous.execution?.cwd
+        ) {
+          current.current = next;
+          setBlock(next);
+        }
+      } catch {
+        // The event stream remains primary; a temporary refresh error is retryable.
+      } finally {
+        if (!disposed) timer = setTimeout(() => void refresh(), 2000);
+      }
+    };
+    // Read-only fallback for a missing final snapshot; never launches an agent.
+    timer = setTimeout(() => void refresh(), 2000);
+    return () => {
+      disposed = true;
+      clearTimeout(timer);
+    };
+  }, [preparing, pluginId, viewId, i18n.resolvedLanguage, i18n.language]);
   const messages = block.messages.filter(
     (message) =>
       message.role !== "assistant" ||
@@ -178,6 +221,11 @@ export function PluginChat({
   const profile =
     block.config?.profiles.find((item) => item.id === block.modelId) ??
     block.config?.profiles.find((item) => item.id === block.config?.activeProfileId);
+  const agentReady =
+    !block.commands.prepare ||
+    (block.readiness?.status === "ready" &&
+      block.readiness.profileId === block.modelId &&
+      block.readiness.targetKey === chatExecutionKey(block.execution));
   const executionProfiles =
     block.config?.profiles.filter(
       (item) =>
@@ -280,7 +328,8 @@ export function PluginChat({
   };
   const send = async () => {
     const message = draft.trim();
-    if (!message || active || !block.configured || readOnlyUnavailable) return;
+    if (!message || active || preparing || !agentReady || !block.configured || readOnlyUnavailable)
+      return;
     if (new TextEncoder().encode(message).length > PLUGIN_INPUT_MAX_BYTES / 2) {
       setError(t("pluginView.inputTooLarge"));
       return;
@@ -333,7 +382,7 @@ export function PluginChat({
       label={t("pluginChat.model")}
       className="plugin-chat__model"
       menuClassName="plugin-chat__model-menu"
-      disabled={!!busy || active || !block.models.length}
+      disabled={!!busy || active || preparing || !block.models.length}
       trigger={
         <>
           <Sparkles size={13} aria-hidden="true" />
@@ -361,7 +410,7 @@ export function PluginChat({
       label={t("pluginChat.mode")}
       className={`plugin-chat__mode${block.mode === "full" ? " is-full" : ""}`}
       menuClassName="plugin-chat__permissions-menu"
-      disabled={!!busy || active}
+      disabled={!!busy || active || preparing}
       trigger={
         <>
           {modeIcons[block.mode]}
@@ -390,7 +439,9 @@ export function PluginChat({
       className="plugin-chat__location"
       menuClassName="plugin-chat__location-menu"
       label={t("pluginChat.executionLocation")}
-      disabled={!!busy || active || (!executionProfiles.length && !block.commands.configure)}
+      disabled={
+        !!busy || active || preparing || (!executionProfiles.length && !block.commands.configure)
+      }
       trigger={
         <>
           {remoteSession ? <Server size={13} /> : <Laptop size={13} />}
@@ -420,12 +471,10 @@ export function PluginChat({
                 checked: remoteSession === item.id,
                 onSelect: () => {
                   if (remoteSession === item.id) return;
-                  if (presentation === "copilot") setExecutionOpen(item.id);
-                  else
-                    void command(block.commands.target, {
-                      targetId: item.id,
-                      modelId: block.modelId,
-                    });
+                  void command(block.commands.target, {
+                    targetId: item.id,
+                    modelId: block.modelId,
+                  });
                 },
               })),
               ...(!sshSessions.length
@@ -536,7 +585,11 @@ export function PluginChat({
           </>
         ) : null}
         {block.commands.configure ? (
-          <IconButton label={configureLabel} disabled={!!busy || active} onClick={openConfig}>
+          <IconButton
+            label={configureLabel}
+            disabled={!!busy || active || preparing}
+            onClick={openConfig}
+          >
             <Settings2 size={14} />
           </IconButton>
         ) : null}
@@ -566,7 +619,7 @@ export function PluginChat({
                 <button
                   type="button"
                   key={item.id}
-                  disabled={!!busy || active}
+                  disabled={!!busy || active || preparing}
                   onClick={() => chooseSession(item.id)}
                 >
                   <History size={13} aria-hidden="true" />
@@ -655,7 +708,7 @@ export function PluginChat({
                     <span className="settings-hint">{t("pluginChat.recoveryHint")}</span>
                     <Button
                       size="sm"
-                      disabled={!!busy || active}
+                      disabled={!!busy || active || preparing}
                       onClick={() =>
                         void command(block.commands.recover, { taskId: task.id, action: "inspect" })
                       }
@@ -664,7 +717,7 @@ export function PluginChat({
                     </Button>
                     <Button
                       size="sm"
-                      disabled={!!busy || active}
+                      disabled={!!busy || active || preparing}
                       onClick={() =>
                         void command(block.commands.recover, { taskId: task.id, action: "resume" })
                       }
@@ -729,6 +782,30 @@ export function PluginChat({
           {t("common.retry")}
         </Button>
       ) : null}
+      {block.commands.prepare && !agentReady && !active ? (
+        <section
+          className="plugin-chat__initialization"
+          aria-label={t("pluginChat.initialization")}
+        >
+          <p role={block.readiness?.status === "error" ? "alert" : "status"}>
+            {preparing
+              ? t("pluginChat.initializing")
+              : t("pluginChat.initializeHint", { location })}
+          </p>
+          {block.readiness?.status === "error" && block.readiness.detail ? (
+            <small>{block.readiness.detail}</small>
+          ) : null}
+          {remoteSession && block.commands.install ? (
+            <Button
+              size="sm"
+              disabled={!!busy || preparing || !block.configured}
+              onClick={() => void command(block.commands.install, { modelId: block.modelId })}
+            >
+              {t("pluginChat.installInitialize")}
+            </Button>
+          ) : null}
+        </section>
+      ) : null}
       <form
         className="plugin-chat__composer"
         onSubmit={(event) => {
@@ -775,15 +852,31 @@ export function PluginChat({
             {presentation === "copilot" || presentation === "pi" ? locationControl : null}
             {presentation === "claude" ? permissionPicker : null}
             {presentation === "codex" ? modelPicker : null}
-            {active ? (
+            {active || preparing ? (
               <IconButton
                 className="plugin-chat__send is-stopping"
-                label={t("pluginChat.stop")}
+                label={preparing ? t("pluginChat.cancelInitialization") : t("pluginChat.stop")}
                 disabled={!!busy}
                 onClick={() => void command(block.commands.stop, {})}
               >
                 <Square size={13} fill="currentColor" />
               </IconButton>
+            ) : !block.configured || !agentReady ? (
+              <Button
+                className="plugin-chat__initialize"
+                size="sm"
+                disabled={!!busy || preparing}
+                onClick={() => {
+                  if (!block.configured) openConfig();
+                  else void command(block.commands.prepare, { modelId: block.modelId });
+                }}
+              >
+                {preparing
+                  ? t("pluginChat.initializing")
+                  : block.configured
+                    ? t("pluginChat.initialize")
+                    : t("pluginChat.configure")}
+              </Button>
             ) : (
               <IconButton
                 className="plugin-chat__send"
@@ -819,7 +912,7 @@ export function PluginChat({
         <PluginChatSessions
           sessions={block.sessions}
           activeId={block.activeSessionId}
-          activeRunning={active}
+          activeRunning={active || preparing}
           suspended={appDialogOpen}
           busy={!!busy}
           error={error}

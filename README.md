@@ -28,7 +28,8 @@ are currently unsigned.
 ## Workbench
 
 - Organize, search, tag, favorite and reorder hosts. Connect with passwords, key files
-  or pasted private keys; host-key trust and credentials have dedicated controls.
+  or pasted private keys. Save passwords while editing a host and double click to
+  connect directly; unknown or changed server keys still require explicit trust.
 - Use an xterm.js terminal with ANSI colors, Unicode grapheme widths, monospace fonts,
   native clipboard integration, configurable mouse behavior and live command history.
 - Browse any two local/remote locations independently. Sort, filter, group, rename

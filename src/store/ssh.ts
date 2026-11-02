@@ -17,7 +17,10 @@ interface SshStore {
   connectingHostIds: string[];
   disconnectingSessionIds: string[];
   refresh: () => Promise<void>;
-  connect: (request: SshConnectRequest) => Promise<SshSession | null>;
+  connect: (
+    request: SshConnectRequest,
+    onError?: (error: unknown) => void,
+  ) => Promise<SshSession | null>;
   disconnect: (sessionId: string) => Promise<void>;
   forget: (sessionId: string) => void;
   renameHost: (hostId: string, title: string) => void;
@@ -50,7 +53,7 @@ export const useSsh = create<SshStore>((set, get) => ({
     }
   },
 
-  connect: (request) => {
+  connect: (request, onError) => {
     const existing = connections.get(request.hostId);
     if (existing) {
       return existing;
@@ -69,7 +72,8 @@ export const useSsh = create<SshStore>((set, get) => ({
         void api.markHostUsed(request.hostId).catch(() => undefined);
         return session;
       } catch (error) {
-        toast(translateError(error), "error");
+        if (onError) onError(error);
+        else toast(translateError(error), "error");
         return null;
       } finally {
         connections.delete(request.hostId);

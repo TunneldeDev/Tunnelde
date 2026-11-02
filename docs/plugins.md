@@ -434,6 +434,16 @@ custom sources and Node consent.
 
 ## Installing
 
+The independent Codex, Claude Code, Pi and Tunnelde AI plugins in version 1.4.0 require
+Tunnelde 0.26.0+. Select **Execution location** in the composer, then Initialize the agent
+before sending. Remote POSIX hosts also offer an approved private **Install and initialize**
+flow. Missing executables and account/setup errors appear beside the composer without
+adding a failed user message; drafts are preserved and initialization can be cancelled.
+Checks use each agent's native structured protocol over SSH, with no model prompt. They
+do not guarantee future provider inference. Local coding CLIs still use their official
+installers. Tunnelde never executes existing user Node without consent. See the hub's
+`docs/assistant-plugins-1.4.md` for supported platforms, installation behavior and limits.
+
 - **Plugins sidebar → Install plugin** copies a folder into the app data `plugins` directory after the
   manifest validates, and refuses to overwrite an existing id.
 - A `.zip` archive works too: it is unpacked to a temporary folder, which must contain the manifest

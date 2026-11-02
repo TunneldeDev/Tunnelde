@@ -93,6 +93,20 @@ their defaults without overwriting existing choices.
 
 Host rows select on a single click or Space. Double click or Enter runs the chosen
 activation action: open a terminal (default), show details, or edit the host.
+**Connect directly when activating a host** is enabled by default. With the terminal
+action selected, double click or Enter uses the saved password or key without an
+extra Connect click. SSH still verifies the actual server key before authentication.
+Unknown or changed keys, missing credentials and authentication failures open the
+connection dialog; trust is never granted automatically. Turn the preference off
+to review the connection dialog every time.
+
+Create or edit a host to save a password directly in the operating system credential
+store. The saved value is never shown or included in host metadata or settings
+profiles. Leave the field blank to retain it, enter a replacement to change it, or
+choose **Remove saved password**. Changes apply only on Save; removal can be undone
+before saving. If storing a password fails, the draft remains open for retry and
+does not create another host.
+
 Workspace restoration restores tabs and layout on the next launch; it does not
 automatically reconnect SSH sessions.
 

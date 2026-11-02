@@ -30,7 +30,7 @@ export function PluginExecutionDialog({
   const id = useId();
   const [cwd, setCwd] = useState(execution?.cwd || "");
   const [executable, setExecutable] = useState(execution?.executable || "");
-  const [runtime, setRuntime] = useState(execution?.runtime || "node");
+  const [runtime, setRuntime] = useState(execution?.runtime || "");
   const [picking, setPicking] = useState(false);
   const [pickerError, setPickerError] = useState<string | null>(null);
   const remote = targetId !== "local";
@@ -60,7 +60,7 @@ export function PluginExecutionDialog({
           </Button>
           <Button
             variant="primary"
-            disabled={busy || picking || (remote && apiAssistant && !runtime.trim())}
+            disabled={busy || picking}
             onClick={() => {
               void onSave({
                 ...(cwd.trim() ? { cwd: cwd.trim() } : {}),
@@ -117,6 +117,7 @@ export function PluginExecutionDialog({
           >
             <Input
               id={`${id}-runtime`}
+              placeholder={t("pluginChat.runtimeInstallHint")}
               disabled={busy}
               value={runtime}
               onChange={(event) => setRuntime(event.target.value)}

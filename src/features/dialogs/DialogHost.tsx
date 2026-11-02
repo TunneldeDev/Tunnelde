@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -96,15 +96,38 @@ function HostDialog({
     key?: string;
   }>({});
   const [saving, setSaving] = useState(false);
+  const [password, setPassword] = useState("");
+  const [savedPassword, setSavedPassword] = useState(false);
+  const [removePassword, setRemovePassword] = useState(false);
+  const [credentialError, setCredentialError] = useState<string | null>(null);
+  // If credential storage fails after creating a host, retry updates that host.
+  const persistedHost = useRef<Host | null>(host);
+  const pendingSave = useRef(false);
   const tagInput = useRef<TagInputHandle>(null);
   const existingTags = useHosts((state) => state.hosts);
+
+  useEffect(() => {
+    if (!host) return;
+    let active = true;
+    void api
+      .credentialStatus(host.id)
+      .then((saved) => {
+        if (active) setSavedPassword(saved);
+      })
+      .catch((cause: unknown) => {
+        if (active) setCredentialError(translateError(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [host]);
 
   const set = <K extends keyof HostFormState>(key: K, value: HostFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
   const submit = async () => {
-    if (saving) return;
+    if (pendingSave.current) return;
     const nextErrors: typeof errors = {};
     if (!form.name.trim()) {
       nextErrors.name = t("error.required");
@@ -126,6 +149,7 @@ function HostDialog({
       return;
     }
 
+    pendingSave.current = true;
     setSaving(true);
     let keyPath = form.authMethod === "key" ? form.keyPath.trim() || null : null;
     if (form.authMethod === "key" && keySource === "content" && form.keyContent.trim()) {
@@ -134,6 +158,7 @@ function HostDialog({
       } catch (error) {
         toast(translateError(error), "error");
         setSaving(false);
+        pendingSave.current = false;
         return;
       }
     }
@@ -152,20 +177,27 @@ function HostDialog({
       color: form.color,
     };
 
-    if (host) {
-      const updated = await updateHost(host.id, input);
-      if (updated) {
-        renameHost(updated.id, updated.name);
-        onClose();
+    try {
+      const saved = persistedHost.current
+        ? await updateHost(persistedHost.current.id, input)
+        : await createHost(input);
+      if (!saved) return;
+      persistedHost.current = saved;
+      renameHost(saved.id, saved.name);
+      if (password.length > 0 && form.authMethod !== "key" && form.authMethod !== "agent") {
+        await api.credentialSave(saved.id, password);
+      } else if (removePassword) {
+        await api.credentialForget(saved.id);
       }
-    } else {
-      const created = await createHost(input);
-      if (created) {
-        openHost(created);
-        onClose();
-      }
+      if (!host) openHost(saved);
+      setPassword("");
+      onClose();
+    } catch (cause) {
+      setCredentialError(t("host.credentialSaveFailed", { error: translateError(cause) }));
+    } finally {
+      pendingSave.current = false;
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   return (
@@ -178,7 +210,7 @@ function HostDialog({
       dismissible={!saving}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" disabled={saving} onClick={onClose}>
             {t("common.cancel")}
           </Button>
           <Button variant="primary" disabled={saving} onClick={() => void submit()}>
@@ -189,6 +221,8 @@ function HostDialog({
     >
       <form
         className="form-grid"
+        inert={saving}
+        aria-busy={saving}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -252,6 +286,51 @@ function HostDialog({
             />
           </Field>
         </div>
+
+        {form.authMethod === "password" || form.authMethod === "keyboardInteractive" ? (
+          <Field
+            label={t("connect.password")}
+            htmlFor="host-password"
+            hint={
+              removePassword
+                ? t("host.passwordRemoveHint")
+                : savedPassword
+                  ? t("host.passwordSavedHint")
+                  : t("host.passwordHint")
+            }
+            error={credentialError ?? undefined}
+          >
+            <div className="field-row">
+              <Input
+                id="host-password"
+                type="password"
+                autoComplete="new-password"
+                disabled={saving}
+                placeholder={savedPassword && !removePassword ? "••••••••" : undefined}
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setCredentialError(null);
+                  if (event.target.value) setRemovePassword(false);
+                }}
+              />
+              {savedPassword ? (
+                <Button
+                  size="sm"
+                  variant={removePassword ? "ghost" : "ghost-danger"}
+                  disabled={saving}
+                  onClick={() => {
+                    setRemovePassword(!removePassword);
+                    setPassword("");
+                    setCredentialError(null);
+                  }}
+                >
+                  {removePassword ? t("common.undo") : t("host.removePassword")}
+                </Button>
+              ) : null}
+            </div>
+          </Field>
+        ) : null}
 
         <div className="form-row">
           <Field label={t("host.group")} htmlFor="host-group" className="grow">
@@ -328,6 +407,14 @@ function HostDialog({
               </Field>
             )}
           </>
+        ) : null}
+
+        {credentialError &&
+        form.authMethod !== "password" &&
+        form.authMethod !== "keyboardInteractive" ? (
+          <p className="td-field__error" role="alert">
+            {credentialError}
+          </p>
         ) : null}
 
         <Field label={t("color.host")}>
@@ -538,6 +625,7 @@ export function DialogHost() {
           host={dialog.host}
           after={dialog.after}
           intent={dialog.intent}
+          initialError={dialog.error}
           onClose={close}
         />
       );

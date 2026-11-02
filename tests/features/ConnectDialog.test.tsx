@@ -20,6 +20,9 @@ import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import type { Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
+import { useSsh } from "@/store/ssh";
+
+const connect = vi.fn();
 
 const host: Host = {
   id: "host-1",
@@ -41,6 +44,14 @@ const host: Host = {
 };
 
 beforeEach(() => {
+  connect.mockReset().mockResolvedValue(null);
+  useSsh.setState({ connect });
+  apiMock.sshTrust.mockReset().mockResolvedValue({
+    fingerprint: "SHA256:abc",
+    algorithm: "ssh-ed25519",
+    status: "known",
+    knownFingerprint: "SHA256:abc",
+  });
   apiMock.sshProbe.mockReset().mockResolvedValue({
     fingerprint: "SHA256:abc",
     algorithm: "ssh-ed25519",
@@ -61,6 +72,74 @@ beforeEach(() => {
 });
 
 describe("ConnectDialog", () => {
+  it("requires explicit approval of an unknown key even when a password is saved", async () => {
+    apiMock.sshProbe.mockResolvedValue({
+      fingerprint: "SHA256:abc",
+      algorithm: "ssh-ed25519",
+      status: "unknown",
+    });
+    apiMock.credentialStatus.mockResolvedValue(true);
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    const trust = await screen.findByRole("button", { name: "Trust and continue" });
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.click(trust);
+    await waitFor(() =>
+      expect(apiMock.sshTrust).toHaveBeenCalledExactlyOnceWith("host-1", "SHA256:abc"),
+    );
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    await waitFor(() => expect(connect).toHaveBeenCalledOnce());
+  });
+
+  it("refreshes the displayed key and refuses connection if it changes during approval", async () => {
+    apiMock.sshProbe
+      .mockResolvedValueOnce({
+        fingerprint: "SHA256:abc",
+        algorithm: "ssh-ed25519",
+        status: "unknown",
+      })
+      .mockResolvedValue({
+        fingerprint: "SHA256:new",
+        algorithm: "ssh-ed25519",
+        status: "unknown",
+      });
+    apiMock.sshTrust.mockRejectedValue({ code: "ssh", message: "ssh.hostKeyChanged" });
+    apiMock.credentialStatus.mockResolvedValue(true);
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Trust and continue" }));
+    await screen.findByText("SHA256:new");
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(connect).not.toHaveBeenCalled();
+    expect(apiMock.sshTrust).toHaveBeenCalledExactlyOnceWith("host-1", "SHA256:abc");
+  });
+
+  it("waits for a password after approving a key when no credential is saved", async () => {
+    apiMock.sshProbe.mockResolvedValue({
+      fingerprint: "SHA256:abc",
+      algorithm: "ssh-ed25519",
+      status: "unknown",
+    });
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Trust and continue" }));
+    await screen.findByText("Trusted");
+    expect(connect).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    fireEvent.keyDown(screen.getByLabelText("Password"), { key: "Enter" });
+    await waitFor(() =>
+      expect(connect).toHaveBeenCalledWith(
+        expect.objectContaining({ password: "secret", hostId: "host-1" }),
+        expect.any(Function),
+      ),
+    );
+  });
   it("installs the public key with the typed password", async () => {
     render(<ConnectDialog host={host} onClose={() => undefined} />);
 

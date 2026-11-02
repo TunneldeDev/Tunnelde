@@ -33,6 +33,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     showStatusBar: true,
     restoreWorkspace: true,
     hostActivation: "terminal",
+    hostDirectConnect: true,
     terminalScrollback: 10_000,
     terminalLineHeight: 1.2,
     terminalCursorStyle: "block",

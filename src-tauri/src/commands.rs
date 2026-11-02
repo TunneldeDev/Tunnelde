@@ -476,8 +476,12 @@ pub async fn ssh_probe(app: AppHandle, host_id: String) -> AppResult<HostKeyInfo
 }
 
 #[tauri::command]
-pub async fn ssh_trust(app: AppHandle, host_id: String) -> AppResult<HostKeyInfo> {
-    ssh::trust(&app, &host_id).await
+pub async fn ssh_trust(
+    app: AppHandle,
+    host_id: String,
+    fingerprint: String,
+) -> AppResult<HostKeyInfo> {
+    ssh::trust(&app, &host_id, &fingerprint).await
 }
 
 #[tauri::command]

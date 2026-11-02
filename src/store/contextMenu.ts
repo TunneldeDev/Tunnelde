@@ -1,12 +1,7 @@
 import { create } from "zustand";
+import type { MenuAction } from "@/components/ui/overlay/menuTypes";
 
-export interface MenuItem {
-  label: string;
-  danger?: boolean;
-  disabled?: boolean;
-  separatorBefore?: boolean;
-  onSelect: () => void;
-}
+export type MenuItem = MenuAction;
 
 export interface MenuState {
   x: number;

@@ -147,7 +147,7 @@ describe("plugin chat presentation and controls", () => {
     expect(screen.getByRole("menuitemradio", { name: "New host" })).toBeTruthy();
   });
 
-  it("requests an explicit remote runtime for API execution before switching targets", async () => {
+  it("selects a remote machine directly without requiring a runtime path or starting its agent", async () => {
     const block = { ...chat, commands: { ...chat.commands, target: "ai.target" } };
     useSsh.setState({
       sessions: [
@@ -165,19 +165,16 @@ describe("plugin chat presentation and controls", () => {
     render(<PluginChat pluginId="assistant" viewId="chat" block={block} />);
     fireEvent.click(screen.getByRole("button", { name: "Execution location" }));
     fireEvent.click(screen.getByRole("menuitemradio", { name: "Remote machine" }));
-    expect(mock.run).not.toHaveBeenCalled();
-    expect(screen.getByRole("dialog")).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Remote Node executable (explicit path)"), {
-      target: { value: "/opt/node/bin/node" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Use this target" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() =>
       expect(mock.run).toHaveBeenCalledWith(
         "assistant",
         "ai.target",
-        expect.objectContaining({ targetId: "ssh", runtime: "/opt/node/bin/node" }),
+        expect.objectContaining({ targetId: "ssh", modelId: block.modelId }),
       ),
     );
+    expect(mock.run).toHaveBeenCalledTimes(1);
+    expect(mock.run.mock.calls[0]![2]).not.toHaveProperty("runtime");
   });
 
   it("keeps the model and execution controls inside the input card and permissions underneath", () => {

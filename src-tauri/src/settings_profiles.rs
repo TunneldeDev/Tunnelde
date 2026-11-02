@@ -42,6 +42,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "showStatusBar",
     "restoreWorkspace",
     "hostActivation",
+    "hostDirectConnect",
     "terminalScrollback",
     "terminalLineHeight",
     "terminalCursorStyle",

@@ -2,6 +2,7 @@ import {
   ChevronRight,
   FolderClosed,
   FolderPlus,
+  LoaderCircle,
   Pencil,
   Plus,
   Search,
@@ -18,11 +19,13 @@ import { Menu } from "@/components/ui/overlay/Menu";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn, hostSubtitle } from "@/lib/text/format";
 import { copyText } from "@/lib/session/clipboard";
+import { connectHostDirectly } from "@/lib/session/connectHost";
 import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
 import { useSettings } from "@/store/settings";
+import { useSsh } from "@/store/ssh";
 import type { Group, Host } from "@/lib/api/types";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 
@@ -38,7 +41,8 @@ function activateHost(host: Host): void {
       useDialogs.getState().openHost(host);
       return;
     default:
-      useDialogs.getState().openConnect(host, "terminal");
+      if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
+      else useDialogs.getState().openConnect(host, "terminal");
   }
 }
 
@@ -119,6 +123,7 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
   const groups = useHosts((state) => state.groups);
   const moveToGroup = useHosts((state) => state.moveToGroup);
   const os = useSettings((state) => state.info?.os);
+  const connecting = useSsh((state) => state.connectingHostIds.includes(host.id));
   const [over, setOver] = useState<"before" | "after" | null>(null);
   const row = useRef<HTMLDivElement>(null);
 
@@ -260,6 +265,7 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
         openMenu(event.clientX, event.clientY, menuItems);
       }}
       role="treeitem"
+      aria-busy={connecting || undefined}
       aria-selected={focused}
       id={`host-${host.id}`}
       data-host-id={host.id}
@@ -274,6 +280,14 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
         <span className="host-row__name">{host.name}</span>
         <span className="host-row__meta">{hostSubtitle(host.username, host.host, host.port)}</span>
       </span>
+      {connecting ? (
+        <LoaderCircle
+          size={13}
+          className="host-row__connecting"
+          aria-label={t("connect.connecting")}
+          role="status"
+        />
+      ) : null}
       {host.favorite ? (
         <Star size={11} className="host-row__star" fill="currentColor" aria-hidden="true" />
       ) : null}

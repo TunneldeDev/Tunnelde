@@ -10,6 +10,10 @@ import { useWorkspace } from "@/store/workspace";
 import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useContextMenu } from "@/store/contextMenu";
+import { ContextMenuHost } from "@/components/ui/overlay/ContextMenu";
+import { connectHostDirectly } from "@/lib/session/connectHost";
+
+vi.mock("@/lib/session/connectHost", () => ({ connectHostDirectly: vi.fn(async () => undefined) }));
 
 const host = (id: string, name: string, sortOrder: number): Host => ({
   id,
@@ -40,7 +44,8 @@ beforeEach(() => {
     openConnect: vi.fn(),
     confirm: vi.fn(),
   });
-  useSettings.setState({ settings: DEFAULT_SETTINGS });
+  vi.mocked(connectHostDirectly).mockClear();
+  useSettings.setState({ settings: { ...DEFAULT_SETTINGS, hostDirectConnect: false } });
   useWorkspace.setState({
     openHost: openHostDetails,
     tabs: [],
@@ -128,7 +133,9 @@ describe("HostTree keyboard navigation", () => {
   it.each(["terminal", "details", "edit"] as const)(
     "uses the %s action once for double click and Enter",
     (action) => {
-      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, hostActivation: action } });
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, hostActivation: action, hostDirectConnect: false },
+      });
       const openDetails = vi.spyOn(useWorkspace.getState(), "openHost");
       render(<HostTree />);
       const row = screen.getAllByRole("treeitem")[0]!;
@@ -157,6 +164,39 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.doubleClick(screen.getAllByRole("button", { name: "More" })[0]!);
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
     expect(useWorkspace.getState().tabs).toEqual([]);
+  });
+
+  it("uses direct connection for double click and Enter when enabled", () => {
+    useSettings.setState({ settings: DEFAULT_SETTINGS });
+    render(<HostTree />);
+    fireEvent.doubleClick(screen.getAllByRole("treeitem")[0]!);
+    expect(connectHostDirectly).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: "a" }),
+    );
+    expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("tree"), { key: "Enter" });
+    expect(connectHostDirectly).toHaveBeenCalledTimes(2);
+  });
+
+  it("renders the same actions, icons and separators for right click and the ellipsis", () => {
+    render(
+      <>
+        <HostTree />
+        <ContextMenuHost />
+      </>,
+    );
+    fireEvent.contextMenu(screen.getAllByRole("treeitem")[0]!, { clientX: 20, clientY: 30 });
+    const actions = () =>
+      screen.getAllByRole("menuitem").map((item) => ({
+        label: item.getAttribute("aria-label"),
+        icon: item.querySelector("svg")?.getAttribute("class") ?? null,
+        separatorBefore: item.previousElementSibling?.getAttribute("role") === "separator",
+      }));
+    const rightClickItems = actions();
+    expect(rightClickItems.some((item) => item.icon !== null)).toBe(true);
+    fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
+    fireEvent.click(screen.getAllByRole("button", { name: "More" })[0]!);
+    expect(actions()).toEqual(rightClickItems);
   });
 
   it("groups host actions consistently in context and ellipsis menus", () => {

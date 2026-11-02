@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { DialogHost } from "@/features/dialogs/DialogHost";
@@ -68,8 +68,10 @@ describe("host color editing", () => {
     );
   });
 
-  it("keeps host dialog open and its color unchanged when cancelling the nested picker", () => {
-    render(<DialogHost />);
+  it("keeps host dialog open and its color unchanged when cancelling the nested picker", async () => {
+    await act(async () => {
+      render(<DialogHost />);
+    });
     fireEvent.click(screen.getByRole("button", { name: "Host color" }));
     const picker = screen.getByRole("dialog", { name: "Host color" });
     fireEvent.change(within(picker).getByRole("textbox", { name: "HEX" }), {

@@ -1,6 +1,5 @@
-import { Check, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import {
-  Fragment,
   useCallback,
   useEffect,
   useId,
@@ -14,18 +13,11 @@ import { createPortal } from "react-dom";
 import { IconButton } from "@/components/ui/form/Button";
 import { cn } from "@/lib/text/format";
 import { focusMenuItem, handleMenuKeyDown } from "./menuKeyboard";
+import { MenuItems } from "./MenuItems";
+import type { MenuAction } from "./menuTypes";
 import "@/styles/menus.css";
 
-export interface MenuAction {
-  label: string;
-  icon?: ReactNode;
-  danger?: boolean;
-  disabled?: boolean;
-  separatorBefore?: boolean;
-  description?: string;
-  checked?: boolean;
-  onSelect: () => void;
-}
+export type { MenuAction } from "./menuTypes";
 
 interface MenuProps {
   label: string;
@@ -149,48 +141,13 @@ export function Menu({ label, items, trigger, className, menuClassName, disabled
                 visibility: position ? "visible" : "hidden",
               }}
             >
-              {items.map((item, index) => (
-                <Fragment key={index}>
-                  {index > 0 && item.separatorBefore ? (
-                    <div className="td-menu__separator" role="separator" />
-                  ) : null}
-                  <button
-                    type="button"
-                    role={item.checked === undefined ? "menuitem" : "menuitemradio"}
-                    aria-label={item.label}
-                    aria-describedby={
-                      item.description ? `${menuId}-description-${index}` : undefined
-                    }
-                    aria-checked={item.checked}
-                    disabled={item.disabled}
-                    tabIndex={-1}
-                    className={cn(
-                      "td-menu__item",
-                      item.description && "td-menu__item--description",
-                      item.danger && "is-danger",
-                    )}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (item.disabled) return;
-                      close();
-                      item.onSelect();
-                    }}
-                  >
-                    {item.icon ? <span className="td-menu__icon">{item.icon}</span> : null}
-                    {item.description ? (
-                      <span className="td-menu__item-text">
-                        <span>{item.label}</span>
-                        <small id={`${menuId}-description-${index}`}>{item.description}</small>
-                      </span>
-                    ) : (
-                      item.label
-                    )}
-                    {item.checked ? (
-                      <Check size={13} aria-hidden="true" className="td-menu__check" />
-                    ) : null}
-                  </button>
-                </Fragment>
-              ))}
+              <MenuItems
+                items={items}
+                onSelect={(item) => {
+                  close();
+                  item.onSelect();
+                }}
+              />
             </div>,
             document.body,
           )
