@@ -11,6 +11,7 @@ const files = {
   lock: join(root, "src-tauri", "Cargo.lock"),
   helper: join(root, "native-helpers", "Cargo.toml"),
   helperLock: join(root, "native-helpers", "Cargo.lock"),
+  manifest: join(root, ".release-please-manifest.json"),
 };
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -94,6 +95,10 @@ export function setVersion(version) {
     writeFileSync(file, content.replace(pattern, `$1${version}$2`));
   }
 
+  const manifest = JSON.parse(readFileSync(files.manifest, "utf8"));
+  manifest["."] = version;
+  writeFileSync(files.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
+
   return version;
 }
 
@@ -108,6 +113,10 @@ export function checkVersion(tag) {
     readFileSync(files.lock, "utf8"),
   );
   const problems = [];
+  const manifestVersion = JSON.parse(readFileSync(files.manifest, "utf8"))["."];
+  if (manifestVersion !== pkg) {
+    problems.push(`release manifest ${manifestVersion} != package.json ${pkg}`);
+  }
   const helperVersion = /^version = "([^"]+)"$/m.exec(readFileSync(files.helper, "utf8"))?.[1];
   const helperLockVersion =
     /\[\[package\]\]\r?\nname = "tunnelde-agent"\r?\nversion = "([^"]+)"/.exec(

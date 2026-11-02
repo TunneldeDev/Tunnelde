@@ -57,17 +57,28 @@ host-specific panes update without relying on navigation.
 
 ## Release flow
 
-`scripts/release/release.mjs` bumps `package.json`, both Rust manifests/lockfiles and
-`tauri.conf.json`, then moves the `## [Unreleased]` changelog section into a dated one. The Release
-workflow runs that script from a `workflow_dispatch` input, commits and tags the result, builds all
-four desktop targets, and publishes `latest.json` once after every build finishes (`scripts/release/updater-json.mjs`).
-One shared draft is created before parallel builds. Publication validates the installer/update
-assets and rejects native-helper binaries in desktop downloads; helpers remain Actions artifacts.
+`main` is the protected default branch. Feature PRs pass CI and the trusted PR-policy
+workflow, then squash merge with a Conventional Commit title. Release Please maintains one
+cumulative release PR, updating the frontend/Tauri/Rust versions and both native lockfiles.
+Manual notes in `## [Unreleased]` move into the proposed release without removing generated notes.
+
+Merging the release PR creates a draft bound to that exact merge commit and an immutable
+`v<version>` tag. The Release PR workflow explicitly calls the reusable Release workflow;
+it does not rely on a bot's tag push triggering another workflow. All four desktop builds
+share the draft, then generate and validate `latest.json`. The release remains a draft until
+a maintainer publishes it. Another unfinished draft blocks the next release, not unrelated
+fixes. Native-helper binaries remain Actions artifacts and are rejected in desktop downloads.
+
+The native repository token works without a persistent credential: after updating the release
+branch, automation explicitly dispatches CI on that branch and sets the required PR-policy status
+on its head SHA. An optional repository-scoped GitHub App can create release PRs instead.
+The privileged metadata workflow executes only trusted `main` code, never PR code.
+See [release operations](releases.md) for credentials, rules, recovery and version overrides.
 
 Both macOS desktop architectures build on `macos-15-intel`. Rust and the installed Apple SDK
 cross compile `aarch64-apple-darwin`; the x64 build targets `x86_64-apple-darwin`. Each app is
 ad-hoc signed and checked for its expected Mach-O architecture and a valid code signature before
-the release can publish. Updater signatures remain separate. This avoids depending on the
+the draft is ready for review. Updater signatures remain separate. This avoids depending on the
 capacity of hosted Apple Silicon runners; it does not replace testing the app on Apple Silicon.
 Native helper CI runs on Intel macOS and also compiles/checks an arm64 binary.
 
@@ -75,8 +86,8 @@ The desktop library emits only `rlib`, which the application executable consumes
 build unused C static/shared libraries. Full LTO and size optimization remain enabled. Release
 dependency caches use a stable shared key per target, so the Build performance workflow can
 restore and refresh the same cache from `main`, where future tagged releases can access it.
-Prefer dispatching Release from `main` for routine releases so new dependency caches remain
-available to later releases instead of being scoped to one tag.
+The reusable release workflow runs from `main`, keeping reusable dependency caches accessible
+to later releases instead of scoping them to one tag.
 
 Dispatch Build performance to compare the previous three-library configuration with `rlib`
 using the same source, compiler, release profile and Intel runner image. Its summary reports
@@ -85,10 +96,9 @@ Check cache restore logs before comparing runs. Release builds also retain compi
 Actions artifacts. Neither measurements nor compiler reports are added to public release assets.
 
 To recover an interrupted draft with updated build infrastructure, dispatch Release from `main`
-with `existing_tag` set to its original version tag (for example, `v0.26.0`), leaving `version`
-empty. This builds the original tagged source, reuses its draft, replaces desktop assets and
+with `existing_tag` set to its original version tag. This builds the original tagged source, reuses its draft, replaces desktop assets and
 regenerates the validated updater manifest. It never moves the tag or bumps a version and refuses
-to overwrite a public release. Optional helper artifacts remain in the original workflow run.
+to overwrite a public release. Optional helper artifacts remain in the original workflow run unless `build_helpers` is selected.
 
 CI checks repository hygiene, Rust (fmt, clippy, tests), Web (version/i18n checks, typecheck,
 lint, tests, build), and native helpers across Windows, macOS and Linux. The independent hub

@@ -31,6 +31,7 @@ function fixture(notes = "- Fix a reproducible bug.") {
     );
   }
   writeFileSync(join(root, "package.json"), JSON.stringify({ version: "0.18.1" }));
+  writeFileSync(join(root, ".release-please-manifest.json"), JSON.stringify({ ".": "0.18.1" }));
   writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version: "0.18.1" }));
   writeFileSync(
     join(root, "src-tauri/Cargo.toml"),
@@ -60,6 +61,7 @@ describe("release preparation", () => {
     const f = fixture("");
     const names = [
       "package.json",
+      ".release-please-manifest.json",
       "src-tauri/Cargo.toml",
       "src-tauri/Cargo.lock",
       "src-tauri/tauri.conf.json",
@@ -78,6 +80,7 @@ describe("release preparation", () => {
     expect(f.run("version", "check", "v0.19.0").status).toBe(0);
     expect(f.read("native-helpers/Cargo.toml")).toContain('version = "0.19.0"');
     expect(f.read("native-helpers/Cargo.lock")).toContain('version = "0.19.0"');
+    expect(JSON.parse(f.read(".release-please-manifest.json"))["."]).toBe("0.19.0");
     expect(f.read("CHANGELOG.md")).toContain("## [0.19.0] - ");
     expect(f.run("changelog", "notes", "0.19.0").stdout.trim()).toBe("- Fix a reproducible bug.");
   });
@@ -91,6 +94,14 @@ describe("release preparation", () => {
     const result = f.run("version", "check");
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Cargo.lock 0.17.0");
+  });
+
+  it("rejects a release manifest that disagrees with the application version", () => {
+    const f = fixture();
+    writeFileSync(join(f.root, ".release-please-manifest.json"), JSON.stringify({ ".": "0.18.0" }));
+    const result = f.run("version", "check");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("release manifest 0.18.0 != package.json 0.18.1");
   });
 });
 
@@ -233,14 +244,21 @@ describe("release publishing", () => {
     expect(updater).not.toContain("needs: [prepare, build, helpers]");
   });
 
-  it("creates one draft before parallel builders and shares its release ID", () => {
+  it("reuses one draft before parallel builders and never automatically publishes it", () => {
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
     const prepare = workflow.split("\n  prepare:\n")[1]!.split("\n  build:\n")[0]!;
     const build = workflow.split("\n  build:\n")[1]!.split("\n  helpers:\n")[0]!;
-    expect(prepare).toContain("Create shared draft release");
+    expect(prepare).toContain("Validate and reuse the shared draft");
     expect(prepare).toContain("release_id: ${{ steps.draft.outputs.id }}");
-    expect(prepare).toContain("duplicate releases for ${TAG}");
+    expect(prepare).toContain("Expected exactly one existing release draft for ${TAG}");
+    expect(prepare).toContain(".draft == true");
     expect(build).toContain("needs: prepare");
     expect(build).toContain("releaseId: ${{ needs.prepare.outputs.release_id }}");
+    expect(workflow).not.toContain("--draft=false");
+    expect(workflow).not.toContain("HEAD:main");
+    const config = JSON.parse(
+      readFileSync(join(process.cwd(), "release-please-config.json"), "utf8"),
+    );
+    expect(config.draft).toBe(true);
   });
 });

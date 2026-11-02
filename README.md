@@ -137,19 +137,17 @@ docs/               User and developer documentation
 ```
 
 The marketplace lives in the independent `TunneldeDev/tunnelde-hub` repository.
-CI validates web, native, helper and repository checks. Release builds target Windows,
-Linux, Apple Silicon and Intel macOS, then verify and publish one shared release.
+CI validates web, native, helper and repository checks. `main` is the protected default
+branch: work on a feature branch and open a PR with a Conventional Commit title.
 
-Use **Actions → Release**, or prepare a reviewed local release:
+Release Please maintains one cumulative release PR containing the next version, synchronized
+native manifests/lockfiles and generated changelog. Merge that PR when ready to release.
+Windows, Linux, Apple Silicon and Intel macOS installers are built into one **draft**;
+validated assets and `latest.json` stay private until a maintainer publishes the draft.
+Ordinary feature merges do not start installer builds.
 
-```sh
-pnpm release:prepare --part patch
-pnpm version:check
-pnpm release:notes <version>
-```
-
-Commit the coherent change and tag `v<version>`; pushing the tag triggers release builds.
-The preparation script updates both native manifests/locks and the desktop manifests.
+See [Contributing](CONTRIBUTING.md) for PR conventions and [Release operations](docs/releases.md)
+for branch protection, automation credentials, version overrides and draft recovery.
 `pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 
 ## License
