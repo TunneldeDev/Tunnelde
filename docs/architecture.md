@@ -71,6 +71,19 @@ the release can publish. Updater signatures remain separate. This avoids dependi
 capacity of hosted Apple Silicon runners; it does not replace testing the app on Apple Silicon.
 Native helper CI runs on Intel macOS and also compiles/checks an arm64 binary.
 
+The desktop library emits only `rlib`, which the application executable consumes; it does not
+build unused C static/shared libraries. Full LTO and size optimization remain enabled. Release
+dependency caches use a stable shared key per target, so the Build performance workflow can
+restore and refresh the same cache from `main`, where future tagged releases can access it.
+Prefer dispatching Release from `main` for routine releases so new dependency caches remain
+available to later releases instead of being scoped to one tag.
+
+Dispatch Build performance to compare the previous three-library configuration with `rlib`
+using the same source, compiler, release profile and Intel runner image. Its summary reports
+wall time and raw/gzip executable sizes; Actions artifacts retain Cargo's compiler timing charts.
+Check cache restore logs before comparing runs. Release builds also retain compiler timings as
+Actions artifacts. Neither measurements nor compiler reports are added to public release assets.
+
 To recover an interrupted draft with updated build infrastructure, dispatch Release from `main`
 with `existing_tag` set to its original version tag (for example, `v0.26.0`), leaving `version`
 empty. This builds the original tagged source, reuses its draft, replaces desktop assets and

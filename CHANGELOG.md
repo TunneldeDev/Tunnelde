@@ -9,6 +9,7 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Build
 
 - Build both macOS architectures on Intel runners, with arm64 cross compilation and executable/signature validation, avoiding Apple Silicon runner capacity failures. Allow interrupted draft releases to resume using updated build infrastructure without changing their tagged source.
+- Stop generating unused C static/shared libraries for the desktop app while retaining full LTO and size optimization. Share release dependency caches with reproducible build measurements and keep compiler timing reports as Actions artifacts.
 
 ## [0.26.0] - 2026-11-02
 

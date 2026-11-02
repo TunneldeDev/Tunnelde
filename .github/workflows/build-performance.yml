@@ -1,0 +1,111 @@
+name: Build performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: macOS target to compare on Intel runners
+        type: choice
+        options: [aarch64, x86_64]
+        default: aarch64
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-performance-${{ github.ref }}-${{ inputs.architecture }}
+  cancel-in-progress: false
+
+jobs:
+  measure:
+    name: Measure ${{ matrix.variant }}
+    runs-on: macos-15-intel
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [three-library-types, rlib-only]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Configure target and baseline
+        env:
+          ARCHITECTURE: ${{ inputs.architecture }}
+          VARIANT: ${{ matrix.variant }}
+        run: |
+          set -euo pipefail
+          rustup target add "${ARCHITECTURE}-apple-darwin"
+          if [ "${VARIANT}" = three-library-types ]; then
+            node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync } from 'node:fs';
+          const path = 'src-tauri/Cargo.toml';
+          const source = readFileSync(path, 'utf8');
+          const updated = source.replace('crate-type = ["rlib"]', 'crate-type = ["staticlib", "cdylib", "rlib"]');
+          if (updated === source) throw new Error('Expected the desktop rlib configuration');
+          writeFileSync(path, updated);
+          NODE
+          fi
+      - name: Restore release dependency cache
+        id: cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: macos-${{ inputs.architecture }}-build
+          cache-on-failure: true
+          # Only the production configuration may update the main-branch cache.
+          save-if: ${{ matrix.variant == 'rlib-only' }}
+      - run: pnpm install --frozen-lockfile
+      - name: Measure compilation and executable size
+        env:
+          TARGET: ${{ inputs.architecture }}-apple-darwin
+          VARIANT: ${{ matrix.variant }}
+          CACHE_EXACT_MATCH: ${{ steps.cache.outputs.cache-hit }}
+        run: node scripts/ci/measure-build.mjs "${TARGET}" "${VARIANT}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: build-performance-${{ matrix.variant }}-${{ inputs.architecture }}
+          path: |
+            artifacts/build-performance/metrics.json
+            src-tauri/target/cargo-timings/*.html
+          if-no-files-found: warn
+          retention-days: 14
+
+  report:
+    name: Compare measurements
+    needs: measure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: build-performance-*
+          path: measurements
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Summarize time and size
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, readFileSync, readdirSync } from 'node:fs';
+          import { join } from 'node:path';
+          const rows = readdirSync('measurements', { recursive: true })
+            .filter(path => path.endsWith('metrics.json'))
+            .map(path => JSON.parse(readFileSync(join('measurements', path), 'utf8')))
+            .sort((a, b) => a.variant.localeCompare(b.variant));
+          if (rows.length !== 2 || rows.some(row => row.exitCode !== 0)) throw new Error('Incomplete measurements');
+          if (rows.some(row => row.sourceCommit !== rows[0].sourceCommit || row.toolchain !== rows[0].toolchain || row.target !== rows[0].target)) throw new Error('Measurements must use the same source, compiler and target');
+          const lines = [
+            '| Configuration | Build seconds | Executable bytes | gzip bytes | Exact cache match |',
+            '| --- | ---: | ---: | ---: | --- |',
+            ...rows.map(row => `| ${row.variant} | ${row.elapsedSeconds} | ${row.binaryBytes} | ${row.gzipBytes} | ${row.cacheExactMatch} |`),
+            '',
+            'Both variants use the same source, compiler, target and release optimization profile. Check the cache restore logs and compiler timing artifacts when comparing results; runner load can affect elapsed time.',
+          ];
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n') + '\n');
+          NODE

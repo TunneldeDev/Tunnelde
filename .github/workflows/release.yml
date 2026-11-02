@@ -211,7 +211,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: ${{ matrix.name }}
+          # Keep the existing cache namespace, independent of the calling job ID.
+          shared-key: ${{ matrix.name }}-build
+          cache-on-failure: true
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -230,7 +232,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           includeUpdaterJson: false
-          args: ${{ matrix.args }}
+          args: ${{ matrix.args }} -- --locked --timings
 
       - name: Verify macOS executable architecture and signature
         if: startsWith(matrix.platform, 'macos')
@@ -244,6 +246,15 @@ jobs:
           executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${app}/Contents/Info.plist")
           test "$(lipo -archs "${app}/Contents/MacOS/${executable}")" = "${EXPECTED_ARCH}"
           codesign --verify --deep --strict --verbose=2 "${app}"
+
+      - name: Upload compiler timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compiler-timings-${{ matrix.name }}
+          path: src-tauri/target/cargo-timings/*.html
+          if-no-files-found: ignore
+          retention-days: 14
 
   helpers:
     name: Native helper ${{ matrix.asset }}

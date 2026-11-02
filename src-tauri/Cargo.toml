@@ -10,7 +10,8 @@ rust-version = "1.82"
 
 [lib]
 name = "tunnelde_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+# The desktop executable links the Rust library directly; no C/mobile library is shipped.
+crate-type = ["rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.7.4", features = [] }
