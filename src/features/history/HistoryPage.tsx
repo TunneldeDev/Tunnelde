@@ -6,6 +6,7 @@ import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { encodeBase64 } from "@/lib/text/base64";
+import { notifyHistoryChanged, recordTerminalCommand } from "@/lib/session/history";
 import { translateError } from "@/lib/api/errors";
 import { formatRelative } from "@/lib/text/format";
 import { api } from "@/lib/api/ipc";
@@ -18,7 +19,9 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
   const { t, i18n } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const confirm = useDialogs((state) => state.confirm);
-  const [snapshot, setSnapshot] = useState<{ hostId: string; entries: HistoryEntry[] } | null>(null);
+  const [snapshot, setSnapshot] = useState<{ hostId: string; entries: HistoryEntry[] } | null>(
+    null,
+  );
   const [query, setQuery] = useState("");
   const hostId = session?.hostId ?? null;
   const entries = snapshot?.hostId === hostId ? snapshot.entries : null;
@@ -38,11 +41,15 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
           if (alive && revision === requested) toast(translateError(error), "error");
         });
     };
+    const changed = (event: Event) => {
+      const changedHost = (event as CustomEvent<{ hostId?: string }>).detail?.hostId;
+      if (!changedHost || changedHost === hostId) load();
+    };
     load();
-    window.addEventListener("tunnelde:history-changed", load);
+    window.addEventListener("tunnelde:history-changed", changed);
     return () => {
       alive = false;
-      window.removeEventListener("tunnelde:history-changed", load);
+      window.removeEventListener("tunnelde:history-changed", changed);
     };
   }, [hostId]);
 
@@ -61,13 +68,14 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
   const insert = (entry: HistoryEntry) => {
     void api
       .sshWrite(session.id, encodeBase64(`${entry.command}\r`))
+      .then(() => recordTerminalCommand(session.hostId, entry.command))
       .catch((error) => toast(translateError(error), "error"));
   };
 
   const remove = (entry: HistoryEntry) => {
     void api
       .historyDelete(entry.id)
-      .then(() => window.dispatchEvent(new Event("tunnelde:history-changed")))
+      .then(() => notifyHistoryChanged(session.hostId))
       .catch((error) => toast(translateError(error), "error"));
   };
 
@@ -80,7 +88,7 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
       onConfirm: async () => {
         try {
           await api.historyClear(session.hostId);
-          window.dispatchEvent(new Event("tunnelde:history-changed"));
+          notifyHistoryChanged(session.hostId);
         } catch (error) {
           toast(translateError(error), "error");
         }

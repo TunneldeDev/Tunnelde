@@ -180,6 +180,77 @@ describe("SftpPage", () => {
     expect(await screen.findByText("readme.md")).toBeTruthy();
   });
 
+  it("reports a slow initial listing outside the file list and waits before showing an empty folder", async () => {
+    let resolveListing!: (listing: typeof remoteListing) => void;
+    fsMock.list.mockImplementation((source: FsSource) =>
+      source.kind === "local"
+        ? Promise.resolve(localListing)
+        : new Promise((resolve) => {
+            resolveListing = resolve;
+          }),
+    );
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const remote = screen.getAllByRole("listbox")[1]!;
+    const pane = remote.closest(".sftp-pane") as HTMLElement;
+    expect(remote.getAttribute("aria-busy")).toBe("true");
+    expect(within(remote).queryByRole("status")).toBeNull();
+    expect(within(pane).getByRole("status").textContent).toBe("Loading…");
+    expect(within(remote).queryByText("Empty folder")).toBeNull();
+
+    await act(async () => resolveListing({ ...remoteListing, entries: [] }));
+    expect(remote.getAttribute("aria-busy")).toBe("false");
+    expect(within(pane).getByRole("status").textContent).toBe("0 items");
+    expect(within(remote).getByText("Empty folder")).toBeTruthy();
+  });
+
+  it.each(["refresh", "navigate"])(
+    "keeps existing rows in place while a remote %s is pending",
+    async (action) => {
+      render(<SftpPage sessionId="session-1" />);
+      const row = (await screen.findByText("readme.md")).closest(".sftp-row")!;
+      const remote = screen.getAllByRole("listbox")[1]!;
+      const pane = remote.closest(".sftp-pane") as HTMLElement;
+      const contents = Array.from(remote.children);
+      let resolveListing!: (listing: typeof remoteListing) => void;
+      fsMock.list.mockImplementation((source: FsSource) =>
+        source.kind === "local"
+          ? Promise.resolve(localListing)
+          : new Promise((resolve) => {
+              resolveListing = resolve;
+            }),
+      );
+      if (action === "refresh") {
+        fireEvent.click(row);
+        fireEvent.click(within(pane).getByRole("button", { name: "Refresh" }));
+      } else {
+        const path = within(pane).getByRole("textbox", { name: "Path" });
+        fireEvent.change(path, { target: { value: "/srv/other" } });
+        fireEvent.keyDown(path, { key: "Enter" });
+      }
+      expect(remote.getAttribute("aria-busy")).toBe("true");
+      expect(within(pane).getByRole("status").textContent).toBe("Loading…");
+      expect(within(remote).queryByRole("status")).toBeNull();
+      expect(Array.from(remote.children)).toEqual(contents);
+      expect(within(remote).getByText("readme.md").closest(".sftp-row")).toBe(row);
+
+      await act(async () =>
+        resolveListing({
+          ...remoteListing,
+          ...(action === "navigate" ? { path: "/srv/other", entries: [] } : {}),
+        }),
+      );
+      expect(remote.getAttribute("aria-busy")).toBe("false");
+      expect(within(pane).getByRole("status").textContent).toBe(
+        action === "refresh" ? "1 items" : "0 items",
+      );
+      if (action === "refresh") {
+        expect(within(remote).getByRole("option", { selected: true })).toBe(row);
+        expect(Array.from(remote.children)).toEqual(contents);
+      } else expect(within(remote).getByText("Empty folder")).toBeTruthy();
+    },
+  );
+
   it("renames in place from the keyboard", async () => {
     render(<SftpPage sessionId="session-1" />);
     const row = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;

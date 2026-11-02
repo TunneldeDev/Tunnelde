@@ -5,15 +5,12 @@ import { api } from "@/lib/api/ipc";
 import type { RemoteStats } from "@/lib/api/types";
 import { useMonitorHistory } from "@/store/monitorHistory";
 
-const HISTORY = 60;
-
 export interface MonitorEntry {
   stats: RemoteStats | null;
-  cpuHistory: number[];
   error: string | null;
 }
 
-const EMPTY: MonitorEntry = { stats: null, cpuHistory: [], error: null };
+const EMPTY: MonitorEntry = { stats: null, error: null };
 const pending = new Map<string, Promise<void>>();
 const versions = new Map<string, number>();
 
@@ -39,12 +36,10 @@ export const useMonitor = create<MonitorStore>((set) => ({
           return;
         }
         set((state) => {
-          const current = state.entries[sessionId] ?? EMPTY;
-          const cpuHistory = [...current.cpuHistory, Math.round(stats.cpuPercent)].slice(-HISTORY);
           return {
             entries: {
               ...state.entries,
-              [sessionId]: { stats, cpuHistory, error: null },
+              [sessionId]: { stats, error: null },
             },
           };
         });
@@ -55,6 +50,8 @@ export const useMonitor = create<MonitorStore>((set) => ({
           disk: stats.diskTotal > 0 ? (stats.diskUsed / stats.diskTotal) * 100 : 0,
           rx: stats.netRxRate,
           tx: stats.netTxRate,
+          diskRead: stats.diskReadRate ?? null,
+          diskWrite: stats.diskWriteRate ?? null,
         });
       } catch (error) {
         if ((versions.get(sessionId) ?? 0) !== version) {

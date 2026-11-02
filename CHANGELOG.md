@@ -6,8 +6,20 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-02
+
+### Added
+
+- Shared CPU, memory, network and disk read/write timelines in the remote sidebar and monitor page, with timestamp-based spacing, labeled dashed scales, separate receive/send and read/write series, and mouse or keyboard sample inspection.
+- Linux disk I/O sampling uses block-device counters without counting stacked devices twice, and handles device resets, removal and unavailable measurements.
+
 ### Fixed
 
+- Keep slow remote folder loading and refresh status in the existing file-pane footer so file rows and scroll positions remain stable.
+- Copy selected text from mouse-aware terminal applications such as Pi through user-triggered OSC 52 writes when copy-on-select is enabled. Preserve native selection text across TUI redraws and forward application copy shortcuts when appropriate; clipboard read requests remain unsupported.
+- Refresh mounted command-history panes after successful recording, including rerun commands, without reloading unrelated hosts or changing history-recording consent.
+- Size terminal grids within their actual padded content area. Terminal previews retain their sample scrollback even when SSH scrollback is disabled, and tab labels allow enough line height for descenders and CJK glyphs.
+- Exclude guest CPU time from duplicate accounting in remote CPU usage.
 - Create one shared draft before parallel release builds and pass its ID to every platform, preventing downloads from being split across duplicate drafts.
 - Separate native helper caches by runner image to prevent incompatible Linux C libraries being restored across Ubuntu versions. Optional helper builds run independently of desktop publication.
 

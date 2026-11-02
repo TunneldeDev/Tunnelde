@@ -15,6 +15,8 @@ const { stats, apiMock } = vi.hoisted(() => ({
     uptime: 100,
     netRxRate: 2048,
     netTxRate: 1024,
+    diskReadRate: 4096,
+    diskWriteRate: 8192,
     processes: [],
     sampledAt: 1,
   },
@@ -52,7 +54,10 @@ describe("MonitorPage", () => {
 
     expect(await screen.findByText("alpha")).toBeTruthy();
     expect(await screen.findByText("42%")).toBeTruthy();
-    expect(screen.getByText("50%")).toBeTruthy();
+    expect(screen.getByText("50%", { selector: ".monitor-card__value" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Memory history" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Network history" })).toBeTruthy();
+    expect(screen.getByRole("slider", { name: "Disk I/O history" })).toBeTruthy();
 
     await waitFor(() => {
       expect(useMonitorHistory.getState().samples.s1?.length).toBeGreaterThan(0);

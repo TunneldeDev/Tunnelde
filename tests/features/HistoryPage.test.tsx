@@ -1,10 +1,17 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { useSsh } from "@/store/ssh";
 import type { HistoryEntry, SshSession } from "@/lib/api/types";
+import { useSettings } from "@/store/settings";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
-const mocks = vi.hoisted(() => ({ historyList: vi.fn(), toast: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  historyList: vi.fn(),
+  historyRecord: vi.fn(),
+  sshWrite: vi.fn(),
+  toast: vi.fn(),
+}));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
 vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key } }));
@@ -29,10 +36,50 @@ const session = (hostId: string): SshSession => ({
 beforeEach(() => {
   mocks.historyList.mockReset().mockResolvedValue([entry(1, "first command")]);
   mocks.toast.mockReset();
+  mocks.historyRecord.mockReset().mockResolvedValue(entry(2, "first command"));
+  mocks.sshWrite.mockReset().mockResolvedValue(undefined);
+  useSettings.setState({ settings: { ...DEFAULT_SETTINGS } });
   useSsh.setState({ sessions: [session("one")] });
 });
 
 describe("history changes from other views and plugins", () => {
+  it("refreshes for its host while ignoring unrelated hosts", async () => {
+    render(<HistoryPage sessionId="session" />);
+    await screen.findByText("first command");
+    act(() =>
+      window.dispatchEvent(
+        new CustomEvent("tunnelde:history-changed", { detail: { hostId: "two" } }),
+      ),
+    );
+    expect(mocks.historyList).toHaveBeenCalledOnce();
+    mocks.historyList.mockResolvedValue([entry(2, "new command")]);
+    act(() =>
+      window.dispatchEvent(
+        new CustomEvent("tunnelde:history-changed", { detail: { hostId: "one" } }),
+      ),
+    );
+    await screen.findByText("new command");
+    expect(mocks.historyList).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates recency when rerunning a command only with history recording enabled", async () => {
+    render(<HistoryPage sessionId="session" />);
+    await screen.findByText("first command");
+    fireEvent.click(screen.getByRole("button", { name: "history.insert" }));
+    await waitFor(() => expect(mocks.sshWrite).toHaveBeenCalledOnce());
+    expect(mocks.historyRecord).not.toHaveBeenCalled();
+    act(() =>
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, recordTerminalHistory: true } }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "history.insert" }));
+    await waitFor(() => expect(mocks.historyRecord).toHaveBeenCalledWith("one", "first command"));
+    await waitFor(() => expect(mocks.historyList).toHaveBeenCalledTimes(2));
+    mocks.sshWrite.mockRejectedValueOnce(new Error("disconnected"));
+    fireEvent.click(screen.getByRole("button", { name: "history.insert" }));
+    await waitFor(() => expect(mocks.toast).toHaveBeenCalled());
+    expect(mocks.historyRecord).toHaveBeenCalledOnce();
+  });
+
   it("refreshes on domain changes and removes its listener on unmount", async () => {
     const view = render(<HistoryPage sessionId="session" />);
     await screen.findByText("first command");

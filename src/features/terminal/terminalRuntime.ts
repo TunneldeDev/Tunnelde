@@ -71,7 +71,11 @@ export function terminalOptions(
 }
 
 /** Shares live preferences and the official renderer lifecycle with the local preview. */
-export function bindTerminalSettings(terminal: Terminal, fit: () => void) {
+export function bindTerminalSettings(
+  terminal: Terminal,
+  fit: () => void,
+  { minimumScrollback = 0 }: { minimumScrollback?: number } = {},
+) {
   // Configure widths before any output: Unicode 6 counts ❌ as one column and
   // splits emoji sequences, moving table borders and TUI cursor positions.
   terminal.loadAddon(new UnicodeGraphemesAddon());
@@ -126,6 +130,7 @@ export function bindTerminalSettings(terminal: Terminal, fit: () => void) {
     if (disposed) return;
     const settings = useSettings.getState().settings;
     const next = terminalOptions(settings, colorScheme.matches, motion.matches);
+    next.scrollback = Math.max(minimumScrollback, next.scrollback ?? 0);
     const { fontFamily, fontSize, ...otherOptions } = next;
     const fontChanged = requestedFont !== fontFamily || requestedSize !== fontSize;
     const dimensionsChanged = terminal.options.lineHeight !== next.lineHeight;

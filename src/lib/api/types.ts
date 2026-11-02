@@ -328,6 +328,8 @@ export interface RemoteStats {
   uptime: number;
   netRxRate: number;
   netTxRate: number;
+  diskReadRate: number | null;
+  diskWriteRate: number | null;
   processes: RemoteProcess[];
   sampledAt: number;
 }

@@ -45,9 +45,16 @@ export function TerminalPreview({ className = "" }: { className?: string }) {
       terminal.loadAddon(fit);
       terminal.open(element);
       terminalRef.current = terminal;
-      runtime = bindTerminalSettings(terminal, () => {
-        if (element.clientWidth > 24 && element.clientHeight > 24) fit.fit();
-      });
+      runtime = bindTerminalSettings(
+        terminal,
+        () => {
+          if (element.clientWidth > 24 && element.clientHeight > 24) fit.fit();
+        },
+        // Retain the complete sample even when SSH scrollback is disabled.
+        { minimumScrollback: 100 },
+      );
+      // Size the viewport before writing, so sample rows overflow into scrollback.
+      fit.fit();
       runtime.requestLayout();
       terminal.write(SAMPLE);
     })();
@@ -61,11 +68,12 @@ export function TerminalPreview({ className = "" }: { className?: string }) {
   }, []);
   return (
     <div
-      ref={container}
       className={`terminal-preview terminal-host ${className}`.trim()}
       style={{ height: 180, minHeight: 180, overflow: "hidden" }}
       aria-label={t("terminal.previewLabel")}
       onClick={() => terminalRef.current?.focus()}
-    />
+    >
+      <div className="terminal-surface" ref={container} />
+    </div>
   );
 }

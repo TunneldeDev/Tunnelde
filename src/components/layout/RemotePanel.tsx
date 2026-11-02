@@ -20,6 +20,10 @@ import { useMonitor } from "@/store/monitor";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
 import { useRemoteMonitor } from "@/lib/session/useRemoteMonitor";
+import { MonitorChart } from "@/features/monitor/MonitorChart";
+import { useMonitorHistory, type MonitorSample } from "@/store/monitorHistory";
+
+const EMPTY_SAMPLES: MonitorSample[] = [];
 
 function Meter({ value }: { value: number }) {
   const clamped = Math.min(100, Math.max(0, Math.round(value)));
@@ -37,30 +41,6 @@ function Meter({ value }: { value: number }) {
         data-tone={clamped >= 90 ? "red" : clamped >= 70 ? "orange" : "accent"}
       />
     </div>
-  );
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  if (values.length < 2) {
-    return <div className="sparkline" aria-hidden="true" />;
-  }
-  const points = values
-    .map((value, index) => {
-      const x = (index / (values.length - 1)) * 100;
-      const y = 26 - (Math.min(100, Math.max(0, value)) / 100) * 24;
-      return `${x.toFixed(2)},${y.toFixed(2)}`;
-    })
-    .join(" ");
-  return (
-    <svg className="sparkline" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
-      <polyline
-        points={points}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        vectorEffect="non-scaling-stroke"
-      />
-    </svg>
   );
 }
 
@@ -105,6 +85,7 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const entry = useMonitor((state) => state.entries[sessionId]);
+  const samples = useMonitorHistory((state) => state.samples[sessionId] ?? EMPTY_SAMPLES);
   const [processesOpen, setProcessesOpen] = useState(false);
   const openMonitor = useWorkspace((state) => state.openMonitor);
   useRemoteMonitor(sessionId, !hidden && session !== null);
@@ -152,20 +133,21 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
             stats && stats.cpuCount > 0 ? t("panel.cores", { count: stats.cpuCount }) : undefined
           }
         >
-          <Sparkline values={entry?.cpuHistory ?? []} />
+          <MonitorChart samples={samples} kind="cpu" label={t("panel.cpu")} />
         </Card>
 
         <Card
           icon={<MemoryStick size={12} />}
           label={t("panel.memory")}
           value={stats ? formatPercent(memoryPercent) : "—"}
-          meter={stats ? memoryPercent : undefined}
           detail={
             stats
               ? `${formatBytes(stats.memoryUsed)} / ${formatBytes(stats.memoryTotal)}`
               : undefined
           }
-        />
+        >
+          <MonitorChart samples={samples} kind="memory" label={t("panel.memory")} />
+        </Card>
 
         <Card
           icon={<HardDrive size={12} />}
@@ -182,7 +164,20 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
           label={t("panel.network")}
           value={stats ? `↓ ${formatBytes(stats.netRxRate)}/s` : "—"}
           detail={stats ? `↑ ${formatBytes(stats.netTxRate)}/s` : undefined}
-        />
+        >
+          <MonitorChart samples={samples} kind="network" label={t("panel.network")} />
+        </Card>
+
+        <Card
+          icon={<HardDrive size={12} />}
+          label={t("monitor.diskIo")}
+          value={stats?.diskReadRate != null ? `↓ ${formatBytes(stats.diskReadRate)}/s` : "—"}
+          detail={
+            stats?.diskWriteRate != null ? `↑ ${formatBytes(stats.diskWriteRate)}/s` : undefined
+          }
+        >
+          <MonitorChart samples={samples} kind="disk" label={t("monitor.diskIo")} />
+        </Card>
 
         <div className="panel-grid">
           <Card

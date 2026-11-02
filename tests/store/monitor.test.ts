@@ -22,6 +22,8 @@ const stats: RemoteStats = {
   uptime: 100,
   netRxRate: 2,
   netTxRate: 1,
+  diskReadRate: 1024,
+  diskWriteRate: 2048,
   processes: [],
   sampledAt: 1,
 };
@@ -63,6 +65,10 @@ describe("shared remote monitoring", () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(remoteStats).toHaveBeenCalledTimes(1);
     expect(useMonitorHistory.getState().samples.s1).toHaveLength(1);
+    expect(useMonitorHistory.getState().samples.s1?.[0]).toMatchObject({
+      diskRead: 1024,
+      diskWrite: 2048,
+    });
     await vi.advanceTimersByTimeAsync(3000);
     expect(remoteStats).toHaveBeenCalledTimes(2);
     releases.pop()?.();

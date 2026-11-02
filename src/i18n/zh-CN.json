@@ -631,7 +631,14 @@
     "open": "打开监控",
     "live": "{{count}} 个采样",
     "average": "均值",
-    "peak": "峰值"
+    "peak": "峰值",
+    "diskIo": "磁盘读写",
+    "read": "读取",
+    "write": "写入",
+    "receive": "接收",
+    "send": "发送",
+    "unavailable": "暂不可用",
+    "chart": "{{metric}}历史曲线"
   },
   "pluginView": {
     "title": "插件",

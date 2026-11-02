@@ -16,6 +16,14 @@ const SCRIPT: &str = r#"LANG=C
 echo '#cpu'; head -1 /proc/stat
 echo '#mem'; grep -E '^(MemTotal|MemAvailable|SwapTotal|SwapFree):' /proc/meminfo
 echo '#disk'; df -kP / | tail -1
+echo '#io'
+for device in /sys/block/*; do
+  [ -r "$device/stat" ] || continue
+  case "${device##*/}" in loop*|ram*|zram*|sr*|fd*) continue ;; esac
+  set -- "$device"/slaves/*
+  [ -e "$1" ] && continue
+  awk -v device="${device##*/}" '{print device, $3, $7}' "$device/stat"
+done
 echo '#net'; awk 'NR>2 {rx+=$2; tx+=$10} END {print rx+0, tx+0}' /proc/net/dev
 echo '#uptime'; cut -d' ' -f1 /proc/uptime
 echo '#load'; cat /proc/loadavg
@@ -48,16 +56,19 @@ pub struct RemoteStats {
     pub uptime: u64,
     pub net_rx_rate: f32,
     pub net_tx_rate: f32,
+    pub disk_read_rate: Option<f32>,
+    pub disk_write_rate: Option<f32>,
     pub processes: Vec<RemoteProcess>,
     pub sampled_at: i64,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 struct Counters {
     cpu_total: u64,
     cpu_idle: u64,
     rx: u64,
     tx: u64,
+    disks: HashMap<String, (u64, u64)>,
     at: Option<Instant>,
 }
 
@@ -71,7 +82,7 @@ impl MonitorCache {
         self.samples
             .lock()
             .ok()
-            .and_then(|samples| samples.get(session_id).copied())
+            .and_then(|samples| samples.get(session_id).cloned())
             .unwrap_or_default()
     }
 
@@ -131,9 +142,19 @@ pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats>
     let raw = exec(app, session_id, SCRIPT).await?;
     let cache = &app.state::<AppState>().monitor;
     let previous = cache.previous(session_id);
+    let (stats, counters) = parse_sample(&raw, &previous, Instant::now(), now_ms());
+    cache.store(session_id, counters);
+    Ok(stats)
+}
 
+fn parse_sample(
+    raw: &str,
+    previous: &Counters,
+    now: Instant,
+    sampled_at: i64,
+) -> (RemoteStats, Counters) {
     let mut stats = RemoteStats {
-        sampled_at: now_ms(),
+        sampled_at,
         ..RemoteStats::default()
     };
     let mut counters = Counters::default();
@@ -154,6 +175,8 @@ pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats>
                 let values: Vec<u64> = line
                     .split_whitespace()
                     .skip(1)
+                    // Guest time is already included in user/nice counters.
+                    .take(8)
                     .filter_map(|value| value.parse::<u64>().ok())
                     .collect();
                 counters.cpu_total = values.iter().sum();
@@ -184,6 +207,16 @@ pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats>
                 if fields.len() == 2 {
                     counters.rx = fields[0].parse().unwrap_or(0);
                     counters.tx = fields[1].parse().unwrap_or(0);
+                }
+            }
+            "io" => {
+                let fields: Vec<&str> = line.split_whitespace().collect();
+                if let [device, read, written] = fields.as_slice() {
+                    if let (Ok(read), Ok(written)) = (read.parse::<u64>(), written.parse::<u64>()) {
+                        counters
+                            .disks
+                            .insert((*device).to_string(), (read, written));
+                    }
                 }
             }
             "uptime" => {
@@ -224,16 +257,30 @@ pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats>
         stats.cpu_percent = (busy as f32 / total_delta as f32) * 100.0;
     }
 
-    let now = Instant::now();
     if let Some(previous_at) = previous.at {
         let seconds = now.duration_since(previous_at).as_secs_f32().max(0.2);
         stats.net_rx_rate = counters.rx.saturating_sub(previous.rx) as f32 / seconds;
         stats.net_tx_rate = counters.tx.saturating_sub(previous.tx) as f32 / seconds;
+        let mut read_sectors = 0_u64;
+        let mut written_sectors = 0_u64;
+        let mut matched = false;
+        for (device, (read, written)) in &counters.disks {
+            if let Some((old_read, old_written)) = previous.disks.get(device) {
+                matched = true;
+                read_sectors = read_sectors.saturating_add(read.saturating_sub(*old_read));
+                written_sectors =
+                    written_sectors.saturating_add(written.saturating_sub(*old_written));
+            }
+        }
+        if matched {
+            // Linux block statistics always count 512-byte sectors, regardless of device geometry.
+            stats.disk_read_rate = Some(read_sectors as f32 * 512.0 / seconds);
+            stats.disk_write_rate = Some(written_sectors as f32 * 512.0 / seconds);
+        }
     }
     counters.at = Some(now);
 
-    cache.store(session_id, counters);
-    Ok(stats)
+    (stats, counters)
 }
 
 fn parse_process(line: &str) -> Option<RemoteProcess> {
@@ -281,6 +328,73 @@ pub async fn kill(app: &AppHandle, session_id: &str, pid: u32) -> AppResult<()> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn calculates_io_rates_from_matching_devices_and_elapsed_time() {
+        let start = Instant::now();
+        let (_, first) = parse_sample(
+            "#io\nsda 100 200\nnvme0n1 50 70",
+            &Counters::default(),
+            start,
+            1,
+        );
+        let (stats, _) = parse_sample(
+            "#io\nsda 104 208\nnvme0n1 52 74",
+            &first,
+            start + Duration::from_secs(2),
+            2,
+        );
+        assert_eq!(stats.disk_read_rate, Some(1536.0));
+        assert_eq!(stats.disk_write_rate, Some(3072.0));
+        assert_eq!(stats.sampled_at, 2);
+    }
+
+    #[test]
+    fn ignores_new_disappeared_and_reset_disk_counters() {
+        let start = Instant::now();
+        let (_, first) = parse_sample(
+            "#io\nsda 100 200\nsdb 99999 99999",
+            &Counters::default(),
+            start,
+            1,
+        );
+        let (stats, _) = parse_sample(
+            "#io\nsda 2 3\nsdc 99999 99999",
+            &first,
+            start + Duration::from_secs(2),
+            2,
+        );
+        assert_eq!(stats.disk_read_rate, Some(0.0));
+        assert_eq!(stats.disk_write_rate, Some(0.0));
+    }
+
+    #[test]
+    fn missing_and_first_io_samples_are_unavailable_instead_of_fake_zeroes() {
+        let start = Instant::now();
+        let (stats, first) = parse_sample("#io\nsda 100 200", &Counters::default(), start, 1);
+        assert_eq!(stats.disk_read_rate, None);
+        let (stats, _) = parse_sample("#io\nbad row", &first, start + Duration::from_secs(2), 2);
+        assert_eq!(stats.disk_read_rate, None);
+        assert_eq!(stats.disk_write_rate, None);
+    }
+
+    #[test]
+    fn cpu_guest_time_is_not_counted_twice() {
+        let start = Instant::now();
+        let (_, first) = parse_sample(
+            "#cpu\ncpu 100 0 0 100 0 0 0 0 100 0",
+            &Counters::default(),
+            start,
+            1,
+        );
+        let (stats, _) = parse_sample(
+            "#cpu\ncpu 150 0 0 150 0 0 0 0 150 0",
+            &first,
+            start + Duration::from_secs(2),
+            2,
+        );
+        assert_eq!(stats.cpu_percent, 50.0);
+    }
 
     #[test]
     fn parses_ps_rows() {

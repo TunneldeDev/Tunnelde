@@ -15,6 +15,7 @@ import { translateError } from "@/lib/api/errors";
 import { decodeBase64, encodeBase64 } from "@/lib/text/base64";
 import { consumeInput, type CommandCapture } from "@/lib/session/terminalInput";
 import { copyText } from "@/lib/session/clipboard";
+import { recordTerminalCommand } from "@/lib/session/history";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import {
   bindTerminalSettings,
@@ -28,6 +29,7 @@ import { useDialogs } from "@/store/dialogs";
 import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
 import { createTerminalOutputDecoder } from "./terminalOutput";
+import { bindTerminalClipboard } from "./terminalClipboard";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -120,6 +122,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     let runtime: ReturnType<typeof bindTerminalSettings> | null = null;
     let dataListener: { dispose: () => void } | null = null;
     let selectionListener: { dispose: () => void } | null = null;
+    let applicationClipboard: { dispose: () => void } | null = null;
     let selectionTimer: number | undefined;
     let copiedSelection = "";
     const subscriptions: UnlistenFn[] = [];
@@ -159,6 +162,15 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       terminalRef.current = instance;
       fitRef.current = addon;
       runtime = bindTerminalSettings(instance, fit);
+      const writeClipboard = (text: string) =>
+        isTauri() ? api.clipboardWriteText(text) : navigator.clipboard.writeText(text);
+      applicationClipboard = bindTerminalClipboard(
+        instance,
+        element,
+        () => !ended && activeRef.current && useSettings.getState().settings.terminalCopyOnSelect,
+        writeClipboard,
+        () => toast(t("menu.copyFailed"), "error"),
+      );
       const copy = () => {
         if (!disposed && instance.hasSelection()) {
           copyText(instance.getSelection());
@@ -197,19 +209,21 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         canPaste: () => !disposed && !ended,
       };
       selectionListener = instance.onSelectionChange(() => {
+        // A TUI redraw may clear the selection immediately after mouse release.
+        // Keep the text captured at selection time, rather than reading it after the delay.
+        const text = instance.getSelection();
+        if (!text) {
+          copiedSelection = "";
+          return;
+        }
         window.clearTimeout(selectionTimer);
-        if (!instance.hasSelection()) copiedSelection = "";
         if (!useSettings.getState().settings.terminalCopyOnSelect) return;
         selectionTimer = window.setTimeout(() => {
           if (disposed || !useSettings.getState().settings.terminalCopyOnSelect) return;
-          if (!instance.hasSelection()) return;
-          const text = instance.getSelection();
-          if (!text || text === copiedSelection) return;
+          if (text === copiedSelection) return;
           copiedSelection = text;
           // Selection changes must not steal focus or flood success notifications.
-          void (
-            isTauri() ? api.clipboardWriteText(text) : navigator.clipboard.writeText(text)
-          ).catch(() => {
+          void writeClipboard(text).catch(() => {
             if (disposed) return;
             if (copiedSelection === text) copiedSelection = "";
             toast(t("menu.copyFailed"), "error");
@@ -237,7 +251,8 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === "c";
         if (
           matchesCommand(event, "terminal.copy", bindings) &&
-          (!plainControlC || mac || instance.hasSelection())
+          (!plainControlC || mac || instance.hasSelection()) &&
+          (instance.hasSelection() || instance.modes.mouseTrackingMode === "none")
         ) {
           event.preventDefault();
           copy();
@@ -274,7 +289,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           }
           const hostId = useSsh.getState().sessions.find((item) => item.id === sessionId)?.hostId;
           if (hostId) {
-            void api.historyRecord(hostId, command).catch(() => undefined);
+            void recordTerminalCommand(hostId, command).catch(() => undefined);
           }
         }
       });
@@ -358,6 +373,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       subscriptions.forEach((unlisten) => unlisten());
       dataListener?.dispose();
       selectionListener?.dispose();
+      applicationClipboard?.dispose();
       window.clearTimeout(selectionTimer);
       runtime?.dispose();
       terminal?.dispose();
@@ -428,7 +444,6 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       </header>
       <div
         className="terminal-host"
-        ref={containerRef}
         onContextMenu={(event) => {
           event.preventDefault();
           event.stopPropagation();
@@ -453,7 +468,9 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             { label: t("terminal.selectAll"), separatorBefore: true, onSelect: actions.selectAll },
           ]);
         }}
-      />
+      >
+        <div className="terminal-surface" ref={containerRef} />
+      </div>
     </div>
   );
 }

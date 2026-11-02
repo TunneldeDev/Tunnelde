@@ -6,61 +6,26 @@ import { useRemoteMonitor } from "@/lib/session/useRemoteMonitor";
 import { useMonitor } from "@/store/monitor";
 import { summarize, useMonitorHistory, type MonitorSample } from "@/store/monitorHistory";
 import { useSsh } from "@/store/ssh";
+import { MonitorChart } from "./MonitorChart";
 
 const EMPTY: MonitorSample[] = [];
-
-interface ChartProps {
-  values: number[];
-  ceiling: number;
-  tone: "accent" | "green" | "orange";
-}
-
-function Chart({ values, ceiling, tone }: ChartProps) {
-  const limit = ceiling > 0 ? ceiling : 1;
-  const points = values.map((value, index) => {
-    const x = values.length > 1 ? (index / (values.length - 1)) * 100 : 0;
-    const y = 30 - Math.min(1, Math.max(0, value / limit)) * 28;
-    return `${x.toFixed(2)},${y.toFixed(2)}`;
-  });
-
-  return (
-    <svg
-      className={`chart chart--${tone}`}
-      viewBox="0 0 100 30"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      {points.length > 1 ? (
-        <>
-          <polygon points={`0,30 ${points.join(" ")} 100,30`} className="chart__area" />
-          <polyline
-            points={points.join(" ")}
-            className="chart__line"
-            vectorEffect="non-scaling-stroke"
-          />
-        </>
-      ) : null}
-    </svg>
-  );
-}
 
 interface MetricProps {
   label: string;
   value: string;
   caption: string;
-  values: number[];
-  ceiling: number;
-  tone: "accent" | "green" | "orange";
+  samples: MonitorSample[];
+  kind: "cpu" | "memory" | "network" | "disk";
 }
 
-function Metric({ label, value, caption, values, ceiling, tone }: MetricProps) {
+function Metric({ label, value, caption, samples, kind }: MetricProps) {
   return (
     <article className="monitor-card">
       <header className="monitor-card__head">
         <span className="monitor-card__label">{label}</span>
         <span className="monitor-card__value">{value}</span>
       </header>
-      <Chart values={values} ceiling={ceiling} tone={tone} />
+      <MonitorChart samples={samples} kind={kind} label={label} />
       <p className="monitor-card__caption">{caption}</p>
     </article>
   );
@@ -88,7 +53,14 @@ export function MonitorPage({ sessionId, active = true }: { sessionId: string; a
   const cpuSummary = summarize(cpu);
   const memorySummary = summarize(memory);
   const rateSummary = summarize(rates);
-  const rateCeiling = Math.max(rateSummary.max, 1024);
+  const diskRates = samples.flatMap((sample) =>
+    sample.diskRead !== null && sample.diskWrite !== null
+      ? [sample.diskRead + sample.diskWrite]
+      : [],
+  );
+  const diskSummary = summarize(diskRates);
+  const rateCaption = (summary: typeof cpuSummary) =>
+    `${t("monitor.average")} ${formatBytes(summary.average)}/s · ${t("monitor.peak")} ${formatBytes(summary.max)}/s`;
 
   const percentCaption = (summary: typeof cpuSummary) =>
     `${t("monitor.average")} ${formatPercent(summary.average)} · ${t("monitor.peak")} ${formatPercent(summary.max)}`;
@@ -111,25 +83,33 @@ export function MonitorPage({ sessionId, active = true }: { sessionId: string; a
           label={t("panel.cpu")}
           value={formatPercent(last?.cpu ?? 0)}
           caption={percentCaption(cpuSummary)}
-          values={cpu}
-          ceiling={100}
-          tone="accent"
+          samples={samples}
+          kind="cpu"
         />
         <Metric
           label={t("panel.memory")}
           value={formatPercent(last?.memory ?? 0)}
           caption={percentCaption(memorySummary)}
-          values={memory}
-          ceiling={100}
-          tone="green"
+          samples={samples}
+          kind="memory"
         />
         <Metric
           label={t("panel.network")}
           value={last ? `${formatBytes(last.rx + last.tx)}/s` : "—"}
-          caption={`${t("monitor.average")} ${formatBytes(rateSummary.average)}/s · ${t("monitor.peak")} ${formatBytes(rateSummary.max)}/s`}
-          values={rates}
-          ceiling={rateCeiling}
-          tone="orange"
+          caption={rateCaption(rateSummary)}
+          samples={samples}
+          kind="network"
+        />
+        <Metric
+          label={t("monitor.diskIo")}
+          value={
+            last && last.diskRead !== null && last.diskWrite !== null
+              ? `${formatBytes(last.diskRead + last.diskWrite)}/s`
+              : "—"
+          }
+          caption={diskRates.length ? rateCaption(diskSummary) : t("monitor.unavailable")}
+          samples={samples}
+          kind="disk"
         />
       </div>
     </div>

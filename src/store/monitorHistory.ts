@@ -9,6 +9,8 @@ export interface MonitorSample {
   disk: number;
   rx: number;
   tx: number;
+  diskRead: number | null;
+  diskWrite: number | null;
 }
 
 interface MonitorHistoryStore {

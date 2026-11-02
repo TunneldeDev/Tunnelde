@@ -116,7 +116,7 @@
 
 .td-tab__label {
   font-size: 12.5px;
-  line-height: 1;
+  line-height: 1.5;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1943,7 +1943,14 @@
   padding: 6px 4px 2px 10px;
 }
 
-.terminal-host .xterm {
+.terminal-surface {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.terminal-surface .xterm {
   height: 100%;
 }
 
@@ -2215,6 +2222,8 @@
 
 .sftp-pane__foot {
   display: flex;
+  flex-shrink: 0;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
   padding: 4px 8px;
@@ -2222,6 +2231,13 @@
   font-family: var(--td-mono);
   font-size: 10.5px;
   color: var(--td-faint);
+}
+
+.sftp-pane__status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sftp-pane__selection {
@@ -2828,11 +2844,12 @@
 
 .monitor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
   gap: 12px;
 }
 
 .monitor-card {
+  --monitor-chart-height: 132px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2846,6 +2863,8 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .monitor-card__label {
@@ -2868,34 +2887,130 @@
   color: var(--td-faint);
 }
 
-.chart {
+.monitor-chart {
+  display: grid;
+  grid-template-columns: minmax(48px, max-content) minmax(0, 1fr);
+  column-gap: 8px;
+  margin-top: 10px;
+  min-width: 0;
+  font-family: var(--td-mono);
+  font-size: 9px;
+  line-height: 1.5;
+}
+.monitor-chart__axis {
+  position: relative;
+  color: var(--td-faint);
+}
+.monitor-chart__axis > span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  white-space: nowrap;
+}
+.monitor-chart__plot {
+  position: relative;
+  min-width: 0;
+  height: var(--monitor-chart-height, 84px);
+  touch-action: pan-y;
+}
+.monitor-chart__plot > svg {
   display: block;
   width: 100%;
-  height: 76px;
+  height: 100%;
+  overflow: visible;
 }
-
-.chart__line {
+.monitor-chart__grid {
+  stroke: var(--td-border-strong);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+.monitor-chart__series polyline {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.4;
 }
-
-.chart__area {
+.monitor-chart__series circle {
   fill: currentColor;
-  opacity: 0.12;
-  stroke: none;
 }
-
-.chart--accent {
+.monitor-chart .is-accent {
   color: var(--td-accent);
 }
-
-.chart--green {
+.monitor-chart .is-green {
   color: var(--td-green);
 }
-
-.chart--orange {
+.monitor-chart .is-orange {
   color: var(--td-orange);
+}
+.monitor-chart__cursor {
+  stroke: var(--td-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+}
+.monitor-chart__times {
+  grid-column: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  padding-top: 5px;
+  color: var(--td-faint);
+}
+.monitor-chart__legend {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  color: var(--td-muted);
+}
+.monitor-chart__legend > span,
+.monitor-chart__tooltip > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.monitor-chart i {
+  display: inline-block;
+  flex: 0 0 10px;
+  height: 2px;
+  background: currentColor;
+}
+.monitor-chart__tooltip {
+  position: absolute;
+  z-index: 2;
+  top: 3px;
+  width: max-content;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--td-border-strong);
+  border-radius: var(--td-radius-sm);
+  background: var(--td-elevated);
+  color: var(--td-text);
+  box-shadow: 0 3px 10px #0003;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+.monitor-chart__tooltip[data-side="left"] {
+  transform: translateX(-100%);
+}
+.monitor-chart__tooltip > time {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--td-muted);
+}
+.monitor-chart__tooltip strong {
+  margin-left: auto;
+  font-weight: 500;
+}
+.monitor-chart__empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--td-faint);
+  text-align: center;
+  pointer-events: none;
 }
 
 /* ---------- plugin views ---------- */

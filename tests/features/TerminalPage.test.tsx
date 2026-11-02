@@ -13,11 +13,13 @@ const {
   webglState,
   contextLoss,
   selections,
+  oscHandlers,
 } = vi.hoisted(() => ({
   apiMock: {
     sshResize: vi.fn(),
     sshWrite: vi.fn(),
     historyRecord: vi.fn(),
+    historyList: vi.fn(),
     sshAttach: vi.fn(),
     sshDisconnect: vi.fn(),
     clipboardReadText: vi.fn(),
@@ -34,6 +36,7 @@ const {
     hasSelection: ReturnType<typeof vi.fn>;
     getSelection: ReturnType<typeof vi.fn>;
     clearSelection: ReturnType<typeof vi.fn>;
+    modes: { mouseTrackingMode: string };
     open: ReturnType<typeof vi.fn>;
     refresh: ReturnType<typeof vi.fn>;
     unicode: { activeVersion: string; register: ReturnType<typeof vi.fn> };
@@ -50,6 +53,7 @@ const {
   }>,
   contextLoss: [] as Array<() => void>,
   selections: [] as Array<() => void>,
+  oscHandlers: [] as Array<(data: string) => boolean | Promise<boolean>>,
 }));
 
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock, events: eventMock, isTauri: () => true }));
@@ -88,6 +92,7 @@ vi.mock("@xterm/xterm", () => ({
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => "selected text");
     clearSelection = vi.fn(() => this.hasSelection.mockReturnValue(false));
+    modes = { mouseTrackingMode: "none" };
     onSelectionChange = vi.fn((callback: () => void) => {
       selections.push(callback);
       return { dispose: vi.fn() };
@@ -100,6 +105,14 @@ vi.mock("@xterm/xterm", () => ({
     });
     open = vi.fn();
     refresh = vi.fn();
+    parser = {
+      registerOscHandler: vi.fn(
+        (_id: number, callback: (data: string) => boolean | Promise<boolean>) => {
+          oscHandlers.push(callback);
+          return { dispose: vi.fn() };
+        },
+      ),
+    };
     unicode = { activeVersion: "6", register: vi.fn() };
     onData = vi.fn((callback: (data: string) => void) => {
       inputs.push(callback);
@@ -117,6 +130,8 @@ vi.mock("@xterm/xterm", () => ({
 import "@/i18n/i18n";
 import { TerminalPage } from "@/features/terminal/TerminalPage";
 import { TerminalPreview } from "@/features/terminal/TerminalPreview";
+import { HistoryPage } from "@/features/history/HistoryPage";
+import { encodeBase64 } from "@/lib/text/base64";
 import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
@@ -135,11 +150,13 @@ beforeEach(() => {
   webglInstances.length = 0;
   contextLoss.length = 0;
   selections.length = 0;
+  oscHandlers.length = 0;
   webglState.failLoad = false;
   vi.clearAllMocks();
   apiMock.sshResize.mockResolvedValue(undefined);
   apiMock.sshWrite.mockResolvedValue(undefined);
   apiMock.historyRecord.mockResolvedValue(undefined);
+  apiMock.historyList.mockReset().mockResolvedValue([]);
   apiMock.sshAttach.mockResolvedValue(undefined);
   apiMock.sshDisconnect.mockResolvedValue(undefined);
   apiMock.clipboardReadText.mockResolvedValue("pasted\ntext");
@@ -627,11 +644,13 @@ describe("local terminal preview", () => {
           terminalCursorStyle: "underline",
           terminalLineHeight: 1.4,
           terminalRenderer: "dom",
+          terminalScrollback: 0,
         },
       }),
     );
     expect(terminal.options.cursorStyle).toBe("underline");
     expect(terminal.options.lineHeight).toBe(1.4);
+    expect(terminal.options.scrollback).toBe(100);
     expect(webglInstances[0]!.dispose).toHaveBeenCalledOnce();
     expect(instances).toHaveLength(1);
     view.unmount();
@@ -660,6 +679,65 @@ describe("local terminal preview", () => {
 });
 
 describe("terminal clipboard", () => {
+  it("forwards copy shortcuts to mouse-aware TUIs when their selection is not owned by xterm", async () => {
+    render(<TerminalPage sessionId="s1" active />);
+    await waitFor(() => expect(keyboard).toHaveLength(1));
+    const terminal = instances[0]!;
+    terminal.modes.mouseTrackingMode = "drag";
+    const copy = () =>
+      new KeyboardEvent("keydown", { key: "c", ctrlKey: true, shiftKey: true, cancelable: true });
+    expect(keyboard[0]!(copy())).toBe(true);
+    expect(copyMock).not.toHaveBeenCalled();
+    terminal.hasSelection.mockReturnValue(true);
+    expect(keyboard[0]!(copy())).toBe(false);
+    expect(copyMock).toHaveBeenCalledWith("selected text");
+  });
+
+  it("copies the captured selection even if a TUI redraw clears it before the debounce", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } });
+    render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(selections).toHaveLength(1));
+    vi.useFakeTimers();
+    const terminal = instances[0]!;
+    terminal.hasSelection.mockReturnValue(true);
+    terminal.getSelection.mockReturnValue("selected before redraw");
+    act(() => selections[0]!());
+    terminal.hasSelection.mockReturnValue(false);
+    terminal.getSelection.mockReturnValue("");
+    act(() => {
+      selections[0]!();
+      vi.advanceTimersByTime(150);
+    });
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledWith("selected before redraw");
+    expect(terminal.focus).not.toHaveBeenCalled();
+  });
+
+  it("accepts Pi-style OSC 52 copies after a selection gesture in an active opted-in terminal", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } });
+    const view = render(<TerminalPage sessionId="s1" active />);
+    await waitFor(() => expect(oscHandlers).toHaveLength(1));
+    const surface = view.container.querySelector(".terminal-surface")!;
+    const data = `c;${encodeBase64("Pi 中文 selection 👩‍💻")}`;
+    oscHandlers[0]!(data);
+    expect(apiMock.clipboardWriteText).not.toHaveBeenCalled();
+    fireEvent.mouseDown(surface, { button: 0 });
+    fireEvent.mouseUp(surface, { button: 0 });
+    oscHandlers[0]!("c;?");
+    expect(apiMock.clipboardReadText).not.toHaveBeenCalled();
+    oscHandlers[0]!(data);
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledWith("Pi 中文 selection 👩‍💻");
+    oscHandlers[0]!(data);
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    view.rerender(<TerminalPage sessionId="s1" active={false} />);
+    fireEvent.mouseDown(surface, { button: 0 });
+    fireEvent.mouseUp(surface, { button: 0 });
+    oscHandlers[0]!(data);
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    view.unmount();
+    oscHandlers[0]!(data);
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+  });
+
   it("debounces copy-on-select without stealing focus, and honors disabling and cleanup", async () => {
     const view = render(<TerminalPage sessionId="s1" active={false} />);
     await waitFor(() => expect(selections).toHaveLength(1));
@@ -859,5 +937,40 @@ describe("terminal clipboard", () => {
     view.unmount();
     keyboard[0]!(new KeyboardEvent("keydown", { key: "v", ctrlKey: true }));
     expect(apiMock.clipboardReadText).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("live command history", () => {
+  it("refreshes an already mounted history pane only after the terminal command is saved", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, recordTerminalHistory: true } });
+    let save!: (entry: { id: number; hostId: string; command: string; executedAt: number }) => void;
+    apiMock.historyRecord.mockReturnValueOnce(
+      new Promise((resolve) => {
+        save = resolve;
+      }),
+    );
+    const view = render(
+      <>
+        <TerminalPage sessionId="s1" active={false} />
+        <HistoryPage sessionId="s1" />
+      </>,
+    );
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    await waitFor(() => expect(apiMock.historyList).toHaveBeenCalledTimes(1));
+    act(() => inputs[0]!("pwd\r"));
+    expect(apiMock.historyRecord).toHaveBeenCalledWith("h1", "pwd");
+    expect(apiMock.historyList).toHaveBeenCalledTimes(1);
+    const entry = { id: 1, hostId: "h1", command: "pwd", executedAt: Date.now() };
+    apiMock.historyList.mockResolvedValue([entry]);
+    await act(async () => save(entry));
+    await view.findByText("pwd");
+    expect(apiMock.historyList).toHaveBeenCalledTimes(2);
+    apiMock.historyRecord.mockRejectedValueOnce(new Error("database unavailable"));
+    await act(async () => inputs[0]!("ls\r"));
+    expect(apiMock.historyList).toHaveBeenCalledTimes(2);
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS } }));
+    await act(async () => inputs[0]!("whoami\r"));
+    expect(apiMock.historyRecord).toHaveBeenCalledTimes(2);
+    expect(apiMock.historyList).toHaveBeenCalledTimes(2);
   });
 });

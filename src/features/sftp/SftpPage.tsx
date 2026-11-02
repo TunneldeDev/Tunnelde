@@ -1649,12 +1649,7 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
             }}
           >
             {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
-            {state.busy ? (
-              <p className="sftp-pane__empty" role="status">
-                {t("sftp.loading")}
-              </p>
-            ) : null}
-            {state.listing && fileView.total === 0 && !creating ? (
+            {!state.busy && state.listing && fileView.total === 0 && !creating ? (
               <p className="sftp-pane__empty">
                 {t(state.filter || state.filterKind !== "all" ? "sftp.noMatches" : "sftp.empty")}
               </p>
@@ -1888,7 +1883,13 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
         </div>
 
         <footer className="sftp-pane__foot">
-          <span>{state.listing ? t("sftp.itemCount", { count: fileView.total }) : "—"}</span>
+          <span className="sftp-pane__status" role="status" aria-live="polite" aria-atomic="true">
+            {state.busy
+              ? t("sftp.loading")
+              : state.listing
+                ? t("sftp.itemCount", { count: fileView.total })
+                : "—"}
+          </span>
           {selectedCount > 1 ? (
             <span className="sftp-pane__selection">
               {t("sftp.selectedCount", { count: selectedCount })}

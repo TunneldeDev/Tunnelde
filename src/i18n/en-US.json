@@ -631,7 +631,14 @@
     "open": "Open monitor",
     "live": "{{count}} samples",
     "average": "avg",
-    "peak": "peak"
+    "peak": "peak",
+    "diskIo": "Disk I/O",
+    "read": "Read",
+    "write": "Write",
+    "receive": "Receive",
+    "send": "Send",
+    "unavailable": "Unavailable",
+    "chart": "{{metric}} history"
   },
   "pluginView": {
     "title": "Plugin",

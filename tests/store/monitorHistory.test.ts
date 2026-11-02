@@ -9,6 +9,8 @@ const sample = (cpu: number) => ({
   disk: 0,
   rx: 0,
   tx: 0,
+  diskRead: null,
+  diskWrite: null,
 });
 
 describe("monitor history", () => {
