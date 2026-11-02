@@ -1,21 +1,25 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_call:
+    inputs:
+      existing_tag:
+        description: Existing draft tag to build without changing source or version
+        required: true
+        type: string
+      build_helpers:
+        type: boolean
+        default: true
   workflow_dispatch:
     inputs:
-      part:
-        description: Semantic version part to bump
-        type: choice
-        options: [patch, minor, major]
-        default: patch
-      version:
-        description: Explicit version (overrides part)
-        required: false
       existing_tag:
-        description: Resume an existing draft release without changing its tag or source
-        required: false
+        description: Resume an existing draft release using its immutable source tag
+        required: true
+        type: string
+      build_helpers:
+        description: Also rebuild optional helper Actions artifacts
+        type: boolean
+        default: false
 
 concurrency:
   group: release-${{ inputs.existing_tag || github.ref_name }}
@@ -27,8 +31,6 @@ permissions:
 jobs:
   prepare:
     name: Prepare release
-    # The bot pushes the bump commit and its tag; that tag push must not build twice.
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
@@ -36,23 +38,21 @@ jobs:
       body: ${{ steps.meta.outputs.body }}
       release_id: ${{ steps.draft.outputs.id }}
     steps:
-      - name: Validate recovery tag
-        if: inputs.existing_tag != ''
+      - name: Validate draft tag
         env:
           TAG: ${{ inputs.existing_tag }}
-          VERSION: ${{ inputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ -n "${VERSION}" ]; then
-            echo "existing_tag must be a stable version tag and cannot be combined with version" >&2
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "existing_tag must be a stable version tag" >&2
             exit 1
           fi
 
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.existing_tag || (github.event_name == 'workflow_dispatch' && 'main' || github.ref) }}
+          ref: ${{ inputs.existing_tag }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -60,38 +60,12 @@ jobs:
         with:
           node-version: 24
 
-      - name: Bump version, cut changelog and tag
-        if: github.event_name == 'workflow_dispatch' && inputs.existing_tag == ''
+      - name: Verify immutable tag against manifests and main history
         env:
-          RELEASE_PART: ${{ inputs.part }}
-          RELEASE_VERSION: ${{ inputs.version }}
-        shell: bash
+          TAG: ${{ inputs.existing_tag }}
         run: |
-          set -euo pipefail
-          if [ -n "${RELEASE_VERSION}" ]; then
-            node scripts/release/release.mjs --version "${RELEASE_VERSION}"
-          else
-            node scripts/release/release.mjs --part "${RELEASE_PART:-patch}"
-          fi
-
-          version=$(node scripts/release/version.mjs current)
-          if git rev-parse -q --verify "refs/tags/v${version}" >/dev/null; then
-            echo "tag v${version} already exists; delete the release and tag before re-dispatching" >&2
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package.json src-tauri/Cargo.toml src-tauri/Cargo.lock src-tauri/tauri.conf.json native-helpers/Cargo.toml native-helpers/Cargo.lock CHANGELOG.md
-          git commit -m "chore(release): ${version}"
-          git tag "v${version}"
-          git push origin HEAD:main
-          git push origin "v${version}"
-
-      - name: Verify tag against manifests
-        if: github.event_name == 'push' || inputs.existing_tag != ''
-        env:
-          TAG: ${{ inputs.existing_tag || github.ref_name }}
-        run: node scripts/release/version.mjs check "${TAG}"
+          node scripts/release/version.mjs check "${TAG}"
+          git merge-base --is-ancestor HEAD origin/main
 
       - name: Collect tag, version and release notes
         id: meta
@@ -100,16 +74,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [ -n "${EXISTING_TAG}" ]; then
-            tag="${EXISTING_TAG}"
-            version="${tag#v}"
-          elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            tag="${GITHUB_REF_NAME}"
-            version="${tag#v}"
-          else
-            version=$(node scripts/release/version.mjs current)
-            tag="v${version}"
-          fi
+          tag="${EXISTING_TAG}"
+          version="${tag#v}"
           echo "tag=${tag}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
           {
@@ -118,33 +84,25 @@ jobs:
             echo "RELEASE_NOTES"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Create shared draft release
+      - name: Validate and reuse the shared draft
         id: draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
-          VERSION: ${{ steps.meta.outputs.version }}
-          EXISTING_TAG: ${{ inputs.existing_tag }}
         shell: bash
         run: |
           set -euo pipefail
           gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/releases" > releases.json
           count=$(jq --arg tag "${TAG}" '[.[][] | select(.tag_name == $tag)] | length' releases.json)
-          if [ "${count}" -gt 1 ]; then
-            echo "duplicate releases for ${TAG}; consolidate their assets before retrying" >&2
+          if [ "${count}" -ne 1 ]; then
+            echo "Expected exactly one existing release draft for ${TAG}" >&2
             exit 1
-          elif [ "${count}" -eq 1 ]; then
-            id=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
-          else
-            if [ -n "${EXISTING_TAG}" ]; then
-              echo "recovery requires an existing draft release for ${TAG}" >&2
-              exit 1
-            fi
-            node scripts/release/changelog.mjs notes "${VERSION}" > release-notes.md
-            jq -n --arg tag "${TAG}" --arg name "Tunnelde ${VERSION}" --rawfile body release-notes.md \
-              '{tag_name:$tag,name:$name,body:$body,draft:true,prerelease:false}' > release.json
-            id=$(gh api --method POST "repos/${GITHUB_REPOSITORY}/releases" --input release.json --jq '.id')
           fi
+          id=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
+          source=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag) | .target_commitish' releases.json)
+          test "${source}" = "$(git rev-parse HEAD)"
+          node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md
+          gh release edit "${TAG}" --notes-file release-notes.md --title "Tunnelde ${TAG#v}" --repo "${GITHUB_REPOSITORY}"
           echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
   build:
@@ -259,8 +217,7 @@ jobs:
   helpers:
     name: Native helper ${{ matrix.asset }}
     needs: prepare
-    # Recovery rebuilds desktop assets; optional helpers remain in the original run.
-    if: inputs.existing_tag == ''
+    if: inputs.build_helpers
     strategy:
       fail-fast: false
       matrix:
@@ -321,7 +278,7 @@ jobs:
           retention-days: 30
 
   updater:
-    name: Publish updater manifest
+    name: Verify completed draft
     needs: [prepare, build]
     if: needs.prepare.outputs.tag != ''
     runs-on: ubuntu-latest
@@ -358,11 +315,15 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: gh release upload "${TAG}" latest.json --clobber --repo "${GITHUB_REPOSITORY}"
 
-      - name: Verify assets and publish completed release
+      - name: Verify assets and leave release as draft
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
           gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" --json assets > assets.json
           node scripts/release/verify-assets.mjs --tag "${TAG}" --manifest latest.json --assets assets.json
-          gh release edit "${TAG}" --draft=false --latest --repo "${GITHUB_REPOSITORY}"
+          {
+            echo "### Draft ready for review: ${TAG}"
+            echo "All desktop assets and the updater manifest passed validation."
+            echo "Review the draft in Releases and publish it manually."
+          } >> "${GITHUB_STEP_SUMMARY}"

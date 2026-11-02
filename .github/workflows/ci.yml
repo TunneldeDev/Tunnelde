@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
   pull_request:
@@ -37,6 +38,9 @@ jobs:
 
       - name: Check version manifests
         run: pnpm version:check
+
+      - name: Test release automation
+        run: node --test scripts/release/tests/*.test.mjs
 
       - name: Check translation catalogues
         run: pnpm i18n:check
