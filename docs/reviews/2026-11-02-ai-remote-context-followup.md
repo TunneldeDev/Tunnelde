@@ -1,6 +1,8 @@
 # AI remote target and tool context follow-up
 
-Status: deferred at the user's request on November 2, 2026. This records observed failures and required behavior; no fix has been verified yet.
+Status: addressed for desktop 0.25.0 and assistant plugins 1.3.0 after the user's request
+to resume plugin work. This records the original failure and the verification boundaries.
+See [current assistant setup](../ai-assistants.md).
 
 ## Observed behavior in 0.22.2
 
@@ -20,6 +22,20 @@ Status: deferred at the user's request on November 2, 2026. This records observe
 - Refresh context when targets, sessions or authorization change. Explain missing/disconnected targets accurately and provide a direct UI remedy; do not infer session absence from an unrelated path error.
 
 ## Verification required before closing
+
+Automated coverage now checks live target menus, Windows-local/POSIX path defaults,
+same-host reconnection, explicit runtime consent, permission restrictions, independent
+CLI wire protocols and an actual isolated Node subprocess for the API remote bridge.
+The bridge test simulates SSH transport and uses a loopback test provider. It does not
+authenticate vendor CLIs or verify paid providers on a real SSH installation. macOS Dock
+interaction requires platform testing. These boundaries remain relevant to the checks below.
+
+An additional read-only SSH inspection found Claude Code installed on the authorized
+test server. In a new isolated user directory, UTF-8 SFTP write/read and Claude Code
+stream-json initialization completed successfully. No user prompt/model request was
+sent, and no existing workspace or service was changed. The created test directory
+and its own entries were then removed. Vendor login and paid model execution remain
+unverified.
 
 - Windows local workspace and POSIX SSH home resolution, including `~/` input.
 - Direct switching between two connected SSH machines; disconnected/stale session handling.

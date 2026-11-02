@@ -1,5 +1,23 @@
 # Settings
 
+## Quick Access and plugin shortcuts
+
+- F1 / Ctrl/Cmd+Shift+P opens Quick Access in command mode (`>`).
+- Ctrl/Cmd+P searches files in the selected directory and existing tabs.
+- Ctrl/Cmd+Shift+F opens content search (`%`). `@` searches saved hosts.
+- Settings → Keyboard Shortcuts includes installed plugin commands and views.
+  Searching this metadata never launches a plugin. Invocation still requires runtime
+  consent and executable-plugin approval. These custom bindings are exported in profiles.
+- From a terminal, F1 and Ctrl+Shift+P open Quick Access. Ctrl+K and Ctrl+P retain
+  their shell behavior; macOS Command shortcuts remain application shortcuts.
+
+Content search uses a visible local/SSH directory, literal case-insensitive matching,
+and no shell. It skips links, hidden/build directories, binary and oversized files,
+and stops at 100 matches, 4,000 entries, 8 directory levels, 8 MiB read or 15 seconds
+(plus bounded connection setup/close). Remote editor drafts override disk search
+results and remain intact when navigating to a matching line. Local files open a
+read-only preview up to 512 KiB.
+
 Appearance starts with compact built-in palette choices and installed plugin themes. One plugin
 can supply multiple named palettes; pure theme packs need no Node. Detailed region controls live
 under the initially collapsed Customize colors disclosure, grouped into workbench and terminal.
@@ -62,7 +80,7 @@ their defaults without overwriting existing choices.
 
 | Category           | Controls                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| General            | Language, window title bar, close to tray where supported                                               |
+| General            | Language, window title bar, close to tray on Windows/Linux, background Dock visibility on macOS         |
 | Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                 |
 | Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                           |
 | Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history |
@@ -82,7 +100,15 @@ Hosts, Plugins and Trusted Hosts can move from the sidebar into workspace tabs u
 their title drag handles or title menus. Drag a panel to a tab group or workspace edge
 to reorder or split it, then drag it back to the activity bar/sidebar or choose Return
 to sidebar. Search, expansion and scroll state survive moves. Clicking its activity
-icon focuses an already-docked panel; closing its tab returns it to the sidebar.
+icon hides and restores a docked panel while retaining its position, size and live state.
+The panel menu also provides Return to sidebar. Each pane can be locked as the destination
+for new pages, independently of keyboard focus.
+
+macOS retains the main window and sessions when its close button is used. **General →
+Show in Dock while running in the background** defaults to on. With it off, closing
+the window removes its running Dock presence; use the menu-bar tray or launch the app
+again to restore it. Restoring returns normal Dock behavior. Minimizing retains the
+Dock icon, and Quit exits rather than hiding the window.
 
 Plugins settings also provide restricted mode, per-plugin approval/revocation, runtime
 selection and marketplace sources. `--safe-mode` and `--restricted-mode` force restricted
@@ -96,6 +122,10 @@ motion preference; reduced motion disables it. Right click opens a menu by defau
 Optional modes paste directly, or copy a selection and clear it before the next
 paste. Shift+right click always opens the menu. Copy-on-select is off by default.
 Automatic rendering uses WebGL when available and falls back to DOM rendering.
+The scrollable preview uses the same terminal settings. With copy-on-select enabled,
+user-triggered OSC 52 clipboard writes from mouse-aware tools such as Pi are supported;
+clipboard read requests are blocked. Command-history panes refresh after successful
+recording, including when docked elsewhere.
 
 Both the preview and connected terminals use Unicode 15 grapheme widths for Chinese,
 emoji sequences and modern terminal tables. A streaming UTF-8 decoder preserves
@@ -113,4 +143,7 @@ background requests.
 Editor preferences change presentation only: they do not reindent or rewrite
 existing content. Monitoring shares requests between views and pauses while
 hidden. Turning workspace restoration, status visibility or motion on/off does
-not close sessions or discard editor drafts.
+not close sessions or discard editor drafts. Remote CPU, memory, network and disk
+read/write use timestamped timelines with labeled dashed scales and mouse/keyboard
+sample inspection. Missing disk samples are shown as unavailable rather than invented
+zero readings.

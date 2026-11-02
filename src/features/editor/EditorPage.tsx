@@ -1,6 +1,6 @@
 import { Save } from "lucide-react";
 import { matchesCommand } from "@/lib/keyboard/registry";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -11,6 +11,7 @@ import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
+import { useEditorLocation } from "@/store/editorLocation";
 
 interface EditorPageProps {
   tabId: string;
@@ -29,6 +30,32 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const hostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
   const candidate = useSsh((state) => state.sessions.find((session) => session.hostId === hostId));
   const [reconnecting, setReconnecting] = useState(false);
+  const textarea = useRef<HTMLTextAreaElement>(null);
+  const location = useEditorLocation((state) => state.target);
+  useEffect(() => {
+    if (
+      !active ||
+      location?.tabId !== tabId ||
+      !entry ||
+      entry.loading ||
+      entry.error ||
+      !textarea.current
+    )
+      return;
+    const lines = entry.content.split("\n");
+    const line = Math.max(0, Math.min(lines.length - 1, location.line - 1));
+    const offset =
+      lines.slice(0, line).reduce((total, item) => total + item.length + 1, 0) +
+      Array.from(lines[line] ?? "")
+        .slice(0, Math.max(0, location.column - 1))
+        .join("").length;
+    const element = textarea.current;
+    element.focus();
+    element.setSelectionRange(offset, offset);
+    const lineHeight = parseFloat(getComputedStyle(element).lineHeight) || 20;
+    element.scrollTop = Math.max(0, line * lineHeight - element.clientHeight / 3);
+    useEditorLocation.getState().clear();
+  }, [active, location, tabId, entry]);
 
   const recover = async () => {
     if (!candidate || reconnecting) return;
@@ -116,6 +143,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         </div>
       ) : (
         <textarea
+          ref={textarea}
           className="editor-body"
           aria-label={entry.name}
           spellCheck={spellCheck}

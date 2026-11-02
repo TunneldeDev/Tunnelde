@@ -1,9 +1,76 @@
 import { describe, expect, it } from "vitest";
-import { applyChatEvent, normalizeChatBlock, normalizeChatConfig } from "@/lib/plugins/pluginChat";
+import {
+  applyChatEvent,
+  normalizeChatBlock,
+  normalizeChatConfig,
+  groupChatMessages,
+} from "@/lib/plugins/pluginChat";
 import { normalizeBlocks } from "@/lib/plugins/pluginView";
 import { chat } from "../fixtures/pluginChat";
 
 describe("controlled plugin chat payloads", () => {
+  it("groups work by user turn, preserves final replies and does not merge different turns", () => {
+    const turns = groupChatMessages([
+      { id: "u1", role: "user", content: "inspect" },
+      {
+        id: "a1",
+        role: "assistant",
+        content: "Checking",
+        activity: [{ id: "r", kind: "reasoning", title: "", content: "summary" }],
+      },
+      { id: "t1", role: "tool", name: "list_sessions", content: "two machines" },
+      { id: "a2", role: "assistant", content: "Final reply" },
+      { id: "u2", role: "user", content: "next" },
+    ]);
+    expect(turns).toHaveLength(2);
+    expect(turns[0]?.activity.map((item) => item.id)).toEqual(["r", "a1", "t1"]);
+    expect(turns[0]?.reply?.content).toBe("Final reply");
+    expect(turns[1]?.activity).toEqual([]);
+  });
+  it("merges bounded structured activity without duplicating text or accepting stale events", () => {
+    const initial = {
+      ...chat,
+      run: { id: "run", status: "running" as const, seq: 1 },
+      messages: [{ id: "a", role: "assistant" as const, content: "answer" }],
+    };
+    const event = {
+      type: "activity",
+      viewId: "chat",
+      sessionId: chat.activeSessionId,
+      runId: "run",
+      seq: 2,
+      messageId: "a",
+      activity: [{ id: "tool", kind: "tool", title: "ls", content: "result", html: "<script>" }],
+    };
+    const next = applyChatEvent(initial, "chat", event);
+    expect(next.messages[0]?.content).toBe("answer");
+    expect(next.messages[0]?.activity?.[0]).not.toHaveProperty("html");
+    expect(applyChatEvent(next, "chat", event)).toBe(next);
+    const delta = applyChatEvent(next, "chat", { ...event, type: "delta", seq: 3, delta: "!" });
+    expect(delta.messages[0]?.content).toBe("answer!");
+    expect(delta.messages[0]?.activity).toEqual(next.messages[0]?.activity);
+  });
+  it("preserves execution target metadata and its command without exposing arbitrary properties", () => {
+    const value = normalizeChatBlock({
+      ...chat,
+      commands: { ...chat.commands, target: "ai.target" },
+      execution: {
+        kind: "remote",
+        sessionId: "ssh",
+        hostId: "host",
+        title: "Development",
+        cwd: "/home/dev",
+        home: "/home/dev",
+        platform: "posix",
+        runtime: "/bin/node",
+        password: "secret",
+      },
+    })!;
+    expect(value.commands.target).toBe("ai.target");
+    expect(value.execution).toMatchObject({ kind: "remote", sessionId: "ssh", cwd: "/home/dev" });
+    expect(value.execution).not.toHaveProperty("password");
+  });
+
   it("preserves independent agent identity and refuses invalid profile policies", () => {
     const policy = {
       primaryProtocols: ["codex"],

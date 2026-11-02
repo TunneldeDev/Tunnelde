@@ -1,8 +1,33 @@
 .plugin-tool {
+  flex-shrink: 0;
   width: 100%;
   max-width: 1000px;
   min-width: 0;
   margin-block: 16px;
+}
+.plugin-tool__result {
+  flex: 0 0 auto;
+  width: 100%;
+  min-width: 0;
+}
+.plugin-tool__result > .td-textarea {
+  display: block;
+  width: 100%;
+  min-height: 220px;
+  height: 280px;
+  max-height: 70vh;
+  resize: vertical;
+  overflow: auto;
+  font-family: var(--td-mono);
+  line-height: 1.6;
+  white-space: pre;
+}
+.plugin-detail > *,
+.plugin-command-page > * {
+  flex-shrink: 0;
+}
+.plugin-command-page {
+  overflow: auto;
 }
 .plugin-tool__fields {
   display: grid;

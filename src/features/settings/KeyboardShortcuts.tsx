@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/form/Field";
 import { useSettings } from "@/store/settings";
 import { useDialogs } from "@/store/dialogs";
 import {
-  SHORTCUT_COMMANDS,
+  shortcutCommands,
   bindingsFor,
   displayShortcut,
   recordShortcut,
@@ -15,11 +15,14 @@ import {
   type ShortcutCommand,
 } from "@/lib/keyboard/registry";
 import "@/styles/shortcuts.css";
+import { usePlugins } from "@/store/plugins";
 
 const EMPTY_SHORTCUTS = {};
 
 export function KeyboardShortcuts() {
   const { t } = useTranslation();
+  const plugins = usePlugins((state) => state.items);
+  const definitions = useMemo(() => shortcutCommands(plugins), [plugins]);
   const overrides = useSettings((state) => state.settings.keyboardShortcuts) ?? EMPTY_SHORTCUTS;
   const update = useSettings((state) => state.update);
   const saving = useSettings((state) => state.saving);
@@ -28,24 +31,27 @@ export function KeyboardShortcuts() {
   const [editing, setEditing] = useState<{ id: string; index: number } | null>(null);
   const [draft, setDraft] = useState("");
   const label = (item: ShortcutCommand) =>
-    t(item.label as ParseKeys, { number: item.id.slice(-1) });
+    item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) });
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase();
-    return SHORTCUT_COMMANDS.filter(
+    return definitions.filter(
       (item) =>
         (!modifiedOnly || Object.hasOwn(overrides, item.id)) &&
         [
-          t(item.label as ParseKeys, { number: item.id.slice(-1) }),
+          item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
           item.id,
           t(`shortcuts.scope.${item.scope}` as ParseKeys),
-          ...bindingsFor(item.id, overrides).map((key) => displayShortcut(key)),
+          ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
+            displayShortcut(key),
+          ),
         ]
           .join(" ")
           .toLocaleLowerCase()
           .includes(needle),
     );
-  }, [query, modifiedOnly, overrides, t]);
-  const conflict = editing && draft ? shortcutConflict(editing.id, draft, overrides) : undefined;
+  }, [query, modifiedOnly, overrides, t, definitions]);
+  const conflict =
+    editing && draft ? shortcutConflict(editing.id, draft, overrides, definitions) : undefined;
   const resetOne = (id: string) => {
     const next = { ...overrides };
     delete next[id];
@@ -58,7 +64,7 @@ export function KeyboardShortcuts() {
   };
   const save = () => {
     if (!editing || !draft || conflict) return;
-    const next = [...bindingsFor(editing.id, overrides)];
+    const next = [...bindingsFor(editing.id, overrides, undefined, definitions)];
     next.splice(editing.index, editing.index < next.length ? 1 : 0, draft);
     void update({ keyboardShortcuts: { ...overrides, [editing.id]: [...new Set(next)] } });
     setEditing(null);
@@ -113,7 +119,7 @@ export function KeyboardShortcuts() {
           <p className="shortcuts__hint">{t("shortcuts.empty" as ParseKeys)}</p>
         )}
         {filtered.map((item) => {
-          const keys = bindingsFor(item.id, overrides);
+          const keys = bindingsFor(item.id, overrides, undefined, definitions);
           const active = editing?.id === item.id;
           return (
             <div className="shortcuts__row" role="listitem" key={item.id}>

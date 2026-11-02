@@ -59,7 +59,7 @@ describe("KeyboardShortcuts", () => {
       key: "k",
       ctrlKey: true,
     });
-    expect(screen.getByRole("alert").textContent).toContain("Command palette");
+    expect(screen.getByRole("alert").textContent).toContain("Quick Access");
     expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Press a shortcut" }), { key: "Escape" });
     expect(screen.queryByRole("textbox", { name: "Press a shortcut" })).toBeNull();

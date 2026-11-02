@@ -17,12 +17,19 @@ credit the reporter unless anonymity is requested.
 
 ## Design commitments
 
-- Passwords, private keys and passphrases are stored only in the operating system credential store,
-  never in SQLite or log files.
+- Saved SSH passwords, passphrases and plugin API keys use the operating system credential
+  store. SSH key files remain files: selected keys stay at their selected location, and pasted
+  keys are imported under the app data `keys/` directory with private POSIX permissions.
+  SQLite stores key paths and connection metadata rather than private-key contents.
 - The webview runs with a strict content security policy and a minimal Tauri capability set; the
   shell plugin is not used.
 - Every IPC command validates its arguments before touching storage.
-- Plugins run in separate processes and only receive the permissions declared in their manifest.
+- Direct host API calls require declared permissions and user approval. Node plugins run in
+  separate processes with the local account's permissions; this is not an OS sandbox. Restricted
+  mode stops executable plugins and blocks their host API calls without disabling theme data.
+- AI tool scopes restrict approved targets and canonical file paths. Shell commands and trusted
+  coding agents require their own OS isolation when account-wide access is unacceptable. Remote
+  credentials and runtime use require explicit selection/approval; SSH trust remains in the host UI.
 - Logs are written locally, rotated daily, and never transmitted automatically.
 
 ## Out of scope

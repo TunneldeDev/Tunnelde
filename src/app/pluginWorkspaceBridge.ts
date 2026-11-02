@@ -11,6 +11,7 @@ import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
 import { toast, type ToastVariant } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
+import { useQuickAccess } from "@/store/quickAccess";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -51,6 +52,33 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
   switch (method) {
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();
+    case "workspace.showQuickAccess": {
+      const query = params.query ?? ">";
+      if (typeof query !== "string" || query.length > 512 || query.includes("\0"))
+        throw new Error("invalid:query");
+      useQuickAccess.getState().show(query);
+      break;
+    }
+    case "workspace.setPaneLocked": {
+      const paneId = text(params, "paneId");
+      if (typeof params.locked !== "boolean") throw new Error("invalid:locked");
+      const pane = workspace.panes.find((item) => item.id === paneId);
+      if (!pane) throw new Error("pane.notFound");
+      if (!!pane.locked !== params.locked) workspace.togglePaneLock(paneId);
+      break;
+    }
+    case "workspace.resizeSplit": {
+      const splitId = text(params, "splitId"),
+        ratio = params.ratio;
+      if (typeof ratio !== "number" || !Number.isFinite(ratio) || ratio < 0.1 || ratio > 0.9)
+        throw new Error("invalid:ratio");
+      const contains = (layout: typeof workspace.layout): boolean =>
+        layout.kind === "split" &&
+        (layout.id === splitId || contains(layout.first) || contains(layout.second));
+      if (!contains(workspace.layout)) throw new Error("split.notFound");
+      workspace.resizeSplit(splitId, ratio);
+      break;
+    }
     case "workspace.openPage": {
       const kind = text(params, "kind");
       const page = PAGES.find((item) => item === kind);

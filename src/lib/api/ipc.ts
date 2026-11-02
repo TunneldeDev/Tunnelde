@@ -170,6 +170,20 @@ export const api = {
   sftpList: (sessionId: string, path?: string | null) =>
     invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),
   localList: (path?: string | null) => invoke<Listing>("local_list", { path: path ?? null }),
+  filesSearch: (
+    requestId: string,
+    sessionId: string | null,
+    root: string,
+    query: string,
+    content: boolean,
+  ) =>
+    invoke<{
+      matches: { path: string; line: number; column: number; preview: string }[];
+      limited: boolean;
+      skipped: number;
+    }>("files_search", { requestId, sessionId, root, query, content }),
+  filesSearchCancel: (requestId: string) => invoke<void>("files_search_cancel", { requestId }),
+  searchPreviewLocal: (path: string) => invoke<string>("search_preview_local", { path }),
   localHome: () => invoke<string>("local_home"),
   sftpMkdir: (sessionId: string, path: string) => invoke<void>("sftp_mkdir", { sessionId, path }),
   sftpRename: (sessionId: string, from: string, to: string, overwrite = false) =>

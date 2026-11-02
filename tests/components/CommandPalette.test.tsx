@@ -1,15 +1,28 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { useQuickAccess } from "@/store/quickAccess";
 import { useHosts } from "@/store/hosts";
 import { useNavigation } from "@/store/navigation";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
+import { usePlugins } from "@/store/plugins";
+import { useSearchRoots } from "@/store/searchRoots";
+import { useSsh } from "@/store/ssh";
+import { useEditors } from "@/store/editors";
+import { useEditorLocation } from "@/store/editorLocation";
+import { api } from "@/lib/api/ipc";
+import type { PluginInfo, SshSession } from "@/lib/api/types";
 
 beforeEach(() => {
+  useQuickAccess.setState({ query: ">" });
+  usePlugins.setState({ items: [], outputs: {} });
+  useSearchRoots.setState({ roots: {} });
+  useSsh.setState({ sessions: [] });
+  useEditors.setState({ entries: {} });
   useWorkspace.setState({
     tabs: [],
     panes: [{ id: "pane-1", tabIds: [], activeId: null }],
@@ -27,20 +40,135 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
-  it("filters commands while typing", () => {
-    render(<CommandPalette open onClose={() => undefined} />);
-    fireEvent.change(screen.getByPlaceholderText("Type a command"), {
-      target: { value: "welcome" },
+  it("keeps an existing local search root selected when choosing the same folder", async () => {
+    useQuickAccess.setState({ query: "" });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "local-root", path: "C:/work", sessionId: null }] },
     });
+    vi.spyOn(api, "pluginPickFolder").mockResolvedValue("C:/work");
+    const search = vi.spyOn(api, "filesSearch").mockResolvedValue({
+      matches: [],
+      limited: false,
+      skipped: 0,
+    });
+    render(<CommandPalette />);
+    fireEvent.click(screen.getByRole("button", { name: "Choose local search folder" }));
+    await waitFor(() => expect(api.pluginPickFolder).toHaveBeenCalled());
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "readme" } });
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(expect.any(String), null, "C:/work", "readme", false),
+    );
+  });
+
+  it("lists plugin metadata without starting a runtime and executes a command into its result page", async () => {
+    const plugin = {
+      id: "uuid",
+      name: "UUID Generator",
+      runtime: "node",
+      status: "running",
+      views: [],
+      commands: [{ id: "generate", title: "Generate UUIDs" }],
+    } as unknown as PluginInfo;
+    usePlugins.setState({ items: [plugin] });
+    const start = vi.spyOn(usePlugins.getState(), "start");
+    const run = vi
+      .spyOn(api, "pluginRun")
+      .mockResolvedValue({ text: "first-uuid\nsecond-uuid", title: "UUIDs" });
+    render(<CommandPalette />);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "> UUID Generate" } });
+    expect(start).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(run).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() =>
+      expect(usePlugins.getState().outputs.uuid?.text).toBe("first-uuid\nsecond-uuid"),
+    );
+    expect(useWorkspace.getState().activeId).toBe("plugin:uuid:$command");
+  });
+
+  it("cancels obsolete content searches, ignores their late results and preserves dirty editor text", async () => {
+    const session = { id: "ssh", hostId: "host", title: "Development" } as SshSession;
+    useSsh.setState({ sessions: [session] });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "remote-root", path: "/work", sessionId: "ssh" }] },
+    });
+    let finishOld!: (value: Awaited<ReturnType<typeof api.filesSearch>>) => void;
+    const search = vi
+      .spyOn(api, "filesSearch")
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishOld = resolve;
+          }),
+      )
+      .mockResolvedValue({
+        matches: [{ path: "/work/a.txt", line: 1, column: 1, preview: "disk: match" }],
+        limited: false,
+        skipped: 0,
+      });
+    const cancel = vi.spyOn(api, "filesSearchCancel").mockResolvedValue();
+    const tabId = "editor:ssh:/work/a.txt";
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: "ssh",
+          path: "/work/a.txt",
+          name: "a.txt",
+          content: "unsaved\nmy match",
+          baseline: "old",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    useQuickAccess.setState({ query: "% old" });
+    render(<CommandPalette />);
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(1));
+    const oldRequest = search.mock.calls[0]![0];
+    fireEvent.change(
+      screen.getByRole("combobox", {
+        name: "Search files, or type > commands, % content, @ hosts",
+      }),
+      { target: { value: "% match" } },
+    );
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(2));
+    expect(cancel).toHaveBeenCalledWith(oldRequest);
+    await act(async () =>
+      finishOld({
+        matches: [{ path: "/work/stale.txt", line: 1, column: 1, preview: "old" }],
+        limited: false,
+        skipped: 0,
+      }),
+    );
+    expect(screen.queryByText("disk: match")).toBeNull();
+    expect(screen.queryByText("/work/stale.txt:1:1")).toBeNull();
+    fireEvent.click(screen.getByRole("option", { name: /my match/ }));
+    expect(useEditors.getState().entries[tabId]?.content).toBe("unsaved\nmy match");
+    expect(useEditorLocation.getState().target).toEqual({ tabId, line: 2, column: 4 });
+  });
+  it("filters commands while typing", () => {
+    render(<CommandPalette />);
+    fireEvent.change(
+      screen.getByPlaceholderText("Search files, or type > commands, % content, @ hosts"),
+      {
+        target: { value: ">welcome" },
+      },
+    );
     expect(screen.getByRole("option", { name: "Welcome" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Settings" })).toBeNull();
   });
 
   it("runs the highlighted command with Enter", () => {
-    const onClose = vi.fn();
-    render(<CommandPalette open onClose={onClose} />);
-    const input = screen.getByPlaceholderText("Type a command");
-    fireEvent.change(input, { target: { value: "settings" } });
+    const onClose = vi.spyOn(useQuickAccess.getState(), "close");
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(
+      "Search files, or type > commands, % content, @ hosts",
+    );
+    fireEvent.change(input, { target: { value: ">settings" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
     expect(onClose).toHaveBeenCalled();
@@ -48,17 +176,22 @@ describe("CommandPalette", () => {
   });
 
   it("reports when nothing matches", () => {
-    render(<CommandPalette open onClose={() => undefined} />);
-    fireEvent.change(screen.getByPlaceholderText("Type a command"), {
-      target: { value: "zzzz" },
-    });
-    expect(screen.getByText("No command matches")).toBeTruthy();
+    render(<CommandPalette />);
+    fireEvent.change(
+      screen.getByPlaceholderText("Search files, or type > commands, % content, @ hosts"),
+      {
+        target: { value: ">zzzz" },
+      },
+    );
+    expect(screen.getByText("No results")).toBeTruthy();
   });
 
   it("opens the trusted-host sidebar without creating a tab", () => {
-    render(<CommandPalette open onClose={() => undefined} />);
-    const input = screen.getByPlaceholderText("Type a command");
-    fireEvent.change(input, { target: { value: "Trusted hosts" } });
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(
+      "Search files, or type > commands, % content, @ hosts",
+    );
+    fireEvent.change(input, { target: { value: ">Trusted hosts" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(useNavigation.getState().activeSidebar).toBe("knownHosts");
     expect(useNavigation.getState().sidebarVisible).toBe(true);
@@ -68,9 +201,11 @@ describe("CommandPalette", () => {
   it("keeps the panel toggle accessible when the status bar is hidden", () => {
     const update = vi.fn().mockResolvedValue(true);
     useSettings.setState({ settings: { ...DEFAULT_SETTINGS, showStatusBar: false }, update });
-    render(<CommandPalette open onClose={() => undefined} />);
-    const input = screen.getByPlaceholderText("Type a command");
-    fireEvent.change(input, { target: { value: "Show panel" } });
+    render(<CommandPalette />);
+    const input = screen.getByPlaceholderText(
+      "Search files, or type > commands, % content, @ hosts",
+    );
+    fireEvent.change(input, { target: { value: ">Show panel" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(update).toHaveBeenCalledWith({ rightPanel: true });
   });

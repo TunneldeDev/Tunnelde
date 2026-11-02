@@ -11,7 +11,9 @@ imports and exports. Remove every binding to disable a command, reset an
 individual command with its reset button, or choose **Reset all shortcuts**.
 File, editor and terminal commands apply within their respective views and take
 precedence over workbench commands. Ordinary text inputs retain editing keys;
-Settings and the command palette remain accessible. Input method composition
+Settings and Quick Access remain accessible. Installed plugin commands and views
+also appear here, even before their runtime starts, and can have custom bindings.
+Input method composition
 and AltGr are preserved. Widget navigation such as arrow keys, Tab and Escape
 is not remapped by the application shortcut editor.
 
@@ -19,7 +21,9 @@ The following tables show the default bindings.
 
 | Keys                           | Action                                                |
 | ------------------------------ | ----------------------------------------------------- |
-| `Ctrl+K`, `Ctrl+Shift+P`       | Command palette                                       |
+| `F1`, `Ctrl+K`, `Ctrl+Shift+P` | Quick Access: `>` application and plugin commands     |
+| `Ctrl+P`                       | Quick Access: files and open tabs                     |
+| `Ctrl+Shift+F`                 | Quick Access: `%` file contents                       |
 | `Ctrl+N`                       | New host                                              |
 | `Ctrl+B`                       | Show / hide the current sidebar                       |
 | `Ctrl+,`                       | Settings                                              |
@@ -37,12 +41,18 @@ The following tables show the default bindings.
 On macOS, the Command key also works for these actions. In a terminal,
 ordinary Control shortcuts stay available to the shell, including `Ctrl+K`,
 `Ctrl+N`, `Ctrl+B`, `Ctrl+W`, `Ctrl+\` and Control with a number. Use
-`Ctrl+Shift+P` for the command palette, `Ctrl+Shift+N` for a new host,
+`F1` or `Ctrl+Shift+P` for Quick Access, `Ctrl+Shift+N` for a new host,
 `Cmd+W` on macOS or `Ctrl+Shift+W` to close the terminal tab/group.
 Settings, tab switching and font-size shortcuts remain available in terminals.
 Custom workbench Control shortcuts in terminals require Shift unless the
 command is Settings, Keyboard Shortcuts, tab switching or font sizing.
 Dialogs and input composition take precedence over workspace shortcuts.
+
+In Quick Access, type `>` followed by a command or plugin name (for example
+`> UUID`) to run it. Type `%` to search contents, or `@` to find a saved host.
+File and content searches use the selected directory, with connected file panes
+and remote editors offered as roots; the folder button selects a local directory.
+Local results open a read-only preview. Remote results open the editor at the match.
 
 Terminal clipboard:
 

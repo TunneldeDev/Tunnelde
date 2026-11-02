@@ -99,6 +99,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("files.local.copy", ["fs.read", "fs.write"], "{from:string,to:string,overwrite?:boolean}", "Copy local files/directories through the existing copy service."),
     method!("files.local.delete", ["fs.write"], "{path:string,isDir:boolean}", "Delete a local file or directory."),
     method!("files.sftp.list", ["sftp.read"], "{sessionId:string,path?:string}", "List a remote directory using an active SSH session."),
+    method!("files.sftp.resolveDirectory", ["sftp.read"], "{sessionId:string,path?:string}", "Resolve the SSH account home and an optional working directory through SFTP without listing entries or executing a shell. Return {home,path}. Supports ~ and relative paths."),
     method!("files.sftp.readText", ["sftp.read"], "{sessionId:string,path:string}", "Read remote UTF-8 text through the editor service; API response size limits apply."),
     method!("files.sftp.writeText", ["sftp.write"], "{sessionId:string,path:string,content:string}", "Replace existing remote text through the editor service."),
     method!("files.sftp.createFile", ["sftp.write"], "{sessionId:string,path:string}", "Create an empty remote file without replacing an existing file."),
@@ -128,6 +129,9 @@ pub const METHODS: &[ApiMethod] = &[
     method!("workspace.close", ["workspace.write"], "{tabId:string}", "Close a tab; dirty editors retain the normal user confirmation. Result reports pending confirmation."),
     method!("workspace.split", ["workspace.write"], "{tabId:string,direction:row|column,position?:before|after,targetPaneId?:string}", "Move a tab into a split group."),
     method!("workspace.move", ["workspace.write"], "{tabId:string,paneId:string,beforeTabId?:string|null}", "Move or reorder an existing tab."),
+    method!("workspace.showQuickAccess", ["workspace.write"], "{query?:string}", "Open Quick Access with an optional query. Never execute a command automatically."),
+    method!("workspace.setPaneLocked", ["workspace.write"], "{paneId:string,locked:boolean}", "Set the destination lock on an existing pane."),
+    method!("workspace.resizeSplit", ["workspace.write"], "{splitId:string,ratio:number}", "Resize an existing split with a ratio between 0.1 and 0.9."),
     method!("workspace.returnSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Return a docked list to the sidebar."),
     method!("clipboard.readText", ["clipboard.read"], "{}", "Read the system text clipboard."),
     method!("clipboard.writeText", ["clipboard.write"], "{text:string}", "Replace the system text clipboard."),
@@ -355,6 +359,14 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             commands::local_delete(field(&params, "path")?, field(&params, "isDir")?)?;
             Ok(Value::Null)
         }
+        "files.sftp.resolveDirectory" => encode(
+            crate::ssh::files::remote_resolve_directory(
+                app,
+                &field::<String>(&params, "sessionId")?,
+                optional(&params, "path")?,
+            )
+            .await?,
+        ),
         "files.sftp.list" => encode(
             commands::sftp_list(
                 app.clone(),

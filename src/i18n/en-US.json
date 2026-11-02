@@ -714,9 +714,19 @@
     "empty": "Add a host to get started"
   },
   "palette": {
-    "title": "Command palette",
-    "placeholder": "Type a command",
-    "empty": "No command matches"
+    "title": "Quick Access",
+    "placeholder": "Search files, or type > commands, % content, @ hosts",
+    "empty": "No results",
+    "files": "Quick Open Files",
+    "content": "Search File Contents",
+    "openTab": "Open tab",
+    "modes": "> Commands · % File contents · @ Hosts · No prefix: files and open tabs",
+    "scope": "Search directory",
+    "chooseFolder": "Choose local search folder",
+    "noRoot": "Open a file browser or choose a local folder to search.",
+    "typeMore": "Type at least 2 characters to search this directory.",
+    "limits": "Search is bounded to 100 results, 4,000 entries and 15 seconds. Hidden/build folders and links are excluded. Skipped files: {{count}}.",
+    "localPreview": "Local file preview (read-only)"
   },
   "window": {
     "controls": "Window controls",
@@ -938,9 +948,17 @@
     "readOnlyUnavailable": "This CLI does not provide a verifiable read-only sandbox. Use Tunnelde AI with an API connection for read-only tasks.",
     "placeholderNamed": "Chat with {{name}}…",
     "executionLocation": "Execution location",
+    "executionSettings": "Workspace and execution settings",
+    "legacyDeployment": "Advanced: persistent remote supervisor",
+    "connectTargetHint": "Connect a host in the Hosts sidebar to run remotely",
+    "targetHint": "The model connection and execution target are independent. Changing a conversation's machine or workspace starts a new conversation and keeps the previous one.",
+    "cwdAutoHint": "Leave empty to use the selected machine's home directory. Relative paths and ~ are resolved automatically.",
+    "agentExecutableHint": "Optional override for the installed agent executable on this machine. Remote defaults: codex, claude or pi.",
+    "remoteNodeConsent": "Selecting this target authorizes using this remote runtime. Tunnelde AI uploads its own files to a fresh user directory and runs there over SSH. No Node is installed and no services are changed.",
+    "useTarget": "Use this target",
     "localExecution": "Local",
     "remoteExecution": "SSH",
-    "executionLocationHint": "Change the execution location in provider settings.",
+    "executionLocationHint": "Choose Local or a connected SSH host from Execution location. The working directory is resolved automatically.",
     "credentialsHint": "Secrets are stored in your operating-system credential vault. Saved secrets are never displayed.",
     "profiles": "Providers",
     "mcp": "MCP servers",
@@ -1037,7 +1055,12 @@
     "streaming": "Responding…",
     "enterHint": "Enter to send · Shift+Enter for a new line",
     "stop": "Stop",
-    "send": "Send"
+    "send": "Send",
+    "targetDisconnected": "The selected SSH connection is disconnected.",
+    "process": "Activity",
+    "reasoning": "Thinking",
+    "steps": "{{count}} steps",
+    "activityRunning": "Working…"
   },
   "pluginApi": {
     "messageTitle": "Plugin · {{name}}",
@@ -1129,5 +1152,11 @@
     "invalidStorage": "Saved profiles could not be read. Current settings are unaffected.",
     "notFound": "This profile no longer exists. Refresh the profiles and try again.",
     "limit": "You can save up to 32 settings profiles. Delete one to add another."
+  },
+  "search": {
+    "invalidRoot": "Choose an existing absolute directory.",
+    "invalidQuery": "Enter 2 or more characters (up to 256 bytes).",
+    "busy": "Too many searches. Please try again.",
+    "timeout": "Search timed out; narrow the search directory."
   }
 }

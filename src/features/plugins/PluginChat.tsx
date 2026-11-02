@@ -7,7 +7,6 @@ import {
   ChevronDown,
   CircleHelp,
   Code2,
-  Copy,
   History,
   Laptop,
   Plus,
@@ -35,11 +34,12 @@ import {
   type PluginChatBlock,
 } from "@/lib/plugins/pluginChat";
 import { PLUGIN_INPUT_MAX_BYTES } from "@/lib/plugins/pluginView";
-import { copyText } from "@/lib/session/clipboard";
 import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/pluginSecurity";
 import { useDialogs } from "@/store/dialogs";
-import { PluginMarkdown } from "./PluginMarkdown";
+import { useSsh } from "@/store/ssh";
+import { PluginChatMessages } from "./PluginChatMessages";
 import { PluginChatConfigDialog } from "./PluginChatConfig";
+import { PluginExecutionDialog } from "./PluginExecutionDialog";
 import "@/styles/pluginChat.css";
 
 export function PluginChat({
@@ -61,6 +61,8 @@ export function PluginChat({
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [configOpen, setConfigOpen] = useState(false);
+  const [executionOpen, setExecutionOpen] = useState<string | null>(null);
+  const sshSessions = useSsh((state) => state.sessions);
   const [atBottom, setAtBottom] = useState(true);
   const viewport = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
@@ -135,6 +137,7 @@ export function PluginChat({
     (message) =>
       message.role !== "assistant" ||
       message.content.trim() ||
+      !!message.activity?.length ||
       (message.status === "streaming" && active),
   );
   const draft = drafts[block.activeSessionId] ?? "";
@@ -175,11 +178,22 @@ export function PluginChat({
   const readOnlyUnavailable =
     block.mode === "readOnly" &&
     unsupportedReadOnly(profile?.protocol || primaryProtocol || undefined);
-  const remoteSession = profile?.remote?.sessionId || profile?.sessionId;
-  const location = remoteSession ? t("pluginChat.remoteExecution") : t("pluginChat.localExecution");
-  const locationDetail = remoteSession
-    ? [remoteSession, profile?.remote?.directory || profile?.cwd].filter(Boolean).join(" · ")
-    : profile?.cwd;
+  const remoteSession =
+    block.execution?.kind === "remote"
+      ? block.execution.sessionId
+      : block.execution?.kind === "local"
+        ? undefined
+        : profile?.remote?.sessionId || profile?.sessionId;
+  const location = remoteSession
+    ? block.execution?.title ||
+      sshSessions.find((item) => item.id === remoteSession)?.title ||
+      t("pluginChat.remoteExecution")
+    : t("pluginChat.localExecution");
+  const locationDetail =
+    block.execution?.cwd ||
+    (remoteSession
+      ? [remoteSession, profile?.remote?.directory || profile?.cwd].filter(Boolean).join(" · ")
+      : profile?.cwd);
   const modeIcons = {
     ask: <CircleHelp size={13} />,
     approve: <CheckCheck size={13} />,
@@ -211,6 +225,7 @@ export function PluginChat({
         await api.pluginRun(pluginId, name, {
           sessionId: current.current.activeSessionId,
           runId: current.current.run?.id ?? null,
+          ...(name === current.current.commands.target ? { mode: current.current.mode } : {}),
           ...input,
           _locale: i18n.resolvedLanguage ?? i18n.language,
         }),
@@ -219,6 +234,15 @@ export function PluginChat({
       const next = normalizeChatBlock(result.block ?? (result.type === "chat" ? result : null));
       if (next) {
         const previous = current.current;
+        if (
+          name === previous.commands.target &&
+          previous.activeSessionId !== next.activeSessionId
+        ) {
+          setDrafts((saved) => ({
+            ...saved,
+            [next.activeSessionId]: saved[previous.activeSessionId] || "",
+          }));
+        }
         if (
           previous.activeSessionId !== next.activeSessionId ||
           previous.run?.id !== next.run?.id ||
@@ -359,25 +383,64 @@ export function PluginChat({
         </>
       }
       items={[
-        ...executionProfiles.map((item) => {
-          const remote = item.remote?.sessionId || item.sessionId;
-          return {
-            label: `${t(remote ? "pluginChat.remoteExecution" : "pluginChat.localExecution")} · ${item.name || item.model || item.id}`,
-            description: remote
-              ? [remote, item.remote?.directory || item.cwd].filter(Boolean).join(" · ")
-              : item.cwd || undefined,
-            checked: item.id === block.modelId,
-            disabled: block.mode === "readOnly" && unsupportedReadOnly(item.protocol),
-            icon: remote ? <Server size={13} /> : <Laptop size={13} />,
-            onSelect: () => update((previous) => ({ ...previous, modelId: item.id })),
-          };
-        }),
+        ...(block.commands.target
+          ? [
+              {
+                label: t("pluginChat.localExecution"),
+                icon: <Laptop size={13} />,
+                checked: !remoteSession,
+                onSelect: () => {
+                  if (block.execution?.kind === "local") return;
+                  void command(block.commands.target, {
+                    targetId: "local",
+                    modelId: block.modelId,
+                  });
+                },
+              },
+              ...sshSessions.map((item) => ({
+                label: item.title || item.address,
+                description: item.address,
+                icon: <Server size={13} />,
+                checked: remoteSession === item.id,
+                onSelect: () => {
+                  if (remoteSession === item.id) return;
+                  if (presentation === "copilot") setExecutionOpen(item.id);
+                  else
+                    void command(block.commands.target, {
+                      targetId: item.id,
+                      modelId: block.modelId,
+                    });
+                },
+              })),
+              ...(!sshSessions.length
+                ? [{ label: t("pluginChat.connectTargetHint"), disabled: true, onSelect: () => {} }]
+                : []),
+              {
+                label: t("pluginChat.executionSettings"),
+                separatorBefore: true,
+                icon: <Settings2 size={13} />,
+                onSelect: () => setExecutionOpen(remoteSession || "local"),
+              },
+            ]
+          : executionProfiles.map((item) => {
+              const remote = item.remote?.sessionId || item.sessionId;
+              return {
+                label: `${t(remote ? "pluginChat.remoteExecution" : "pluginChat.localExecution")} · ${item.name || item.model || item.id}`,
+                description: remote
+                  ? [remote, item.remote?.directory || item.cwd].filter(Boolean).join(" · ")
+                  : item.cwd || undefined,
+                checked: item.id === block.modelId,
+                disabled: block.mode === "readOnly" && unsupportedReadOnly(item.protocol),
+                icon: remote ? <Server size={13} /> : <Laptop size={13} />,
+                onSelect: () => update((previous) => ({ ...previous, modelId: item.id })),
+              };
+            })),
         ...(block.commands.configure
           ? [
               {
                 label: configureLabel,
                 icon: <Settings2 size={13} />,
-                separatorBefore: executionProfiles.length > 0,
+                separatorBefore: !!block.commands.target || executionProfiles.length > 0,
                 onSelect: openConfig,
               },
             ]
@@ -387,6 +450,35 @@ export function PluginChat({
   );
   return (
     <section className={`plugin-chat plugin-chat--${presentation}`} aria-label={title}>
+      {executionOpen ? (
+        <PluginExecutionDialog
+          targetId={executionOpen}
+          targetName={
+            sshSessions.find((item) => item.id === executionOpen)?.title ||
+            (executionOpen !== "local" ? block.execution?.title : null) ||
+            (executionOpen !== "local" ? t("pluginChat.remoteExecution") : null) ||
+            t("pluginChat.localExecution")
+          }
+          execution={
+            block.execution?.sessionId === executionOpen ||
+            (executionOpen === "local" && block.execution?.kind === "local")
+              ? block.execution
+              : undefined
+          }
+          apiAssistant={presentation === "copilot"}
+          busy={!!busy}
+          error={error}
+          onClose={() => setExecutionOpen(null)}
+          onSave={async (input) => {
+            const ok = await command(block.commands.target, {
+              ...input,
+              targetId: executionOpen,
+              modelId: block.modelId,
+            });
+            if (ok) setExecutionOpen(null);
+          }}
+        />
+      ) : null}
       {presentation === "claude" || presentation === "pi" ? (
         <div className="plugin-chat__brand-header">
           <BrandIcon size={18} aria-hidden="true" />
@@ -498,46 +590,7 @@ export function PluginChat({
             ) : null}
           </div>
         ) : null}
-        {messages.map((message) =>
-          message.role === "tool" ? (
-            <article className="plugin-chat__message is-tool" key={message.id}>
-              <details className="plugin-chat__tool-output">
-                <summary>{t("pluginChat.toolOutput")}</summary>
-                <div className="plugin-chat__message-head">
-                  <strong>{t("pluginChat.roles.tool")}</strong>
-                  <IconButton
-                    size="sm"
-                    label={t("pluginChat.copyToolOutput")}
-                    onClick={() => void copyText(message.content)}
-                  >
-                    <Copy size={12} />
-                  </IconButton>
-                </div>
-                <pre tabIndex={0}>{message.content}</pre>
-              </details>
-            </article>
-          ) : (
-            <article className={`plugin-chat__message is-${message.role}`} key={message.id}>
-              <div className="plugin-chat__message-head">
-                <strong>
-                  {message.role === "assistant" ? title : t(`pluginChat.roles.${message.role}`)}
-                </strong>
-                <IconButton
-                  size="sm"
-                  label={t("pluginChat.copyMessage")}
-                  onClick={() => void copyText(message.content)}
-                >
-                  <Copy size={12} />
-                </IconButton>
-              </div>
-              {message.role === "assistant" ? (
-                <PluginMarkdown source={message.content} />
-              ) : (
-                <div className="plugin-chat__plain">{message.content}</div>
-              )}
-            </article>
-          ),
-        )}
+        <PluginChatMessages messages={messages} title={title} active={active} />
         {block.approvals.map((approval) => (
           <article
             className="plugin-chat__approval"
@@ -762,6 +815,7 @@ export function PluginChat({
           config={block.config}
           title={block.title}
           profilePolicy={block.profilePolicy}
+          managedTargets={!!block.commands.target}
           busy={!!busy}
           error={error}
           onClose={() => {

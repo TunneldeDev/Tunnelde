@@ -12,6 +12,7 @@ import { useHosts } from "@/store/hosts";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
+import { useQuickAccess } from "@/store/quickAccess";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -92,6 +93,26 @@ afterEach(() => {
 });
 
 describe("plugin workspace bridge authorization and live state", () => {
+  it("opens a query without executing it and applies pane locks idempotently", async () => {
+    await runPluginWorkspaceRequest(request("workspace.showQuickAccess", { query: "> UUID" }));
+    expect(useQuickAccess.getState().query).toBe("> UUID");
+    expect(useWorkspace.getState().tabs).toEqual([]);
+    for (let i = 0; i < 2; i++)
+      await runPluginWorkspaceRequest(
+        request("workspace.setPaneLocked", { paneId: "pane-1", locked: true }),
+      );
+    expect(useWorkspace.getState().panes[0]?.locked).toBe(true);
+    await expect(
+      runPluginWorkspaceRequest(
+        request("workspace.resizeSplit", { splitId: "missing", ratio: 0.4 }),
+      ),
+    ).rejects.toThrow("split.notFound");
+    await expect(
+      runPluginWorkspaceRequest(
+        request("workspace.resizeSplit", { splitId: "missing", ratio: Number.NaN }),
+      ),
+    ).rejects.toThrow("invalid:ratio");
+  });
   it("does not mutate the workspace when backend authorization fails", async () => {
     mocks.invoke.mockRejectedValue(new Error("permissionDenied"));
     await expect(

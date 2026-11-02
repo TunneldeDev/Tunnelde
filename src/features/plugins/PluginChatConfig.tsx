@@ -167,6 +167,7 @@ export function PluginChatConfigDialog({
   config,
   title,
   profilePolicy,
+  managedTargets = false,
   busy,
   error,
   onClose,
@@ -175,6 +176,7 @@ export function PluginChatConfigDialog({
   config?: PluginChatConfig;
   title?: string;
   profilePolicy?: ChatProfilePolicy;
+  managedTargets?: boolean;
   busy: boolean;
   error: string | null;
   onClose: () => void;
@@ -288,18 +290,25 @@ export function PluginChatConfigDialog({
       }
     >
       <p className="settings-hint">{t("pluginChat.credentialsHint")}</p>
+      {managedTargets ? (
+        <p className="settings-hint">{t("pluginChat.executionLocationHint")}</p>
+      ) : null}
       <div className="plugin-chat-config__tabs" role="group" aria-label={dialogTitle}>
-        {(["profiles", ...(splitReviewers ? ["reviewers" as const] : []), "scope"] as const).map(
-          (item) => (
-            <Button
-              key={item}
-              variant={section === item ? "secondary" : "ghost"}
-              onClick={() => setSection(item)}
-            >
-              {t(item === "reviewers" ? "pluginChat.reviewerProfiles" : `pluginChat.${item}`)}
-            </Button>
-          ),
-        )}
+        {(
+          [
+            "profiles",
+            ...(splitReviewers ? ["reviewers" as const] : []),
+            ...(!managedTargets ? ["scope" as const] : []),
+          ] as const
+        ).map((item) => (
+          <Button
+            key={item}
+            variant={section === item ? "secondary" : "ghost"}
+            onClick={() => setSection(item)}
+          >
+            {t(item === "reviewers" ? "pluginChat.reviewerProfiles" : `pluginChat.${item}`)}
+          </Button>
+        ))}
       </div>
       <fieldset className="plugin-chat-config" disabled={busy || picking}>
         {section !== "scope" ? (
@@ -424,83 +433,86 @@ export function PluginChatConfigDialog({
                             : undefined
                         }
                       />
-                      <div className="plugin-chat-config__row">
-                        <span>{t("pluginChat.remoteEnabled")}</span>
-                        <Switch
-                          label={t("pluginChat.remoteEnabled")}
-                          checked={!!item.remote}
-                          onChange={(enabled) =>
-                            profile(item.id, {
-                              remote: enabled
-                                ? {
-                                    sessionId: item.sessionId,
-                                    platform: "posix",
-                                    directory: "",
-                                    runnerPath: "",
-                                    executable: "",
-                                  }
-                                : undefined,
-                              sessionId: "",
-                            })
-                          }
-                        />
-                      </div>
-                      {item.remote ? (
-                        <>
-                          <Field label={t("pluginChat.remoteSession")}>
-                            <SessionChoice
-                              label={t("pluginChat.remoteSession")}
-                              value={item.remote.sessionId}
-                              onChange={(sessionId) =>
-                                profile(item.id, { remote: { ...item.remote!, sessionId } })
+                      <details>
+                        <summary>{t("pluginChat.legacyDeployment")}</summary>
+                        <div className="plugin-chat-config__row">
+                          <span>{t("pluginChat.remoteEnabled")}</span>
+                          <Switch
+                            label={t("pluginChat.remoteEnabled")}
+                            checked={!!item.remote}
+                            onChange={(enabled) =>
+                              profile(item.id, {
+                                remote: enabled
+                                  ? {
+                                      sessionId: item.sessionId,
+                                      platform: "posix",
+                                      directory: "",
+                                      runnerPath: "",
+                                      executable: "",
+                                    }
+                                  : undefined,
+                                sessionId: "",
+                              })
+                            }
+                          />
+                        </div>
+                        {item.remote ? (
+                          <>
+                            <Field label={t("pluginChat.remoteSession")}>
+                              <SessionChoice
+                                label={t("pluginChat.remoteSession")}
+                                value={item.remote.sessionId}
+                                onChange={(sessionId) =>
+                                  profile(item.id, { remote: { ...item.remote!, sessionId } })
+                                }
+                              />
+                            </Field>
+                            <Field label={t("pluginChat.remotePlatform")}>
+                              <Select
+                                label={t("pluginChat.remotePlatform")}
+                                value={item.remote.platform}
+                                options={[
+                                  { value: "posix", label: "POSIX (Linux / macOS)" },
+                                  { value: "windows", label: "Windows" },
+                                ]}
+                                onChange={(platform) =>
+                                  profile(item.id, {
+                                    remote: {
+                                      ...item.remote!,
+                                      platform: platform as "posix" | "windows",
+                                    },
+                                  })
+                                }
+                              />
+                            </Field>
+                            <ConfigInput
+                              label={t("pluginChat.remoteDirectory")}
+                              value={item.remote.directory}
+                              onChange={(directory) =>
+                                profile(item.id, { remote: { ...item.remote!, directory } })
                               }
                             />
-                          </Field>
-                          <Field label={t("pluginChat.remotePlatform")}>
-                            <Select
-                              label={t("pluginChat.remotePlatform")}
-                              value={item.remote.platform}
-                              options={[
-                                { value: "posix", label: "POSIX (Linux / macOS)" },
-                                { value: "windows", label: "Windows" },
-                              ]}
-                              onChange={(platform) =>
-                                profile(item.id, {
-                                  remote: {
-                                    ...item.remote!,
-                                    platform: platform as "posix" | "windows",
-                                  },
-                                })
+                            <ConfigInput
+                              label={t("pluginChat.remoteNode")}
+                              value={item.remote.executable}
+                              onChange={(executable) =>
+                                profile(item.id, { remote: { ...item.remote!, executable } })
                               }
                             />
-                          </Field>
-                          <ConfigInput
-                            label={t("pluginChat.remoteDirectory")}
-                            value={item.remote.directory}
-                            onChange={(directory) =>
-                              profile(item.id, { remote: { ...item.remote!, directory } })
-                            }
-                          />
-                          <ConfigInput
-                            label={t("pluginChat.remoteNode")}
-                            value={item.remote.executable}
-                            onChange={(executable) =>
-                              profile(item.id, { remote: { ...item.remote!, executable } })
-                            }
-                          />
-                          <ConfigInput
-                            label={t("pluginChat.helperBinary")}
-                            value={item.helperBinary ?? ""}
-                            onChange={(helperBinary) => profile(item.id, { helperBinary })}
-                            onBrowse={() =>
-                              void pick("file", t("pluginChat.helperBinary"), (helperBinary) =>
-                                profile(item.id, { helperBinary }),
-                              )
-                            }
-                          />
-                          <p className="settings-hint">{t("pluginChat.remoteHint")}</p>
-                        </>
-                      ) : null}
+                            <ConfigInput
+                              label={t("pluginChat.helperBinary")}
+                              value={item.helperBinary ?? ""}
+                              onChange={(helperBinary) => profile(item.id, { helperBinary })}
+                              onBrowse={() =>
+                                void pick("file", t("pluginChat.helperBinary"), (helperBinary) =>
+                                  profile(item.id, { helperBinary }),
+                                )
+                              }
+                            />
+                            <p className="settings-hint">{t("pluginChat.remoteHint")}</p>
+                          </>
+                        ) : null}
+                      </details>
                     </>
                   ) : (
                     <>

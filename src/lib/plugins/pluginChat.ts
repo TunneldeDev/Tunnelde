@@ -52,6 +52,63 @@ export interface ChatMessage {
   role: "user" | "assistant" | "system" | "tool";
   content: string;
   status?: string;
+  name?: string;
+  activity?: ChatActivity[];
+}
+export interface ChatActivity {
+  id: string;
+  kind: "reasoning" | "tool" | "commentary";
+  title: string;
+  content: string;
+  status?: string;
+}
+
+/** Keep each user turn's intermediate work together and its final reply readable. */
+export function groupChatMessages(messages: ChatMessage[]) {
+  const turns: {
+    id: string;
+    user?: ChatMessage;
+    activity: ChatActivity[];
+    reply?: ChatMessage;
+    notices: ChatMessage[];
+  }[] = [];
+  for (const message of messages) {
+    if (message.role === "user" || !turns.length)
+      turns.push({
+        id: message.id,
+        ...(message.role === "user" ? { user: message } : {}),
+        activity: [],
+        notices: [],
+      });
+    const turn = turns[turns.length - 1]!;
+    if (message.role === "user") continue;
+    if (message.role === "system") {
+      turn.notices.push(message);
+      continue;
+    }
+    if (turn.reply?.content)
+      turn.activity.push({
+        id: turn.reply.id,
+        kind: "commentary",
+        title: "",
+        content: turn.reply.content,
+        status: turn.reply.status,
+      });
+    turn.reply = undefined;
+    if (message.role === "tool")
+      turn.activity.push({
+        id: message.id,
+        kind: "tool",
+        title: message.name ?? "",
+        content: message.content,
+        status: message.status,
+      });
+    else {
+      turn.activity.push(...(message.activity ?? []));
+      turn.reply = message;
+    }
+  }
+  return turns;
 }
 export interface ChatApproval {
   id: string;
@@ -80,6 +137,7 @@ export interface PluginChatBlock {
     session?: string;
     approve?: string;
     recover?: string;
+    target?: string;
   };
   sessions: { id: string; title: string }[];
   activeSessionId: string;
@@ -97,6 +155,20 @@ export interface PluginChatBlock {
   configured: boolean;
   notice: string;
   config?: PluginChatConfig;
+  execution?: ChatExecution | null;
+}
+
+export interface ChatExecution {
+  kind: "local" | "remote";
+  sessionId?: string;
+  hostId?: string;
+  title: string;
+  address?: string;
+  cwd: string;
+  home: string;
+  platform: "windows" | "posix";
+  executable?: string;
+  runtime?: string;
 }
 
 export function chatRecord(value: unknown): Record<string, unknown> {
@@ -225,7 +297,7 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
       send: id(commands.send),
       stop: id(commands.stop),
       ...Object.fromEntries(
-        ["configure", "session", "approve", "recover"].flatMap((key) =>
+        ["configure", "session", "approve", "recover", "target"].flatMap((key) =>
           id(commands[key]) ? [[key, id(commands[key])]] : [],
         ),
       ),
@@ -262,6 +334,28 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
                   role,
                   content: text(message.content, 262144),
                   status: text(message.status),
+                  ...(message.name ? { name: text(message.name, 256) } : {}),
+                  ...(Array.isArray(message.activity)
+                    ? {
+                        activity: unique(
+                          message.activity.slice(-64).flatMap((raw) => {
+                            const item = chatRecord(raw);
+                            return id(item.id) &&
+                              ["reasoning", "tool", "commentary"].includes(String(item.kind))
+                              ? [
+                                  {
+                                    id: id(item.id),
+                                    kind: item.kind as ChatActivity["kind"],
+                                    title: text(item.title, 256),
+                                    content: text(item.content, 16384),
+                                    status: text(item.status, 64),
+                                  },
+                                ]
+                              : [];
+                          }),
+                        ),
+                      }
+                    : {}),
                 },
               ]
             : [];
@@ -318,6 +412,26 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
     configured: raw.configured === true,
     notice: text(raw.notice),
     config: normalizeChatConfig(raw.config),
+    ...(raw.execution === null ? { execution: null } : {}),
+    ...(chatRecord(raw.execution).kind === "local" || chatRecord(raw.execution).kind === "remote"
+      ? {
+          execution: {
+            kind: chatRecord(raw.execution).kind as ChatExecution["kind"],
+            sessionId: text(chatRecord(raw.execution).sessionId, 128),
+            hostId: text(chatRecord(raw.execution).hostId, 128),
+            title: text(chatRecord(raw.execution).title, 256),
+            address: text(chatRecord(raw.execution).address, 256),
+            cwd: text(chatRecord(raw.execution).cwd),
+            home: text(chatRecord(raw.execution).home),
+            platform:
+              chatRecord(raw.execution).platform === "windows"
+                ? ("windows" as const)
+                : ("posix" as const),
+            executable: text(chatRecord(raw.execution).executable),
+            runtime: text(chatRecord(raw.execution).runtime),
+          },
+        }
+      : {}),
   };
 }
 
@@ -348,12 +462,37 @@ export function applyChatEvent(
       : block;
   }
   const run = block.run!;
+  if (event.type === "activity" && id(event.messageId) && Array.isArray(event.activity)) {
+    const previous = block.messages.find((message) => message.id === event.messageId);
+    if (previous && previous.role !== "assistant") return block;
+    const normalized = normalizeChatBlock({
+      ...block,
+      messages: [
+        {
+          ...previous,
+          id: event.messageId,
+          role: "assistant",
+          content: previous?.content ?? "",
+          activity: event.activity,
+        },
+      ],
+    });
+    const message = normalized?.messages[0];
+    if (!message) return block;
+    return {
+      ...block,
+      run: { ...run, seq },
+      messages: previous
+        ? block.messages.map((item) => (item.id === message.id ? message : item))
+        : [...block.messages.slice(-499), message],
+    };
+  }
   if (event.type === "delta" && id(event.messageId) && typeof event.delta === "string") {
     const messageId = id(event.messageId),
       previous = block.messages.find((message) => message.id === messageId);
     if (previous && previous.role !== "assistant") return block;
     const content = `${previous?.content ?? ""}${event.delta.slice(0, 262144)}`.slice(0, 1048576);
-    const message: ChatMessage = { id: messageId, role: "assistant", content };
+    const message: ChatMessage = { ...previous, id: messageId, role: "assistant", content };
     return {
       ...block,
       run: { ...run, seq },

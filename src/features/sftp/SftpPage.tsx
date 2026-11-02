@@ -64,6 +64,7 @@ import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
+import { useSearchRoots } from "@/store/searchRoots";
 
 type PaneId = "a" | "b";
 
@@ -233,6 +234,25 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const [dropTarget, setDropTarget] = useState<{ pane: PaneId; path: string } | null>(null);
   const [transferEpoch, setTransferEpoch] = useState(0);
   const instanceId = useId();
+  useEffect(() => {
+    useSearchRoots.getState().publish(
+      instanceId,
+      [active, other(active)].flatMap((id) => {
+        const pane = panes[id];
+        return pane.state.listing
+          ? [
+              {
+                id: `${instanceId}:${id}`,
+                tabId: `sftp:${sessionId}`,
+                path: pane.state.listing.path,
+                sessionId: pane.source.kind === "remote" ? pane.source.sessionId : null,
+              },
+            ]
+          : [];
+      }),
+    );
+  }, [instanceId, active, panes, sessionId]);
+  useEffect(() => () => useSearchRoots.getState().remove(instanceId), [instanceId]);
   const pageRef = useRef<HTMLDivElement>(null);
   const nativeDrop = useRef<(paths: string[], x: number, y: number) => void>(() => undefined);
   const panesRef = useRef(panes);

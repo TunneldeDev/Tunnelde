@@ -8,6 +8,7 @@ import {
   Plug,
   Server,
   Settings,
+  Search,
   Shield,
   ShieldCheck,
   Sparkles,
@@ -30,6 +31,7 @@ import {
 import { usePlugins } from "@/store/plugins";
 import { pluginSidebars } from "@/lib/plugins/sidebars";
 import type { SidebarView } from "@/store/navigation";
+import { useQuickAccess } from "@/store/quickAccess";
 
 const PLUGIN_ICONS = {
   bot: Bot,
@@ -153,6 +155,9 @@ export function ActivityBar() {
         );
       })}
       <span className="activitybar__spacer" />
+      <IconButton label={t("palette.title")} onClick={() => useQuickAccess.getState().show(">")}>
+        <Search size={21} />
+      </IconButton>
       <IconButton
         label={t("nav.settings")}
         active={kind === "settings"}

@@ -16,6 +16,7 @@ vi.mock("@/store/pluginSecurity", () => ({
 import i18n from "@/i18n/i18n";
 import { PluginChat } from "@/features/plugins/PluginChat";
 import { useDialogs } from "@/store/dialogs";
+import { useSsh } from "@/store/ssh";
 
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -24,6 +25,7 @@ beforeEach(async () => {
   mock.listen.mockResolvedValue(() => {});
   mock.authorize.mockResolvedValue(true);
   useDialogs.getState().close();
+  useSsh.setState({ sessions: [] });
 });
 
 function branded(protocol: "codex" | "claude-code" | "pi", title: string): PluginChatBlock {
@@ -40,6 +42,142 @@ function branded(protocol: "codex" | "claude-code" | "pi", title: string): Plugi
 }
 
 describe("plugin chat presentation and controls", () => {
+  it("retains a thinking-only response after completion", () => {
+    render(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{
+          ...chat,
+          messages: [
+            {
+              id: "thinking",
+              role: "assistant",
+              content: "",
+              status: "done",
+              activity: [
+                { id: "reason", kind: "reasoning", title: "", content: "Thought summary" },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByText("Activity")).toBeTruthy();
+    expect(screen.getByText("Thought summary")).toBeTruthy();
+  });
+  it("lists live SSH machines independently of model profiles and keeps the composer draft", async () => {
+    const block = branded("codex", "Codex");
+    block.commands = { ...block.commands, target: "ai.target" };
+    useSsh.setState({
+      sessions: [
+        {
+          id: "ssh-one",
+          hostId: "host-one",
+          title: "Development",
+          address: "dev:22",
+          cols: 80,
+          rows: 24,
+          connectedAt: 0,
+        },
+        {
+          id: "ssh-two",
+          hostId: "host-two",
+          title: "Build host",
+          address: "build:22",
+          cols: 80,
+          rows: 24,
+          connectedAt: 0,
+        },
+      ],
+    });
+    mock.run.mockResolvedValue({
+      block: {
+        ...block,
+        activeSessionId: "new-target-conversation",
+        sessions: [...block.sessions, { id: "new-target-conversation", title: "New conversation" }],
+        execution: {
+          kind: "remote",
+          sessionId: "ssh-two",
+          title: "Build host",
+          home: "/home/dev",
+          cwd: "/home/dev",
+          platform: "posix",
+        },
+      },
+    });
+    render(<PluginChat pluginId="codex" viewId="chat" block={block} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Keep my draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Execution location" }));
+    expect(screen.getByRole("menuitemradio", { name: "Local" })).toBeTruthy();
+    expect(screen.getByRole("menuitemradio", { name: "Development" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Build host" }));
+    await waitFor(() =>
+      expect(mock.run).toHaveBeenCalledWith(
+        "codex",
+        "ai.target",
+        expect.objectContaining({ targetId: "ssh-two", modelId: block.modelId }),
+      ),
+    );
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("Keep my draft");
+    expect(screen.getByRole("button", { name: "Execution location" }).textContent).toContain(
+      "Build host",
+    );
+    expect(mock.run).not.toHaveBeenCalledWith("codex", "ai.send", expect.anything());
+    // A newly connected host appears without remounting or editing the model.
+    act(() =>
+      useSsh.setState((state) => ({
+        sessions: [
+          ...state.sessions,
+          {
+            id: "ssh-three",
+            hostId: "host-three",
+            title: "New host",
+            address: "new:22",
+            cols: 80,
+            rows: 24,
+            connectedAt: 0,
+          },
+        ],
+      })),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Execution location" }));
+    expect(screen.getByRole("menuitemradio", { name: "New host" })).toBeTruthy();
+  });
+
+  it("requests an explicit remote runtime for API execution before switching targets", async () => {
+    const block = { ...chat, commands: { ...chat.commands, target: "ai.target" } };
+    useSsh.setState({
+      sessions: [
+        {
+          id: "ssh",
+          hostId: "host",
+          title: "Remote machine",
+          address: "remote:22",
+          cols: 80,
+          rows: 24,
+          connectedAt: 0,
+        },
+      ],
+    });
+    render(<PluginChat pluginId="assistant" viewId="chat" block={block} />);
+    fireEvent.click(screen.getByRole("button", { name: "Execution location" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "Remote machine" }));
+    expect(mock.run).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Remote Node executable (explicit path)"), {
+      target: { value: "/opt/node/bin/node" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Use this target" }));
+    await waitFor(() =>
+      expect(mock.run).toHaveBeenCalledWith(
+        "assistant",
+        "ai.target",
+        expect.objectContaining({ targetId: "ssh", runtime: "/opt/node/bin/node" }),
+      ),
+    );
+  });
+
   it("keeps the model and execution controls inside the input card and permissions underneath", () => {
     const view = render(
       <PluginChat pluginId="assistant" viewId="chat" block={{ ...chat, title: "Tunnelde AI" }} />,

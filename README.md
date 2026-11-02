@@ -1,145 +1,153 @@
 # Tunnelde
 
-A cross-platform SSH, SFTP and remote-ops workbench for Windows, macOS and Linux.
+A desktop SSH and SFTP workbench for Windows, macOS and Linux, maintained by
+**quyansiyuanwang / TunneldeDev**. Built with Tauri 2, Rust, React and TypeScript.
 
-Tunnelde is built with **Tauri 2 + Rust + React + TypeScript**. It is designed for people who live
-in remote shells: multi-tab sessions, two file panels that can pair any two locations, remote
-monitoring, a credential vault and a permissioned plugin system.
+## Install
 
-Tunnelde is developed by **quyansiyuanwang** under the **TunneldeDev** organization.
+Download a desktop installer from [GitHub Releases](https://github.com/TunneldeDev/Tunnelde/releases).
 
-## Status
+| Platform                          | Downloads                                  | Updates                                         |
+| --------------------------------- | ------------------------------------------ | ----------------------------------------------- |
+| Windows 10/11 x64                 | NSIS `.exe`                                | In-app updater                                  |
+| macOS 12+, Apple Silicon or Intel | Matching `.dmg`                            | Manual DMG updates while builds remain unsigned |
+| Linux x64                         | AppImage or `.deb`, WebKitGTK 4.1 required | In-app AppImage updates; manual deb updates     |
 
-Early development, built in public milestone by milestone.
+Press **F1** for Quick Access: `>` lists application and installed plugin commands,
+`%` searches file contents in the selected local/SSH directory, and `@` finds hosts.
+**Ctrl/Cmd+P** opens files and existing tabs. Plugin commands, including UUID
+Generator, can be run directly here and assigned keys in Settings → Keyboard Shortcuts.
+Local search results open a read-only preview; remote results open the editor at the
+matching line, preserving unsaved text. Search is literal, bounded, and cancellable.
 
-- `v0.1.x` — workspace shell, host library, settings, GitHub Releases auto-update
-- `v0.2.x` — SSH terminal with host key trust, keychain passwords, command history
-- `v0.3.x` — dual-pane file manager, transfers and a remote text editor
-- `v0.4.x` — remote monitoring and process control
-- `v0.5.x` — plugin host with JSON-RPC over stdio and TypeScript plugins
-- `v0.6.x` – `v0.10.x` — plugin views, split panes, drag and drop, CI and release automation
-- `v0.11.x` — either file panel can show this computer or any session; monospace font choice;
-  optional system menu; tag chips, key login and a trusted-hosts page
-- `v0.12.x` — host ordering by drag, passwordless setup from the password dialog, plugin zip
-  archives
-- `v0.13.x` — command palette (`Ctrl+K`), dialog focus handling, terminal colour checks
-- `v0.14.x` — multi-selection in the file panels, keyboard-driven host sidebar
-- `v0.15.x` — a plugin marketplace served from this repository with checksum-verified installs
-- next — a WASM plugin runtime next to the Node host
+The desktop application does **not** bundle or require Node for SSH, SFTP, monitoring,
+settings or theme packs. Executable Node plugins require a separately selected runtime;
+Tunnelde asks before discovering or using your system Node. Windows and macOS packages
+are currently unsigned.
 
-## Stack
+## Workbench
 
-| Layer      | Choice                                             |
-| ---------- | -------------------------------------------------- |
-| Shell      | Tauri 2, Rust, Tokio                               |
-| UI         | React 19, TypeScript, Vite, xterm.js               |
-| Storage    | SQLite (rusqlite) + OS keychain                    |
-| SSH / SFTP | russh, russh-sftp, optional system OpenSSH backend |
-| Plugins    | JSON-RPC 2.0 over stdio, Node and WASM runtimes    |
-| Updates    | Tauri updater, GitHub Releases                     |
+- Organize, search, tag, favorite and reorder hosts. Connect with passwords, key files
+  or pasted private keys; host-key trust and credentials have dedicated controls.
+- Use an xterm.js terminal with ANSI colors, Unicode grapheme widths, monospace fonts,
+  native clipboard integration, configurable mouse behavior and live command history.
+- Browse any two local/remote locations independently. Sort, filter, group, rename
+  inline, create files or folders, drag transfers and edit remote text files.
+- Drag tabs and sidebar panels into splits. Lock a pane as the destination for new
+  pages; hide and restore docked panels with their placement and size remembered.
+- Inspect remote CPU, memory, network and disk I/O timelines with scales, timestamps
+  and mouse or keyboard sample inspection. Process termination requires confirmation.
+- Customize themes, individual colors, fonts, terminal behavior and keyboard shortcuts.
+  Export preferences and switch named profiles without exporting hosts or credentials.
+- Choose native or compact title bars. On macOS, closing retains the window and SSH
+  sessions; clicking the Dock or tray restores it. Settings → General controls whether
+  the Dock icon remains visible in the background. Use Quit to exit.
+
+## Independent AI plugins
+
+The separate [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) supplies the
+marketplace, source folders and checksum-pinned ZIP packages. Install only the plugins
+that you want; each has its own sidebar, settings, conversations, secrets and lifecycle.
+
+| Plugin           | Integration                                                               |
+| ---------------- | ------------------------------------------------------------------------- |
+| **Codex**        | The installed `codex` binary, using Codex app-server                      |
+| **Claude Code**  | The installed `claude` binary, using stream-json and its control protocol |
+| **Pi**           | The installed `pi` binary, using RPC and a permission extension           |
+| **Tunnelde AI**  | OpenAI-compatible Chat Completions, Responses, Anthropic or Gemini APIs   |
+| **Tunnelde MCP** | Authenticated loopback MCP tools for external AI clients                  |
+
+The coding integrations are community plugins maintained by TunneldeDev, not vendor
+extensions. They execute the corresponding agent; selecting a model does not substitute
+an API chatbot for a coding CLI. Authenticate the CLI on the machine where it will run.
+
+With desktop **0.25.0+** and assistant plugins **1.3.0+**:
+
+1. Connect a remote host in the Hosts sidebar.
+2. Open the plugin's **Execution location / 运行位置** menu and choose **Local** or the
+   connected machine by name. Model selection is a separate control.
+3. The working directory defaults to that machine's resolved home. Use **Workspace and
+   execution settings** to choose another folder or override the agent executable.
+4. Send a message. Coding agents run on the selected machine over SSH stdin/stdout;
+   no session ID or native helper is needed for ordinary remote execution.
+
+Tunnelde AI also supports running its API assistant process on the selected remote.
+Select and authorize the remote Node runtime, then approve uploading the plugin into a
+fresh user directory. API calls originate there; configuration and API keys travel over
+SSH stdin and are not written into the deployment files. Pi asks before uploading its
+small permission extension. Neither operation installs Node, installs an agent, or
+changes system services.
+
+Four modes are available: **Ask for approval**, **Approve for me**, **Full Access** and
+**ReadOnly**. Independent review needs a separate API reviewer; failure or denial falls
+back to human approval. Claude Code and Pi do not provide the verified OS read sandbox
+required for CLI ReadOnly, so that combination is disabled. API file tools and the Codex
+read sandbox support read-only work. Plugin permissions are not an OS sandbox for
+trusted executable code or arbitrary shell commands.
+
+The optional `tunnelde-agent` helper is for MCP stdio and advanced persistent remote
+supervisors. It is an Actions artifact or source build, **not a desktop Release download**.
+Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 
 ## Documentation
 
-- [Shortcuts](docs/shortcuts.md): keyboard and mouse gestures.
-- [Settings](docs/settings.md): customization, defaults and preference behavior.
-- [Plugins](docs/plugins.md): manifest, JSON-RPC protocol and views.
-- [Architecture](docs/architecture.md): module map, data locations, events and the release flow.
-- [Troubleshooting](docs/troubleshooting.md): terminal colours, key login, plugin installs.
+- [Settings and profiles](docs/settings.md)
+- [Keyboard and mouse shortcuts](docs/shortcuts.md)
+- [AI local/remote setup](docs/ai-assistants.md)
+- [Plugin development and security](docs/plugins.md)
+- [Architecture and data locations](docs/architecture.md)
+- [Troubleshooting](docs/troubleshooting.md)
+- [Optional native helper](native-helpers/README.md)
+- [Changes by release](CHANGELOG.md)
 
 ## Development
 
-Prerequisites: Rust 1.92+, Node.js 24+, pnpm 10+, and the platform WebView dependencies
-(WebView2 on Windows, WebKitGTK 4.1 on Linux, WKWebView on macOS).
+Development requires Rust 1.92+, Node 24+, pnpm 10+ and the platform WebView build
+dependencies. These requirements apply to contributors, not ordinary desktop users.
 
-```bash
-pnpm install
+```sh
+pnpm install --frozen-lockfile
 pnpm tauri dev
 ```
 
-Checks before a commit:
-
-```bash
-pnpm typecheck
-pnpm lint
-pnpm test
+```sh
+pnpm check
+pnpm i18n:check
+pnpm version:check
 pnpm build
-cargo fmt --manifest-path src-tauri/Cargo.toml --all
+cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Releases are cut from **Actions → Release**: pick `patch`, `minor` or `major` (or pass an explicit
-version) and the workflow bumps `package.json`, `Cargo.toml`, `Cargo.lock` and `tauri.conf.json`,
-moves the `Unreleased` changelog section under the new version, commits, tags `vX.Y.Z` and builds
-every platform. Export `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` for
-local builds; the public key lives in `src-tauri/tauri.conf.json`. For an installer without the
-updater signature use `pnpm build:local`.
-
-The same steps are available locally:
-
-```bash
-pnpm release:prepare --part patch   # bump manifests and cut the changelog
-pnpm release:notes 0.5.0            # print the notes for a version
-pnpm version:check                  # verify every manifest agrees
-```
-
-```bash
-pnpm tauri build
-```
-
-Repository layout:
+Source layout:
 
 ```text
-src/                  React workspace (components, features, stores, i18n, styles)
-src-tauri/            Rust core, Tauri configuration and capabilities
-assets/brand/         Icon master
-build/, resources/    Packaged icons, tray assets, installer bitmaps
-public/brand/         Web assets served by Vite
-scripts/brand/        Icon generation and verification
-scripts/ci/           Repository hygiene checks
+src/                 React workbench, UI primitives, feature stores and i18n
+src-tauri/           Rust SSH/SFTP core, plugin APIs, native integration and updater
+native-helpers/     Optional MCP/remote-supervisor executable
+examples/plugins/   Minimal plugin examples
+scripts/            Build, validation, packaging and release tools
+docs/               User and developer documentation
 ```
 
-## Plugins
+The marketplace lives in the independent `TunneldeDev/tunnelde-hub` repository.
+CI validates web, native, helper and repository checks. Release builds target Windows,
+Linux, Apple Silicon and Intel macOS, then verify and publish one shared release.
 
-Plugins live in the app data `plugins` folder and speak JSON-RPC 2.0 over stdio, one JSON object
-per line. A minimal example ships in `examples/plugins/hello`; copy that folder into the plugins
-directory and start it from Settings → Plugins. Plugins can declare workspace or dockable sidebar
-views, including controlled chat, and publish sequenced updates through the host API.
+Use **Actions → Release**, or prepare a reviewed local release:
 
-The independent [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) includes **Tunnelde MCP**
-for authenticated local AI tools and **Tunnelde AI** for chat, API providers and structured coding
-CLIs. Both require Tunnelde 0.22.0 or newer. Their four permission modes are Ask for approval,
-Approve for me, Full Access and ReadOnly; the default asks before changes or commands.
+```sh
+pnpm release:prepare --part patch
+pnpm version:check
+pnpm release:notes <version>
+```
 
-Node is optional and is not bundled. Using an existing runtime requires consent or explicit
-selection. API keys use the operating system keyring. Remote agent execution requires a matching
-optional native helper, an explicitly configured remote runtime, and confirmation before deploying
-into a fresh user directory. The helper supports MCP stdio and remote agent integrations; ordinary
-SSH, SFTP, terminal and local API chat use does not require it. It is available as a Release workflow
-artifact in GitHub Actions or can be built from source, and is not part of the desktop Release
-downloads. See [native helper setup](native-helpers/README.md) and the plugins'
-READMEs for their boundaries and supported CLI permission modes.
-
-## Platforms
-
-- Windows 10/11 x64 — NSIS, automatic updates
-- macOS 12+ — Apple silicon and Intel DMG, manual updates while unsigned
-- Linux x64 — AppImage (automatic updates) and deb (manual updates); requires WebKitGTK 4.1
-
-macOS builds are currently unsigned, so macOS updates are offered as manual DMG downloads.
-Windows builds are unsigned for now; SmartScreen may warn on first launch.
+Commit the coherent change and tag `v<version>`; pushing the tag triggers release builds.
+The preparation script updates both native manifests/locks and the desktop manifests.
+`pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 
 ## License
 
-Tunnelde is free software licensed under the **GNU General Public License,
-version 3.0** (`GPL-3.0-only`).
-
-You can redistribute it and/or modify it under the terms of the GNU General
-Public License as published by the Free Software Foundation, version 3 of the
-License.
-
-Tunnelde is distributed in the hope that it will be useful, but **without any
-warranty**; without even the implied warranty of merchantability or fitness for
-a particular purpose. See the [GNU General Public License](LICENSE) for details.
-
-Copyright (C) 2026 quyansiyuanwang (TunneldeDev). Source code for every release is available at
-<https://github.com/TunneldeDev/Tunnelde>.
+[GNU GPL version 3 only](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
+Copyright © 2026 quyansiyuanwang (TunneldeDev).

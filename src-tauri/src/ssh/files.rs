@@ -12,6 +12,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+pub mod search;
+
 pub const TRANSFER_EVENT: &str = "sftp://transfer";
 
 const CHUNK: usize = 64 * 1024;
@@ -336,6 +338,44 @@ pub(crate) async fn session(app: &AppHandle, session_id: &str) -> AppResult<Sftp
     SftpSession::new(channel.into_stream())
         .await
         .map_err(map_sftp)
+}
+
+fn requested_directory(home: &str, input: Option<&str>) -> AppResult<String> {
+    let input = input
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or(".");
+    if input.len() > 32768 || input.contains('\0') {
+        return Err(AppError::validation("plugin.tools.invalidPath"));
+    }
+    if matches!(input, "." | "~") {
+        Ok(home.into())
+    } else if let Some(relative) = input.strip_prefix("~/") {
+        Ok(format!("{}/{relative}", home.trim_end_matches('/')))
+    } else if input.starts_with('/') {
+        Ok(input.into())
+    } else {
+        Ok(format!("{}/{input}", home.trim_end_matches('/')))
+    }
+}
+
+pub async fn remote_resolve_directory(
+    app: &AppHandle,
+    session_id: &str,
+    path: Option<String>,
+) -> AppResult<serde_json::Value> {
+    let sftp = session(app, session_id).await?;
+    let result = async {
+        let home = sftp.canonicalize(".").await.map_err(map_sftp)?;
+        let requested = requested_directory(&home, path.as_deref())?;
+        let path = sftp.canonicalize(requested).await.map_err(map_sftp)?;
+        if !sftp.metadata(&path).await.map_err(map_sftp)?.is_dir() {
+            return Err(AppError::validation("plugin.tools.invalidPath"));
+        }
+        Ok(serde_json::json!({ "home": home, "path": path }))
+    }
+    .await;
+    let _ = sftp.close().await;
+    result
 }
 
 pub async fn remote_list(
@@ -1405,6 +1445,23 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn target_directories_expand_home_and_relative_paths_without_guessing_a_session() {
+        use super::requested_directory;
+        for (input, expected) in [
+            (None, "/home/test"),
+            (Some(""), "/home/test"),
+            (Some("~"), "/home/test"),
+            (Some("~/project"), "/home/test/project"),
+            (Some("project"), "/home/test/project"),
+            (Some("/srv/project"), "/srv/project"),
+        ] {
+            assert_eq!(requested_directory("/home/test", input).unwrap(), expected);
+        }
+        assert!(requested_directory("/home/test", Some("a\0b")).is_err());
+        assert!(requested_directory("/home/test", Some(&"a".repeat(32769))).is_err());
+    }
+
     use super::*;
 
     fn transfer_event(id: &str, status: TransferStatus) -> TransferEvent {

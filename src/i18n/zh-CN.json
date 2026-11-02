@@ -714,9 +714,19 @@
     "empty": "添加一台主机开始使用"
   },
   "palette": {
-    "title": "命令面板",
-    "placeholder": "输入命令",
-    "empty": "没有匹配的命令"
+    "title": "快速访问",
+    "placeholder": "搜索文件，或输入 > 命令、% 内容、@ 主机",
+    "empty": "没有匹配的结果",
+    "files": "快速打开文件",
+    "content": "搜索文件内容",
+    "openTab": "已打开的标签页",
+    "modes": "> 命令 · % 文件内容 · @ 主机 · 无前缀：文件和已打开的标签页",
+    "scope": "搜索目录",
+    "chooseFolder": "选择本地搜索文件夹",
+    "noRoot": "打开文件管理器，或选择一个本地文件夹后搜索。",
+    "typeMore": "输入至少 2 个字符以搜索此目录。",
+    "limits": "搜索最多返回 100 条结果，扫描 4,000 个条目或 15 秒；跳过隐藏目录、构建目录及链接。已跳过文件：{{count}}。",
+    "localPreview": "本地文件预览（只读）"
   },
   "window": {
     "controls": "窗口控制",
@@ -938,9 +948,17 @@
     "readOnlyUnavailable": "此 CLI 无法提供可验证的只读沙箱。只读任务请使用 Tunnelde AI 的 API 连接。",
     "placeholderNamed": "与 {{name}} 对话…",
     "executionLocation": "运行位置",
+    "executionSettings": "工作目录与运行设置",
+    "legacyDeployment": "高级：持久化远端监督程序",
+    "connectTargetHint": "先在主机侧栏连接目标主机，即可在远端运行",
+    "targetHint": "模型连接与运行位置独立选择。更换已有对话的机器或工作目录时会创建新对话，原对话会保留。",
+    "cwdAutoHint": "留空使用目标机器的主目录，相对路径和 ~ 会自动解析。",
+    "agentExecutableHint": "可选：指定该机器上已安装的代理程序。远端默认使用 codex、claude 或 pi。",
+    "remoteNodeConsent": "选择此目标即授权使用这个远端运行时。Tunnelde AI 会将自身文件上传至新建的用户目录并通过 SSH 在远端运行，不安装 Node，不更改服务。",
+    "useTarget": "使用此目标",
     "localExecution": "本地",
     "remoteExecution": "SSH",
-    "executionLocationHint": "在连接配置中更改运行位置。",
+    "executionLocationHint": "在运行位置菜单选择本机或已连接的 SSH 主机，工作目录会自动解析。",
     "credentialsHint": "密钥保存在操作系统凭据库中，已保存的密钥不会回显。",
     "profiles": "服务商",
     "mcp": "MCP 服务器",
@@ -1037,7 +1055,12 @@
     "streaming": "正在回复…",
     "enterHint": "Enter 发送 · Shift+Enter 换行",
     "stop": "停止",
-    "send": "发送"
+    "send": "发送",
+    "targetDisconnected": "所选 SSH 连接已断开。",
+    "process": "处理过程",
+    "reasoning": "思考",
+    "steps": "{{count}} 个步骤",
+    "activityRunning": "处理中…"
   },
   "pluginApi": {
     "messageTitle": "插件 · {{name}}",
@@ -1129,5 +1152,11 @@
     "invalidStorage": "无法读取已保存的方案，当前设置不受影响。",
     "notFound": "此方案已不存在，请刷新方案后重试。",
     "limit": "最多可保存 32 个设置方案，请先删除一个再新增。"
+  },
+  "search": {
+    "invalidRoot": "请选择有效的绝对目录。",
+    "invalidQuery": "请输入至少 2 个字符（最多 256 字节）。",
+    "busy": "正在进行的搜索过多，请稍后重试。",
+    "timeout": "搜索超时，请缩小搜索目录。"
   }
 }

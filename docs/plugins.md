@@ -1,6 +1,41 @@
 # Plugins
 
+## Quick access and command results
+
+Press F1 and type `> UUID` (or another plugin name/command) to open a contributed
+view or execute an installed plugin command. Listing commands reads manifest metadata
+and does not start Node. Execution retains runtime consent and plugin approval.
+Commands without views open a host-owned result page with scrollable, resizable,
+plain-text output, Copy, Clear, and command buttons. Settings → Keyboard Shortcuts
+includes installed plugin commands and views; these bindings are included in profiles.
+
+The workspace API also provides `workspace.showQuickAccess`,
+`workspace.setPaneLocked`, and `workspace.resizeSplit`, gated by `workspace.write`.
+Quick Access accepts an initial query but never automatically executes it.
+
+AI views group intermediate messages, native thinking summaries, and tool activity
+per user turn in collapsible sections. Final answers and approval prompts stay visible.
+Activity output is bounded and displayed as text/Markdown without arbitrary HTML.
+See the [official extension investigation](reviews/2026-11-02-vscode-agent-extensions.md)
+for the source and licensing findings; arbitrary VSIX packages are not supported.
+
+The independent marketplace and official source packages live in
+[TunneldeDev/tunnelde-hub](https://github.com/TunneldeDev/tunnelde-hub). For installing and
+connecting Codex, Claude Code, Pi or Tunnelde AI, start with [the assistant guide](ai-assistants.md).
+Those are four separately installed integrations; Tunnelde AI does not aggregate coding CLIs.
+
 Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure theme packs contain only a manifest and theme colors; they do not start a process or require Node.
+
+Assistant chat blocks can expose `commands.target` and an `execution` object containing
+`kind`, machine display metadata, `sessionId`/`hostId` for SSH, `cwd`, `home`, `platform`
+and optional executable/runtime overrides. The host renders a machine selector independently
+of provider models. Older blocks without this command retain the legacy profile selector.
+The official plugins validate connected targets and persist their selection per conversation.
+
+`files.sftp.resolveDirectory` (0.25.0+) accepts `{sessionId,path?}` and returns `{home,path}`.
+It resolves account home, `~`, relative paths and the canonical working directory through
+SFTP metadata without reading directory entries or running a shell. Like other direct SFTP
+calls it requires the declared `sftp.read` permission and an approved executable plugin.
 
 ## Layout
 

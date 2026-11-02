@@ -13,8 +13,8 @@ vi.mock("@/features/plugins/PluginsSidebar", () => ({
   PluginsSidebar: () => <input aria-label="Plugin view search" defaultValue="" />,
 }));
 vi.mock("@/components/layout/CommandPalette", () => ({
-  CommandPalette: ({ open }: { open: boolean }) =>
-    open ? <div data-testid="command-palette" /> : null,
+  CommandPalette: () =>
+    useQuickAccess((state) => state.query !== null) ? <div data-testid="command-palette" /> : null,
 }));
 vi.mock("@/components/layout/ActivityBar", () => ({ ActivityBar: () => null }));
 vi.mock("@/components/layout/RemotePanel", () => ({ RemotePanel: () => null }));
@@ -30,6 +30,7 @@ vi.mock("@/components/layout/TabContent", () => ({
   WorkspaceContents: () => null,
 }));
 
+import { useQuickAccess } from "@/store/quickAccess";
 import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { useWorkspace } from "@/store/workspace";
@@ -92,6 +93,7 @@ function renderWorkspace() {
 }
 
 beforeEach(() => {
+  useQuickAccess.setState({ query: null });
   useDialogs.getState().close();
   useSettings.setState({ settings: DEFAULT_SETTINGS, update: vi.fn().mockResolvedValue(true) });
   useNavigation.setState({

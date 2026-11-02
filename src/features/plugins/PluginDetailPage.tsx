@@ -15,6 +15,7 @@ import { PluginError } from "./PluginError";
 import { PluginThemes } from "./PluginThemes";
 import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
+import { PluginCommandResult } from "./PluginCommandResult";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -261,7 +262,12 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           ))}
         </div>
       ) : null}
-      {output && own ? <pre className="plugin-output">{output.text}</pre> : null}
+      {output && own ? (
+        <PluginCommandResult
+          result={output}
+          onClear={() => usePlugins.getState().clearOutput(pluginId)}
+        />
+      ) : null}
       {output?.error && own ? <PluginRestrictedAction /> : null}
       <section className="plugin-detail__readme">
         <h2>{t("market.description")}</h2>

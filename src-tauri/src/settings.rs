@@ -197,8 +197,10 @@ impl Settings {
     pub fn sanitize(&mut self) {
         let mut shortcut_count = 0;
         self.keyboard_shortcuts.retain(|id, bindings| {
-            let valid = id.len() <= 64
-                && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'.')
+            let valid = id.len() <= 256
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
                 && [
                     "palette.",
                     "page.",
@@ -214,6 +216,7 @@ impl Settings {
                     "editor.",
                     "terminal.",
                     "files.",
+                    "plugin.",
                 ]
                 .iter()
                 .any(|prefix| id.starts_with(prefix))
@@ -420,6 +423,27 @@ mod tests {
             } else {
                 "system"
             }
+        );
+    }
+
+    #[test]
+    fn plugin_command_bindings_survive_profile_serialization_with_safe_identifiers() {
+        let mut settings = Settings::default();
+        settings.keyboard_shortcuts.insert(
+            "plugin.c.12.example-tool.generate_uuid".into(),
+            vec!["Mod+Shift+U".into()],
+        );
+        settings
+            .keyboard_shortcuts
+            .insert("plugin.c.bad/path".into(), vec!["F1".into()]);
+        settings.sanitize();
+        let mut restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        restored.sanitize();
+        assert_eq!(restored.keyboard_shortcuts.len(), 1);
+        assert_eq!(
+            restored.keyboard_shortcuts["plugin.c.12.example-tool.generate_uuid"],
+            vec!["Mod+Shift+U"]
         );
     }
 

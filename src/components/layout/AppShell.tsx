@@ -21,7 +21,7 @@ import { useSettings } from "@/store/settings";
 import { cn } from "@/lib/text/format";
 import { runWorkbenchCommand } from "@/lib/keyboard/actions";
 import {
-  SHORTCUT_COMMANDS,
+  shortcutCommands,
   isTextTarget,
   matchesCommand,
   terminalAllowsCommand,
@@ -32,6 +32,9 @@ import { useSsh } from "@/store/ssh";
 import { isTauri } from "@/lib/api/ipc";
 import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/workspace";
 import { sidebarTabId } from "@/lib/session/sidebarDock";
+import { usePlugins } from "@/store/plugins";
+import { useQuickAccess } from "@/store/quickAccess";
+import { LocalFilePreview } from "@/features/sftp/LocalFilePreview";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -58,7 +61,7 @@ export function AppShell() {
   const [panelDraft, setPanelDraft] = useState<number | null>(null);
   const [tabDrag, setTabDrag] = useState(false);
   const [edge, setEdge] = useState<string | null>(null);
-  const [palette, setPalette] = useState(false);
+  const palette = useQuickAccess((state) => state.query !== null);
   const workspace = useRef<HTMLElement>(null);
   const sidebarWidth = sidebarDraft ?? settings.sidebarWidth;
   const panelWidth = panelDraft ?? settings.rightPanelWidth;
@@ -143,15 +146,15 @@ export function AppShell() {
         return;
       const overrides = useSettings.getState().settings.keyboardShortcuts ?? {};
       const terminal = event.target instanceof Element && !!event.target.closest(".terminal-host");
-      const command = SHORTCUT_COMMANDS.find(
+      const definitions = shortcutCommands(usePlugins.getState().items);
+      const command = definitions.find(
         (item) =>
           item.scope === "workbench" &&
           (!isTextTarget(event.target) || terminal || item.input) &&
           (!terminal || terminalAllowsCommand(event, item.id, overrides)) &&
-          matchesCommand(event, item.id, overrides),
+          matchesCommand(event, item.id, overrides, definitions),
       );
-      if (command && runWorkbenchCommand(command.id, () => setPalette(true)))
-        event.preventDefault();
+      if (command && runWorkbenchCommand(command.id)) event.preventDefault();
     };
 
     const onTerminalKeyDown = (event: KeyboardEvent) => {
@@ -276,7 +279,8 @@ export function AppShell() {
       <ToastHost />
       <DialogHost />
       <ContextMenuHost />
-      <CommandPalette open={palette} onClose={() => setPalette(false)} />
+      <CommandPalette />
+      <LocalFilePreview />
     </div>
   );
 }

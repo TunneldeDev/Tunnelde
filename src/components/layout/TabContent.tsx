@@ -8,6 +8,7 @@ import { EditorPage } from "@/features/editor/EditorPage";
 import { HistoryPage } from "@/features/history/HistoryPage";
 import { MonitorPage } from "@/features/monitor/MonitorPage";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
+import { PluginCommandPage } from "@/features/plugins/PluginCommandPage";
 import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
@@ -61,6 +62,7 @@ function TabBody({
       const separator = rest.indexOf(":");
       const pluginId = separator >= 0 ? rest.slice(0, separator) : rest;
       const viewId = separator >= 0 ? rest.slice(separator + 1) : "default";
+      if (viewId === "$command") return <PluginCommandPage pluginId={pluginId} />;
       return <PluginViewPage pluginId={pluginId} viewId={viewId} />;
     }
     case "pluginDetail": {

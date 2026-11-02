@@ -552,6 +552,47 @@ pub fn local_list(path: Option<String>) -> AppResult<Listing> {
 }
 
 #[tauri::command]
+pub async fn files_search(
+    app: AppHandle,
+    request_id: String,
+    session_id: Option<String>,
+    root: String,
+    query: String,
+    content: bool,
+) -> AppResult<sftp::search::SearchResult> {
+    sftp::search::search(app, request_id, session_id, root, query, content).await
+}
+
+#[tauri::command]
+pub fn files_search_cancel(request_id: String) {
+    sftp::search::cancel(&request_id);
+}
+
+#[tauri::command]
+pub async fn search_preview_local(path: String) -> AppResult<String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::io::Read;
+        let path = std::path::PathBuf::from(path);
+        if !path.is_absolute() || !path.is_file() {
+            return Err(AppError::validation("search.invalidRoot"));
+        }
+        let mut bytes = Vec::new();
+        std::fs::File::open(path)?
+            .take(512 * 1024 + 1)
+            .read_to_end(&mut bytes)?;
+        if bytes.len() > 512 * 1024 {
+            return Err(AppError::validation("sftp.fileTooLarge"));
+        }
+        if bytes.contains(&0) {
+            return Err(AppError::validation("sftp.binaryFile"));
+        }
+        String::from_utf8(bytes).map_err(|_| AppError::validation("sftp.unsupportedEncoding"))
+    })
+    .await
+    .map_err(|error| AppError::internal(error.to_string()))?
+}
+
+#[tauri::command]
 pub fn local_home() -> String {
     sftp::home_dir().to_string_lossy().into_owned()
 }

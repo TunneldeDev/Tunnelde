@@ -1,3 +1,5 @@
+import type { PluginInfo } from "@/lib/api/types";
+
 export type ShortcutOverrides = Record<string, string[]>;
 export type CommandScope = "workbench" | "files" | "editor" | "terminal";
 
@@ -8,6 +10,8 @@ export interface ShortcutCommand {
   defaults: string[];
   macDefaults?: string[];
   input?: boolean;
+  title?: string;
+  plugin?: { id: string; command?: string; view?: string };
 }
 
 const command = (
@@ -21,7 +25,11 @@ const command = (
 /** Application commands, shared by the router, palette and keyboard editor.
  * Widget navigation (arrows, Escape, Tab) remains local to each widget. */
 export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
-  command("palette.open", "palette.title", "workbench", ["Mod+K", "Mod+Shift+P"], { input: true }),
+  command("palette.open", "palette.title", "workbench", ["F1", "Mod+K", "Mod+Shift+P"], {
+    input: true,
+  }),
+  command("palette.files", "palette.files", "workbench", ["Mod+P"], { input: true }),
+  command("palette.content", "palette.content", "workbench", ["Mod+Shift+F"], { input: true }),
   command("page.settings", "nav.settings", "workbench", ["Mod+Comma"], { input: true }),
   command("keyboard.shortcuts", "shortcuts.title", "workbench", ["Mod+Shift+F12"], { input: true }),
   command("host.new", "sidebar.newHost", "workbench", ["Mod+N", "Mod+Shift+N"]),
@@ -79,6 +87,35 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
 ];
 
 export const isMacKeyboard = () => /Mac|iPhone|iPad/.test(navigator.platform);
+
+/** Manifest metadata is safe to list without starting a plugin or discovering Node. */
+export function shortcutCommands(plugins: readonly PluginInfo[] = []): ShortcutCommand[] {
+  return [
+    ...SHORTCUT_COMMANDS,
+    ...plugins
+      .filter((plugin) => plugin.runtime !== "theme")
+      .flatMap((plugin) => [
+        ...plugin.views.map((view) => ({
+          id: `plugin.v.${plugin.id.length}.${plugin.id}.${view.id}`,
+          label: "pluginView.title",
+          title: `${plugin.name}: ${view.title}`,
+          scope: "workbench" as const,
+          input: true,
+          defaults: [],
+          plugin: { id: plugin.id, view: view.id },
+        })),
+        ...plugin.commands.map((item) => ({
+          id: `plugin.c.${plugin.id.length}.${plugin.id}.${item.id}`,
+          label: "pluginView.run",
+          title: `${plugin.name}: ${item.title}`,
+          scope: "workbench" as const,
+          input: true,
+          defaults: [],
+          plugin: { id: plugin.id, command: item.id },
+        })),
+      ]),
+  ];
+}
 const aliases: Record<string, string> = {
   ",": "Comma",
   ".": "Period",
@@ -177,8 +214,9 @@ export function bindingsFor(
   id: string,
   overrides: ShortcutOverrides = {},
   mac = isMacKeyboard(),
+  definitions: readonly ShortcutCommand[] = SHORTCUT_COMMANDS,
 ): string[] {
-  const definition = SHORTCUT_COMMANDS.find((item) => item.id === id);
+  const definition = definitions.find((item) => item.id === id);
   if (!definition) return [];
   const own = overrides[id];
   return Array.isArray(own)
@@ -192,8 +230,11 @@ export function matchesCommand(
   event: KeyEvent,
   id: string,
   overrides: ShortcutOverrides = {},
+  definitions: readonly ShortcutCommand[] = SHORTCUT_COMMANDS,
 ): boolean {
-  return bindingsFor(id, overrides).some((binding) => shortcutMatches(event, binding));
+  return bindingsFor(id, overrides, undefined, definitions).some((binding) =>
+    shortcutMatches(event, binding),
+  );
 }
 
 export function recordShortcut(event: KeyEvent): string | null {
@@ -246,15 +287,16 @@ export function shortcutConflict(
   id: string,
   binding: string,
   overrides: ShortcutOverrides,
+  definitions: readonly ShortcutCommand[] = SHORTCUT_COMMANDS,
 ): ShortcutCommand | undefined {
-  const own = SHORTCUT_COMMANDS.find((item) => item.id === id);
+  const own = definitions.find((item) => item.id === id);
   const variants = (value: string) =>
     [false, true].map((mac) => displayShortcut(normalizeShortcut(value) ?? value, mac));
-  return SHORTCUT_COMMANDS.find(
+  return definitions.find(
     (item) =>
       item.id !== id &&
       item.scope === own?.scope &&
-      bindingsFor(item.id, overrides).some((other) =>
+      bindingsFor(item.id, overrides, undefined, definitions).some((other) =>
         variants(binding).some((value, i) => value === variants(other)[i]),
       ),
   );
@@ -281,6 +323,7 @@ export function terminalAllowsCommand(
     id === "tab.previous"
   )
     return true;
-  if (["palette.open", "host.new", "pane.close"].includes(id)) return event.shiftKey;
+  if (["palette.open", "palette.content", "host.new", "pane.close"].includes(id))
+    return event.shiftKey;
   return Array.isArray(overrides[id]) && event.shiftKey;
 }

@@ -5,13 +5,27 @@ import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
 import { closeTab } from "@/lib/session/tabActions";
 import { DEFAULT_SETTINGS, MONO_FONT_SIZE_MAX, MONO_FONT_SIZE_MIN } from "@/lib/prefs/defaults";
+import { useQuickAccess } from "@/store/quickAccess";
+import { usePlugins } from "@/store/plugins";
+import { shortcutCommands } from "./registry";
+import { openPluginAction } from "@/lib/plugins/actions";
 
 /** One action implementation for keyboard and command-palette invocation. */
 export function runWorkbenchCommand(id: string, openPalette?: () => void): boolean {
   const workspace = useWorkspace.getState();
   const settings = useSettings.getState();
-  if (id === "palette.open") openPalette?.();
-  else if (id === "keyboard.shortcuts") {
+  if (id === "palette.open") {
+    if (openPalette) openPalette();
+    else useQuickAccess.getState().show(">");
+  } else if (id === "palette.files") useQuickAccess.getState().show("");
+  else if (id === "palette.content") useQuickAccess.getState().show("%");
+  else if (id.startsWith("plugin.")) {
+    const action = shortcutCommands(usePlugins.getState().items).find(
+      (item) => item.id === id,
+    )?.plugin;
+    if (!action) return false;
+    void openPluginAction(action);
+  } else if (id === "keyboard.shortcuts") {
     useNavigation.getState().selectSettings("shortcuts");
     workspace.openPage("settings");
   } else if (id === "page.settings" || id === "page.welcome" || id === "page.about")

@@ -6,6 +6,28 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-11-02
+
+### Added
+
+- A separate execution-location selector for assistant plugins: choose this computer or a connected SSH host directly, with automatic home-directory resolution and optional workspace/executable overrides. Requires assistant packages 1.3.0 from Tunnelde Hub.
+- A native permission-checked SFTP directory resolver for plugins, accepting home-relative and relative directories without running a shell or enumerating home contents.
+- Universal Quick Access with F1 / Ctrl/Cmd+Shift+P, `>` application and plugin commands, `%` directory content search, `@` hosts, and Ctrl/Cmd+P for files/open tabs. Installed plugin commands and views can be assigned shortcuts and included in settings profiles.
+- Cancellable, bounded native local/SFTP search with an explicit directory selector, read-only local previews, and remote editor line navigation that preserves unsaved text.
+- Host API methods to open Quick Access, set pane destination locks and resize existing splits, with normal workspace permissions and parameter validation.
+- Per-turn collapsible AI activity shared by all four assistant plugins, including structured thinking, tool execution and output from the actual Codex, Claude Code and Pi protocols.
+
+### Fixed
+
+- Preserve composer drafts when changing execution targets creates a new conversation. Keep model selection separate from machine selection and hide obsolete manual scope setup for target-aware plugins.
+- Give plugin command results a dedicated tool page, readable/resizable output, Copy and Clear controls. Render UUID/text results without their JSON wrapper and prevent the plugin detail layout from collapsing their height.
+- Cancel pending host tool approvals as well as the plugin-side wait when an assistant is stopped.
+
+### Documentation
+
+- Rewrite the README around the current workbench, platform downloads, independent marketplace and assistant setup. Refresh settings, architecture, plugin API, security, troubleshooting and optional-helper documentation, including runtime consent and actual validation limits.
+- Document official Claude Code and Codex VS Code extension investigation, source/license findings and why arbitrary VSIX packages require a separate compatibility host.
+
 ## [0.24.1] - 2026-11-02
 
 ### Added
@@ -15,7 +37,6 @@ All notable changes to Tunnelde are documented here. The format follows
 ### Fixed
 
 - Reopen and focus the retained main window when clicking the macOS Dock icon after closing, hiding or minimizing it. Tray actions and relaunching use the same restoration path while preserving SSH sessions and unsaved drafts.
-
 
 ## [0.24.0] - 2026-11-02
 

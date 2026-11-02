@@ -4,10 +4,13 @@ import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { PluginInfo, MarketEntry } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
+import { normalizeResult } from "@/lib/plugins/pluginView";
+import i18n from "@/i18n/i18n";
 
 export interface PluginOutput {
   text: string;
   error: boolean;
+  title?: string;
 }
 
 interface PluginsStore {
@@ -31,6 +34,7 @@ interface PluginsStore {
   start: (id: string) => Promise<void>;
   stop: (id: string) => Promise<void>;
   run: (id: string, command: string) => Promise<void>;
+  clearOutput: (id: string) => void;
 }
 
 export const usePlugins = create<PluginsStore>((set, get) => {
@@ -116,6 +120,10 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     busyIds: [],
     reloading: false,
     outputs: {},
+    clearOutput: (id) =>
+      set((state) => ({
+        outputs: Object.fromEntries(Object.entries(state.outputs).filter(([key]) => key !== id)),
+      })),
 
     load: () => reloadRequest ?? readList(api.pluginsList),
 
@@ -236,14 +244,22 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             const { ensurePluginPermission } = await import("@/store/pluginSecurity");
             if (!(await ensurePluginPermission(info))) return;
           }
-          const result = await api.pluginRun(id, command);
-          output = { text: JSON.stringify(result, null, 2), error: false };
+          const result = await api.pluginRun(id, command, {
+            _locale: i18n.resolvedLanguage ?? i18n.language,
+          });
+          output = normalizeResult(result);
         } catch (error) {
           if (isTauri()) {
             const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
             reportPluginExecutionFailure(error);
           }
-          output = { text: translateError(error), error: true };
+          output = {
+            text:
+              error instanceof Error && error.message === "resultTooLarge"
+                ? i18n.t("pluginView.resultTooLarge")
+                : translateError(error),
+            error: true,
+          };
         }
         set((state) => ({ outputs: { ...state.outputs, [id]: output } }));
       }),
