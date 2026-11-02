@@ -64,6 +64,19 @@ four desktop targets, and publishes `latest.json` once after every build finishe
 One shared draft is created before parallel builds. Publication validates the installer/update
 assets and rejects native-helper binaries in desktop downloads; helpers remain Actions artifacts.
 
+Both macOS desktop architectures build on `macos-15-intel`. Rust and the installed Apple SDK
+cross compile `aarch64-apple-darwin`; the x64 build targets `x86_64-apple-darwin`. Each app is
+ad-hoc signed and checked for its expected Mach-O architecture and a valid code signature before
+the release can publish. Updater signatures remain separate. This avoids depending on the
+capacity of hosted Apple Silicon runners; it does not replace testing the app on Apple Silicon.
+Native helper CI runs on Intel macOS and also compiles/checks an arm64 binary.
+
+To recover an interrupted draft with updated build infrastructure, dispatch Release from `main`
+with `existing_tag` set to its original version tag (for example, `v0.26.0`), leaving `version`
+empty. This builds the original tagged source, reuses its draft, replaces desktop assets and
+regenerates the validated updater manifest. It never moves the tag or bumps a version and refuses
+to overwrite a public release. Optional helper artifacts remain in the original workflow run.
+
 CI checks repository hygiene, Rust (fmt, clippy, tests), Web (version/i18n checks, typecheck,
 lint, tests, build), and native helpers across Windows, macOS and Linux. The independent hub
 validates package manifests, deterministic archives/checksums, SDK metadata and plugin tests.

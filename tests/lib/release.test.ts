@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const temporary: string[] = [];
@@ -23,7 +24,7 @@ function fixture(notes = "- Fix a reproducible bug.") {
     join(root, "native-helpers/Cargo.lock"),
     '[[package]]\nname = "tunnelde-agent"\nversion = "0.18.1"\n',
   );
-  for (const name of ["version", "changelog", "release", "verify-assets"]) {
+  for (const name of ["version", "changelog", "release", "verify-assets", "native-helper"]) {
     copyFileSync(
       join(process.cwd(), `scripts/release/${name}.mjs`),
       join(root, `scripts/release/${name}.mjs`),
@@ -91,6 +92,58 @@ describe("release preparation", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("Cargo.lock 0.17.0");
   });
+});
+
+describe("native helper packaging", () => {
+  it.each([
+    ["windows-x86_64", "", ".exe"],
+    ["linux-x86_64", "", ""],
+    ["macos-aarch64", "aarch64-apple-darwin", ""],
+    ["macos-x86_64", "x86_64-apple-darwin", ""],
+  ])("packages the intended binary and checksum for %s", (asset, triple, extension) => {
+    const f = fixture();
+    const source = join(
+      f.root,
+      "native-helpers/target",
+      triple,
+      "release",
+      `tunnelde-agent${extension}`,
+    );
+    mkdirSync(dirname(source), { recursive: true });
+    const bytes = Buffer.from(`target binary: ${asset}`);
+    writeFileSync(source, bytes);
+    if (triple) {
+      const hostDirectory = join(f.root, "native-helpers/target/release");
+      mkdirSync(hostDirectory, { recursive: true });
+      writeFileSync(join(hostDirectory, "tunnelde-agent"), "wrong host binary");
+    }
+    const result = spawnSync(process.execPath, ["scripts/release/native-helper.mjs"], {
+      cwd: f.root,
+      encoding: "utf8",
+      env: { ...process.env, HELPER_ASSET: asset, HELPER_TARGET: triple },
+    });
+    expect(result.stderr).toBe("");
+    expect(result.status).toBe(0);
+    const name = `tunnelde-agent-${asset}${extension}`;
+    expect(readFileSync(join(f.root, "artifacts/helpers", name))).toEqual(bytes);
+    expect(f.read(`artifacts/helpers/${name}.sha256`)).toBe(
+      `${createHash("sha256").update(bytes).digest("hex")}  ${name}\n`,
+    );
+  });
+
+  it.each(["x86_64-apple-darwin", "../../outside"])(
+    "rejects a mismatched or unsafe target before packaging: %s",
+    (triple) => {
+      const f = fixture();
+      const result = spawnSync(process.execPath, ["scripts/release/native-helper.mjs"], {
+        cwd: f.root,
+        encoding: "utf8",
+        env: { ...process.env, HELPER_ASSET: "macos-aarch64", HELPER_TARGET: triple },
+      });
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain("HELPER_TARGET does not match HELPER_ASSET");
+    },
+  );
 });
 
 describe("release publishing", () => {
@@ -172,7 +225,7 @@ describe("release publishing", () => {
     );
     expect(helpers).toContain("actions/upload-artifact@v4");
     expect(helpers).toContain("if-no-files-found: error");
-    expect(helpers).toContain("key: ${{ matrix.os }}");
+    expect(helpers).toContain("key: ${{ matrix.asset }}");
     expect(helpers).not.toContain("gh release upload");
     expect(workflow).not.toContain("--assets assets.json --helpers");
     const updater = workflow.split("\n  updater:\n")[1]!;

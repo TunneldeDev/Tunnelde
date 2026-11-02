@@ -13,9 +13,12 @@ on:
       version:
         description: Explicit version (overrides part)
         required: false
+      existing_tag:
+        description: Resume an existing draft release without changing its tag or source
+        required: false
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.existing_tag || github.ref_name }}
   cancel-in-progress: false
 
 permissions:
@@ -33,10 +36,23 @@ jobs:
       body: ${{ steps.meta.outputs.body }}
       release_id: ${{ steps.draft.outputs.id }}
     steps:
+      - name: Validate recovery tag
+        if: inputs.existing_tag != ''
+        env:
+          TAG: ${{ inputs.existing_tag }}
+          VERSION: ${{ inputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || [ -n "${VERSION}" ]; then
+            echo "existing_tag must be a stable version tag and cannot be combined with version" >&2
+            exit 1
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && 'main' || github.ref }}
+          ref: ${{ inputs.existing_tag || (github.event_name == 'workflow_dispatch' && 'main' || github.ref) }}
           fetch-depth: 0
 
       - name: Setup Node
@@ -45,7 +61,7 @@ jobs:
           node-version: 24
 
       - name: Bump version, cut changelog and tag
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.existing_tag == ''
         env:
           RELEASE_PART: ${{ inputs.part }}
           RELEASE_VERSION: ${{ inputs.version }}
@@ -72,15 +88,22 @@ jobs:
           git push origin "v${version}"
 
       - name: Verify tag against manifests
-        if: github.event_name == 'push'
-        run: node scripts/release/version.mjs check "${GITHUB_REF_NAME}"
+        if: github.event_name == 'push' || inputs.existing_tag != ''
+        env:
+          TAG: ${{ inputs.existing_tag || github.ref_name }}
+        run: node scripts/release/version.mjs check "${TAG}"
 
       - name: Collect tag, version and release notes
         id: meta
+        env:
+          EXISTING_TAG: ${{ inputs.existing_tag }}
         shell: bash
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+          if [ -n "${EXISTING_TAG}" ]; then
+            tag="${EXISTING_TAG}"
+            version="${tag#v}"
+          elif [ "${GITHUB_EVENT_NAME}" = "push" ]; then
             tag="${GITHUB_REF_NAME}"
             version="${tag#v}"
           else
@@ -101,6 +124,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
           VERSION: ${{ steps.meta.outputs.version }}
+          EXISTING_TAG: ${{ inputs.existing_tag }}
         shell: bash
         run: |
           set -euo pipefail
@@ -112,6 +136,10 @@ jobs:
           elif [ "${count}" -eq 1 ]; then
             id=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag and .draft == true) | .id' releases.json)
           else
+            if [ -n "${EXISTING_TAG}" ]; then
+              echo "recovery requires an existing draft release for ${TAG}" >&2
+              exit 1
+            fi
             node scripts/release/changelog.mjs notes "${VERSION}" > release-notes.md
             jq -n --arg tag "${TAG}" --arg name "Tunnelde ${VERSION}" --rawfile body release-notes.md \
               '{tag_name:$tag,name:$name,body:$body,draft:true,prerelease:false}' > release.json
@@ -120,7 +148,7 @@ jobs:
           echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
   build:
-    name: Build ${{ matrix.platform }}
+    name: Build ${{ matrix.name }}
     needs: prepare
     if: needs.prepare.outputs.tag != ''
     strategy:
@@ -128,15 +156,21 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
+            name: windows-x86_64
             args: ""
-          # macOS 14 is being retired, and its brownouts abort release runs;
-          # macos-15 is the current Apple Silicon image.
-          - platform: macos-15
-            args: "--target aarch64-apple-darwin"
-          # Intel image; macos-13 is no longer available.
+          # Build both architectures on Intel to avoid arm64 runner shortages.
           - platform: macos-15-intel
+            name: macos-aarch64
+            target: aarch64-apple-darwin
+            arch: arm64
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-15-intel
+            name: macos-x86_64
+            target: x86_64-apple-darwin
+            arch: x86_64
             args: "--target x86_64-apple-darwin"
           - platform: ubuntu-22.04
+            name: linux-x86_64
             args: ""
     runs-on: ${{ matrix.platform }}
     steps:
@@ -170,12 +204,14 @@ jobs:
         run: |
           rustup target add aarch64-apple-darwin
           rustup target add x86_64-apple-darwin
+          # Apple Silicon requires a valid code signature, including cross builds.
+          echo "APPLE_SIGNING_IDENTITY=-" >> "${GITHUB_ENV}"
 
       - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: ${{ matrix.platform }}
+          key: ${{ matrix.name }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -196,19 +232,36 @@ jobs:
           includeUpdaterJson: false
           args: ${{ matrix.args }}
 
+      - name: Verify macOS executable architecture and signature
+        if: startsWith(matrix.platform, 'macos')
+        env:
+          TARGET: ${{ matrix.target }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="src-tauri/target/${TARGET}/release/bundle/macos/Tunnelde.app"
+          executable=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "${app}/Contents/Info.plist")
+          test "$(lipo -archs "${app}/Contents/MacOS/${executable}")" = "${EXPECTED_ARCH}"
+          codesign --verify --deep --strict --verbose=2 "${app}"
+
   helpers:
     name: Native helper ${{ matrix.asset }}
     needs: prepare
+    # Recovery rebuilds desktop assets; optional helpers remain in the original run.
+    if: inputs.existing_tag == ''
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: windows-latest
             asset: windows-x86_64
-          - os: macos-15
+          - os: macos-15-intel
             asset: macos-aarch64
+            target: aarch64-apple-darwin
           - os: macos-15-intel
             asset: macos-x86_64
+            target: x86_64-apple-darwin
           - os: ubuntu-22.04
             asset: linux-x86_64
           - os: ubuntu-24.04-arm
@@ -222,15 +275,31 @@ jobs:
         with:
           node-version: 24
       - uses: dtolnay/rust-toolchain@stable
+      - name: Add macOS helper target
+        if: matrix.target != ''
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "${TARGET}"
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: native-helpers
-          key: ${{ matrix.os }}
+          key: ${{ matrix.asset }}
       - run: cargo test --locked --manifest-path native-helpers/Cargo.toml
-      - run: cargo build --release --locked --manifest-path native-helpers/Cargo.toml
+      - name: Build native helper
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${TARGET}" ]; then
+            cargo build --release --locked --manifest-path native-helpers/Cargo.toml --target "${TARGET}"
+          else
+            cargo build --release --locked --manifest-path native-helpers/Cargo.toml
+          fi
       - name: Package native helper and checksum
         env:
           HELPER_ASSET: ${{ matrix.asset }}
+          HELPER_TARGET: ${{ matrix.target }}
         run: node scripts/release/native-helper.mjs
       - name: Upload optional helper build artifact
         uses: actions/upload-artifact@v4
