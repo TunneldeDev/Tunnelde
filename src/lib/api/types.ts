@@ -44,6 +44,7 @@ export interface Settings {
   skippedVersion: string | null;
   lastUpdateCheck: number | null;
   closeToTray: boolean;
+  showDockIconInBackground: boolean;
   titleBarStyle: TitleBarStyle;
   recordTerminalHistory: boolean;
   preloadDirs: boolean;

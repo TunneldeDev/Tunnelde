@@ -160,6 +160,12 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Tunnelde")
         .run(|app, event| {
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                // A closed main window is retained for its sessions and drafts.
+                // Always restore it, including when it is merely minimized.
+                window::show_main(app);
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 use tauri::Manager;
                 if let Some(state) = app.try_state::<state::AppState>() {

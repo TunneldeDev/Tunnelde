@@ -186,6 +186,8 @@
     "cssRejected": "External URLs and @import are not allowed",
     "autoCheck": "Check for updates automatically",
     "closeToTray": "Keep running in the tray",
+    "showDockIconInBackground": "Show in Dock while running in the background",
+    "showDockIconInBackgroundHint": "Keep the Dock icon after closing the window. When disabled, use the menu bar tray icon or launch Tunnelde again to restore the window. Active sessions stay connected.",
     "resetAll": "Reset all settings",
     "resetConfirm": "Reset all preferences to their platform defaults? Hosts, credentials, plugins, tabs and unsaved files are kept.",
     "dataDir": "Data folder",

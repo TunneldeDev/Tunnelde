@@ -27,6 +27,7 @@ export interface SettingDefinition {
   unit?: string;
   dependsOn?: "preloadDirs";
   hideOnMac?: boolean;
+  macOnly?: boolean;
 }
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
@@ -220,6 +221,10 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     label: "settings.titleBar",
   },
   { ...toggle("closeToTray", "general", "settings.closeToTrayHint"), hideOnMac: true },
+  {
+    ...toggle("showDockIconInBackground", "general", "settings.showDockIconInBackgroundHint"),
+    macOnly: true,
+  },
   select("theme", "appearance", [
     choice("system", "settings.themeSystem"),
     choice("dark", "settings.themeDark"),

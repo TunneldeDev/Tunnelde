@@ -75,6 +75,28 @@ mod tests {
     }
 
     #[test]
+    fn background_dock_preference_migrates_and_persists_both_choices() {
+        let legacy = load_json(r#"{"theme":"dark","closeToTray":true}"#);
+        assert!(legacy.show_dock_icon_in_background);
+        assert!(legacy.close_to_tray);
+        assert_eq!(legacy.theme, "dark");
+        let database = Database::in_memory().unwrap();
+        for visible in [false, true] {
+            let settings = Settings {
+                show_dock_icon_in_background: visible,
+                ..Settings::default()
+            };
+            database
+                .with(|conn| {
+                    save(conn, &settings)?;
+                    assert_eq!(load(conn)?.show_dock_icon_in_background, visible);
+                    Ok(())
+                })
+                .unwrap();
+        }
+    }
+
+    #[test]
     fn persists_settings_through_save_and_load() {
         let database = Database::in_memory().expect("database");
         for language in ["system", "zh-CN", "en-US"] {

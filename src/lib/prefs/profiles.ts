@@ -16,6 +16,7 @@ export const PORTABLE_SETTING_KEYS = [
   "userCss",
   "autoCheckUpdates",
   "closeToTray",
+  "showDockIconInBackground",
   "titleBarStyle",
   "recordTerminalHistory",
   "preloadDirs",

@@ -4,11 +4,60 @@ use crate::error::AppResult;
 use crate::state::AppState;
 
 pub fn show_main(app: &AppHandle) {
+    // Restore Dock presence before focusing the window. This also covers tray
+    // actions and a second launch while the app is running without a Dock icon.
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            if let Err(error) = handle.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                tracing::warn!(%error, "could not restore Dock icon");
+            }
+            let _ = handle.show();
+            show_main_window(&handle);
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    show_main_window(app);
+}
+
+fn show_main_window(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.unminimize();
         let _ = window.show();
         let _ = window.set_focus();
     }
+}
+
+/// Re-evaluate on the main thread so preference changes and close/reopen events
+/// use the current window state, even when queued close together.
+pub fn apply_background_dock_preference(app: &AppHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let handle = app.clone();
+        let _ = app.run_on_main_thread(move || {
+            let visible = handle
+                .get_webview_window("main")
+                .and_then(|window| window.is_visible().ok())
+                .unwrap_or(true);
+            let show_in_background = handle
+                .try_state::<AppState>()
+                .map(|state| state.settings().show_dock_icon_in_background)
+                .unwrap_or(true);
+            // Accessory mode keeps the menu-bar tray available. Use activation
+            // policy rather than Dock transforms, which can drop rapid hides.
+            let policy = if visible || show_in_background {
+                tauri::ActivationPolicy::Regular
+            } else {
+                tauri::ActivationPolicy::Accessory
+            };
+            if let Err(error) = handle.set_activation_policy(policy) {
+                tracing::warn!(%error, "could not update background Dock icon");
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 /// Keeps the native title bar in sync with the in-app theme.
@@ -83,7 +132,9 @@ pub fn install_close_handler(app: &AppHandle) {
             let keep_alive = cfg!(target_os = "macos") || close_to_tray(&handle);
             if keep_alive {
                 api.prevent_close();
-                let _ = target.hide();
+                if target.hide().is_ok() {
+                    apply_background_dock_preference(&handle);
+                }
             }
         }
     });

@@ -42,6 +42,30 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it.each(["windows", "linux", "macos"])(
+    "shows the background Dock preference only on macOS (%s)",
+    async (os) => {
+      const platformDefaults = createDefaultSettings(os);
+      useSettings.setState({
+        settings: platformDefaults,
+        info: { os, defaultSettings: platformDefaults } as AppInfo,
+      });
+      render(<SettingsPage />);
+      expect(Boolean(document.querySelector('[data-setting="closeToTray"]'))).toBe(os !== "macos");
+      if (os !== "macos") {
+        expect(document.querySelector('[data-setting="showDockIconInBackground"]')).toBeNull();
+        return;
+      }
+      const toggle = row("showDockIconInBackground").getByRole("switch");
+      expect(toggle.getAttribute("aria-checked")).toBe("true");
+      await act(async () => fireEvent.click(toggle));
+      expect(update).toHaveBeenLastCalledWith({ showDockIconInBackground: false });
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
+      await act(async () => fireEvent.click(row("showDockIconInBackground").getByRole("button")));
+      expect(update).toHaveBeenLastCalledWith({ showDockIconInBackground: true });
+    },
+  );
+
   it("places the labelled terminal preview inside display settings and navigates to that parent", async () => {
     useNavigation.setState({ settingsSection: "terminal" });
     await act(async () => {

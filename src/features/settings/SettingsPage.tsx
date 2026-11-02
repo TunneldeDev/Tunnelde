@@ -324,7 +324,9 @@ export function SettingsPage() {
     });
   const defaults = info?.defaultSettings ?? createDefaultSettings(info?.os);
   const filtering = Boolean(query.trim()) || modifiedOnly;
-  const definitions = SETTINGS_CATALOG.filter((item) => !(item.hideOnMac && info?.os === "macos"));
+  const definitions = SETTINGS_CATALOG.filter(
+    (item) => !(item.hideOnMac && info?.os === "macos") && (!item.macOnly || info?.os === "macos"),
+  );
   const isModified = (item: SettingDefinition) =>
     !samePreference(settings[item.key], defaults[item.key]) ||
     (item.key === "userCss" && cssDraft !== null && cssDraft !== settings.userCss);

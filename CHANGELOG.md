@@ -6,6 +6,17 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-11-02
+
+### Added
+
+- A macOS-only General setting to keep or hide the Dock icon while the closed window runs in the background. It defaults to visible, supports settings profiles and import/export, and restores Dock presence when the window is reopened.
+
+### Fixed
+
+- Reopen and focus the retained main window when clicking the macOS Dock icon after closing, hiding or minimizing it. Tray actions and relaunching use the same restoration path while preserving SSH sessions and unsaved drafts.
+
+
 ## [0.24.0] - 2026-11-02
 
 ### Added

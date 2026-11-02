@@ -186,6 +186,8 @@
     "cssRejected": "不允许外部 URL 与 @import",
     "autoCheck": "自动检查更新",
     "closeToTray": "关闭后留在托盘",
+    "showDockIconInBackground": "后台运行时在程序坞显示",
+    "showDockIconInBackgroundHint": "关闭窗口后保留程序坞图标。关闭此选项后，可通过菜单栏托盘图标或重新启动 Tunnelde 恢复窗口，已连接的会话会继续运行。",
     "resetAll": "重置全部设置",
     "resetConfirm": "恢复当前平台的全部默认偏好设置？主机、凭据、插件、标签和未保存文件会保留。",
     "dataDir": "数据目录",

@@ -47,6 +47,8 @@ pub struct Settings {
     pub skipped_version: Option<String>,
     pub last_update_check: Option<i64>,
     pub close_to_tray: bool,
+    /// macOS: keep the Dock icon after closing the main window.
+    pub show_dock_icon_in_background: bool,
     /// "system" uses native chrome; "compact" integrates the window controls.
     pub title_bar_style: String,
     pub record_terminal_history: bool,
@@ -99,6 +101,7 @@ impl Default for Settings {
             skipped_version: None,
             last_update_check: None,
             close_to_tray: false,
+            show_dock_icon_in_background: true,
             title_bar_style: if cfg!(target_os = "windows") {
                 "compact"
             } else {

@@ -24,6 +24,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     skippedVersion: null,
     lastUpdateCheck: null,
     closeToTray: false,
+    showDockIconInBackground: true,
     titleBarStyle: platform === "windows" ? "compact" : "system",
     recordTerminalHistory: false,
     preloadDirs: true,

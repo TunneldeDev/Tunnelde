@@ -33,6 +33,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "userCss",
     "autoCheckUpdates",
     "closeToTray",
+    "showDockIconInBackground",
     "titleBarStyle",
     "recordTerminalHistory",
     "preloadDirs",
@@ -306,6 +307,21 @@ pub async fn settings_file_export(
 mod tests {
     use super::*;
     use crate::db::Database;
+
+    #[test]
+    fn background_dock_preference_is_portable_and_legacy_profiles_keep_default() {
+        assert_eq!(
+            normalize(serde_json::json!({"theme":"dark"})).unwrap()["showDockIconInBackground"],
+            true
+        );
+        let settings = Settings {
+            show_dock_icon_in_background: false,
+            ..Settings::default()
+        };
+        let snapshot = portable(&settings).unwrap();
+        assert_eq!(snapshot["showDockIconInBackground"], false);
+        assert_eq!(normalize(snapshot.clone()).unwrap(), snapshot);
+    }
 
     #[test]
     fn portable_snapshot_excludes_runtime_metadata_and_all_unrelated_data() {
