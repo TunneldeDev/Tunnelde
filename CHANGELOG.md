@@ -6,6 +6,17 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-11-02
+
+### Fixed
+
+- Use the full chat pane with centered message and composer columns, including editor and sidebar docking. Keep long execution-target names from pushing the send button outside narrow panes.
+- Give multi-line menu entries their natural height, preventing overlapping host addresses and approval descriptions.
+- Keep SSH connection names synchronized after renaming a host. Show one assistant target per saved host and connected address, preserving the selected connection instead of switching terminals.
+- Replace the assistant session dropdown with searchable history and direct per-row rename/delete actions. Deleting another conversation preserves the active conversation, draft, model and approval choice; running conversations remain protected.
+- Localize untitled conversations without changing custom names, and update background conversation completion in history. Requires assistant packages 1.3.1 for the new session metadata and rename action.
+- Keep provider configuration in the chat toolbar and workspace options in the target menu.
+
 ## [0.25.0] - 2026-11-02
 
 ### Added

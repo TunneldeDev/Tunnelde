@@ -61,7 +61,7 @@ The coding integrations are community plugins maintained by TunneldeDev, not ven
 extensions. They execute the corresponding agent; selecting a model does not substitute
 an API chatbot for a coding CLI. Authenticate the CLI on the machine where it will run.
 
-With desktop **0.25.0+** and assistant plugins **1.3.0+**:
+With desktop **0.25.1+** and assistant plugins **1.3.1+**:
 
 1. Connect a remote host in the Hosts sidebar.
 2. Open the plugin's **Execution location / 运行位置** menu and choose **Local** or the
@@ -72,6 +72,10 @@ With desktop **0.25.0+** and assistant plugins **1.3.0+**:
    no session ID or native helper is needed for ordinary remote execution.
 
 Tunnelde AI also supports running its API assistant process on the selected remote.
+
+Click the conversation title to search history and rename or delete an item directly
+from its row. Untitled conversations follow the interface language. Host renames update
+the target selector, and multiple terminals on the same host share one machine entry.
 Select and authorize the remote Node runtime, then approve uploading the plugin into a
 fresh user directory. API calls originate there; configuration and API keys travel over
 SSH stdin and are not written into the deployment files. Pi asks before uploading its

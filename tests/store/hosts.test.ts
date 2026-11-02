@@ -17,6 +17,7 @@ vi.mock("@/lib/api/ipc", () => ({
 import "@/i18n/i18n";
 import type { Host } from "@/lib/api/types";
 import { useHosts } from "@/store/hosts";
+import { useSsh } from "@/store/ssh";
 
 const host = (id: string, sortOrder: number): Host => ({
   id,
@@ -45,6 +46,37 @@ beforeEach(() => {
 });
 
 describe("host ordering", () => {
+  it("publishes a saved rename immediately while the host snapshot is still loading", async () => {
+    let resolveSnapshot!: (value: { hosts: Host[]; groups: [] }) => void;
+    snapshot.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    );
+    const original = host("alpha", 0);
+    const renamed = { ...original, name: "Renamed" };
+    update.mockResolvedValue(renamed);
+    useSsh.setState({
+      sessions: [
+        {
+          id: "ssh",
+          hostId: "alpha",
+          title: "alpha",
+          address: "root@alpha.example.com:22",
+          cols: 80,
+          rows: 24,
+          connectedAt: 1,
+        },
+      ],
+    });
+    const saving = useHosts.getState().updateHost("alpha", { ...renamed });
+    await vi.waitFor(() => expect(snapshot).toHaveBeenCalled());
+    expect(useHosts.getState().hosts[0]?.name).toBe("Renamed");
+    expect(useSsh.getState().sessions[0]?.title).toBe("Renamed");
+    resolveSnapshot({ hosts: [renamed], groups: [] });
+    await saving;
+  });
   it("moves a host in front of the drop target", () => {
     useHosts.getState().moveHost("gamma", "alpha");
     expect(useHosts.getState().hosts.map((item) => item.id)).toEqual(["gamma", "alpha", "beta"]);

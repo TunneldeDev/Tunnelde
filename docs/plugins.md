@@ -202,6 +202,18 @@ model and approval controls; subsequent `events.publish` messages carry sequence
 The UI preserves drafts when a panel is moved. Secrets belong in `secrets.*`, never view data
 or plugin storage. See the hub SDK and Tunnelde AI source for the complete schema.
 
+Since 0.25.1, the controlled session picker provides searchable history with row-level
+rename and delete actions. `commands.session` receives `action: "select" | "new" |
+"rename" | "delete"`, a `sessionId` for an existing conversation, and `title` for a rename.
+Rename/delete must operate on that ID without selecting a different conversation;
+deleting the active conversation may select a remaining one. Empty or overlong names
+must be rejected, and running conversations must reject deletion. Session entries can
+include `untitled`, `updatedAt` (Unix milliseconds), `running` and `runId`. Use an empty
+title plus `untitled: true` for a localized placeholder, and `untitled: false` for custom
+names. Background terminal events matching the session's `runId` clear its running
+indicator without changing the visible conversation. The four official assistants
+implement this contract starting with 1.3.1.
+
 Since 0.22.2, chat blocks may include a `title` and a `profilePolicy` containing
 `primaryProtocols`, `reviewerProtocols` and `defaultProtocol`. The default must be one of
 the primary protocols. The host uses these to show the plugin's identity and keep its

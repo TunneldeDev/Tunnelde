@@ -38,6 +38,29 @@ beforeEach(() => {
 });
 
 describe("SSH session lifecycle", () => {
+  it("updates all connection titles after renaming a host and ignores an older refresh", async () => {
+    let resolveSnapshot!: (sessions: SshSession[]) => void;
+    const others = { ...session, id: "other-host", hostId: "other", title: "Other" };
+    useSsh.setState({ sessions: [session, { ...session, id: "second" }, others] });
+    apiMock.sshSessions.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    );
+    const refresh = useSsh.getState().refresh();
+    useSsh.getState().renameHost(session.hostId, "Temporary name");
+    useSsh.getState().renameHost(session.hostId, "server");
+    resolveSnapshot([{ ...session, title: "Temporary name" }]);
+    await refresh;
+    expect(useSsh.getState().sessions.map((item) => [item.id, item.title])).toEqual([
+      [session.id, "server"],
+      ["second", "server"],
+      [others.id, "Other"],
+    ]);
+    expect(apiMock.sshConnect).not.toHaveBeenCalled();
+    expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+  });
   it("retains the session and tabs when disconnect fails", async () => {
     apiMock.sshDisconnect.mockRejectedValue(new Error("unavailable"));
     await useSsh.getState().disconnect(session.id);

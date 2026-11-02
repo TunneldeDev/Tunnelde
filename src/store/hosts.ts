@@ -5,6 +5,7 @@ import { api } from "@/lib/api/ipc";
 import type { Group, Host, HostInput } from "@/lib/api/types";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
+import { useSsh } from "@/store/ssh";
 
 interface HostsStore {
   groups: Group[];
@@ -131,6 +132,12 @@ export const useHosts = create<HostsStore>((set, get) => ({
   updateHost: async (id, input) => {
     try {
       const host = await api.updateHost(id, input);
+      editVersion++;
+      set((state) => ({
+        hosts: state.hosts.map((item) => (item.id === id ? host : item)),
+        loading: false,
+      }));
+      useSsh.getState().renameHost(id, host.name);
       await get().load();
       toast(i18n.t("toast.hostUpdated"), "success");
       return host;

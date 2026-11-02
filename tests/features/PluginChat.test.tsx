@@ -406,13 +406,13 @@ describe("controlled plugin chat", () => {
     render(<PluginChat pluginId="assistant" viewId="chat" block={chat} />);
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "First draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
-    fireEvent.click(screen.getByRole("option", { name: "Second conversation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Second conversation" }));
     await waitFor(() =>
       expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(""),
     );
     fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Second draft" } });
     fireEvent.click(screen.getByRole("button", { name: "Conversation" }));
-    fireEvent.click(screen.getByRole("option", { name: "First conversation" }));
+    fireEvent.click(screen.getByRole("button", { name: "First conversation" }));
     await waitFor(() =>
       expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("First draft"),
     );

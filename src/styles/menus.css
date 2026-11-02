@@ -45,6 +45,19 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
+.td-menu__item.td-menu__item--description {
+  height: auto;
+  min-height: 44px;
+  padding-block: 7px;
+  align-items: flex-start;
+}
+.td-menu__item--description > .td-menu__icon,
+.td-menu__item--description > .td-menu__check {
+  margin-top: 2px;
+}
+.td-menu__item-text > span {
+  line-height: 1.4;
+}
 .td-menu__item-text > small {
   color: var(--td-muted);
   font-size: 11px;

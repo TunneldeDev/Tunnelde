@@ -20,6 +20,7 @@ interface SshStore {
   connect: (request: SshConnectRequest) => Promise<SshSession | null>;
   disconnect: (sessionId: string) => Promise<void>;
   forget: (sessionId: string) => void;
+  renameHost: (hostId: string, title: string) => void;
 }
 
 export const useSsh = create<SshStore>((set, get) => ({
@@ -27,6 +28,15 @@ export const useSsh = create<SshStore>((set, get) => ({
   connectingHostId: null,
   connectingHostIds: [],
   disconnectingSessionIds: [],
+
+  renameHost: (hostId, title) => {
+    sessionVersion += 1;
+    set((state) => ({
+      sessions: state.sessions.map((session) =>
+        session.hostId === hostId ? { ...session, title } : session,
+      ),
+    }));
+  },
 
   refresh: async () => {
     const version = sessionVersion;

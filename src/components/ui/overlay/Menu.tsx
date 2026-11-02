@@ -164,7 +164,11 @@ export function Menu({ label, items, trigger, className, menuClassName, disabled
                     aria-checked={item.checked}
                     disabled={item.disabled}
                     tabIndex={-1}
-                    className={cn("td-menu__item", item.danger && "is-danger")}
+                    className={cn(
+                      "td-menu__item",
+                      item.description && "td-menu__item--description",
+                      item.danger && "is-danger",
+                    )}
                     onClick={(event) => {
                       event.stopPropagation();
                       if (item.disabled) return;

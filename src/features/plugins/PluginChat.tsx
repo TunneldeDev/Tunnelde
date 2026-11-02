@@ -18,11 +18,9 @@ import {
   Sparkles,
   Square,
   Terminal,
-  Trash2,
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Textarea } from "@/components/ui/form/Field";
-import { Select } from "@/components/ui/form/Select";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { api, events, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
@@ -30,6 +28,7 @@ import {
   CHAT_MODES,
   applyChatEvent,
   chatRecord,
+  chatSessionTitle,
   normalizeChatBlock,
   type PluginChatBlock,
 } from "@/lib/plugins/pluginChat";
@@ -37,9 +36,12 @@ import { PLUGIN_INPUT_MAX_BYTES } from "@/lib/plugins/pluginView";
 import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/pluginSecurity";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
+import { useHosts } from "@/store/hosts";
+import { chatTargets } from "@/lib/plugins/chatTargets";
 import { PluginChatMessages } from "./PluginChatMessages";
 import { PluginChatConfigDialog } from "./PluginChatConfig";
 import { PluginExecutionDialog } from "./PluginExecutionDialog";
+import { PluginChatSessions } from "./PluginChatSessions";
 import "@/styles/pluginChat.css";
 
 export function PluginChat({
@@ -61,11 +63,14 @@ export function PluginChat({
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamAttempt, setStreamAttempt] = useState(0);
   const [configOpen, setConfigOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [executionOpen, setExecutionOpen] = useState<string | null>(null);
   const sshSessions = useSsh((state) => state.sessions);
+  const hosts = useHosts((state) => state.hosts);
   const [atBottom, setAtBottom] = useState(true);
   const viewport = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
+  const visibleSession = useRef(initial.activeSessionId);
   const lifetime = useRef(0);
   const generation = useRef(-1);
   const subscription = useRef<Promise<void>>(Promise.resolve());
@@ -128,9 +133,14 @@ export function PluginChat({
     };
   }, [pluginId, viewId, streamAttempt]);
   useEffect(() => {
+    if (visibleSession.current !== block.activeSessionId) {
+      visibleSession.current = block.activeSessionId;
+      nearBottom.current = true;
+      setAtBottom(true);
+    }
     if (nearBottom.current && viewport.current)
       viewport.current.scrollTop = viewport.current.scrollHeight;
-  }, [block.messages, block.approvals, block.tasks]);
+  }, [block.activeSessionId, block.messages, block.approvals, block.tasks]);
 
   const active = block.run?.status === "running" || block.run?.status === "waiting";
   const messages = block.messages.filter(
@@ -184,10 +194,10 @@ export function PluginChat({
       : block.execution?.kind === "local"
         ? undefined
         : profile?.remote?.sessionId || profile?.sessionId;
+  const targets = chatTargets(sshSessions, hosts, remoteSession);
+  const liveTarget = targets.find((item) => item.id === remoteSession);
   const location = remoteSession
-    ? block.execution?.title ||
-      sshSessions.find((item) => item.id === remoteSession)?.title ||
-      t("pluginChat.remoteExecution")
+    ? liveTarget?.title || block.execution?.title || t("pluginChat.remoteExecution")
     : t("pluginChat.localExecution");
   const locationDetail =
     block.execution?.cwd ||
@@ -248,7 +258,13 @@ export function PluginChat({
           previous.run?.id !== next.run?.id ||
           (next.run?.seq ?? 0) >= (previous.run?.seq ?? 0)
         )
-          update(next);
+          update(
+            name === previous.commands.session &&
+              ["rename", "delete"].includes(String(input.action)) &&
+              previous.activeSessionId === next.activeSessionId
+              ? { ...next, modelId: previous.modelId, mode: previous.mode }
+              : next,
+          );
       }
       return true;
     } catch (cause) {
@@ -397,7 +413,7 @@ export function PluginChat({
                   });
                 },
               },
-              ...sshSessions.map((item) => ({
+              ...targets.map((item) => ({
                 label: item.title || item.address,
                 description: item.address,
                 icon: <Server size={13} />,
@@ -435,7 +451,7 @@ export function PluginChat({
                 onSelect: () => update((previous) => ({ ...previous, modelId: item.id })),
               };
             })),
-        ...(block.commands.configure
+        ...(!block.commands.target && !executionProfiles.length && block.commands.configure
           ? [
               {
                 label: configureLabel,
@@ -454,7 +470,7 @@ export function PluginChat({
         <PluginExecutionDialog
           targetId={executionOpen}
           targetName={
-            sshSessions.find((item) => item.id === executionOpen)?.title ||
+            targets.find((item) => item.id === executionOpen)?.title ||
             (executionOpen !== "local" ? block.execution?.title : null) ||
             (executionOpen !== "local" ? t("pluginChat.remoteExecution") : null) ||
             t("pluginChat.localExecution")
@@ -486,21 +502,28 @@ export function PluginChat({
         </div>
       ) : null}
       <div className="plugin-chat__toolbar">
-        <Select
+        <button
+          type="button"
           className="plugin-chat__session"
-          label={t("pluginChat.session")}
-          value={block.activeSessionId}
-          options={
-            block.sessions.length
-              ? block.sessions.map((item) => ({
-                  value: item.id,
-                  label: item.title || t("pluginChat.untitled"),
-                }))
-              : [{ value: block.activeSessionId, label: t("pluginChat.untitled") }]
-          }
+          aria-label={t("pluginChat.session")}
+          aria-haspopup="dialog"
+          aria-expanded={historyOpen}
+          title={t("pluginChat.sessionHistory")}
           disabled={!!busy || !block.commands.session}
-          onChange={chooseSession}
-        />
+          onClick={() => {
+            setError(null);
+            setHistoryOpen(true);
+          }}
+        >
+          <History size={14} aria-hidden="true" />
+          <span>
+            {chatSessionTitle(
+              block.sessions.find((item) => item.id === block.activeSessionId),
+              t("pluginChat.untitled"),
+            )}
+          </span>
+          <ChevronDown size={12} aria-hidden="true" />
+        </button>
         {block.commands.session ? (
           <>
             <IconButton
@@ -509,24 +532,6 @@ export function PluginChat({
               onClick={() => void command(block.commands.session, { action: "new" })}
             >
               <Plus size={14} />
-            </IconButton>
-            <IconButton
-              label={t("pluginChat.deleteSession")}
-              disabled={!!busy || active}
-              onClick={() => {
-                if (useDialogs.getState().dialog.kind !== "none") return;
-                useDialogs.getState().confirm({
-                  title: t("pluginChat.deleteSession"),
-                  body: t("pluginChat.deleteConfirm"),
-                  confirmLabel: t("common.delete"),
-                  danger: true,
-                  onConfirm: () => {
-                    void command(block.commands.session, { action: "delete" });
-                  },
-                });
-              }}
-            >
-              <Trash2 size={13} />
             </IconButton>
           </>
         ) : null}
@@ -565,7 +570,7 @@ export function PluginChat({
                   onClick={() => chooseSession(item.id)}
                 >
                   <History size={13} aria-hidden="true" />
-                  <span>{item.title || t("pluginChat.untitled")}</span>
+                  <span>{chatSessionTitle(item, t("pluginChat.untitled"))}</span>
                 </button>
               ))}
           </section>
@@ -810,6 +815,24 @@ export function PluginChat({
           </span>
         </div>
       </form>
+      {historyOpen ? (
+        <PluginChatSessions
+          sessions={block.sessions}
+          activeId={block.activeSessionId}
+          activeRunning={active}
+          suspended={appDialogOpen}
+          busy={!!busy}
+          error={error}
+          onClose={() => setHistoryOpen(false)}
+          onAction={(action, sessionId, title) =>
+            command(block.commands.session, {
+              action,
+              sessionId,
+              ...(title !== undefined ? { title } : {}),
+            })
+          }
+        />
+      ) : null}
       {configOpen && !appDialogOpen ? (
         <PluginChatConfigDialog
           config={block.config}

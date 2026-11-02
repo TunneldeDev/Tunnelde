@@ -17,6 +17,7 @@ import i18n from "@/i18n/i18n";
 import { PluginChat } from "@/features/plugins/PluginChat";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
+import { useHosts } from "@/store/hosts";
 
 beforeEach(async () => {
   vi.clearAllMocks();
@@ -26,6 +27,7 @@ beforeEach(async () => {
   mock.authorize.mockResolvedValue(true);
   useDialogs.getState().close();
   useSsh.setState({ sessions: [] });
+  useHosts.setState({ hosts: [] });
 });
 
 function branded(protocol: "codex" | "claude-code" | "pi", title: string): PluginChatBlock {
@@ -298,7 +300,8 @@ describe("plugin chat presentation and controls", () => {
     render(<PluginChat pluginId="claude" viewId="chat" block={block} />);
     fireEvent.click(screen.getByRole("button", { name: "Execution location" }));
     expect(screen.queryByRole("menuitemradio", { name: /Foreign provider/ })).toBeNull();
-    expect(screen.getByRole("menuitem", { name: "Configure Claude Code" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Configure Claude Code" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Configure Claude Code" })).toBeTruthy();
   });
 
   it("keeps the stop control and blocks profile changes while a branded assistant is running", async () => {

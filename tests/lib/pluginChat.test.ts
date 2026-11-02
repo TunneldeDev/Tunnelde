@@ -9,6 +9,30 @@ import { normalizeBlocks } from "@/lib/plugins/pluginView";
 import { chat } from "../fixtures/pluginChat";
 
 describe("controlled plugin chat payloads", () => {
+  it("marks a background session finished without replacing the current conversation or accepting another run", () => {
+    const block = {
+      ...chat,
+      sessions: chat.sessions.map((session) => ({
+        ...session,
+        running: true,
+        runId: "background-run",
+      })),
+    };
+    const event = {
+      viewId: "chat",
+      type: "done",
+      sessionId: "session-2",
+      runId: "background-run",
+      seq: 10,
+    };
+    expect(applyChatEvent(block, "chat", { ...event, runId: "stale-run" })).toBe(block);
+    expect(applyChatEvent(block, "chat", { ...event, viewId: "other" })).toBe(block);
+    const result = applyChatEvent(block, "chat", event);
+    expect(result.sessions[1]?.running).toBe(false);
+    expect(result.sessions[0]?.running).toBe(true);
+    expect(result.messages).toBe(block.messages);
+    expect(result.activeSessionId).toBe(block.activeSessionId);
+  });
   it("groups work by user turn, preserves final replies and does not merge different turns", () => {
     const turns = groupChatMessages([
       { id: "u1", role: "user", content: "inspect" },

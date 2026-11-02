@@ -139,7 +139,7 @@ export interface PluginChatBlock {
     recover?: string;
     target?: string;
   };
-  sessions: { id: string; title: string }[];
+  sessions: ChatSession[];
   activeSessionId: string;
   mode: ChatMode;
   models: { id: string; label: string }[];
@@ -156,6 +156,23 @@ export interface PluginChatBlock {
   notice: string;
   config?: PluginChatConfig;
   execution?: ChatExecution | null;
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  untitled?: boolean;
+  running?: boolean;
+  runId?: string;
+  updatedAt?: number;
+}
+
+export function chatSessionTitle(session: ChatSession | undefined, untitled: string): string {
+  return !session?.title ||
+    session.untitled === true ||
+    (session.untitled === undefined && ["New conversation", "新会话"].includes(session.title))
+    ? untitled
+    : session.title;
 }
 
 export interface ChatExecution {
@@ -307,7 +324,20 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
         .slice(0, 200)
         .flatMap((item) => {
           const session = chatRecord(item);
-          return id(session.id) ? [{ id: id(session.id), title: text(session.title) }] : [];
+          return id(session.id)
+            ? [
+                {
+                  id: id(session.id),
+                  title: text(session.title),
+                  ...(typeof session.untitled === "boolean" ? { untitled: session.untitled } : {}),
+                  ...(typeof session.running === "boolean" ? { running: session.running } : {}),
+                  ...(id(session.runId) ? { runId: id(session.runId) } : {}),
+                  ...(Number.isSafeInteger(session.updatedAt) && Number(session.updatedAt) >= 0
+                    ? { updatedAt: Number(session.updatedAt) }
+                    : {}),
+                },
+              ]
+            : [];
         }),
     ),
     activeSessionId: id(raw.activeSessionId),
@@ -442,13 +472,25 @@ export function applyChatEvent(
   payload: unknown,
 ): PluginChatBlock {
   const event = chatRecord(payload);
-  if (
-    event.viewId !== viewId ||
-    event.sessionId !== block.activeSessionId ||
-    !Number.isSafeInteger(event.seq) ||
-    Number(event.seq) < 0
-  )
+  if (event.viewId !== viewId || !Number.isSafeInteger(event.seq) || Number(event.seq) < 0)
     return block;
+  if (event.sessionId !== block.activeSessionId) {
+    // A background conversation may finish while the user is viewing another one.
+    // Only its own terminal event can clear its history row's running state.
+    const session = block.sessions.find((item) => item.id === event.sessionId);
+    if (
+      session?.running &&
+      session.runId === event.runId &&
+      ["done", "error"].includes(String(event.type))
+    )
+      return {
+        ...block,
+        sessions: block.sessions.map((item) =>
+          item === session ? { ...item, running: false } : item,
+        ),
+      };
+    return block;
+  }
   if (block.run && (event.runId !== block.run.id || Number(event.seq) <= block.run.seq))
     return block;
   if (!block.run && event.type !== "snapshot") return block;

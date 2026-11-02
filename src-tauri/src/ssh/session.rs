@@ -179,6 +179,16 @@ impl SshManager {
             .unwrap_or_default()
     }
 
+    pub fn rename_host(&self, host_id: &str, title: &str) {
+        if let Ok(mut sessions) = self.sessions.lock() {
+            for session in sessions.values_mut() {
+                if session.info.host_id == host_id {
+                    session.info.title = title.to_owned();
+                }
+            }
+        }
+    }
+
     pub fn write(&self, session_id: &str, data: Vec<u8>) -> AppResult<()> {
         let sessions = self
             .sessions

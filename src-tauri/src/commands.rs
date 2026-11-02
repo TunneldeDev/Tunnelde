@@ -209,9 +209,11 @@ pub fn host_create(state: State<'_, AppState>, input: HostInput) -> AppResult<Ho
 #[tauri::command]
 pub fn host_update(state: State<'_, AppState>, id: String, input: HostInput) -> AppResult<Host> {
     let draft = input.validate()?;
-    state
+    let host = state
         .db
-        .with(|conn| db::hosts::update_host(conn, &id, &draft))
+        .with(|conn| db::hosts::update_host(conn, &id, &draft))?;
+    state.ssh.rename_host(&id, &host.name);
+    Ok(host)
 }
 
 #[tauri::command]
