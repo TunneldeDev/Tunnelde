@@ -164,7 +164,7 @@ export function replacePendingRelease(baseChangelog, release) {
 
 export function releasePrBody(version, count, repository, sha) {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("Expected an immutable changelog SHA");
-  // Keep the squash body concise and link to the exact reviewed changelog.
+  // Keep the merge body concise and link to the exact reviewed changelog.
   return `---\n## ${version}\n\n归总 ${count} 项变更并更新版本，详见 [CHANGELOG.md](https://github.com/${repository}/blob/${sha}/CHANGELOG.md)。\n---`;
 }
 

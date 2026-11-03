@@ -93,7 +93,8 @@ individual authors, coauthors and change descriptions. Main promotions use Squas
 Every dev update maintains one generated `release/dev-to-main` PR and builds a beta prerelease
 named Nightly. The PR tree comes from dev, with synchronized versions, a summarized changelog,
 and a marker recording the dev source; its parent is current main. The marker tracks promotions
-across squash history. Historical changelog entries stay intact, and actual branch refs are
+across release history. Promotions retain the original dev commits and SHAs through a preparation
+commit with main/dev parents and a normal PR merge into main. Historical changelog entries stay intact, and actual branch refs are
 resolved and rechecked before generated refs are changed.
 
 Merging that release PR tags the exact stable merge commit and creates a shared draft. The reusable
