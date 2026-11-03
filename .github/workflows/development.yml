@@ -27,15 +27,12 @@ jobs:
           ref: dev
       - uses: actions/github-script@v7
         id: release
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
-          RUN_ATTEMPT: ${{ github.run_attempt }}
         with:
           script: |
             const {planDevelopment, maintainReleasePr, prepareNightly} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
             const plan = await planDevelopment({github, context});
             await maintainReleasePr({github, context, plan});
-            core.setOutput('tag', await prepareNightly({github, context, plan, runNumber: process.env.RUN_NUMBER, runAttempt: process.env.RUN_ATTEMPT}));
+            core.setOutput('tag', await prepareNightly({github, context, plan}));
 
   nightly:
     needs: prepare

@@ -12,7 +12,20 @@ export const RELEASE_BRANCH = "release/dev-to-main";
 export const POLICY_CONTEXT = "PR policy";
 export const SOURCE_PATH = ".github/release-source.json";
 const SHA = /^[a-f0-9]{40}$/;
-const TAG = /^v\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
+const TAG = /^v\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
+
+function compareReleaseTags(left, right) {
+  const a = left.match(/\d+/g).map(BigInt);
+  const b = right.match(/\d+/g).map(BigInt);
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    if (index === 3 && (a.length === 3 || b.length === 3))
+      return a.length === b.length ? 0 : a.length === 3 ? 1 : -1;
+    if (a[index] === undefined || b[index] === undefined)
+      return a.length === b.length ? 0 : a.length < b.length ? -1 : 1;
+    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
+  }
+  return 0;
+}
 
 export function validateTitle(title) {
   if (
@@ -299,17 +312,42 @@ export async function ensureRelease({ github, context, tag, sha, body, nightly =
   return tag;
 }
 
-export async function prepareNightly({ github, context, plan, runNumber, runAttempt }) {
+export async function prepareNightly({ github, context, plan }) {
   if (!plan.version) return "";
-  if (!/^\d+$/.test(String(runNumber)) || !/^\d+$/.test(String(runAttempt)))
-    throw new Error("Invalid build sequence");
-  const version = `${plan.version}-beta.${runNumber}.${runAttempt}`;
-  const releases = await github.paginate(github.rest.repos.listReleases, {
-    ...context.repo,
-    per_page: 100,
+  const repo = context.repo;
+  await assertSources(github, repo, { dev: plan.dev });
+  // Releases are retired, but immutable tags reserve every allocated sequence.
+  const { data: refs } = await github.rest.git.listMatchingRefs({
+    ...repo,
+    ref: `tags/v${plan.version}-beta.`,
   });
-  const existing = releases.find((release) => release.tag_name === `v${version}`);
-  if (existing) return existing.draft ? existing.tag_name : "";
+  const tags = refs
+    .map((ref) => ({ ...ref, tag: ref.ref.replace(/^refs\/tags\//, "") }))
+    .filter(({ tag }) => TAG.test(tag) && tag.startsWith(`v${plan.version}-beta.`))
+    .sort((a, b) => compareReleaseTags(b.tag, a.tag));
+  const latest = tags[0];
+  const body = `Development build from ${plan.dev}.\n\n${plan.release.notes}`;
+  if (latest) {
+    if (latest.object.type !== "commit" || !SHA.test(latest.object.sha))
+      throw new Error("Invalid existing Nightly tag");
+    const { data: commit } = await github.rest.git.getCommit({
+      ...repo,
+      commit_sha: latest.object.sha,
+    });
+    if (/^Release-source: ([a-f0-9]{40})$/m.exec(commit.message)?.[1] === plan.dev) {
+      await assertSources(github, repo, { dev: plan.dev });
+      return ensureRelease({
+        github,
+        context,
+        tag: latest.tag,
+        sha: latest.object.sha,
+        nightly: true,
+        body,
+      });
+    }
+  }
+  const sequence = latest ? BigInt(/-beta\.(\d+)/.exec(latest.tag)[1]) + 1n : 1n;
+  const version = `${plan.version}-beta.${sequence}`;
   const release = {
     ...plan.release,
     heading: plan.release.heading.replace(`[${plan.version}]`, `[${version}]`),
@@ -332,7 +370,7 @@ export async function prepareNightly({ github, context, plan, runNumber, runAtte
     tag: `v${version}`,
     sha,
     nightly: true,
-    body: `Development build from ${plan.dev}.\n\n${plan.release.notes}`,
+    body,
   });
 }
 
@@ -365,22 +403,14 @@ export async function publishRelease({ github, context, tag }) {
   const { data: ref } = await github.rest.git.getRef({ ...repo, ref: `tags/${tag}` });
   if (ref.object.sha !== release.target_commitish) throw new Error("Release tag moved");
   if (nightly) {
-    const sequence = (value) =>
-      value
-        .match(/-beta\.(\d+)\.(\d+)$/)
-        ?.slice(1)
-        .map(Number);
-    const currentSequence = sequence(tag);
-    if (!currentSequence) throw new Error("Invalid beta tag");
+    if (!TAG.test(tag)) throw new Error("Invalid beta tag");
     const newer = releases.some((item) => {
-      const candidate = sequence(item.tag_name);
       return (
         item.name === "Nightly" &&
         item.prerelease &&
         !item.draft &&
-        candidate &&
-        (candidate[0] > currentSequence[0] ||
-          (candidate[0] === currentSequence[0] && candidate[1] > currentSequence[1]))
+        TAG.test(item.tag_name) &&
+        compareReleaseTags(item.tag_name, tag) > 0
       );
     });
     if (newer) throw new Error("A newer Nightly is already published");
@@ -406,7 +436,8 @@ export async function publishRelease({ github, context, tag }) {
         old.id !== release.id &&
         old.name === "Nightly" &&
         old.prerelease &&
-        /^v\d+\.\d+\.\d+-beta\.\d+\.\d+$/.test(old.tag_name)
+        TAG.test(old.tag_name) &&
+        old.tag_name.includes("-beta.")
       )
         await github.rest.repos.deleteRelease({ ...repo, release_id: old.id });
     }

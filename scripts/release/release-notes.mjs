@@ -7,7 +7,7 @@ const CATEGORIES = [
   ["build", "构建 | Build"],
   ["other", "其他 | Other"],
 ];
-const VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
+const VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
 
 function markdown(value) {
   return value

@@ -16,6 +16,11 @@ fn stable_and_beta_channels_use_semver_without_implicit_downgrades() {
         ("0.26.2", "0.26.3-beta.4.1", "beta", true),
         ("0.26.3-beta.9.1", "0.26.3-beta.10.1", "beta", true),
         ("0.26.3-beta.10.1", "0.26.3-beta.9.1", "beta", false),
+        ("0.26.3", "0.26.4-beta.1", "beta", true),
+        ("0.26.3-beta.99.1", "0.26.4-beta.1", "beta", true),
+        ("0.26.3-beta.2.1", "0.26.3-beta.3", "beta", true),
+        ("0.26.4-beta.9", "0.26.4-beta.10", "beta", true),
+        ("0.26.4-beta.1", "0.26.4", "stable", true),
         ("0.26.1", "0.27.0-alpha.1", "beta", false),
         ("0.26.2", "0.26.2", "stable", false),
     ] {
@@ -71,10 +76,10 @@ fn beta_discovery_chooses_newest_eligible_published_package_not_list_order() {
         github_beta_feed(&releases).unwrap().version,
         Some(version("0.26.2"))
     );
-    releases.push(release("v0.26.3-beta.1.1", true, false, true));
+    releases.push(release("v0.26.3-beta.1", true, false, true));
     assert_eq!(
         github_beta_feed(&releases).unwrap().version,
-        Some(version("0.26.3-beta.1.1"))
+        Some(version("0.26.3-beta.1"))
     );
     assert!(github_beta_feed(&[]).is_err());
 }

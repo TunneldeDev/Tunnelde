@@ -16,7 +16,7 @@ const files = {
 };
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
-const BUILD_VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
+const BUILD_VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
 
 export const VERSION_PATHS = [
   "package.json",
@@ -110,7 +110,7 @@ export function setVersion(version) {
 export function checkVersion(tag) {
   const candidate = String(tag ?? "");
   // Branch names such as "main" are not release tags and must be ignored.
-  const expected = /^v?\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/.test(candidate)
+  const expected = /^v?\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/.test(candidate)
     ? candidate.replace(/^v/, "")
     : "";
   const pkg = currentVersion();
@@ -120,7 +120,7 @@ export function checkVersion(tag) {
     readFileSync(files.lock, "utf8"),
   );
   const problems = [];
-  const citationVersion = /^version: ["']?(\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?)["']?$/m.exec(
+  const citationVersion = /^version: ["']?(\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?)["']?$/m.exec(
     readFileSync(files.citation, "utf8"),
   )?.[1];
   if (citationVersion !== pkg)

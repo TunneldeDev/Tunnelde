@@ -14,7 +14,7 @@ ordinary work into `dev`; only the generated release promotion targets `main`.
    plus synchronized versions, the source marker, and the new changelog section. Its parent
    is current main, so it stays up to date with strict branch protection. The branch can be
    rebuilt with a forced update; dev, main and existing tags are never force updated.
-3. The same dev source builds a unique `vX.Y.Z-beta.RUN.ATTEMPT` tag. The public prerelease
+3. The same dev source builds a unique `vX.Y.Z-beta.N` tag. The public prerelease
    is named **Nightly**. All desktop installers, signatures and updater metadata must pass
    verification before publication. Only then is the previous Nightly release retired;
    immutable beta tags remain. Failed/stale builds cannot replace the working Nightly.
@@ -38,11 +38,15 @@ development preparation after the migration merges. No bot bypass or direct main
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
 Beta versions use the same next stable base with a unique build sequence suffix.
-The suffix is `beta.<Development run_number>.<run_attempt>`: `beta.2.1` is the second
-Development workflow run, first attempt. The run number is global to that workflow;
-publishing a stable version does **not** reset it. For example, after `0.26.2` is
-published, a new fix can produce `0.26.3-beta.3.1`. Retrying that Development run
-uses `beta.3.2`. These are build identifiers, not product minor/patch versions.
+The suffix is `beta.N`, counted separately for each target stable version. For example,
+`0.26.2-beta.1`, `0.26.2-beta.2`, then stable `0.26.2`; the first beta for the next patch
+is `0.26.3-beta.1`. A change to the target minor/major version also starts at `beta.1`.
+Automation reads immutable tags rather than the workflow's global run counter or the
+retired Nightly release. Failed builds reserve their number; retrying the same source
+reuses its existing tag and draft without changing published packages. Legacy tags such
+as `0.26.2-beta.2.1` remain valid and reserve sequence 2, so the next new source for that
+same target uses `0.26.2-beta.3`. Publication compares complete semantic versions, so
+a larger target version supersedes older betas even when its sequence restarts at 1.
 
 All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
 and lockfiles, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous
