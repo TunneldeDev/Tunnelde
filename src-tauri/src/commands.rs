@@ -15,7 +15,7 @@ use crate::ssh::files::{self as sftp, Listing};
 use crate::ssh::monitor;
 use crate::ssh::{self, HostKeyInfo, SessionInfo, SshConnectRequest};
 use crate::state::AppState;
-use crate::update::{self, UpdateState, RELEASES_PAGE};
+use crate::update::{self, UpdateState};
 use crate::vault;
 
 const TAB_KINDS: [&str; 14] = [
@@ -144,6 +144,8 @@ pub fn settings_update(
         .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;
     next.sanitize();
     next.network.validate()?;
+    update::validate_preferences(&next)?;
+    update::validate_settings_change(&previous, &next, &state.update.snapshot())?;
 
     let title_bar_changed = next.title_bar_style != previous.title_bar_style;
     if title_bar_changed {
@@ -179,6 +181,7 @@ pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<S
     let previous = state.settings();
     let mut next = Settings::default();
     next.sanitize();
+    update::validate_settings_change(&previous, &next, &state.update.snapshot())?;
     let title_bar_changed = next.title_bar_style != previous.title_bar_style;
     if title_bar_changed {
         crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
@@ -344,8 +347,11 @@ pub async fn update_install(app: AppHandle) -> AppResult<UpdateState> {
 
 #[tauri::command]
 pub fn open_release_page(app: AppHandle) -> AppResult<()> {
+    let state = app.state::<AppState>();
+    let snapshot = state.update.snapshot();
+    let page = update::release_page(&state.settings(), &snapshot);
     app.opener()
-        .open_url(RELEASES_PAGE, None::<&str>)
+        .open_url(page, None::<&str>)
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 

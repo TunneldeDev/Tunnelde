@@ -38,6 +38,11 @@ development preparation after the migration merges. No bot bypass or direct main
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
 Beta versions use the same next stable base with a unique build sequence suffix.
+The suffix is `beta.<Development run_number>.<run_attempt>`: `beta.2.1` is the second
+Development workflow run, first attempt. The run number is global to that workflow;
+publishing a stable version does **not** reset it. For example, after `0.26.2` is
+published, a new fix can produce `0.26.3-beta.3.1`. Retrying that Development run
+uses `beta.3.2`. These are build identifiers, not product minor/patch versions.
 
 All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
 and lockfiles, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous
@@ -86,3 +91,49 @@ to the newest dev source, avoiding a queue of obsolete installer builds.
 
 Native helpers and compiler timings remain optional Actions artifacts, never public desktop
 release downloads. The plugin marketplace repository has its own independent release process.
+
+## In-app channels, sources and OTA
+
+Updates live inside **Settings → Updates**. The status-bar notification, tray action and
+command palette all lead to that same section; they do not create a separate update page.
+Checks default to once daily, with every-startup and weekly options. Checking never
+downloads or installs a package automatically. Release notes are included in `latest.json`
+and displayed in a collapsed Markdown section.
+
+- **Stable** uses the latest public stable manifest and excludes prereleases.
+- **Public beta (Nightly)** discovers published releases containing `latest.json` and
+  selects the greatest eligible stable/beta version using SemVer. A finished stable
+  release supersedes its older beta builds. Drafts, alpha builds and incomplete releases
+  are excluded. A source outage is an error, never an up-to-date result.
+- Switching back to Stable never automatically downgrades a newer prerelease. It waits
+  for a stable version greater than the installed build. Existing beta tags stay immutable.
+
+Stable builds default to Stable. New beta installations default to Public beta; saved
+preferences always take priority when upgrading an existing installation.
+
+The official source is **GitHub**. There is no bundled third-party mirror. A **custom HTTPS
+source** can serve standard Tauri manifests at a template such as
+`https://updates.example.com/{channel}/latest.json`. The placeholder must occur exactly
+once in the path, expanding to `stable` or `beta`. Credentials, query strings and fragments
+are rejected. A beta check queries both manifests and chooses the newest eligible version;
+the beta endpoint may return HTTP 204 if no beta is available. Both channel endpoints
+must otherwise be reachable. This is a manifest service, not a generic GitHub proxy prefix.
+
+Mirror operators copy verified `latest.json` and the corresponding signed updater packages
+only after publication. Preserve version, signatures and release notes; replace package
+URLs with their HTTPS mirror locations. Publishing manifests atomically avoids half-built
+updates. Mirror data never replaces the application's embedded verification key. The
+application-update proxy in Network settings applies to source discovery, manifests and
+package downloads; the custom source itself is not a proxy setting.
+
+`requireSignedVersion` also binds the announced version to the signed package. A mirror
+cannot replay an older signed installer under a newer manifest version. Legacy packages
+without a version in their trusted signature comment must be updated manually.
+
+The existing release pipeline already produces **signed full-package OTA updates** for
+Windows and AppImage installations. Installation retains the exact package chosen by the
+check, verifies its signature and restarts the app. Checks and installs share an exclusive
+operation guard, and progress events are throttled to avoid flooding the UI. This is not
+binary delta patching: extra differential formats are unnecessary for the current updater.
+Unsigned macOS and Linux system packages can still check their selected channel and open
+the corresponding release for manual installation. Development builds do not self-update.

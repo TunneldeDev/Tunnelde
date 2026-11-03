@@ -1,5 +1,23 @@
 # Settings
 
+## Application updates
+
+**Settings → Updates** contains the current version, checks, installation progress and
+collapsible release notes. All update actions use this section instead of opening a new
+page. Choose **Stable** or **Public beta (Nightly)**, and **GitHub** or a compatible custom
+HTTPS source. Default: Stable for stable builds, Public beta for new beta installations,
+GitHub source, automatic checks once a day, manual download/installation. Existing saved
+channel choices are preserved. Every-startup and weekly checks are also available.
+
+Custom source addresses use exactly one `{channel}` in the URL path, e.g.
+`https://updates.example.com/{channel}/latest.json`; use **Apply** to save an edited
+address. A source must serve Tauri manifests and signed packages, rather than just a web
+page. Source selection and per-feature proxies are separate preferences. See
+[release operations](releases.md#in-app-channels-sources-and-ota) for mirror requirements.
+
+切换到正式版不会自动降级当前 beta；软件会等待版本号更新的正式版。
+更新检查不自动下载安装包，安装会重启应用。更新源、渠道和检查频率也随设置 profile 保存。
+
 ## Quick Access and plugin shortcuts
 
 - F1 / Ctrl/Cmd+Shift+P opens Quick Access in command mode (`>`).

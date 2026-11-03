@@ -46,6 +46,26 @@ const record = (id: string, kind: TabRecord["kind"], hostId: string | null = nul
   state: null,
 });
 
+it("migrates old updates tabs into a single settings tab while preserving pane placement", () => {
+  const metadata = JSON.stringify({
+    version: 1,
+    layout: { kind: "pane", paneId: "right" },
+    panes: [{ id: "right", tabIds: ["page:updates", "page:settings"], activeId: "page:updates" }],
+    activePaneId: "right",
+  });
+  state().hydrate([
+    { ...record("page:updates", "updates"), state: metadata },
+    record("page:settings", "settings"),
+  ]);
+  expect(state().tabs.map((tab) => tab.id)).toEqual(["page:settings"]);
+  expect(state().panes[0]!.tabIds).toEqual(["page:settings"]);
+  expect(state().panes[0]!.activeId).toBe("page:settings");
+  expect(state().activePaneId).toBe("right");
+  state().openPage("updates");
+  expect(state().tabs).toHaveLength(1);
+  expect(useNavigation.getState().settingsSection).toBe("updates");
+});
+
 beforeEach(() => {
   useNavigation.setState({
     activeSidebar: "hosts",
