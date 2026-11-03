@@ -100,11 +100,13 @@ describe("release preparation", () => {
 
   it("checks beta versions across every manifest and allows idempotent recovery", () => {
     const f = fixture();
-    expect(f.run("version", "set", "0.19.0-beta.12.1").status).toBe(0);
-    expect(f.run("version", "check", "v0.19.0-beta.12.1").status).toBe(0);
-    expect(f.run("version", "check", "v0.19.0-beta.12.2").status).toBe(1);
-    expect(f.run("version", "set", "0.19.0-beta.12.1").status).toBe(0);
-    expect(f.read("CITATION.cff")).toContain("version: 0.19.0-beta.12.1");
+    for (const version of ["0.19.0-beta.12.1", "0.19.0-beta.13"]) {
+      expect(f.run("version", "set", version).status).toBe(0);
+      expect(f.run("version", "check", `v${version}`).status).toBe(0);
+      expect(f.run("version", "check", "v0.19.0-beta.14").status).toBe(1);
+      expect(f.run("version", "set", version).status).toBe(0);
+      expect(f.read("CITATION.cff")).toContain(`version: ${version}`);
+    }
   });
 
   it("rejects a stale Cargo lock version", () => {
@@ -205,7 +207,7 @@ describe("release publishing", () => {
       writeFileSync(join(f.root, `sigs/Tunnelde_${name}.sig`), "test-signature");
     }
     writeFileSync(join(f.root, "notes.md"), "## Fixes\n\n- 终端粘贴。\n");
-    for (const tag of ["v0.27.0", "v0.27.1-beta.3.1"]) {
+    for (const tag of ["v0.27.0", "v0.27.1-beta.3.1", "v0.27.1-beta.4"]) {
       const result = f.run(
         "updater-json",
         "--tag",
