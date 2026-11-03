@@ -48,6 +48,34 @@ beforeEach(() => {
 });
 
 describe("settings persistence", () => {
+  it("publishes readiness only after saved settings, language and colors have been applied", async () => {
+    const saved: Settings = {
+      ...DEFAULT_SETTINGS,
+      theme: "light",
+      language: "zh-CN",
+      monoFontSize: 18,
+      colors: { background: "#f0e0d0" },
+    };
+    mocks.settings.mockResolvedValue(saved);
+    const store = await fresh();
+    const ready = vi.fn();
+    const unsubscribe = store.subscribe((state) => {
+      if (!state.ready) return;
+      ready();
+      expect(state.settings).toEqual(saved);
+      expect(document.documentElement.dataset.theme).toBe("light");
+      expect(document.documentElement.style.getPropertyValue("--td-mono-size")).toBe("18px");
+      expect(document.getElementById("td-color-preferences")?.textContent).toContain("#f0e0d0");
+      expect(mocks.setLanguage).toHaveBeenLastCalledWith("zh-CN");
+    });
+    try {
+      await store.getState().load();
+      expect(ready).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+    }
+  });
+
   it.each([
     ["windows", "compact"],
     ["macos", "system"],

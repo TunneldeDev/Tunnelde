@@ -17,6 +17,7 @@ pub fn run() {
     use platform::{menu, tray, window};
 
     tauri::Builder::default()
+        .manage(window::StartupWindow::default())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             use tauri::Manager;
             if plugins::security::cli_restricted(args.iter()) {
@@ -29,11 +30,17 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(window::SAVED_STATE_FLAGS)
+                .skip_initial_state("main")
+                .build(),
+        )
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
+            window::restore_main_geometry(&handle);
             let (theme, title_bar_style, locale) = {
                 use tauri::Manager;
                 let state = handle.state::<state::AppState>();
@@ -54,6 +61,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            window::main_window_ready,
             mounts::plugin_mounts_action,
             ssh::files::durable::durable_transfer_list,
             ssh::files::durable::durable_transfer_clear,

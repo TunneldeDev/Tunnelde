@@ -1,9 +1,49 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use tauri::{AppHandle, Manager, Theme, WindowEvent};
+use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 use crate::error::AppResult;
 use crate::state::AppState;
 
+// Visibility belongs to startup/tray handling; decorations belong to settings.
+pub const SAVED_STATE_FLAGS: StateFlags = StateFlags::SIZE
+    .union(StateFlags::POSITION)
+    .union(StateFlags::MAXIMIZED)
+    .union(StateFlags::FULLSCREEN);
+
+#[derive(Default)]
+pub struct StartupWindow(AtomicBool);
+
+pub fn restore_main_geometry(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        // Defer fullscreen: native fullscreen transitions can reveal a window.
+        let geometry = SAVED_STATE_FLAGS.difference(StateFlags::FULLSCREEN);
+        if let Err(error) = window.restore_state(geometry) {
+            tracing::warn!(%error, "could not restore window geometry");
+        }
+    }
+}
+
+#[tauri::command]
+pub fn main_window_ready(app: AppHandle, window: tauri::WebviewWindow) -> AppResult<()> {
+    if window.label() != "main" {
+        return Err(crate::error::AppError::validation("invalid window"));
+    }
+    if !app.state::<StartupWindow>().0.swap(true, Ordering::AcqRel) {
+        if let Err(error) = window.restore_state(StateFlags::FULLSCREEN) {
+            tracing::warn!(%error, "could not restore fullscreen state");
+        }
+        show_main(&app);
+    }
+    Ok(())
+}
+
 pub fn show_main(app: &AppHandle) {
+    // A second launch, Dock click or tray action must not expose startup frames.
+    if !app.state::<StartupWindow>().0.load(Ordering::Acquire) {
+        return;
+    }
     // Restore Dock presence before focusing the window. This also covers tray
     // actions and a second launch while the app is running without a Dock icon.
     #[cfg(target_os = "macos")]
@@ -71,6 +111,23 @@ pub fn apply_theme(app: &AppHandle, mode: &str) {
         _ => None,
     };
     let _ = window.set_theme(theme);
+    let background = app
+        .try_state::<AppState>()
+        .and_then(|state| {
+            state
+                .settings()
+                .colors
+                .get("background")
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or_else(|| {
+            if theme.or_else(|| window.theme().ok()) == Some(Theme::Light) {
+                tauri::window::Color(242, 245, 250, 255)
+            } else {
+                tauri::window::Color(7, 11, 18, 255)
+            }
+        });
+    let _ = window.set_background_color(Some(background));
 }
 
 /// Applies native chrome immediately, including when the preference changes.
