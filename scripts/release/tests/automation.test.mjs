@@ -55,6 +55,7 @@ function fixture({
   messages = {},
   prCommits,
   pr,
+  gitCommits = {},
   moved = false,
 } = {}) {
   const calls = [];
@@ -62,7 +63,7 @@ function fixture({
   const references = { "heads/main": main, "heads/dev": dev, ...refs };
   const files = { ...versionFiles, "CHANGELOG.md": history, [SOURCE_PATH]: JSON.stringify(marker) };
   const pull = {
-    commits: 1,
+    commits: pr?.head.ref === RELEASE_BRANCH ? 2 : 1,
     ...(pr || {
       number: 15,
       title: "fix: restore paste",
@@ -74,6 +75,9 @@ function fixture({
   let comparisons = 0;
   const github = {
     paginate: (method, args) => method(args),
+    graphql: async (query, variables) => {
+      calls.push({ ready: { query, variables } });
+    },
     rest: {
       git: {
         listMatchingRefs: async ({ ref }) => ({
@@ -97,9 +101,9 @@ function fixture({
           };
         },
         getCommit: async ({ commit_sha }) => ({
-          data: {
+          data: gitCommits[commit_sha] ?? {
             tree: { sha: commit_sha },
-            parents: [{ sha: main }],
+            parents: (commit_sha === generated ? [main, dev] : [main]).map((sha) => ({ sha })),
             message: messages[commit_sha] ?? `chore: Nightly\n\nRelease-source: ${dev}`,
           },
         }),
@@ -115,6 +119,11 @@ function fixture({
         },
         createCommit: async (args) => {
           calls.push({ commit: args });
+          gitCommits[generated] = {
+            tree: { sha: args.tree },
+            parents: args.parents.map((sha) => ({ sha })),
+            message: args.message,
+          };
           for (const entry of calls.findLast((call) => call.tree).tree.tree)
             contents.set(`${generated}:${entry.path}`, entry.content);
           return { data: { sha: generated } };
@@ -169,12 +178,10 @@ function fixture({
       },
       pulls: {
         listCommits: async () =>
-          prCommits ?? [
-            {
-              ...source,
-              sha: references[`heads/${pull.head.ref}`] || pull.head.sha,
-            },
-          ],
+          prCommits ??
+          (pull.head.ref === RELEASE_BRANCH
+            ? [source, { sha: generated, commit: { message: "chore(main): release 0.26.2" } }]
+            : [{ ...source, sha: references[`heads/${pull.head.ref}`] || pull.head.sha }]),
         list: async () => (pr ? [pr] : []),
         get: async () => ({
           data: {
@@ -186,6 +193,7 @@ function fixture({
           calls.push({ createPr: args });
           pull.head.ref = args.head;
           pull.base.ref = args.base;
+          pull.commits = 2;
           return { data: { number: 15 } };
         },
         update: async (args) => {
@@ -199,7 +207,7 @@ function fixture({
       },
     },
   };
-  return { github, context, calls, files, contents, references };
+  return { github, context, calls, files, contents, references, gitCommits };
 }
 
 test("conventional titles and automatic semantic versioning", () => {
@@ -223,7 +231,7 @@ test("conventional titles and automatic semantic versioning", () => {
   assert.equal(nextVersion("1.2.3", changes("docs: guide")), "1.2.4");
 });
 
-test("immutable source reads retry transient GitHub gateway errors only", async () => {
+test("immutable source reads retry transient GitHub server errors only", async () => {
   const f = fixture();
   const original = f.github.rest.repos.getContent;
   const delays = [];
@@ -237,7 +245,7 @@ test("immutable source reads retry transient GitHub gateway errors only", async 
     history,
   );
   assert.deepEqual(delays, [1000, 2000]);
-  for (const status of [403, 404, 504]) {
+  for (const status of [400, 401, 403, 404, 422, 500, 502, 503, 504]) {
     reads = 0;
     f.github.rest.repos.getContent = async () => {
       reads++;
@@ -247,7 +255,7 @@ test("immutable source reads retry transient GitHub gateway errors only", async 
       readText(f.github, context.repo, "CHANGELOG.md", dev, async () => {}),
       /Read failed/,
     );
-    assert.equal(reads, status === 504 ? 4 : 1);
+    assert.equal(reads, status >= 500 ? 4 : 1);
   }
 });
 
@@ -334,7 +342,7 @@ test("Nightly reruns reuse their immutable tag rather than creating another comm
   );
 });
 
-test("promotion tree is dev content with main history and a single main parent, without modifying dev or main", async () => {
+test("promotion tree retains both main and original dev history without modifying either branch", async () => {
   const f = fixture();
   const plan = await planDevelopment(f);
   await maintainReleasePr({ ...f, plan });
@@ -343,7 +351,13 @@ test("promotion tree is dev content with main history and a single main parent, 
   const notes = tree.tree.find((entry) => entry.path === "CHANGELOG.md").content;
   assert.ok(notes.includes("## [0.26.2]"));
   assert.ok(notes.endsWith("## [0.26.1] - 2026-11-03\n\n- Historical notes.\n"));
-  assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [main]);
+  assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [main, dev]);
+  assert.deepEqual(JSON.parse(f.contents.get(`${generated}:${SOURCE_PATH}`)), {
+    sourceSha: dev,
+    baseSha: main,
+    version: "0.26.2",
+    history: "merge",
+  });
   assert.equal(f.references["heads/main"], main);
   assert.equal(f.references["heads/dev"], dev);
   assert.equal(f.calls.find((call) => call.createPr).createPr.base, "main");
@@ -369,7 +383,10 @@ test("release policy ignores stale PR base.sha and resolves actual main/dev refs
     base: { ref: "main", sha: baseline, repo },
   };
   const f = fixture({ pr });
-  f.contents.set(`${generated}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
+  f.contents.set(
+    `${generated}:${SOURCE_PATH}`,
+    JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2", history: "merge" }),
+  );
   await checkPullRequest({ ...f, number: 15 });
   assert.equal(f.calls.at(-1).status.state, "success");
   f.references["heads/main"] = sha("f");
@@ -540,7 +557,10 @@ test("unchanged generated release PRs redispatch CI when recovering an interrupt
     base: { ref: "main", sha: main, repo },
   };
   const f = fixture({ pr, refs: { [`heads/${RELEASE_BRANCH}`]: generated } });
-  f.contents.set(`${generated}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
+  f.contents.set(
+    `${generated}:${SOURCE_PATH}`,
+    JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2", history: "merge" }),
+  );
   await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
   assert.deepEqual(
     f.calls.filter((call) => !call.compare).map((call) => Object.keys(call)[0]),
@@ -549,7 +569,7 @@ test("unchanged generated release PRs redispatch CI when recovering an interrupt
   assert.equal(f.calls.at(-1).dispatch.ref, RELEASE_BRANCH);
 });
 
-test("generated release PRs require exactly one reviewed commit", async () => {
+test("generated release PRs retain individual dev commits and validate their actual parents", async () => {
   const f = fixture({
     pr: {
       number: 15,
@@ -564,7 +584,89 @@ test("generated release PRs require exactly one reviewed commit", async () => {
       { ...source, sha: generated },
     ],
   });
-  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /must contain one commit/);
+  f.contents.set(
+    `${generated}:${SOURCE_PATH}`,
+    JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2", history: "merge" }),
+  );
+  await checkPullRequest({ ...f, number: 15 });
+  assert.equal(f.calls.at(-1).status.state, "success");
+  for (const parents of [[main], [dev], [dev, main], [main, baseline]]) {
+    f.gitCommits[generated] = {
+      tree: { sha: generated },
+      parents: parents.map((sha) => ({ sha })),
+    };
+    await assert.rejects(
+      checkPullRequest({ ...f, number: 15 }),
+      /retain the reviewed main and dev/,
+    );
+    assert.equal(f.calls.at(-1).status.state, "failure");
+  }
+});
+
+test("release policy rejects legacy squashed preparations and source changes outside metadata", async () => {
+  const f = fixture({
+    pr: {
+      number: 15,
+      title: "chore(main): release 0.26.2",
+      state: "open",
+      head: { ref: RELEASE_BRANCH, sha: generated, repo },
+      base: { ref: "main", sha: main, repo },
+    },
+  });
+  f.contents.set(
+    `${generated}:${SOURCE_PATH}`,
+    JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2" }),
+  );
+  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /regenerated/);
+  f.contents.set(
+    `${generated}:${SOURCE_PATH}`,
+    JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2", history: "merge" }),
+  );
+  f.github.rest.git.getTree = async ({ tree_sha }) => ({
+    data: {
+      truncated: false,
+      tree: [{ path: "app.ts", type: "blob", mode: "100644", sha: tree_sha }],
+    },
+  });
+  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /outside metadata \(app.ts\)/);
+  f.github.rest.git.getTree = async () => ({ data: { tree: [], truncated: true } });
+  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /truncated/);
+});
+
+test("legacy release branches are rebuilt even when their source markers are current", async () => {
+  const f = fixture({
+    refs: { [`heads/${RELEASE_BRANCH}`]: oldHead },
+    pr: {
+      number: 15,
+      title: "chore(main): release 0.26.2",
+      state: "open",
+      head: { ref: RELEASE_BRANCH, sha: oldHead, repo },
+      base: { ref: "main", sha: main, repo },
+    },
+  });
+  f.contents.set(`${oldHead}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
+  await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
+  assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [main, dev]);
+  assert.equal(f.calls.find((call) => call.updateRef).updateRef.ref, `heads/${RELEASE_BRANCH}`);
+});
+
+test("an old release draft is reopened only after history-preserving regeneration passes policy", async () => {
+  const f = fixture({
+    refs: { [`heads/${RELEASE_BRANCH}`]: oldHead },
+    pr: {
+      number: 15,
+      node_id: "PR_migration",
+      draft: true,
+      title: "chore(main): release 0.26.2",
+      state: "open",
+      head: { ref: RELEASE_BRANCH, sha: oldHead, repo },
+      base: { ref: "main", sha: main, repo },
+    },
+  });
+  f.contents.set(`${oldHead}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
+  await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
+  assert.equal(f.calls.at(-1).ready.variables.id, "PR_migration");
+  assert.equal(f.calls.at(-2).dispatch.ref, RELEASE_BRANCH);
 });
 
 test("rebased batches choose the highest semantic bump from retained commits", () => {
@@ -583,16 +685,16 @@ test("rebased batches choose the highest semantic bump from retained commits", (
   assert.equal(nextVersion("1.2.3", changes(["docs: usage", "fix: reconnect"])), "1.2.4");
 });
 
-test("merge settings allow rebase contributions and keep stable promotions squash-only", () => {
+test("merge settings retain linear contributions and preserve original history in stable promotions", () => {
   const settings = JSON.parse(
     readFileSync(new URL("../../../.github/repository-settings.json", import.meta.url)),
   );
   assert.equal(settings.allow_rebase_merge, true);
   assert.equal(settings.allow_squash_merge, true);
-  assert.equal(settings.allow_merge_commit, false);
+  assert.equal(settings.allow_merge_commit, true);
   for (const [branch, methods] of [
     ["dev", ["squash", "rebase"]],
-    ["main", ["squash"]],
+    ["main", ["merge"]],
   ]) {
     const ruleset = JSON.parse(
       readFileSync(new URL(`../../../.github/${branch}-ruleset.json`, import.meta.url)),
@@ -601,7 +703,12 @@ test("merge settings allow rebase contributions and keep stable promotions squas
       ruleset.rules.find((rule) => rule.type === "pull_request").parameters.allowed_merge_methods,
       methods,
     );
-    assert.ok(ruleset.rules.some((rule) => rule.type === "required_linear_history"));
+    assert.equal(
+      ruleset.rules.some((rule) => rule.type === "required_linear_history"),
+      branch === "dev",
+    );
+    for (const required of ["deletion", "non_fast_forward", "required_status_checks"])
+      assert.ok(ruleset.rules.some((rule) => rule.type === required));
     assert.deepEqual(ruleset.bypass_actors, []);
   }
 });
@@ -727,6 +834,57 @@ test("main migration skips publication and stable preparation requires reviewed 
   assert.equal(await prepareStable(f), "v0.26.1");
   f.files[SOURCE_PATH] = JSON.stringify({ sourceSha: dev, baseSha: baseline, version: "0.26.1" });
   await assert.rejects(prepareStable(f), /reviewed release promotion/);
+});
+
+test("stable releases tag the exact reviewed merge while retaining the original dev ancestry", async () => {
+  const f = fixture({
+    refs: { "heads/main": oldHead, "heads/dev": baseline },
+    gitCommits: {
+      [oldHead]: { tree: { sha: generated }, parents: [{ sha: main }, { sha: generated }] },
+    },
+  });
+  f.files[SOURCE_PATH] = JSON.stringify({
+    sourceSha: dev,
+    baseSha: main,
+    version: "0.26.1",
+    history: "merge",
+  });
+  assert.equal(await prepareStable(f), "v0.26.1");
+  assert.equal(f.calls.find((call) => call.createRelease).createRelease.target_commitish, oldHead);
+  assert.equal(f.references["tags/v0.26.1"], oldHead);
+});
+
+test("stable merge validation refuses squash, rebase, unreviewed content and broken ancestry", async () => {
+  for (const invalid of ["squash", "rebase", "base", "tree", "source"]) {
+    const f = fixture({ refs: { "heads/main": oldHead } });
+    f.files[SOURCE_PATH] = JSON.stringify({
+      sourceSha: dev,
+      baseSha: main,
+      version: "0.26.1",
+      history: "merge",
+    });
+    f.gitCommits[oldHead] = {
+      tree: { sha: invalid === "tree" ? oldHead : generated },
+      parents: (invalid === "squash"
+        ? [main]
+        : invalid === "rebase"
+          ? [generated]
+          : invalid === "base"
+            ? [baseline, generated]
+            : [main, generated]
+      ).map((sha) => ({ sha })),
+    };
+    if (invalid === "source")
+      f.gitCommits[generated] = { tree: { sha: generated }, parents: [{ sha: main }] };
+    await assert.rejects(
+      prepareStable(f),
+      /merge commit|reviewed release tree|reviewed main and dev/,
+    );
+    assert.equal(
+      f.calls.some((call) => call.createRef || call.createRelease),
+      false,
+    );
+  }
 });
 
 test("Nightly publication happens before retiring the previous Nightly and preserves stable releases", async () => {

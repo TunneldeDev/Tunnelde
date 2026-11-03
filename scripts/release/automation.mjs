@@ -14,6 +14,7 @@ export const POLICY_CONTEXT = "PR policy";
 export const SOURCE_PATH = ".github/release-source.json";
 const SHA = /^[a-f0-9]{40}$/;
 const TAG = /^v\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
+const RELEASE_METADATA = new Set([...VERSION_PATHS, "CHANGELOG.md", SOURCE_PATH]);
 
 function compareReleaseTags(left, right) {
   const a = left.match(/\d+/g).map(BigInt);
@@ -51,7 +52,7 @@ export async function readText(github, repo, path, ref, wait = delay) {
         throw new Error(`Cannot read ${path}`);
       return Buffer.from(data.content, "base64").toString("utf8");
     } catch (error) {
-      if (attempt === 3 || ![502, 503, 504].includes(error.status)) throw error;
+      if (attempt === 3 || ![500, 502, 503, 504].includes(error.status)) throw error;
       await wait(1000 * 2 ** attempt);
     }
   }
@@ -141,8 +142,8 @@ export async function checkPullRequest({ github, context, number, expectedHead, 
       );
     success = `PR title and all ${commits.length} commit subjects passed`;
     if (isReleasePr(pr)) {
-      if (commits.length !== 1) throw new Error("The generated release PR must contain one commit");
       const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, pr.head.sha));
+      await checkPromotionCommit(github, repo, pr.head.sha, marker);
       // PR base.sha is a snapshot; resolve both actual refs on every check.
       await assertSources(github, repo, { main: marker.baseSha, dev: marker.sourceSha });
     }
@@ -170,7 +171,7 @@ export async function refreshReleasePolicy({ github, context }) {
   for (const pr of prs) await checkPullRequest({ github, context, number: pr.number });
 }
 
-async function commitTree({ github, repo, source, parent, contents, message }) {
+async function commitTree({ github, repo, source, parent, mergeParent, contents, message }) {
   const { data: original } = await github.rest.git.getCommit({ ...repo, commit_sha: source });
   const { data: tree } = await github.rest.git.createTree({
     ...repo,
@@ -185,16 +186,15 @@ async function commitTree({ github, repo, source, parent, contents, message }) {
   const { data: commit } = await github.rest.git.createCommit({
     ...repo,
     tree: tree.sha,
-    parents: [parent],
+    parents: mergeParent ? [parent, mergeParent] : [parent],
     message,
   });
   return commit.sha;
 }
 
-async function assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker) {
-  if (!marker.baseSha) return; // Initial migration, before the first dev promotion.
-  const trees = await Promise.all(
-    [main, marker.sourceSha, dev].map(async (sha) => {
+async function sourceTrees(github, repo, sources) {
+  return Promise.all(
+    sources.map(async (sha) => {
       const { data } = await github.rest.git.getTree({ ...repo, tree_sha: sha, recursive: "true" });
       if (data.truncated) throw new Error("Cannot safely compare truncated source trees");
       return new Map(
@@ -204,10 +204,37 @@ async function assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker)
       );
     }),
   );
-  const generated = new Set([...VERSION_PATHS, "CHANGELOG.md", SOURCE_PATH]);
+}
+
+async function checkPromotionCommit(github, repo, sha, marker) {
+  if (
+    marker.history !== "merge" ||
+    !SHA.test(marker.baseSha) ||
+    !SHA.test(marker.sourceSha) ||
+    !/^\d+\.\d+\.\d+$/.test(marker.version)
+  )
+    throw new Error("Release PR must be regenerated to preserve dev history");
+  const { data: commit } = await github.rest.git.getCommit({ ...repo, commit_sha: sha });
+  if (
+    commit.parents.length !== 2 ||
+    commit.parents[0].sha !== marker.baseSha ||
+    commit.parents[1].sha !== marker.sourceSha
+  )
+    throw new Error("Release preparation must retain the reviewed main and dev parents");
+  const trees = await sourceTrees(github, repo, [sha, marker.sourceSha]);
+  for (const path of new Set(trees.flatMap((tree) => [...tree.keys()]))) {
+    if (!RELEASE_METADATA.has(path) && trees[0].get(path) !== trees[1].get(path))
+      throw new Error(`Release preparation changes dev content outside metadata (${path})`);
+  }
+  return commit;
+}
+
+async function assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker) {
+  if (!marker.baseSha) return; // Initial migration, before the first dev promotion.
+  const trees = await sourceTrees(github, repo, [main, marker.sourceSha, dev]);
   for (const path of new Set(trees.flatMap((tree) => [...tree.keys()]))) {
     if (
-      !generated.has(path) &&
+      !RELEASE_METADATA.has(path) &&
       trees[0].get(path) !== trees[1].get(path) &&
       trees[0].get(path) !== trees[2].get(path)
     )
@@ -276,6 +303,7 @@ export async function maintainReleasePr({ github, context, plan }) {
   });
   if (prs.length > 1) throw new Error("Multiple release pull requests found");
   let previous;
+  let legacyDraft;
   try {
     previous = await branchSha(github, repo, RELEASE_BRANCH);
   } catch (error) {
@@ -283,7 +311,12 @@ export async function maintainReleasePr({ github, context, plan }) {
   }
   if (previous && prs.length) {
     const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, previous));
-    if (marker.sourceSha === plan.dev && marker.baseSha === plan.main) {
+    if (marker.history !== "merge" && prs[0].draft) legacyDraft = prs[0].node_id;
+    if (
+      marker.history === "merge" &&
+      marker.sourceSha === plan.dev &&
+      marker.baseSha === plan.main
+    ) {
       await checkReleasePullRequest({ github, context, number: prs[0].number, sha: previous });
       return;
     }
@@ -291,13 +324,14 @@ export async function maintainReleasePr({ github, context, plan }) {
   const contents = {
     ...versionContents(plan.files, plan.version),
     "CHANGELOG.md": replacePendingRelease(plan.history, plan.release),
-    [SOURCE_PATH]: `${JSON.stringify({ sourceSha: plan.dev, baseSha: plan.main, version: plan.version }, null, 2)}\n`,
+    [SOURCE_PATH]: `${JSON.stringify({ sourceSha: plan.dev, baseSha: plan.main, version: plan.version, history: "merge" }, null, 2)}\n`,
   };
   const sha = await commitTree({
     github,
     repo,
     source: plan.dev,
     parent: plan.main,
+    mergeParent: plan.dev,
     contents,
     message: `chore(main): release ${plan.version}\n\nRelease-source: ${plan.dev}`,
   });
@@ -322,6 +356,11 @@ export async function maintainReleasePr({ github, context, plan }) {
     number = pr.number;
   }
   await checkReleasePullRequest({ github, context, number, sha });
+  if (legacyDraft)
+    await github.graphql(
+      "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { id } } }",
+      { id: legacyDraft },
+    );
 }
 
 async function checkReleasePullRequest({ github, context, number, sha }) {
@@ -440,7 +479,13 @@ export async function prepareStable({ github, context }) {
   const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, sha));
   if (!marker.baseSha) return ""; // Migration does not invent another stable release.
   const { data: commit } = await github.rest.git.getCommit({ ...repo, commit_sha: sha });
-  if (commit.parents.length !== 1 || commit.parents[0].sha !== marker.baseSha)
+  if (marker.history === "merge") {
+    if (commit.parents.length !== 2 || commit.parents[0].sha !== marker.baseSha)
+      throw new Error("Main must preserve the reviewed release with Create a merge commit");
+    const prepared = await checkPromotionCommit(github, repo, commit.parents[1].sha, marker);
+    if (commit.tree.sha !== prepared.tree.sha)
+      throw new Error("Merged main content differs from the reviewed release tree");
+  } else if (commit.parents.length !== 1 || commit.parents[0].sha !== marker.baseSha)
     throw new Error("Main is not the reviewed release promotion");
   const version = JSON.parse(await readText(github, repo, "package.json", sha)).version;
   if (version !== marker.version || !SHA.test(marker.sourceSha))

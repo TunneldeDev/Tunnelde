@@ -15,7 +15,8 @@ The PR policy checks every commit, reports invalid commit SHAs and rejects incom
 Use **Rebase and merge** when individual commits are useful to retain and review. Use **Squash and
 merge** when intermediate fixes should become one change. Rename or consolidate nonconforming
 commits on your contribution branch before merging. Rebase merging preserves individual changes
-but creates new commit SHAs. Generated release PRs to `main` allow **Squash** only.
+but creates new commit SHAs. Generated release PRs to `main` use **Create a merge commit**
+to retain the exact commits already reviewed on `dev`.
 
 | Type                                               | Example                                 | Release effect |
 | -------------------------------------------------- | --------------------------------------- | -------------- |
@@ -60,7 +61,7 @@ That PR contains all development changes since the last promotion, synchronized 
 summarized changelog with highlights, categorized details, PR links and contributors. Historical
 entries are preserved. Optional Unreleased notes can supply curated highlights.
 
-Review and squash merge that release PR when ready. The exact merged source is tagged, built for
+Review and merge that release PR with **Create a merge commit** when ready. The exact merged source is tagged, built for
 all four desktop targets, verified and automatically published as the latest stable release.
 Nightly never replaces the stable updater channel. Do not edit or contribute to the generated
 release branch; it is rebuilt from the latest `dev` and `main` refs.

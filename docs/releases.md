@@ -3,24 +3,26 @@
 ## Branches and normal workflow
 
 `dev` is the default branch and contribution target. `main` is stable. Both require PRs,
-linear history, resolved review conversations and the seven CI/policy checks. Squash merge
+resolved review conversations and the seven CI/policy checks. Dev requires linear history. Squash merge
 ordinary work into `dev`, or rebase merge to preserve meaningful individual commits; only the
-generated release promotion targets `main`, where Squash is the only allowed merge method.
+generated release promotion targets `main`, where **Create a merge commit** is the only allowed method.
 
 1. A `dev` push runs CI and **Development**. Automation resolves the actual `dev` and `main`
    refs and collects changes after the last promoted dev commit recorded on main in
-   `.github/release-source.json`. This survives repeated squash promotions without requiring
-   dev to contain main's release commits.
+   `.github/release-source.json`. Dev does not need to contain main's release commits.
 2. One generated `release/dev-to-main` PR is created or refreshed. Its tree is dev's content
-   plus synchronized versions, the source marker, and the new changelog section. Its parent
-   is current main, so it stays up to date with strict branch protection. The branch can be
+   plus synchronized versions, the source marker, and the new changelog section. The final
+   preparation commit has current main and dev as its two parents. This retains every original
+   dev commit and SHA while remaining up to date with strict branch protection. The branch can be
    rebuilt with a forced update; dev, main and existing tags are never force updated.
 3. The same dev source builds a unique `vX.Y.Z-beta.N` tag. The public prerelease
    is named **Nightly**. All desktop installers, signatures and updater metadata must pass
    verification before publication. Only then is the previous Nightly release retired;
    immutable beta tags remain. Failed/stale builds cannot replace the working Nightly.
-4. Review the version and summarized changelog in the release PR, then squash merge it into
-   main. **Stable release** creates an immutable tag at that exact merged commit before
+4. Review the version and summarized changelog in the release PR, then use **Create a merge commit**
+   to merge into main. The release keeps all individual dev commits, the preparation commit and
+   an explicit PR merge point. **Stable release** verifies the reviewed parents and tree,
+   creates an immutable tag at that exact merged commit before
    creating a draft, then calls **Release** for the four desktop targets.
 5. **Verify and publish release** validates all desktop artifacts and `latest.json`, then
    automatically publishes the release as latest. Nightly always uses `prerelease: true`
@@ -77,9 +79,10 @@ policy code; it never checks out contribution code. Required checks remain bound
 
 `.github/main-ruleset.json` and `.github/dev-ruleset.json` are the tracked protection definitions.
 Both block deletion and force pushes, require PRs and all seven checks, and have no bypass actors.
-The merge-method settings are tracked in `.github/repository-settings.json`: both squash and
-rebase are enabled, while merge commits stay disabled. The dev Ruleset allows squash/rebase;
-main allows squash only. Squash uses the PR title/body as its commit message. Apply settings
+The merge-method settings are tracked in `.github/repository-settings.json`: squash, rebase and
+merge commits are enabled at repository level. The dev Ruleset allows squash/rebase and retains
+linear history; main allows merge commits only. Main permits merge history to preserve exact dev
+commits. Both merge and squash default to the PR title/body as their commit message. Apply settings
 and Ruleset changes via repository settings or the API; editing JSON alone does not apply them.
 
 PR policy validates the title and every commit subject as Conventional Commits. This applies
@@ -89,9 +92,14 @@ and rejects incomplete history (including PRs beyond GitHub's 250-commit listing
 The policy retries inconsistent API snapshots with bounded backoff after ref updates, while
 still rejecting incomplete history once retries are exhausted. Generated PR checks must
 match the exact prepared head; recovery redispatches CI even if the PR already exists.
-Immutable source-file reads also retry transient GitHub gateway errors (502/503/504).
-The generated release PR must have exactly one commit. The privileged policy workflow reads only
-commit metadata and trusted base-branch code, never executes contribution code.
+Immutable source-file reads also retry transient GitHub server errors (500/502/503/504), with
+at most four attempts and 1/2/4-second backoff. Permanent permission or validation errors fail immediately.
+The generated release PR retains all development commits and one preparation commit. Policy checks
+both preparation parents against the recorded main/dev refs and rejects changes outside release
+metadata. Legacy single-parent preparations are regenerated even if their source marker is current.
+Stable publication rejects squash/rebase of a history-preserving preparation and any merged tree
+that differs from the reviewed tree. The privileged policy workflow reads only commit metadata
+and trusted base-branch code, never executes contribution code.
 
 Release collection reads the actual retained commit messages after either merge method, taking
 the highest semantic bump across the batch. Rebased commits are associated with their merged
