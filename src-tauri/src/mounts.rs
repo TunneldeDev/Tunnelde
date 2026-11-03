@@ -188,9 +188,13 @@ async fn detect_transport(program: &Path) -> Option<String> {
         .ok()?
 }
 fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
-    let mut cmd = Command::new(program);
+    let cmd = Command::new(program);
     #[cfg(windows)]
-    cmd.creation_flags(0x08000000);
+    let cmd = {
+        let mut cmd = cmd;
+        cmd.creation_flags(0x08000000);
+        cmd
+    };
     cmd
 }
 
