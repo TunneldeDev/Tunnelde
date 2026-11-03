@@ -105,7 +105,11 @@ impl Default for Settings {
             right_panel_width: 296,
             user_css: String::new(),
             auto_check_updates: true,
-            update_channel: if env!("CARGO_PKG_VERSION").contains('-') {
+            update_channel: if env!("CARGO_PKG_VERSION").contains("-alpha.")
+                || env!("CARGO_PKG_VERSION").contains(".d.")
+            {
+                "nightly"
+            } else if env!("CARGO_PKG_VERSION").contains('-') {
                 "beta"
             } else {
                 "stable"
@@ -245,7 +249,7 @@ impl Settings {
             valid && shortcut_count <= 128
         });
         let defaults = Self::default();
-        if !["stable", "beta"].contains(&self.update_channel.as_str()) {
+        if !["stable", "beta", "nightly"].contains(&self.update_channel.as_str()) {
             self.update_channel = defaults.update_channel.clone();
         }
         if !["github", "custom"].contains(&self.update_source.as_str()) {
@@ -652,7 +656,7 @@ mod tests {
             ("density", &DENSITIES),
             ("monoFont", &MONO_FONTS),
             ("titleBarStyle", &TITLE_BAR_STYLES),
-            ("updateChannel", &["stable", "beta"]),
+            ("updateChannel", &["stable", "beta", "nightly"]),
             ("updateSource", &["github", "custom"]),
             ("updateCheckInterval", &["startup", "daily", "weekly"]),
             ("motion", &["system", "reduced", "full"]),

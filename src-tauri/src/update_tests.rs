@@ -1,3 +1,5 @@
+use super::channels::source_channels;
+use super::feeds::{github_channel_feed, GitHubRelease, ReleaseAsset};
 use super::*;
 
 fn version(value: &str) -> Version {
@@ -22,7 +24,69 @@ fn stable_and_beta_channels_use_semver_without_implicit_downgrades() {
         ("0.26.4-beta.9", "0.26.4-beta.10", "beta", true),
         ("0.26.4-beta.1", "0.26.4", "stable", true),
         ("0.26.1", "0.27.0-alpha.1", "beta", false),
+        ("0.26.1", "0.26.2-beta.1.d.2.gabcdef012345", "beta", false),
+        (
+            "0.26.2-beta.1",
+            "0.26.2-beta.1.d.2.gabcdef012345",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.2-beta.1.d.2.gabcdef012345",
+            "0.26.2-beta.2",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.2-beta.1.d.2.gabcdef012345",
+            "0.26.2-beta.1",
+            "beta",
+            false,
+        ),
         ("0.26.2", "0.26.2", "stable", false),
+        ("0.26.1", "0.26.2-alpha.1.d.9.gabcdef012345", "beta", false),
+        (
+            "0.26.1",
+            "0.26.2-alpha.1.d.9.gabcdef012345",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.2-alpha.1.d.9.gabcdef012345",
+            "0.26.2-alpha.1.d.10.gabcdef012345",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.2-alpha.1.d.999.gabcdef012345",
+            "0.26.2-alpha.1.d.1000.gabcdef012345",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.2-alpha.1.d.10.gabcdef012345",
+            "0.26.2-beta.1",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.2-beta.1",
+            "0.26.2-alpha.1.d.20.gabcdef012345",
+            "nightly",
+            false,
+        ),
+        (
+            "0.26.2-alpha.1.d.10.gabcdef012345",
+            "0.26.2",
+            "stable",
+            true,
+        ),
+        (
+            "0.26.2",
+            "0.26.1-alpha.1.d.1000.gabcdef012345",
+            "nightly",
+            false,
+        ),
     ] {
         assert_eq!(
             accepts_version(&version(current), &version(candidate), channel),
@@ -60,7 +124,7 @@ fn beta_discovery_chooses_newest_eligible_published_package_not_list_order() {
         release("v0.96.0", true, false, true),
         release("v0.95.0-beta.1.1", false, false, true),
     ];
-    let feed = github_beta_feed(&releases).unwrap();
+    let feed = github_channel_feed(&releases, "beta").unwrap();
     assert!(feed
         .notes
         .as_deref()
@@ -73,15 +137,15 @@ fn beta_discovery_chooses_newest_eligible_published_package_not_list_order() {
         .ends_with("/v0.26.2-beta.10.1/latest.json"));
     releases.push(release("v0.26.2", false, false, true));
     assert_eq!(
-        github_beta_feed(&releases).unwrap().version,
+        github_channel_feed(&releases, "beta").unwrap().version,
         Some(version("0.26.2"))
     );
     releases.push(release("v0.26.3-beta.1", true, false, true));
     assert_eq!(
-        github_beta_feed(&releases).unwrap().version,
+        github_channel_feed(&releases, "beta").unwrap().version,
         Some(version("0.26.3-beta.1"))
     );
-    assert!(github_beta_feed(&[]).is_err());
+    assert!(github_channel_feed(&[], "beta").is_err());
 }
 
 #[test]
@@ -186,4 +250,31 @@ fn installation_locks_channel_and_source_but_allows_other_preferences() {
     snapshot.phase = Phase::Error;
     next.update_channel = "beta".into();
     assert!(validate_settings_change(&previous, &next, &snapshot).is_ok());
+}
+
+#[test]
+fn nightly_discovery_includes_beta_and_stable_but_beta_excludes_nightly() {
+    let releases = vec![
+        release("v0.27.0-alpha.1.d.10.gabcdef012345", true, false, true),
+        release("v0.26.2-beta.1", true, false, true),
+        release("v0.26.2-beta.1.d.2.gabcdef012345", true, false, true),
+        release("v0.26.1", false, false, true),
+        release("v0.99.0-alpha.1.d.1.gabcdef012345", true, true, true),
+        release("v0.98.0-alpha.1.d.1.gabcdef012345", true, false, false),
+    ];
+    assert_eq!(
+        github_channel_feed(&releases, "nightly").unwrap().version,
+        Some(version("0.27.0-alpha.1.d.10.gabcdef012345"))
+    );
+    assert_eq!(
+        github_channel_feed(&releases, "beta").unwrap().version,
+        Some(version("0.26.2-beta.1"))
+    );
+    assert_eq!(
+        github_channel_feed(&releases, "stable").unwrap().version,
+        Some(version("0.26.1"))
+    );
+    assert_eq!(source_channels("nightly"), &["stable", "beta", "nightly"]);
+    assert_eq!(source_channels("beta"), &["stable", "beta"]);
+    assert_eq!(source_channels("stable"), &["stable"]);
 }

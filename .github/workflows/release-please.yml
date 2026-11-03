@@ -17,8 +17,6 @@ permissions:
 jobs:
   prepare:
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,21 +25,14 @@ jobs:
         id: release
         with:
           script: |
-            const {prepareStable} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
-            core.setOutput('tag', await prepareStable({github, context}));
-
-  publish:
-    needs: prepare
-    if: needs.prepare.outputs.tag != ''
-    uses: ./.github/workflows/release.yml
-    with:
-      existing_tag: ${{ needs.prepare.outputs.tag }}
-      build_helpers: false
-    secrets: inherit
+            const {prepareStable} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/publishing/stable.mjs`);
+            const tag = await prepareStable({github, context});
+            // Explicit dispatch is required for tags created by GITHUB_TOKEN.
+            if (tag) await github.rest.actions.createWorkflowDispatch({...context.repo,
+              workflow_id: 'release-version.yml', ref: 'dev', inputs: {tag}});
 
   refresh:
-    needs: [prepare, publish]
-    if: always() && needs.prepare.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    needs: prepare
     runs-on: ubuntu-latest
     steps:
       - uses: actions/github-script@v7

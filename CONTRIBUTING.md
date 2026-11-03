@@ -55,15 +55,16 @@ and applying its repository Ruleset.
 
 ## Releases
 
-Ordinary PRs do not need version bumps or changelog edits. Every `dev` update builds a **Nightly**
-prerelease with a unique beta version and maintains one `release/dev-to-main` PR targeting `main`.
+Ordinary PRs do not need version bumps or changelog edits. Every `dev` update runs CI and maintains one `release/dev-to-main` PR targeting `main`.
 That PR contains all development changes since the last promotion, synchronized versions and a
 summarized changelog with highlights, categorized details, PR links and contributors. Historical
 entries are preserved. Optional Unreleased notes can supply curated highlights.
 
 Review and merge that release PR with **Create a merge commit** when ready. The exact merged source is tagged, built for
 all four desktop targets, verified and automatically published as the latest stable release.
-Nightly never replaces the stable updater channel. Do not edit or contribute to the generated
+Beta packages publish from `vX.Y.Z-beta.N` tags; **Prepare Beta** in Actions creates the next tag
+from the current dev snapshot. **Nightly** runs separately at 22:00 UTC daily or manually, skips
+unchanged sources and uses source-derived versions. Beta and Nightly never replace the stable updater channel. Do not edit or contribute to the generated
 release branch; it is rebuilt from the latest `dev` and `main` refs.
 
 See [Release operations](docs/releases.md) for configuration and failed-build recovery.

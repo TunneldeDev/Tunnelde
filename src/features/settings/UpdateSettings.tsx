@@ -199,9 +199,7 @@ export function UpdateStatus() {
           <span className="settings-row__hint">{t("updates.current")}</span>
           <p className="settings-update__version">{current ? `v${current}` : "—"}</p>
         </div>
-        <span className="settings-update__channel">
-          {t(settings.updateChannel === "beta" ? "updates.beta" : "updates.stable")}
-        </span>
+        <span className="settings-update__channel">{t(`updates.${settings.updateChannel}`)}</span>
       </div>
       <p className={`updates__status${state?.available ? " is-available" : ""}`} role="status">
         {status}

@@ -76,6 +76,7 @@ describe("update operation state", () => {
     expect(matchingUpdateState(state, settings)).toBe(state);
     for (const patch of [
       { updateChannel: "beta" },
+      { updateChannel: "nightly" },
       { updateSource: "custom" },
       { updateSourceUrl: "https://mirror.example.com/{channel}.json" },
     ]) {

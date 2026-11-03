@@ -104,19 +104,24 @@ host-specific panes update without relying on navigation.
 `dev` is the protected default branch and contribution target. `main` contains stable releases.
 Contributions can rebase or squash merge into dev; every retained commit subject is checked as
 a Conventional Commit. Release collection associates rebased commits with their PR and retains
-individual authors, coauthors and change descriptions. Main promotions use Squash only.
-Every dev update maintains one generated `release/dev-to-main` PR and builds a beta prerelease
-named Nightly. The PR tree comes from dev, with synchronized versions, a summarized changelog,
-and a marker recording the dev source; its parent is current main. The marker tracks promotions
-across release history. Promotions retain the original dev commits and SHAs through a preparation
-commit with main/dev parents and a normal PR merge into main. Historical changelog entries stay intact, and actual branch refs are
-resolved and rechecked before generated refs are changed.
+individual authors, coauthors and change descriptions. Main promotions use **Create a merge commit**.
+Every dev update maintains one generated `release/dev-to-main` PR without starting installer builds.
+The PR tree comes from dev with synchronized versions, a summarized changelog and a source marker.
+Its preparation commit has main/dev parents so the final promotion preserves original dev SHAs.
+Historical changelog entries remain intact; actual refs are rechecked before generated refs change.
 
-Merging that release PR tags the exact stable merge commit and creates a shared draft. The reusable
-Release workflow builds all four desktop targets, validates signatures and `latest.json`, then
-publishes automatically. Nightly has a unique beta tag and cannot become the latest stable release.
-Its predecessor stays available until the replacement is verified and published. Helpers remain
-Actions artifacts and are rejected in desktop release downloads.
+Beta and stable publication are triggered by immutable version tags. The manual **Prepare Beta**
+workflow versions an isolated dev snapshot and explicitly dispatches the tag publisher because
+`GITHUB_TOKEN` tag writes do not trigger push workflows. Stable promotion tags the reviewed main
+merge and uses the same publisher. Nightly has an independent daily/manual workflow, source-derived
+versions and no-change detection. Its numeric commit distance sorts correctly under SemVer.
+
+The reusable Release workflow builds all four desktop targets and validates signatures, every
+installer and `latest.json` before making a draft public. Release titles include full version tags.
+Tagged sources remain valid when dev advances during a build; ancestry is still verified. Historical
+releases and tags remain available. Beta and Nightly cannot become the latest stable release.
+The app exposes Stable, Beta and Nightly channels and chooses by SemVer, never release-list order.
+Helpers remain Actions artifacts and are rejected in desktop release downloads.
 
 The repository token explicitly dispatches CI on generated PR heads and writes PR-policy status;
 no personal token or App credential is needed. The privileged policy workflow executes only trusted
