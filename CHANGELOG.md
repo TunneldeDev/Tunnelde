@@ -4,6 +4,16 @@ All notable changes to Tunnelde are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and versions follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.26.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.26.0...v0.26.1) (2026-11-03)
+
+
+### Build
+
+* cross-compile macOS arm64 releases on Intel runners ([00dc256](https://github.com/TunneldeDev/Tunnelde/commit/00dc25623b4b3e9f4e1242f5cbf54d6fd425f31a))
+* **deps:** bump i18next from 26.5.11 to 26.5.12 ([#9](https://github.com/TunneldeDev/Tunnelde/issues/9)) ([9d5a10c](https://github.com/TunneldeDev/Tunnelde/commit/9d5a10c80cebf9d94fc18c900b7c24e6bb36f28c))
+* **deps:** bump lucide-react from 1.64.0 to 1.65.0 ([#10](https://github.com/TunneldeDev/Tunnelde/issues/10)) ([3a83c42](https://github.com/TunneldeDev/Tunnelde/commit/3a83c4292dadec4eaf5cb7501b39badced746814))
+* remove unused library outputs and measure release builds ([6cf7182](https://github.com/TunneldeDev/Tunnelde/commit/6cf7182ef576ac32fa46fbb11328358c51ce7fd9))
+
 ## [Unreleased]
 
 ### Build
