@@ -4,6 +4,7 @@ version: 2
 # the bundled runtime move together, so an automatic major bump is rarely safe.
 updates:
   - package-ecosystem: npm
+    target-branch: dev
     directory: /
     commit-message:
       prefix: "fix(deps)"
@@ -35,6 +36,7 @@ updates:
           - jsdom
 
   - package-ecosystem: cargo
+    target-branch: dev
     directory: /src-tauri
     commit-message:
       prefix: "fix(deps)"
@@ -62,6 +64,7 @@ updates:
           - tracing-*
 
   - package-ecosystem: github-actions
+    target-branch: dev
     directory: /
     commit-message:
       prefix: "ci(deps)"

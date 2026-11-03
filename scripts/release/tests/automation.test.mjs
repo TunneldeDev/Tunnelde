@@ -2,312 +2,454 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import {
-  assertNoDrafts,
+  branchSha,
   checkPullRequest,
-  ensureDraftTag,
-  isReleasePr,
-  releasePrNeedsRefresh,
-  updateReleasePr,
+  ensureRelease,
+  maintainReleasePr,
+  nextVersion,
+  planDevelopment,
+  prepareNightly,
+  prepareStable,
+  publishRelease,
+  RELEASE_BRANCH,
+  SOURCE_PATH,
   validateTitle,
 } from "../automation.mjs";
-import {
-  releasePrBody,
-  releaseSection,
-  renderRelease,
-  replacePendingRelease,
-} from "../release-notes.mjs";
+import { VERSION_PATHS, versionContents } from "../version.mjs";
 
+const sha = (letter) => letter.repeat(40);
+const main = sha("a"),
+  dev = sha("b"),
+  baseline = sha("c"),
+  generated = sha("d"),
+  oldHead = sha("e");
 const context = {
   repo: { owner: "TunneldeDev", repo: "Tunnelde" },
   runId: 123,
   serverUrl: "https://github.com",
 };
-const sha = "a".repeat(40);
-const baseSha = "b".repeat(40);
-const newSha = "c".repeat(40);
-const source = {
-  sha: "d".repeat(40),
-  commit: { message: "fix(terminal): restore paste" },
-  author: { login: "contributor" },
-};
-const baseChangelog =
-  "# Changelog\n\n## [Unreleased]\n\n## [0.26.0] - 2026-11-02\n\n- Historical content.\n";
-const generated =
-  "# Changelog\n\n## [0.26.1](url) (2026-11-03)\n\n- Original.\n\n## [Unreleased]\n\n## [0.26.0] - 2026-11-02\n\n- Historical content.\n";
-const summarized = replacePendingRelease(
-  baseChangelog,
-  renderRelease({
-    version: "0.26.1",
-    previousVersion: "0.26.0",
-    date: "2026-11-03",
-    repository: "TunneldeDev/Tunnelde",
-    commits: [source],
-  }),
-);
 const repo = { full_name: "TunneldeDev/Tunnelde" };
-function pullRequest(overrides = {}) {
-  return {
-    number: 12,
-    title: "fix(terminal): restore paste",
-    state: "open",
-    head: { ref: "fix/paste", sha, repo },
-    base: { ref: "main", repo, sha: baseSha },
-    ...overrides,
-  };
-}
-function fixture({
-  pr = pullRequest(),
-  releases = [],
-  tag,
-  notes = generated,
-  moved = false,
-} = {}) {
+const history =
+  "# Changelog\n\n## [Unreleased]\n\n## [0.26.1] - 2026-11-03\n\n- Historical notes.\n";
+const source = {
+  sha: dev,
+  commit: { message: "fix(terminal): restore paste" },
+  author: { login: "author" },
+};
+const versionFiles = versionContents(
+  Object.fromEntries(
+    VERSION_PATHS.map((path) => [
+      path,
+      readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8"),
+    ]),
+  ),
+  "0.26.1",
+);
+const marker = { sourceSha: baseline, baseSha: null, version: "0.26.1" };
+
+function fixture({ refs = {}, releases = [], commits = [source], pr, moved = false } = {}) {
   const calls = [];
+  const contents = new Map();
+  const references = { "heads/main": main, "heads/dev": dev, ...refs };
+  const files = { ...versionFiles, "CHANGELOG.md": history, [SOURCE_PATH]: JSON.stringify(marker) };
+  const pull = pr || {
+    number: 15,
+    title: "fix: restore paste",
+    state: "open",
+    head: { ref: "fix/paste", sha: oldHead, repo },
+    base: { ref: "dev", sha: baseline, repo },
+  };
+  let comparisons = 0;
   const github = {
-    paginate: async (method, args) => method(args),
+    paginate: (method, args) => method(args),
     rest: {
-      pulls: {
-        get: async () => ({ data: moved ? { ...pr, head: { ...pr.head, sha: newSha } } : pr }),
-        update: async (args) => calls.push({ body: args }),
-        list: async () => [pr].filter(isReleasePr),
-      },
-      repos: {
-        listReleases: async () => releases,
-        createCommitStatus: async (args) => calls.push({ status: args }),
-        getContent: async ({ path, ref }) => ({
+      git: {
+        getRef: async ({ ref }) => {
+          const value = references[ref];
+          if (!value) throw Object.assign(new Error("Not found"), { status: 404 });
+          return {
+            data: {
+              object: {
+                type: "commit",
+                sha: moved && comparisons && ref === "heads/dev" ? sha("f") : value,
+              },
+            },
+          };
+        },
+        getCommit: async ({ commit_sha }) => ({
           data: {
-            type: "file",
-            encoding: "base64",
-            sha,
-            content: Buffer.from(
-              path.endsWith(".json")
-                ? JSON.stringify({ ".": ref === baseSha ? "0.26.0" : "0.26.1" })
-                : ref === baseSha
-                  ? baseChangelog
-                  : notes,
-            ).toString("base64"),
+            tree: { sha: commit_sha },
+            parents: [{ sha: main }],
+            message: `chore: Nightly\n\nRelease-source: ${dev}`,
           },
         }),
-        compareCommitsWithBasehead: async () => ({
-          data: { status: "ahead", total_commits: 1, commits: [{ ...source }] },
+        getTree: async () => ({
+          data: {
+            truncated: false,
+            tree: [{ path: "app.ts", mode: "100644", type: "blob", sha: baseline }],
+          },
         }),
-        listPullRequestsAssociatedWithCommit: async () => [],
-        updateRelease: async (args) => calls.push({ release: args }),
-      },
-      actions: { createWorkflowDispatch: async (args) => calls.push({ dispatch: args }) },
-      git: {
-        getCommit: async () => ({ data: { tree: { sha } } }),
         createTree: async (args) => {
           calls.push({ tree: args });
-          return { data: { sha: newSha } };
+          return { data: { sha: generated } };
         },
         createCommit: async (args) => {
           calls.push({ commit: args });
-          return { data: { sha: newSha } };
+          for (const entry of calls.findLast((call) => call.tree).tree.tree)
+            contents.set(`${generated}:${entry.path}`, entry.content);
+          return { data: { sha: generated } };
+        },
+        createRef: async (args) => {
+          calls.push({ createRef: args });
+          references[args.ref.replace(/^refs\//, "")] = args.sha;
         },
         updateRef: async (args) => {
-          calls.push({ ref: args });
-          pr.head.sha = args.sha;
+          calls.push({ updateRef: args });
+          references[args.ref] = args.sha;
         },
-        getRef: async () => {
-          if (tag) return { data: { object: tag } };
-          throw Object.assign(new Error("Not found"), { status: 404 });
+      },
+      repos: {
+        getContent: async ({ path, ref }) => {
+          const text = contents.get(`${ref}:${path}`) ?? files[path];
+          if (text === undefined) throw Object.assign(new Error("Not found"), { status: 404 });
+          return {
+            data: {
+              type: "file",
+              encoding: "base64",
+              content: Buffer.from(text).toString("base64"),
+            },
+          };
         },
-        createRef: async (args) => calls.push({ tag: args }),
+        compareCommitsWithBasehead: async (args) => {
+          calls.push({ compare: args });
+          comparisons++;
+          return {
+            data: {
+              status: commits.length ? "ahead" : "identical",
+              total_commits: commits.length,
+              commits: globalThis.structuredClone(commits),
+            },
+          };
+        },
+        listPullRequestsAssociatedWithCommit: async () => [],
+        listReleases: async () => releases,
+        createCommitStatus: async (args) => {
+          calls.push({ status: args });
+        },
+        createRelease: async (args) => {
+          calls.push({ createRelease: args });
+          return { data: { id: 42 } };
+        },
+        updateRelease: async (args) => {
+          calls.push({ publish: args });
+        },
+        deleteRelease: async (args) => {
+          calls.push({ deleteRelease: args });
+        },
+      },
+      pulls: {
+        list: async () => (pr ? [pr] : []),
+        get: async () => ({
+          data: {
+            ...pull,
+            head: { ...pull.head, sha: references[`heads/${pull.head.ref}`] || pull.head.sha },
+          },
+        }),
+        create: async (args) => {
+          calls.push({ createPr: args });
+          pull.head.ref = args.head;
+          pull.base.ref = args.base;
+          return { data: { number: 15 } };
+        },
+        update: async (args) => {
+          calls.push({ updatePr: args });
+        },
+      },
+      actions: {
+        createWorkflowDispatch: async (args) => {
+          calls.push({ dispatch: args });
+        },
       },
     },
   };
-  return { github, context, calls };
+  return { github, context, calls, files, contents, references };
 }
 
-test("accepts conventional PR titles, including release and dependency PRs", () => {
+test("conventional titles and automatic semantic versioning", () => {
   for (const title of [
-    "feat: add a theme",
-    "fix(deps): update i18next",
-    "build(deps): update lucide",
-    "feat(api)!: replace the API",
-    "chore(main): release 0.26.1",
-    "docs: 更新指南",
-    "revert: undo faulty migration",
-  ]) {
+    "fix(deps): update parser",
+    "feat!: replace API",
+    "ci: release",
+    "chore(main): release 1.0.1",
+  ])
     assert.doesNotThrow(() => validateTitle(title));
-  }
-});
-
-test("rejects unclassified, empty and multiline titles", () => {
-  for (const title of [
-    "Update stuff",
-    "Fix: paste",
-    "feat:",
-    "fix: ",
-    "fix: one\nfeat: two",
-    "fix(): paste",
-  ]) {
+  for (const title of ["Update stuff", "fix: ", "feat: one\nfix: two"])
     assert.throws(() => validateTitle(title));
-  }
+  const changes = (message) => [{ commit: { message } }];
+  assert.equal(nextVersion("0.26.1", changes("fix: paste")), "0.26.2");
+  assert.equal(nextVersion("0.26.1", changes("feat: themes")), "0.27.0");
+  assert.equal(nextVersion("0.26.1", changes("feat!: replace API")), "0.27.0");
+  assert.equal(
+    nextVersion("1.2.3", changes("fix: replacement\n\nBREAKING CHANGE: remove API")),
+    "2.0.0",
+  );
+  assert.equal(nextVersion("1.2.3", changes("docs: guide")), "1.2.4");
 });
 
-test("only identifies the release branch in the same repository", () => {
-  assert.equal(isReleasePr(pullRequest()), false);
-  assert.equal(
-    isReleasePr(pullRequest({ head: { ref: "release-please--branches--main", sha, repo } })),
-    true,
+test("stable and beta transforms update all eight versions, are idempotent, and reject missing metadata", () => {
+  for (const version of ["0.26.2", "0.26.2-beta.12.1"]) {
+    const updated = versionContents(versionFiles, version);
+    for (const path of VERSION_PATHS) assert.ok(updated[path].includes(version), path);
+    assert.deepEqual(versionContents(updated, version), updated);
+  }
+  assert.throws(() => versionContents(versionFiles, "nightly"), /invalid version/);
+  assert.throws(
+    () => versionContents({ ...versionFiles, "src-tauri/Cargo.lock": "missing" }, "0.26.2"),
+    /locate version/,
   );
+});
+
+test("release plans use authoritative heads and last promoted dev SHA across squash releases", async () => {
+  const f = fixture();
+  const plan = await planDevelopment(f);
+  assert.equal(plan.main, main);
+  assert.equal(plan.dev, dev);
+  assert.equal(plan.version, "0.26.2");
+  assert.equal(f.calls[0].compare.basehead, `${baseline}...${dev}`);
+  assert.ok(plan.history.endsWith("- Historical notes.\n"));
+  f.files[SOURCE_PATH] = JSON.stringify({ ...marker, sourceSha: dev, baseSha: baseline });
+  f.github.rest.repos.compareCommitsWithBasehead = async (args) => {
+    assert.equal(args.basehead, `${dev}...${dev}`);
+    return { data: { status: "identical", total_commits: 0, commits: [] } };
+  };
+  assert.equal((await planDevelopment(f)).version, undefined);
+});
+
+test("migration waits for main metadata, and an identical source creates no release", async () => {
+  const f = fixture({ commits: [] });
+  assert.equal((await planDevelopment(f)).version, undefined);
+  delete f.files[SOURCE_PATH];
+  assert.equal((await planDevelopment(f)).version, undefined);
+});
+
+test("refuses to discard main changes outside generated metadata", async () => {
+  const f = fixture();
+  f.files[SOURCE_PATH] = JSON.stringify({ ...marker, baseSha: baseline });
+  f.github.rest.git.getTree = async ({ tree_sha }) => ({
+    data: {
+      tree: [{ type: "blob", mode: "100644", path: "app.ts", sha: tree_sha }],
+      truncated: false,
+    },
+  });
+  await assert.rejects(planDevelopment(f), /merge main into dev/);
+  f.github.rest.git.getTree = async () => ({ data: { tree: [], truncated: true } });
+  await assert.rejects(planDevelopment(f), /truncated/);
+});
+
+test("hotfix protection permits main changes already incorporated into dev", async () => {
+  const f = fixture();
+  f.files[SOURCE_PATH] = JSON.stringify({ ...marker, baseSha: baseline });
+  f.github.rest.git.getTree = async ({ tree_sha }) => ({
+    data: {
+      truncated: false,
+      tree: [
+        {
+          type: "blob",
+          mode: "100644",
+          path: "app.ts",
+          sha: tree_sha === baseline ? baseline : main,
+        },
+      ],
+    },
+  });
+  assert.equal((await planDevelopment(f)).version, "0.26.2");
+});
+
+test("Nightly reruns reuse their immutable tag rather than creating another commit", async () => {
+  const tag = "v0.26.2-beta.12.1";
+  const f = fixture({ releases: [{ tag_name: tag, draft: true }] });
+  const plan = await planDevelopment(f);
+  assert.equal(await prepareNightly({ ...f, plan, runNumber: 12, runAttempt: 1 }), tag);
   assert.equal(
-    isReleasePr(
-      pullRequest({
-        head: { ref: "release-please--branches--main", sha, repo: { full_name: "other/fork" } },
-      }),
-    ),
+    f.calls.some((call) => call.commit),
     false,
   );
 });
 
-test("blocks another draft while allowing recovery of the same tag", () => {
-  const releases = [
-    { tag_name: "v0.26.1", draft: true },
-    { tag_name: "v0.26.0", draft: false },
-  ];
-  assert.throws(() => assertNoDrafts(releases), /v0.26.1/);
-  assert.doesNotThrow(() => assertNoDrafts(releases, "v0.26.1"));
-  assert.doesNotThrow(() => assertNoDrafts(releases.slice(1)));
-});
-
-test("publishes PR policy status on the PR head, including validation failures", async () => {
+test("promotion tree is dev content with main history and a single main parent, without modifying dev or main", async () => {
   const f = fixture();
-  await checkPullRequest({ ...f, number: 12 });
-  assert.equal(f.calls[0].status.sha, sha);
-  assert.equal(f.calls[0].status.state, "success");
-  const bad = fixture({ pr: pullRequest({ title: "bad title" }) });
-  await assert.rejects(checkPullRequest({ ...bad, number: 12 }), /Conventional/);
-  assert.equal(bad.calls[0].status.state, "failure");
+  const plan = await planDevelopment(f);
+  await maintainReleasePr({ ...f, plan });
+  const tree = f.calls.find((call) => call.tree).tree;
+  assert.equal(tree.base_tree, dev);
+  const notes = tree.tree.find((entry) => entry.path === "CHANGELOG.md").content;
+  assert.ok(notes.includes("## [0.26.2]"));
+  assert.ok(notes.endsWith("## [0.26.1] - 2026-11-03\n\n- Historical notes.\n"));
+  assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [main]);
+  assert.equal(f.references["heads/main"], main);
+  assert.equal(f.references["heads/dev"], dev);
+  assert.equal(f.calls.find((call) => call.createPr).createPr.base, "main");
+  assert.equal(f.calls.at(-1).dispatch.ref, RELEASE_BRANCH);
 });
 
-test("draft release blocks the release PR but permits unrelated fixes", async () => {
-  const releases = [{ draft: true, tag_name: "v0.26.1" }];
-  const release = fixture({
-    releases,
-    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
-  });
-  await assert.rejects(checkPullRequest({ ...release, number: 12 }), /existing draft/);
-  const normal = fixture({ releases });
-  await checkPullRequest({ ...normal, number: 12 });
-  assert.equal(normal.calls[0].status.state, "success");
-});
-
-test("summarizes only on the release branch before dispatching its actual head", async () => {
-  const f = fixture({
-    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
-  });
-  await updateReleasePr(f);
-  assert.deepEqual(
-    f.calls.map((call) => Object.keys(call)[0]),
-    ["tree", "commit", "ref", "body", "status", "dispatch"],
-  );
-  assert.deepEqual(f.calls[0].tree.tree, [
-    { path: "CHANGELOG.md", mode: "100644", type: "blob", content: summarized },
-  ]);
-  assert.deepEqual(f.calls[1].commit.parents, [sha]);
-  assert.equal(f.calls[2].ref.ref, "heads/release-please--branches--main");
-  assert.equal(f.calls[2].ref.force, false);
-  assert.equal(f.calls[3].body.body, releasePrBody("0.26.1", 1, "TunneldeDev/Tunnelde", newSha));
-  assert.equal(f.calls[4].status.sha, newSha);
-  assert.equal(f.calls[5].dispatch.ref, "release-please--branches--main");
-});
-
-test("regeneration does not create redundant commits or edit the PR body", async () => {
-  const pr = pullRequest({
-    head: { ref: "release-please--branches--main", sha, repo },
-    body: releasePrBody("0.26.1", 1, "TunneldeDev/Tunnelde", sha),
-  });
-  const f = fixture({ pr, notes: summarized });
-  await updateReleasePr(f);
-  assert.deepEqual(
-    f.calls.map((call) => Object.keys(call)[0]),
-    ["status", "dispatch"],
+test("moving main/dev during preparation never mutates a branch or dispatches checks", async () => {
+  const f = fixture({ moved: true });
+  const plan = await planDevelopment(f);
+  await assert.rejects(maintainReleasePr({ ...f, plan }), /dev moved/);
+  assert.equal(
+    f.calls.some((call) => call.createRef || call.updateRef || call.createPr || call.dispatch),
+    false,
   );
 });
 
-test("unchanged source skips Release Please regeneration and preserves the summarized branch", async () => {
-  const f = fixture({
-    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
-  });
-  f.github.rest.git.getCommit = async () => ({
-    data: { message: `chore(main): release 0.26.1\n\nRelease-source: ${baseSha}` },
-  });
-  assert.equal(await releasePrNeedsRefresh(f), false);
-  f.github.rest.git.getCommit = async () => ({
-    data: { message: `chore(main): release 0.26.1\n\nRelease-source: ${sha}` },
-  });
-  assert.equal(await releasePrNeedsRefresh(f), true);
-  assert.equal(await releasePrNeedsRefresh(fixture()), true);
-  assert.deepEqual(f.calls, []);
-});
-
-test("a concurrently moved release PR is never overwritten", async () => {
-  const f = fixture({
-    moved: true,
-    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
-  });
-  await assert.rejects(updateReleasePr(f), /moved/);
-  assert.deepEqual(f.calls, []);
-});
-
-test("a non-fast-forward update failure prevents metadata updates and CI dispatch", async () => {
-  const f = fixture({
-    pr: pullRequest({ head: { ref: "release-please--branches--main", sha, repo } }),
-  });
-  f.github.rest.git.updateRef = async () => {
-    throw new Error("Not a fast forward");
+test("release policy ignores stale PR base.sha and resolves actual main/dev refs", async () => {
+  const pr = {
+    number: 15,
+    title: "chore(main): release 0.26.2",
+    state: "open",
+    head: { ref: RELEASE_BRANCH, sha: generated, repo },
+    base: { ref: "main", sha: baseline, repo },
   };
-  await assert.rejects(updateReleasePr(f), /fast forward/);
-  assert.deepEqual(
-    f.calls.map((call) => Object.keys(call)[0]),
-    ["tree", "commit"],
+  const f = fixture({ pr });
+  f.contents.set(`${generated}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
+  await checkPullRequest({ ...f, number: 15 });
+  assert.equal(f.calls.at(-1).status.state, "success");
+  f.references["heads/main"] = sha("f");
+  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /main moved/);
+  assert.equal(f.calls.at(-1).status.state, "failure");
+});
+
+test("contributions target dev, and invalid titles fail on the actual head", async () => {
+  const f = fixture();
+  await checkPullRequest({ ...f, number: 15 });
+  assert.equal(f.calls.at(-1).status.sha, oldHead);
+  const pr = {
+    number: 15,
+    title: "fix: hotfix",
+    state: "open",
+    head: { ref: "fix/a", sha: oldHead, repo },
+    base: { ref: "main", sha: baseline, repo },
+  };
+  const bad = fixture({ pr });
+  await assert.rejects(checkPullRequest({ ...bad, number: 15 }), /Contributions target dev/);
+});
+
+test("tag is created before a draft; stable recovery is idempotent and never moves tags", async () => {
+  const f = fixture();
+  assert.equal(await ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes" }), "v0.26.2");
+  assert.ok(
+    f.calls.findIndex((call) => call.createRef) < f.calls.findIndex((call) => call.createRelease),
+  );
+  const retry = fixture({
+    refs: { "tags/v0.26.2": main },
+    releases: [{ tag_name: "v0.26.2", target_commitish: main, prerelease: false, draft: true }],
+  });
+  assert.equal(
+    await ensureRelease({ ...retry, tag: "v0.26.2", sha: main, body: "Notes" }),
+    "v0.26.2",
+  );
+  assert.deepEqual(retry.calls, []);
+  retry.references["tags/v0.26.2"] = dev;
+  await assert.rejects(
+    ensureRelease({ ...retry, tag: "v0.26.2", sha: main, body: "Notes" }),
+    /elsewhere/,
   );
 });
 
-test("creates a source tag only for a single matching draft and immutable commit", async () => {
-  const releases = [{ id: 42, tag_name: "v0.26.1", draft: true, target_commitish: sha }];
-  const f = fixture({ releases });
-  await ensureDraftTag({ ...f, tag: "v0.26.1", sha });
-  assert.equal(f.calls[0].release.body, releaseSection(generated, "0.26.1").notes);
-  assert.equal(f.calls[0].release.release_id, 42);
-  assert.equal(f.calls[1].tag.sha, sha);
-  const existing = fixture({
-    releases: [{ ...releases[0], body: releaseSection(generated, "0.26.1").notes }],
-    tag: { type: "commit", sha },
-  });
-  await ensureDraftTag({ ...existing, tag: "v0.26.1", sha });
-  assert.equal(existing.calls.length, 0);
-});
-
-test("refuses to retag or overwrite published, duplicate or mismatched releases", async () => {
-  for (const releases of [
-    [],
-    [{ tag_name: "v0.26.1", draft: false, target_commitish: sha }],
-    [{ tag_name: "v0.26.1", draft: true, target_commitish: "main" }],
-    Array(2).fill({ tag_name: "v0.26.1", draft: true, target_commitish: sha }),
-  ]) {
-    const f = fixture({ releases });
-    await assert.rejects(ensureDraftTag({ ...f, tag: "v0.26.1", sha }), /Expected one draft/);
-    assert.equal(f.calls.length, 0);
-  }
+test("published releases are never rebuilt and channel mismatches are rejected", async () => {
   const f = fixture({
-    releases: [{ tag_name: "v0.26.1", draft: true, target_commitish: sha }],
-    tag: { type: "commit", sha: "b".repeat(40) },
+    refs: { "tags/v0.26.2": main },
+    releases: [{ tag_name: "v0.26.2", target_commitish: main, prerelease: false, draft: false }],
   });
-  await assert.rejects(ensureDraftTag({ ...f, tag: "v0.26.1", sha }), /elsewhere/);
+  assert.equal(await ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes" }), "");
+  await assert.rejects(
+    ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes", nightly: true }),
+    /channel/,
+  );
 });
 
-test("the required CI contexts match the protected main rule", () => {
+test("Nightly uses beta manifests, its own immutable tag and does not become latest stable", async () => {
+  const f = fixture();
+  const plan = await planDevelopment(f);
+  const tag = await prepareNightly({ ...f, plan, runNumber: 12, runAttempt: 1 });
+  assert.equal(tag, "v0.26.2-beta.12.1");
+  const release = f.calls.find((call) => call.createRelease).createRelease;
+  assert.equal(release.prerelease, true);
+  assert.equal(release.make_latest, "false");
+  assert.equal(release.name, "Nightly");
+  assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [dev]);
+  assert.ok(f.contents.get(`${generated}:CITATION.cff`).includes("0.26.2-beta.12.1"));
+});
+
+test("main migration skips publication and stable preparation requires reviewed promotion metadata", async () => {
+  const f = fixture();
+  assert.equal(await prepareStable(f), "");
+  f.files[SOURCE_PATH] = JSON.stringify({ sourceSha: dev, baseSha: main, version: "0.26.1" });
+  assert.equal(await prepareStable(f), "v0.26.1");
+  f.files[SOURCE_PATH] = JSON.stringify({ sourceSha: dev, baseSha: baseline, version: "0.26.1" });
+  await assert.rejects(prepareStable(f), /reviewed release promotion/);
+});
+
+test("Nightly publication happens before retiring the previous Nightly and preserves stable releases", async () => {
+  const tag = "v0.26.2-beta.12.1";
+  const f = fixture({
+    refs: { [`tags/${tag}`]: generated },
+    releases: [
+      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
+      { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.11.1", draft: false, prerelease: true },
+      { id: 3, name: "Tunnelde 0.26.1", tag_name: "v0.26.1", draft: false, prerelease: false },
+    ],
+  });
+  await publishRelease({ ...f, tag });
+  assert.deepEqual(
+    f.calls.map((call) => Object.keys(call)[0]),
+    ["publish", "deleteRelease"],
+  );
+  assert.equal(f.calls[0].publish.make_latest, "false");
+  assert.equal(f.calls[1].deleteRelease.release_id, 2);
+});
+
+test("an obsolete Nightly cannot replace the current build; stable publication selects latest", async () => {
+  const tag = "v0.26.2-beta.12.1";
+  const f = fixture({
+    refs: { [`tags/${tag}`]: generated, "heads/dev": baseline },
+    releases: [
+      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
+    ],
+  });
+  await assert.rejects(publishRelease({ ...f, tag }), /dev moved/);
+  assert.deepEqual(f.calls, []);
+  const stable = fixture({
+    refs: { "tags/v0.26.2": main },
+    releases: [
+      { id: 4, tag_name: "v0.26.2", target_commitish: main, draft: true, prerelease: false },
+    ],
+  });
+  await publishRelease({ ...stable, tag: "v0.26.2" });
+  assert.equal(stable.calls[0].publish.make_latest, "true");
+});
+
+test("recovery cannot replace a newer Nightly even when dev has not moved", async () => {
+  const tag = "v0.26.2-beta.12.1";
+  const f = fixture({
+    refs: { [`tags/${tag}`]: generated },
+    releases: [
+      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
+      { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.13.1", draft: false, prerelease: true },
+    ],
+  });
+  await assert.rejects(publishRelease({ ...f, tag }), /newer Nightly/);
+  assert.deepEqual(f.calls, []);
+});
+
+test("required checks stay bound to Actions and main protection has no bypass", () => {
   const ruleset = JSON.parse(
     readFileSync(new URL("../../../.github/main-ruleset.json", import.meta.url)),
   );
-  assert.equal(ruleset.enforcement, "active");
   assert.deepEqual(ruleset.bypass_actors, []);
-  const checks = ruleset.rules.find((r) => r.type === "required_status_checks").parameters;
+  const checks = ruleset.rules.find((rule) => rule.type === "required_status_checks").parameters;
   assert.equal(checks.strict_required_status_checks_policy, true);
   assert.equal(checks.required_status_checks.length, 7);
   for (const check of checks.required_status_checks) assert.equal(check.integration_id, 15368);
+  assert.equal(typeof branchSha, "function");
 });

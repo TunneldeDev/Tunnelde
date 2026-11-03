@@ -7,7 +7,7 @@ const CATEGORIES = [
   ["build", "构建 | Build"],
   ["other", "其他 | Other"],
 ];
-const VERSION = /^\d+\.\d+\.\d+$/;
+const VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
 
 function markdown(value) {
   return value
@@ -43,7 +43,6 @@ export function summarizeChanges(commits) {
     if (/^chore(?:\(main\))?: release \d+\.\d+\.\d+/.test(subject)) continue;
     const breaking = Boolean(match?.[3] || /^BREAKING[ -]CHANGE:/m.test(message));
     const type = match?.[1];
-    if (!breaking && ["test", "style"].includes(type)) continue;
     const category = breaking
       ? "breaking"
       : {
@@ -55,6 +54,8 @@ export function summarizeChanges(commits) {
           docs: "docs",
           build: "build",
           ci: "build",
+          test: "build",
+          style: "perf",
         }[type] || "other";
     const title = (match?.[4] || subject).trim();
     const scope = match?.[2] || "";
@@ -157,23 +158,27 @@ export function replacePendingRelease(baseChangelog, release) {
 
 export function releasePrBody(version, count, repository, sha) {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("Expected an immutable changelog SHA");
-  // Release Please parses the delimited version heading when creating the draft.
+  // Keep the squash body concise and link to the exact reviewed changelog.
   return `---\n## ${version}\n\n归总 ${count} 项变更并更新版本，详见 [CHANGELOG.md](https://github.com/${repository}/blob/${sha}/CHANGELOG.md)。\n---`;
 }
 
-export async function collectChanges({ github, repo, previousVersion, head }) {
-  if (!VERSION.test(previousVersion) || !/^[a-f0-9]{40}$/.test(head))
+export async function collectChanges({ github, repo, previousVersion, base, head }) {
+  if (
+    (!base && !VERSION.test(previousVersion)) ||
+    (base && !/^[a-f0-9]{40}$/.test(base)) ||
+    !/^[a-f0-9]{40}$/.test(head)
+  )
     throw new Error("Invalid comparison range");
   const commits = [];
   let total;
   for (let page = 1; ; page++) {
     const { data } = await github.rest.repos.compareCommitsWithBasehead({
       ...repo,
-      basehead: `v${previousVersion}...${head}`,
+      basehead: `${base || `v${previousVersion}`}...${head}`,
       per_page: 100,
       page,
     });
-    if (data.status !== "ahead")
+    if (!["ahead", "identical"].includes(data.status))
       throw new Error("Release source must descend from the previous version tag");
     total ??= data.total_commits;
     commits.push(...data.commits);
@@ -195,7 +200,7 @@ export async function collectChanges({ github, repo, previousVersion, head }) {
         commit.pullRequest = prs.find(
           (pr) =>
             pr.merged_at &&
-            pr.base.ref === "main" &&
+            ["dev", "main"].includes(pr.base.ref) &&
             pr.base.repo.full_name === `${repo.owner}/${repo.repo}` &&
             pr.merge_commit_sha === commit.sha,
         );

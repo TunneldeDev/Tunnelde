@@ -1,21 +1,21 @@
 # Contributing
 
-`main` is the default branch and must remain releasable. Create a short-lived branch,
-open a pull request and squash merge after the required checks pass. There is no long-lived
-`dev` branch. Direct pushes, force pushes and deletion of `main` are blocked, including for bots.
-An additional person's approval is not required for the current solo-maintainer workflow.
+`dev` is the default branch and the target for contributions. Create a short-lived branch from
+`dev`, open a PR to `dev`, and squash merge after required checks pass. `main` is the stable branch:
+only the generated release PR promotes development to it. Both branches block direct pushes,
+force pushes and deletion. No additional reviewer is required for the solo-maintainer workflow.
 
 ## PR titles
 
 Use a Conventional Commit title; GitHub uses that title for the squash commit.
 
-| Type                                               | Example                                 | Release effect          |
-| -------------------------------------------------- | --------------------------------------- | ----------------------- |
-| `feat`                                             | `feat(themes): add background controls` | Minor                   |
-| `fix`                                              | `fix(terminal): restore paste`          | Patch                   |
-| `perf`, `build`                                    | `build: reduce linker work`             | Patch                   |
-| `revert`                                           | `revert: undo broken migration`         | Patch                   |
-| `docs`, `test`, `ci`, `chore`, `refactor`, `style` | `docs: explain host authentication`     | No release on their own |
+| Type                                               | Example                                 | Release effect |
+| -------------------------------------------------- | --------------------------------------- | -------------- |
+| `feat`                                             | `feat(themes): add background controls` | Minor          |
+| `fix`                                              | `fix(terminal): restore paste`          | Patch          |
+| `perf`, `build`                                    | `build: reduce linker work`             | Patch          |
+| `revert`                                           | `revert: undo broken migration`         | Patch          |
+| `docs`, `test`, `ci`, `chore`, `refactor`, `style` | `docs: explain host authentication`     | Patch          |
 
 Add `!` before the colon for a breaking change, for example `feat(api)!: replace task transport`.
 Breaking changes increase the minor version while the project is below 1.0, and the major version
@@ -36,17 +36,21 @@ node --test scripts/release/tests/*.test.mjs
 ```
 
 Rust changes also require formatting, Clippy and the relevant Cargo tests. CI checks native helpers
-on Linux, Windows and macOS. Keep the PR up to date with `main` and resolve all review conversations
-before merging. Do not change the required-check names without updating `.github/main-ruleset.json`
+on Linux, Windows and macOS. Keep the PR up to date with its target branch and resolve all review conversations
+before merging. Do not change the required-check names without updating `.github/main-ruleset.json` / `.github/dev-ruleset.json`
 and applying its repository Ruleset.
 
 ## Releases
 
-Ordinary PRs do not need a version bump. Release Please gathers merged Conventional Commits into
-one release PR. A script summarizes merged changes into highlights, categorized details, PR links
-and contributors in that release branch. Ordinary PRs do not need to edit `CHANGELOG.md`.
-Existing optional Unreleased notes are retained as highlights, and historical entries stay unchanged.
-Merge the release PR when the group of changes is ready. Its installers are built into a draft
-for manual publication.
+Ordinary PRs do not need version bumps or changelog edits. Every `dev` update builds a **Nightly**
+prerelease with a unique beta version and maintains one `release/dev-to-main` PR targeting `main`.
+That PR contains all development changes since the last promotion, synchronized versions and a
+summarized changelog with highlights, categorized details, PR links and contributors. Historical
+entries are preserved. Optional Unreleased notes can supply curated highlights.
 
-See [Release operations](docs/releases.md) for version overrides, credentials and failed-build recovery.
+Review and squash merge that release PR when ready. The exact merged source is tagged, built for
+all four desktop targets, verified and automatically published as the latest stable release.
+Nightly never replaces the stable updater channel. Do not edit or contribute to the generated
+release branch; it is rebuilt from the latest `dev` and `main` refs.
+
+See [Release operations](docs/releases.md) for configuration and failed-build recovery.

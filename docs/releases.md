@@ -1,102 +1,88 @@
 # Release operations
 
-## Normal workflow
+## Branches and normal workflow
 
-1. Open a feature PR targeting protected `main`. Its Conventional Commit title becomes the squash commit.
-2. Pass Web, Rust, Repository hygiene, the three Native helpers checks and PR policy; update the branch
-   with `main` and resolve review threads. Squash merge.
-3. **Release PR** creates or updates one `release-please--branches--main` branch and PR. Its generated
-   changelog and every application/native version are reviewed together. The script groups changes
-   since the previous version tag into bilingual categories, with highlights, expandable details,
-   PR/commit links and contributors. It writes only to the release branch. No installers build yet.
-4. Merge the release PR. Automation creates a draft for the exact merge SHA, creates its immutable
-   version tag, and explicitly invokes **Release**. The four desktop builds share the draft.
-5. Wait for **Verify completed draft** to succeed, inspect its notes/assets, then click **Publish release**
-   in GitHub Releases. Select the release as latest. `latest.json` becomes publicly available with it.
+`dev` is the default branch and contribution target. `main` is stable. Both require PRs,
+linear history, resolved review conversations and the seven CI/policy checks. Squash merge
+ordinary work into `dev`; only the generated release promotion targets `main`.
 
-A complete build never automatically publishes the release. Until publication, the previous public
-version remains available to the desktop updater. A failed build leaves its draft available for recovery.
-Native helpers and compiler timings are Actions artifacts, not public desktop downloads.
+1. A `dev` push runs CI and **Development**. Automation resolves the actual `dev` and `main`
+   refs and collects changes after the last promoted dev commit recorded on main in
+   `.github/release-source.json`. This survives repeated squash promotions without requiring
+   dev to contain main's release commits.
+2. One generated `release/dev-to-main` PR is created or refreshed. Its tree is dev's content
+   plus synchronized versions, the source marker, and the new changelog section. Its parent
+   is current main, so it stays up to date with strict branch protection. The branch can be
+   rebuilt with a forced update; dev, main and existing tags are never force updated.
+3. The same dev source builds a unique `vX.Y.Z-beta.RUN.ATTEMPT` tag. The public prerelease
+   is named **Nightly**. All desktop installers, signatures and updater metadata must pass
+   verification before publication. Only then is the previous Nightly release retired;
+   immutable beta tags remain. Failed/stale builds cannot replace the working Nightly.
+4. Review the version and summarized changelog in the release PR, then squash merge it into
+   main. **Stable release** creates an immutable tag at that exact merged commit before
+   creating a draft, then calls **Release** for the four desktop targets.
+5. **Verify and publish release** validates all desktop artifacts and `latest.json`, then
+   automatically publishes the release as latest. Nightly always uses `prerelease: true`
+   and `make_latest: false`; stable desktop updater URLs continue to use `/releases/latest/`.
+6. After stable publication, development automation is refreshed to pick up any work that
+   arrived while the stable builds were running. No new changes means no duplicate release PR.
 
-Only one unfinished draft is allowed. It blocks another release PR from merging, but does not block
-normal fixes. After publishing, the next push to `main` (or a manual **Release PR** dispatch) resumes
-the cumulative release PR. Publishing/deleting a release refreshes the PR-policy status automatically.
+The main migration PR itself keeps version 0.26.1 and does not create an extra stable release.
+Development preparation waits until the migration metadata exists on main. Set `dev` as the
+repository default once its reviewed workflow files are available; **Stable release** dispatches
+development preparation after the migration merges. No bot bypass or direct main write is needed.
 
-## Version and changelog policy
+## Versions and changelog
 
-`feat` increases minor; `fix`, `perf`, `build` and `revert` increase patch. Hidden maintenance types
-(`docs`, `test`, `ci`, `chore`, `refactor`, `style`) do not produce a release by themselves. A breaking
-change marked with `!` or a `BREAKING CHANGE:` footer increases minor before 1.0 and major after 1.0.
-The initial automated baseline is the existing `v0.26.0` tag; it is never changed.
+`feat` increases minor. Other development changes, including docs, CI and tests, increase patch.
+Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
+and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
+Beta versions use the same next stable base with a unique build sequence suffix.
 
-Release Please updates `package.json`, Tauri config, both Cargo manifests/lockfiles and
-`.release-please-manifest.json` and `CITATION.cff`. CI rejects mismatches. This repository has one
-root release; the empty release package name keeps component prefixes out of its branch/tag parsing.
-`scripts/release/release-notes.mjs` reads the
-exact main SHA and its previous version tag, groups Conventional Commits, combines duplicate titles
-and collects PR authors and GitHub coauthors. Tests/style-only changes and release commits are omitted.
-Build/CI changes remain visible. This process is deterministic and needs no AI service or extra token.
+All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
+and lockfiles, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous
+Release Please action is replaced by repository scripts; the manifest remains version metadata.
 
-`updateReleasePr` writes the resulting `CHANGELOG.md` only to `release-please--branches--main`, using
-a non-forced update based on the expected head. Historical version entries are preserved byte for byte.
-Ordinary development PRs need no changelog edits, and automation never commits directly to `main`.
-Optional existing Unreleased notes become highlights. The pending section is regenerated as main
-advances, so review the result in the release PR before merging.
+The changelog has bilingual categories, highlights, expandable detail, PR/commit links and
+contributors. Duplicate titles retain their source references and authors. History on main is
+preserved byte for byte. Optional Unreleased notes from dev become the new release highlights.
+Generation is deterministic for fixed inputs and date, requires no AI service, and happens in
+the PR before main is changed. PR bodies stay short and link to that exact changelog SHA.
 
-Keep normal PR bodies to a few sentences: the title becomes the squash subject and the body becomes
-its message. Release PR bodies contain a short version summary and a link to the changelog; their
-delimited version heading is required by Release Please. When that PR is merged, the draft receives
-the complete notes from the exact release commit's changelog rather than the short PR body.
+Do not edit `release/dev-to-main`; put fixes and version policy changes through dev. Automation
+checks actual refs again before updating a generated branch, so old PR base snapshots cannot
+hide new changes. It refuses to overwrite main changes outside generated release metadata;
+merge such hotfixes into dev through a reviewed PR before promoting again.
 
-For an explicit version such as 1.0.0, set `release-as` in the root package entry of
-`release-please-config.json` through a reviewed PR. Inspect the resulting release PR and remove the
-override in a subsequent PR once that version is cut. Never rewrite an existing tag. The local
-`pnpm release:prepare` utility remains available for reviewed exceptional version preparation; it does
-not push or publish, and all resulting changes must still use a PR.
+## Credentials and protection
 
-## Automation credentials
+Use the short-lived repository `GITHUB_TOKEN`. Enable **Settings → Actions → General → Workflow
+permissions → Allow GitHub Actions to create and approve pull requests**. No PAT, App secret,
+organization-wide access or Ruleset bypass is needed. Each workflow declares its permissions.
+Automation creates PRs but does not approve them or merge them.
 
-The default setup uses the short-lived repository `GITHUB_TOKEN`; no personal access token or App
-secret is required. Enable **Settings → Actions → General → Workflow permissions → Allow GitHub
-Actions to create and approve pull requests**. Keep the default token permissions read-only: each
-workflow declares its required permissions. The automation creates PRs and never approves reviews.
+Automation explicitly dispatches CI on the generated branch and writes the PR policy status
+to the actual head. The privileged policy workflow executes only the trusted target branch's
+policy code; it never checks out contribution code. Required checks remain bound to Actions.
 
-GitHub normally prevents the token's own writes from starting another workflow. After preparing the
-release branch, automation explicitly dispatches `CI` on that branch, which attaches checks to its
-actual head SHA. The trusted metadata workflow sets the required `PR policy` commit status.
+`.github/main-ruleset.json` and `.github/dev-ruleset.json` are the tracked protection definitions.
+Both block deletion and force pushes, require PRs and all seven checks, and have no bypass actors.
+Repository settings allow squash only, using PR title/body as the commit message. Apply Ruleset
+changes via repository settings or the API; changing the JSON alone does not apply protection.
 
-For a dedicated GitHub App, install it on this repository with Contents and Pull requests read/write
-permissions and set repository variable `RELEASE_APP_ID` plus secret `RELEASE_APP_PRIVATE_KEY`.
-The App creates the release PR and draft; the normal workflow token performs check dispatch and
-metadata updates. Do not grant the App Ruleset bypass, repository administration or organization-wide
-access. Never commit a private key. Missing/invalid configured App credentials fail visibly rather
-than silently falling back.
+## Failed builds and recovery
 
-## Main Ruleset
+An interrupted build leaves its draft and immutable tag. Dispatch **Release** with that original
+`existing_tag` from a branch containing the current workflow, and optionally `build_helpers`.
+It rebuilds the tagged source, shares the same draft across builders, validates every asset, and
+publishes automatically. Already public releases are rejected by the build preparation step;
+recovery never replaces public installers. Never move an existing tag or reuse an abandoned version.
 
-`.github/main-ruleset.json` is the reviewed configuration for **Protect main**, targeting
-`refs/heads/main`, with no bypass actors. It blocks deletion and force pushes, requires linear history,
-PRs, resolved conversations, all seven named CI/policy checks and a branch up to date with `main`.
-Required checks are bound to the GitHub Actions integration. Additional-member approvals are set to
-zero so the maintainer can merge their own PR after checks pass. Repository merge settings allow only
-Squash, use the PR title for the commit subject, and delete merged branches.
+Publication rechecks the current channel source: an obsolete Nightly cannot replace a newer dev
+build, and an old stable draft cannot become latest after main advances. Retry **Development**
+or **Stable release** to prepare the current source. A published stable version is not duplicated.
+Development workflow concurrency serializes release-branch updates; pending pushes may coalesce
+to the newest dev source, avoiding a queue of obsolete installer builds.
 
-Apply rule updates through the GitHub Rulesets API or **Settings → Rules → Rulesets** after the matching
-workflows and checks are available. Ruleset changes do not automatically follow edits to the JSON file.
-No CI workflow has permission to change these protection rules.
-
-## Recovery and withdrawal
-
-For an interrupted draft, dispatch **Release** from `main` with its original `existing_tag`. It checks
-that the tag matches all versions, belongs to `main` history, and corresponds to exactly one existing
-draft with the same source SHA. It rebuilds the original tagged source with the current workflow,
-replaces assets and validates the updater manifest, leaving the result as a draft. Select
-`build_helpers` only if optional helper Actions artifacts also need rebuilding.
-
-Re-running **Release PR** does not increment versions again or duplicate an existing draft. If a draft
-was created but its tag step failed, first resolve that failure and create only the missing tag at the
-recorded merge SHA; never move a tag. Then use **Release** recovery.
-
-To abandon a draft, explicitly delete it in Releases; do not reuse its version or tag. The next release
-uses the version already recorded on `main` as its baseline and increments again. Public releases are
-never overwritten by recovery. The marketplace repository has its own independent release process.
+Native helpers and compiler timings remain optional Actions artifacts, never public desktop
+release downloads. The plugin marketplace repository has its own independent release process.

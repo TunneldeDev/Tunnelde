@@ -91,6 +91,15 @@ describe("release preparation", () => {
     expect(f.run("changelog", "notes", "0.19.0").stdout.trim()).toBe("- Fix a reproducible bug.");
   });
 
+  it("checks beta versions across every manifest and allows idempotent recovery", () => {
+    const f = fixture();
+    expect(f.run("version", "set", "0.19.0-beta.12.1").status).toBe(0);
+    expect(f.run("version", "check", "v0.19.0-beta.12.1").status).toBe(0);
+    expect(f.run("version", "check", "v0.19.0-beta.12.2").status).toBe(1);
+    expect(f.run("version", "set", "0.19.0-beta.12.1").status).toBe(0);
+    expect(f.read("CITATION.cff")).toContain("version: 0.19.0-beta.12.1");
+  });
+
   it("rejects a stale Cargo lock version", () => {
     const f = fixture();
     writeFileSync(
@@ -258,7 +267,7 @@ describe("release publishing", () => {
     expect(updater).not.toContain("needs: [prepare, build, helpers]");
   });
 
-  it("reuses one draft before parallel builders and never automatically publishes it", () => {
+  it("reuses one draft and publishes only after all desktop assets have passed verification", () => {
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
     const prepare = workflow.split("\n  prepare:\n")[1]!.split("\n  build:\n")[0]!;
     const build = workflow.split("\n  build:\n")[1]!.split("\n  helpers:\n")[0]!;
@@ -270,9 +279,9 @@ describe("release publishing", () => {
     expect(build).toContain("releaseId: ${{ needs.prepare.outputs.release_id }}");
     expect(workflow).not.toContain("--draft=false");
     expect(workflow).not.toContain("HEAD:main");
-    const config = JSON.parse(
-      readFileSync(join(process.cwd(), "release-please-config.json"), "utf8"),
-    );
-    expect(config.draft).toBe(true);
+    const updater = workflow.split("\n  updater:\n")[1]!;
+    expect(updater).toContain("publishRelease({github, context, tag:");
+    expect(updater.indexOf("verify-assets.mjs")).toBeLessThan(updater.indexOf("publishRelease({"));
+    expect(build).toContain("prerelease: ${{ contains(needs.prepare.outputs.tag, '-beta.') }}");
   });
 });
