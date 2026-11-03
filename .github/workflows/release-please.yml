@@ -43,7 +43,7 @@ jobs:
       - name: Create draft for a merged release PR
         if: steps.gate.outputs.allowed == 'true'
         id: release
-        uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           target-branch: main
@@ -68,7 +68,7 @@ jobs:
             core.setOutput('needed', await releasePrNeedsRefresh({github, context}));
       - name: Maintain cumulative release PR
         if: steps.gate.outputs.allowed == 'true' && steps.release.outputs.release_created != 'true' && steps.refresh.outputs.needed == 'true'
-        uses: googleapis/release-please-action@8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 # v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
           target-branch: main
