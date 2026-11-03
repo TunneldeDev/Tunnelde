@@ -401,8 +401,8 @@ async fn run_install(app: &AppHandle) -> AppResult<UpdateState> {
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
     let mut last_emitted = std::time::Instant::now();
-    update
-        .download_and_install(
+    let bytes = update
+        .download(
             move |chunk, total| {
                 downloaded += chunk as u64;
                 let state = progress_app.state::<AppState>();
@@ -422,14 +422,22 @@ async fn run_install(app: &AppHandle) -> AppResult<UpdateState> {
             || {},
         )
         .await?;
-    {
-        let mut next = service.update.write();
-        next.phase = Phase::Ready;
-        next.progress = next.content_length;
-    }
-    service.update.set_pending(None);
-    service.update.publish(app);
-    app.restart();
+    // Download verifies the package before we change the recovery marker.
+    // Windows installation exits directly; Linux returns and needs a restart.
+    service
+        .plugins
+        .security
+        .with_planned_restart(&service.db, || {
+            update.install(bytes)?;
+            {
+                let mut next = service.update.write();
+                next.phase = Phase::Ready;
+                next.progress = next.content_length;
+            }
+            service.update.set_pending(None);
+            service.update.publish(app);
+            app.restart();
+        })
 }
 
 pub fn release_page(settings: &Settings, snapshot: &UpdateState) -> String {

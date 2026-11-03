@@ -155,6 +155,9 @@ selection and marketplace sources. `--safe-mode` and `--restricted-mode` force r
 mode for the current process, including an already-running single instance. Executable
 Node/WASM plugins stay stopped while pure theme packs remain available. After an abnormal
 exit following plugin execution, startup enters restricted mode and offers recovery.
+Installing an update records a planned restart after package verification, so automatic
+relaunch does not trigger crash recovery. Explicit restricted mode remains enabled;
+failed installations restore the running process's recovery marker.
 
 Terminal settings apply to open terminals without reconnecting. Reducing
 scrollback discards lines beyond the new capacity. Smooth scrolling follows the

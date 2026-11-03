@@ -14,6 +14,8 @@ use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod restart;
+
 pub const EVENT: &str = "plugin:security-changed";
 pub const PERMISSIONS: &[&str] = &[
     "log",
@@ -69,6 +71,7 @@ struct Policy {
     saved: Persisted,
     cli_locked: bool,
     recovery_suggested: bool,
+    restarting: bool,
     revision: u64,
 }
 
@@ -232,6 +235,9 @@ impl PluginSecurity {
         if policy.saved.restricted {
             return Err(AppError::validation("pluginSecurity.blocked"));
         }
+        if policy.restarting {
+            return Err(AppError::validation("pluginSecurity.changed"));
+        }
         let grant = policy
             .saved
             .grants
@@ -365,6 +371,9 @@ impl PluginSecurity {
         let mut policy = self.policy();
         if policy.saved.restricted {
             return Err(AppError::validation("pluginSecurity.blocked"));
+        }
+        if policy.restarting {
+            return Err(AppError::validation("pluginSecurity.changed"));
         }
         if !policy.saved.unclean {
             let mut next = policy.saved.clone();
@@ -557,7 +566,12 @@ mod tests {
 
     const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    fn grant(security: &PluginSecurity, db: &Database, id: &str, permissions: &[&str]) -> Lease {
+    pub(super) fn grant(
+        security: &PluginSecurity,
+        db: &Database,
+        id: &str,
+        permissions: &[&str],
+    ) -> Lease {
         let permissions: Vec<String> = permissions.iter().map(|value| (*value).into()).collect();
         security
             .set_permissions(

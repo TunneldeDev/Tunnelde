@@ -39,7 +39,7 @@ generated release promotion targets `main`, where **Create a merge commit** is t
 **Nightly** runs at `0 22 * * *` (22:00 UTC, 06:00 Beijing time the following day), or from its
 **Run workflow** button. It reads current `dev`; it is not triggered by dev pushes. No work after
 the last stable promotion means no build. Repeating an already published snapshot also skips it;
-an interrupted draft is reused. This follows MAA's separation of tagged releases and daily snapshots.
+an interrupted draft is reused. Tagged releases and daily development snapshots run independently.
 
 Versions contain the target stable base, the commit distance and the source hash:
 
@@ -50,8 +50,7 @@ Versions contain the target stable base, the commit distance and the source hash
 The most recent applicable Beta is the anchor; its source must be an ancestor of current dev.
 Distance is a separate numeric SemVer identifier so 1000 sorts after 999. The versioned title adds
 `(Nightly)`. Daily builds do not consume Beta numbers. Nightly stays in this repository and builds
-all four desktop targets using the existing Tauri signed updater, rather than MAA's Windows-only
-OTA packaging and separate release repository.
+all four desktop targets using Tunnelde's signed updater packages.
 
 ## Versions and changelog
 
