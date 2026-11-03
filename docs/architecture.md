@@ -14,6 +14,21 @@
 | Storage    | `src-tauri/src/db/*`                                                                                    | SQLite with numbered migrations: hosts, groups, settings, tabs, audit, known hosts, command history                                    |
 | Platform   | `src-tauri/src/{lib,state,settings}.rs`, `platform/{window,tray,menu,logging,system}.rs`                | App wiring, window, tray and menu behaviour, logging, local system sampling                                                            |
 
+## Startup and window presentation
+
+The main native window starts hidden. Window-state restoration applies saved size,
+position and maximization before settings apply native chrome and background colors.
+The window-state plugin does not restore visibility or decorations; settings and the
+startup/tray handlers own those choices.
+
+The frontend applies saved appearance and language before publishing settings readiness,
+then restores plugin view metadata and workspace layout before mounting the shell.
+After its selected bundled fonts load, the committed shell sends `main_window_ready`.
+Only then does the native layer restore fullscreen and reveal the window. Tray actions,
+Dock clicks and second launches share this readiness gate. Background update status does
+not delay presentation, and font failures use fallbacks. No animation-frame wait is used
+because hidden webviews can suspend those callbacks.
+
 ## Data
 
 - Database: `<app data>/tunnelde.db` (SQLite, WAL).

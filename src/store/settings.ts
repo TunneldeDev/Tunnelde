@@ -129,8 +129,8 @@ export const useSettings = create<SettingsStore>((set, get) => {
         if (info.status === "fulfilled") set({ info: info.value });
         const failed =
           settings.status === "rejected" ? settings : info.status === "rejected" ? info : null;
-        set({ ready: true, error: failed ? translateError(failed.reason) : null });
         display();
+        set({ ready: true, error: failed ? translateError(failed.reason) : null });
       });
       queue = task.catch(() => undefined);
       loading = task.finally(() => {

@@ -68,7 +68,7 @@ async function start(): Promise<void> {
   });
   // Save pruned/normalized restoration, but never overwrite an unreadable snapshot.
   if (restored) schedulePersistence();
-  await useUpdates.getState().refresh();
+  void useUpdates.getState().refresh();
 }
 
 function schedulePersistence(): void {
