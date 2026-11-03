@@ -129,6 +129,7 @@ pub fn settings_update(
     let mut base = serde_json::to_value(&previous)?;
     let colors = patch.get("colors").cloned();
     let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
+    let network = patch.get("network").cloned();
     merge_json(&mut base, patch);
     if let Some(colors) = colors {
         base["colors"] = colors;
@@ -136,9 +137,13 @@ pub fn settings_update(
     if let Some(keyboard_shortcuts) = keyboard_shortcuts {
         base["keyboardShortcuts"] = keyboard_shortcuts;
     }
+    if let Some(network) = network {
+        base["network"] = network;
+    }
     let mut next: Settings = serde_json::from_value(base)
         .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;
     next.sanitize();
+    next.network.validate()?;
 
     let title_bar_changed = next.title_bar_style != previous.title_bar_style;
     if title_bar_changed {
@@ -149,6 +154,18 @@ pub fn settings_update(
             let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
         }
         return Err(error);
+    }
+    for profile in &previous.network.profiles {
+        if !next
+            .network
+            .profiles
+            .iter()
+            .any(|current| current.id == profile.id)
+        {
+            if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
+                tracing::warn!(%error, "could not remove deleted proxy credential");
+            }
+        }
     }
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
@@ -171,6 +188,18 @@ pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<S
             let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
         }
         return Err(error);
+    }
+    for profile in &previous.network.profiles {
+        if !next
+            .network
+            .profiles
+            .iter()
+            .any(|current| current.id == profile.id)
+        {
+            if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
+                tracing::warn!(%error, "could not remove deleted proxy credential");
+            }
+        }
     }
     state.set_settings(next.clone());
     crate::platform::window::apply_theme(&app, &next.theme);
@@ -219,7 +248,11 @@ pub fn host_update(state: State<'_, AppState>, id: String, input: HostInput) -> 
 #[tauri::command]
 pub fn host_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
     let host = state.db.with(|conn| db::hosts::find_host(conn, &id))?;
-    state.db.with(|conn| db::hosts::delete_host(conn, &id))?;
+    state.db.with(|conn| {
+        db::hosts::delete_host(conn, &id)?;
+        conn.execute("DELETE FROM settings WHERE key=?1", [format!("route:{id}")])?;
+        Ok(())
+    })?;
     let _ = crate::vault::forget(&host.id);
     Ok(())
 }
@@ -471,8 +504,12 @@ pub fn ssh_sessions(state: State<'_, AppState>) -> Vec<SessionInfo> {
 }
 
 #[tauri::command]
-pub async fn ssh_probe(app: AppHandle, host_id: String) -> AppResult<HostKeyInfo> {
-    ssh::probe(&app, &host_id).await
+pub async fn ssh_probe(
+    app: AppHandle,
+    host_id: String,
+    jump_credentials: Option<std::collections::HashMap<String, ssh::session::HopCredential>>,
+) -> AppResult<HostKeyInfo> {
+    ssh::session::probe_route(&app, &host_id, jump_credentials.unwrap_or_default()).await
 }
 
 #[tauri::command]
@@ -480,8 +517,17 @@ pub async fn ssh_trust(
     app: AppHandle,
     host_id: String,
     fingerprint: String,
+    expected_host_id: Option<String>,
+    jump_credentials: Option<std::collections::HashMap<String, ssh::session::HopCredential>>,
 ) -> AppResult<HostKeyInfo> {
-    ssh::trust(&app, &host_id, &fingerprint).await
+    ssh::session::trust_route(
+        &app,
+        &host_id,
+        &fingerprint,
+        expected_host_id.as_deref(),
+        jump_credentials.unwrap_or_default(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -516,8 +562,15 @@ pub async fn ssh_install_key(
     app: AppHandle,
     host_id: String,
     password: Option<String>,
+    jump_credentials: Option<std::collections::HashMap<String, ssh::session::HopCredential>>,
 ) -> AppResult<ssh::InstalledKey> {
-    ssh::keys::install(&app, &host_id, password).await
+    ssh::keys::install(
+        &app,
+        &host_id,
+        password,
+        jump_credentials.unwrap_or_default(),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -927,8 +980,8 @@ pub fn plugin_sources_save(
 }
 
 #[tauri::command]
-pub async fn plugin_source_test(url: String) -> AppResult<usize> {
-    let payload = plugins::network::fetch_json::<Value>(&url, 2 * 1024 * 1024).await?;
+pub async fn plugin_source_test(app: AppHandle, url: String) -> AppResult<usize> {
+    let payload = plugins::network::fetch_json::<Value>(&app, &url, 2 * 1024 * 1024).await?;
     payload
         .get("plugins")
         .and_then(|p| p.as_array())
@@ -950,7 +1003,7 @@ pub async fn marketplace_catalogue(
         .into_iter()
         .find(|source| source.id == source_id && source.enabled)
         .ok_or_else(|| AppError::validation("market.sourceDisabled"))?;
-    plugins::marketplace::catalogue(&state.data_dir, &source, refresh).await
+    plugins::marketplace::catalogue(&app, &state.data_dir, &source, refresh).await
 }
 
 #[tauri::command]
@@ -1104,6 +1157,7 @@ pub async fn plugin_uninstall(app: AppHandle, id: String) -> AppResult<()> {
     let state = app.state::<AppState>();
     state.plugins.revoke_background(&app, &id);
     let result = state.plugins.uninstall(&id).await;
+    state.plugins.revoke_background(&app, &id);
     plugins::security::emit_state(&app).await;
     result
 }
@@ -1115,6 +1169,9 @@ pub async fn plugin_reload(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>
         state.plugins.revoke_background(&app, &plugin.id);
     }
     let result = state.plugins.reload().await;
+    for plugin in &result {
+        state.plugins.revoke_background(&app, &plugin.id);
+    }
     plugins::security::emit_state(&app).await;
     Ok(result)
 }

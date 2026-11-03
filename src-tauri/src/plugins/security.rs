@@ -40,6 +40,10 @@ pub const PERMISSIONS: &[&str] = &[
     "network",
     "process.exec",
     "secrets",
+    "mounts.read",
+    "mounts.write",
+    "forwards.read",
+    "forwards.write",
 ];
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
@@ -406,6 +410,15 @@ impl PluginSecurity {
         self.notify(&mut policy);
     }
 
+    pub fn cleanup_boundary(&self, id: &str) -> u64 {
+        let policy = self.policy();
+        policy
+            .saved
+            .grants
+            .get(id)
+            .map_or(policy.revision, |grant| grant.generation)
+    }
+
     pub fn persist(&self, db: &Database) -> AppResult<()> {
         save(db, &self.policy().saved)
     }
@@ -666,6 +679,22 @@ mod tests {
                 Some(current.generation)
             )
             .is_err());
+    }
+
+    #[test]
+    fn cleanup_boundary_excludes_replacement_and_unrelated_runtime_generations() {
+        let db = Database::in_memory().unwrap();
+        let security = PluginSecurity::default();
+        let old = grant(&security, &db, "one", &[]);
+        security.invalidate_runtime("one");
+        let boundary = security.cleanup_boundary("one");
+        assert!(old.generation < boundary);
+        let replacement = security.lease("one", DIGEST.into(), vec![]).unwrap();
+        assert_eq!(replacement.generation, boundary);
+        grant(&security, &db, "two", &[]);
+        assert_eq!(security.cleanup_boundary("one"), boundary);
+        security.invalidate("one");
+        assert!(security.cleanup_boundary("one") > replacement.generation);
     }
 
     #[tokio::test]

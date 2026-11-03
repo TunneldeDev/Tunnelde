@@ -213,9 +213,7 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
         return Ok(service.update.snapshot());
     }
 
-    let updater = app
-        .updater()
-        .map_err(|error| AppError::Update(error.to_string()))?;
+    let updater = configured_updater(app)?;
     let checked = tokio::time::timeout(Duration::from_secs(30), updater.check()).await;
 
     let mut next = service.update.snapshot();
@@ -268,9 +266,7 @@ pub async fn install(app: AppHandle) -> AppResult<UpdateState> {
     }
     service.update.publish(&app);
 
-    let updater = app
-        .updater()
-        .map_err(|error| AppError::Update(error.to_string()))?;
+    let updater = configured_updater(&app)?;
     let Some(update) = updater
         .check()
         .await
@@ -349,4 +345,23 @@ fn persist_last_check(app: &AppHandle) {
     } else {
         service.set_settings(settings);
     }
+}
+
+fn configured_updater(app: &AppHandle) -> AppResult<tauri_plugin_updater::Updater> {
+    let mut builder = app.updater_builder();
+    if let Some(url) =
+        crate::network::proxy_url(&app.state::<AppState>().settings().network, "updates", None)?
+    {
+        builder = if url.is_empty() {
+            builder.no_proxy()
+        } else {
+            builder.proxy(
+                url.parse()
+                    .map_err(|_| AppError::validation("network.invalid"))?,
+            )
+        };
+    }
+    builder
+        .build()
+        .map_err(|_| AppError::validation("network.failed"))
 }

@@ -62,7 +62,9 @@ Manage profiles provides rename, apply, per-profile export and delete. Deleting 
 the current preferences. Names are unique, 1–64 characters, with up to 32 profiles stored locally.
 
 Import and export use native JSON file pickers. Export includes appearance, custom CSS, behavior,
-terminal, editor, file view and keyboard preferences. It excludes hosts, passwords, SSH keys,
+terminal, editor, file view, keyboard preferences and proxy metadata/feature routes. Proxy passwords
+remain in the local OS credential store and must be entered again on another computer.
+It excludes hosts, passwords, SSH keys,
 plugin configuration and credentials, history, open tabs and update records. Import checks the
 format/version, size (512 KB maximum), setting names, types and supported ranges, then previews
 the profile name and number of changed preferences before Apply. Cancellation changes nothing.
@@ -88,8 +90,14 @@ their defaults without overwriting existing choices.
 | Files              | Hidden entries, folders first, sort field/direction, directory preloading                               |
 | Text editor        | Word wrap, tab width, spellcheck                                                                        |
 | Monitoring         | Local and remote refresh interval                                                                       |
+| Network & proxies  | Named HTTP/SOCKS5 proxies, per-feature/plugin routing, credential storage and connection tests          |
 | Updates            | Automatic checks and access to the update page                                                          |
 | Advanced           | Custom CSS, data/log folders, full preference reset                                                     |
+
+Host-specific proxies and ordered jump hosts live in the host editor's collapsed
+**Proxy & jump hosts** section. Port forwards live on the host detail page. See
+[network and storage](network-storage.md) for route precedence, process-environment
+behavior, transfer recovery and SSHFS dependencies.
 
 Host rows select on a single click or Space. Double click or Enter runs the chosen
 activation action: open a terminal (default), show details, or edit the host.

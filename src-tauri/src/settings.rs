@@ -25,6 +25,7 @@ pub const COLOR_REGIONS: [&str; 11] = [
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
     /// "system" | "zh-CN" | "en-US"
     pub language: String,
@@ -85,6 +86,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
             language: "system".into(),
             theme: "system".into(),

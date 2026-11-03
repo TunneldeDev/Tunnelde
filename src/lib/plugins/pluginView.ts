@@ -17,6 +17,7 @@ export interface PluginFormBlock {
 }
 
 export type PluginBlock =
+  | { type: "mounts" }
   | { type: "heading"; text: string }
   | { type: "text"; text: string }
   | { type: "kv"; items: { label: string; value: string }[] }
@@ -80,6 +81,11 @@ export function normalizeBlocks(value: unknown): PluginBlock[] {
       continue;
     }
     const record = raw as Record<string, unknown>;
+
+    if (record.type === "mounts") {
+      if (!blocks.some((block) => block.type === "mounts")) blocks.push({ type: "mounts" });
+      continue;
+    }
 
     if (record.type === "chat") {
       const chat = normalizeChatBlock(record);

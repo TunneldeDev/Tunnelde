@@ -35,6 +35,9 @@ impl PluginHost {
         let mut command = Command::new(node);
         #[cfg(windows)]
         command.creation_flags(0x08000000);
+        if let Some(context) = &context {
+            crate::network::process_environment(&context.app, &context.id, &mut command)?;
+        }
         let mut child = command
             .arg(node_path(entry))
             .current_dir(node_path(working_dir))
@@ -264,6 +267,17 @@ async fn read_loop(
     requests.abort_all();
     if let Some(context) = &context {
         super::tasks::cancel_plugin(&context.id, Some(context.generation));
+        context
+            .app
+            .state::<crate::state::AppState>()
+            .forwards
+            .stop_generation(&context.id, context.generation);
+        context
+            .app
+            .state::<crate::state::AppState>()
+            .mounts
+            .stop_generation(&context.id, context.generation)
+            .await;
         context
             .app
             .state::<crate::state::AppState>()

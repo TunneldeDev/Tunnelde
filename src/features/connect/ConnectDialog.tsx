@@ -8,7 +8,7 @@ import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { cn } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
-import { isIpcError, type Host, type HostKeyInfo } from "@/lib/api/types";
+import { isIpcError, type Host, type HostKeyInfo, type SshConnectRequest } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
@@ -42,6 +42,13 @@ export function ConnectDialog({
   const openSftp = useWorkspace((state) => state.openSftp);
   const confirm = useDialogs((state) => state.confirm);
 
+  const hosts = useHosts((state) => state.hosts);
+  const [jumpIds, setJumpIds] = useState<string[]>([]);
+  const [jumpCredentials, setJumpCredentials] = useState<
+    NonNullable<SshConnectRequest["jumpCredentials"]>
+  >({});
+  const [jumpSaved, setJumpSaved] = useState<Record<string, boolean>>({});
+  const [rememberJumps, setRememberJumps] = useState(true);
   const [probe, setProbe] = useState<HostKeyInfo | null>(null);
   const [trusted, setTrusted] = useState(false);
   const [probing, setProbing] = useState(true);
@@ -70,7 +77,7 @@ export function ConnectDialog({
           return;
         }
         setProbe(info);
-        setTrusted(info.status === "known");
+        setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
       })
       .catch((cause: unknown) => {
         if (alive) {
@@ -102,6 +109,46 @@ export function ConnectDialog({
     };
   }, [host.id]);
 
+  useEffect(() => {
+    let active = true;
+    void api
+      .connectionRoute(host.id)
+      .then(async (route) => {
+        if (!active) return;
+        setJumpIds(route.jumpHosts);
+        const statuses = await Promise.all(
+          route.jumpHosts.map(async (id) => [id, await api.credentialStatus(id)] as const),
+        );
+        if (active) setJumpSaved(Object.fromEntries(statuses));
+      })
+      .catch((cause) => {
+        if (active) setError(translateError(cause));
+      });
+    return () => {
+      active = false;
+    };
+  }, [host.id]);
+
+  const verifyRoute = async () => {
+    if (pending.current) return;
+    pending.current = true;
+    setProbing(true);
+    setError(null);
+    setTrusted(false);
+    try {
+      const info = await api.sshProbe(host.id, jumpCredentials);
+      if (alive.current) {
+        setProbe(info);
+        setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
+      }
+    } catch (cause) {
+      if (alive.current) setError(translateError(cause));
+    } finally {
+      pending.current = false;
+      if (alive.current) setProbing(false);
+    }
+  };
+
   const setup = intent === "installKey";
   const unsupported = !setup && host.authMethod === "agent";
   const interactive = setup || (host.authMethod !== "key" && !unsupported);
@@ -117,22 +164,45 @@ export function ConnectDialog({
     setError(null);
     let approved = false;
     try {
-      const info = await api.sshTrust(host.id, probe.fingerprint);
+      const info = await (probe.hostId
+        ? api.sshTrust(
+            host.id,
+            probe.fingerprint,
+            jumpIds.length ? jumpCredentials : undefined,
+            probe.hostId,
+          )
+        : jumpIds.length
+          ? api.sshTrust(host.id, probe.fingerprint, jumpCredentials)
+          : api.sshTrust(host.id, probe.fingerprint));
       if (!alive.current) {
         return;
       }
       setProbe(info);
-      setTrusted(true);
-      approved = true;
+      const finalHost = !info.hostId || info.hostId === host.id;
+      setTrusted(finalHost);
+      approved = finalHost;
+      if (!finalHost) {
+        setProbing(true);
+        try {
+          const next = await api.sshProbe(host.id, jumpCredentials);
+          if (alive.current) {
+            setProbe(next);
+            approved = next.status === "known" && (!next.hostId || next.hostId === host.id);
+            setTrusted(approved);
+          }
+        } finally {
+          if (alive.current) setProbing(false);
+        }
+      }
     } catch (cause) {
       if (alive.current) {
         setError(translateError(cause));
         if (isIpcError(cause) && cause.message === "ssh.hostKeyChanged") {
           try {
-            const info = await api.sshProbe(host.id);
+            const info = await api.sshProbe(host.id, jumpCredentials);
             if (alive.current) {
               setProbe(info);
-              setTrusted(info.status === "known");
+              setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
             }
           } catch {
             // Keep the old fingerprint untrusted until the dialog is reopened.
@@ -160,6 +230,7 @@ export function ConnectDialog({
     const session = await connect(
       {
         hostId: host.id,
+        jumpCredentials,
         password: interactive ? password || null : null,
         passphrase: interactive ? null : passphrase || null,
         cols: 120,
@@ -181,6 +252,17 @@ export function ConnectDialog({
         await api.credentialSave(host.id, password);
       } catch (cause) {
         toast(translateError(cause), "error");
+      }
+    }
+    if (rememberJumps) {
+      for (const [id, credentials] of Object.entries(jumpCredentials)) {
+        if (credentials.password) {
+          try {
+            await api.credentialSave(id, credentials.password);
+          } catch (cause) {
+            toast(translateError(cause), "error");
+          }
+        }
       }
     }
     if (after === "sftp") {
@@ -222,7 +304,9 @@ export function ConnectDialog({
     setError(null);
     try {
       // No typed password means the backend falls back to the keychain copy.
-      await api.sshInstallKey(host.id, password || null);
+      await (jumpIds.length
+        ? api.sshInstallKey(host.id, password || null, jumpCredentials)
+        : api.sshInstallKey(host.id, password || null));
       await useHosts.getState().load();
       toast(t("connect.installKeyDone"), "success");
       if (alive.current) {
@@ -286,11 +370,82 @@ export function ConnectDialog({
           </code>
         </div>
 
+        {jumpIds.length ? (
+          <div className="form-grid">
+            {jumpIds.map((id) => {
+              const jump = hosts.find((item) => item.id === id);
+              if (!jump)
+                return (
+                  <p key={id} className="connect__error">
+                    {t("network.hostMissing")}
+                  </p>
+                );
+              const key = jump.authMethod === "key";
+              return (
+                <Field
+                  key={id}
+                  label={t("network.jumpCredential", { name: jump.name })}
+                  hint={
+                    jumpSaved[id] && !key
+                      ? t("connect.savedHint")
+                      : key
+                        ? t("connect.optional")
+                        : undefined
+                  }
+                >
+                  <Input
+                    type="password"
+                    aria-label={`${jump.name} · ${t(key ? "connect.passphrase" : "connect.password")}`}
+                    autoComplete="off"
+                    disabled={busy || probing}
+                    placeholder={
+                      jumpSaved[id] && !key
+                        ? "••••••••"
+                        : t(key ? "connect.passphrase" : "connect.password")
+                    }
+                    value={
+                      (key ? jumpCredentials[id]?.passphrase : jumpCredentials[id]?.password) ?? ""
+                    }
+                    onChange={(event) => {
+                      setJumpCredentials((current) => ({
+                        ...current,
+                        [id]: {
+                          ...current[id],
+                          [key ? "passphrase" : "password"]: event.target.value,
+                        },
+                      }));
+                      setTrusted(false);
+                    }}
+                  />
+                </Field>
+              );
+            })}
+            <Switch
+              label={t("network.jumpRemember")}
+              checked={rememberJumps}
+              onChange={setRememberJumps}
+              disabled={busy}
+            />
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={probing || busy}
+              onClick={() => void verifyRoute()}
+            >
+              {t("network.verifyRoute")}
+            </Button>
+          </div>
+        ) : null}
+
         <div className={cn("key-box", status === "changed" && "is-danger")}>
           <div className="key-box__head">
             <span className="key-box__title">
               {status === "known" ? <ShieldCheck size={13} /> : <ShieldAlert size={13} />}
-              {t("connect.hostKey")}
+              {probe?.hostId && probe.hostId !== host.id
+                ? t("network.keyFor", {
+                    name: hosts.find((h) => h.id === probe.hostId)?.name ?? probe.hostId,
+                  })
+                : t("connect.hostKey")}
             </span>
             <span className={cn("key-box__status", status === "known" && "is-ok")}>
               {probing ? t("connect.probing") : keyStatus}

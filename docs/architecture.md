@@ -41,6 +41,35 @@ the desktop bridge routes tools to the fixed selected scope, limits callbacks an
 and passes configuration and selected credentials through SSH stdin. Normal runs use the active
 connection. Optional native supervisors provide the separate detached/persistent mode.
 
+## Network and resource lifecycle
+
+`network.rs` resolves host/plugin overrides, per-feature choices, the global
+default and system routing. HTTP clients and SSH TCP use the same profile model;
+proxy passwords remain in the vault under `proxy:<id>`. SSH supports bounded HTTP
+CONNECT and SOCKS5 negotiation. Jump routes live under `route:<host-id>` in SQLite.
+Each hop checks its actual server key before authenticating; nested SSH channels
+and jump handles stay owned by the destination session.
+
+Durable desktop transfers journal tasks under `transfer:<id>`, per-file checkpoints
+under `transfer-file:<id>:…`, and overwrite recovery intent under
+`transfer-backup:<id>:…`. Stable host IDs rebind tasks after reconnecting. Full
+prefix verification, source stamps and owned-backup checks protect resume and
+overwrite recovery. Plugin transfers retain runtime ownership instead of acquiring
+restart-persistent permissions.
+
+The forwarding registry owns listeners, active sockets and remote forwarding
+routes, with cancellation tickets covering setup as well as active connections.
+Disconnect, deletion and plugin revocation cancel only the relevant resources.
+The mount registry owns SSHFS child processes and direct SFTP stdio bridges,
+reserves canonical mount points, and checks OS mount visibility before reporting
+success. Both registries track plugin runtime generations, so an older runtime's
+exit cannot close a replacement runtime's resources. Busy mount cleanup retains
+a retryable record while authenticated access is severed immediately.
+
+Declarative plugins contain bounded JSON views, contribute no executable commands,
+and never invoke Node. `mounts.*` and `forwards.*` use separate read/write permissions;
+native UI blocks and executable host calls share the same authorization and ownership.
+
 ## Events
 
 | Event                | Payload                                                       |

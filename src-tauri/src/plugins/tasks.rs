@@ -477,6 +477,7 @@ async fn run_local(
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    crate::network::process_environment(&context.app, &context.id, &mut command)?;
     let mut child = command.spawn()?;
     let stdin = child.stdin.take().expect("piped stdin");
     let mut writer_cancel = cancellation.clone();

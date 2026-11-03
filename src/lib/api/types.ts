@@ -1,3 +1,4 @@
+import type { NetworkSettings } from "./network";
 export type Language = "system" | "zh-CN" | "en-US";
 export type ThemeMode = "dark" | "light" | "system";
 export type Density = "comfortable" | "compact";
@@ -27,6 +28,7 @@ export type ColorRegion =
 export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 
 export interface Settings {
+  network: NetworkSettings;
   keyboardShortcuts: Record<string, string[]>;
   language: Language;
   theme: ThemeMode;
@@ -241,6 +243,7 @@ export function isIpcError(value: unknown): value is IpcError {
 export type HostKeyStatus = "known" | "unknown" | "changed";
 
 export interface HostKeyInfo {
+  hostId?: string;
   fingerprint: string;
   algorithm: string;
   status: HostKeyStatus;
@@ -263,6 +266,7 @@ export interface SshSession {
 }
 
 export interface SshConnectRequest {
+  jumpCredentials?: Record<string, { password?: string; passphrase?: string }>;
   hostId: string;
   password?: string | null;
   passphrase?: string | null;
@@ -298,7 +302,7 @@ export interface Listing {
 export type FsSource = { kind: "local" } | { kind: "remote"; sessionId: string };
 
 export type TransferDirection = "transfer";
-export type TransferStatus = "running" | "done" | "failed" | "cancelled";
+export type TransferStatus = "running" | "done" | "failed" | "cancelled" | "paused";
 
 export interface TransferEvent {
   id: string;
@@ -370,7 +374,7 @@ export interface MarketEntry {
   sha256: string;
   author?: string | null;
   readme?: string | null;
-  runtime?: "node" | "wasm" | "theme" | null;
+  runtime?: "node" | "wasm" | "theme" | "declarative" | null;
   apiVersion?: number | null;
   engines?: Record<string, string>;
   sourceId?: string;
@@ -422,7 +426,7 @@ export interface PluginInfo {
   error: string | null;
   path: string;
   fingerprint?: string;
-  runtime?: "node" | "wasm" | "theme";
+  runtime?: "node" | "wasm" | "theme" | "declarative";
   themes?: PluginTheme[];
   author?: string | null;
   readme?: string | null;

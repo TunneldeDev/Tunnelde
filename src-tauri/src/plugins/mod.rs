@@ -1,5 +1,6 @@
 pub mod api;
 pub mod config;
+mod declarative;
 mod host;
 pub mod manifest;
 pub mod marketplace;
@@ -173,8 +174,25 @@ pub struct PluginsManager {
 
 impl PluginsManager {
     pub fn revoke_background(&self, app: &AppHandle, id: &str) {
+        self.security.invalidate_runtime(id);
         tasks::cancel_plugin(id, None);
+        self.stop_network_resources(app, id);
         self.stop_remote_runners(app, id);
+    }
+    fn stop_network_resources(&self, app: &AppHandle, id: &str) {
+        let boundary = self.security.cleanup_boundary(id);
+        app.state::<crate::state::AppState>()
+            .forwards
+            .stop_before_generation(id, boundary);
+        let cleanup_app = app.clone();
+        let cleanup_owner = id.to_owned();
+        tauri::async_runtime::spawn(async move {
+            cleanup_app
+                .state::<crate::state::AppState>()
+                .mounts
+                .stop_before_generation(&cleanup_owner, boundary)
+                .await;
+        });
     }
     fn stop_remote_runners(&self, app: &AppHandle, id: &str) {
         let info = self
@@ -259,6 +277,7 @@ impl PluginsManager {
     pub async fn stop_immediately(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
         self.security.invalidate_runtime(id);
         tasks::cancel_plugin(id, None);
+        self.stop_network_resources(app, id);
         self.stop_remote_runners(app, id);
         self.remember_source(id, None);
         let handle = self.instance(id).await?;
@@ -431,6 +450,16 @@ impl PluginsManager {
         let state = app.state::<crate::state::AppState>();
         self.security.mark_running(&state.db)?;
 
+        if instance.manifest.runtime.as_deref() == Some("declarative") {
+            instance.status = PluginStatus::Running;
+            instance.error = None;
+            let info = instance.info();
+            self.remember(&info);
+            drop(instance);
+            let _ = app.emit(STATE_EVENT, &info);
+            return Ok(info);
+        }
+
         if instance.is_wasm() {
             // The module is preloaded when the plugin is scanned, but a stop
             // drops it, so reload on demand to keep start idempotent.
@@ -595,6 +624,7 @@ impl PluginsManager {
     pub async fn stop(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
         self.security.invalidate_runtime(id);
         tasks::cancel_plugin(id, None);
+        self.stop_network_resources(app, id);
         self.stop_remote_runners(app, id);
         self.remember_source(id, None);
         let handle = self.instance(id).await?;
@@ -680,6 +710,12 @@ impl PluginsManager {
             security::fingerprint_async(instance.dir.clone()).await?,
             instance.manifest.permissions.clone(),
         )?;
+        if instance.manifest.runtime.as_deref() == Some("declarative") {
+            if !instance.manifest.views.iter().any(|item| item.id == view) {
+                return Err(AppError::NotFound("plugin.view.notFound".into()));
+            }
+            return declarative::render(&instance.dir, &instance.manifest.main, view);
+        }
         if instance.is_wasm() {
             let result = wasm_call(
                 &instance,

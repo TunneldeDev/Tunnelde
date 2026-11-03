@@ -20,6 +20,7 @@ import { copyText } from "@/lib/session/clipboard";
 import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/pluginSecurity";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginChat } from "./PluginChat";
+import { PluginMounts } from "./PluginMounts";
 import "@/styles/pluginTools.css";
 
 interface PluginViewPageProps {
@@ -138,6 +139,7 @@ function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) 
           <EmptyState title={t("pluginView.empty")} />
         ) : (
           view.blocks.map((block, index) => {
+            if (block.type === "mounts") return <PluginMounts key="mounts" pluginId={pluginId} />;
             if (block.type === "chat") {
               return (
                 <PluginChat
