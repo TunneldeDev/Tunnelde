@@ -2,6 +2,8 @@ mod commands;
 mod db;
 mod error;
 mod models;
+mod mounts;
+mod network;
 mod platform;
 mod plugins;
 mod settings;
@@ -52,6 +54,20 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            mounts::plugin_mounts_action,
+            ssh::files::durable::durable_transfer_list,
+            ssh::files::durable::durable_transfer_clear,
+            ssh::files::durable::durable_transfer_pause,
+            ssh::files::durable::durable_transfer_resume,
+            ssh::forward::forwarding_list,
+            ssh::forward::forwarding_save,
+            ssh::forward::forwarding_remove,
+            ssh::forward::forwarding_start,
+            ssh::forward::forwarding_stop,
+            network::connection_route_get,
+            network::connection_route_save,
+            network::proxy_password_save,
+            network::proxy_test,
             plugins::security::plugin_security_state,
             plugins::security::plugin_set_restricted,
             plugins::security::plugin_set_permissions,
@@ -172,6 +188,14 @@ pub fn run() {
             if matches!(event, tauri::RunEvent::Exit) {
                 use tauri::Manager;
                 if let Some(state) = app.try_state::<state::AppState>() {
+                    state.forwards.stop_all();
+                    tauri::async_runtime::block_on(async {
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_secs(5),
+                            state.mounts.shutdown(),
+                        )
+                        .await;
+                    });
                     if let Err(error) = state.plugins.mark_clean(&state.db) {
                         tracing::warn!(%error, "could not clear extension recovery marker");
                     }

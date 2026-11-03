@@ -119,7 +119,7 @@ impl MarketEntry {
             && self
                 .runtime
                 .as_deref()
-                .is_none_or(|runtime| matches!(runtime, "node" | "wasm" | "theme"))
+                .is_none_or(|runtime| matches!(runtime, "node" | "wasm" | "theme" | "declarative"))
             && self.engines.len() <= 8
             && self
                 .engines
@@ -190,6 +190,7 @@ fn fresh(catalogue: &Catalogue, now: i64) -> bool {
 }
 
 pub async fn catalogue(
+    app: &AppHandle,
     data_dir: &Path,
     source: &super::config::MarketSource,
     refresh: bool,
@@ -207,7 +208,7 @@ pub async fn catalogue(
         }
     }
     let result =
-        super::network::fetch_json::<serde_json::Value>(&source.url, 2 * 1024 * 1024).await;
+        super::network::fetch_json::<serde_json::Value>(app, &source.url, 2 * 1024 * 1024).await;
     match result.and_then(|payload| parse_catalogue(payload, source)) {
         Ok(c) => {
             // A read-only/full cache must not turn a successful online lookup
@@ -280,7 +281,7 @@ pub async fn install_remote(
         .ok_or_else(|| AppError::validation("market.sourceDisabled"))?;
     let task = super::network::DownloadTask::begin(app, task_id)?;
     let catalogue = tokio::select! {
-        result = catalogue(&state.data_dir, &source, false) => result?,
+        result = catalogue(app, &state.data_dir, &source, false) => result?,
         _ = task.wait_cancel() => return Err(AppError::validation("market.cancelled")),
     };
     task.check()?;

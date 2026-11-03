@@ -18,7 +18,7 @@ export interface SettingDefinition {
   key: SettingKey;
   section: SettingsSection;
   label: MessageKey;
-  kind: "toggle" | "number" | "select" | "accent" | "colors" | "css" | "shortcuts";
+  kind: "toggle" | "number" | "select" | "accent" | "colors" | "css" | "shortcuts" | "network";
   hint?: MessageKey;
   options?: SettingOption[];
   min?: number;
@@ -32,6 +32,7 @@ export interface SettingDefinition {
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
   "general",
+  "network",
   "appearance",
   "workspace",
   "terminal",
@@ -44,6 +45,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "advanced",
 ];
 export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
+  network: "network.title",
   general: "settings.general",
   appearance: "settings.appearance",
   workspace: "settings.workspace",
@@ -199,6 +201,13 @@ const cursorOptions = [
 
 /** Every editable preference appears here once: rendering, search and scoped reset share it. */
 export const SETTINGS_CATALOG: SettingDefinition[] = [
+  {
+    key: "network",
+    section: "network",
+    label: "network.title",
+    hint: "network.intro",
+    kind: "network",
+  },
   {
     key: "keyboardShortcuts",
     section: "shortcuts",

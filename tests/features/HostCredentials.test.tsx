@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
+    connectionRoute: vi.fn(),
+    saveConnectionRoute: vi.fn(),
     credentialStatus: vi.fn(),
     credentialSave: vi.fn(),
     credentialForget: vi.fn(),
@@ -43,6 +45,8 @@ const updateHost = vi.fn();
 beforeEach(async () => {
   vi.resetAllMocks();
   await i18n.changeLanguage("en-US");
+  apiMock.connectionRoute.mockReset().mockResolvedValue({ proxy: "", jumpHosts: [] });
+  apiMock.saveConnectionRoute.mockReset().mockResolvedValue(undefined);
   apiMock.credentialStatus.mockResolvedValue(true);
   apiMock.credentialSave.mockResolvedValue(undefined);
   apiMock.credentialForget.mockResolvedValue(undefined);
@@ -60,6 +64,11 @@ describe("host password editing", () => {
     await screen.findByRole("button", { name: "Remove saved password" });
     expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Renamed" } });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
     expect(apiMock.credentialSave).not.toHaveBeenCalled();
@@ -72,6 +81,11 @@ describe("host password editing", () => {
     fireEvent.change(screen.getByLabelText("Password"), {
       target: { value: " secret with spaces " },
     });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(apiMock.credentialSave).toHaveBeenCalledWith("h1", " secret with spaces "),
@@ -92,6 +106,11 @@ describe("host password editing", () => {
   it("removes a saved password only when the draft is saved", async () => {
     render(<DialogHost />);
     fireEvent.click(await screen.findByRole("button", { name: "Remove saved password" }));
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(apiMock.credentialForget).toHaveBeenCalledExactlyOnceWith("h1"));
   });
@@ -103,10 +122,20 @@ describe("host password editing", () => {
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Web" } });
     fireEvent.change(screen.getByLabelText("Host"), { target: { value: "example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "secret" } });
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await screen.findByText(/Host details were saved.*Vault unavailable/);
     expect(useDialogs.getState().dialog.kind).toBe("host");
     expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("secret");
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
     expect(createHost).toHaveBeenCalledOnce();
@@ -120,6 +149,11 @@ describe("host password editing", () => {
     });
     render(<DialogHost />);
     expect(screen.queryByLabelText("Password")).toBeNull();
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
     expect(apiMock.credentialSave).not.toHaveBeenCalled();

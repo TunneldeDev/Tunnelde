@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { apiMock } = vi.hoisted(() => ({
   apiMock: {
+    connectionRoute: vi.fn(),
+    saveConnectionRoute: vi.fn(),
     sshProbe: vi.fn(),
     sshTrust: vi.fn(),
     credentialStatus: vi.fn(),
@@ -58,6 +60,8 @@ beforeEach(() => {
     status: "known",
     knownFingerprint: "SHA256:abc",
   });
+  apiMock.connectionRoute.mockReset().mockResolvedValue({ proxy: "", jumpHosts: [] });
+  apiMock.saveConnectionRoute.mockReset().mockResolvedValue(undefined);
   apiMock.credentialStatus.mockReset().mockResolvedValue(false);
   apiMock.credentialSave.mockReset().mockResolvedValue(undefined);
   apiMock.sshInstallKey.mockReset().mockResolvedValue({
@@ -180,6 +184,75 @@ describe("ConnectDialog", () => {
       expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "setup-secret"),
     );
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
+  });
+
+  it("trusts each jump separately and never connects before the target key is approved", async () => {
+    const jump = { ...host, id: "jump-1", name: "Bastion" };
+    useHosts.setState({ hosts: [jump, host] });
+    apiMock.connectionRoute.mockResolvedValue({ proxy: "", jumpHosts: [jump.id] });
+    apiMock.credentialStatus.mockResolvedValue(true);
+    apiMock.sshProbe
+      .mockResolvedValueOnce({
+        hostId: jump.id,
+        fingerprint: "SHA256:jump",
+        algorithm: "ssh-ed25519",
+        status: "unknown",
+      })
+      .mockResolvedValueOnce({
+        hostId: host.id,
+        fingerprint: "SHA256:target",
+        algorithm: "ssh-ed25519",
+        status: "unknown",
+      });
+    apiMock.sshTrust
+      .mockResolvedValueOnce({
+        hostId: jump.id,
+        fingerprint: "SHA256:jump",
+        algorithm: "ssh-ed25519",
+        status: "known",
+      })
+      .mockResolvedValueOnce({
+        hostId: host.id,
+        fingerprint: "SHA256:target",
+        algorithm: "ssh-ed25519",
+        status: "known",
+      });
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    await screen.findByText("Host key: Bastion");
+    fireEvent.click(screen.getByRole("button", { name: "Trust and continue" }));
+    await screen.findByText("SHA256:target");
+    expect(connect).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Trust and continue" }));
+    await waitFor(() => expect(connect).toHaveBeenCalledOnce());
+    expect(apiMock.sshTrust).toHaveBeenNthCalledWith(1, host.id, "SHA256:jump", {}, jump.id);
+    expect(apiMock.sshTrust).toHaveBeenNthCalledWith(2, host.id, "SHA256:target", {}, host.id);
+  });
+
+  it("keeps the target untrusted when a jump needs a password and lets the user retry", async () => {
+    const jump = { ...host, id: "jump-1", name: "Bastion" };
+    useHosts.setState({ hosts: [jump, host] });
+    apiMock.connectionRoute.mockResolvedValue({ proxy: "", jumpHosts: [jump.id] });
+    apiMock.sshProbe
+      .mockRejectedValueOnce({ code: "ssh", message: "ssh.passwordRequired" })
+      .mockResolvedValueOnce({
+        hostId: host.id,
+        fingerprint: "SHA256:target",
+        algorithm: "ssh-ed25519",
+        status: "unknown",
+      });
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    const input = await screen.findByLabelText("Bastion · Password");
+    await waitFor(() => expect((input as HTMLInputElement).disabled).toBe(false));
+    fireEvent.change(input, { target: { value: "jump-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Verify connection route" }));
+    await screen.findByText("SHA256:target");
+    expect(apiMock.sshProbe).toHaveBeenLastCalledWith(host.id, {
+      "jump-1": { password: "jump-secret" },
+    });
+    expect(connect).not.toHaveBeenCalled();
   });
 
   it("does not ask for a password for an unsupported agent record", async () => {

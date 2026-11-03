@@ -44,6 +44,7 @@ import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
+import { NetworkSettingsSection } from "./NetworkSettings";
 import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
 const TerminalPreview = lazy(() =>
@@ -541,7 +542,9 @@ export function SettingsPage() {
                         </div>
                       ) : null}
                       {group.definitions.map((definition) =>
-                        definition.kind === "shortcuts" ? (
+                        definition.kind === "network" ? (
+                          <NetworkSettingsSection key={definition.key} />
+                        ) : definition.kind === "shortcuts" ? (
                           <div key={definition.key} data-setting="keyboardShortcuts">
                             <KeyboardShortcuts />
                           </div>

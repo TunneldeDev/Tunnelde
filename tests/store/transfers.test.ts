@@ -2,6 +2,7 @@ import { act } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { api } from "@/lib/api/ipc";
+import { transferApi } from "@/lib/api/transfers";
 import { useTransfers } from "@/store/transfers";
 import type { TransferEvent } from "@/lib/api/types";
 
@@ -42,5 +43,36 @@ describe("transfer cancellation", () => {
       status: "running",
       cancelling: false,
     });
+  });
+});
+
+describe("durable transfer controls", () => {
+  it("resumes before progress arrives and never overwrites a fast completion", async () => {
+    let finish!: () => void;
+    vi.spyOn(transferApi, "resume").mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    useTransfers.setState({
+      items: [{ ...running, status: "paused", durable: true, updatedAt: 1 }],
+    });
+    useTransfers.getState().resume(running.id);
+    expect(useTransfers.getState().items[0]?.status).toBe("running");
+    useTransfers.getState().apply({ ...running, status: "done", transferred: 100 });
+    await act(async () => finish());
+    expect(useTransfers.getState().items[0]?.status).toBe("done");
+  });
+  it("retains paused jobs when many ordinary transfers finish", () => {
+    useTransfers.setState({
+      items: [{ ...running, status: "paused", durable: true, updatedAt: 1 }],
+    });
+    for (let n = 0; n < 12; n++)
+      useTransfers.getState().apply({ ...running, id: `finished-${n}`, status: "done" });
+    expect(
+      useTransfers.getState().items.some((x) => x.id === running.id && x.status === "paused"),
+    ).toBe(true);
+    expect(useTransfers.getState().items).toHaveLength(7);
   });
 });

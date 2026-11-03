@@ -194,6 +194,14 @@ impl PluginManifest {
         }
         match self.runtime.as_deref() {
             None | Some("node") => {}
+            Some("declarative") => {
+                if self.main.is_empty() || self.views.is_empty() || !self.commands.is_empty() {
+                    return Err(AppError::validation("plugin.runtime.invalid"));
+                }
+                // Declarative plugins use a JSON view definition as their entry.
+                entry_path(dir, &self.main)?;
+                return Ok(());
+            }
             Some("wasm") => {
                 if !self.main.to_ascii_lowercase().ends_with(".wasm") {
                     return Err(AppError::validation("plugin.runtime.invalid"));
@@ -488,5 +496,23 @@ mod tests {
         assert!(load(&dir).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn declarative_plugins_require_local_data_and_expose_no_executable_commands() {
+        let dir = temp_dir("declarative");
+        std::fs::write(
+            dir.join("views.json"),
+            r#"{"views":{"main":{"blocks":[{"type":"mounts"}]}}}"#,
+        )
+        .unwrap();
+        let manifest = serde_json::json!({"id":"sshfs-lite", "name":"SSHFS Lite", "version":"1.0.0", "apiVersion":1, "runtime":"declarative", "main":"views.json", "permissions":["mounts.read","mounts.write"], "views":[{"id":"main","title":"SSHFS"}]});
+        std::fs::write(dir.join(MANIFEST_FILE), manifest.to_string()).unwrap();
+        assert_eq!(load(&dir).unwrap().runtime.as_deref(), Some("declarative"));
+        let mut invalid = manifest;
+        invalid["commands"] = serde_json::json!([{"id":"exec","title":"Execute"}]);
+        std::fs::write(dir.join(MANIFEST_FILE), invalid.to_string()).unwrap();
+        assert!(load(&dir).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

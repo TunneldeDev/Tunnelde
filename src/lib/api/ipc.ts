@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { ConnectionRoute } from "./network";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
 
@@ -40,6 +41,13 @@ export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const api = {
+  connectionRoute: (hostId: string) => invoke<ConnectionRoute>("connection_route_get", { hostId }),
+  saveConnectionRoute: (hostId: string, route: ConnectionRoute) =>
+    invoke<void>("connection_route_save", { hostId, route }),
+  saveProxyPassword: (id: string, password: string | null) =>
+    invoke<void>("proxy_password_save", { id, password }),
+  testProxy: (proxy: string, host: string, port: number) =>
+    invoke<void>("proxy_test", { proxy, host, port }),
   appInfo: () => invoke<AppInfo>("app_info"),
   clipboardReadText: () => invoke<string>("clipboard_read_text"),
   clipboardWriteText: (text: string) => invoke<void>("clipboard_write_text", { text }),
@@ -84,17 +92,36 @@ export const api = {
   openLocalPath: (path: string) => invoke<void>("open_local_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
 
-  sshProbe: (hostId: string) => invoke<HostKeyInfo>("ssh_probe", { hostId }),
-  sshTrust: (hostId: string, fingerprint: string) =>
-    invoke<HostKeyInfo>("ssh_trust", { hostId, fingerprint }),
+  sshProbe: (hostId: string, jumpCredentials?: SshConnectRequest["jumpCredentials"]) =>
+    invoke<HostKeyInfo>("ssh_probe", { hostId, ...(jumpCredentials ? { jumpCredentials } : {}) }),
+  sshTrust: (
+    hostId: string,
+    fingerprint: string,
+    jumpCredentials?: SshConnectRequest["jumpCredentials"],
+    expectedHostId?: string,
+  ) =>
+    invoke<HostKeyInfo>("ssh_trust", {
+      hostId,
+      fingerprint,
+      ...(jumpCredentials ? { jumpCredentials } : {}),
+      ...(expectedHostId ? { expectedHostId } : {}),
+    }),
   sshConnect: (request: SshConnectRequest) => invoke<SshSession>("ssh_connect", { request }),
   sshAttach: (sessionId: string) => invoke<void>("ssh_attach", { sessionId }),
   sshWrite: (sessionId: string, data: string) => invoke<void>("ssh_write", { sessionId, data }),
   sshResize: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
   sshDisconnect: (sessionId: string) => invoke<void>("ssh_disconnect", { sessionId }),
-  sshInstallKey: (hostId: string, password: string | null) =>
-    invoke<InstalledKey>("ssh_install_key", { hostId, password }),
+  sshInstallKey: (
+    hostId: string,
+    password: string | null,
+    jumpCredentials?: SshConnectRequest["jumpCredentials"],
+  ) =>
+    invoke<InstalledKey>("ssh_install_key", {
+      hostId,
+      password,
+      ...(jumpCredentials ? { jumpCredentials } : {}),
+    }),
   sshSessions: () => invoke<SshSession[]>("ssh_sessions"),
 
   knownHostsList: () => invoke<KnownHostEntry[]>("known_hosts_list"),

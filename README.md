@@ -34,6 +34,11 @@ are currently unsigned.
   native clipboard integration, configurable mouse behavior and live command history.
 - Browse any two local/remote locations independently. Sort, filter, group, rename
   inline, create files or folders, drag transfers and edit remote text files.
+- Configure proxies per feature, connect through ordered SSH jump hosts, pause and
+  resume file transfers, and manage local or remote TCP forwards from a host page.
+  Optional SSHFS and SSHFS Lite plugins mount remote directories through the same
+  authenticated connection. See [network and storage](docs/network-storage.md)
+  for 0.27+ features and dependency requirements.
 - Drag tabs and sidebar panels into splits. Lock a pane as the destination for new
   pages; hide and restore docked panels with their placement and size remembered.
 - Inspect remote CPU, memory, network and disk I/O timelines with scales, timestamps
@@ -97,6 +102,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 ## Documentation
 
 - [Settings and profiles](docs/settings.md)
+- [Proxies, jump hosts, resumable transfers and SSHFS](docs/network-storage.md)
 - [Keyboard and mouse shortcuts](docs/shortcuts.md)
 - [AI local/remote setup](docs/ai-assistants.md)
 - [Plugin development and security](docs/plugins.md)

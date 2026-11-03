@@ -47,6 +47,18 @@ macro_rules! method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("mounts.browse", ["mounts.read"], "{sessionId:string,path?:string}", "Browse directories through an authenticated SFTP session for the mount chooser."),
+    method!("mounts.open", ["mounts.write"], "{id:string}", "Open this plugin's mount in the system file manager."),
+    method!("mounts.documentation", ["mounts.read"], "{}", "Open platform SSHFS installation instructions in the system browser."),
+    method!("mounts.dependencies", ["mounts.read"], "{}", "Detect SSHFS and FUSE compatibility; never install software or drivers."),
+    method!("mounts.list", ["mounts.read"], "{}", "List this plugin's own SSHFS mounts."),
+    method!("mounts.mount", ["mounts.write"], "{sessionId:string,remotePath:string,mountPoint:string,readOnly?:boolean}", "Mount using an authenticated SSH subsystem and the host's proxy/jump route. Defaults read-only."),
+    method!("mounts.unmount", ["mounts.write"], "{id:string,force?:boolean}", "Unmount this plugin's own SSHFS filesystem; never terminate unrelated processes."),
+    method!("forwards.list", ["forwards.read"], "{}", "Read saved TCP forwarding rules and running status."),
+    method!("forwards.save", ["forwards.write"], "{rule:ForwardRule}", "Create or update a validated TCP forwarding rule; active rules must be stopped first."),
+    method!("forwards.remove", ["forwards.write"], "{id:string}", "Remove a saved forwarding rule and stop its active connections."),
+    method!("forwards.start", ["forwards.write"], "{id:string,sessionId:string}", "Start a saved forward through its host's active authenticated session; stopped on plugin revocation."),
+    method!("forwards.stop", ["forwards.write"], "{id:string}", "Stop a forwarding listener and its active connections."),
     method!("runners.deploy", ["ssh.exec", "fs.read", "sftp.write"], "{sessionId:string,platform:posix|windows,directory:string,runnerPath:string,executable:string}", "After explicit confirmation, deploy an optional selected native helper and this plugin into a fresh user directory. Never install Node or modify services."),
     method!("runners.start", ["ssh.exec"], "{sessionId:string,directory:string,config:object,secrets?:object}", "Start a durable plugin runner using a previously approved deployment; secrets travel over SSH stdin, not files or argv."),
     method!("runners.list", ["ssh.exec"], "{}", "Read this plugin's durable runner records, including stopPending for unreachable revoked tasks."),
@@ -214,6 +226,55 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         .and_then(Value::as_str)
         .map(str::to_owned);
     let result = match method {
+        name if name.starts_with("mounts.") => {
+            crate::mounts::action(
+                app.clone(),
+                context.id.clone(),
+                name.trim_start_matches("mounts.").into(),
+                params,
+                Some(context.generation),
+            )
+            .await
+        }
+        "forwards.list" => encode(crate::ssh::forward::list(app)?),
+        "forwards.save" => encode(crate::ssh::forward::save(app, field(&params, "rule")?)?),
+        "forwards.remove" => {
+            crate::ssh::forward::remove(app, &field::<String>(&params, "id")?)?;
+            Ok(Value::Null)
+        }
+        "forwards.start" => {
+            let lease = super::security::Lease {
+                id: context.id.clone(),
+                fingerprint: context.fingerprint.clone(),
+                permissions: context.permissions.clone(),
+                generation: context.generation,
+            };
+            let result = state
+                .plugins
+                .security
+                .guard(
+                    &lease,
+                    crate::ssh::forward::start_owned(
+                        app,
+                        &field::<String>(&params, "id")?,
+                        &field::<String>(&params, "sessionId")?,
+                        Some((context.id.clone(), context.generation)),
+                    ),
+                )
+                .await;
+            if let Err(error) = authorize(context, &["forwards.write"]) {
+                state
+                    .forwards
+                    .stop_generation(&context.id, context.generation);
+                return Err(error);
+            }
+            result?;
+            Ok(Value::Null)
+        }
+        "forwards.stop" => {
+            state.forwards.stop(&field::<String>(&params, "id")?);
+            Ok(Value::Null)
+        }
         "events.publish" => {
             let event: String = field(&params, "event")?;
             if event.is_empty()

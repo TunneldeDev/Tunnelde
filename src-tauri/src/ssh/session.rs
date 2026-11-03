@@ -43,6 +43,7 @@ pub enum HostKeyStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostKeyInfo {
+    pub host_id: String,
     pub fingerprint: String,
     pub algorithm: String,
     pub status: HostKeyStatus,
@@ -57,10 +58,19 @@ pub struct SshConnectRequest {
     pub password: Option<String>,
     #[serde(default)]
     pub passphrase: Option<String>,
+    #[serde(default)]
+    pub jump_credentials: HashMap<String, HopCredential>,
     #[serde(default = "default_cols")]
     pub cols: u32,
     #[serde(default = "default_rows")]
     pub rows: u32,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct HopCredential {
+    pub password: Option<String>,
+    pub passphrase: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,7 +100,7 @@ struct ClosedPayload {
 }
 
 #[derive(Debug, Clone)]
-struct ObservedKey {
+pub(super) struct ObservedKey {
     fingerprint: String,
     algorithm: String,
 }
@@ -98,10 +108,32 @@ struct ObservedKey {
 pub(crate) struct ClientHandler {
     expected: Option<String>,
     observed: Arc<StdMutex<Option<ObservedKey>>>,
+    remote_forwards: Arc<super::forward::RemoteRoutes>,
 }
 
 impl client::Handler for ClientHandler {
     type Error = russh::Error;
+
+    async fn server_channel_open_forwarded_tcpip(
+        &mut self,
+        channel: Channel<client::Msg>,
+        connected_address: &str,
+        connected_port: u32,
+        _originator_address: &str,
+        _originator_port: u32,
+        reply: client::ChannelOpenHandle,
+        _session: &mut client::Session,
+    ) -> Result<(), Self::Error> {
+        super::forward::remote_channel(
+            &self.remote_forwards,
+            channel,
+            connected_address,
+            connected_port,
+            reply,
+        )
+        .await;
+        Ok(())
+    }
 
     async fn check_server_key(
         &mut self,
@@ -134,6 +166,8 @@ struct SessionHandle {
     writer: mpsc::Sender<WriterMsg>,
     task: JoinHandle<()>,
     handle: Arc<Handle<ClientHandler>>,
+    _jumps: Vec<Arc<Handle<ClientHandler>>>,
+    remote_forwards: Arc<super::forward::RemoteRoutes>,
 }
 
 #[derive(Default)]
@@ -156,6 +190,18 @@ impl SshManager {
         sessions
             .get(session_id)
             .map(|session| session.handle.clone())
+            .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))
+    }
+
+    pub(crate) fn remote_routes(
+        &self,
+        session_id: &str,
+    ) -> AppResult<Arc<super::forward::RemoteRoutes>> {
+        self.sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?
+            .get(session_id)
+            .map(|s| s.remote_forwards.clone())
             .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))
     }
 
@@ -244,31 +290,53 @@ fn map_ssh_error(error: russh::Error) -> AppError {
 }
 
 async fn open(
+    app: &AppHandle,
     host: String,
     port: u16,
     expected: Option<String>,
-) -> AppResult<(Handle<ClientHandler>, ObservedKey)> {
+    transport: Option<crate::network::Stream>,
+    proxy: &str,
+) -> AppResult<(
+    Handle<ClientHandler>,
+    ObservedKey,
+    Arc<super::forward::RemoteRoutes>,
+)> {
+    let stream = match transport {
+        Some(stream) => stream,
+        None => crate::network::tcp(app, &host, port, proxy).await?,
+    };
+    handshake(stream, expected).await
+}
+
+pub(super) async fn handshake(
+    stream: crate::network::Stream,
+    expected: Option<String>,
+) -> AppResult<(
+    Handle<ClientHandler>,
+    ObservedKey,
+    Arc<super::forward::RemoteRoutes>,
+)> {
     let observed = Arc::new(StdMutex::new(None));
+    let remote_forwards = Arc::new(super::forward::RemoteRoutes::default());
     let handler = ClientHandler {
         expected,
         observed: observed.clone(),
+        remote_forwards: remote_forwards.clone(),
     };
     let config = Arc::new(client::Config::default());
     let connected = tokio::time::timeout(
         CONNECT_TIMEOUT,
-        client::connect(config, (host.as_str(), port), handler),
+        client::connect_stream(config, stream, handler),
     )
     .await
     .map_err(|_| AppError::Ssh("ssh.timeout".into()))?
     .map_err(map_ssh_error)?;
-
     let observed = observed
         .lock()
         .map_err(|_| AppError::internal("ssh.lock"))?
         .clone()
         .ok_or_else(|| AppError::Ssh("ssh.noHostKey".into()))?;
-
-    Ok((connected, observed))
+    Ok((connected, observed, remote_forwards))
 }
 
 async fn authenticate(
@@ -430,48 +498,150 @@ async fn pump_terminal(
     }
 }
 
-pub async fn probe(app: &AppHandle, host_id: &str) -> AppResult<HostKeyInfo> {
-    let state = app.state::<AppState>();
-    let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
-    probe_host(app, &host).await
+async fn probe_host(
+    app: &AppHandle,
+    host: &Host,
+    credentials: &HashMap<String, HopCredential>,
+) -> AppResult<HostKeyInfo> {
+    let (_, info, _, _) = open_route(app, host, credentials, true).await?;
+    Ok(info)
 }
 
-async fn probe_host(app: &AppHandle, host: &Host) -> AppResult<HostKeyInfo> {
-    let state = app.state::<AppState>();
-    let known = state
+pub async fn probe_route(
+    app: &AppHandle,
+    host_id: &str,
+    credentials: HashMap<String, HopCredential>,
+) -> AppResult<HostKeyInfo> {
+    let host = app
+        .state::<AppState>()
         .db
-        .with(|conn| db::known_hosts::find(conn, &host.host, host.port as i64))?;
-
-    let (_handle, observed) = open(host.host.clone(), host.port, None).await?;
-
-    let status = match &known {
-        None => HostKeyStatus::Unknown,
-        Some(entry) if entry.fingerprint == observed.fingerprint => HostKeyStatus::Known,
-        Some(_) => HostKeyStatus::Changed,
-    };
-
-    Ok(HostKeyInfo {
-        fingerprint: observed.fingerprint,
-        algorithm: observed.algorithm,
-        status,
-        known_fingerprint: known.map(|entry| entry.fingerprint),
-    })
+        .with(|conn| db::hosts::find_host(conn, host_id))?;
+    probe_host(app, &host, &credentials).await
 }
 
-pub async fn trust(app: &AppHandle, host_id: &str, fingerprint: &str) -> AppResult<HostKeyInfo> {
+async fn open_route(
+    app: &AppHandle,
+    host: &Host,
+    credentials: &HashMap<String, HopCredential>,
+    probing: bool,
+) -> AppResult<(
+    Handle<ClientHandler>,
+    HostKeyInfo,
+    Vec<Arc<Handle<ClientHandler>>>,
+    Arc<super::forward::RemoteRoutes>,
+)> {
+    let state = app.state::<AppState>();
+    let route = crate::network::route(app, &host.id)?;
+    let mut ids = route.jump_hosts;
+    ids.push(host.id.clone());
+    let mut seen = std::collections::HashSet::new();
+    if ids.len() > 9 || ids.iter().any(|id| !seen.insert(id.clone())) {
+        return Err(AppError::validation("network.jumpCycle"));
+    }
+    let mut jumps: Vec<Arc<Handle<ClientHandler>>> = Vec::new();
+    for (index, id) in ids.iter().enumerate() {
+        let node = if id == &host.id {
+            host.clone()
+        } else {
+            state.db.with(|conn| db::hosts::find_host(conn, id))?
+        };
+        let known = state
+            .db
+            .with(|conn| db::known_hosts::find(conn, &node.host, node.port as i64))?;
+        let stream = match jumps.last() {
+            Some(jump) => Some(Box::pin(
+                tokio::time::timeout(
+                    CONNECT_TIMEOUT,
+                    jump.channel_open_direct_tcpip(&node.host, node.port as u32, "127.0.0.1", 0),
+                )
+                .await
+                .map_err(|_| AppError::Ssh("ssh.timeout".into()))?
+                .map_err(map_ssh_error)?
+                .into_stream(),
+            ) as crate::network::Stream),
+            None => None,
+        };
+        let expected = if probing {
+            None
+        } else {
+            Some(
+                known
+                    .as_ref()
+                    .ok_or_else(|| AppError::Ssh(format!("ssh.hostKeyUntrusted: {}", node.name)))?
+                    .fingerprint
+                    .clone(),
+            )
+        };
+        let (mut handle, observed, remote_forwards) = open(
+            app,
+            node.host.clone(),
+            node.port,
+            expected,
+            stream,
+            &route.proxy,
+        )
+        .await?;
+        let status = match &known {
+            None => HostKeyStatus::Unknown,
+            Some(key) if key.fingerprint == observed.fingerprint => HostKeyStatus::Known,
+            Some(_) => HostKeyStatus::Changed,
+        };
+        let info = HostKeyInfo {
+            host_id: node.id.clone(),
+            fingerprint: observed.fingerprint,
+            algorithm: observed.algorithm,
+            status,
+            known_fingerprint: known.map(|key| key.fingerprint),
+        };
+        if probing && (status != HostKeyStatus::Known || index + 1 == ids.len()) {
+            return Ok((handle, info, jumps, remote_forwards));
+        }
+        if status != HostKeyStatus::Known {
+            return Err(AppError::Ssh(format!("ssh.hostKeyChanged: {}", node.name)));
+        }
+        if index + 1 == ids.len() {
+            return Ok((handle, info, jumps, remote_forwards));
+        }
+        let credential = credentials.get(&node.id).cloned().unwrap_or_default();
+        let request = SshConnectRequest {
+            host_id: node.id.clone(),
+            password: credential.password,
+            passphrase: credential.passphrase,
+            jump_credentials: HashMap::new(),
+            cols: 120,
+            rows: 32,
+        };
+        tokio::time::timeout(CONNECT_TIMEOUT, authenticate(&mut handle, &node, &request))
+            .await
+            .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
+        jumps.push(Arc::new(handle));
+    }
+    Err(AppError::validation("network.invalid"))
+}
+
+pub async fn trust_route(
+    app: &AppHandle,
+    host_id: &str,
+    fingerprint: &str,
+    expected_host_id: Option<&str>,
+    credentials: HashMap<String, HopCredential>,
+) -> AppResult<HostKeyInfo> {
     let state = app.state::<AppState>();
     let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
-    let info = probe_host(app, &host).await?;
+    let info = probe_host(app, &host, &credentials).await?;
     // Record only the key the user actually reviewed, never a newly observed key.
-    if info.fingerprint != fingerprint {
+    if info.fingerprint != fingerprint || info.host_id != expected_host_id.unwrap_or(host_id) {
         return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
     }
 
+    let approved = state
+        .db
+        .with(|conn| db::hosts::find_host(conn, &info.host_id))?;
     state.db.with(|conn| {
         db::known_hosts::upsert(
             conn,
-            &host.host,
-            host.port as i64,
+            &approved.host,
+            approved.port as i64,
             &info.algorithm,
             &info.fingerprint,
         )
@@ -509,22 +679,12 @@ async fn connect_for_auth(
     if password_auth {
         host.auth_method = "password".into();
     }
-    let known = state
-        .db
-        .with(|conn| db::known_hosts::find(conn, &host.host, host.port as i64))?
-        .ok_or_else(|| AppError::Ssh("ssh.hostKeyUntrusted".into()))?;
+    let (mut handle, _observed, jumps, remote_forwards) =
+        open_route(&app, &host, &request.jump_credentials, false).await?;
 
-    let (mut handle, observed) = open(
-        host.host.clone(),
-        host.port,
-        Some(known.fingerprint.clone()),
-    )
-    .await?;
-    if observed.fingerprint != known.fingerprint {
-        return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
-    }
-
-    authenticate(&mut handle, &host, &request).await?;
+    tokio::time::timeout(CONNECT_TIMEOUT, authenticate(&mut handle, &host, &request))
+        .await
+        .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
 
     let (channel, startup) = open_terminal_channel(&handle, request.cols, request.rows).await?;
 
@@ -560,12 +720,16 @@ async fn connect_for_auth(
             },
         );
         if let Some(state) = task_app.try_state::<AppState>() {
+            state.forwards.stop_session(&task_session);
+            state.mounts.stop_session(&task_session).await;
             state.ssh.remove(&task_session);
             state.monitor.forget(&task_session);
         }
     });
 
     state.ssh.insert(SessionHandle {
+        _jumps: jumps,
+        remote_forwards,
         info: info.clone(),
         writer: tx,
         task,
@@ -582,6 +746,16 @@ async fn connect_for_auth(
 
 pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
     let state = app.state::<AppState>();
+    state.forwards.stop_session(session_id);
+    let cleanup_app = app.clone();
+    let cleanup_session = session_id.to_owned();
+    tauri::async_runtime::spawn(async move {
+        cleanup_app
+            .state::<AppState>()
+            .mounts
+            .stop_session(&cleanup_session)
+            .await;
+    });
     state.ssh.disconnect(session_id);
     Ok(())
 }
@@ -713,7 +887,10 @@ mod tests {
         let task = tokio::spawn(async move {
             let _ = server.run_on_socket(Arc::new(config), &socket).await;
         });
-        let (mut client, _) = open("127.0.0.1".into(), port, None).await.unwrap();
+        let stream = tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .unwrap();
+        let (mut client, _, _) = handshake(Box::pin(stream), None).await.unwrap();
         assert!(client.authenticate_none("qa").await.unwrap().success());
         (client, requests, task)
     }

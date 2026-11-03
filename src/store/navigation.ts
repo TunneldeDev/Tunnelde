@@ -4,6 +4,7 @@ import { sidebarTabId, SIDEBAR_VIEWS } from "@/lib/session/sidebarDock";
 import type { PluginSidebarView } from "@/lib/plugins/sidebars";
 
 export type SettingsSection =
+  | "network"
   | "general"
   | "appearance"
   | "workspace"
