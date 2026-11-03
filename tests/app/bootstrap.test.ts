@@ -111,6 +111,16 @@ afterEach(() => {
 });
 
 describe("workspace startup and persistence", () => {
+  it("does not delay first presentation for background update status", async () => {
+    const update = deferred<void>();
+    mocks.updateRefresh.mockReturnValueOnce(update.promise);
+    const { bootstrap, useWorkspace } = await fresh();
+    await bootstrap();
+    expect(mocks.updateRefresh).toHaveBeenCalledOnce();
+    expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:about"]);
+    update.resolve();
+  });
+
   it("discovers plugin contributions before restoring tabs without starting executable plugins", async () => {
     const discovered = deferred<void>();
     mocks.pluginLoad.mockReturnValueOnce(discovered.promise);

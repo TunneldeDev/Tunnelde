@@ -4,10 +4,14 @@ on:
   workflow_call:
     inputs:
       existing_tag:
-        description: Immutable stable or beta draft tag to build and publish
+        description: Immutable stable, beta or Nightly draft tag to build and publish
         required: true
         type: string
       build_helpers:
+        type: boolean
+        default: true
+      use_rust_cache:
+        description: Restore Rust caches; disable when recovering a cache service outage
         type: boolean
         default: true
   workflow_dispatch:
@@ -20,6 +24,10 @@ on:
         description: Also rebuild optional helper Actions artifacts
         type: boolean
         default: false
+      use_rust_cache:
+        description: Restore Rust caches; disable to rebuild from source
+        type: boolean
+        default: true
 
 concurrency:
   group: release-${{ inputs.existing_tag || github.ref_name }}
@@ -27,6 +35,9 @@ concurrency:
 
 permissions:
   contents: write
+
+env:
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 2
 
 jobs:
   prepare:
@@ -44,8 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+(\.[0-9]+)?)?$ ]]; then
-            echo "existing_tag must be a stable or beta version tag" >&2
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+(\.[0-9]+)?(\.d\.[0-9]+\.g[a-f0-9]{7,40})?|-alpha\.1\.d\.[0-9]+\.g[a-f0-9]{7,40})?$ ]]; then
+            echo "existing_tag must be a stable, beta or Nightly version tag" >&2
             exit 1
           fi
 
@@ -65,9 +76,14 @@ jobs:
           TAG: ${{ inputs.existing_tag }}
         run: |
           node scripts/release/version.mjs check "${TAG}"
-          if [[ "${TAG}" == *-beta.* ]]; then
+          if [[ "${TAG}" == *-* ]]; then
             source=$(git show -s --format=%B HEAD | sed -n 's/^Release-source: //p')
-            test "${source}" = "$(git rev-parse HEAD^)"
+            if [ -n "${source}" ]; then
+              test "$(git rev-list --parents -n 1 HEAD | wc -w | xargs)" = "2"
+              test "${source}" = "$(git rev-parse HEAD^)"
+            else
+              source=$(git rev-parse HEAD)
+            fi
             git merge-base --is-ancestor "${source}" origin/dev
           else
             git merge-base --is-ancestor HEAD origin/main
@@ -108,11 +124,11 @@ jobs:
           source=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag) | .target_commitish' releases.json)
           test "${source}" = "$(git rev-parse HEAD)"
           channel=false
-          if [[ "${TAG}" == *-beta.* ]]; then channel=true; fi
+          if [[ "${TAG}" == *-* ]]; then channel=true; fi
           jq -e --arg tag "${TAG}" --argjson channel "${channel}" '.[][] | select(.tag_name == $tag) | .prerelease == $channel' releases.json
           node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md
-          title="Tunnelde ${TAG#v}"
-          if [[ "${TAG}" == *-beta.* ]]; then title="Nightly"; fi
+          title="${TAG}"
+          if [[ "${TAG}" == *.d.* ]]; then title="${TAG} (Nightly)"; fi
           gh release edit "${TAG}" --notes-file release-notes.md --title "${title}" --repo "${GITHUB_REPOSITORY}"
           echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
@@ -148,6 +164,13 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.tag }}
 
+      - name: Checkout current cache recovery tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          persist-credentials: false
+
       - name: Install Linux build dependencies
         if: matrix.platform == 'ubuntu-22.04'
         run: |
@@ -177,12 +200,20 @@ jobs:
           echo "APPLE_SIGNING_IDENTITY=-" >> "${GITHUB_ENV}"
 
       - name: Cache Rust build
+        if: inputs.use_rust_cache
+        id: rust-cache
+        timeout-minutes: 3
+        continue-on-error: true
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
           # Keep the existing cache namespace, independent of the calling job ID.
           shared-key: ${{ matrix.name }}-build
           cache-on-failure: true
+
+      - name: Discard incomplete Rust cache
+        if: steps.rust-cache.outcome == 'failure'
+        run: node .release-tools/scripts/ci/reset-rust-cache.mjs src-tauri
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
@@ -196,10 +227,10 @@ jobs:
         with:
           releaseId: ${{ needs.prepare.outputs.release_id }}
           tagName: ${{ needs.prepare.outputs.tag }}
-          releaseName: Tunnelde ${{ needs.prepare.outputs.version }}
+          releaseName: ${{ needs.prepare.outputs.tag }}
           releaseBody: ${{ needs.prepare.outputs.body }}
           releaseDraft: true
-          prerelease: ${{ contains(needs.prepare.outputs.tag, '-beta.') }}
+          prerelease: ${{ contains(needs.prepare.outputs.tag, '-') }}
           includeUpdaterJson: false
           args: ${{ matrix.args }} -- --locked --timings
 
@@ -250,6 +281,11 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ needs.prepare.outputs.tag }}
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -260,9 +296,16 @@ jobs:
           TARGET: ${{ matrix.target }}
         run: rustup target add "${TARGET}"
       - uses: Swatinem/rust-cache@v2
+        if: inputs.use_rust_cache
+        id: rust-cache
+        timeout-minutes: 3
+        continue-on-error: true
         with:
           workspaces: native-helpers
           key: ${{ matrix.asset }}
+      - name: Discard incomplete Rust cache
+        if: steps.rust-cache.outcome == 'failure'
+        run: node .release-tools/scripts/ci/reset-rust-cache.mjs native-helpers
       - run: cargo test --locked --manifest-path native-helpers/Cargo.toml
       - name: Build native helper
         env:
@@ -348,6 +391,6 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         with:
           script: |
-            const {publishRelease} = await import(`${process.env.GITHUB_WORKSPACE}/.release-tools/scripts/release/automation.mjs`);
+            const {publishRelease} = await import(`${process.env.GITHUB_WORKSPACE}/.release-tools/scripts/release/publishing/releases.mjs`);
             await publishRelease({github, context, tag: process.env.RELEASE_TAG});
             await core.summary.addHeading(`Published ${process.env.RELEASE_TAG}`).addRaw('All desktop assets, signatures and updater metadata passed validation.').write();

@@ -26,12 +26,15 @@ function fixture(notes = "- Fix a reproducible bug.") {
   );
   for (const name of [
     "version",
+    "metadata/channels",
+    "metadata/version-files",
     "changelog",
     "release",
     "verify-assets",
     "native-helper",
     "updater-json",
   ]) {
+    mkdirSync(dirname(join(root, `scripts/release/${name}.mjs`)), { recursive: true });
     copyFileSync(
       join(process.cwd(), `scripts/release/${name}.mjs`),
       join(root, `scripts/release/${name}.mjs`),
@@ -100,7 +103,12 @@ describe("release preparation", () => {
 
   it("checks beta versions across every manifest and allows idempotent recovery", () => {
     const f = fixture();
-    for (const version of ["0.19.0-beta.12.1", "0.19.0-beta.13"]) {
+    for (const version of [
+      "0.19.0-beta.12.1",
+      "0.19.0-beta.13",
+      "0.19.0-alpha.1.d.10.gabcdef012345",
+      "0.19.0-beta.13.d.2.gabcdef012345",
+    ]) {
       expect(f.run("version", "set", version).status).toBe(0);
       expect(f.run("version", "check", `v${version}`).status).toBe(0);
       expect(f.run("version", "check", "v0.19.0-beta.14").status).toBe(1);
@@ -207,7 +215,13 @@ describe("release publishing", () => {
       writeFileSync(join(f.root, `sigs/Tunnelde_${name}.sig`), "test-signature");
     }
     writeFileSync(join(f.root, "notes.md"), "## Fixes\n\n- 终端粘贴。\n");
-    for (const tag of ["v0.27.0", "v0.27.1-beta.3.1", "v0.27.1-beta.4"]) {
+    for (const tag of [
+      "v0.27.0",
+      "v0.27.1-beta.3.1",
+      "v0.27.1-beta.4",
+      "v0.27.1-alpha.1.d.10.gabcdef012345",
+      "v0.27.1-beta.4.d.2.gabcdef012345",
+    ]) {
       const result = f.run(
         "updater-json",
         "--tag",
@@ -338,6 +352,6 @@ describe("release publishing", () => {
     const updater = workflow.split("\n  updater:\n")[1]!;
     expect(updater).toContain("publishRelease({github, context, tag:");
     expect(updater.indexOf("verify-assets.mjs")).toBeLessThan(updater.indexOf("publishRelease({"));
-    expect(build).toContain("prerelease: ${{ contains(needs.prepare.outputs.tag, '-beta.') }}");
+    expect(build).toContain("prerelease: ${{ contains(needs.prepare.outputs.tag, '-') }}");
   });
 });

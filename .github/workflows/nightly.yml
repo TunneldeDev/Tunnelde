@@ -1,0 +1,44 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 22 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: nightly-release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  prepare:
+    name: Prepare development snapshot
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+      - uses: actions/github-script@v7
+        id: release
+        with:
+          script: |
+            const {planDevelopment} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/planning/promotion.mjs`);
+            const {prepareNightly} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/publishing/snapshots.mjs`);
+            const plan = await planDevelopment({github, context});
+            const tag = await prepareNightly({github, context, plan});
+            core.setOutput('tag', tag);
+            if (!tag) core.notice('No new development snapshot to publish.');
+
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
+    uses: ./.github/workflows/release.yml
+    with:
+      existing_tag: ${{ needs.prepare.outputs.tag }}
+      build_helpers: false
+    secrets: inherit

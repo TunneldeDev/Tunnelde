@@ -17,10 +17,8 @@ permissions:
 
 jobs:
   prepare:
-    name: Maintain promotion PR and Nightly
+    name: Maintain promotion PR
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,16 +27,6 @@ jobs:
         id: release
         with:
           script: |
-            const {planDevelopment, maintainReleasePr, prepareNightly} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
+            const {planDevelopment, maintainReleasePr} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/planning/promotion.mjs`);
             const plan = await planDevelopment({github, context});
             await maintainReleasePr({github, context, plan});
-            core.setOutput('tag', await prepareNightly({github, context, plan}));
-
-  nightly:
-    needs: prepare
-    if: needs.prepare.outputs.tag != ''
-    uses: ./.github/workflows/release.yml
-    with:
-      existing_tag: ${{ needs.prepare.outputs.tag }}
-      build_helpers: false
-    secrets: inherit
