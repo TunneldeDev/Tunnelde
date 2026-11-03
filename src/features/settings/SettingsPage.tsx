@@ -20,11 +20,11 @@ import { createDefaultSettings, ACCENT_SWATCHES } from "@/lib/prefs/defaults";
 import type { Settings, SettingsPatch } from "@/lib/api/types";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
-import { cn, formatDateTime } from "@/lib/text/format";
+import { cn } from "@/lib/text/format";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
+import { UpdateSourceUrl, UpdateStatus } from "./UpdateSettings";
 import { useUpdates } from "@/store/updates";
-import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
 import { useNavigation, type SettingsSection } from "@/store/navigation";
 import {
@@ -44,6 +44,7 @@ import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
+import { NetworkSettingsSection } from "./NetworkSettings";
 import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
 const TerminalPreview = lazy(() =>
@@ -70,11 +71,16 @@ function PreferenceRow({
   const { t } = useTranslation();
   const descriptionId = useId();
   const update = useSettings((state) => state.update);
+  const updatesBusy = useUpdates(
+    (state) => state.busy || state.state?.phase === "downloading" || state.state?.phase === "ready",
+  );
   const label = t(definition.label);
   const value = settings[definition.key];
   const defaultValue = defaults[definition.key];
   const modified = !samePreference(value, defaultValue);
-  const disabled = definition.dependsOn ? !settings[definition.dependsOn] : false;
+  const disabled =
+    (definition.dependsOn ? !settings[definition.dependsOn] : false) ||
+    (definition.section === "updates" && updatesBusy);
   const setValue = (next: string | number | boolean) =>
     void update({ [definition.key]: next } as SettingsPatch);
   const optionLabel = (option: SettingOption) => (option.literal ? option.label : t(option.label));
@@ -176,7 +182,7 @@ function PreferenceRow({
           className="settings-reset"
           size="sm"
           label={t("settings.restoreOne", { name: label })}
-          disabled={!modified}
+          disabled={!modified || (definition.section === "updates" && updatesBusy)}
           onClick={onReset}
         >
           <RotateCcw size={13} />
@@ -301,12 +307,14 @@ export function SettingsPage() {
   const info = useSettings((state) => state.info);
   const error = useSettings((state) => state.error);
   const saving = useSettings((state) => state.saving);
+  const updatesBusy = useUpdates(
+    (state) => state.busy || state.state?.phase === "downloading" || state.state?.phase === "ready",
+  );
   const update = useSettings((state) => state.update);
   const reset = useSettings((state) => state.reset);
   const confirm = useDialogs((state) => state.confirm);
   const section = useNavigation((state) => state.settingsSection);
   const selectSection = useNavigation((state) => state.selectSettings);
-  const openPage = useWorkspace((state) => state.openPage);
   const [query, setQuery] = useState("");
   const [modifiedOnly, setModifiedOnly] = useState(false);
   const [cssDraft, setCssDraft] = useState<string | null>(null);
@@ -386,7 +394,6 @@ export function SettingsPage() {
     selectSection(target);
     clearFilters();
   };
-  const locale = i18n.resolvedLanguage ?? "en-US";
   return (
     <div className="page settings">
       <SettingsProfiles
@@ -482,6 +489,7 @@ export function SettingsPage() {
                     variant="ghost"
                     size="sm"
                     disabled={
+                      (item === "updates" && updatesBusy) ||
                       !definitions.some(
                         (definition) => definition.section === item && isModified(definition),
                       )
@@ -498,6 +506,7 @@ export function SettingsPage() {
                   <p className="settings-section__intro">{t("settings.filePaneDefaultsHint")}</p>
                 ) : null}
                 {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
+                {item === "updates" && !filtering ? <UpdateStatus /> : null}
                 {groupSettings(
                   item,
                   visible.filter((definition) => definition.section === item),
@@ -541,7 +550,16 @@ export function SettingsPage() {
                         </div>
                       ) : null}
                       {group.definitions.map((definition) =>
-                        definition.kind === "shortcuts" ? (
+                        definition.kind === "updateUrl" ? (
+                          !filtering && settings.updateSource !== "custom" ? null : (
+                            <UpdateSourceUrl
+                              key={`${definition.key}-${resetVersions[definition.key] ?? 0}`}
+                              onReset={() => resetOne(definition)}
+                            />
+                          )
+                        ) : definition.kind === "network" ? (
+                          <NetworkSettingsSection key={definition.key} />
+                        ) : definition.kind === "shortcuts" ? (
                           <div key={definition.key} data-setting="keyboardShortcuts">
                             <KeyboardShortcuts />
                           </div>
@@ -583,26 +601,6 @@ export function SettingsPage() {
                     </div>
                   </div>
                 ))}
-                {!filtering && item === "updates" ? (
-                  <>
-                    <p className="settings-detail">
-                      {t("settings.version")}: {info?.version ?? "—"} · {t("updates.lastChecked")}:{" "}
-                      {settings.lastUpdateCheck
-                        ? formatDateTime(settings.lastUpdateCheck, locale)
-                        : t("common.never")}
-                    </p>
-                    <div className="settings-actions">
-                      <Button
-                        onClick={() => {
-                          openPage("updates");
-                          void useUpdates.getState().check(true);
-                        }}
-                      >
-                        {t("updates.check")}
-                      </Button>
-                    </div>
-                  </>
-                ) : null}
                 {!filtering && item === "advanced" ? (
                   <>
                     <div className="settings-locations">

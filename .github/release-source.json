@@ -1,5 +1,6 @@
 {
-  "sourceSha": "8f0d8f6d7d30bc021129d8a44f5f403ef49d3210",
-  "baseSha": null,
-  "version": "0.26.1"
+  "sourceSha": "f7aeccd9b2a7b7906ff4cf8bee7159432d5ae45f",
+  "baseSha": "6073cc051e5a00b2028f8e401930f37dc0714e06",
+  "version": "0.27.0",
+  "history": "merge"
 }

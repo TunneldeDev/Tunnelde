@@ -182,7 +182,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
           const { ensurePluginPermission } = await import("@/store/pluginSecurity");
           if (!(await ensurePluginPermission(info))) return null;
         }
-        if (isTauri() && info?.runtime !== "wasm") {
+        if (isTauri() && !["wasm", "declarative"].includes(info?.runtime ?? "node")) {
           const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
           if (!(await ensureNodeRuntime())) return null;
         }

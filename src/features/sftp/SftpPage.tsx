@@ -1,5 +1,8 @@
 import { matchesCommand, isTextTarget } from "@/lib/keyboard/registry";
 import {
+  Pause,
+  Play,
+  Trash2,
   ArrowLeftRight,
   ArrowLeft,
   ArrowRight,
@@ -159,6 +162,19 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
   const hosts = useHosts((state) => state.hosts);
   const transfers = useTransfers((state) => state.items);
   const cancelTransfer = useTransfers((state) => state.cancel);
+  const pauseTransfer = useTransfers((state) => state.pause);
+  const resumeTransfer = useTransfers((state) => state.resume);
+  const clearTransfer = useTransfers((state) => state.clear);
+  useEffect(() => {
+    void useTransfers.getState().hydrate();
+  }, []);
+  const pendingTransferIds = transfers
+    .filter((x) => !x.durable && x.status === "running")
+    .map((x) => x.id)
+    .join(",");
+  useEffect(() => {
+    if (pendingTransferIds) void useTransfers.getState().hydrate();
+  }, [pendingTransferIds]);
   const clip = useFileClipboard((state) => state.clip);
   const setClip = useFileClipboard((state) => state.set);
   const openMenu = useContextMenu((state) => state.open);
@@ -1938,9 +1954,11 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
                   : `${percent}%`
                 : item.status === "done"
                   ? t("sftp.done")
-                  : item.status === "cancelled"
-                    ? t("sftp.cancelled")
-                    : t("sftp.failed");
+                  : item.status === "paused"
+                    ? t("sftp.paused")
+                    : item.status === "cancelled"
+                      ? t("sftp.cancelled")
+                      : t("sftp.failed");
             return (
               <div key={item.id} className={cn("transfer", `is-${item.status}`)}>
                 <span className="transfer__name" title={item.name}>
@@ -1952,18 +1970,47 @@ export function SftpPage({ sessionId }: { sessionId: string }) {
                 <span className="transfer__state" title={item.error ?? undefined}>
                   {stateLabel}
                 </span>
-                {item.status === "running" ? (
-                  <IconButton
-                    label={t("sftp.cancelTransfer")}
-                    size="sm"
-                    disabled={item.cancelling}
-                    onClick={() => cancelTransfer(item.id)}
-                  >
-                    <X size={12} />
-                  </IconButton>
-                ) : (
-                  <span className="transfer__spacer" />
-                )}
+                <span className="transfer__actions">
+                  {item.durable && item.status === "running" ? (
+                    <IconButton
+                      label={t("sftp.pauseTransfer")}
+                      size="sm"
+                      onClick={() => pauseTransfer(item.id)}
+                    >
+                      <Pause size={12} />
+                    </IconButton>
+                  ) : null}
+                  {item.durable && ["paused", "failed", "cancelled"].includes(item.status) ? (
+                    <IconButton
+                      label={t("sftp.resumeTransfer")}
+                      size="sm"
+                      onClick={() => resumeTransfer(item.id)}
+                    >
+                      <Play size={12} />
+                    </IconButton>
+                  ) : null}
+                  {item.durable && item.status !== "running" ? (
+                    <IconButton
+                      label={t("sftp.clearTransfer")}
+                      size="sm"
+                      onClick={() => clearTransfer(item.id)}
+                    >
+                      <Trash2 size={12} />
+                    </IconButton>
+                  ) : null}
+                  {item.status === "running" ? (
+                    <IconButton
+                      label={t("sftp.cancelTransfer")}
+                      size="sm"
+                      disabled={item.cancelling}
+                      onClick={() => cancelTransfer(item.id)}
+                    >
+                      <X size={12} />
+                    </IconButton>
+                  ) : (
+                    <span className="transfer__spacer" />
+                  )}
+                </span>
               </div>
             );
           })}

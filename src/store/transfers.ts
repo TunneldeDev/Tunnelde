@@ -1,3 +1,5 @@
+import { transferApi } from "@/lib/api/transfers";
+import { isTauri } from "@/lib/api/ipc";
 import { create } from "zustand";
 
 import { api } from "@/lib/api/ipc";
@@ -5,7 +7,9 @@ import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TransferEvent } from "@/lib/api/types";
 
-export interface TransferItem extends TransferEvent {
+export interface TransferItem extends Omit<TransferEvent, "status"> {
+  status: TransferEvent["status"] | "paused";
+  durable?: boolean;
   updatedAt: number;
   cancelling?: boolean;
 }
@@ -14,23 +18,75 @@ interface TransfersStore {
   items: TransferItem[];
   apply: (event: TransferEvent) => void;
   cancel: (id: string) => void;
+  hydrate: () => Promise<void>;
+  pause: (id: string) => void;
+  resume: (id: string) => void;
+  clear: (id: string) => void;
 }
 
 const KEEP_FINISHED = 6;
 
 export const useTransfers = create<TransfersStore>((set, get) => ({
   items: [],
+  hydrate: async () => {
+    if (!isTauri()) return;
+    try {
+      const rows = await transferApi.list();
+      set((state) => ({
+        items: [
+          ...state.items.filter((x) => !rows.some((r) => r.id === x.id)),
+          ...rows.map((row) => {
+            const previous = state.items.find((x) => x.id === row.id);
+            const newer =
+              previous &&
+              (previous.updatedAt > row.updatedAt ||
+                (previous.updatedAt === row.updatedAt &&
+                  previous.status !== "running" &&
+                  row.status === "running"));
+            return { ...(newer ? previous : row), durable: true };
+          }),
+        ],
+      }));
+    } catch (error) {
+      toast(translateError(error), "error");
+    }
+  },
+  pause: (id) => {
+    void transferApi.pause(id).catch((error) => toast(translateError(error), "error"));
+  },
+  resume: (id) => {
+    const previous = get().items.find((x) => x.id === id);
+    if (!previous || previous.status === "running") return;
+    set((state) => ({
+      items: state.items.map((x) =>
+        x.id === id ? { ...x, status: "running", cancelling: false, error: null } : x,
+      ),
+    }));
+    void transferApi.resume(id).catch((error) => {
+      set((state) => ({
+        items: state.items.map((x) => (x.id === id && x.status === "running" ? previous : x)),
+      }));
+      toast(translateError(error), "error");
+    });
+  },
+  clear: (id) => {
+    void transferApi
+      .clear(id)
+      .then(() => set((state) => ({ items: state.items.filter((x) => x.id !== id) })))
+      .catch((error) => toast(translateError(error), "error"));
+  },
 
   apply: (event) => {
     const next: TransferItem = { ...event, updatedAt: Date.now() };
     set((state) => {
       const previous = state.items.find((item) => item.id === event.id);
       if (previous && previous.status !== "running" && event.status === "running") return state;
+      next.durable = previous?.durable;
       if (event.status === "running") next.cancelling = previous?.cancelling;
       const others = state.items.filter((item) => item.id !== event.id);
       const merged = [...others, next].sort((left, right) => left.updatedAt - right.updatedAt);
-      const finished = merged.filter((item) => item.status !== "running");
-      const running = merged.filter((item) => item.status === "running");
+      const finished = merged.filter((item) => !item.durable && item.status !== "running");
+      const running = merged.filter((item) => item.durable || item.status === "running");
       const trimmed = [...running, ...finished.slice(-KEEP_FINISHED)];
       return { items: trimmed };
     });

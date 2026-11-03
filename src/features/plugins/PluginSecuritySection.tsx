@@ -12,7 +12,7 @@ import { PluginError } from "./PluginError";
 
 const PERMISSION_GROUPS = {
   execution: ["process", "network", "secrets"],
-  remote: ["hosts", "sessions", "ssh", "sftp", "monitor", "history"],
+  remote: ["hosts", "sessions", "ssh", "sftp", "monitor", "history", "mounts", "forwards"],
   files: ["fs"],
   workspace: ["workspace", "clipboard"],
   application: ["app", "settings", "log"],

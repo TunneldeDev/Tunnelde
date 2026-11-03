@@ -1,11 +1,13 @@
 import { ArrowUpCircle } from "lucide-react";
 
-import { useUpdates } from "@/store/updates";
+import { matchingUpdateState, useUpdates } from "@/store/updates";
+import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 
 /** Shown in the status bar while a newer release is waiting. */
 export function UpdatePill() {
-  const state = useUpdates((value) => value.state);
+  const settings = useSettings((value) => value.settings);
+  const state = useUpdates((value) => matchingUpdateState(value.state, settings));
   const openPage = useWorkspace((value) => value.openPage);
 
   if (!state?.available || state.skipped || !state.version) {

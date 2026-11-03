@@ -19,6 +19,8 @@ import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { toast } from "@/store/toasts";
 import { useWorkspace } from "@/store/workspace";
+import { ConnectionRouteEditor } from "@/features/hosts/ConnectionRouteEditor";
+import type { ConnectionRoute } from "@/lib/api/network";
 import { useSettings } from "@/store/settings";
 
 interface HostFormState {
@@ -88,6 +90,9 @@ function HostDialog({
   const [form, setForm] = useState<HostFormState>(
     host ? fromHost(host) : { ...EMPTY, groupId: groupId ?? "" },
   );
+  const [route, setRoute] = useState<ConnectionRoute>({ proxy: "", jumpHosts: [] });
+  const [routeLoading, setRouteLoading] = useState(Boolean(host));
+  const [routeError, setRouteError] = useState("");
   const [keySource, setKeySource] = useState<"file" | "content">("file");
   const [errors, setErrors] = useState<{
     name?: string;
@@ -122,12 +127,31 @@ function HostDialog({
     };
   }, [host]);
 
+  useEffect(() => {
+    if (!host) return;
+    let active = true;
+    api
+      .connectionRoute(host.id)
+      .then((value) => {
+        if (active) setRoute(value);
+      })
+      .catch((cause) => {
+        if (active) setRouteError(translateError(cause));
+      })
+      .finally(() => {
+        if (active) setRouteLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [host]);
+
   const set = <K extends keyof HostFormState>(key: K, value: HostFormState[K]) => {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
   const submit = async () => {
-    if (pendingSave.current) return;
+    if (pendingSave.current || routeLoading || routeError) return;
     const nextErrors: typeof errors = {};
     if (!form.name.trim()) {
       nextErrors.name = t("error.required");
@@ -184,6 +208,7 @@ function HostDialog({
       if (!saved) return;
       persistedHost.current = saved;
       renameHost(saved.id, saved.name);
+      await api.saveConnectionRoute(saved.id, route);
       if (password.length > 0 && form.authMethod !== "key" && form.authMethod !== "agent") {
         await api.credentialSave(saved.id, password);
       } else if (removePassword) {
@@ -213,7 +238,11 @@ function HostDialog({
           <Button variant="ghost" disabled={saving} onClick={onClose}>
             {t("common.cancel")}
           </Button>
-          <Button variant="primary" disabled={saving} onClick={() => void submit()}>
+          <Button
+            variant="primary"
+            disabled={saving || routeLoading || Boolean(routeError)}
+            onClick={() => void submit()}
+          >
             {t("common.save")}
           </Button>
         </>
@@ -414,6 +443,13 @@ function HostDialog({
         form.authMethod !== "keyboardInteractive" ? (
           <p className="td-field__error" role="alert">
             {credentialError}
+          </p>
+        ) : null}
+
+        <ConnectionRouteEditor hostId={host?.id} value={route} onChange={setRoute} />
+        {routeError ? (
+          <p role="alert" className="td-field__error">
+            {routeError}
           </p>
         ) : null}
 

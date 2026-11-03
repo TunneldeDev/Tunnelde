@@ -405,6 +405,10 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     openPage: (kind) => {
+      if (kind === "updates") {
+        useNavigation.getState().selectSettings("updates");
+        kind = "settings";
+      }
       const id = `page:${kind}`;
       set((state) =>
         insert(state, {
@@ -826,6 +830,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     hydrate: (records) => {
+      const updateIds = new Set(
+        records.filter((record) => record.kind === "updates").map((record) => record.id),
+      );
+      const normalizeId = (id: string) => (updateIds.has(id) ? "page:settings" : id);
+      if (updateIds.size && !records.some((record) => record.kind === "settings")) {
+        useNavigation.getState().selectSettings("updates");
+      }
+      records = records.map((record) =>
+        record.kind === "updates"
+          ? {
+              ...record,
+              id: "page:settings",
+              kind: "settings",
+              title: "settings",
+            }
+          : record,
+      );
       const tabs: WorkspaceTab[] = [];
       for (const record of records) {
         if (record.id === WORKSPACE_LAYOUT_RECORD_ID && record.kind === "welcome") continue;
@@ -877,15 +898,19 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             )
               continue;
             paneIds.add(item.id);
-            const tabIds = item.tabIds.filter((id) => {
-              if (typeof id !== "string" || seen.has(id) || !valid.has(id)) return false;
-              seen.add(id);
-              return true;
-            });
+            const tabIds = item.tabIds
+              .map((id) => (typeof id === "string" ? normalizeId(id) : id))
+              .filter((id) => {
+                if (typeof id !== "string" || seen.has(id) || !valid.has(id)) return false;
+                seen.add(id);
+                return true;
+              });
             panes.push({
               id: item.id,
               tabIds,
-              activeId: tabIds.includes(item.activeId ?? "") ? item.activeId : (tabIds[0] ?? null),
+              activeId: tabIds.includes(normalizeId(item.activeId ?? ""))
+                ? normalizeId(item.activeId!)
+                : (tabIds[0] ?? null),
               ...(typeof item.locked === "boolean"
                 ? { locked: item.locked && !panes.some((entry) => entry.locked) }
                 : {}),

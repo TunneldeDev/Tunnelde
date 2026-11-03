@@ -33,6 +33,35 @@
   display: grid;
   gap: 14px;
 }
+.plugin-mounts {
+  display: grid;
+  gap: 14px;
+}
+.plugin-mounts .field-row,
+.plugin-mounts .settings-row {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.plugin-mounts .settings-row__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.plugin-mounts hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--td-border);
+}
+.plugin-mounts__directories {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: start;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--td-border);
+  border-radius: 6px;
+}
 .plugin-tool .td-input {
   min-width: 0;
   width: 100%;

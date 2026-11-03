@@ -7,6 +7,7 @@ export const UI_FONT_SIZE_MAX = 20;
 
 export function createDefaultSettings(platform = "unknown"): Settings {
   return {
+    network: { profiles: [], defaultProxy: "", features: {} },
     keyboardShortcuts: {},
     language: "system",
     theme: "system",
@@ -21,6 +22,10 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     rightPanelWidth: 296,
     userCss: "",
     autoCheckUpdates: true,
+    updateChannel: "stable",
+    updateSource: "github",
+    updateSourceUrl: "",
+    updateCheckInterval: "daily",
     skippedVersion: null,
     lastUpdateCheck: null,
     closeToTray: false,

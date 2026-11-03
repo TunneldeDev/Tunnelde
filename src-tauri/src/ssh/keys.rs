@@ -113,6 +113,7 @@ pub async fn install(
     app: &AppHandle,
     host_id: &str,
     password: Option<String>,
+    jump_credentials: std::collections::HashMap<String, super::session::HopCredential>,
 ) -> AppResult<InstalledKey> {
     let state = app.state::<AppState>();
     state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
@@ -121,6 +122,7 @@ pub async fn install(
     let session = connect_with_password(
         app.clone(),
         SshConnectRequest {
+            jump_credentials,
             host_id: host_id.to_string(),
             password,
             passphrase: None,

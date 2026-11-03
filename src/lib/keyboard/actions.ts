@@ -34,8 +34,10 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "sidebar.toggle") useNavigation.getState().toggleSidebar();
   else if (id === "sidebar.knownHosts") useNavigation.getState().showSidebar("knownHosts");
   else if (id === "sidebar.plugins") useNavigation.getState().showSidebar("plugins");
-  else if (id === "update.check") void useUpdates.getState().check(true);
-  else if (id === "panel.toggle")
+  else if (id === "update.check") {
+    workspace.openPage("updates");
+    void useUpdates.getState().check(true);
+  } else if (id === "panel.toggle")
     void settings.update({ rightPanel: !settings.settings.rightPanel });
   else if (id === "theme.cycle")
     void settings.update({

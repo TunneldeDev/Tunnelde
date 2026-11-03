@@ -15,7 +15,7 @@ import { SftpPage } from "@/features/sftp/SftpPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
 import { TerminalPage } from "@/features/terminal/TerminalPage";
-import { UpdatesPage } from "@/features/updates/UpdatesPage";
+import { useNavigation } from "@/store/navigation";
 import { WelcomePage } from "@/features/welcome/WelcomePage";
 import { useWorkspace, type WorkspaceTab } from "@/store/workspace";
 import { SidebarMount } from "@/components/layout/SidebarDock";
@@ -46,7 +46,7 @@ function TabBody({
     case "about":
       return <AboutPage />;
     case "updates":
-      return <UpdatesPage />;
+      return <LegacyUpdates />;
     case "terminal":
       return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
@@ -72,6 +72,13 @@ function TabBody({
     default:
       return null;
   }
+}
+
+function LegacyUpdates() {
+  useLayoutEffect(() => {
+    useNavigation.getState().selectSettings("updates");
+  }, []);
+  return <SettingsPage />;
 }
 
 export function TabContent({ paneId }: { paneId?: string }) {

@@ -17,8 +17,11 @@ use crate::update::UpdateService;
 pub struct AppState {
     pub db: Database,
     pub settings: RwLock<Settings>,
+    pub http_clients: crate::network::HttpClients,
     pub update: UpdateService,
     pub ssh: SshManager,
+    pub forwards: crate::ssh::forward::ForwardRegistry,
+    pub mounts: crate::mounts::MountRegistry,
     pub transfers: TransferRegistry,
     pub monitor: MonitorCache,
     pub plugins: PluginsManager,
@@ -109,8 +112,11 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     app.manage(AppState {
         db: database,
         settings: RwLock::new(settings),
+        http_clients: Default::default(),
         update: UpdateService::new(version),
         ssh: SshManager::default(),
+        forwards: Default::default(),
+        mounts: Default::default(),
         transfers: TransferRegistry::default(),
         monitor: MonitorCache::default(),
         plugins,

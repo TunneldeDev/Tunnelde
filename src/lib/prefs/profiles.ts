@@ -2,6 +2,7 @@ import type { Settings, SettingsPatch } from "@/lib/api/types";
 
 /** Explicit allowlist: runtime metadata, host data and plugin secrets never leave their stores. */
 export const PORTABLE_SETTING_KEYS = [
+  "network",
   "language",
   "theme",
   "accent",
@@ -15,6 +16,10 @@ export const PORTABLE_SETTING_KEYS = [
   "rightPanelWidth",
   "userCss",
   "autoCheckUpdates",
+  "updateChannel",
+  "updateSource",
+  "updateSourceUrl",
+  "updateCheckInterval",
   "closeToTray",
   "showDockIconInBackground",
   "titleBarStyle",

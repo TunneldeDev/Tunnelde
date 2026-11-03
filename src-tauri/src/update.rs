@@ -1,17 +1,21 @@
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{RwLock, RwLockWriteGuard};
+use std::sync::{Mutex, RwLock, RwLockWriteGuard};
 use std::time::Duration;
 
+use semver::Version;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tauri_plugin_updater::UpdaterExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::now_ms;
+use crate::settings::Settings;
 use crate::state::AppState;
 
 pub const RELEASES_PAGE: &str = "https://github.com/TunneldeDev/Tunnelde/releases/latest";
+const RELEASES_API: &str =
+    "https://api.github.com/repos/TunneldeDev/Tunnelde/releases?per_page=100";
 const EVENT: &str = "update://state";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -32,6 +36,9 @@ pub enum Phase {
 pub struct UpdateState {
     pub phase: Phase,
     pub current_version: String,
+    pub channel: String,
+    pub source: String,
+    pub source_url: String,
     pub version: Option<String>,
     pub notes: Option<String>,
     pub published_at: Option<i64>,
@@ -47,10 +54,13 @@ pub struct UpdateState {
 }
 
 impl UpdateState {
-    fn new(current_version: String) -> Self {
+    fn new(current_version: String, settings: &Settings) -> Self {
         Self {
             phase: Phase::Idle,
             current_version,
+            channel: settings.update_channel.clone(),
+            source: settings.update_source.clone(),
+            source_url: settings.update_source_url.clone(),
             version: None,
             notes: None,
             published_at: None,
@@ -65,17 +75,41 @@ impl UpdateState {
             skipped: false,
         }
     }
+
+    fn matches(&self, settings: &Settings) -> bool {
+        self.channel == settings.update_channel
+            && self.source == settings.update_source
+            && self.source_url == settings.update_source_url
+    }
+}
+
+pub fn validate_settings_change(
+    previous: &Settings,
+    next: &Settings,
+    snapshot: &UpdateState,
+) -> AppResult<()> {
+    if matches!(snapshot.phase, Phase::Downloading | Phase::Ready)
+        && (previous.update_channel != next.update_channel
+            || previous.update_source != next.update_source
+            || previous.update_source_url != next.update_source_url)
+    {
+        return Err(AppError::validation("updates.installInProgress"));
+    }
+    Ok(())
 }
 
 pub struct UpdateService {
     state: RwLock<UpdateState>,
+    // Retain the exact signed package selected by Check, rather than checking again at Install.
+    pending: Mutex<Option<Update>>,
     busy: AtomicBool,
 }
 
 impl UpdateService {
     pub fn new(current_version: String) -> Self {
         Self {
-            state: RwLock::new(UpdateState::new(current_version)),
+            state: RwLock::new(UpdateState::new(current_version, &Settings::default())),
+            pending: Mutex::new(None),
             busy: AtomicBool::new(false),
         }
     }
@@ -97,16 +131,31 @@ impl UpdateService {
         let _ = app.emit(EVENT, self.snapshot());
     }
 
-    fn set_progress(&self, downloaded: u64, total: Option<u64>) {
-        let mut guard = self.write();
-        guard.progress = Some(downloaded);
-        if total.is_some() {
-            guard.content_length = total;
-        }
+    fn set_pending(&self, update: Option<Update>) {
+        *self.pending.lock().unwrap_or_else(|e| e.into_inner()) = update;
     }
 
-    fn is_busy(&self) -> bool {
-        self.busy.load(Ordering::SeqCst)
+    fn acquire(&self) -> Option<BusyGuard<'_>> {
+        self.busy
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .ok()
+            .map(|_| BusyGuard(&self.busy))
+    }
+
+    fn fail(&self, app: &AppHandle, error: &AppError) {
+        {
+            let mut guard = self.write();
+            guard.phase = Phase::Error;
+            guard.error = Some(error.to_string());
+        }
+        self.publish(app);
+    }
+}
+
+struct BusyGuard<'a>(&'a AtomicBool);
+impl Drop for BusyGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
     }
 }
 
@@ -116,8 +165,6 @@ pub struct Capability {
     pub reason: &'static str,
 }
 
-/// Which install path this build can actually use. Signing gaps are
-/// reported to the UI instead of failing silently mid-download.
 pub fn capability() -> Capability {
     if cfg!(debug_assertions) {
         return Capability {
@@ -126,127 +173,298 @@ pub fn capability() -> Capability {
             reason: "dev",
         };
     }
-
-    if cfg!(target_os = "windows") {
-        Capability {
-            supported: true,
-            auto_install: true,
-            reason: "",
-        }
+    let (supported, auto_install, reason) = if cfg!(target_os = "windows") {
+        (true, true, "")
     } else if cfg!(target_os = "macos") {
-        Capability {
-            supported: false,
-            auto_install: false,
-            reason: "unsigned",
-        }
+        (true, false, "unsigned")
     } else if cfg!(target_os = "linux") {
         if std::env::var_os("APPIMAGE").is_some() {
-            Capability {
-                supported: true,
-                auto_install: true,
-                reason: "",
-            }
+            (true, true, "")
         } else {
-            Capability {
-                supported: false,
-                auto_install: false,
-                reason: "package",
-            }
+            (true, false, "package")
         }
     } else {
-        Capability {
-            supported: false,
-            auto_install: false,
-            reason: "unsupported",
-        }
+        (false, false, "unsupported")
+    };
+    Capability {
+        supported,
+        auto_install,
+        reason,
     }
+}
+
+/// Custom sources serve ordinary Tauri manifests for both channels. No source may replace
+/// the embedded verification key or disable HTTPS / package signature verification.
+pub fn validate_preferences(settings: &Settings) -> AppResult<()> {
+    if settings.update_source_url.is_empty() {
+        return Ok(());
+    }
+    let template = &settings.update_source_url;
+    if template.len() > 2048
+        || template.matches("{channel}").count() != 1
+        || template
+            .chars()
+            .any(|c| c.is_whitespace() || c.is_control())
+    {
+        return Err(AppError::validation("updates.invalidSource"));
+    }
+    let replaced = template.replace("{channel}", "tunnelde-update-channel");
+    if replaced.contains(['{', '}', '\\']) {
+        return Err(AppError::validation("updates.invalidSource"));
+    }
+    let url = reqwest::Url::parse(&replaced)
+        .map_err(|_| AppError::validation("updates.invalidSource"))?;
+    if url.scheme() != "https"
+        || url.host_str().is_none()
+        || !url.username().is_empty()
+        || url.password().is_some()
+        || url.fragment().is_some()
+        || url.query().is_some()
+        || !url.path().contains("tunnelde-update-channel")
+        || url
+            .host_str()
+            .is_some_and(|host| host.contains("tunnelde-update-channel"))
+    {
+        return Err(AppError::validation("updates.invalidSource"));
+    }
+    Ok(())
+}
+
+fn accepts_version(current: &Version, candidate: &Version, channel: &str) -> bool {
+    candidate > current
+        && (candidate.pre.is_empty()
+            || (channel == "beta" && candidate.pre.as_str().starts_with("beta.")))
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseAsset {
+    name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<ReleaseAsset>,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+struct Feed {
+    url: reqwest::Url,
+    channel: String,
+    version: Option<Version>,
+    page: String,
+    notes: Option<String>,
+}
+
+fn github_beta_feed(releases: &[GitHubRelease]) -> AppResult<Feed> {
+    let (version, release) = releases
+        .iter()
+        .filter(|release| !release.draft && release.assets.iter().any(|a| a.name == "latest.json"))
+        .filter_map(|release| {
+            let version = Version::parse(release.tag_name.strip_prefix('v')?).ok()?;
+            let eligible = if version.pre.is_empty() {
+                !release.prerelease
+            } else {
+                release.prerelease && version.pre.as_str().starts_with("beta.")
+            };
+            eligible.then_some((version, release))
+        })
+        .max_by(|a, b| a.0.cmp(&b.0))
+        .ok_or_else(|| AppError::Update("updates.noFeed".into()))?;
+    let tag = &release.tag_name;
+    Ok(Feed {
+        url: format!("https://github.com/TunneldeDev/Tunnelde/releases/download/{tag}/latest.json")
+            .parse()
+            .map_err(|_| AppError::Update("updates.noFeed".into()))?,
+        channel: "beta".into(),
+        version: Some(version),
+        page: format!("https://github.com/TunneldeDev/Tunnelde/releases/tag/{tag}"),
+        notes: release.body.clone(),
+    })
+}
+
+async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec<Feed>> {
+    validate_preferences(settings)?;
+    if settings.update_source == "custom" {
+        if settings.update_source_url.is_empty() {
+            return Err(AppError::validation("updates.invalidSource"));
+        }
+        let channels: &[&str] = if settings.update_channel == "beta" {
+            &["stable", "beta"]
+        } else {
+            &["stable"]
+        };
+        return channels
+            .iter()
+            .map(|channel| {
+                Ok(Feed {
+                    url: settings
+                        .update_source_url
+                        .replace("{channel}", channel)
+                        .parse()
+                        .map_err(|_| AppError::validation("updates.invalidSource"))?,
+                    channel: (*channel).into(),
+                    version: None,
+                    notes: None,
+                    page: if *channel == "stable" {
+                        RELEASES_PAGE.into()
+                    } else {
+                        "https://github.com/TunneldeDev/Tunnelde/releases".into()
+                    },
+                })
+            })
+            .collect();
+    }
+    if settings.update_channel == "stable" {
+        return Ok(vec![Feed {
+            url: format!("{RELEASES_PAGE}/download/latest.json")
+                .parse()
+                .unwrap(),
+            channel: "stable".into(),
+            version: None,
+            notes: None,
+            page: RELEASES_PAGE.into(),
+        }]);
+    }
+    let client = crate::network::http_client(app, "updates")?;
+    let mut response = client
+        .get(RELEASES_API)
+        .timeout(Duration::from_secs(30))
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(|_| AppError::Update("updates.sourceUnavailable".into()))?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|_| AppError::Update("updates.sourceUnavailable".into()))?
+    {
+        if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
+            return Err(AppError::Update("updates.invalidFeed".into()));
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let releases = serde_json::from_slice::<Vec<GitHubRelease>>(&bytes)
+        .map_err(|_| AppError::Update("updates.invalidFeed".into()))?;
+    Ok(vec![github_beta_feed(&releases)?])
+}
+
+fn configured_updater(
+    app: &AppHandle,
+    settings: &Settings,
+    feed: &Feed,
+) -> AppResult<tauri_plugin_updater::Updater> {
+    let channel = feed.channel.clone();
+    let version = feed.version.clone();
+    let mut builder = app
+        .updater_builder()
+        .endpoints(vec![feed.url.clone()])?
+        .version_comparator(move |current, release| {
+            version
+                .as_ref()
+                .is_none_or(|version| version == &release.version)
+                && accepts_version(&current, &release.version, &channel)
+        })
+        .configure_client(|builder| {
+            builder
+                .https_only(true)
+                .connect_timeout(Duration::from_secs(15))
+                .read_timeout(Duration::from_secs(60))
+        });
+    if let Some(url) = crate::network::proxy_url(&settings.network, "updates", None)? {
+        builder = if url.is_empty() {
+            builder.no_proxy()
+        } else {
+            builder.proxy(
+                url.parse()
+                    .map_err(|_| AppError::validation("network.invalid"))?,
+            )
+        };
+    }
+    builder
+        .build()
+        .map_err(|error| AppError::Update(error.to_string()))
 }
 
 pub async fn check(app: AppHandle, force: bool) -> AppResult<UpdateState> {
     let service = app.state::<AppState>();
-    if service.update.is_busy() {
+    let Some(_busy) = service.update.acquire() else {
         return Ok(service.update.snapshot());
+    };
+    let result = tokio::time::timeout(Duration::from_secs(65), run_check(&app, force))
+        .await
+        .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
+    if let Err(error) = &result {
+        service.update.fail(&app, error);
     }
-    service.update.busy.store(true, Ordering::SeqCst);
-    let outcome = run_check(&app, force).await;
-    service.update.busy.store(false, Ordering::SeqCst);
-
-    match outcome {
-        Ok(snapshot) => Ok(snapshot),
-        Err(error) => {
-            {
-                let mut guard = service.update.write();
-                guard.phase = Phase::Error;
-                guard.error = Some(error.to_string());
-                guard.last_checked = Some(now_ms());
-            }
-            service.update.publish(&app);
-            Err(error)
-        }
-    }
+    result
 }
 
 async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
-    let capability = capability();
     let service = app.state::<AppState>();
     let settings = service.settings();
-
-    {
-        let mut guard = service.update.write();
-        guard.phase = Phase::Checking;
-        guard.error = None;
-        guard.skipped = false;
-    }
+    let capability = capability();
+    let mut next = UpdateState::new(service.update.snapshot().current_version, &settings);
+    next.phase = Phase::Checking;
+    service.update.set_pending(None);
+    *service.update.write() = next.clone();
     service.update.publish(app);
 
     if !capability.supported {
-        let mut next = service.update.snapshot();
         next.phase = Phase::Unsupported;
-        next.available = false;
-        next.auto_install = false;
-        next.unsupported_reason = Some(capability.reason.to_string());
-        next.download_url = Some(RELEASES_PAGE.to_string());
-        next.last_checked = Some(now_ms());
-        *service.update.write() = next;
-        persist_last_check(app);
-        service.update.publish(app);
-        return Ok(service.update.snapshot());
-    }
-
-    let updater = app
-        .updater()
-        .map_err(|error| AppError::Update(error.to_string()))?;
-    let checked = tokio::time::timeout(Duration::from_secs(30), updater.check()).await;
-
-    let mut next = service.update.snapshot();
-    next.last_checked = Some(now_ms());
-
-    match checked {
-        Err(_) => {
-            next.phase = Phase::Error;
-            next.error = Some("timeout".into());
+        next.unsupported_reason = Some(capability.reason.into());
+        next.download_url = Some(RELEASES_PAGE.into());
+    } else {
+        let feeds = feeds(app, &settings).await?;
+        let mut candidates = Vec::new();
+        // At most two channel manifests; query concurrently, then choose by SemVer, not date.
+        let checks = feeds
+            .iter()
+            .map(|feed| configured_updater(app, &settings, feed))
+            .collect::<AppResult<Vec<_>>>()?;
+        let (first, second) = tokio::join!(checks[0].check(), async {
+            if checks.len() > 1 {
+                checks[1].check().await
+            } else {
+                Ok(None)
+            }
+        });
+        for (index, result) in [first, second].into_iter().enumerate() {
+            if let Some(mut update) = result? {
+                if update.body.is_none() {
+                    update.body = feeds[index].notes.clone();
+                }
+                if update.download_url.scheme() != "https" {
+                    return Err(AppError::Update("updates.invalidFeed".into()));
+                }
+                let version = Version::parse(&update.version)
+                    .map_err(|_| AppError::Update("updates.invalidFeed".into()))?;
+                candidates.push((version, update, feeds[index].page.clone()));
+            }
         }
-        Ok(Err(error)) => {
-            next.phase = Phase::Error;
-            next.error = Some(error.to_string());
-        }
-        Ok(Ok(None)) => {
-            next.phase = Phase::UpToDate;
-            next.available = false;
-        }
-        Ok(Ok(Some(update))) => {
+        if let Some((_, update, page)) = candidates.into_iter().max_by(|a, b| a.0.cmp(&b.0)) {
             next.phase = Phase::Available;
             next.available = true;
             next.auto_install = capability.auto_install;
-            next.download_url = Some(RELEASES_PAGE.to_string());
+            next.download_url = Some(page);
             next.skipped =
                 !force && settings.skipped_version.as_deref() == Some(update.version.as_str());
             next.version = Some(update.version.clone());
             next.notes = update.body.clone();
             next.published_at = update.date.map(|date| date.unix_timestamp() * 1000);
+            service.update.set_pending(Some(update));
+        } else {
+            next.phase = Phase::UpToDate;
+        }
+        if !capability.auto_install {
+            next.unsupported_reason = Some(capability.reason.into());
         }
     }
-
+    next.last_checked = Some(now_ms());
     *service.update.write() = next;
     persist_last_check(app);
     service.update.publish(app);
@@ -254,69 +472,87 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
 }
 
 pub async fn install(app: AppHandle) -> AppResult<UpdateState> {
-    let capability = capability();
-    if !capability.auto_install {
-        return Err(AppError::Update("unsupported".into()));
-    }
-
     let service = app.state::<AppState>();
-    {
-        let mut guard = service.update.write();
-        guard.phase = Phase::Downloading;
-        guard.progress = Some(0);
-        guard.error = None;
-    }
-    service.update.publish(&app);
-
-    let updater = app
-        .updater()
-        .map_err(|error| AppError::Update(error.to_string()))?;
-    let Some(update) = updater
-        .check()
-        .await
-        .map_err(|error| AppError::Update(error.to_string()))?
-    else {
-        let mut guard = service.update.write();
-        guard.phase = Phase::UpToDate;
-        guard.available = false;
-        drop(guard);
-        service.update.publish(&app);
+    let Some(_busy) = service.update.acquire() else {
         return Ok(service.update.snapshot());
     };
+    let result = run_install(&app).await;
+    if let Err(error) = &result {
+        service.update.fail(&app, error);
+    }
+    result
+}
 
+async fn run_install(app: &AppHandle) -> AppResult<UpdateState> {
+    if !capability().auto_install {
+        return Err(AppError::Update("updates.unsupportedOther".into()));
+    }
+    let service = app.state::<AppState>();
+    let snapshot = service.update.snapshot();
+    if !snapshot.matches(&service.settings()) || !snapshot.available {
+        return Err(AppError::Update("updates.checkAgain".into()));
+    }
+    let update = service
+        .update
+        .pending
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone()
+        .ok_or_else(|| AppError::Update("updates.checkAgain".into()))?;
+    {
+        let mut next = service.update.write();
+        next.phase = Phase::Downloading;
+        next.progress = Some(0);
+        next.content_length = None;
+        next.error = None;
+    }
+    service.update.publish(app);
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
-    let result = update
+    let mut last_emitted = std::time::Instant::now();
+    update
         .download_and_install(
             move |chunk, total| {
                 downloaded += chunk as u64;
                 let state = progress_app.state::<AppState>();
-                state.update.set_progress(downloaded, total);
-                state.update.publish(&progress_app);
+                {
+                    let mut next = state.update.write();
+                    next.progress = Some(downloaded);
+                    if total.is_some() {
+                        next.content_length = total;
+                    }
+                }
+                if last_emitted.elapsed() >= Duration::from_millis(100) || total == Some(downloaded)
+                {
+                    state.update.publish(&progress_app);
+                    last_emitted = std::time::Instant::now();
+                }
             },
             || {},
         )
-        .await;
+        .await?;
+    {
+        let mut next = service.update.write();
+        next.phase = Phase::Ready;
+        next.progress = next.content_length;
+    }
+    service.update.set_pending(None);
+    service.update.publish(app);
+    app.restart();
+}
 
-    match result {
-        Ok(()) => {
-            {
-                let mut guard = service.update.write();
-                guard.phase = Phase::Ready;
-                guard.progress = guard.content_length;
+pub fn release_page(settings: &Settings, snapshot: &UpdateState) -> String {
+    if snapshot.matches(settings) {
+        if let Some(url) = &snapshot.download_url {
+            if url.starts_with("https://github.com/TunneldeDev/Tunnelde/releases/") {
+                return url.clone();
             }
-            service.update.publish(&app);
-            tracing::info!("update installed, restarting");
-            app.restart();
         }
-        Err(error) => {
-            let mut guard = service.update.write();
-            guard.phase = Phase::Error;
-            guard.error = Some(error.to_string());
-            drop(guard);
-            service.update.publish(&app);
-            Err(AppError::Update(error.to_string()))
-        }
+    }
+    if settings.update_channel == "beta" {
+        "https://github.com/TunneldeDev/Tunnelde/releases".into()
+    } else {
+        RELEASES_PAGE.into()
     }
 }
 
@@ -326,16 +562,37 @@ pub fn spawn_check(app: AppHandle) {
     });
 }
 
+fn auto_check_due(settings: &Settings, now: i64, startup: bool) -> bool {
+    if !settings.auto_check_updates {
+        return false;
+    }
+    let interval = match settings.update_check_interval.as_str() {
+        "startup" => return startup,
+        "weekly" => 7 * 24 * 60 * 60 * 1000,
+        _ => 24 * 60 * 60 * 1000,
+    };
+    settings
+        .last_update_check
+        .is_none_or(|last| now < last || now.saturating_sub(last) >= interval)
+}
+
 pub fn spawn_auto_check(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(4)).await;
-        let enabled = app.state::<AppState>().settings().auto_check_updates;
-        if !enabled || !capability().supported {
+        if !capability().supported {
             return;
         }
-        if let Err(error) = check(app, false).await {
-            tracing::debug!(%error, "automatic update check failed");
+        let mut startup = true;
+        loop {
+            let due = auto_check_due(&app.state::<AppState>().settings(), now_ms(), startup);
+            if due {
+                if let Err(error) = check(app.clone(), false).await {
+                    tracing::debug!(%error, "automatic update check failed");
+                }
+            }
+            startup = false;
+            tokio::time::sleep(Duration::from_secs(60 * 60)).await;
         }
     });
 }
@@ -350,3 +607,7 @@ fn persist_last_check(app: &AppHandle) {
         service.set_settings(settings);
     }
 }
+
+#[cfg(test)]
+#[path = "update_tests.rs"]
+mod tests;

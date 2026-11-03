@@ -1,3 +1,4 @@
+import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -5,6 +6,9 @@ import { Button, IconButton } from "@/components/ui/form/Button";
 import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
 import { formatDateTime, formatRelative, hostSubtitle } from "@/lib/text/format";
 import { AUTH_LABELS } from "@/lib/prefs/labels";
+import { api } from "@/lib/api/ipc";
+import { translateError } from "@/lib/api/errors";
+import { toast } from "@/store/toasts";
 import type { Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
@@ -45,12 +49,18 @@ function HostDetails({ host }: { host: Host }) {
       port: host.port,
       username: host.username,
       authMethod: host.authMethod,
+      keyPath: host.keyPath,
       groupId: host.groupId,
       color: host.color,
       tags: host.tags,
       note: host.note,
     });
     if (copy) {
+      try {
+        await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
+      } catch (error) {
+        toast(translateError(error), "error");
+      }
       openHost(copy);
     }
   };
@@ -154,6 +164,7 @@ function HostDetails({ host }: { host: Host }) {
         {host.note ? <p className="host-note">{host.note}</p> : null}
       </section>
 
+      <ForwardingSection key={host.id} host={host} />
       <div className="host-page__foot">
         <Button variant="secondary" onClick={() => void duplicate()}>
           {t("common.duplicate")}

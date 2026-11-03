@@ -214,7 +214,6 @@ describe("workspace startup and persistence", () => {
     expect((mocks.saveTabs.mock.calls[1]![0] as TabRecord[]).map((tab) => tab.id)).toEqual([
       "page:about",
       "page:settings",
-      "page:updates",
     ]);
   });
 
