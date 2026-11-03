@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  SEGMENT_DOWNLOAD_TIMEOUT_MINS: 2
+
 concurrency:
   group: build-performance-${{ github.ref }}-${{ inputs.architecture }}
   cancel-in-progress: false
@@ -53,6 +56,8 @@ jobs:
           fi
       - name: Restore release dependency cache
         id: cache
+        timeout-minutes: 3
+        continue-on-error: true
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -60,6 +65,9 @@ jobs:
           cache-on-failure: true
           # Only the production configuration may update the main-branch cache.
           save-if: ${{ matrix.variant == 'rlib-only' }}
+      - name: Discard incomplete Rust cache
+        if: steps.cache.outcome == 'failure'
+        run: node scripts/ci/reset-rust-cache.mjs src-tauri
       - run: pnpm install --frozen-lockfile
       - name: Measure compilation and executable size
         env:

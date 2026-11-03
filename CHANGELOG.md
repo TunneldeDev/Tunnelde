@@ -6,6 +6,31 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.27.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.0...v0.27.1) - 2026-11-03
+
+### 更新概览 | Highlights
+
+- **ci:** recover stalled Rust cache restores
+- **startup:** restore saved appearance before showing the window
+- **settings:** align network and proxy configuration layouts
+- **release:** correct channels and update restart recovery
+
+<details open>
+<summary>详细变更 | Details (4)</summary>
+
+### 修复 | Fix
+
+- **ci:** recover stalled Rust cache restores ([#20](https://github.com/TunneldeDev/Tunnelde/pull/20)) @quyansiyuanwang
+- **startup:** restore saved appearance before showing the window ([#21](https://github.com/TunneldeDev/Tunnelde/pull/21)) @quyansiyuanwang
+- **settings:** align network and proxy configuration layouts ([#22](https://github.com/TunneldeDev/Tunnelde/pull/22)) @quyansiyuanwang
+- **release:** correct channels and update restart recovery ([#25](https://github.com/TunneldeDev/Tunnelde/pull/25)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.27.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.26.1...v0.27.0) - 2026-11-03
 
 ### 更新概览 | Highlights

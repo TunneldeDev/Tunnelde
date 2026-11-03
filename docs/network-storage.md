@@ -13,6 +13,11 @@ named profile. Proxy passwords are stored in the operating system credential sto
 An empty password keeps the saved value; **Forget saved proxy password** removes it
 only when saved. The connection test uses the route selected in its own dropdown.
 
+Proxy profiles are edited inline with separate connection and authentication groups.
+Feature routes use aligned controls and stack vertically in narrow panes. Individual
+plugin overrides stay in a collapsible list. The connection test labels its destination
+address and port separately from the proxy server and locks its inputs until it finishes.
+
 SSH and native HTTP requests use system/environment proxy settings and bypass
 rules in system mode. PAC scripts are not evaluated. Explicit SOCKS5 routes resolve
 destination hostnames through the proxy. An unavailable or rejected explicit proxy

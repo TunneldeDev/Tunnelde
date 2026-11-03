@@ -1,11 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { NetworkSettingsSection } from "@/features/settings/NetworkSettings";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
-import type { Settings } from "@/lib/api/types";
+import type { PluginInfo, Settings } from "@/lib/api/types";
 
 const api = vi.hoisted(() => ({ saveProxyPassword: vi.fn(), testProxy: vi.fn() }));
 vi.mock("@/lib/api/ipc", () => ({ api, isTauri: () => true }));
@@ -84,4 +84,83 @@ it("forgets a saved password only after explicit selection and save", async () =
   expect(api.saveProxyPassword).not.toHaveBeenCalled();
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
   expect(api.saveProxyPassword).toHaveBeenCalledExactlyOnceWith("office", null);
+});
+
+it("keeps the proxy editor in its section and protects the current draft while saving", async () => {
+  let finish!: () => void;
+  api.saveProxyPassword.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(<NetworkSettingsSection />);
+  const profiles = within(screen.getByRole("region", { name: "Proxy profiles" }));
+  fireEvent.click(profiles.getByRole("button", { name: "Edit" }));
+  const editor = profiles.getByRole("form", { name: "Edit proxy" });
+  expect(within(editor).getByRole("group", { name: "Connection" })).toBeTruthy();
+  expect(within(editor).getByRole("group", { name: "Authentication (optional)" })).toBeTruthy();
+  // Clicking the visible label operates the switch, rather than just its small thumb.
+  fireEvent.click(within(editor).getByText("Forget saved proxy password"));
+  expect(within(editor).getByRole("switch").getAttribute("aria-checked")).toBe("true");
+  fireEvent.click(profiles.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(api.saveProxyPassword).toHaveBeenCalled());
+  for (const name of ["Edit", "Delete", "Add proxy", "Cancel"]) {
+    expect(profiles.getByRole("button", { name }).matches(":disabled")).toBe(true);
+  }
+  expect(within(editor).getByLabelText("Name").matches(":disabled")).toBe(true);
+  await act(async () => finish());
+  expect(profiles.queryByRole("form")).toBeNull();
+  expect(profiles.getByRole("button", { name: "Edit" }).matches(":disabled")).toBe(false);
+});
+
+it("validates the destination, locks the running test and clears stale results on edits", async () => {
+  let finish!: () => void;
+  api.testProxy.mockReturnValueOnce(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(<NetworkSettingsSection />);
+  const form = screen.getByRole("form", { name: "Test connection" });
+  const test = within(form);
+  const address = test.getByLabelText("Destination address");
+  const port = test.getByLabelText("Port");
+  fireEvent.change(port, { target: { value: "65536" } });
+  expect(test.getByRole("button", { name: "Test connection" }).matches(":disabled")).toBe(true);
+  fireEvent.submit(form);
+  expect(api.testProxy).not.toHaveBeenCalled();
+  fireEvent.change(port, { target: { value: "443" } });
+  fireEvent.change(address, { target: { value: "   " } });
+  fireEvent.submit(form);
+  expect(api.testProxy).not.toHaveBeenCalled();
+  fireEvent.change(address, { target: { value: " example.com " } });
+  fireEvent.submit(form);
+  await waitFor(() => expect(api.testProxy).toHaveBeenCalledWith("system", "example.com", 443));
+  expect(address.matches(":disabled")).toBe(true);
+  expect(test.getByRole("button", { name: "Proxy" }).matches(":disabled")).toBe(true);
+  fireEvent.submit(form);
+  expect(api.testProxy).toHaveBeenCalledOnce();
+  await act(async () => finish());
+  expect(test.getByRole("status").textContent).toContain("Connection established");
+  fireEvent.change(address, { target: { value: "different.example.com" } });
+  expect(test.getByRole("status").textContent).toBe("");
+});
+
+it("saves plugin routing independently and retains choices across collapse", async () => {
+  usePlugins.setState({ items: [{ id: "assistant", name: "Team assistant" } as PluginInfo] });
+  render(<NetworkSettingsSection />);
+  const summary = screen.getByText("Individual plugin overrides");
+  const details = summary.closest("details")!;
+  expect(details.open).toBe(false);
+  fireEvent.click(summary);
+  expect(details.open).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Team assistant" }));
+  fireEvent.click(screen.getByRole("option", { name: "Office" }));
+  await waitFor(() =>
+    expect(useSettings.getState().settings.network.features["plugin:assistant"]).toBe("office"),
+  );
+  fireEvent.click(summary);
+  expect(details.open).toBe(false);
+  fireEvent.click(summary);
+  expect(screen.getByRole("button", { name: "Team assistant" }).textContent).toContain("Office");
 });

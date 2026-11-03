@@ -41,6 +41,7 @@ export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const api = {
+  mainWindowReady: () => invoke<void>("main_window_ready"),
   connectionRoute: (hostId: string) => invoke<ConnectionRoute>("connection_route_get", { hostId }),
   saveConnectionRoute: (hostId: string, route: ConnectionRoute) =>
     invoke<void>("connection_route_save", { hostId, route }),

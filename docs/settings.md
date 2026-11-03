@@ -4,8 +4,8 @@
 
 **Settings → Updates** contains the current version, checks, installation progress and
 collapsible release notes. All update actions use this section instead of opening a new
-page. Choose **Stable** or **Public beta (Nightly)**, and **GitHub** or a compatible custom
-HTTPS source. Default: Stable for stable builds, Public beta for new beta installations,
+page. Choose **Stable**, **Public beta (Beta)** or **Development (Nightly)**, and **GitHub** or a compatible custom
+HTTPS source. Default: Stable for stable builds, Public beta for new Beta installations, Nightly for new Nightly installations,
 GitHub source, automatic checks once a day, manual download/installation. Existing saved
 channel choices are preserved. Every-startup and weekly checks are also available.
 
@@ -155,6 +155,9 @@ selection and marketplace sources. `--safe-mode` and `--restricted-mode` force r
 mode for the current process, including an already-running single instance. Executable
 Node/WASM plugins stay stopped while pure theme packs remain available. After an abnormal
 exit following plugin execution, startup enters restricted mode and offers recovery.
+Installing an update records a planned restart after package verification, so automatic
+relaunch does not trigger crash recovery. Explicit restricted mode remains enabled;
+failed installations restore the running process's recovery marker.
 
 Terminal settings apply to open terminals without reconnecting. Reducing
 scrollback discards lines beyond the new capacity. Smooth scrolling follows the

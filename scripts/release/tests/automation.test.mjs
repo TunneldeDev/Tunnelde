@@ -8,7 +8,10 @@ import {
   maintainReleasePr,
   nextVersion,
   planDevelopment,
+  prepareBeta,
   prepareNightly,
+  prepareTaggedRelease,
+  resolveTag,
   prepareStable,
   publishRelease,
   readText,
@@ -328,14 +331,14 @@ test("hotfix protection permits main changes already incorporated into dev", asy
   assert.equal((await planDevelopment(f)).version, "0.26.2");
 });
 
-test("Nightly reruns reuse their immutable tag rather than creating another commit", async () => {
+test("Beta reruns reuse their immutable tag rather than creating another commit", async () => {
   const tag = "v0.26.2-beta.1";
   const f = fixture({
     refs: { [`tags/${tag}`]: generated },
     releases: [{ tag_name: tag, target_commitish: generated, prerelease: true, draft: true }],
   });
   const plan = await planDevelopment(f);
-  assert.equal(await prepareNightly({ ...f, plan }), tag);
+  assert.equal(await prepareBeta({ ...f, plan }), tag);
   assert.equal(
     f.calls.some((call) => call.commit),
     false,
@@ -742,20 +745,20 @@ test("published releases are never rebuilt and channel mismatches are rejected",
   });
   assert.equal(await ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes" }), "");
   await assert.rejects(
-    ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes", nightly: true }),
+    ensureRelease({ ...f, tag: "v0.26.2", sha: main, body: "Notes", prerelease: true }),
     /channel/,
   );
 });
 
-test("Nightly uses beta manifests, its own immutable tag and does not become latest stable", async () => {
+test("Beta uses versioned manifests, its own immutable tag and does not become latest stable", async () => {
   const f = fixture();
   const plan = await planDevelopment(f);
-  const tag = await prepareNightly({ ...f, plan });
+  const tag = await prepareBeta({ ...f, plan });
   assert.equal(tag, "v0.26.2-beta.1");
   const release = f.calls.find((call) => call.createRelease).createRelease;
   assert.equal(release.prerelease, true);
   assert.equal(release.make_latest, "false");
-  assert.equal(release.name, "Nightly");
+  assert.equal(release.name, tag);
   assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [dev]);
   assert.ok(f.contents.get(`${generated}:CITATION.cff`).includes("0.26.2-beta.1"));
 });
@@ -772,7 +775,7 @@ test("beta sequences advance numerically using tags even after releases are reti
       [oldHead]: `Release-source: ${oldHead}`,
     },
   });
-  assert.equal(await prepareNightly({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.11");
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.11");
   assert.equal(f.references["tags/v0.26.2-beta.10"], oldHead);
 });
 
@@ -780,7 +783,7 @@ test("each target stable version starts its own beta sequence at one", async () 
   for (const version of ["0.26.3", "0.27.0", "1.0.0"]) {
     const f = fixture({ refs: { "tags/v0.26.2-beta.99.2": oldHead } });
     const plan = { ...(await planDevelopment(f)), version };
-    assert.equal(await prepareNightly({ ...f, plan }), `v${version}-beta.1`);
+    assert.equal(await prepareBeta({ ...f, plan }), `v${version}-beta.1`);
   }
 });
 
@@ -790,9 +793,9 @@ test("legacy beta tags reserve their original sequence and remain recoverable", 
     refs: { [`tags/${tag}`]: oldHead },
     messages: { [oldHead]: `Release-source: ${oldHead}` },
   });
-  assert.equal(await prepareNightly({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.3");
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.3");
   const retry = fixture({ refs: { [`tags/${tag}`]: generated } });
-  assert.equal(await prepareNightly({ ...retry, plan: await planDevelopment(retry) }), tag);
+  assert.equal(await prepareBeta({ ...retry, plan: await planDevelopment(retry) }), tag);
   assert.equal(
     retry.calls.some((call) => call.commit),
     false,
@@ -802,7 +805,7 @@ test("legacy beta tags reserve their original sequence and remain recoverable", 
 test("an interrupted preparation resumes the reserved tag and a published source is skipped", async () => {
   const tag = "v0.26.2-beta.1";
   const f = fixture({ refs: { [`tags/${tag}`]: generated } });
-  assert.equal(await prepareNightly({ ...f, plan: await planDevelopment(f) }), tag);
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), tag);
   assert.equal(
     f.calls.some((call) => call.commit),
     false,
@@ -811,20 +814,20 @@ test("an interrupted preparation resumes the reserved tag and a published source
     refs: { [`tags/${tag}`]: generated },
     releases: [{ tag_name: tag, target_commitish: generated, prerelease: true, draft: false }],
   });
-  assert.equal(await prepareNightly({ ...published, plan: await planDevelopment(published) }), "");
+  assert.equal(await prepareBeta({ ...published, plan: await planDevelopment(published) }), "");
   assert.equal(
     published.calls.some((call) => call.createRelease || call.commit),
     false,
   );
 });
 
-test("retrying a Nightly rejects mismatched release sources", async () => {
+test("retrying a Beta rejects mismatched release sources", async () => {
   const tag = "v0.26.2-beta.1";
   const f = fixture({
     refs: { [`tags/${tag}`]: generated },
     releases: [{ tag_name: tag, target_commitish: oldHead, prerelease: true, draft: true }],
   });
-  await assert.rejects(prepareNightly({ ...f, plan: await planDevelopment(f) }), /source\/channel/);
+  await assert.rejects(prepareBeta({ ...f, plan: await planDevelopment(f) }), /source\/channel/);
 });
 
 test("main migration skips publication and stable preparation requires reviewed promotion metadata", async () => {
@@ -887,85 +890,177 @@ test("stable merge validation refuses squash, rebase, unreviewed content and bro
   }
 });
 
-test("Nightly publication happens before retiring the previous Nightly and preserves stable releases", async () => {
-  const tag = "v0.26.2-beta.12.1";
-  const f = fixture({
-    refs: { [`tags/${tag}`]: generated },
-    releases: [
-      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
-      { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.11.1", draft: false, prerelease: true },
-      { id: 3, name: "Tunnelde 0.26.1", tag_name: "v0.26.1", draft: false, prerelease: false },
-    ],
-  });
-  await publishRelease({ ...f, tag });
-  assert.deepEqual(
-    f.calls.map((call) => Object.keys(call)[0]),
-    ["publish", "deleteRelease"],
-  );
-  assert.equal(f.calls[0].publish.make_latest, "false");
-  assert.equal(f.calls[1].deleteRelease.release_id, 2);
-});
-
-test("an obsolete Nightly cannot replace the current build; stable publication selects latest", async () => {
-  const tag = "v0.26.2-beta.12.1";
-  const f = fixture({
-    refs: { [`tags/${tag}`]: generated, "heads/dev": baseline },
-    releases: [
-      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
-    ],
-  });
-  await assert.rejects(publishRelease({ ...f, tag }), /dev moved/);
-  assert.deepEqual(f.calls, []);
-  const stable = fixture({
-    refs: { "tags/v0.26.2": main },
-    releases: [
-      { id: 4, tag_name: "v0.26.2", target_commitish: main, draft: true, prerelease: false },
-    ],
-  });
-  await publishRelease({ ...stable, tag: "v0.26.2" });
-  assert.equal(stable.calls[0].publish.make_latest, "true");
-});
-
-test("recovery cannot replace a newer Nightly even when dev has not moved", async () => {
-  const tag = "v0.26.2-beta.12.1";
-  const f = fixture({
-    refs: { [`tags/${tag}`]: generated },
-    releases: [
-      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
-      { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.13.1", draft: false, prerelease: true },
-    ],
-  });
-  await assert.rejects(publishRelease({ ...f, tag }), /newer Nightly/);
-  assert.deepEqual(f.calls, []);
-});
-
-test("Nightly publication compares target versions before reset beta sequences", async () => {
-  const tag = "v0.27.0-beta.1";
-  const f = fixture({
-    refs: { [`tags/${tag}`]: generated },
-    releases: [
-      { id: 1, tag_name: tag, target_commitish: generated, draft: true, prerelease: true },
-      { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.99.1", draft: false, prerelease: true },
-    ],
-  });
-  await publishRelease({ ...f, tag });
-  assert.equal(f.calls[0].publish.release_id, 1);
-  assert.equal(f.calls[1].deleteRelease.release_id, 2);
-  const stale = fixture({
-    refs: { "tags/v0.26.2-beta.99.1": oldHead },
+function publicationFixture(tag, options = {}) {
+  return fixture({
+    refs: { [`tags/${tag}`]: generated, ...options.refs },
     releases: [
       {
         id: 1,
-        tag_name: "v0.26.2-beta.99.1",
-        target_commitish: oldHead,
+        tag_name: tag,
+        target_commitish: generated,
         draft: true,
-        prerelease: true,
+        prerelease: tag.includes("-"),
       },
-      { id: 2, name: "Nightly", tag_name: tag, draft: false, prerelease: true },
+      ...(options.releases || []),
+    ],
+    gitCommits: { [generated]: { parents: [{ sha: dev }], message: `Release-source: ${dev}` } },
+  });
+}
+
+test("tagged Beta publication retains historical releases and uses its full version title", async () => {
+  const tag = "v0.26.2-beta.12.1";
+  const f = publicationFixture(tag, {
+    releases: [
+      { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.11.1", draft: false, prerelease: true },
+      { id: 3, name: "v0.26.1", tag_name: "v0.26.1", draft: false, prerelease: false },
     ],
   });
-  await assert.rejects(publishRelease({ ...stale, tag: "v0.26.2-beta.99.1" }), /newer Nightly/);
-  assert.deepEqual(stale.calls, []);
+  await publishRelease({ ...f, tag });
+  assert.equal(f.calls.length, 1);
+  assert.equal(f.calls[0].publish.make_latest, "false");
+  assert.equal(f.calls[0].publish.name, tag);
+  assert.equal(f.calls[0].publish.draft, false);
+});
+
+test("a tagged snapshot can publish after dev advances, but divergent history is rejected", async () => {
+  const tag = "v0.26.2-beta.1";
+  const f = publicationFixture(tag, { refs: { "heads/dev": oldHead } });
+  await publishRelease({ ...f, tag });
+  assert.equal(f.calls.at(-1).publish.draft, false);
+  const divergent = publicationFixture(tag, { refs: { "heads/dev": oldHead } });
+  divergent.github.rest.repos.compareCommitsWithBasehead = async () => ({
+    data: { status: "diverged" },
+  });
+  await assert.rejects(publishRelease({ ...divergent, tag }), /no longer in dev history/);
+  assert.equal(
+    divergent.calls.some((call) => call.publish),
+    false,
+  );
+});
+
+test("older Beta recovery preserves newer versions and cannot change latest stable", async () => {
+  const tag = "v0.26.2-beta.12.1";
+  const f = publicationFixture(tag, {
+    releases: [
+      {
+        id: 2,
+        name: "v0.26.2-beta.13.1",
+        tag_name: "v0.26.2-beta.13.1",
+        draft: false,
+        prerelease: true,
+      },
+    ],
+  });
+  await publishRelease({ ...f, tag });
+  assert.equal(f.calls[0].publish.make_latest, "false");
+  assert.equal(
+    f.calls.some((call) => call.deleteRelease),
+    false,
+  );
+});
+
+test("recovering an older stable release cannot move latest backwards", async () => {
+  const tag = "v0.26.2";
+  const f = publicationFixture(tag, {
+    refs: { "heads/main": generated },
+    releases: [{ id: 2, tag_name: "v0.27.0", draft: false, prerelease: false }],
+  });
+  await publishRelease({ ...f, tag });
+  assert.equal(f.calls[0].publish.make_latest, "false");
+  const latest = publicationFixture(tag, { refs: { "heads/main": generated } });
+  await publishRelease({ ...latest, tag });
+  assert.equal(latest.calls[0].publish.make_latest, "true");
+  const advanced = publicationFixture(tag);
+  await publishRelease({ ...advanced, tag });
+  assert.equal(advanced.calls.at(-1).publish.make_latest, "false");
+});
+
+test("Nightly uses a source-derived alpha tag, numeric distance and its own update channel", async () => {
+  const f = fixture();
+  const plan = await planDevelopment(f);
+  const tag = await prepareNightly({ ...f, plan });
+  assert.equal(tag, `v0.26.2-alpha.1.d.1.g${dev.slice(0, 12)}`);
+  const release = f.calls.find((call) => call.createRelease).createRelease;
+  assert.equal(release.name, `${tag} (Nightly)`);
+  assert.equal(release.prerelease, true);
+  assert.equal(release.make_latest, "false");
+  for (const path of VERSION_PATHS)
+    assert.ok(f.contents.get(`${generated}:${path}`).includes(tag.slice(1)));
+  assert.equal(f.references["tags/v0.26.2-beta.1"], undefined);
+  assert.equal(await prepareNightly({ ...f, plan: {} }), "");
+});
+
+test("an unchanged Nightly source resumes the same draft or skips a published build", async () => {
+  const tag = `v0.26.2-alpha.1.d.1.g${dev.slice(0, 12)}`;
+  for (const draft of [true, false]) {
+    const f = fixture({
+      refs: { [`tags/${tag}`]: generated },
+      releases: [{ tag_name: tag, target_commitish: generated, prerelease: true, draft }],
+    });
+    assert.equal(await prepareNightly({ ...f, plan: await planDevelopment(f) }), draft ? tag : "");
+    assert.equal(
+      f.calls.some((call) => call.commit || call.createRelease),
+      false,
+    );
+  }
+});
+
+test("Nightly after Beta extends that milestone and skips a Beta's exact source", async () => {
+  const beta = "v0.26.2-beta.3";
+  const f = fixture({
+    refs: { [`tags/${beta}`]: oldHead },
+    messages: { [oldHead]: `Release-source: ${baseline}` },
+  });
+  const tag = await prepareNightly({ ...f, plan: await planDevelopment(f) });
+  assert.equal(tag, `v0.26.2-beta.3.d.1.g${dev.slice(0, 12)}`);
+  const unchanged = fixture({ refs: { [`tags/${beta}`]: oldHead } });
+  assert.equal(await prepareNightly({ ...unchanged, plan: await planDevelopment(unchanged) }), "");
+  assert.equal(
+    unchanged.calls.some((call) => call.commit || call.createRelease),
+    false,
+  );
+});
+
+test("Nightly publication is a versioned public prerelease and leaves Beta history intact", async () => {
+  const tag = `v0.26.2-alpha.1.d.10.g${dev.slice(0, 12)}`;
+  const f = publicationFixture(tag, {
+    releases: [{ id: 2, tag_name: "v0.26.2-beta.1", prerelease: true, draft: false }],
+  });
+  await publishRelease({ ...f, tag });
+  assert.equal(f.calls[0].publish.name, `${tag} (Nightly)`);
+  assert.equal(f.calls[0].publish.prerelease, true);
+  assert.equal(f.calls[0].publish.make_latest, "false");
+  assert.equal(
+    f.calls.some((call) => call.deleteRelease),
+    false,
+  );
+});
+
+test("direct tag publication validates all manifests, notes and branch ancestry", async () => {
+  const tag = "v0.26.2-beta.1";
+  const f = fixture({
+    refs: { [`tags/${tag}`]: generated },
+    gitCommits: {
+      [generated]: { parents: [{ sha: dev }], message: `Release-source: ${dev}` },
+    },
+  });
+  for (const [path, text] of Object.entries(versionContents(f.files, tag.slice(1))))
+    f.contents.set(`${generated}:${path}`, text);
+  f.contents.set(
+    `${generated}:CHANGELOG.md`,
+    `# Changelog\n\n## [Unreleased]\n\n## [${tag.slice(1)}]\n\n- Notes.\n`,
+  );
+  assert.equal(await prepareTaggedRelease({ ...f, tag }), tag);
+  assert.equal(f.calls.find((call) => call.createRelease).createRelease.name, tag);
+  f.contents.set(`${generated}:CITATION.cff`, "version: 0.0.0\n");
+  await assert.rejects(prepareTaggedRelease({ ...f, tag }), /version manifests/);
+});
+
+test("annotated version tags are resolved to their immutable commit", async () => {
+  const f = fixture();
+  f.github.rest.git.getRef = async () => ({ data: { object: { type: "tag", sha: oldHead } } });
+  f.github.rest.git.getTag = async () => ({ data: { object: { type: "commit", sha: dev } } });
+  assert.equal(await resolveTag(f.github, context.repo, "v0.26.2-beta.1"), dev);
 });
 
 test("required checks stay bound to Actions and main protection has no bypass", () => {

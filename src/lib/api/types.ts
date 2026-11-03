@@ -43,7 +43,7 @@ export interface Settings {
   rightPanelWidth: number;
   userCss: string;
   autoCheckUpdates: boolean;
-  updateChannel: "stable" | "beta";
+  updateChannel: "stable" | "beta" | "nightly";
   updateSource: "github" | "custom";
   updateSourceUrl: string;
   updateCheckInterval: "startup" | "daily" | "weekly";
