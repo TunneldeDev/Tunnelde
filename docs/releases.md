@@ -123,6 +123,17 @@ to the newest dev source, avoiding a queue of obsolete installer builds.
 Native helpers and compiler timings remain optional Actions artifacts, never public desktop
 release downloads. The plugin marketplace repository has its own independent release process.
 
+Rust cache restoration is optional: each step has a three-minute ceiling and cache downloads
+use a two-minute segment timeout. If a restore fails or times out, disposable hosted runners
+discard the affected target directory and Cargo registry/Git cache before compiling from source.
+Source files, other Rust workspaces and installed toolchains are retained. Recovery of older
+release tags loads this cleanup tool from the workflow source, while building the immutable tag.
+Manual **Release** recovery also offers `use_rust_cache: false` to compile from source during
+a cache service outage without changing the source tag or cache namespace.
+Contribution CI restores shared caches but only main/dev runs save them, avoiding duplicate
+PR cache archives. Keep private LAN proxy addresses in local development settings; hosted
+runners need their own reachable network route.
+
 ## In-app channels, sources and OTA
 
 Updates live inside **Settings → Updates**. The status-bar notification, tray action and
