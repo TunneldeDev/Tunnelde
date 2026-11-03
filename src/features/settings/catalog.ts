@@ -18,14 +18,23 @@ export interface SettingDefinition {
   key: SettingKey;
   section: SettingsSection;
   label: MessageKey;
-  kind: "toggle" | "number" | "select" | "accent" | "colors" | "css" | "shortcuts" | "network";
+  kind:
+    | "toggle"
+    | "number"
+    | "select"
+    | "accent"
+    | "colors"
+    | "css"
+    | "shortcuts"
+    | "network"
+    | "updateUrl";
   hint?: MessageKey;
   options?: SettingOption[];
   min?: number;
   max?: number;
   step?: number;
   unit?: string;
-  dependsOn?: "preloadDirs";
+  dependsOn?: "preloadDirs" | "autoCheckUpdates";
   hideOnMac?: boolean;
   macOnly?: boolean;
 }
@@ -68,6 +77,15 @@ export interface SettingsGroup {
 
 /** Navigation and inline headings share the same groups; no extra settings pages. */
 export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsGroup[]>> = {
+  updates: [
+    {
+      id: "update-checks",
+      label: "updates.checkPreferences",
+      keys: ["autoCheckUpdates", "updateCheckInterval"],
+    },
+    { id: "update-channel", label: "updates.channel", keys: ["updateChannel"] },
+    { id: "update-source", label: "updates.source", keys: ["updateSource", "updateSourceUrl"] },
+  ],
   appearance: [
     { id: "theme", label: "settings.groups.theme", keys: ["theme", "accent", "colors"] },
     {
@@ -352,6 +370,39 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     "settings.monitorIntervalMsHint",
   ),
   { ...toggle("autoCheckUpdates", "updates"), label: "settings.autoCheck" },
+  {
+    ...select("updateCheckInterval", "updates", [
+      choice("startup", "updates.onStartup"),
+      choice("daily", "updates.daily"),
+      choice("weekly", "updates.weekly"),
+    ]),
+    label: "updates.checkInterval",
+    dependsOn: "autoCheckUpdates",
+    hint: "updates.checkIntervalHint",
+  },
+  {
+    ...select("updateChannel", "updates", [
+      choice("stable", "updates.stable"),
+      choice("beta", "updates.beta"),
+    ]),
+    label: "updates.channel",
+    hint: "updates.channelHint",
+  },
+  {
+    ...select("updateSource", "updates", [
+      choice("github", "updates.github"),
+      choice("custom", "updates.custom"),
+    ]),
+    label: "updates.source",
+    hint: "updates.sourceHint",
+  },
+  {
+    key: "updateSourceUrl",
+    section: "updates",
+    label: "updates.sourceUrl",
+    kind: "updateUrl",
+    hint: "updates.sourceUrlHint",
+  },
   {
     key: "userCss",
     section: "advanced",

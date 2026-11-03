@@ -321,10 +321,12 @@ jobs:
         env:
           TAG: ${{ needs.prepare.outputs.tag }}
         run: |
+          node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md
           node .release-tools/scripts/release/updater-json.mjs \
             --tag "${TAG}" \
             --sig-dir sigs \
             --repo "${GITHUB_REPOSITORY}" \
+            --notes-file release-notes.md \
             --out latest.json
 
       - name: Upload manifest

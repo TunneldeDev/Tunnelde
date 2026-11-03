@@ -1,6 +1,88 @@
 .settings {
   flex-direction: column;
 }
+
+.settings-update {
+  padding: 16px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg);
+}
+.settings-update__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.settings-update__version {
+  margin: 4px 0 0;
+  font-family: var(--td-mono);
+  font-size: 18px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.settings-update__channel {
+  padding: 3px 8px;
+  border: 1px solid var(--td-border);
+  border-radius: 4px;
+  color: var(--td-muted);
+  font-size: 11px;
+}
+.settings-update > .settings-row__hint {
+  margin-top: 10px;
+}
+.settings-update .td-progress {
+  margin-top: 12px;
+}
+.settings-update .is-indeterminate .td-progress__fill {
+  animation: update-progress 1.5s ease-in-out infinite alternate;
+}
+@keyframes update-progress {
+  to {
+    transform: translateX(180%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-update .is-indeterminate .td-progress__fill {
+    animation: none;
+  }
+}
+.settings-update__notes {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--td-border);
+}
+.settings-update__notes > summary {
+  cursor: pointer;
+  font-weight: 500;
+  color: var(--td-text);
+}
+.settings-update__notes .plugin-markdown {
+  max-height: 360px;
+  overflow: auto;
+  padding-top: 12px;
+}
+.settings-update-source {
+  flex-wrap: wrap;
+}
+.settings-update-source__editor {
+  width: 100%;
+  min-width: 0;
+}
+.settings-update-source__input {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.settings-update-source__input > .td-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  font-family: var(--td-mono);
+  font-size: 11px;
+}
 .settings-toolbar {
   display: flex;
   align-items: center;

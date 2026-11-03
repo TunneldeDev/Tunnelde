@@ -43,6 +43,10 @@ export interface Settings {
   rightPanelWidth: number;
   userCss: string;
   autoCheckUpdates: boolean;
+  updateChannel: "stable" | "beta";
+  updateSource: "github" | "custom";
+  updateSourceUrl: string;
+  updateCheckInterval: "startup" | "daily" | "weekly";
   skippedVersion: string | null;
   lastUpdateCheck: number | null;
   closeToTray: boolean;
@@ -211,6 +215,9 @@ export type UpdatePhase =
 export interface UpdateState {
   phase: UpdatePhase;
   currentVersion: string;
+  channel: Settings["updateChannel"];
+  source: Settings["updateSource"];
+  sourceUrl: string;
   version: string | null;
   notes: string | null;
   publishedAt: number | null;

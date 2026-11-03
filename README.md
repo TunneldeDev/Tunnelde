@@ -25,6 +25,12 @@ settings or theme packs. Executable Node plugins require a separately selected r
 Tunnelde asks before discovering or using your system Node. Windows and macOS packages
 are currently unsigned.
 
+Update controls live in **Settings → Updates**: choose **Stable** or **Public beta
+(Nightly)**, and the official **GitHub** source or a compatible **custom HTTPS source**.
+Automatic checks default to once daily; downloading and installing remain manual.
+Windows and AppImage use signed full-package updates. Switching to Stable never
+automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.md#in-app-channels-sources-and-ota).
+
 ## Workbench
 
 - Organize, search, tag, favorite and reorder hosts. Connect with passwords, key files

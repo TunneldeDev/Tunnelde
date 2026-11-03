@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
-import type { UpdateState } from "@/lib/api/types";
+import type { Settings, UpdateState } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 
@@ -14,6 +14,17 @@ interface UpdatesStore {
   install: () => Promise<void>;
   skip: () => Promise<void>;
   apply: (state: UpdateState) => void;
+}
+
+export function matchingUpdateState(
+  state: UpdateState | null,
+  settings: Settings,
+): UpdateState | null {
+  return state?.channel === settings.updateChannel &&
+    state.source === settings.updateSource &&
+    state.sourceUrl === settings.updateSourceUrl
+    ? state
+    : null;
 }
 
 export const useUpdates = create<UpdatesStore>((set, get) => ({
@@ -46,7 +57,7 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
   },
 
   install: async () => {
-    if (!isTauri()) {
+    if (!isTauri() || get().busy) {
       return;
     }
     set({ busy: true });
@@ -55,17 +66,19 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
     } catch (error) {
       set({ busy: false });
       toast(translateError(error), "error");
+    } finally {
+      set({ busy: false });
     }
   },
 
   skip: async () => {
-    const version = get().state?.version;
+    const version = matchingUpdateState(get().state, useSettings.getState().settings)?.version;
     if (!version) {
       return;
     }
-    await useSettings.getState().update({ skippedVersion: version });
-    const state = get().state;
-    if (state) {
+    if (!(await useSettings.getState().update({ skippedVersion: version }))) return;
+    const state = matchingUpdateState(get().state, useSettings.getState().settings);
+    if (state?.version === version) {
       set({ state: { ...state, skipped: true } });
     }
   },
