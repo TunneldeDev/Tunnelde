@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   policy:
-    name: Check title and release policy
+    name: Check title, commits and release policy
     runs-on: ubuntu-latest
     steps:
       # Never load or execute code from the PR in this privileged workflow.
