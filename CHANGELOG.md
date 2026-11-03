@@ -6,11 +6,34 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
-### Build
+## [0.26.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.26.0...v0.26.1) - 2026-11-03
+
+### 更新概览 | Highlights
+
+**Build**
 
 - Protect main with required PR/CI checks and maintain a cumulative release PR with synchronized versions and generated notes. Build installers only after merging the release PR, and retain validated releases as drafts for manual publication.
 - Build both macOS architectures on Intel runners, with arm64 cross compilation and executable/signature validation, avoiding Apple Silicon runner capacity failures. Allow interrupted draft releases to resume using updated build infrastructure without changing their tagged source.
 - Stop generating unused C static/shared libraries for the desktop app while retaining full LTO and size optimization. Share release dependency caches with reproducible build measurements and keep compiler timing reports as Actions artifacts.
+
+<details open>
+<summary>详细变更 | Details (7)</summary>
+
+### 构建 | Build
+
+- cross-compile macOS arm64 releases on Intel runners ([00dc256](https://github.com/TunneldeDev/Tunnelde/commit/00dc25623b4b3e9f4e1242f5cbf54d6fd425f31a)) @quyansiyuanwang
+- remove unused library outputs and measure release builds ([6cf7182](https://github.com/TunneldeDev/Tunnelde/commit/6cf7182ef576ac32fa46fbb11328358c51ce7fd9)) @quyansiyuanwang
+- protect main and prepare reviewed draft releases ([#11](https://github.com/TunneldeDev/Tunnelde/pull/11)) @quyansiyuanwang
+- **release:** summarize changelogs and add citation metadata ([#14](https://github.com/TunneldeDev/Tunnelde/pull/14)) @quyansiyuanwang
+- **deps:** bump i18next from 26.5.11 to 26.5.12 ([#9](https://github.com/TunneldeDev/Tunnelde/pull/9))
+- **deps:** bump lucide-react from 1.64.0 to 1.65.0 ([#10](https://github.com/TunneldeDev/Tunnelde/pull/10)) @quyansiyuanwang
+- **deps:** bump googleapis/release-please-action from 8b8fd2cc23b2e18957157a9d923d75aa0c6f6ad5 to 5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 ([#12](https://github.com/TunneldeDev/Tunnelde/pull/12))
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
 
 ## [0.26.0] - 2026-11-02
 
