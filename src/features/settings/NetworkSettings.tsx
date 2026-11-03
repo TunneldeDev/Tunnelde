@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { ChevronRight, Plus } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input, Switch } from "@/components/ui/form/Field";
@@ -20,10 +21,24 @@ export function NetworkSettingsSection() {
   const [clearPassword, setClearPassword] = useState(false);
   const [testProxy, setTestProxy] = useState("");
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const busy = saving || testing;
   const [testHost, setTestHost] = useState("github.com");
   const [testPort, setTestPort] = useState("443");
   const [result, setResult] = useState("");
+  const editingExisting = editing !== null && settings.profiles.some((p) => p.id === editing.id);
+  const validTest =
+    testHost.trim().length > 0 &&
+    /^\d+$/.test(testPort) &&
+    Number(testPort) >= 1 &&
+    Number(testPort) <= 65535;
+  const beginEditing = (profile: ProxyProfile) => {
+    setEditing(profile);
+    setPassword("");
+    setClearPassword(false);
+    setError("");
+  };
   const choices = [
     { value: "", label: t("network.inherit") },
     { value: "system", label: t("network.system") },
@@ -32,7 +47,7 @@ export function NetworkSettingsSection() {
   ];
   const save = async () => {
     if (!editing || busy) return;
-    setBusy(true);
+    setSaving(true);
     setError("");
     try {
       const profiles = settings.profiles.some((p) => p.id === editing.id)
@@ -48,48 +63,77 @@ export function NetworkSettingsSection() {
     } catch (cause) {
       setError(translateError(cause));
     } finally {
-      setBusy(false);
+      setSaving(false);
     }
   };
   return (
     <div className="network-settings">
       <p className="settings-section__intro">{t("network.intro")}</p>
-      <p className="settings-row__hint">{t("network.systemHint")}</p>
-      <Field label={t("network.default")}>
-        <Select
-          label={t("network.default")}
-          value={settings.defaultProxy || "system"}
-          options={choices.filter((c) => c.value !== "")}
-          onChange={(value) => void update({ network: { ...settings, defaultProxy: value } })}
-        />
-      </Field>
-      <section className="settings-preference-group">
-        <h3 className="settings-preference-group__title">{t("network.profiles")}</h3>
-        <div className="settings-preference-group__body">
+      <section className="network-settings__section" aria-labelledby={`${formId}-default-title`}>
+        <div className="network-settings__route">
+          <div className="network-settings__description">
+            <h3 id={`${formId}-default-title`}>{t("network.default")}</h3>
+            <p className="settings-row__hint" id={`${formId}-default-hint`}>
+              {t("network.systemHint")}
+            </p>
+          </div>
+          <Select
+            label={t("network.default")}
+            descriptionId={`${formId}-default-hint`}
+            disabled={busy}
+            value={settings.defaultProxy || "system"}
+            options={choices.filter((c) => c.value !== "")}
+            onChange={(value) => void update({ network: { ...settings, defaultProxy: value } })}
+          />
+        </div>
+      </section>
+      <section className="network-settings__section" aria-labelledby={`${formId}-profiles-title`}>
+        <div className="network-settings__head">
+          <h3 id={`${formId}-profiles-title`}>{t("network.profiles")}</h3>
+          <Button
+            size="sm"
+            variant="secondary"
+            leading={<Plus size={14} />}
+            disabled={editing !== null || busy}
+            onClick={() =>
+              beginEditing({
+                id: crypto.randomUUID(),
+                name: "",
+                protocol: "http",
+                host: "127.0.0.1",
+                port: 7890,
+                username: "",
+              })
+            }
+          >
+            {t("network.add")}
+          </Button>
+        </div>
+        <div className="network-settings__profiles">
+          {settings.profiles.length === 0 ? (
+            <p className="network-settings__empty">{t("network.noProfiles")}</p>
+          ) : null}
           {settings.profiles.map((profile) => (
-            <div className="settings-row" key={profile.id}>
-              <div className="settings-row__text">
+            <div className="network-settings__profile" key={profile.id}>
+              <div className="network-settings__description">
                 <strong>{profile.name}</strong>
                 <code>
                   {profile.protocol}://{profile.host}:{profile.port}
                 </code>
               </div>
-              <div className="field-row">
+              <div className="network-settings__actions">
                 <Button
                   size="sm"
                   variant="ghost"
-                  onClick={() => {
-                    setEditing(profile);
-                    setPassword("");
-                    setClearPassword(false);
-                    setError("");
-                  }}
+                  disabled={editing !== null || busy}
+                  onClick={() => beginEditing(profile)}
                 >
                   {t("common.edit")}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost-danger"
+                  disabled={editing !== null || busy}
                   onClick={() => {
                     const features = Object.fromEntries(
                       Object.entries(settings.features).map(([k, v]) => [
@@ -113,103 +157,114 @@ export function NetworkSettingsSection() {
               </div>
             </div>
           ))}
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              setEditing({
-                id: crypto.randomUUID(),
-                name: "",
-                protocol: "http",
-                host: "127.0.0.1",
-                port: 7890,
-                username: "",
-              });
-              setPassword("");
-              setClearPassword(false);
-            }}
-          >
-            {t("network.add")}
-          </Button>
         </div>
-      </section>
-      {editing ? (
-        <section className="settings-preference-group">
-          <h3 className="settings-preference-group__title">{t("network.edit")}</h3>
+        {editing ? (
           <form
-            className="form-grid"
+            className="network-settings__editor"
+            aria-labelledby={`${formId}-edit-title`}
+            aria-busy={busy}
             onSubmit={(event) => {
               event.preventDefault();
               void save();
             }}
           >
-            <Field label={t("network.name")} htmlFor={`${formId}-name`}>
-              <Input
-                id={`${formId}-name`}
-                autoFocus
-                value={editing.name}
-                onChange={(e) => setEditing({ ...editing, name: e.target.value })}
-              />
-            </Field>
-            <Field label={t("network.protocol")}>
-              <Select
-                label={t("network.protocol")}
-                value={editing.protocol}
-                options={[
-                  { value: "http", label: "HTTP CONNECT" },
-                  { value: "socks5", label: "SOCKS5" },
-                ]}
-                onChange={(value) =>
-                  setEditing({ ...editing, protocol: value as ProxyProfile["protocol"] })
-                }
-              />
-            </Field>
-            <Field htmlFor={`${formId}-host`} label={t("network.address")}>
-              <Input
-                id={`${formId}-host`}
-                spellCheck={false}
-                value={editing.host}
-                onChange={(e) => setEditing({ ...editing, host: e.target.value })}
-              />
-            </Field>
-            <Field htmlFor={`${formId}-port`} label={t("network.port")}>
-              <Input
-                id={`${formId}-port`}
-                type="number"
-                min={1}
-                max={65535}
-                value={editing.port}
-                onChange={(e) => setEditing({ ...editing, port: Number(e.target.value) })}
-              />
-            </Field>
-            <Field htmlFor={`${formId}-username`} label={t("network.username")}>
-              <Input
-                id={`${formId}-username`}
-                autoComplete="off"
-                value={editing.username}
-                onChange={(e) => setEditing({ ...editing, username: e.target.value })}
-              />
-            </Field>
-            <Field
-              htmlFor={`${formId}-password`}
-              label={t("network.password")}
-              hint={t("network.passwordHint")}
-            >
-              <Input
-                id={`${formId}-password`}
-                type="password"
-                autoComplete="new-password"
-                disabled={clearPassword}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            <Switch
-              label={t("network.clearPassword")}
-              checked={clearPassword}
-              onChange={setClearPassword}
-            />
-            <div className="field-row">
+            <h4 id={`${formId}-edit-title`}>
+              {t(editingExisting ? "network.edit" : "network.add")}
+            </h4>
+            <fieldset disabled={busy} className="network-settings__fieldset">
+              <legend>{t("network.connection")}</legend>
+              <div className="network-settings__grid">
+                <Field label={t("network.name")} htmlFor={`${formId}-name`}>
+                  <Input
+                    id={`${formId}-name`}
+                    autoFocus
+                    value={editing.name}
+                    onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+                  />
+                </Field>
+                <Field label={t("network.protocol")} htmlFor={`${formId}-protocol`}>
+                  <Select
+                    id={`${formId}-protocol`}
+                    disabled={busy}
+                    label={t("network.protocol")}
+                    value={editing.protocol}
+                    options={[
+                      { value: "http", label: "HTTP CONNECT" },
+                      { value: "socks5", label: "SOCKS5" },
+                    ]}
+                    onChange={(value) =>
+                      setEditing({ ...editing, protocol: value as ProxyProfile["protocol"] })
+                    }
+                  />
+                </Field>
+              </div>
+              <div className="network-settings__endpoint">
+                <Field htmlFor={`${formId}-host`} label={t("network.address")}>
+                  <Input
+                    id={`${formId}-host`}
+                    spellCheck={false}
+                    autoComplete="off"
+                    value={editing.host}
+                    onChange={(e) => setEditing({ ...editing, host: e.target.value })}
+                  />
+                </Field>
+                <Field htmlFor={`${formId}-port`} label={t("network.port")}>
+                  <Input
+                    id={`${formId}-port`}
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    max={65535}
+                    value={editing.port}
+                    onChange={(e) => setEditing({ ...editing, port: Number(e.target.value) })}
+                  />
+                </Field>
+              </div>
+            </fieldset>
+            <fieldset disabled={busy} className="network-settings__fieldset">
+              <legend>{t("network.authentication")}</legend>
+              <div className="network-settings__grid">
+                <Field htmlFor={`${formId}-username`} label={t("network.username")}>
+                  <Input
+                    id={`${formId}-username`}
+                    autoComplete="off"
+                    value={editing.username}
+                    onChange={(e) => setEditing({ ...editing, username: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  htmlFor={`${formId}-password`}
+                  label={t("network.password")}
+                  hint={editingExisting ? t("network.passwordHint") : undefined}
+                >
+                  <Input
+                    id={`${formId}-password`}
+                    type="password"
+                    autoComplete="new-password"
+                    disabled={clearPassword}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                </Field>
+              </div>
+              {editingExisting ? (
+                <label className="network-settings__toggle">
+                  <span>{t("network.clearPassword")}</span>
+                  <Switch
+                    label={t("network.clearPassword")}
+                    checked={clearPassword}
+                    onChange={setClearPassword}
+                    disabled={busy}
+                  />
+                </label>
+              ) : null}
+            </fieldset>
+            {error ? (
+              <p role="alert" className="td-field__error">
+                {error}
+              </p>
+            ) : null}
+            <div className="network-settings__actions network-settings__editor-actions">
               <Button
                 variant="primary"
                 type="submit"
@@ -224,20 +279,33 @@ export function NetworkSettingsSection() {
               >
                 {t("common.save")}
               </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => setEditing(null)}>
+              <Button
+                variant="secondary"
+                disabled={busy}
+                onClick={() => {
+                  setEditing(null);
+                  setPassword("");
+                  setError("");
+                }}
+              >
                 {t("common.cancel")}
               </Button>
             </div>
           </form>
-        </section>
-      ) : null}
-      <section className="settings-preference-group">
-        <h3 className="settings-preference-group__title">{t("network.features")}</h3>
-        <div className="settings-preference-group__body">
+        ) : null}
+      </section>
+      <section className="network-settings__section" aria-labelledby={`${formId}-features-title`}>
+        <div className="network-settings__head">
+          <h3 id={`${formId}-features-title`}>{t("network.features")}</h3>
+        </div>
+        <div className="network-settings__routes">
           {(["updates", "marketplace", "ssh", "processes"] as const).map((feature) => (
-            <Field key={feature} label={t(`network.${feature}`)}>
+            <div key={feature} className="network-settings__route">
+              <label htmlFor={`${formId}-${feature}`}>{t(`network.${feature}`)}</label>
               <Select
+                id={`${formId}-${feature}`}
                 label={t(`network.${feature}`)}
+                disabled={busy}
                 value={settings.features[feature] ?? ""}
                 options={choices}
                 onChange={(value) =>
@@ -246,14 +314,26 @@ export function NetworkSettingsSection() {
                   })
                 }
               />
-            </Field>
+            </div>
           ))}
-          <details>
-            <summary>{t("network.plugins")}</summary>
+        </div>
+        <details className="network-settings__plugins">
+          <summary>
+            <ChevronRight size={14} aria-hidden="true" />
+            {t("network.plugins")}
+            <span className="network-settings__count">{plugins.length}</span>
+          </summary>
+          <div className="network-settings__routes">
+            {plugins.length === 0 ? (
+              <p className="network-settings__empty">{t("network.noPlugins")}</p>
+            ) : null}
             {plugins.map((plugin) => (
-              <Field key={plugin.id} label={plugin.name}>
+              <div key={plugin.id} className="network-settings__route">
+                <label htmlFor={`${formId}-plugin-${plugin.id}`}>{plugin.name}</label>
                 <Select
+                  id={`${formId}-plugin-${plugin.id}`}
                   label={plugin.name}
+                  disabled={busy}
                   value={settings.features[`plugin:${plugin.id}`] ?? ""}
                   options={choices}
                   onChange={(value) =>
@@ -265,64 +345,92 @@ export function NetworkSettingsSection() {
                     })
                   }
                 />
-              </Field>
+              </div>
             ))}
-          </details>
-          <p className="settings-row__hint">{t("network.processHint")}</p>
-        </div>
+          </div>
+        </details>
+        <p className="settings-row__hint network-settings__note">{t("network.processHint")}</p>
       </section>
-      <section className="settings-preference-group">
-        <h3 className="settings-preference-group__title">{t("network.test")}</h3>
-        <Field label={t("network.proxy")}>
-          <Select
-            label={t("network.proxy")}
-            value={testProxy}
-            options={choices}
-            onChange={setTestProxy}
-          />
-        </Field>
-        <div className="field-row">
-          <Input
-            aria-label={t("network.address")}
-            value={testHost}
-            onChange={(e) => setTestHost(e.target.value)}
-          />
-          <Input
-            aria-label={t("network.port")}
-            type="number"
-            value={testPort}
-            onChange={(e) => setTestPort(e.target.value)}
-          />
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setResult("");
-              try {
-                await api.testProxy(
-                  testProxy || settings.defaultProxy || "system",
-                  testHost,
-                  Number(testPort),
-                );
-                setResult(t("network.testSuccess"));
-              } catch (cause) {
-                setResult(translateError(cause));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {t("network.test")}
-          </Button>
+      <section className="network-settings__section" aria-labelledby={`${formId}-test-title`}>
+        <div className="network-settings__head">
+          <h3 id={`${formId}-test-title`}>{t("network.test")}</h3>
         </div>
-        <p role="status">{result}</p>
+        <form
+          className="network-settings__test"
+          aria-labelledby={`${formId}-test-title`}
+          aria-busy={testing}
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (busy || !validTest) return;
+            setTesting(true);
+            setResult("");
+            try {
+              await api.testProxy(
+                testProxy || settings.defaultProxy || "system",
+                testHost.trim(),
+                Number(testPort),
+              );
+              setResult(t("network.testSuccess"));
+            } catch (cause) {
+              setResult(translateError(cause));
+            } finally {
+              setTesting(false);
+            }
+          }}
+        >
+          <Field label={t("network.proxy")} htmlFor={`${formId}-test-proxy`}>
+            <Select
+              id={`${formId}-test-proxy`}
+              label={t("network.proxy")}
+              value={testProxy}
+              options={choices}
+              disabled={busy}
+              onChange={(value) => {
+                setTestProxy(value);
+                setResult("");
+              }}
+            />
+          </Field>
+          <div className="network-settings__endpoint">
+            <Field label={t("network.testAddress")} htmlFor={`${formId}-test-host`}>
+              <Input
+                id={`${formId}-test-host`}
+                spellCheck={false}
+                autoComplete="off"
+                disabled={busy}
+                value={testHost}
+                onChange={(e) => {
+                  setTestHost(e.target.value);
+                  setResult("");
+                }}
+              />
+            </Field>
+            <Field label={t("network.port")} htmlFor={`${formId}-test-port`}>
+              <Input
+                id={`${formId}-test-port`}
+                type="number"
+                min={1}
+                max={65535}
+                inputMode="numeric"
+                disabled={busy}
+                value={testPort}
+                onChange={(e) => {
+                  setTestPort(e.target.value);
+                  setResult("");
+                }}
+              />
+            </Field>
+          </div>
+          <div className="network-settings__test-actions">
+            <Button type="submit" disabled={busy || !validTest}>
+              {t(testing ? "common.loading" : "network.test")}
+            </Button>
+            <p role="status" className="network-settings__result">
+              {result}
+            </p>
+          </div>
+        </form>
       </section>
-      {error ? (
-        <p role="alert" className="td-field__error">
-          {error}
-        </p>
-      ) : null}
     </div>
   );
 }
