@@ -50,7 +50,13 @@ function TabBody({
     case "terminal":
       return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
-      return <SftpPage sessionId={tab.id.replace("sftp:", "")} />;
+      return (
+        <SftpPage
+          sessionId={tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "")}
+          single={tab.filePane}
+          scopeId={tab.filePane ? tab.id : undefined}
+        />
+      );
     case "editor":
       return <EditorPage tabId={tab.id} active={active} />;
     case "history":

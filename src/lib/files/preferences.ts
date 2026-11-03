@@ -20,6 +20,11 @@ export function readFileViewPreferences(
     const view = (parsed as { view: Record<string, unknown> }).view;
     if (!view || typeof view !== "object") return fallback;
     return {
+      ...(view.filesLayout === "details" || view.filesLayout === "columns"
+        ? { filesLayout: view.filesLayout }
+        : defaults.filesLayout
+          ? { filesLayout: defaults.filesLayout }
+          : {}),
       filesShowHidden:
         typeof view.filesShowHidden === "boolean" ? view.filesShowHidden : fallback.filesShowHidden,
       filesFoldersFirst:

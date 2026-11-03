@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 import { api } from "@/lib/api/ipc";
-import type { Host, SshSession, TabKind, TabRecord } from "@/lib/api/types";
+import type { Host, SshSession, TabKind, TabRecord, FsSource } from "@/lib/api/types";
+import type { FileViewPreferences } from "@/lib/files/view";
 import { fileName, useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
@@ -24,6 +25,14 @@ export interface WorkspaceTab {
   pinned: boolean;
   /** Collapsed docked sidebars remain in their original group and layout. */
   hidden?: boolean;
+  filePane?: FilePaneOptions;
+}
+
+export interface FilePaneOptions {
+  source: FsSource;
+  path: string | null;
+  ownerSessionId: string;
+  view?: FileViewPreferences;
 }
 
 export interface WorkspacePane {
@@ -85,6 +94,7 @@ interface WorkspaceStore {
   openHost: (host: Host) => void;
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
+  openFilePane: (options: FilePaneOptions, title: string) => string;
   openEditor: (session: SshSession, path: string) => void;
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
@@ -456,6 +466,21 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           pinned: false,
         }),
       );
+    },
+
+    openFilePane: (filePane, title) => {
+      const id = `files:${crypto.randomUUID()}`;
+      set((state) =>
+        insert(state, {
+          id,
+          kind: "sftp",
+          title,
+          pinned: false,
+          filePane,
+          hostId: null,
+        }),
+      );
+      return id;
     },
 
     openEditor: (session, path) => {

@@ -57,15 +57,29 @@ stores its task and per-file progress locally. After an interruption or restart,
 connect to the same saved host and resume from the list; changing terminal session
 IDs does not require recreating the task. Local transfers can resume immediately.
 
-Data is written into a task-owned `.tunnelde-….part` sibling. Resume verifies the
-entire existing prefix against the source before appending, and verifies completed
-files before skipping them. A changed source or mismatched partial file is rejected.
+Data is written into a task-owned `.tunnelde-….part` sibling. A clean pause saves
+its closed file's size and modification time. If both source and staging metadata
+still match, resume verifies the first and last blocks and continues at the saved
+offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
+verification. A changed source or mismatched partial file is rejected. Verification
+has its own visible status and can be cancelled while awaiting network reads.
+
 Overwrite uses a recoverable, verified backup of the previous destination. For a
 move, source removal happens after the copy succeeds and is checkpointed separately.
-Reading an existing prefix adds verification I/O but avoids trusting unrelated data.
+Pause and Cancel retain partial data so Resume remains possible. The trash action
+**Remove transfer and clean temporary files** deletes task-owned staging files before
+removing the journal. It restores a verified original destination backup if a commit
+was interrupted. Completed destination files and source files are preserved.
 
-Pause and interruption retain partial data. Clearing a task removes its journal;
-it does not delete files from either endpoint. Cancelling leaves partial files too.
+Reconnect a remote destination before cleaning an unfinished task. Failed cleanup
+keeps the record for retry, and cleanup and resume cannot run at the same time.
+Legacy directory transfers with an unidentified original backup keep that backup and
+report that recovery is needed. Completed records can be removed while offline.
+
+The transfer list shows transferred and remaining bytes, recent throughput and an
+estimated remaining time. Throughput history resets on resume; existing bytes do not
+count as newly transferred traffic.
+
 Executable-plugin transfers remain tied to the authorized runtime and cannot resume
 after an application restart or privilege revocation.
 

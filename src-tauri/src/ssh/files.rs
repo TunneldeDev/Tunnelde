@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod artifacts;
 pub mod durable;
 pub mod search;
 
@@ -59,6 +60,8 @@ pub struct TransferEvent {
     pub transferred: u64,
     pub total: u64,
     pub status: TransferStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<&'static str>,
     pub error: Option<String>,
 }
 
@@ -102,6 +105,12 @@ impl ActiveTransfer {
 }
 
 impl TransferRegistry {
+    fn release(&self, id: &str) {
+        if let Ok(mut state) = self.inner.lock() {
+            state.active.remove(id);
+            state.paused.remove(id);
+        }
+    }
     pub fn is_active(&self, id: &str) -> bool {
         self.inner
             .lock()
@@ -163,6 +172,7 @@ impl TransferRegistry {
                     transferred: 0,
                     total: 0,
                     status: TransferStatus::Running,
+                    phase: None,
                     error: None,
                 },
             },
@@ -201,7 +211,8 @@ impl TransferRegistry {
     }
 
     pub fn cancel(&self, id: &str) {
-        if let Ok(state) = self.inner.lock() {
+        if let Ok(mut state) = self.inner.lock() {
+            state.paused.remove(id);
             if let Some(transfer) = state.active.get(id) {
                 transfer.cancel();
             }
@@ -566,6 +577,20 @@ fn emit(app: &AppHandle, event: TransferEvent) {
     let _ = app.emit(TRANSFER_EVENT, event);
 }
 
+fn phase(app: &AppHandle, id: &str, phase: &'static str) {
+    let event = app
+        .state::<AppState>()
+        .transfers
+        .inner
+        .lock()
+        .ok()
+        .and_then(|state| state.active.get(id).map(|transfer| transfer.event.clone()));
+    if let Some(mut event) = event {
+        event.phase = Some(phase);
+        emit(app, event);
+    }
+}
+
 fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64) {
     emit(
         app,
@@ -576,6 +601,7 @@ fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64)
             transferred,
             total,
             status: TransferStatus::Running,
+            phase: None,
             error: None,
         },
     );
@@ -607,6 +633,7 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             transferred: total,
             total,
             status: TransferStatus::Done,
+            phase: None,
             error: None,
         },
         Outcome::Cancelled(transferred) => TransferEvent {
@@ -616,6 +643,7 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             transferred,
             total: 0,
             status: TransferStatus::Cancelled,
+            phase: None,
             error: None,
         },
         Outcome::Failed(transferred, error) => TransferEvent {
@@ -625,6 +653,7 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             transferred,
             total: 0,
             status: TransferStatus::Failed,
+            phase: None,
             error: Some(error),
         },
     };
@@ -633,6 +662,12 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         event.status = TransferStatus::Paused;
     }
     if let Ok(mut row) = durable::Journal::get(app, id) {
+        if matches!(
+            event.status,
+            TransferStatus::Cancelled | TransferStatus::Paused | TransferStatus::Failed
+        ) {
+            event.transferred = event.transferred.max(row.transferred);
+        }
         row.status = match event.status {
             TransferStatus::Running => "running",
             TransferStatus::Done => "done",
@@ -782,10 +817,6 @@ pub(crate) fn resume_transfer(
     if row.status == "done" {
         return Err(AppError::validation("sftp.transferAlreadyComplete"));
     }
-    let mut row = row;
-    row.status = "running".into();
-    row.error = None;
-    durable::Journal::upsert(&app, row.clone())?;
     let cancel = Arc::new(AtomicBool::new(false));
     let id = row.id.clone();
     let name = row.name.clone();
@@ -793,6 +824,13 @@ pub(crate) fn resume_transfer(
     app.state::<AppState>()
         .transfers
         .register(&id, cancel.clone(), None)?;
+    let mut row = row;
+    row.status = "running".into();
+    row.error = None;
+    if let Err(error) = durable::Journal::upsert(&app, row.clone()) {
+        app.state::<AppState>().transfers.release(&id);
+        return Err(error);
+    }
     tauri::async_runtime::spawn(async move {
         let out = run(
             &app2,
@@ -839,6 +877,7 @@ struct Meter<'a> {
     transferred: u64,
     total: u64,
     last: u64,
+    last_update: std::time::Instant,
 }
 
 impl<'a> Meter<'a> {
@@ -850,13 +889,18 @@ impl<'a> Meter<'a> {
             transferred: 0,
             total,
             last: 0,
+            last_update: std::time::Instant::now(),
         }
     }
 
     fn add(&mut self, bytes: u64) {
         self.transferred += bytes;
-        if self.transferred - self.last >= PROGRESS_STEP || self.transferred >= self.total {
+        if (self.transferred - self.last >= PROGRESS_STEP
+            && self.last_update.elapsed() >= std::time::Duration::from_millis(100))
+            || self.transferred >= self.total
+        {
             self.last = self.transferred;
+            self.last_update = std::time::Instant::now();
             if let Ok(mut row) = durable::Journal::get(self.app, self.id) {
                 row.transferred = self.transferred;
                 row.total = self.total;
@@ -875,7 +919,34 @@ enum Reader {
     Remote(Box<russh_sftp::client::fs::File>),
 }
 
+/// Check cancellation while waiting for a stalled socket, including verification.
+async fn interruptible<T>(
+    cancel: Option<&AtomicBool>,
+    operation: impl std::future::Future<Output = AppResult<T>>,
+) -> AppResult<T> {
+    tokio::pin!(operation);
+    let mut tick = tokio::time::interval(std::time::Duration::from_millis(40));
+    loop {
+        tokio::select! {
+            biased;
+            _ = tick.tick() => {
+                if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                    return Err(AppError::Ssh(CANCELLED.into()));
+                }
+            }
+            result = &mut operation => return result,
+        }
+    }
+}
+
 impl Reader {
+    async fn seek(&mut self, offset: u64) -> AppResult<()> {
+        match self {
+            Reader::Local(file) => file.seek(std::io::SeekFrom::Start(offset)).await?,
+            Reader::Remote(file) => file.seek(std::io::SeekFrom::Start(offset)).await?,
+        };
+        Ok(())
+    }
     async fn read(&mut self, buffer: &mut [u8]) -> AppResult<usize> {
         Ok(match self {
             Reader::Local(file) => file.read(buffer).await?,
@@ -885,7 +956,9 @@ impl Reader {
 
     async fn finish(self) -> AppResult<()> {
         if let Reader::Remote(file) = self {
-            file.close().await?;
+            tokio::time::timeout(std::time::Duration::from_secs(5), file.close())
+                .await
+                .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??;
         }
         Ok(())
     }
@@ -908,7 +981,11 @@ impl Writer {
     async fn finish(self) -> AppResult<()> {
         match self {
             Writer::Local(mut file) => file.flush().await?,
-            Writer::Remote(file) => finish_remote_file(*file).await?,
+            Writer::Remote(file) => {
+                tokio::time::timeout(std::time::Duration::from_secs(5), finish_remote_file(*file))
+                    .await
+                    .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??
+            }
         }
         Ok(())
     }
@@ -1210,11 +1287,24 @@ async fn verify_prefix(
     length: u64,
     cancel: Option<&AtomicBool>,
 ) -> AppResult<()> {
+    verify_range(reader, partial, sftp, 0, length, cancel).await
+}
+
+async fn verify_range(
+    reader: &mut Reader,
+    partial: &Endpoint,
+    sftp: Option<&SftpSession>,
+    offset: u64,
+    length: u64,
+    cancel: Option<&AtomicBool>,
+) -> AppResult<()> {
     let mut other = open_reader(partial, sftp).await?;
     let mut left = length;
     let mut a = vec![0; CHUNK];
     let mut b = vec![0; CHUNK];
     let result = async {
+        reader.seek(offset).await?;
+        other.seek(offset).await?;
         while left > 0 {
             if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
                 return Err(AppError::Ssh(CANCELLED.into()));
@@ -1222,7 +1312,7 @@ async fn verify_prefix(
             let n = left.min(CHUNK as u64) as usize;
             let mut got = 0;
             while got < n {
-                let read = reader.read(&mut a[got..n]).await?;
+                let read = interruptible(cancel, reader.read(&mut a[got..n])).await?;
                 if read == 0 {
                     return Err(AppError::validation("sftp.resumePrefixMismatch"));
                 }
@@ -1230,7 +1320,7 @@ async fn verify_prefix(
             }
             let mut got = 0;
             while got < n {
-                let read = other.read(&mut b[got..n]).await?;
+                let read = interruptible(cancel, other.read(&mut b[got..n])).await?;
                 if read == 0 {
                     return Err(AppError::validation("sftp.resumePrefixMismatch"));
                 }
@@ -1306,7 +1396,7 @@ async fn fingerprint_file(
             if cancel.load(Ordering::SeqCst) {
                 return Err(AppError::Ssh(CANCELLED.into()));
             }
-            let n = reader.read(&mut buf).await?;
+            let n = interruptible(Some(cancel), reader.read(&mut buf)).await?;
             if n == 0 {
                 break;
             }
@@ -1416,6 +1506,7 @@ async fn durable_copy_file(
             return Err(AppError::validation("sftp.resumeSourceChanged"));
         }
         if old.2 {
+            phase(meter.app, id, "verifying");
             let mut source = open_reader(from, from_sftp).await?;
             if file_length(to, to_sftp).await? != Some(stamp.0) {
                 return Err(AppError::validation("sftp.resumePrefixMismatch"));
@@ -1439,6 +1530,7 @@ async fn durable_copy_file(
         None
     };
     if resuming && partial.is_none() && file_length(to, to_sftp).await? == Some(stamp.0) {
+        phase(meter.app, id, "verifying");
         let mut completed = open_reader(from, from_sftp).await?;
         let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
         completed.finish().await?;
@@ -1455,12 +1547,31 @@ async fn durable_copy_file(
     }
     let mut reader = open_reader(from, from_sftp).await?;
     if existing > 0 {
-        verify_prefix(&mut reader, &temp, to_sftp, existing, Some(cancel)).await?;
+        phase(meter.app, id, "verifying");
+        let verified = artifacts::resume_offset(
+            meter.app,
+            &key,
+            stamp,
+            &temp,
+            to_sftp,
+            &mut reader,
+            existing,
+            cancel,
+        )
+        .await;
+        if let Err(error) = verified {
+            let _ = reader.finish().await;
+            return Err(error);
+        }
     }
     let destination_exists = file_length(to, to_sftp).await?.is_some();
     if destination_exists && !overwrite {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
+    if partial.is_none() && file_length(&temp, to_sftp).await?.is_some() {
+        return Err(AppError::validation("sftp.alreadyExists"));
+    }
+    artifacts::record(meter.app, id, to)?;
     let mut writer = if partial.is_some() {
         match to_sftp {
             Some(s) => Writer::Remote(Box::new(
@@ -1489,17 +1600,22 @@ async fn durable_copy_file(
         }
     }
     meter.add(existing);
+    progress(meter.app, id, meter.name, meter.transferred, meter.total);
+    let mut confirmed = existing;
+    let mut attempted = existing;
     let result = async {
         let mut buf = vec![0; CHUNK];
         loop {
             if cancel.load(Ordering::SeqCst) {
                 return Err(AppError::Ssh(CANCELLED.into()));
             }
-            let n = reader.read(&mut buf).await?;
+            let n = interruptible(Some(cancel), reader.read(&mut buf)).await?;
             if n == 0 {
                 break;
             }
-            writer.write_all(&buf[..n]).await?;
+            attempted = confirmed + n as u64;
+            interruptible(Some(cancel), writer.write_all(&buf[..n])).await?;
+            confirmed += n as u64;
             meter.add(n as u64);
         }
         Ok(())
@@ -1507,6 +1623,22 @@ async fn durable_copy_file(
     .await;
     let closed = writer.finish().await;
     let read_closed = reader.finish().await;
+    if closed.is_ok() && (result.is_ok() || cancel.load(Ordering::SeqCst)) {
+        // Closing flushes an interrupted sequential write too. Its resulting
+        // length must lie within the source bytes submitted to this writer.
+        if let Err(error) = artifacts::checkpoint(
+            meter.app,
+            &key,
+            stamp,
+            &temp,
+            to_sftp,
+            confirmed..=attempted,
+        )
+        .await
+        {
+            tracing::warn!(%error, "Cannot save transfer resume checkpoint");
+        }
+    }
     result?;
     closed?;
     read_closed?;
@@ -1639,16 +1771,22 @@ async fn run(
     }
 
     let from_sftp = match &from.session {
-        Some(session_id) => match session(app, session_id).await {
+        Some(session_id) => match interruptible(Some(cancel), session(app, session_id)).await {
             Ok(value) => Some(value),
-            Err(error) => return Outcome::Failed(0, error.to_string()),
+            Err(error) => return Outcome::from_result(Err(error), 0, cancel),
         },
         None => None,
     };
     let to_sftp = match &to.session {
-        Some(session_id) => match session(app, session_id).await {
+        Some(session_id) => match interruptible(Some(cancel), session(app, session_id)).await {
             Ok(value) => Some(value),
-            Err(error) => return Outcome::Failed(0, error.to_string()),
+            Err(error) => {
+                if let Some(sftp) = from_sftp {
+                    let _ =
+                        tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+                }
+                return Outcome::from_result(Err(error), 0, cancel);
+            }
         },
         None => None,
     };
@@ -1680,7 +1818,17 @@ async fn run(
             }
         }
     }
-    let total = measure(from, from_sftp.as_ref()).await.unwrap_or(0);
+    let measured = interruptible(Some(cancel), measure(from, from_sftp.as_ref())).await;
+    if cancel.load(Ordering::SeqCst) {
+        if let Some(sftp) = from_sftp {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+        }
+        if let Some(sftp) = to_sftp {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+        }
+        return Outcome::Cancelled(0);
+    }
+    let total = measured.unwrap_or(0);
     progress(app, id, name, 0, total);
 
     let mut meter = Meter::new(app, id, name, total);
@@ -1737,10 +1885,10 @@ async fn run(
     .await;
 
     if let Some(sftp) = from_sftp {
-        let _ = sftp.close().await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
     }
     if let Some(sftp) = to_sftp {
-        let _ = sftp.close().await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
     }
 
     Outcome::from_result(result, meter.transferred, cancel)
@@ -2228,6 +2376,7 @@ mod tests {
             transferred: 42,
             total: 42,
             status,
+            phase: None,
             error: None,
         }
     }

@@ -48,15 +48,22 @@ of being interpreted as POSIX paths.
 ## Remote runtime consent and files
 
 Codex and Claude Code directly start their selected binary through SSH. Pi first asks
-before uploading a permission extension into a newly created `.tunnelde-pi-permissions-*`
-user directory; its extension forwards tool decisions through the Pi protocol.
+before uploading a permission extension into a newly created `.TunneldeAI/Chats/pi-permissions-*`
+directory; its extension forwards tool decisions through the Pi protocol.
 
 For Tunnelde AI, choose an existing remote Node 22+ executable in the location dialog and
-approve deployment into a new `.tunnelde-tunnelde-ai-*` user directory. Node is neither
+approve deployment into a new `.TunneldeAI/Chats/tunnelde-ai-*` directory. Node is neither
 detected by execution nor installed automatically. An approved deployment is reused by
 that conversation while its source fingerprint and host identity match. Only plugin
 source files are uploaded. Configuration, conversation state and model keys are supplied
 over encrypted SSH stdin; the bridge retains state in memory and the desktop's plugin store.
+
+Private runtimes are installed under `.TunneldeAI/Runtimes/node-*`; the download
+archive is removed after verification and extraction. Conversation deployments are
+retained for reuse and checked against their recorded file hashes before deletion.
+Deleting a remote conversation requires reconnecting its host so cleanup can finish.
+Known legacy source directories migrate under `Chats` at the next approved deployment;
+untracked directories and existing runtime executable paths are preserved.
 
 These private source directories are retained for reuse; no existing user file or system
 service is overwritten. Failed setup only attempts cleanup of entries it created. Normal
