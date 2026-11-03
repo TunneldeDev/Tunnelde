@@ -2,7 +2,7 @@ name: PR policy
 
 on:
   pull_request_target:
-    branches: [main]
+    branches: [main, dev]
     types: [opened, reopened, synchronize, edited, ready_for_review]
   release:
     types: [published, deleted]
@@ -25,7 +25,7 @@ jobs:
       # Never load or execute code from the PR in this privileged workflow.
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.base.ref || 'dev' }}
           persist-credentials: false
       - uses: actions/github-script@v7
         with:

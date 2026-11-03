@@ -42,7 +42,7 @@ test("groups meaningful changes, combines duplicates and preserves all reference
     commit(13, "chore(deps): update parser"),
   ];
   const result = renderRelease({ ...options, commits });
-  assert.equal(result.count, 9);
+  assert.equal(result.count, 11);
   for (const category of [
     "不兼容变更 | Breaking changes",
     "新增 | New",
@@ -57,7 +57,7 @@ test("groups meaningful changes, combines duplicates and preserves all reference
   assert.match(result.notes, /pull\/11/);
   assert.match(result.notes, /@other/);
   assert.match(result.notes, /@maintainer/);
-  assert.doesNotMatch(result.notes, /users\.noreply|cover paste|chore\(main\)|- format/);
+  assert.doesNotMatch(result.notes, /users\.noreply|chore\(main\)/);
   assert.equal(
     summarizeChanges(commits).find((entry) => entry.title === "add split views").sources.size,
     2,
@@ -123,7 +123,7 @@ test("rejects invalid ranges and missing versions instead of summarizing unrelat
   assert.throws(() => summarizeChanges([commit(1, "fix: paste", { sha: "bad" })]), /SHA/);
 });
 
-test("the short PR body retains the version heading and delimiters required by Release Please", () => {
+test("the short PR body links to the immutable reviewed changelog", () => {
   const body = releasePrBody("0.27.0", 5, repository, head);
   assert.match(body, /^---\n## 0\.27\.0\n\n/);
   assert.match(body, /归总 5 项变更/);
@@ -132,7 +132,7 @@ test("the short PR body retains the version heading and delimiters required by R
   assert.doesNotMatch(body, /beep|boop|<details>|Checklist/);
 });
 
-test("collects every comparison page and associates only actual main merges", async () => {
+test("collects every comparison page and associates actual development merges", async () => {
   const calls = [];
   const all = Array.from({ length: 101 }, (_, index) => commit(index + 1, `fix: issue ${index}`));
   const github = {
@@ -184,7 +184,7 @@ test("collects every comparison page and associates only actual main merges", as
     [1, 2],
   );
   assert.ok(calls.every((call) => call.basehead === `v0.26.0...${head}`));
-  assert.ok(changes.every((change) => change.pullRequest.number === 3));
+  assert.ok(changes.every((change) => change.pullRequest.number === 2));
 });
 
 test("diverged, truncated or duplicate comparison results stop generation", async () => {

@@ -137,19 +137,18 @@ docs/               User and developer documentation
 ```
 
 The marketplace lives in the independent `TunneldeDev/tunnelde-hub` repository.
-CI validates web, native, helper and repository checks. `main` is the protected default
-branch: work on a feature branch and open a PR with a Conventional Commit title.
+CI validates web, native, helper and repository checks. `dev` is the protected default branch
+and contribution target; `main` contains stable releases. Use a Conventional Commit PR title.
 
-Release Please maintains one cumulative release PR containing the next version, synchronized
-native manifests/lockfiles and automatically summarized changelog. Highlights, categorized details,
-PR links and contributors are prepared on the release branch; ordinary PRs need no changelog edits.
-Merge that PR when ready to release.
-Windows, Linux, Apple Silicon and Intel macOS installers are built into one **draft**;
-validated assets and `latest.json` stay private until a maintainer publishes the draft.
-Ordinary feature merges do not start installer builds.
+Each `dev` update builds a **Nightly** prerelease for testers and updates one release PR targeting
+`main`. That PR contains the next version, synchronized manifests and a summarized changelog with
+highlights, categorized details, PR links and contributors. Ordinary PRs need no version or
+changelog edits. Squash merge the release PR to automatically tag, build, verify and publish a
+stable release for Windows, Linux, Apple Silicon and Intel macOS. Failed builds remain drafts;
+Nightly never becomes the latest stable release or replaces its updater downloads.
 
 See [Contributing](CONTRIBUTING.md) for PR conventions and [Release operations](docs/releases.md)
-for branch protection, automation credentials, version overrides and draft recovery.
+for branch protection, automation credentials and build recovery.
 `pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 
 ## License

@@ -4,10 +4,15 @@ import {
   releaseSection,
   renderRelease,
   replacePendingRelease,
+  summarizeChanges,
 } from "./release-notes.mjs";
+import { bumpVersion, VERSION_PATHS, versionContents } from "./version.mjs";
 
-const RELEASE_BRANCH = "release-please--branches--main";
+export const RELEASE_BRANCH = "release/dev-to-main";
 export const POLICY_CONTEXT = "PR policy";
+export const SOURCE_PATH = ".github/release-source.json";
+const SHA = /^[a-f0-9]{40}$/;
+const TAG = /^v\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
 
 export function validateTitle(title) {
   if (
@@ -15,37 +20,62 @@ export function validateTitle(title) {
     !/^(feat|fix|perf|build|docs|test|ci|chore|refactor|style|revert)(\([\w./-]+\))?!?: \S[^\r\n]*$/.test(
       title,
     )
-  ) {
+  )
     throw new Error("Use a Conventional Commit title, for example fix(terminal): restore paste");
-  }
 }
 
 export function isReleasePr(pr) {
   return pr.head.ref === RELEASE_BRANCH && pr.head.repo?.full_name === pr.base.repo.full_name;
 }
 
-export function assertNoDrafts(releases, allowedTag) {
-  const blocked = releases.filter((release) => release.draft && release.tag_name !== allowedTag);
-  if (blocked.length) {
-    throw new Error(
-      `Complete or explicitly withdraw the existing draft: ${blocked.map((r) => r.tag_name).join(", ")}`,
-    );
+export async function readText(github, repo, path, ref) {
+  if (!SHA.test(ref)) throw new Error("Expected an immutable source SHA");
+  const { data } = await github.rest.repos.getContent({ ...repo, path, ref });
+  if (data.type !== "file" || data.encoding !== "base64") throw new Error(`Cannot read ${path}`);
+  return Buffer.from(data.content, "base64").toString("utf8");
+}
+
+export async function branchSha(github, repo, branch) {
+  const { data } = await github.rest.git.getRef({ ...repo, ref: `heads/${branch}` });
+  if (data.object.type !== "commit" || !SHA.test(data.object.sha))
+    throw new Error("Invalid branch source");
+  return data.object.sha;
+}
+
+async function assertSources(github, repo, sources) {
+  for (const [branch, sha] of Object.entries(sources)) {
+    if ((await branchSha(github, repo, branch)) !== sha)
+      throw new Error(`${branch} moved during preparation; rerun the workflow`);
   }
+}
+
+export function nextVersion(version, commits) {
+  let part = "patch";
+  for (const {
+    commit: { message },
+  } of commits) {
+    if (/^\w+(?:\([^)]+\))?!:|^BREAKING[ -]CHANGE:/m.test(message)) {
+      part = version.startsWith("0.") ? "minor" : "major";
+      break;
+    }
+    if (/^feat(?:\([^)]+\))?:/.test(message)) part = "minor";
+  }
+  return bumpVersion(version, part);
 }
 
 export async function checkPullRequest({ github, context, number }) {
   const repo = context.repo;
   const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number });
-  if (pr.base.ref !== "main" || pr.state !== "open") return;
+  if (!["main", "dev"].includes(pr.base.ref) || pr.state !== "open") return;
   let problem;
   try {
     validateTitle(pr.title);
+    if (pr.base.ref === "main" && !isReleasePr(pr))
+      throw new Error("Contributions target dev; main accepts the generated release PR");
     if (isReleasePr(pr)) {
-      const releases = await github.paginate(github.rest.repos.listReleases, {
-        ...repo,
-        per_page: 100,
-      });
-      assertNoDrafts(releases);
+      const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, pr.head.sha));
+      // PR base.sha is a snapshot; resolve both actual refs on every check.
+      await assertSources(github, repo, { main: marker.baseSha, dev: marker.sourceSha });
     }
   } catch (error) {
     problem = error.message;
@@ -55,7 +85,7 @@ export async function checkPullRequest({ github, context, number }) {
     sha: pr.head.sha,
     context: POLICY_CONTEXT,
     state: problem ? "failure" : "success",
-    description: (problem || "Title and release policy passed").slice(0, 140),
+    description: (problem || "Title and release source passed").slice(0, 140),
     target_url: `${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
   });
   if (problem) throw new Error(problem);
@@ -71,24 +101,103 @@ export async function refreshReleasePolicy({ github, context }) {
   for (const pr of prs) await checkPullRequest({ github, context, number: pr.number });
 }
 
-export async function releasePrNeedsRefresh({ github, context }) {
-  const prs = await github.paginate(github.rest.pulls.list, {
-    ...context.repo,
-    state: "open",
-    base: "main",
-    head: `${context.repo.owner}:${RELEASE_BRANCH}`,
+async function commitTree({ github, repo, source, parent, contents, message }) {
+  const { data: original } = await github.rest.git.getCommit({ ...repo, commit_sha: source });
+  const { data: tree } = await github.rest.git.createTree({
+    ...repo,
+    base_tree: original.tree.sha,
+    tree: Object.entries(contents).map(([path, content]) => ({
+      path,
+      mode: "100644",
+      type: "blob",
+      content,
+    })),
   });
-  if (!prs.length) return true;
-  if (prs.length > 1) throw new Error("Multiple release pull requests found");
-  const pr = prs[0];
-  const { data: commit } = await github.rest.git.getCommit({
-    ...context.repo,
-    commit_sha: pr.head.sha,
+  const { data: commit } = await github.rest.git.createCommit({
+    ...repo,
+    tree: tree.sha,
+    parents: [parent],
+    message,
   });
-  return !commit.message.split(/\r?\n/).includes(`Release-source: ${pr.base.sha}`);
+  return commit.sha;
 }
 
-export async function updateReleasePr({ github, context, dispatch = true }) {
+async function assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker) {
+  if (!marker.baseSha) return; // Initial migration, before the first dev promotion.
+  const trees = await Promise.all(
+    [main, marker.sourceSha, dev].map(async (sha) => {
+      const { data } = await github.rest.git.getTree({ ...repo, tree_sha: sha, recursive: "true" });
+      if (data.truncated) throw new Error("Cannot safely compare truncated source trees");
+      return new Map(
+        data.tree
+          .filter((entry) => entry.type !== "tree")
+          .map((entry) => [entry.path, `${entry.mode}:${entry.sha}`]),
+      );
+    }),
+  );
+  const generated = new Set([...VERSION_PATHS, "CHANGELOG.md", SOURCE_PATH]);
+  for (const path of new Set(trees.flatMap((tree) => [...tree.keys()]))) {
+    if (
+      !generated.has(path) &&
+      trees[0].get(path) !== trees[1].get(path) &&
+      trees[0].get(path) !== trees[2].get(path)
+    )
+      throw new Error(
+        `Main has changes outside release metadata (${path}); merge main into dev before promoting`,
+      );
+  }
+}
+
+export async function planDevelopment({
+  github,
+  context,
+  date = new Date().toISOString().slice(0, 10),
+}) {
+  const repo = context.repo;
+  const [main, dev] = await Promise.all(
+    ["main", "dev"].map((branch) => branchSha(github, repo, branch)),
+  );
+  let markerText;
+  try {
+    markerText = await readText(github, repo, SOURCE_PATH, main);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    return { main, dev }; // Wait for the reviewed migration PR to reach protected main.
+  }
+  const [pkg, history, developmentNotes, ...files] = await Promise.all([
+    readText(github, repo, "package.json", main),
+    readText(github, repo, "CHANGELOG.md", main),
+    readText(github, repo, "CHANGELOG.md", dev),
+    ...VERSION_PATHS.map((path) => readText(github, repo, path, dev)),
+  ]);
+  const marker = JSON.parse(markerText);
+  if (!SHA.test(marker.sourceSha)) throw new Error("Invalid last promoted dev source");
+  const commits = await collectChanges({ github, repo, base: marker.sourceSha, head: dev });
+  if (!summarizeChanges(commits).length) return { main, dev };
+  await assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker);
+  const previousVersion = JSON.parse(pkg).version;
+  const version = nextVersion(previousVersion, commits);
+  const release = renderRelease({
+    version,
+    previousVersion,
+    date,
+    repository: `${repo.owner}/${repo.repo}`,
+    commits,
+    curated: releaseSection(developmentNotes, "Unreleased").notes,
+  });
+  return {
+    main,
+    dev,
+    version,
+    previousVersion,
+    release,
+    history,
+    files: Object.fromEntries(VERSION_PATHS.map((path, index) => [path, files[index]])),
+  };
+}
+
+export async function maintainReleasePr({ github, context, plan }) {
+  if (!plan.version) return;
   const repo = context.repo;
   const prs = await github.paginate(github.rest.pulls.list, {
     ...repo,
@@ -97,109 +206,209 @@ export async function updateReleasePr({ github, context, dispatch = true }) {
     head: `${repo.owner}:${RELEASE_BRANCH}`,
   });
   if (prs.length > 1) throw new Error("Multiple release pull requests found");
-  if (!prs.length) return;
-  const pr = prs[0];
-  if (!isReleasePr(pr) || pr.base.ref !== "main") throw new Error("Unexpected release PR target");
-  const [manifest, baseManifest, original, baseChangelog] = await Promise.all([
-    readText(github, repo, ".release-please-manifest.json", pr.head.sha),
-    readText(github, repo, ".release-please-manifest.json", pr.base.sha),
-    readText(github, repo, "CHANGELOG.md", pr.head.sha),
-    readText(github, repo, "CHANGELOG.md", pr.base.sha),
-  ]);
-  const version = JSON.parse(manifest)["."];
-  const previousVersion = JSON.parse(baseManifest)["."];
-  if (version === previousVersion) throw new Error("Release version must differ from main");
-  const date = releaseSection(original, version).heading.match(/\d{4}-\d{2}-\d{2}/)?.[0];
-  const commits = await collectChanges({ github, repo, previousVersion, head: pr.base.sha });
-  const repository = `${repo.owner}/${repo.repo}`;
-  const release = renderRelease({
-    version,
-    previousVersion,
-    date,
-    repository,
-    commits,
-    curated: releaseSection(baseChangelog, "Unreleased").notes,
+  let previous;
+  try {
+    previous = await branchSha(github, repo, RELEASE_BRANCH);
+  } catch (error) {
+    if (error.status !== 404) throw error;
+  }
+  if (previous && prs.length) {
+    const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, previous));
+    if (marker.sourceSha === plan.dev && marker.baseSha === plan.main) {
+      await checkPullRequest({ github, context, number: prs[0].number });
+      return;
+    }
+  }
+  const contents = {
+    ...versionContents(plan.files, plan.version),
+    "CHANGELOG.md": replacePendingRelease(plan.history, plan.release),
+    [SOURCE_PATH]: `${JSON.stringify({ sourceSha: plan.dev, baseSha: plan.main, version: plan.version }, null, 2)}\n`,
+  };
+  const sha = await commitTree({
+    github,
+    repo,
+    source: plan.dev,
+    parent: plan.main,
+    contents,
+    message: `chore(main): release ${plan.version}\n\nRelease-source: ${plan.dev}`,
   });
-  const changelog = replacePendingRelease(baseChangelog, release);
-  const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
-  if (current.head.sha !== pr.head.sha || current.base.sha !== pr.base.sha) {
-    throw new Error("Release PR moved during changelog generation; rerun the workflow");
-  }
-  let releaseHead = pr.head.sha;
-  if (changelog !== original) {
-    // Parent and non-forced ref update prevent overwriting concurrent branch edits.
-    const { data: parent } = await github.rest.git.getCommit({ ...repo, commit_sha: pr.head.sha });
-    const { data: tree } = await github.rest.git.createTree({
+  await assertSources(github, repo, { main: plan.main, dev: plan.dev });
+  if (previous) {
+    await assertSources(github, repo, { [RELEASE_BRANCH]: previous });
+    // This generated branch is serialized by the development workflow; never contribute here.
+    await github.rest.git.updateRef({ ...repo, ref: `heads/${RELEASE_BRANCH}`, sha, force: true });
+  } else await github.rest.git.createRef({ ...repo, ref: `refs/heads/${RELEASE_BRANCH}`, sha });
+  const body = releasePrBody(plan.version, plan.release.count, `${repo.owner}/${repo.repo}`, sha);
+  const title = `chore(main): release ${plan.version}`;
+  let number = prs[0]?.number;
+  if (number) await github.rest.pulls.update({ ...repo, pull_number: number, title, body });
+  else {
+    const { data: pr } = await github.rest.pulls.create({
       ...repo,
-      base_tree: parent.tree.sha,
-      tree: [{ path: "CHANGELOG.md", mode: "100644", type: "blob", content: changelog }],
+      base: "main",
+      head: RELEASE_BRANCH,
+      title,
+      body,
     });
-    const { data: commit } = await github.rest.git.createCommit({
-      ...repo,
-      tree: tree.sha,
-      parents: [pr.head.sha],
-      message: `chore(main): release ${version}\n\nRelease-source: ${pr.base.sha}`,
-    });
-    await github.rest.git.updateRef({
-      ...repo,
-      ref: `heads/${RELEASE_BRANCH}`,
-      sha: commit.sha,
-      force: false,
-    });
-    releaseHead = commit.sha;
+    number = pr.number;
   }
-  const body = releasePrBody(version, release.count, repository, releaseHead);
-  if (body !== current.body) {
-    await github.rest.pulls.update({ ...repo, pull_number: pr.number, body });
-  }
-  await checkPullRequest({ github, context, number: pr.number });
-  if (dispatch) {
-    // GITHUB_TOKEN cannot trigger pull_request workflows through its own writes.
-    // workflow_dispatch is the supported exception and runs CI on this head SHA.
-    await github.rest.actions.createWorkflowDispatch({
-      ...repo,
-      workflow_id: "ci.yml",
-      ref: RELEASE_BRANCH,
-    });
-  }
+  await checkPullRequest({ github, context, number });
+  // GITHUB_TOKEN writes do not trigger pull_request; dispatch checks explicitly.
+  await github.rest.actions.createWorkflowDispatch({
+    ...repo,
+    workflow_id: "ci.yml",
+    ref: RELEASE_BRANCH,
+  });
 }
 
-async function readText(github, repo, path, ref) {
-  if (!/^[a-f0-9]{40}$/.test(ref)) throw new Error("Expected an immutable source SHA");
-  const { data } = await github.rest.repos.getContent({ ...repo, path, ref });
-  if (data.type !== "file" || data.encoding !== "base64") throw new Error(`Cannot read ${path}`);
-  return Buffer.from(data.content, "base64").toString("utf8");
+export async function ensureRelease({ github, context, tag, sha, body, nightly = false }) {
+  if (!TAG.test(tag) || !SHA.test(sha) || tag.includes("-beta.") !== nightly || !body?.trim())
+    throw new Error("Invalid release source, channel or notes");
+  const repo = context.repo;
+  // Tag must exist before the draft, avoiding GitHub's untagged draft conversion.
+  try {
+    const { data } = await github.rest.git.getRef({ ...repo, ref: `tags/${tag}` });
+    if (data.object.type !== "commit" || data.object.sha !== sha)
+      throw new Error("Existing tag points elsewhere");
+  } catch (error) {
+    if (error.status !== 404) throw error;
+    await github.rest.git.createRef({ ...repo, ref: `refs/tags/${tag}`, sha });
+  }
+  const releases = await github.paginate(github.rest.repos.listReleases, {
+    ...repo,
+    per_page: 100,
+  });
+  const matching = releases.filter((release) => release.tag_name === tag);
+  if (matching.length > 1) throw new Error("Duplicate release tag");
+  if (matching.length) {
+    const release = matching[0];
+    if (release.target_commitish !== sha || release.prerelease !== nightly)
+      throw new Error("Release source/channel mismatch");
+    return release.draft ? tag : "";
+  }
+  await github.rest.repos.createRelease({
+    ...repo,
+    tag_name: tag,
+    target_commitish: sha,
+    name: nightly ? "Nightly" : `Tunnelde ${tag.slice(1)}`,
+    body,
+    draft: true,
+    prerelease: nightly,
+    make_latest: "false",
+  });
+  return tag;
 }
 
-export async function ensureDraftTag({ github, context, tag, sha }) {
-  if (!/^v\d+\.\d+\.\d+$/.test(tag) || !/^[a-f0-9]{40}$/.test(sha)) {
-    throw new Error("Expected a stable tag and exact release commit SHA");
-  }
+export async function prepareNightly({ github, context, plan, runNumber, runAttempt }) {
+  if (!plan.version) return "";
+  if (!/^\d+$/.test(String(runNumber)) || !/^\d+$/.test(String(runAttempt)))
+    throw new Error("Invalid build sequence");
+  const version = `${plan.version}-beta.${runNumber}.${runAttempt}`;
   const releases = await github.paginate(github.rest.repos.listReleases, {
     ...context.repo,
     per_page: 100,
   });
-  assertNoDrafts(releases, tag);
-  const matching = releases.filter((r) => r.tag_name === tag);
-  if (matching.length !== 1 || !matching[0].draft || matching[0].target_commitish !== sha) {
-    throw new Error("Expected one draft bound to the merged release commit");
+  const existing = releases.find((release) => release.tag_name === `v${version}`);
+  if (existing) return existing.draft ? existing.tag_name : "";
+  const release = {
+    ...plan.release,
+    heading: plan.release.heading.replace(`[${plan.version}]`, `[${version}]`),
+  };
+  const sha = await commitTree({
+    github,
+    repo: context.repo,
+    source: plan.dev,
+    parent: plan.dev,
+    contents: {
+      ...versionContents(plan.files, version),
+      "CHANGELOG.md": replacePendingRelease(plan.history, release),
+    },
+    message: `chore: Nightly ${version}\n\nRelease-source: ${plan.dev}`,
+  });
+  await assertSources(github, context.repo, { dev: plan.dev });
+  return ensureRelease({
+    github,
+    context,
+    tag: `v${version}`,
+    sha,
+    nightly: true,
+    body: `Development build from ${plan.dev}.\n\n${plan.release.notes}`,
+  });
+}
+
+export async function prepareStable({ github, context }) {
+  const repo = context.repo;
+  const sha = await branchSha(github, repo, "main");
+  const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, sha));
+  if (!marker.baseSha) return ""; // Migration does not invent another stable release.
+  const { data: commit } = await github.rest.git.getCommit({ ...repo, commit_sha: sha });
+  if (commit.parents.length !== 1 || commit.parents[0].sha !== marker.baseSha)
+    throw new Error("Main is not the reviewed release promotion");
+  const version = JSON.parse(await readText(github, repo, "package.json", sha)).version;
+  if (version !== marker.version || !SHA.test(marker.sourceSha))
+    throw new Error("Release metadata mismatch");
+  const body = releaseSection(await readText(github, repo, "CHANGELOG.md", sha), version).notes;
+  await assertSources(github, repo, { main: sha });
+  return ensureRelease({ github, context, tag: `v${version}`, sha, body });
+}
+
+export async function publishRelease({ github, context, tag }) {
+  const repo = context.repo;
+  const nightly = tag.includes("-beta.");
+  const releases = await github.paginate(github.rest.repos.listReleases, {
+    ...repo,
+    per_page: 100,
+  });
+  const release = releases.find((item) => item.tag_name === tag);
+  if (!release?.draft || release.prerelease !== nightly)
+    throw new Error("Expected matching draft channel");
+  const { data: ref } = await github.rest.git.getRef({ ...repo, ref: `tags/${tag}` });
+  if (ref.object.sha !== release.target_commitish) throw new Error("Release tag moved");
+  if (nightly) {
+    const sequence = (value) =>
+      value
+        .match(/-beta\.(\d+)\.(\d+)$/)
+        ?.slice(1)
+        .map(Number);
+    const currentSequence = sequence(tag);
+    if (!currentSequence) throw new Error("Invalid beta tag");
+    const newer = releases.some((item) => {
+      const candidate = sequence(item.tag_name);
+      return (
+        item.name === "Nightly" &&
+        item.prerelease &&
+        !item.draft &&
+        candidate &&
+        (candidate[0] > currentSequence[0] ||
+          (candidate[0] === currentSequence[0] && candidate[1] > currentSequence[1]))
+      );
+    });
+    if (newer) throw new Error("A newer Nightly is already published");
+    const { data: commit } = await github.rest.git.getCommit({
+      ...repo,
+      commit_sha: ref.object.sha,
+    });
+    const source = /^Release-source: ([a-f0-9]{40})$/m.exec(commit.message)?.[1];
+    await assertSources(github, repo, { dev: source });
+  } else await assertSources(github, repo, { main: ref.object.sha });
+  await github.rest.repos.updateRelease({
+    ...repo,
+    release_id: release.id,
+    draft: false,
+    prerelease: nightly,
+    make_latest: nightly ? "false" : "true",
+    name: nightly ? "Nightly" : `Tunnelde ${tag.slice(1)}`,
+  });
+  if (nightly) {
+    // Keep the previous working Nightly until its verified replacement is public.
+    for (const old of releases) {
+      if (
+        old.id !== release.id &&
+        old.name === "Nightly" &&
+        old.prerelease &&
+        /^v\d+\.\d+\.\d+-beta\.\d+\.\d+$/.test(old.tag_name)
+      )
+        await github.rest.repos.deleteRelease({ ...repo, release_id: old.id });
+    }
   }
-  let missingTag = false;
-  try {
-    const { data: ref } = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` });
-    if (ref.object.type !== "commit" || ref.object.sha !== sha)
-      throw new Error("Existing tag points elsewhere");
-  } catch (error) {
-    if (error.status !== 404) throw error;
-    missingTag = true;
-  }
-  // The PR body stays concise; the draft gets the full notes from its exact source.
-  const changelog = await readText(github, context.repo, "CHANGELOG.md", sha);
-  const body = releaseSection(changelog, tag.slice(1)).notes;
-  if (!body) throw new Error("Release notes cannot be empty");
-  if (matching[0].body !== body) {
-    await github.rest.repos.updateRelease({ ...context.repo, release_id: matching[0].id, body });
-  }
-  if (missingTag)
-    await github.rest.git.createRef({ ...context.repo, ref: `refs/tags/${tag}`, sha });
 }

@@ -57,28 +57,28 @@ host-specific panes update without relying on navigation.
 
 ## Release flow
 
-`main` is the protected default branch. Feature PRs pass CI and the trusted PR-policy
-workflow, then squash merge with a Conventional Commit title. Release Please maintains one
-cumulative release PR, updating the frontend/Tauri/Rust versions and both native lockfiles.
-Manual notes in `## [Unreleased]` move into the proposed release without removing generated notes.
+`dev` is the protected default branch and contribution target. `main` contains stable releases.
+Every dev update maintains one generated `release/dev-to-main` PR and builds a beta prerelease
+named Nightly. The PR tree comes from dev, with synchronized versions, a summarized changelog,
+and a marker recording the dev source; its parent is current main. The marker tracks promotions
+across squash history. Historical changelog entries stay intact, and actual branch refs are
+resolved and rechecked before generated refs are changed.
 
-Merging the release PR creates a draft bound to that exact merge commit and an immutable
-`v<version>` tag. The Release PR workflow explicitly calls the reusable Release workflow;
-it does not rely on a bot's tag push triggering another workflow. All four desktop builds
-share the draft, then generate and validate `latest.json`. The release remains a draft until
-a maintainer publishes it. Another unfinished draft blocks the next release, not unrelated
-fixes. Native-helper binaries remain Actions artifacts and are rejected in desktop downloads.
+Merging that release PR tags the exact stable merge commit and creates a shared draft. The reusable
+Release workflow builds all four desktop targets, validates signatures and `latest.json`, then
+publishes automatically. Nightly has a unique beta tag and cannot become the latest stable release.
+Its predecessor stays available until the replacement is verified and published. Helpers remain
+Actions artifacts and are rejected in desktop release downloads.
 
-The native repository token works without a persistent credential: after updating the release
-branch, automation explicitly dispatches CI on that branch and sets the required PR-policy status
-on its head SHA. An optional repository-scoped GitHub App can create release PRs instead.
-The privileged metadata workflow executes only trusted `main` code, never PR code.
-See [release operations](releases.md) for credentials, rules, recovery and version overrides.
+The repository token explicitly dispatches CI on generated PR heads and writes PR-policy status;
+no personal token or App credential is needed. The privileged policy workflow executes only trusted
+target-branch code. Main and dev remain protected, with no bot bypass or direct release commits.
+See [release operations](releases.md) for protection, source checks and recovery.
 
 Both macOS desktop architectures build on `macos-15-intel`. Rust and the installed Apple SDK
 cross compile `aarch64-apple-darwin`; the x64 build targets `x86_64-apple-darwin`. Each app is
 ad-hoc signed and checked for its expected Mach-O architecture and a valid code signature before
-the draft is ready for review. Updater signatures remain separate. This avoids depending on the
+the release is published. Updater signatures remain separate. This avoids depending on the
 capacity of hosted Apple Silicon runners; it does not replace testing the app on Apple Silicon.
 Native helper CI runs on Intel macOS and also compiles/checks an arm64 binary.
 

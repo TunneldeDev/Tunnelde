@@ -16,6 +16,47 @@ const files = {
 };
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
+const BUILD_VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
+
+export const VERSION_PATHS = [
+  "package.json",
+  "src-tauri/tauri.conf.json",
+  "src-tauri/Cargo.toml",
+  "src-tauri/Cargo.lock",
+  "native-helpers/Cargo.toml",
+  "native-helpers/Cargo.lock",
+  ".release-please-manifest.json",
+  "CITATION.cff",
+];
+
+// Shared by local preparation and Git tree generation; validates before writing anything.
+export function versionContents(contents, version) {
+  if (!BUILD_VERSION.test(version)) throw new Error(`invalid version: ${version}`);
+  return Object.fromEntries(
+    VERSION_PATHS.map((path) => {
+      const text = contents[path];
+      if (typeof text !== "string") throw new Error(`Missing version file: ${path}`);
+      if (path.endsWith(".json")) {
+        const value = JSON.parse(text);
+        value[path === ".release-please-manifest.json" ? "." : "version"] = version;
+        return [path, `${JSON.stringify(value, null, 2)}\n`];
+      }
+      const pattern =
+        path === "CITATION.cff"
+          ? /^version: [^\r\n]+$/m
+          : path.endsWith(".lock")
+            ? new RegExp(
+                `(\\[\\[package\\]\\]\\r?\\nname = "${path.startsWith("native") ? "tunnelde-agent" : "tunnelde"}"\\r?\\nversion = ")[^"]+(")`,
+              )
+            : /(\[package\][\s\S]*?\nversion = ")[^"]+(")/;
+      if (!pattern.test(text)) throw new Error(`Cannot locate version in ${path}`);
+      return [
+        path,
+        text.replace(pattern, path === "CITATION.cff" ? `version: ${version}` : `$1${version}$2`),
+      ];
+    }),
+  );
+}
 
 export function currentVersion() {
   return JSON.parse(readFileSync(files.package, "utf8")).version;
@@ -58,64 +99,20 @@ export function compareVersions(left, right) {
 }
 
 export function setVersion(version) {
-  if (!SEMVER.test(version)) {
-    throw new Error(`invalid version: ${version}`);
-  }
-
-  const pkg = JSON.parse(readFileSync(files.package, "utf8"));
-  pkg.version = version;
-  writeFileSync(files.package, `${JSON.stringify(pkg, null, 2)}\n`);
-
-  const config = JSON.parse(readFileSync(files.config, "utf8"));
-  config.version = version;
-  writeFileSync(files.config, `${JSON.stringify(config, null, 2)}\n`);
-
-  const cargo = readFileSync(files.cargo, "utf8");
-  const nextCargo = cargo.replace(/(\[package\][\s\S]*?\nversion = ")[^"]+(")/, `$1${version}$2`);
-  if (nextCargo === cargo) {
-    throw new Error("could not update src-tauri/Cargo.toml");
-  }
-  writeFileSync(files.cargo, nextCargo);
-
-  const lock = readFileSync(files.lock, "utf8");
-  const nextLock = lock.replace(
-    /(\[\[package\]\]\nname = "tunnelde"\nversion = ")[^"]+(")/,
-    `$1${version}$2`,
+  const contents = Object.fromEntries(
+    VERSION_PATHS.map((path) => [path, readFileSync(join(root, path), "utf8")]),
   );
-  if (nextLock === lock) {
-    throw new Error("could not update src-tauri/Cargo.lock");
-  }
-  writeFileSync(files.lock, nextLock);
-
-  for (const file of [files.helper, files.helperLock]) {
-    const content = readFileSync(file, "utf8");
-    const pattern =
-      file === files.helper
-        ? /(\[package\][\s\S]*?\nversion = ")[^"]+(")/
-        : /(\[\[package\]\]\r?\nname = "tunnelde-agent"\r?\nversion = ")[^"]+(")/;
-    writeFileSync(file, content.replace(pattern, `$1${version}$2`));
-  }
-
-  const manifest = JSON.parse(readFileSync(files.manifest, "utf8"));
-  manifest["."] = version;
-  writeFileSync(files.manifest, `${JSON.stringify(manifest, null, 2)}\n`);
-
-  const citation = readFileSync(files.citation, "utf8");
-  if (!/^version: ["']?\d+\.\d+\.\d+["']?$/m.test(citation)) {
-    throw new Error("CITATION.cff has no version");
-  }
-  writeFileSync(
-    files.citation,
-    citation.replace(/^version: ["']?\d+\.\d+\.\d+["']?$/m, `version: ${version}`),
-  );
-
+  const updated = versionContents(contents, version);
+  for (const [path, content] of Object.entries(updated)) writeFileSync(join(root, path), content);
   return version;
 }
 
 export function checkVersion(tag) {
   const candidate = String(tag ?? "");
   // Branch names such as "main" are not release tags and must be ignored.
-  const expected = /^v?\d+\.\d+\.\d+$/.test(candidate) ? candidate.replace(/^v/, "") : "";
+  const expected = /^v?\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/.test(candidate)
+    ? candidate.replace(/^v/, "")
+    : "";
   const pkg = currentVersion();
   const cargoMatch = /^version = "([^"]+)"$/m.exec(readFileSync(files.cargo, "utf8"));
   const config = JSON.parse(readFileSync(files.config, "utf8")).version;
@@ -123,7 +120,7 @@ export function checkVersion(tag) {
     readFileSync(files.lock, "utf8"),
   );
   const problems = [];
-  const citationVersion = /^version: ["']?(\d+\.\d+\.\d+)["']?$/m.exec(
+  const citationVersion = /^version: ["']?(\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?)["']?$/m.exec(
     readFileSync(files.citation, "utf8"),
   )?.[1];
   if (citationVersion !== pkg)

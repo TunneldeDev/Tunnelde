@@ -1,4 +1,4 @@
-name: Release PR
+name: Stable release
 
 on:
   push:
@@ -6,86 +6,46 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-pr
+  group: stable-release
   cancel-in-progress: false
 
 permissions:
   contents: write
-  pull-requests: write
-  issues: write
-  statuses: write
   actions: write
+  pull-requests: read
 
 jobs:
-  release:
-    name: Maintain release PR
+  prepare:
     runs-on: ubuntu-latest
     outputs:
-      tag: ${{ steps.release.outputs.tag_name }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check for an unfinished draft
-        id: gate
-        uses: actions/github-script@v7
         with:
-          script: |
-            const releases = await github.paginate(github.rest.repos.listReleases, {...context.repo, per_page: 100});
-            const drafts = releases.filter(r => r.draft);
-            core.setOutput('allowed', drafts.length === 0);
-            if (drafts.length) core.notice(`Finish the existing draft before preparing another release: ${drafts.map(r => r.tag_name).join(', ')}`);
-      - name: Create optional release App token
-        if: steps.gate.outputs.allowed == 'true' && vars.RELEASE_APP_ID != ''
-        id: app
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ vars.RELEASE_APP_ID }}
-          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-      - name: Create draft for a merged release PR
-        if: steps.gate.outputs.allowed == 'true'
+          ref: main
+      - uses: actions/github-script@v7
         id: release
-        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
-        with:
-          token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
-          target-branch: main
-          skip-github-pull-request: true
-      - name: Sync draft notes and create immutable source tag
-        if: steps.release.outputs.release_created == 'true'
-        uses: actions/github-script@v7
-        env:
-          RELEASE_TAG: ${{ steps.release.outputs.tag_name }}
-          RELEASE_SHA: ${{ steps.release.outputs.sha }}
         with:
           script: |
-            const {ensureDraftTag} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
-            await ensureDraftTag({github, context, tag: process.env.RELEASE_TAG, sha: process.env.RELEASE_SHA});
-      - name: Check whether release source changed
-        if: steps.gate.outputs.allowed == 'true' && steps.release.outputs.release_created != 'true'
-        id: refresh
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const {releasePrNeedsRefresh} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
-            core.setOutput('needed', await releasePrNeedsRefresh({github, context}));
-      - name: Maintain cumulative release PR
-        if: steps.gate.outputs.allowed == 'true' && steps.release.outputs.release_created != 'true' && steps.refresh.outputs.needed == 'true'
-        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
-        with:
-          token: ${{ steps.app.outputs.token || secrets.GITHUB_TOKEN }}
-          target-branch: main
-          skip-github-release: true
-      - name: Summarize changelog in release PR and run checks
-        if: steps.gate.outputs.allowed == 'true' && steps.release.outputs.release_created != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const {updateReleasePr} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
-            await updateReleasePr({github, context});
+            const {prepareStable} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/automation.mjs`);
+            core.setOutput('tag', await prepareStable({github, context}));
 
-  draft:
-    name: Build draft release
-    needs: release
-    if: needs.release.outputs.tag != ''
+  publish:
+    needs: prepare
+    if: needs.prepare.outputs.tag != ''
     uses: ./.github/workflows/release.yml
     with:
-      existing_tag: ${{ needs.release.outputs.tag }}
+      existing_tag: ${{ needs.prepare.outputs.tag }}
+      build_helpers: false
     secrets: inherit
+
+  refresh:
+    needs: [prepare, publish]
+    if: always() && needs.prepare.result == 'success' && (needs.publish.result == 'success' || needs.publish.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            // Refresh from authoritative dev/main refs after promotion, including new work accumulated during the build.
+            await github.rest.actions.createWorkflowDispatch({...context.repo, workflow_id: 'development.yml', ref: 'dev'});
