@@ -2,6 +2,8 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BUILD_VERSION } from "./metadata/channels.mjs";
+import { VERSION_PATHS, versionContents } from "./metadata/version-files.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const files = {
@@ -16,47 +18,8 @@ const files = {
 };
 
 const SEMVER = /^(\d+)\.(\d+)\.(\d+)$/;
-const BUILD_VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
 
-export const VERSION_PATHS = [
-  "package.json",
-  "src-tauri/tauri.conf.json",
-  "src-tauri/Cargo.toml",
-  "src-tauri/Cargo.lock",
-  "native-helpers/Cargo.toml",
-  "native-helpers/Cargo.lock",
-  ".release-please-manifest.json",
-  "CITATION.cff",
-];
-
-// Shared by local preparation and Git tree generation; validates before writing anything.
-export function versionContents(contents, version) {
-  if (!BUILD_VERSION.test(version)) throw new Error(`invalid version: ${version}`);
-  return Object.fromEntries(
-    VERSION_PATHS.map((path) => {
-      const text = contents[path];
-      if (typeof text !== "string") throw new Error(`Missing version file: ${path}`);
-      if (path.endsWith(".json")) {
-        const value = JSON.parse(text);
-        value[path === ".release-please-manifest.json" ? "." : "version"] = version;
-        return [path, `${JSON.stringify(value, null, 2)}\n`];
-      }
-      const pattern =
-        path === "CITATION.cff"
-          ? /^version: [^\r\n]+$/m
-          : path.endsWith(".lock")
-            ? new RegExp(
-                `(\\[\\[package\\]\\]\\r?\\nname = "${path.startsWith("native") ? "tunnelde-agent" : "tunnelde"}"\\r?\\nversion = ")[^"]+(")`,
-              )
-            : /(\[package\][\s\S]*?\nversion = ")[^"]+(")/;
-      if (!pattern.test(text)) throw new Error(`Cannot locate version in ${path}`);
-      return [
-        path,
-        text.replace(pattern, path === "CITATION.cff" ? `version: ${version}` : `$1${version}$2`),
-      ];
-    }),
-  );
-}
+export { VERSION_PATHS, versionContents } from "./metadata/version-files.mjs";
 
 export function currentVersion() {
   return JSON.parse(readFileSync(files.package, "utf8")).version;
@@ -110,7 +73,7 @@ export function setVersion(version) {
 export function checkVersion(tag) {
   const candidate = String(tag ?? "");
   // Branch names such as "main" are not release tags and must be ignored.
-  const expected = /^v?\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/.test(candidate)
+  const expected = BUILD_VERSION.test(candidate.replace(/^v/, ""))
     ? candidate.replace(/^v/, "")
     : "";
   const pkg = currentVersion();
@@ -120,7 +83,7 @@ export function checkVersion(tag) {
     readFileSync(files.lock, "utf8"),
   );
   const problems = [];
-  const citationVersion = /^version: ["']?(\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?)["']?$/m.exec(
+  const citationVersion = /^version: ["']?([^\s"']+)["']?$/m.exec(
     readFileSync(files.citation, "utf8"),
   )?.[1];
   if (citationVersion !== pkg)

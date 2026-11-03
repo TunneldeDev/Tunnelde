@@ -4,8 +4,8 @@
 
 **Settings → Updates** contains the current version, checks, installation progress and
 collapsible release notes. All update actions use this section instead of opening a new
-page. Choose **Stable** or **Public beta (Nightly)**, and **GitHub** or a compatible custom
-HTTPS source. Default: Stable for stable builds, Public beta for new beta installations,
+page. Choose **Stable**, **Public beta (Beta)** or **Development (Nightly)**, and **GitHub** or a compatible custom
+HTTPS source. Default: Stable for stable builds, Public beta for new Beta installations, Nightly for new Nightly installations,
 GitHub source, automatic checks once a day, manual download/installation. Existing saved
 channel choices are preserved. Every-startup and weekly checks are also available.
 

@@ -15,40 +15,58 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    preparation commit has current main and dev as its two parents. This retains every original
    dev commit and SHA while remaining up to date with strict branch protection. The branch can be
    rebuilt with a forced update; dev, main and existing tags are never force updated.
-3. The same dev source builds a unique `vX.Y.Z-beta.N` tag. The public prerelease
-   is named **Nightly**. All desktop installers, signatures and updater metadata must pass
-   verification before publication. Only then is the previous Nightly release retired;
-   immutable beta tags remain. Failed/stale builds cannot replace the working Nightly.
-4. Review the version and summarized changelog in the release PR, then use **Create a merge commit**
-   to merge into main. The release keeps all individual dev commits, the preparation commit and
-   an explicit PR merge point. **Stable release** verifies the reviewed parents and tree,
-   creates an immutable tag at that exact merged commit before
-   creating a draft, then calls **Release** for the four desktop targets.
-5. **Verify and publish release** validates all desktop artifacts and `latest.json`, then
-   automatically publishes the release as latest. Nightly always uses `prerelease: true`
-   and `make_latest: false`; stable desktop updater URLs continue to use `/releases/latest/`.
-6. After stable publication, development automation is refreshed to pick up any work that
-   arrived while the stable builds were running. No new changes means no duplicate release PR.
+3. Dev pushes do not publish installers. Use **Prepare Beta → Run workflow** to select the
+   current dev snapshot, synchronize its eight version files and changelog in an isolated commit,
+   and create the next immutable `vX.Y.Z-beta.N` tag. Beta is an explicit testing milestone.
+4. **Publish version** listens to `push.tags: ["v*"]`. Stable tags publish stable releases; Beta
+   tags publish prereleases. Direct tag pushes must already have matching version manifests and
+   release notes and belong to the correct branch history. Lightweight and annotated tags work.
+   Tags created by `GITHUB_TOKEN` do not trigger push workflows, so automation explicitly dispatches
+   this same publisher with the exact tag. Repeating an already public tag skips rebuilding it.
+5. Review the version and changelog in the release PR, then **Create a merge commit** into main.
+   **Stable release** verifies the reviewed parents and tree and tags the exact merged commit;
+   **Publish version** builds Windows, Linux, Apple Silicon and Intel macOS packages.
+6. Every build first shares one staging draft. Only after all desktop artifacts, signatures and
+   `latest.json` pass verification does it become public. Titles are the complete version tag,
+   e.g. `v0.27.1-beta.4` or `v0.27.1`. Beta and Nightly always use `prerelease: true` and
+   `make_latest: false`. Stable uses `/releases/latest/`; an older recovered stable version cannot
+   move that pointer backwards. Historical releases and immutable tags are retained.
+7. After preparing a stable tag, refresh development automation for work accumulated since the
+   promotion. No new changes means no duplicate release PR.
 
-The main migration PR itself keeps version 0.26.1 and does not create an extra stable release.
-Development preparation waits until the migration metadata exists on main. Set `dev` as the
-repository default once its reviewed workflow files are available; **Stable release** dispatches
-development preparation after the migration merges. No bot bypass or direct main write is needed.
+## Independent Nightly builds
+
+**Nightly** runs at `0 22 * * *` (22:00 UTC, 06:00 Beijing time the following day), or from its
+**Run workflow** button. It reads current `dev`; it is not triggered by dev pushes. No work after
+the last stable promotion means no build. Repeating an already published snapshot also skips it;
+an interrupted draft is reused. This follows MAA's separation of tagged releases and daily snapshots.
+
+Versions contain the target stable base, the commit distance and the source hash:
+
+- Before a Beta milestone: `v0.27.1-alpha.1.d.3.g7ec5d7a8c51c`.
+- After `v0.27.1-beta.4`: `v0.27.1-beta.4.d.2.g0123456789ab`.
+- No commits since that Beta: skip Nightly rather than build identical code again.
+
+The most recent applicable Beta is the anchor; its source must be an ancestor of current dev.
+Distance is a separate numeric SemVer identifier so 1000 sorts after 999. The versioned title adds
+`(Nightly)`. Daily builds do not consume Beta numbers. Nightly stays in this repository and builds
+all four desktop targets using the existing Tauri signed updater, rather than MAA's Windows-only
+OTA packaging and separate release repository.
 
 ## Versions and changelog
 
 `feat` increases minor. Other development changes, including docs, CI and tests, increase patch.
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
-Beta versions use the same next stable base with a unique build sequence suffix.
+Explicit Beta versions use the same next stable base with a unique sequence suffix.
 The suffix is `beta.N`, counted separately for each target stable version. For example,
 `0.26.2-beta.1`, `0.26.2-beta.2`, then stable `0.26.2`; the first beta for the next patch
 is `0.26.3-beta.1`. A change to the target minor/major version also starts at `beta.1`.
 Automation reads immutable tags rather than the workflow's global run counter or the
-retired Nightly release. Failed builds reserve their number; retrying the same source
+display title of a release. Failed builds reserve their number; retrying the same source
 reuses its existing tag and draft without changing published packages. Legacy tags such
 as `0.26.2-beta.2.1` remain valid and reserve sequence 2, so the next new source for that
-same target uses `0.26.2-beta.3`. Publication compares complete semantic versions, so
+same target uses `0.26.2-beta.3`. Update discovery compares complete semantic versions, so
 a larger target version supersedes older betas even when its sequence restarts at 1.
 
 All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
@@ -114,11 +132,15 @@ It rebuilds the tagged source, shares the same draft across builders, validates 
 publishes automatically. Already public releases are rejected by the build preparation step;
 recovery never replaces public installers. Never move an existing tag or reuse an abandoned version.
 
-Publication rechecks the current channel source: an obsolete Nightly cannot replace a newer dev
-build, and an old stable draft cannot become latest after main advances. Retry **Development**
-or **Stable release** to prepare the current source. A published stable version is not duplicated.
-Development workflow concurrency serializes release-branch updates; pending pushes may coalesce
-to the newest dev source, avoiding a queue of obsolete installer builds.
+Publication checks the tag's immutable commit, channel and branch ancestry. Advancing dev during
+a build does not invalidate the selected snapshot or strand its complete draft. A source removed
+from branch history is rejected. Historical Beta/Nightly publication cannot overwrite stable or
+newer-version installers; an old stable recovery explicitly keeps the newer stable as latest.
+
+**Publish version → Run workflow → tag** also validates and creates a missing draft for an existing
+version tag. **Release → existing_tag** resumes an already staged draft. Both retain the original
+source; neither changes tags or rebuilds public packages. Development concurrency serializes only
+release-PR maintenance; Beta, Nightly and version publication have independent workflow groups.
 
 Native helpers and compiler timings remain optional Actions artifacts, never public desktop
 release downloads. The plugin marketplace repository has its own independent release process.
@@ -143,23 +165,26 @@ downloads or installs a package automatically. Release notes are included in `la
 and displayed in a collapsed Markdown section.
 
 - **Stable** uses the latest public stable manifest and excludes prereleases.
-- **Public beta (Nightly)** discovers published releases containing `latest.json` and
-  selects the greatest eligible stable/beta version using SemVer. A finished stable
-  release supersedes its older beta builds. Drafts, alpha builds and incomplete releases
-  are excluded. A source outage is an error, never an up-to-date result.
-- Switching back to Stable never automatically downgrades a newer prerelease. It waits
-  for a stable version greater than the installed build. Existing beta tags stay immutable.
+- **Public beta (Beta)** selects the greatest published stable/Beta version with `latest.json`.
+- **Development (Nightly)** additionally accepts daily snapshots, including Nightly builds based
+  on Beta tags. Those snapshots are excluded from the public Beta channel.
+- Discovery follows GitHub release pagination and compares SemVer rather than titles or list order.
+  Drafts, incomplete releases and mismatched prerelease flags are excluded. A source outage is an
+  error rather than an up-to-date result. Discovery is bounded to ten pages; an incomplete scan fails.
+- Switching back to Stable never automatically downgrades a newer prerelease. It waits for a stable
+  version greater than the installed build. All source/channel changes invalidate a previous update
+  selection, and cannot occur during an installation.
 
-Stable builds default to Stable. New beta installations default to Public beta; saved
-preferences always take priority when upgrading an existing installation.
+Fresh installations default to their own channel: stable, Beta or Nightly. Saved preferences always
+take priority when upgrading an existing installation.
 
 The official source is **GitHub**. There is no bundled third-party mirror. A **custom HTTPS
 source** can serve standard Tauri manifests at a template such as
 `https://updates.example.com/{channel}/latest.json`. The placeholder must occur exactly
-once in the path, expanding to `stable` or `beta`. Credentials, query strings and fragments
-are rejected. A beta check queries both manifests and chooses the newest eligible version;
-the beta endpoint may return HTTP 204 if no beta is available. Both channel endpoints
-must otherwise be reachable. This is a manifest service, not a generic GitHub proxy prefix.
+once in the path, expanding to `stable`, `beta` or `nightly`. Credentials, query strings and fragments
+are rejected. A Beta check queries stable/Beta; a Nightly check queries all three
+concurrently and chooses the newest eligible version. An unavailable channel can return HTTP 204.
+The requested endpoints must otherwise be reachable. This is a manifest service, not a generic GitHub proxy prefix.
 
 Mirror operators copy verified `latest.json` and the corresponding signed updater packages
 only after publication. Preserve version, signatures and release notes; replace package

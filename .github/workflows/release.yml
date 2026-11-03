@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       existing_tag:
-        description: Immutable stable or beta draft tag to build and publish
+        description: Immutable stable, beta or Nightly draft tag to build and publish
         required: true
         type: string
       build_helpers:
@@ -55,8 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+(\.[0-9]+)?)?$ ]]; then
-            echo "existing_tag must be a stable or beta version tag" >&2
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+(\.[0-9]+)?(\.d\.[0-9]+\.g[a-f0-9]{7,40})?|-alpha\.1\.d\.[0-9]+\.g[a-f0-9]{7,40})?$ ]]; then
+            echo "existing_tag must be a stable, beta or Nightly version tag" >&2
             exit 1
           fi
 
@@ -76,9 +76,14 @@ jobs:
           TAG: ${{ inputs.existing_tag }}
         run: |
           node scripts/release/version.mjs check "${TAG}"
-          if [[ "${TAG}" == *-beta.* ]]; then
+          if [[ "${TAG}" == *-* ]]; then
             source=$(git show -s --format=%B HEAD | sed -n 's/^Release-source: //p')
-            test "${source}" = "$(git rev-parse HEAD^)"
+            if [ -n "${source}" ]; then
+              test "$(git rev-list --parents -n 1 HEAD | wc -w | xargs)" = "2"
+              test "${source}" = "$(git rev-parse HEAD^)"
+            else
+              source=$(git rev-parse HEAD)
+            fi
             git merge-base --is-ancestor "${source}" origin/dev
           else
             git merge-base --is-ancestor HEAD origin/main
@@ -119,11 +124,11 @@ jobs:
           source=$(jq -er --arg tag "${TAG}" '.[][] | select(.tag_name == $tag) | .target_commitish' releases.json)
           test "${source}" = "$(git rev-parse HEAD)"
           channel=false
-          if [[ "${TAG}" == *-beta.* ]]; then channel=true; fi
+          if [[ "${TAG}" == *-* ]]; then channel=true; fi
           jq -e --arg tag "${TAG}" --argjson channel "${channel}" '.[][] | select(.tag_name == $tag) | .prerelease == $channel' releases.json
           node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md
-          title="Tunnelde ${TAG#v}"
-          if [[ "${TAG}" == *-beta.* ]]; then title="Nightly"; fi
+          title="${TAG}"
+          if [[ "${TAG}" == *.d.* ]]; then title="${TAG} (Nightly)"; fi
           gh release edit "${TAG}" --notes-file release-notes.md --title "${title}" --repo "${GITHUB_REPOSITORY}"
           echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
@@ -222,10 +227,10 @@ jobs:
         with:
           releaseId: ${{ needs.prepare.outputs.release_id }}
           tagName: ${{ needs.prepare.outputs.tag }}
-          releaseName: Tunnelde ${{ needs.prepare.outputs.version }}
+          releaseName: ${{ needs.prepare.outputs.tag }}
           releaseBody: ${{ needs.prepare.outputs.body }}
           releaseDraft: true
-          prerelease: ${{ contains(needs.prepare.outputs.tag, '-beta.') }}
+          prerelease: ${{ contains(needs.prepare.outputs.tag, '-') }}
           includeUpdaterJson: false
           args: ${{ matrix.args }} -- --locked --timings
 
@@ -386,6 +391,6 @@ jobs:
           RELEASE_TAG: ${{ needs.prepare.outputs.tag }}
         with:
           script: |
-            const {publishRelease} = await import(`${process.env.GITHUB_WORKSPACE}/.release-tools/scripts/release/automation.mjs`);
+            const {publishRelease} = await import(`${process.env.GITHUB_WORKSPACE}/.release-tools/scripts/release/publishing/releases.mjs`);
             await publishRelease({github, context, tag: process.env.RELEASE_TAG});
             await core.summary.addHeading(`Published ${process.env.RELEASE_TAG}`).addRaw('All desktop assets, signatures and updater metadata passed validation.').write();

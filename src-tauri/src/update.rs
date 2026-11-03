@@ -13,9 +13,13 @@ use crate::models::now_ms;
 use crate::settings::Settings;
 use crate::state::AppState;
 
+mod channels;
+mod feeds;
+
+use channels::accepts_version;
+use feeds::{feeds, Feed};
+
 pub const RELEASES_PAGE: &str = "https://github.com/TunneldeDev/Tunnelde/releases/latest";
-const RELEASES_API: &str =
-    "https://api.github.com/repos/TunneldeDev/Tunnelde/releases?per_page=100";
 const EVENT: &str = "update://state";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -230,129 +234,6 @@ pub fn validate_preferences(settings: &Settings) -> AppResult<()> {
     Ok(())
 }
 
-fn accepts_version(current: &Version, candidate: &Version, channel: &str) -> bool {
-    candidate > current
-        && (candidate.pre.is_empty()
-            || (channel == "beta" && candidate.pre.as_str().starts_with("beta.")))
-}
-
-#[derive(Debug, Deserialize)]
-struct ReleaseAsset {
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GitHubRelease {
-    tag_name: String,
-    draft: bool,
-    prerelease: bool,
-    assets: Vec<ReleaseAsset>,
-    #[serde(default)]
-    body: Option<String>,
-}
-
-struct Feed {
-    url: reqwest::Url,
-    channel: String,
-    version: Option<Version>,
-    page: String,
-    notes: Option<String>,
-}
-
-fn github_beta_feed(releases: &[GitHubRelease]) -> AppResult<Feed> {
-    let (version, release) = releases
-        .iter()
-        .filter(|release| !release.draft && release.assets.iter().any(|a| a.name == "latest.json"))
-        .filter_map(|release| {
-            let version = Version::parse(release.tag_name.strip_prefix('v')?).ok()?;
-            let eligible = if version.pre.is_empty() {
-                !release.prerelease
-            } else {
-                release.prerelease && version.pre.as_str().starts_with("beta.")
-            };
-            eligible.then_some((version, release))
-        })
-        .max_by(|a, b| a.0.cmp(&b.0))
-        .ok_or_else(|| AppError::Update("updates.noFeed".into()))?;
-    let tag = &release.tag_name;
-    Ok(Feed {
-        url: format!("https://github.com/TunneldeDev/Tunnelde/releases/download/{tag}/latest.json")
-            .parse()
-            .map_err(|_| AppError::Update("updates.noFeed".into()))?,
-        channel: "beta".into(),
-        version: Some(version),
-        page: format!("https://github.com/TunneldeDev/Tunnelde/releases/tag/{tag}"),
-        notes: release.body.clone(),
-    })
-}
-
-async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec<Feed>> {
-    validate_preferences(settings)?;
-    if settings.update_source == "custom" {
-        if settings.update_source_url.is_empty() {
-            return Err(AppError::validation("updates.invalidSource"));
-        }
-        let channels: &[&str] = if settings.update_channel == "beta" {
-            &["stable", "beta"]
-        } else {
-            &["stable"]
-        };
-        return channels
-            .iter()
-            .map(|channel| {
-                Ok(Feed {
-                    url: settings
-                        .update_source_url
-                        .replace("{channel}", channel)
-                        .parse()
-                        .map_err(|_| AppError::validation("updates.invalidSource"))?,
-                    channel: (*channel).into(),
-                    version: None,
-                    notes: None,
-                    page: if *channel == "stable" {
-                        RELEASES_PAGE.into()
-                    } else {
-                        "https://github.com/TunneldeDev/Tunnelde/releases".into()
-                    },
-                })
-            })
-            .collect();
-    }
-    if settings.update_channel == "stable" {
-        return Ok(vec![Feed {
-            url: format!("{RELEASES_PAGE}/download/latest.json")
-                .parse()
-                .unwrap(),
-            channel: "stable".into(),
-            version: None,
-            notes: None,
-            page: RELEASES_PAGE.into(),
-        }]);
-    }
-    let client = crate::network::http_client(app, "updates")?;
-    let mut response = client
-        .get(RELEASES_API)
-        .timeout(Duration::from_secs(30))
-        .send()
-        .await
-        .and_then(reqwest::Response::error_for_status)
-        .map_err(|_| AppError::Update("updates.sourceUnavailable".into()))?;
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|_| AppError::Update("updates.sourceUnavailable".into()))?
-    {
-        if bytes.len() + chunk.len() > 4 * 1024 * 1024 {
-            return Err(AppError::Update("updates.invalidFeed".into()));
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let releases = serde_json::from_slice::<Vec<GitHubRelease>>(&bytes)
-        .map_err(|_| AppError::Update("updates.invalidFeed".into()))?;
-    Ok(vec![github_beta_feed(&releases)?])
-}
-
 fn configured_updater(
     app: &AppHandle,
     settings: &Settings,
@@ -421,19 +302,29 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
     } else {
         let feeds = feeds(app, &settings).await?;
         let mut candidates = Vec::new();
-        // At most two channel manifests; query concurrently, then choose by SemVer, not date.
+        // At most three channel manifests; choose by SemVer, not publication date.
         let checks = feeds
             .iter()
             .map(|feed| configured_updater(app, &settings, feed))
             .collect::<AppResult<Vec<_>>>()?;
-        let (first, second) = tokio::join!(checks[0].check(), async {
-            if checks.len() > 1 {
-                checks[1].check().await
-            } else {
-                Ok(None)
+        let (first, second, third) = tokio::join!(
+            checks[0].check(),
+            async {
+                if checks.len() > 1 {
+                    checks[1].check().await
+                } else {
+                    Ok(None)
+                }
+            },
+            async {
+                if checks.len() > 2 {
+                    checks[2].check().await
+                } else {
+                    Ok(None)
+                }
             }
-        });
-        for (index, result) in [first, second].into_iter().enumerate() {
+        );
+        for (index, result) in [first, second, third].into_iter().enumerate() {
             if let Some(mut update) = result? {
                 if update.body.is_none() {
                     update.body = feeds[index].notes.clone();
@@ -549,7 +440,7 @@ pub fn release_page(settings: &Settings, snapshot: &UpdateState) -> String {
             }
         }
     }
-    if settings.update_channel == "beta" {
+    if settings.update_channel != "stable" {
         "https://github.com/TunneldeDev/Tunnelde/releases".into()
     } else {
         RELEASES_PAGE.into()
