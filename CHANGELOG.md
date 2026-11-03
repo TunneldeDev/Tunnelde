@@ -6,6 +6,65 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.27.1-beta.3](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.0...v0.27.1) - 2026-11-03
+
+### 更新概览 | Highlights
+
+- **ci:** recover stalled Rust cache restores
+- **startup:** restore saved appearance before showing the window
+- **settings:** align network and proxy configuration layouts
+
+<details open>
+<summary>详细变更 | Details (3)</summary>
+
+### 修复 | Fix
+
+- **ci:** recover stalled Rust cache restores ([#20](https://github.com/TunneldeDev/Tunnelde/pull/20)) @quyansiyuanwang
+- **startup:** restore saved appearance before showing the window ([#21](https://github.com/TunneldeDev/Tunnelde/pull/21)) @quyansiyuanwang
+- **settings:** align network and proxy configuration layouts ([#22](https://github.com/TunneldeDev/Tunnelde/pull/22)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
+## [0.27.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.26.1...v0.27.0) - 2026-11-03
+
+### 更新概览 | Highlights
+
+- **network:** add proxies, jump hosts, resumable transfers, SSHFS and forwarding
+- **updates:** integrate update channels and sources into settings
+- **release:** support rebase merges with commit validation
+- **sshfs:** compile the process launcher on Unix
+- **release:** reset beta sequences for each target version
+
+<details open>
+<summary>详细变更 | Details (8)</summary>
+
+### 新增 | New
+
+- **network:** add proxies, jump hosts, resumable transfers, SSHFS and forwarding ([#17](https://github.com/TunneldeDev/Tunnelde/pull/17), [16ff59d](https://github.com/TunneldeDev/Tunnelde/commit/16ff59d6a32e96a77c96b50eb3cd59f424da5021)) @quyansiyuanwang
+- **updates:** integrate update channels and sources into settings ([#17](https://github.com/TunneldeDev/Tunnelde/pull/17), [1ae8993](https://github.com/TunneldeDev/Tunnelde/commit/1ae8993f4e356276945b66d1506be0049890caed)) @quyansiyuanwang
+- **release:** support rebase merges with commit validation ([#17](https://github.com/TunneldeDev/Tunnelde/pull/17)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **sshfs:** compile the process launcher on Unix ([#17](https://github.com/TunneldeDev/Tunnelde/pull/17), [062d92f](https://github.com/TunneldeDev/Tunnelde/commit/062d92fe499b44ce1cfbc4fbf4b3542eb273d079)) @quyansiyuanwang
+- **release:** reset beta sequences for each target version ([#17](https://github.com/TunneldeDev/Tunnelde/pull/17), [42843e8](https://github.com/TunneldeDev/Tunnelde/commit/42843e81158a3de96a98a650bbdc02bd9735f6b1)) @quyansiyuanwang
+- **ci:** recover delayed release PR checks and transient API errors ([#18](https://github.com/TunneldeDev/Tunnelde/pull/18)) @quyansiyuanwang
+- **release:** preserve dev commits in stable promotions ([#19](https://github.com/TunneldeDev/Tunnelde/pull/19)) @quyansiyuanwang
+
+### 构建 | Build
+
+- add dev Nightly and automatic stable releases ([#15](https://github.com/TunneldeDev/Tunnelde/pull/15), [cbcf288](https://github.com/TunneldeDev/Tunnelde/commit/cbcf2889423899a2c46644e750460cfa56103fef)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.26.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.26.0...v0.26.1) - 2026-11-03
 
 ### 更新概览 | Highlights
