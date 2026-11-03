@@ -11,6 +11,7 @@ import {
   prepareNightly,
   prepareStable,
   publishRelease,
+  readText,
   RELEASE_BRANCH,
   SOURCE_PATH,
   validateTitle,
@@ -220,6 +221,34 @@ test("conventional titles and automatic semantic versioning", () => {
     "2.0.0",
   );
   assert.equal(nextVersion("1.2.3", changes("docs: guide")), "1.2.4");
+});
+
+test("immutable source reads retry transient GitHub gateway errors only", async () => {
+  const f = fixture();
+  const original = f.github.rest.repos.getContent;
+  const delays = [];
+  let reads = 0;
+  f.github.rest.repos.getContent = async (args) => {
+    if (++reads <= 2) throw Object.assign(new Error("Gateway timeout"), { status: 504 });
+    return original(args);
+  };
+  assert.equal(
+    await readText(f.github, context.repo, "CHANGELOG.md", dev, async (ms) => delays.push(ms)),
+    history,
+  );
+  assert.deepEqual(delays, [1000, 2000]);
+  for (const status of [403, 404, 504]) {
+    reads = 0;
+    f.github.rest.repos.getContent = async () => {
+      reads++;
+      throw Object.assign(new Error("Read failed"), { status });
+    };
+    await assert.rejects(
+      readText(f.github, context.repo, "CHANGELOG.md", dev, async () => {}),
+      /Read failed/,
+    );
+    assert.equal(reads, status === 504 ? 4 : 1);
+  }
 });
 
 test("stable and beta transforms update all eight versions, are idempotent, and reject missing metadata", () => {
@@ -437,9 +466,87 @@ test("PR policy rejects truncated, changed and duplicate commit history", async 
       },
       prCommits,
     });
-    await assert.rejects(checkPullRequest({ ...f, number: 15 }), /Incomplete or changed/);
+    await assert.rejects(
+      checkPullRequest({ ...f, number: 15, wait: async () => {} }),
+      /Incomplete or changed/,
+    );
     assert.equal(f.calls.at(-1).status.state, "failure");
   }
+});
+
+test("PR checks recover when metadata and commit lists converge after a ref update", async () => {
+  const f = fixture();
+  const originalGet = f.github.rest.pulls.get;
+  let reads = 0;
+  let lists = 0;
+  const delays = [];
+  f.github.rest.pulls.get = async (...args) => {
+    const result = await originalGet(...args);
+    reads++;
+    if (reads === 1) result.data.head.sha = baseline;
+    if (reads === 2) result.data.commits = 2;
+    return result;
+  };
+  f.github.rest.pulls.listCommits = async () => {
+    lists++;
+    return [{ ...source, sha: lists === 1 ? baseline : oldHead }];
+  };
+  await checkPullRequest({
+    ...f,
+    number: 15,
+    expectedHead: oldHead,
+    wait: async (ms) => delays.push(ms),
+  });
+  assert.deepEqual(delays, [1000, 2000]);
+  assert.equal(reads, 3);
+  assert.equal(f.calls.at(-1).status.state, "success");
+  assert.equal(f.calls.at(-1).status.sha, oldHead);
+});
+
+test("consistent but stale snapshots never approve a different generated head", async () => {
+  const f = fixture();
+  const delays = [];
+  await assert.rejects(
+    checkPullRequest({
+      ...f,
+      number: 15,
+      expectedHead: generated,
+      wait: async (ms) => delays.push(ms),
+    }),
+    /Incomplete or changed/,
+  );
+  assert.deepEqual(delays, [1000, 2000, 4000]);
+  assert.equal(f.calls.at(-1).status.state, "failure");
+});
+
+test("invalid subjects are still rejected after a stale snapshot recovers", async () => {
+  const f = fixture();
+  let reads = 0;
+  f.github.rest.pulls.listCommits = async () =>
+    ++reads === 1 ? [] : [{ ...source, sha: oldHead, commit: { message: "fixup! unfinished" } }];
+  await assert.rejects(
+    checkPullRequest({ ...f, number: 15, wait: async () => {} }),
+    /Conventional Commit subjects/,
+  );
+  assert.equal(f.calls.at(-1).status.state, "failure");
+});
+
+test("unchanged generated release PRs redispatch CI when recovering an interrupted workflow", async () => {
+  const pr = {
+    number: 15,
+    title: "chore(main): release 0.26.2",
+    state: "open",
+    head: { ref: RELEASE_BRANCH, sha: generated, repo },
+    base: { ref: "main", sha: main, repo },
+  };
+  const f = fixture({ pr, refs: { [`heads/${RELEASE_BRANCH}`]: generated } });
+  f.contents.set(`${generated}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
+  await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
+  assert.deepEqual(
+    f.calls.filter((call) => !call.compare).map((call) => Object.keys(call)[0]),
+    ["status", "dispatch"],
+  );
+  assert.equal(f.calls.at(-1).dispatch.ref, RELEASE_BRANCH);
 });
 
 test("generated release PRs require exactly one reviewed commit", async () => {
