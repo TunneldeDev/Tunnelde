@@ -42,11 +42,19 @@ export function isReleasePr(pr) {
   return pr.head.ref === RELEASE_BRANCH && pr.head.repo?.full_name === pr.base.repo.full_name;
 }
 
-export async function readText(github, repo, path, ref) {
+export async function readText(github, repo, path, ref, wait = delay) {
   if (!SHA.test(ref)) throw new Error("Expected an immutable source SHA");
-  const { data } = await github.rest.repos.getContent({ ...repo, path, ref });
-  if (data.type !== "file" || data.encoding !== "base64") throw new Error(`Cannot read ${path}`);
-  return Buffer.from(data.content, "base64").toString("utf8");
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const { data } = await github.rest.repos.getContent({ ...repo, path, ref });
+      if (data.type !== "file" || data.encoding !== "base64")
+        throw new Error(`Cannot read ${path}`);
+      return Buffer.from(data.content, "base64").toString("utf8");
+    } catch (error) {
+      if (attempt === 3 || ![502, 503, 504].includes(error.status)) throw error;
+      await wait(1000 * 2 ** attempt);
+    }
+  }
 }
 
 export async function branchSha(github, repo, branch) {

@@ -11,6 +11,7 @@ import {
   prepareNightly,
   prepareStable,
   publishRelease,
+  readText,
   RELEASE_BRANCH,
   SOURCE_PATH,
   validateTitle,
@@ -220,6 +221,34 @@ test("conventional titles and automatic semantic versioning", () => {
     "2.0.0",
   );
   assert.equal(nextVersion("1.2.3", changes("docs: guide")), "1.2.4");
+});
+
+test("immutable source reads retry transient GitHub gateway errors only", async () => {
+  const f = fixture();
+  const original = f.github.rest.repos.getContent;
+  const delays = [];
+  let reads = 0;
+  f.github.rest.repos.getContent = async (args) => {
+    if (++reads <= 2) throw Object.assign(new Error("Gateway timeout"), { status: 504 });
+    return original(args);
+  };
+  assert.equal(
+    await readText(f.github, context.repo, "CHANGELOG.md", dev, async (ms) => delays.push(ms)),
+    history,
+  );
+  assert.deepEqual(delays, [1000, 2000]);
+  for (const status of [403, 404, 504]) {
+    reads = 0;
+    f.github.rest.repos.getContent = async () => {
+      reads++;
+      throw Object.assign(new Error("Read failed"), { status });
+    };
+    await assert.rejects(
+      readText(f.github, context.repo, "CHANGELOG.md", dev, async () => {}),
+      /Read failed/,
+    );
+    assert.equal(reads, status === 504 ? 4 : 1);
+  }
 });
 
 test("stable and beta transforms update all eight versions, are idempotent, and reject missing metadata", () => {

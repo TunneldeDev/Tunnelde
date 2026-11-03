@@ -89,6 +89,7 @@ and rejects incomplete history (including PRs beyond GitHub's 250-commit listing
 The policy retries inconsistent API snapshots with bounded backoff after ref updates, while
 still rejecting incomplete history once retries are exhausted. Generated PR checks must
 match the exact prepared head; recovery redispatches CI even if the PR already exists.
+Immutable source-file reads also retry transient GitHub gateway errors (502/503/504).
 The generated release PR must have exactly one commit. The privileged policy workflow reads only
 commit metadata and trusted base-branch code, never executes contribution code.
 
