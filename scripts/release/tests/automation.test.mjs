@@ -52,6 +52,7 @@ function fixture({
   releases = [],
   commits = [source],
   messages = {},
+  prCommits,
   pr,
   moved = false,
 } = {}) {
@@ -59,12 +60,15 @@ function fixture({
   const contents = new Map();
   const references = { "heads/main": main, "heads/dev": dev, ...refs };
   const files = { ...versionFiles, "CHANGELOG.md": history, [SOURCE_PATH]: JSON.stringify(marker) };
-  const pull = pr || {
-    number: 15,
-    title: "fix: restore paste",
-    state: "open",
-    head: { ref: "fix/paste", sha: oldHead, repo },
-    base: { ref: "dev", sha: baseline, repo },
+  const pull = {
+    commits: 1,
+    ...(pr || {
+      number: 15,
+      title: "fix: restore paste",
+      state: "open",
+      head: { ref: "fix/paste", sha: oldHead, repo },
+      base: { ref: "dev", sha: baseline, repo },
+    }),
   };
   let comparisons = 0;
   const github = {
@@ -163,6 +167,13 @@ function fixture({
         },
       },
       pulls: {
+        listCommits: async () =>
+          prCommits ?? [
+            {
+              ...source,
+              sha: references[`heads/${pull.head.ref}`] || pull.head.sha,
+            },
+          ],
         list: async () => (pr ? [pr] : []),
         get: async () => ({
           data: {
@@ -350,6 +361,142 @@ test("contributions target dev, and invalid titles fail on the actual head", asy
   };
   const bad = fixture({ pr });
   await assert.rejects(checkPullRequest({ ...bad, number: 15 }), /Contributions target dev/);
+});
+
+test("PR policy validates all retained subjects while allowing commit bodies and trailers", async () => {
+  const f = fixture({
+    pr: {
+      number: 15,
+      title: "feat: improve sessions",
+      state: "open",
+      commits: 3,
+      head: { ref: "feat/sessions", sha: oldHead, repo },
+      base: { ref: "dev", sha: main, repo },
+    },
+    prCommits: [
+      { sha: baseline, commit: { message: "feat(sessions): add profiles\n\nAn explanation." } },
+      {
+        sha: dev,
+        commit: { message: "fix: handle reconnect\n\nCo-authored-by: Other <other@example.com>" },
+      },
+      {
+        sha: oldHead,
+        commit: { message: "refactor(api)!: replace sessions\n\nBREAKING CHANGE: remove old API" },
+      },
+    ],
+  });
+  await checkPullRequest({ ...f, number: 15 });
+  assert.equal(f.calls.at(-1).status.state, "success");
+  assert.match(f.calls.at(-1).status.description, /all 3 commit subjects/);
+});
+
+test("a valid PR title cannot hide invalid intermediate commits before rebase merging", async () => {
+  const f = fixture({
+    pr: {
+      number: 15,
+      title: "fix: reconnect",
+      state: "open",
+      commits: 2,
+      head: { ref: "fix/reconnect", sha: oldHead, repo },
+      base: { ref: "dev", sha: main, repo },
+    },
+    prCommits: [
+      { sha: baseline, commit: { message: "fixup! try again" } },
+      { sha: oldHead, commit: { message: "fix: reconnect" } },
+    ],
+  });
+  await assert.rejects(
+    checkPullRequest({ ...f, number: 15 }),
+    /Conventional Commit subjects: ccccccc/,
+  );
+  assert.equal(f.calls.at(-1).status.state, "failure");
+  assert.equal(f.calls.at(-1).status.sha, oldHead);
+});
+
+test("PR policy rejects truncated, changed and duplicate commit history", async () => {
+  for (const [count, prCommits] of [
+    [1, []],
+    [1, [{ ...source, sha: dev }]],
+    [
+      2,
+      [
+        { ...source, sha: oldHead },
+        { ...source, sha: oldHead },
+      ],
+    ],
+    [251, [{ ...source, sha: oldHead }]],
+  ]) {
+    const f = fixture({
+      pr: {
+        number: 15,
+        title: "fix: reconnect",
+        state: "open",
+        commits: count,
+        head: { ref: "fix/reconnect", sha: oldHead, repo },
+        base: { ref: "dev", sha: main, repo },
+      },
+      prCommits,
+    });
+    await assert.rejects(checkPullRequest({ ...f, number: 15 }), /Incomplete or changed/);
+    assert.equal(f.calls.at(-1).status.state, "failure");
+  }
+});
+
+test("generated release PRs require exactly one reviewed commit", async () => {
+  const f = fixture({
+    pr: {
+      number: 15,
+      title: "chore(main): release 0.26.2",
+      state: "open",
+      commits: 2,
+      head: { ref: RELEASE_BRANCH, sha: generated, repo },
+      base: { ref: "main", sha: main, repo },
+    },
+    prCommits: [
+      { ...source, sha: baseline },
+      { ...source, sha: generated },
+    ],
+  });
+  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /must contain one commit/);
+});
+
+test("rebased batches choose the highest semantic bump from retained commits", () => {
+  const changes = (messages) => messages.map((message) => ({ commit: { message } }));
+  assert.equal(
+    nextVersion("0.26.1", changes(["fix: reconnect", "feat: sessions", "docs: usage"])),
+    "0.27.0",
+  );
+  assert.equal(
+    nextVersion(
+      "1.2.3",
+      changes(["feat: sessions", "fix(api)!: replace transport", "docs: usage"]),
+    ),
+    "2.0.0",
+  );
+  assert.equal(nextVersion("1.2.3", changes(["docs: usage", "fix: reconnect"])), "1.2.4");
+});
+
+test("merge settings allow rebase contributions and keep stable promotions squash-only", () => {
+  const settings = JSON.parse(
+    readFileSync(new URL("../../../.github/repository-settings.json", import.meta.url)),
+  );
+  assert.equal(settings.allow_rebase_merge, true);
+  assert.equal(settings.allow_squash_merge, true);
+  assert.equal(settings.allow_merge_commit, false);
+  for (const [branch, methods] of [
+    ["dev", ["squash", "rebase"]],
+    ["main", ["squash"]],
+  ]) {
+    const ruleset = JSON.parse(
+      readFileSync(new URL(`../../../.github/${branch}-ruleset.json`, import.meta.url)),
+    );
+    assert.deepEqual(
+      ruleset.rules.find((rule) => rule.type === "pull_request").parameters.allowed_merge_methods,
+      methods,
+    );
+    assert.ok(ruleset.rules.some((rule) => rule.type === "required_linear_history"));
+    assert.deepEqual(ruleset.bypass_actors, []);
+  }
 });
 
 test("tag is created before a draft; stable recovery is idempotent and never moves tags", async () => {

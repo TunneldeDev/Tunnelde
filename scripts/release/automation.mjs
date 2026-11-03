@@ -81,11 +81,43 @@ export async function checkPullRequest({ github, context, number }) {
   const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number });
   if (!["main", "dev"].includes(pr.base.ref) || pr.state !== "open") return;
   let problem;
+  let success = "Title and release source passed";
   try {
     validateTitle(pr.title);
     if (pr.base.ref === "main" && !isReleasePr(pr))
       throw new Error("Contributions target dev; main accepts the generated release PR");
+    const commits = await github.paginate(github.rest.pulls.listCommits, {
+      ...repo,
+      pull_number: number,
+      per_page: 100,
+    });
+    if (
+      commits.length !== pr.commits ||
+      commits.at(-1)?.sha !== pr.head.sha ||
+      new Set(commits.map((commit) => commit.sha)).size !== commits.length ||
+      commits.some((commit) => !SHA.test(commit.sha))
+    )
+      throw new Error(
+        "Incomplete or changed PR commit history; refresh checks or split PRs over 250 commits",
+      );
+    const invalid = commits.filter((commit) => {
+      try {
+        validateTitle(commit.commit.message.split(/\r?\n/, 1)[0]);
+        return false;
+      } catch {
+        return true;
+      }
+    });
+    if (invalid.length)
+      throw new Error(
+        `Use Conventional Commit subjects: ${invalid
+          .slice(0, 3)
+          .map((commit) => commit.sha.slice(0, 7))
+          .join(", ")}${invalid.length > 3 ? ` (+${invalid.length - 3})` : ""}`,
+      );
+    success = `PR title and all ${commits.length} commit subjects passed`;
     if (isReleasePr(pr)) {
+      if (commits.length !== 1) throw new Error("The generated release PR must contain one commit");
       const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, pr.head.sha));
       // PR base.sha is a snapshot; resolve both actual refs on every check.
       await assertSources(github, repo, { main: marker.baseSha, dev: marker.sourceSha });
@@ -98,7 +130,7 @@ export async function checkPullRequest({ github, context, number }) {
     sha: pr.head.sha,
     context: POLICY_CONTEXT,
     state: problem ? "failure" : "success",
-    description: (problem || "Title and release source passed").slice(0, 140),
+    description: (problem || success).slice(0, 140),
     target_url: `${context.serverUrl}/${repo.owner}/${repo.repo}/actions/runs/${context.runId}`,
   });
   if (problem) throw new Error(problem);

@@ -87,6 +87,9 @@ host-specific panes update without relying on navigation.
 ## Release flow
 
 `dev` is the protected default branch and contribution target. `main` contains stable releases.
+Contributions can rebase or squash merge into dev; every retained commit subject is checked as
+a Conventional Commit. Release collection associates rebased commits with their PR and retains
+individual authors, coauthors and change descriptions. Main promotions use Squash only.
 Every dev update maintains one generated `release/dev-to-main` PR and builds a beta prerelease
 named Nightly. The PR tree comes from dev, with synchronized versions, a summarized changelog,
 and a marker recording the dev source; its parent is current main. The marker tracks promotions

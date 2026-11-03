@@ -4,7 +4,8 @@
 
 `dev` is the default branch and contribution target. `main` is stable. Both require PRs,
 linear history, resolved review conversations and the seven CI/policy checks. Squash merge
-ordinary work into `dev`; only the generated release promotion targets `main`.
+ordinary work into `dev`, or rebase merge to preserve meaningful individual commits; only the
+generated release promotion targets `main`, where Squash is the only allowed merge method.
 
 1. A `dev` push runs CI and **Development**. Automation resolves the actual `dev` and `main`
    refs and collects changes after the last promoted dev commit recorded on main in
@@ -76,8 +77,22 @@ policy code; it never checks out contribution code. Required checks remain bound
 
 `.github/main-ruleset.json` and `.github/dev-ruleset.json` are the tracked protection definitions.
 Both block deletion and force pushes, require PRs and all seven checks, and have no bypass actors.
-Repository settings allow squash only, using PR title/body as the commit message. Apply Ruleset
-changes via repository settings or the API; changing the JSON alone does not apply protection.
+The merge-method settings are tracked in `.github/repository-settings.json`: both squash and
+rebase are enabled, while merge commits stay disabled. The dev Ruleset allows squash/rebase;
+main allows squash only. Squash uses the PR title/body as its commit message. Apply settings
+and Ruleset changes via repository settings or the API; editing JSON alone does not apply them.
+
+PR policy validates the title and every commit subject as Conventional Commits. This applies
+to both contribution merge methods, so switching to rebase cannot silently introduce messages
+that bypass semantic versioning. It checks the complete commit list against the current PR head
+and rejects incomplete history (including PRs beyond GitHub's 250-commit listing limit). The
+generated release PR must have exactly one commit. The privileged policy workflow reads only
+commit metadata and trusted base-branch code, never executes contribution code.
+
+Release collection reads the actual retained commit messages after either merge method, taking
+the highest semantic bump across the batch. Rebased commits are associated with their merged
+PR even when their SHA is not the PR's final merge SHA. CHANGELOG retains their individual
+titles, PR/commit links, original commit authors, PR authors and recognized coauthor trailers.
 
 ## Failed builds and recovery
 
