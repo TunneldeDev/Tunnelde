@@ -1,3 +1,4 @@
+import { setTimeout as delay } from "node:timers/promises";
 import {
   collectChanges,
   releasePrBody,
@@ -76,9 +77,9 @@ export function nextVersion(version, commits) {
   return bumpVersion(version, part);
 }
 
-export async function checkPullRequest({ github, context, number }) {
+export async function checkPullRequest({ github, context, number, expectedHead, wait = delay }) {
   const repo = context.repo;
-  const { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number });
+  let { data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number });
   if (!["main", "dev"].includes(pr.base.ref) || pr.state !== "open") return;
   let problem;
   let success = "Title and release source passed";
@@ -86,20 +87,35 @@ export async function checkPullRequest({ github, context, number }) {
     validateTitle(pr.title);
     if (pr.base.ref === "main" && !isReleasePr(pr))
       throw new Error("Contributions target dev; main accepts the generated release PR");
-    const commits = await github.paginate(github.rest.pulls.listCommits, {
-      ...repo,
-      pull_number: number,
-      per_page: 100,
-    });
-    if (
-      commits.length !== pr.commits ||
-      commits.at(-1)?.sha !== pr.head.sha ||
-      new Set(commits.map((commit) => commit.sha)).size !== commits.length ||
-      commits.some((commit) => !SHA.test(commit.sha))
-    )
-      throw new Error(
-        "Incomplete or changed PR commit history; refresh checks or split PRs over 250 commits",
-      );
+    let commits;
+    // PR metadata and commit lists can briefly disagree after a ref update.
+    // Retry reads only; never approve a partial list or a different generated head.
+    for (let attempt = 0; ; attempt++) {
+      commits = await github.paginate(github.rest.pulls.listCommits, {
+        ...repo,
+        pull_number: number,
+        per_page: 100,
+      });
+      if (
+        (!expectedHead || pr.head.sha === expectedHead) &&
+        commits.length === pr.commits &&
+        commits.at(-1)?.sha === pr.head.sha &&
+        new Set(commits.map((commit) => commit.sha)).size === commits.length &&
+        commits.every((commit) => SHA.test(commit.sha))
+      )
+        break;
+      if (attempt === 3 || pr.commits > 250)
+        throw new Error(
+          "Incomplete or changed PR commit history; refresh checks or split PRs over 250 commits",
+        );
+      await wait(1000 * 2 ** attempt);
+      ({ data: pr } = await github.rest.pulls.get({ ...repo, pull_number: number }));
+      if (!["main", "dev"].includes(pr.base.ref) || pr.state !== "open")
+        throw new Error("PR target or state changed during checks; rerun the workflow");
+      validateTitle(pr.title);
+      if (pr.base.ref === "main" && !isReleasePr(pr))
+        throw new Error("Contributions target dev; main accepts the generated release PR");
+    }
     const invalid = commits.filter((commit) => {
       try {
         validateTitle(commit.commit.message.split(/\r?\n/, 1)[0]);
@@ -260,7 +276,7 @@ export async function maintainReleasePr({ github, context, plan }) {
   if (previous && prs.length) {
     const marker = JSON.parse(await readText(github, repo, SOURCE_PATH, previous));
     if (marker.sourceSha === plan.dev && marker.baseSha === plan.main) {
-      await checkPullRequest({ github, context, number: prs[0].number });
+      await checkReleasePullRequest({ github, context, number: prs[0].number, sha: previous });
       return;
     }
   }
@@ -297,10 +313,14 @@ export async function maintainReleasePr({ github, context, plan }) {
     });
     number = pr.number;
   }
-  await checkPullRequest({ github, context, number });
+  await checkReleasePullRequest({ github, context, number, sha });
+}
+
+async function checkReleasePullRequest({ github, context, number, sha }) {
+  await checkPullRequest({ github, context, number, expectedHead: sha });
   // GITHUB_TOKEN writes do not trigger pull_request; dispatch checks explicitly.
   await github.rest.actions.createWorkflowDispatch({
-    ...repo,
+    ...context.repo,
     workflow_id: "ci.yml",
     ref: RELEASE_BRANCH,
   });

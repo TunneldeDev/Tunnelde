@@ -85,8 +85,11 @@ and Ruleset changes via repository settings or the API; editing JSON alone does 
 PR policy validates the title and every commit subject as Conventional Commits. This applies
 to both contribution merge methods, so switching to rebase cannot silently introduce messages
 that bypass semantic versioning. It checks the complete commit list against the current PR head
-and rejects incomplete history (including PRs beyond GitHub's 250-commit listing limit). The
-generated release PR must have exactly one commit. The privileged policy workflow reads only
+and rejects incomplete history (including PRs beyond GitHub's 250-commit listing limit).
+The policy retries inconsistent API snapshots with bounded backoff after ref updates, while
+still rejecting incomplete history once retries are exhausted. Generated PR checks must
+match the exact prepared head; recovery redispatches CI even if the PR already exists.
+The generated release PR must have exactly one commit. The privileged policy workflow reads only
 commit metadata and trusted base-branch code, never executes contribution code.
 
 Release collection reads the actual retained commit messages after either merge method, taking
