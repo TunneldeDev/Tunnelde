@@ -141,7 +141,9 @@ CI validates web, native, helper and repository checks. `main` is the protected 
 branch: work on a feature branch and open a PR with a Conventional Commit title.
 
 Release Please maintains one cumulative release PR containing the next version, synchronized
-native manifests/lockfiles and generated changelog. Merge that PR when ready to release.
+native manifests/lockfiles and automatically summarized changelog. Highlights, categorized details,
+PR links and contributors are prepared on the release branch; ordinary PRs need no changelog edits.
+Merge that PR when ready to release.
 Windows, Linux, Apple Silicon and Intel macOS installers are built into one **draft**;
 validated assets and `latest.json` stay private until a maintainer publishes the draft.
 Ordinary feature merges do not start installer builds.
@@ -151,6 +153,8 @@ for branch protection, automation credentials, version overrides and draft recov
 `pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 
 ## License
+
+Citation metadata is available in [CITATION.cff](CITATION.cff).
 
 [GNU GPL version 3 only](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
 Copyright © 2026 quyansiyuanwang (TunneldeDev).

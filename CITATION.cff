@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use Tunnelde in your work, please cite it using this metadata."
+type: software
+title: Tunnelde
+abstract: >-
+  A desktop SSH and SFTP workstation with a dockable workbench,
+  remote file management, terminal sessions and a plugin system.
+authors:
+  - name: "quyansiyuanwang (TunneldeDev)"
+    website: "https://github.com/quyansiyuanwang"
+repository-code: "https://github.com/TunneldeDev/Tunnelde"
+url: "https://github.com/TunneldeDev/Tunnelde"
+license: GPL-3.0-only
+version: 0.26.0
+keywords:
+  - SSH
+  - SFTP
+  - terminal
+  - remote development
+  - desktop application

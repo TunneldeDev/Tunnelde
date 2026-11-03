@@ -1,3 +1,11 @@
+import {
+  collectChanges,
+  releasePrBody,
+  releaseSection,
+  renderRelease,
+  replacePendingRelease,
+} from "./release-notes.mjs";
+
 const RELEASE_BRANCH = "release-please--branches--main";
 export const POLICY_CONTEXT = "PR policy";
 
@@ -23,31 +31,6 @@ export function assertNoDrafts(releases, allowedTag) {
       `Complete or explicitly withdraw the existing draft: ${blocked.map((r) => r.tag_name).join(", ")}`,
     );
   }
-}
-
-// Release Please inserts its generated section below Unreleased. Move curated notes
-// into that release once, preserving the historical changelog byte for byte.
-export function foldCuratedNotes(text, version) {
-  if (!/^\d+\.\d+\.\d+$/.test(version)) throw new Error("Invalid stable release version");
-  const headings = [...text.matchAll(/^## \[([^\]]+)\][^\r\n]*(?:\r?\n|$)/gm)];
-  const unreleased = headings.find((heading) => heading[1] === "Unreleased");
-  if (!unreleased) throw new Error("Missing Unreleased section");
-  const release = headings.find((heading) => heading[1] !== "Unreleased");
-  if (!release || release[1] !== version || !headings.slice(0, 2).includes(unreleased)) {
-    throw new Error(`Missing first release section for ${version}`);
-  }
-  const body = (heading) => {
-    const next = headings[headings.indexOf(heading) + 1];
-    return text.slice(heading.index + heading[0].length, next?.index ?? text.length).trim();
-  };
-  const curated = body(unreleased);
-  if (!curated && unreleased.index < release.index) return text;
-  const prefix = text.slice(0, headings[0].index);
-  const history = headings[2] ? text.slice(headings[2].index) : "";
-  const notes = [curated ? `### Maintainer notes\n\n${curated}` : "", body(release)]
-    .filter(Boolean)
-    .join("\n\n");
-  return `${prefix}## [Unreleased]\n\n${release[0].trimEnd()}\n\n${notes}\n${history ? `\n${history}` : ""}`;
 }
 
 export async function checkPullRequest({ github, context, number }) {
@@ -88,6 +71,23 @@ export async function refreshReleasePolicy({ github, context }) {
   for (const pr of prs) await checkPullRequest({ github, context, number: pr.number });
 }
 
+export async function releasePrNeedsRefresh({ github, context }) {
+  const prs = await github.paginate(github.rest.pulls.list, {
+    ...context.repo,
+    state: "open",
+    base: "main",
+    head: `${context.repo.owner}:${RELEASE_BRANCH}`,
+  });
+  if (!prs.length) return true;
+  if (prs.length > 1) throw new Error("Multiple release pull requests found");
+  const pr = prs[0];
+  const { data: commit } = await github.rest.git.getCommit({
+    ...context.repo,
+    commit_sha: pr.head.sha,
+  });
+  return !commit.message.split(/\r?\n/).includes(`Release-source: ${pr.base.sha}`);
+}
+
 export async function updateReleasePr({ github, context, dispatch = true }) {
   const repo = context.repo;
   const prs = await github.paginate(github.rest.pulls.list, {
@@ -99,29 +99,58 @@ export async function updateReleasePr({ github, context, dispatch = true }) {
   if (prs.length > 1) throw new Error("Multiple release pull requests found");
   if (!prs.length) return;
   const pr = prs[0];
-  const { data: manifest } = await github.rest.repos.getContent({
-    ...repo,
-    path: ".release-please-manifest.json",
-    ref: pr.head.sha,
+  if (!isReleasePr(pr) || pr.base.ref !== "main") throw new Error("Unexpected release PR target");
+  const [manifest, baseManifest, original, baseChangelog] = await Promise.all([
+    readText(github, repo, ".release-please-manifest.json", pr.head.sha),
+    readText(github, repo, ".release-please-manifest.json", pr.base.sha),
+    readText(github, repo, "CHANGELOG.md", pr.head.sha),
+    readText(github, repo, "CHANGELOG.md", pr.base.sha),
+  ]);
+  const version = JSON.parse(manifest)["."];
+  const previousVersion = JSON.parse(baseManifest)["."];
+  if (version === previousVersion) throw new Error("Release version must differ from main");
+  const date = releaseSection(original, version).heading.match(/\d{4}-\d{2}-\d{2}/)?.[0];
+  const commits = await collectChanges({ github, repo, previousVersion, head: pr.base.sha });
+  const repository = `${repo.owner}/${repo.repo}`;
+  const release = renderRelease({
+    version,
+    previousVersion,
+    date,
+    repository,
+    commits,
+    curated: releaseSection(baseChangelog, "Unreleased").notes,
   });
-  const version = JSON.parse(Buffer.from(manifest.content, "base64").toString("utf8"))["."];
-  const { data: changelog } = await github.rest.repos.getContent({
-    ...repo,
-    path: "CHANGELOG.md",
-    ref: pr.head.sha,
-  });
-  const original = Buffer.from(changelog.content, "base64").toString("utf8");
-  const folded = foldCuratedNotes(original, version);
-  if (folded !== original) {
-    // Updating one file with its blob SHA also protects against concurrent edits.
-    await github.rest.repos.createOrUpdateFileContents({
+  const changelog = replacePendingRelease(baseChangelog, release);
+  const { data: current } = await github.rest.pulls.get({ ...repo, pull_number: pr.number });
+  if (current.head.sha !== pr.head.sha || current.base.sha !== pr.base.sha) {
+    throw new Error("Release PR moved during changelog generation; rerun the workflow");
+  }
+  let releaseHead = pr.head.sha;
+  if (changelog !== original) {
+    // Parent and non-forced ref update prevent overwriting concurrent branch edits.
+    const { data: parent } = await github.rest.git.getCommit({ ...repo, commit_sha: pr.head.sha });
+    const { data: tree } = await github.rest.git.createTree({
       ...repo,
-      branch: RELEASE_BRANCH,
-      path: "CHANGELOG.md",
-      sha: changelog.sha,
-      message: `chore(main): release ${version}`,
-      content: Buffer.from(folded).toString("base64"),
+      base_tree: parent.tree.sha,
+      tree: [{ path: "CHANGELOG.md", mode: "100644", type: "blob", content: changelog }],
     });
+    const { data: commit } = await github.rest.git.createCommit({
+      ...repo,
+      tree: tree.sha,
+      parents: [pr.head.sha],
+      message: `chore(main): release ${version}\n\nRelease-source: ${pr.base.sha}`,
+    });
+    await github.rest.git.updateRef({
+      ...repo,
+      ref: `heads/${RELEASE_BRANCH}`,
+      sha: commit.sha,
+      force: false,
+    });
+    releaseHead = commit.sha;
+  }
+  const body = releasePrBody(version, release.count, repository, releaseHead);
+  if (body !== current.body) {
+    await github.rest.pulls.update({ ...repo, pull_number: pr.number, body });
   }
   await checkPullRequest({ github, context, number: pr.number });
   if (dispatch) {
@@ -133,6 +162,13 @@ export async function updateReleasePr({ github, context, dispatch = true }) {
       ref: RELEASE_BRANCH,
     });
   }
+}
+
+async function readText(github, repo, path, ref) {
+  if (!/^[a-f0-9]{40}$/.test(ref)) throw new Error("Expected an immutable source SHA");
+  const { data } = await github.rest.repos.getContent({ ...repo, path, ref });
+  if (data.type !== "file" || data.encoding !== "base64") throw new Error(`Cannot read ${path}`);
+  return Buffer.from(data.content, "base64").toString("utf8");
 }
 
 export async function ensureDraftTag({ github, context, tag, sha }) {
@@ -148,12 +184,22 @@ export async function ensureDraftTag({ github, context, tag, sha }) {
   if (matching.length !== 1 || !matching[0].draft || matching[0].target_commitish !== sha) {
     throw new Error("Expected one draft bound to the merged release commit");
   }
+  let missingTag = false;
   try {
     const { data: ref } = await github.rest.git.getRef({ ...context.repo, ref: `tags/${tag}` });
     if (ref.object.type !== "commit" || ref.object.sha !== sha)
       throw new Error("Existing tag points elsewhere");
   } catch (error) {
     if (error.status !== 404) throw error;
-    await github.rest.git.createRef({ ...context.repo, ref: `refs/tags/${tag}`, sha });
+    missingTag = true;
   }
+  // The PR body stays concise; the draft gets the full notes from its exact source.
+  const changelog = await readText(github, context.repo, "CHANGELOG.md", sha);
+  const body = releaseSection(changelog, tag.slice(1)).notes;
+  if (!body) throw new Error("Release notes cannot be empty");
+  if (matching[0].body !== body) {
+    await github.rest.repos.updateRelease({ ...context.repo, release_id: matching[0].id, body });
+  }
+  if (missingTag)
+    await github.rest.git.createRef({ ...context.repo, ref: `refs/tags/${tag}`, sha });
 }

@@ -32,6 +32,10 @@ function fixture(notes = "- Fix a reproducible bug.") {
   }
   writeFileSync(join(root, "package.json"), JSON.stringify({ version: "0.18.1" }));
   writeFileSync(join(root, ".release-please-manifest.json"), JSON.stringify({ ".": "0.18.1" }));
+  writeFileSync(
+    join(root, "CITATION.cff"),
+    "cff-version: 1.2.0\ntitle: Tunnelde\nversion: 0.18.1\n",
+  );
   writeFileSync(join(root, "src-tauri/tauri.conf.json"), JSON.stringify({ version: "0.18.1" }));
   writeFileSync(
     join(root, "src-tauri/Cargo.toml"),
@@ -62,6 +66,7 @@ describe("release preparation", () => {
     const names = [
       "package.json",
       ".release-please-manifest.json",
+      "CITATION.cff",
       "src-tauri/Cargo.toml",
       "src-tauri/Cargo.lock",
       "src-tauri/tauri.conf.json",
@@ -81,6 +86,7 @@ describe("release preparation", () => {
     expect(f.read("native-helpers/Cargo.toml")).toContain('version = "0.19.0"');
     expect(f.read("native-helpers/Cargo.lock")).toContain('version = "0.19.0"');
     expect(JSON.parse(f.read(".release-please-manifest.json"))["."]).toBe("0.19.0");
+    expect(f.read("CITATION.cff")).toContain("version: 0.19.0");
     expect(f.read("CHANGELOG.md")).toContain("## [0.19.0] - ");
     expect(f.run("changelog", "notes", "0.19.0").stdout.trim()).toBe("- Fix a reproducible bug.");
   });
@@ -102,6 +108,14 @@ describe("release preparation", () => {
     const result = f.run("version", "check");
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("release manifest 0.18.0 != package.json 0.18.1");
+  });
+
+  it("rejects citation metadata that disagrees with the application version", () => {
+    const f = fixture();
+    writeFileSync(join(f.root, "CITATION.cff"), "version: 0.18.0\n");
+    const result = f.run("version", "check");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("CITATION.cff 0.18.0 != package.json 0.18.1");
   });
 });
 
