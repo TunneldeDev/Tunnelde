@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { normalizeBlocks, normalizeResult, viewTitle } from "@/lib/plugins/pluginView";
 
 describe("normalizeBlocks", () => {
+  it("mount controls are native, unique and discard plugin-supplied executable fields", () => {
+    expect(
+      normalizeBlocks([{ type: "mounts", command: "unsafe", owner: "other" }, { type: "mounts" }]),
+    ).toEqual([{ type: "mounts" }]);
+  });
   it("keeps known blocks in order", () => {
     const blocks = normalizeBlocks([
       { type: "heading", text: "Title" },

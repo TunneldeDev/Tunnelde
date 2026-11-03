@@ -19,7 +19,7 @@ function isEntry(value: unknown): value is MarketEntry {
     typeof entry.version === "string" &&
     typeof entry.url === "string" &&
     typeof entry.sha256 === "string" &&
-    (entry.runtime == null || ["node", "wasm", "theme"].includes(entry.runtime)) &&
+    (entry.runtime == null || ["node", "wasm", "theme", "declarative"].includes(entry.runtime)) &&
     CHECKSUM.test(entry.sha256) &&
     entry.url.startsWith("https://")
   );

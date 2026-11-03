@@ -1,13 +1,22 @@
 # Contributing
 
 `dev` is the default branch and the target for contributions. Create a short-lived branch from
-`dev`, open a PR to `dev`, and squash merge after required checks pass. `main` is the stable branch:
+`dev`, open a PR to `dev`, and rebase or squash merge after required checks pass. `main` is the stable branch:
 only the generated release PR promotes development to it. Both branches block direct pushes,
 force pushes and deletion. No additional reviewer is required for the solo-maintainer workflow.
 
-## PR titles
+## PR titles and commits
 
 Use a Conventional Commit title; GitHub uses that title for the squash commit.
+Every commit subject must use the same format, including when squash merging, because contribution
+PRs offer both merge methods. Bodies can contain explanations, breaking-change footers and coauthors.
+The PR policy checks every commit, reports invalid commit SHAs and rejects incomplete history.
+
+Use **Rebase and merge** when individual commits are useful to retain and review. Use **Squash and
+merge** when intermediate fixes should become one change. Rename or consolidate nonconforming
+commits on your contribution branch before merging. Rebase merging preserves individual changes
+but creates new commit SHAs. Generated release PRs to `main` use **Create a merge commit**
+to retain the exact commits already reviewed on `dev`.
 
 | Type                                               | Example                                 | Release effect |
 | -------------------------------------------------- | --------------------------------------- | -------------- |
@@ -18,6 +27,10 @@ Use a Conventional Commit title; GitHub uses that title for the squash commit.
 | `docs`, `test`, `ci`, `chore`, `refactor`, `style` | `docs: explain host authentication`     | Patch          |
 
 Add `!` before the colon for a breaking change, for example `feat(api)!: replace task transport`.
+With rebase merging, automated versioning reads every retained commit and uses the highest bump;
+the PR title is not substituted for those commits. Put `feat`, `!` and `BREAKING CHANGE:` in the
+commits that carry those changes. With squash merging, ensure the final commit title and body
+retain those markers. CHANGELOG keeps individual changes, PR references and commit contributors.
 Breaking changes increase the minor version while the project is below 1.0, and the major version
 after 1.0. Use `fix(deps)` for application dependency changes and `ci(deps)` for workflow dependencies.
 Keep the PR body to 1–3 sentences describing the change and its purpose, with one short validation
@@ -48,7 +61,7 @@ That PR contains all development changes since the last promotion, synchronized 
 summarized changelog with highlights, categorized details, PR links and contributors. Historical
 entries are preserved. Optional Unreleased notes can supply curated highlights.
 
-Review and squash merge that release PR when ready. The exact merged source is tagged, built for
+Review and merge that release PR with **Create a merge commit** when ready. The exact merged source is tagged, built for
 all four desktop targets, verified and automatically published as the latest stable release.
 Nightly never replaces the stable updater channel. Do not edit or contribute to the generated
 release branch; it is rebuilt from the latest `dev` and `main` refs.

@@ -7,7 +7,7 @@ const CATEGORIES = [
   ["build", "构建 | Build"],
   ["other", "其他 | Other"],
 ];
-const VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+\.\d+)?$/;
+const VERSION = /^\d+\.\d+\.\d+(?:-beta\.\d+(?:\.\d+)?)?$/;
 
 function markdown(value) {
   return value
@@ -78,7 +78,13 @@ export function summarizeChanges(commits) {
         ? { label: `#${number}`, path: `pull/${number}` }
         : { label: commit.sha.slice(0, 7), path: `commit/${commit.sha}` };
     entry.sources.set(source.path, source);
-    const authors = [pr?.user?.login || commit.author?.login];
+    if (pr && pr.merge_commit_sha !== commit.sha) {
+      entry.sources.set(`commit/${commit.sha}`, {
+        label: commit.sha.slice(0, 7),
+        path: `commit/${commit.sha}`,
+      });
+    }
+    const authors = [commit.author?.login, pr?.user?.login];
     for (const trailer of message.matchAll(/^Co-authored-by:.*<([^<>]+)>\s*$/gim)) {
       const coauthor = /^(?:\d+\+)?([a-z\d-]+)@users\.noreply\.github\.com$/i.exec(trailer[1]);
       if (coauthor) authors.push(coauthor[1]);
@@ -158,7 +164,7 @@ export function replacePendingRelease(baseChangelog, release) {
 
 export function releasePrBody(version, count, repository, sha) {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("Expected an immutable changelog SHA");
-  // Keep the squash body concise and link to the exact reviewed changelog.
+  // Keep the merge body concise and link to the exact reviewed changelog.
   return `---\n## ${version}\n\n归总 ${count} 项变更并更新版本，详见 [CHANGELOG.md](https://github.com/${repository}/blob/${sha}/CHANGELOG.md)。\n---`;
 }
 
@@ -188,7 +194,7 @@ export async function collectChanges({ github, repo, previousVersion, base, head
   if (commits.length !== total || new Set(commits.map((commit) => commit.sha)).size !== total) {
     throw new Error("Inconsistent release commit history");
   }
-  // Bound API concurrency; associates squash commits and ordinary merge commits with PRs.
+  // The association endpoint includes every rebased commit, not just the PR's final SHA.
   for (let offset = 0; offset < commits.length; offset += 4) {
     await Promise.all(
       commits.slice(offset, offset + 4).map(async (commit) => {
@@ -197,13 +203,19 @@ export async function collectChanges({ github, repo, previousVersion, base, head
           commit_sha: commit.sha,
           per_page: 100,
         });
-        commit.pullRequest = prs.find(
+        const candidates = prs.filter(
           (pr) =>
             pr.merged_at &&
             ["dev", "main"].includes(pr.base.ref) &&
-            pr.base.repo.full_name === `${repo.owner}/${repo.repo}` &&
-            pr.merge_commit_sha === commit.sha,
+            pr.base.repo.full_name === `${repo.owner}/${repo.repo}`,
         );
+        candidates.sort(
+          (a, b) =>
+            Number(b.base.ref === "dev") - Number(a.base.ref === "dev") ||
+            Number(b.merge_commit_sha === commit.sha) - Number(a.merge_commit_sha === commit.sha) ||
+            a.number - b.number,
+        );
+        commit.pullRequest = candidates[0];
       }),
     );
   }

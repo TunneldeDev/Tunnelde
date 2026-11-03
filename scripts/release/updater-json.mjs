@@ -54,6 +54,7 @@ try {
   const directory = flag("--sig-dir");
   const output = flag("--out") ?? "latest.json";
   const repository = flag("--repo");
+  const notesFile = flag("--notes-file");
   if (!tag || !directory || !repository) {
     throw new Error(
       "usage: updater-json.mjs --tag vX.Y.Z --sig-dir DIR --repo OWNER/NAME [--out FILE]",
@@ -88,6 +89,7 @@ try {
   const manifest = {
     version,
     pub_date: new Date().toISOString(),
+    ...(notesFile ? { notes: readFileSync(notesFile, "utf8").trim() } : {}),
     platforms,
   };
   writeFileSync(output, `${JSON.stringify(manifest, null, 2)}\n`);

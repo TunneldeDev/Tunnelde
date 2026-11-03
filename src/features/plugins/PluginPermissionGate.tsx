@@ -34,6 +34,10 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
     network: "pluginSecurity.permission.network",
     "process.exec": "pluginSecurity.permission.processExec",
     secrets: "pluginSecurity.permission.secrets",
+    "mounts.read": "pluginSecurity.permission.mountsRead",
+    "mounts.write": "pluginSecurity.permission.mountsWrite",
+    "forwards.read": "pluginSecurity.permission.forwardsRead",
+    "forwards.write": "pluginSecurity.permission.forwardsWrite",
   } as const;
   return permissions.length ? (
     <ul className="plugin-permissions">
@@ -92,9 +96,13 @@ export function PluginPermissionGate() {
         {plugin.sourceUrl ?? plugin.path}
       </p>
       <PluginPermissionList permissions={plugin.permissions} />
-      <p className="settings-hint">
-        {t(plugin.runtime === "wasm" ? "pluginSecurity.wasmWarning" : "pluginSecurity.nodeWarning")}
-      </p>
+      {plugin.runtime !== "declarative" && (
+        <p className="settings-hint">
+          {t(
+            plugin.runtime === "wasm" ? "pluginSecurity.wasmWarning" : "pluginSecurity.nodeWarning",
+          )}
+        </p>
+      )}
       <p className="settings-hint">{t("pluginSecurity.updateWarning")}</p>
       {error ? <PluginError message={error} /> : null}
     </Dialog>

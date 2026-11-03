@@ -25,6 +25,7 @@ pub const COLOR_REGIONS: [&str; 11] = [
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
     /// "system" | "zh-CN" | "en-US"
     pub language: String,
@@ -44,6 +45,10 @@ pub struct Settings {
     pub right_panel_width: u16,
     pub user_css: String,
     pub auto_check_updates: bool,
+    pub update_channel: String,
+    pub update_source: String,
+    pub update_source_url: String,
+    pub update_check_interval: String,
     pub skipped_version: Option<String>,
     pub last_update_check: Option<i64>,
     pub close_to_tray: bool,
@@ -85,6 +90,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
             language: "system".into(),
             theme: "system".into(),
@@ -99,6 +105,15 @@ impl Default for Settings {
             right_panel_width: 296,
             user_css: String::new(),
             auto_check_updates: true,
+            update_channel: if env!("CARGO_PKG_VERSION").contains('-') {
+                "beta"
+            } else {
+                "stable"
+            }
+            .into(),
+            update_source: "github".into(),
+            update_source_url: String::new(),
+            update_check_interval: "daily".into(),
             skipped_version: None,
             last_update_check: None,
             close_to_tray: false,
@@ -230,6 +245,15 @@ impl Settings {
             valid && shortcut_count <= 128
         });
         let defaults = Self::default();
+        if !["stable", "beta"].contains(&self.update_channel.as_str()) {
+            self.update_channel = defaults.update_channel.clone();
+        }
+        if !["github", "custom"].contains(&self.update_source.as_str()) {
+            self.update_source = "github".into();
+        }
+        if !["startup", "daily", "weekly"].contains(&self.update_check_interval.as_str()) {
+            self.update_check_interval = "daily".into();
+        }
         if !TITLE_BAR_STYLES.contains(&self.title_bar_style.as_str()) {
             self.title_bar_style = defaults.title_bar_style;
         }
@@ -628,6 +652,9 @@ mod tests {
             ("density", &DENSITIES),
             ("monoFont", &MONO_FONTS),
             ("titleBarStyle", &TITLE_BAR_STYLES),
+            ("updateChannel", &["stable", "beta"]),
+            ("updateSource", &["github", "custom"]),
+            ("updateCheckInterval", &["startup", "daily", "weekly"]),
             ("motion", &["system", "reduced", "full"]),
             ("hostActivation", &["terminal", "details", "edit"]),
             ("terminalCursorStyle", &["block", "bar", "underline"]),

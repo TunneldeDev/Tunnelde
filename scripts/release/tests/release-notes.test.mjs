@@ -24,10 +24,20 @@ test("groups meaningful changes, combines duplicates and preserves all reference
     commit(
       1,
       "feat(terminal): add split views (#10)\n\nCo-authored-by: Other <123+other@users.noreply.github.com>",
-      { pullRequest: { number: 10, user: { login: "maintainer" } } },
+      {
+        pullRequest: {
+          number: 10,
+          user: { login: "maintainer" },
+          merge_commit_sha: commit(1, "").sha,
+        },
+      },
     ),
     commit(2, "feat(terminal): add split views", {
-      pullRequest: { number: 11, user: { login: "contributor" } },
+      pullRequest: {
+        number: 11,
+        user: { login: "contributor" },
+        merge_commit_sha: commit(2, "").sha,
+      },
     }),
     commit(3, "fix: restore paste"),
     commit(4, "perf: speed up render"),
@@ -64,7 +74,7 @@ test("groups meaningful changes, combines duplicates and preserves all reference
   );
   assert.equal(
     summarizeChanges(commits).find((entry) => entry.title === "add split views").authors.size,
-    3,
+    4,
   );
 });
 
@@ -200,4 +210,81 @@ test("diverged, truncated or duplicate comparison results stop generation", asyn
     const github = { rest: { repos: { compareCommitsWithBasehead: async () => ({ data }) } } };
     await assert.rejects(collectChanges({ github, repo: {}, previousVersion: "0.26.0", head }));
   }
+});
+
+test("rebased commits retain individual changes, original authors, coauthors and PR associations", async () => {
+  const commits = [
+    commit(21, "feat(terminal): add split views", { author: { login: "alice" } }),
+    commit(22, "fix: restore paste\n\nCo-authored-by: Carol <3+carol@users.noreply.github.com>", {
+      author: { login: "bob" },
+    }),
+    commit(23, "docs: explain split views"),
+  ];
+  const github = {
+    paginate: async (method, args) => method(args),
+    rest: {
+      repos: {
+        compareCommitsWithBasehead: async () => ({
+          data: { status: "ahead", total_commits: commits.length, commits },
+        }),
+        listPullRequestsAssociatedWithCommit: async () => [
+          {
+            number: 99,
+            merged_at: "date",
+            base: { ref: "main", repo: { full_name: repository } },
+            merge_commit_sha: commits[0].sha,
+            user: { login: "publisher" },
+          },
+          {
+            number: 20,
+            merged_at: null,
+            base: { ref: "dev", repo: { full_name: repository } },
+            user: { login: "unmerged" },
+          },
+          {
+            number: 17,
+            merged_at: "date",
+            base: { ref: "dev", repo: { full_name: repository } },
+            merge_commit_sha: commits[2].sha,
+            user: { login: "maintainer" },
+          },
+        ],
+      },
+    },
+  };
+  const collected = await collectChanges({
+    github,
+    repo: { owner: "TunneldeDev", repo: "Tunnelde" },
+    previousVersion: "0.26.0",
+    head,
+  });
+  assert.ok(collected.every((item) => item.pullRequest.number === 17));
+  const release = renderRelease({ ...options, commits: collected });
+  assert.equal(release.count, 3);
+  for (const text of [
+    "add split views",
+    "restore paste",
+    "explain split views",
+    "pull/17",
+    `commit/${commits[0].sha}`,
+    `commit/${commits[1].sha}`,
+    "@alice",
+    "@bob",
+    "@carol",
+    "@maintainer",
+  ])
+    assert.ok(release.notes.includes(text), text);
+  assert.doesNotMatch(release.notes, /@publisher|@unmerged/);
+});
+
+test("duplicate rebased subjects keep each commit reference", () => {
+  const changes = [commit(31, "fix: reconnect"), commit(32, "fix: reconnect")].map((item) => ({
+    ...item,
+    pullRequest: { number: 17, merge_commit_sha: head, user: { login: "maintainer" } },
+  }));
+  const result = renderRelease({ ...options, commits: changes });
+  assert.equal(result.count, 1);
+  assert.ok(result.notes.includes(`commit/${changes[0].sha}`));
+  assert.ok(result.notes.includes(`commit/${changes[1].sha}`));
+  assert.ok(result.notes.includes("pull/17"));
 });

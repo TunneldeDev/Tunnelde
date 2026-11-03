@@ -24,7 +24,14 @@ function fixture(notes = "- Fix a reproducible bug.") {
     join(root, "native-helpers/Cargo.lock"),
     '[[package]]\nname = "tunnelde-agent"\nversion = "0.18.1"\n',
   );
-  for (const name of ["version", "changelog", "release", "verify-assets", "native-helper"]) {
+  for (const name of [
+    "version",
+    "changelog",
+    "release",
+    "verify-assets",
+    "native-helper",
+    "updater-json",
+  ]) {
     copyFileSync(
       join(process.cwd(), `scripts/release/${name}.mjs`),
       join(root, `scripts/release/${name}.mjs`),
@@ -93,11 +100,13 @@ describe("release preparation", () => {
 
   it("checks beta versions across every manifest and allows idempotent recovery", () => {
     const f = fixture();
-    expect(f.run("version", "set", "0.19.0-beta.12.1").status).toBe(0);
-    expect(f.run("version", "check", "v0.19.0-beta.12.1").status).toBe(0);
-    expect(f.run("version", "check", "v0.19.0-beta.12.2").status).toBe(1);
-    expect(f.run("version", "set", "0.19.0-beta.12.1").status).toBe(0);
-    expect(f.read("CITATION.cff")).toContain("version: 0.19.0-beta.12.1");
+    for (const version of ["0.19.0-beta.12.1", "0.19.0-beta.13"]) {
+      expect(f.run("version", "set", version).status).toBe(0);
+      expect(f.run("version", "check", `v${version}`).status).toBe(0);
+      expect(f.run("version", "check", "v0.19.0-beta.14").status).toBe(1);
+      expect(f.run("version", "set", version).status).toBe(0);
+      expect(f.read("CITATION.cff")).toContain(`version: ${version}`);
+    }
   });
 
   it("rejects a stale Cargo lock version", () => {
@@ -181,6 +190,53 @@ describe("native helper packaging", () => {
 });
 
 describe("release publishing", () => {
+  it("includes the tagged changelog notes in stable and beta OTA manifests", () => {
+    const config = JSON.parse(
+      readFileSync(join(process.cwd(), "src-tauri/tauri.conf.json"), "utf8"),
+    );
+    expect(config.plugins.updater.requireSignedVersion).toBe(true);
+    const f = fixture();
+    mkdirSync(join(f.root, "sigs"));
+    for (const name of [
+      "x64-setup.exe",
+      "aarch64.app.tar.gz",
+      "x64.app.tar.gz",
+      "amd64.AppImage",
+      "amd64.deb",
+    ]) {
+      writeFileSync(join(f.root, `sigs/Tunnelde_${name}.sig`), "test-signature");
+    }
+    writeFileSync(join(f.root, "notes.md"), "## Fixes\n\n- 终端粘贴。\n");
+    for (const tag of ["v0.27.0", "v0.27.1-beta.3.1", "v0.27.1-beta.4"]) {
+      const result = f.run(
+        "updater-json",
+        "--tag",
+        tag,
+        "--sig-dir",
+        "sigs",
+        "--repo",
+        "TunneldeDev/Tunnelde",
+        "--notes-file",
+        "notes.md",
+      );
+      expect(result.status, result.stderr).toBe(0);
+      const manifest = JSON.parse(f.read("latest.json"));
+      expect(manifest.version).toBe(tag.slice(1));
+      expect(manifest.notes).toBe("## Fixes\n\n- 终端粘贴。");
+      expect(manifest.platforms["windows-x86_64"].url).toContain(`/download/${tag}/`);
+      expect(
+        Object.values(manifest.platforms).every(
+          (entry) => (entry as { signature: string }).signature === "test-signature",
+        ),
+      ).toBe(true);
+    }
+    const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
+    expect(workflow).toContain(
+      'node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md',
+    );
+    expect(workflow).toContain("--notes-file release-notes.md");
+  });
+
   function publishingFixture() {
     const f = fixture();
     const manifest = {

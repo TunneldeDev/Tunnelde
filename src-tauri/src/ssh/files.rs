@@ -7,11 +7,12 @@ use russh_sftp::client::SftpSession;
 use russh_sftp::protocol::{OpenFlags, StatusCode};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+pub mod durable;
 pub mod search;
 
 pub const TRANSFER_EVENT: &str = "sftp://transfer";
@@ -46,6 +47,7 @@ pub enum TransferStatus {
     Done,
     Failed,
     Cancelled,
+    Paused,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +71,7 @@ pub struct TransferRegistry {
 struct TransferState {
     active: std::collections::HashMap<String, ActiveTransfer>,
     completed: std::collections::VecDeque<CompletedTransfer>,
+    paused: std::collections::HashSet<String>,
 }
 
 struct ActiveTransfer {
@@ -99,6 +102,27 @@ impl ActiveTransfer {
 }
 
 impl TransferRegistry {
+    pub fn is_active(&self, id: &str) -> bool {
+        self.inner
+            .lock()
+            .map(|s| s.active.contains_key(id))
+            .unwrap_or(false)
+    }
+    pub fn pause(&self, id: &str) {
+        if let Ok(mut state) = self.inner.lock() {
+            if let Some(t) = state.active.get(id) {
+                t.cancel();
+                state.paused.insert(id.into());
+            }
+        }
+    }
+    fn take_paused(&self, id: &str) -> bool {
+        self.inner
+            .lock()
+            .map(|mut s| s.paused.remove(id))
+            .unwrap_or(false)
+    }
+
     fn register(
         &self,
         id: &str,
@@ -109,6 +133,9 @@ impl TransferRegistry {
             .inner
             .lock()
             .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+        if state.active.contains_key(id) {
+            return Err(AppError::validation("sftp.transferBusy"));
+        }
         if owner.as_ref().is_some_and(|owner| {
             state
                 .active
@@ -601,6 +628,30 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             error: Some(error),
         },
     };
+    let mut event = event;
+    if event.status == TransferStatus::Cancelled && state.transfers.take_paused(id) {
+        event.status = TransferStatus::Paused;
+    }
+    if let Ok(mut row) = durable::Journal::get(app, id) {
+        row.status = match event.status {
+            TransferStatus::Running => "running",
+            TransferStatus::Done => "done",
+            TransferStatus::Cancelled => "cancelled",
+            TransferStatus::Paused => "paused",
+            TransferStatus::Failed => "failed",
+        }
+        .into();
+        row.transferred = event.transferred;
+        row.total = row.total.max(event.total);
+        row.error = event.error.clone();
+        row.updated_at = crate::models::now_ms();
+        if let Err(error) = durable::Journal::upsert(app, row) {
+            tracing::error!(%error,"Cannot persist transfer completion");
+        }
+    }
+    if let Ok(row) = durable::Journal::get(app, id) {
+        event.total = event.total.max(row.total);
+    }
     let event = state.transfers.complete(event);
     emit(app, event);
 }
@@ -643,6 +694,36 @@ fn spawn_transfer_inner(
     }
 
     let id = uuid::Uuid::new_v4().to_string();
+    if owner.is_none() {
+        let sessions = app.state::<AppState>().ssh.list();
+        let host = |id: &Option<String>| {
+            id.as_ref()
+                .and_then(|id| sessions.iter().find(|s| &s.id == id))
+                .map(|s| s.host_id.clone())
+        };
+        durable::Journal::upsert(
+            &app,
+            durable::DurableTransfer {
+                id: id.clone(),
+                direction: "transfer".into(),
+                name: file_name_of(&from.path),
+                from_session: from.session.clone(),
+                from_host_id: host(&from.session),
+                from_path: from.path.clone(),
+                to_session: to.session.clone(),
+                to_host_id: host(&to.session),
+                to_path: to.path.clone(),
+                remove_source,
+                deleting_source: false,
+                overwrite,
+                transferred: 0,
+                total: 0,
+                status: "running".into(),
+                error: None,
+                updated_at: crate::models::now_ms(),
+            },
+        )?;
+    }
     let name = file_name_of(&from.path);
     let cancel = Arc::new(AtomicBool::new(false));
     let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
@@ -669,6 +750,8 @@ fn spawn_transfer_inner(
             TransferOptions {
                 remove_source,
                 overwrite,
+                durable: owner.is_none(),
+                resuming: false,
             },
         );
         let plugin_transfer = owner.is_some();
@@ -688,6 +771,47 @@ fn spawn_transfer_inner(
     });
 
     Ok(id)
+}
+
+pub(crate) fn resume_transfer(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    row: durable::DurableTransfer,
+) -> AppResult<()> {
+    if row.status == "done" {
+        return Err(AppError::validation("sftp.transferAlreadyComplete"));
+    }
+    let mut row = row;
+    row.status = "running".into();
+    row.error = None;
+    durable::Journal::upsert(&app, row.clone())?;
+    let cancel = Arc::new(AtomicBool::new(false));
+    let id = row.id.clone();
+    let name = row.name.clone();
+    let app2 = app.clone();
+    app.state::<AppState>()
+        .transfers
+        .register(&id, cancel.clone(), None)?;
+    tauri::async_runtime::spawn(async move {
+        let out = run(
+            &app2,
+            &from,
+            &to,
+            &id,
+            &name,
+            &cancel,
+            TransferOptions {
+                remove_source: row.remove_source,
+                overwrite: row.overwrite,
+                durable: true,
+                resuming: true,
+            },
+        )
+        .await;
+        finish(&app2, &id, &name, out);
+    });
+    Ok(())
 }
 
 async fn guard_plugin_transfer(
@@ -733,6 +857,14 @@ impl<'a> Meter<'a> {
         self.transferred += bytes;
         if self.transferred - self.last >= PROGRESS_STEP || self.transferred >= self.total {
             self.last = self.transferred;
+            if let Ok(mut row) = durable::Journal::get(self.app, self.id) {
+                row.transferred = self.transferred;
+                row.total = self.total;
+                row.updated_at = crate::models::now_ms();
+                if let Err(error) = durable::Journal::upsert(self.app, row) {
+                    tracing::error!(%error,"Cannot persist transfer progress");
+                }
+            }
             progress(self.app, self.id, self.name, self.transferred, self.total);
         }
     }
@@ -963,6 +1095,7 @@ async fn open_writer(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn copy_entry(
     from: &Endpoint,
     to: &Endpoint,
@@ -971,6 +1104,8 @@ async fn copy_entry(
     meter: &mut Meter<'_>,
     cancel: &Arc<AtomicBool>,
     overwrite: bool,
+    durable_id: Option<&str>,
+    resuming: bool,
 ) -> AppResult<()> {
     if cancel.load(Ordering::SeqCst) {
         return Err(AppError::Ssh(CANCELLED.into()));
@@ -990,12 +1125,20 @@ async fn copy_entry(
                 meter,
                 cancel,
                 overwrite,
+                durable_id,
+                resuming,
             ))
             .await?;
         }
         return Ok(());
     }
 
+    if let Some(id) = durable_id {
+        return durable_copy_file(
+            from, to, from_sftp, to_sftp, meter, cancel, overwrite, id, resuming,
+        )
+        .await;
+    }
     let mut reader = open_reader(from, from_sftp).await?;
     let result = async {
         let mut writer = open_writer(to, to_sftp, overwrite).await?;
@@ -1026,6 +1169,419 @@ async fn copy_entry(
     Ok(())
 }
 
+async fn file_length(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Option<u64>> {
+    reject_destination_link(endpoint, sftp).await?;
+    match sftp {
+        Some(s) => match s.symlink_metadata(&endpoint.path).await {
+            Ok(m) if m.is_dir() => Err(AppError::validation("sftp.typeConflict")),
+            Ok(m) => Ok(Some(m.len())),
+            Err(russh_sftp::client::error::Error::Status(st))
+                if st.status_code == StatusCode::NoSuchFile =>
+            {
+                Ok(None)
+            }
+            Err(e) => Err(map_sftp(e)),
+        },
+        None => match tokio::fs::symlink_metadata(&endpoint.path).await {
+            Ok(m) if m.is_dir() => Err(AppError::validation("sftp.typeConflict")),
+            Ok(m) => Ok(Some(m.len())),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e.into()),
+        },
+    }
+}
+async fn rename_endpoint(
+    from: &Endpoint,
+    to: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<()> {
+    match sftp {
+        Some(s) => s.rename(&from.path, &to.path).await.map_err(map_sftp),
+        None => {
+            tokio::fs::rename(&from.path, &to.path).await?;
+            Ok(())
+        }
+    }
+}
+async fn verify_prefix(
+    reader: &mut Reader,
+    partial: &Endpoint,
+    sftp: Option<&SftpSession>,
+    length: u64,
+    cancel: Option<&AtomicBool>,
+) -> AppResult<()> {
+    let mut other = open_reader(partial, sftp).await?;
+    let mut left = length;
+    let mut a = vec![0; CHUNK];
+    let mut b = vec![0; CHUNK];
+    let result = async {
+        while left > 0 {
+            if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                return Err(AppError::Ssh(CANCELLED.into()));
+            }
+            let n = left.min(CHUNK as u64) as usize;
+            let mut got = 0;
+            while got < n {
+                let read = reader.read(&mut a[got..n]).await?;
+                if read == 0 {
+                    return Err(AppError::validation("sftp.resumePrefixMismatch"));
+                }
+                got += read;
+            }
+            let mut got = 0;
+            while got < n {
+                let read = other.read(&mut b[got..n]).await?;
+                if read == 0 {
+                    return Err(AppError::validation("sftp.resumePrefixMismatch"));
+                }
+                got += read;
+            }
+            if a[..n] != b[..n] {
+                return Err(AppError::validation("sftp.resumePrefixMismatch"));
+            }
+            left -= n as u64;
+        }
+        Ok(())
+    }
+    .await;
+    let closed = other.finish().await;
+    result?;
+    closed
+}
+async fn source_stamp(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<(u64, Option<i64>)> {
+    match sftp {
+        Some(s) => {
+            let m = s.symlink_metadata(&endpoint.path).await.map_err(map_sftp)?;
+            if m.is_symlink() {
+                return Err(AppError::validation("sftp.symlinkUnsupported"));
+            }
+            Ok((m.len(), m.modified().ok().and_then(millis)))
+        }
+        None => {
+            let m = tokio::fs::symlink_metadata(&endpoint.path).await?;
+            if local_metadata_is_link(&m) {
+                return Err(AppError::validation("sftp.symlinkUnsupported"));
+            }
+            Ok((m.len(), m.modified().ok().and_then(millis)))
+        }
+    }
+}
+fn staging_endpoint(destination: &Endpoint, id: &str, suffix: &str) -> Endpoint {
+    use sha2::{Digest, Sha256};
+    let digest = format!("{:x}", Sha256::digest(destination.path.as_bytes()));
+    let name = format!(".tunnelde-{id}-{}.{}", &digest[..16], suffix);
+    let path = if destination.session.is_some() {
+        let parent = destination
+            .path
+            .rsplit_once('/')
+            .map(|(parent, _)| if parent.is_empty() { "/" } else { parent })
+            .unwrap_or(".");
+        join_remote(parent, &name)
+    } else {
+        let parent = Path::new(&destination.path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        display_path(&parent.join(name))
+    };
+    destination.child(path)
+}
+
+type BackupFingerprint = (u64, Option<i64>, String);
+async fn fingerprint_file(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+) -> AppResult<BackupFingerprint> {
+    use sha2::{Digest, Sha256};
+    let before = source_stamp(endpoint, sftp).await?;
+    let mut reader = open_reader(endpoint, sftp).await?;
+    let result = async {
+        let mut hash = Sha256::new();
+        let mut buf = vec![0; CHUNK];
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::Ssh(CANCELLED.into()));
+            }
+            let n = reader.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            hash.update(&buf[..n]);
+        }
+        Ok(format!("{:x}", hash.finalize()))
+    }
+    .await;
+    let closed = reader.finish().await;
+    let digest = result?;
+    closed?;
+    if source_stamp(endpoint, sftp).await? != before {
+        return Err(AppError::validation("sftp.resumeSourceChanged"));
+    }
+    Ok((before.0, before.1, digest))
+}
+fn backup_checkpoint(app: &AppHandle, key: &str) -> AppResult<Option<BackupFingerprint>> {
+    app.state::<AppState>().db.with(|conn| {
+        use rusqlite::OptionalExtension;
+        let raw: Option<String> = conn
+            .query_row("SELECT value FROM settings WHERE key=?1", [key], |r| {
+                r.get(0)
+            })
+            .optional()?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(AppError::from))
+            .transpose()
+    })
+}
+async fn backup_is_owned(
+    app: &AppHandle,
+    key: &str,
+    backup: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+) -> AppResult<bool> {
+    if file_length(backup, sftp).await?.is_none() {
+        return Ok(false);
+    }
+    let expected =
+        backup_checkpoint(app, key)?.ok_or_else(|| AppError::validation("sftp.alreadyExists"))?;
+    if fingerprint_file(backup, sftp, cancel).await? != expected {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    Ok(true)
+}
+async fn remove_verified_backup(
+    backup: &Endpoint,
+    sftp: Option<&SftpSession>,
+    expected: &BackupFingerprint,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    if fingerprint_file(backup, sftp, cancel).await? != *expected {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    remove_endpoint(backup, sftp).await
+}
+async fn cleanup_backup(
+    app: &AppHandle,
+    key: &str,
+    backup: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    let Some(expected) = backup_checkpoint(app, key)? else {
+        return Ok(());
+    };
+    if file_length(backup, sftp).await?.is_some() {
+        remove_verified_backup(backup, sftp, &expected, cancel).await?;
+    }
+    app.state::<AppState>().db.with(|conn| {
+        conn.execute("DELETE FROM settings WHERE key=?1", [key])?;
+        Ok(())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn durable_copy_file(
+    from: &Endpoint,
+    to: &Endpoint,
+    from_sftp: Option<&SftpSession>,
+    to_sftp: Option<&SftpSession>,
+    meter: &mut Meter<'_>,
+    cancel: &Arc<AtomicBool>,
+    overwrite: bool,
+    id: &str,
+    resuming: bool,
+) -> AppResult<()> {
+    use sha2::{Digest, Sha256};
+    let stamp = source_stamp(from, from_sftp).await?;
+    let key = format!(
+        "transfer-file:{id}:{:x}",
+        Sha256::digest(to.path.as_bytes())
+    );
+    let backup = staging_endpoint(to, id, "backup");
+    let backup_key = key.replacen("transfer-file:", "transfer-backup:", 1);
+    let saved = meter.app.state::<AppState>().db.with(|conn| {
+        use rusqlite::OptionalExtension;
+        Ok(conn
+            .query_row("SELECT value FROM settings WHERE key=?1", [&key], |r| {
+                r.get::<_, String>(0)
+            })
+            .optional()?)
+    })?;
+    if let Some(saved) = saved {
+        let old: (u64, Option<i64>, bool) = serde_json::from_str(&saved)?;
+        if old.0 != stamp.0 || old.1 != stamp.1 {
+            return Err(AppError::validation("sftp.resumeSourceChanged"));
+        }
+        if old.2 {
+            let mut source = open_reader(from, from_sftp).await?;
+            if file_length(to, to_sftp).await? != Some(stamp.0) {
+                return Err(AppError::validation("sftp.resumePrefixMismatch"));
+            }
+            verify_prefix(&mut source, to, to_sftp, stamp.0, Some(cancel)).await?;
+            source.finish().await?;
+            cleanup_backup(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+            meter.add(stamp.0);
+            return Ok(());
+        }
+    }
+    let journal_app = meter.app;
+    let save = |completed: bool| -> AppResult<()> {
+        journal_app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&key,serde_json::to_string(&(stamp.0,stamp.1,completed))?,crate::models::now_ms()])?;Ok(())})
+    };
+    save(false)?;
+    let temp = staging_endpoint(to, id, "part");
+    let partial = if resuming {
+        file_length(&temp, to_sftp).await?
+    } else {
+        None
+    };
+    if resuming && partial.is_none() && file_length(to, to_sftp).await? == Some(stamp.0) {
+        let mut completed = open_reader(from, from_sftp).await?;
+        let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
+        completed.finish().await?;
+        if checked.is_ok() {
+            cleanup_backup(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+            save(true)?;
+            meter.add(stamp.0);
+            return Ok(());
+        }
+    }
+    let existing = partial.unwrap_or(0);
+    if existing > stamp.0 {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    let mut reader = open_reader(from, from_sftp).await?;
+    if existing > 0 {
+        verify_prefix(&mut reader, &temp, to_sftp, existing, Some(cancel)).await?;
+    }
+    let destination_exists = file_length(to, to_sftp).await?.is_some();
+    if destination_exists && !overwrite {
+        return Err(AppError::validation("sftp.alreadyExists"));
+    }
+    let mut writer = if partial.is_some() {
+        match to_sftp {
+            Some(s) => Writer::Remote(Box::new(
+                s.open_with_flags(&temp.path, OpenFlags::WRITE)
+                    .await
+                    .map_err(map_sftp)?,
+            )),
+            None => Writer::Local(
+                tokio::fs::OpenOptions::new()
+                    .write(true)
+                    .open(&temp.path)
+                    .await?,
+            ),
+        }
+    } else {
+        open_writer(&temp, to_sftp, false).await?
+    };
+    if existing > 0 {
+        match &mut writer {
+            Writer::Local(f) => {
+                f.seek(std::io::SeekFrom::Start(existing)).await?;
+            }
+            Writer::Remote(f) => {
+                f.seek(std::io::SeekFrom::Start(existing)).await?;
+            }
+        }
+    }
+    meter.add(existing);
+    let result = async {
+        let mut buf = vec![0; CHUNK];
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::Ssh(CANCELLED.into()));
+            }
+            let n = reader.read(&mut buf).await?;
+            if n == 0 {
+                break;
+            }
+            writer.write_all(&buf[..n]).await?;
+            meter.add(n as u64);
+        }
+        Ok(())
+    }
+    .await;
+    let closed = writer.finish().await;
+    let read_closed = reader.finish().await;
+    result?;
+    closed?;
+    read_closed?;
+    if source_stamp(from, from_sftp).await? != stamp {
+        return Err(AppError::validation("sftp.resumeSourceChanged"));
+    }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    // Persist the old target fingerprint before moving it, so both rename
+    // crash windows can recover without treating an unrelated file as ours.
+    let mut own_backup = backup_is_owned(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+    if destination_exists {
+        if own_backup {
+            return Err(AppError::validation("sftp.alreadyExists"));
+        }
+        let expected = fingerprint_file(to, to_sftp, cancel).await?;
+        meter.app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&backup_key,serde_json::to_string(&expected)?,crate::models::now_ms()])?;Ok(())})?;
+        rename_endpoint(to, &backup, to_sftp).await?;
+        own_backup = true;
+    }
+    if let Err(e) = rename_endpoint(&temp, to, to_sftp).await {
+        if own_backup
+            && file_length(to, to_sftp).await?.is_none()
+            && backup_is_owned(meter.app, &backup_key, &backup, to_sftp, cancel).await?
+        {
+            let _ = rename_endpoint(&backup, to, to_sftp).await;
+        }
+        return Err(e);
+    }
+    cleanup_backup(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+    save(true)?;
+    Ok(())
+}
+
+async fn validate_move_source(
+    app: &AppHandle,
+    id: &str,
+    from: &Endpoint,
+    to: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<()> {
+    use sha2::{Digest, Sha256};
+    if is_dir(from, sftp).await? {
+        for path in children(from, sftp).await? {
+            let source = from.child(path);
+            let destination = to.child(to.join(&file_name_of(&source.path)));
+            Box::pin(validate_move_source(app, id, &source, &destination, sftp)).await?;
+        }
+        return Ok(());
+    }
+    let key = format!(
+        "transfer-file:{id}:{:x}",
+        Sha256::digest(to.path.as_bytes())
+    );
+    let stamp = source_stamp(from, sftp).await?;
+    let raw = app
+        .state::<AppState>()
+        .db
+        .with(|conn| {
+            use rusqlite::OptionalExtension;
+            Ok(conn
+                .query_row("SELECT value FROM settings WHERE key=?1", [key], |r| {
+                    r.get::<_, String>(0)
+                })
+                .optional()?)
+        })?
+        .ok_or_else(|| AppError::validation("sftp.resumeSourceChanged"))?;
+    let saved: (u64, Option<i64>, bool) = serde_json::from_str(&raw)?;
+    if (saved.0, saved.1) != stamp || !saved.2 {
+        return Err(AppError::validation("sftp.resumeSourceChanged"));
+    }
+    Ok(())
+}
+
 async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
     match sftp {
         Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
@@ -1036,6 +1592,8 @@ async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> App
 struct TransferOptions {
     remove_source: bool,
     overwrite: bool,
+    durable: bool,
+    resuming: bool,
 }
 
 async fn run(
@@ -1050,10 +1608,12 @@ async fn run(
     let TransferOptions {
         remove_source,
         overwrite,
+        durable,
+        resuming,
     } = options;
     // SFTP v3 rename cannot replace existing targets. Confirmed overwrites use
     // the copy/merge path below and only remove the source after completion.
-    if remove_source && !overwrite {
+    if remove_source && !overwrite && !resuming && !durable {
         if let (Some(from_session), Some(to_session)) = (&from.session, &to.session) {
             if from_session == to_session {
                 let sftp = match session(app, from_session).await {
@@ -1093,12 +1653,43 @@ async fn run(
         None => None,
     };
 
+    if durable && resuming && remove_source {
+        if let Ok(row) = durable::Journal::get(app, id) {
+            if row.deleting_source {
+                let source_exists = match from_sftp.as_ref() {
+                    Some(s) => remote_exists(s, &from.path).await,
+                    None => Path::new(&from.path).try_exists().map_err(AppError::from),
+                };
+                if matches!(source_exists, Ok(false)) {
+                    let target_exists = match to_sftp.as_ref() {
+                        Some(s) => remote_exists(s, &to.path).await,
+                        None => Path::new(&to.path).try_exists().map_err(AppError::from),
+                    };
+                    if let Some(s) = from_sftp {
+                        let _ = s.close().await;
+                    }
+                    if let Some(s) = to_sftp {
+                        let _ = s.close().await;
+                    }
+                    return if matches!(target_exists, Ok(true)) {
+                        Outcome::Done(row.total)
+                    } else {
+                        Outcome::Failed(row.transferred, "sftp.resumePrefixMismatch".into())
+                    };
+                }
+            }
+        }
+    }
     let total = measure(from, from_sftp.as_ref()).await.unwrap_or(0);
     progress(app, id, name, 0, total);
 
     let mut meter = Meter::new(app, id, name, total);
+    if let Ok(mut row) = durable::Journal::get(app, id) {
+        row.total = total;
+        let _ = durable::Journal::upsert(app, row);
+    }
     let result = async {
-        if from.session == to.session {
+        if !resuming && from.session == to.session {
             match from_sftp.as_ref() {
                 Some(sftp) => {
                     check_remote_destination(sftp, &from.path, &to.path, overwrite).await?
@@ -1107,7 +1698,7 @@ async fn run(
                     check_local_destination(Path::new(&from.path), Path::new(&to.path), overwrite)?
                 }
             }
-        } else if !overwrite {
+        } else if !resuming && !overwrite {
             let exists = match to_sftp.as_ref() {
                 Some(sftp) => remote_exists(sftp, &to.path).await?,
                 None => Path::new(&to.path).try_exists()?,
@@ -1124,12 +1715,21 @@ async fn run(
             &mut meter,
             cancel,
             overwrite,
+            if durable { Some(id) } else { None },
+            resuming,
         )
         .await?;
         if cancel.load(Ordering::SeqCst) {
             return Err(AppError::Ssh(CANCELLED.into()));
         }
         if remove_source {
+            if durable {
+                validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
+                let mut row = durable::Journal::get(app, id)?;
+                row.deleting_source = true;
+                row.total = meter.total;
+                durable::Journal::upsert(app, row)?;
+            }
             remove_endpoint(from, from_sftp.as_ref()).await?;
         }
         Ok::<(), AppError>(())
@@ -1445,6 +2045,162 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn resume_prefix_verifies_every_byte_and_keeps_reader_at_resume_offset() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-resume-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let partial = root.join("partial");
+        let content: Vec<u8> = (0..(CHUNK * 3 + 19)).map(|n| (n % 251) as u8).collect();
+        std::fs::write(&source, &content).unwrap();
+        std::fs::write(&partial, &content[..CHUNK + 17]).unwrap();
+        let src = Endpoint {
+            session: None,
+            path: source.to_string_lossy().into_owned(),
+        };
+        let part = Endpoint {
+            session: None,
+            path: partial.to_string_lossy().into_owned(),
+        };
+        let mut reader = open_reader(&src, None).await.unwrap();
+        verify_prefix(&mut reader, &part, None, (CHUNK + 17) as u64, None)
+            .await
+            .unwrap();
+        let mut remainder = vec![0; content.len()];
+        let n = reader.read(&mut remainder).await.unwrap();
+        assert_eq!(&remainder[..n], &content[CHUNK + 17..CHUNK + 17 + n]);
+        reader.finish().await.unwrap();
+        let mut corrupt = content[..CHUNK + 17].to_vec();
+        corrupt[CHUNK + 10] ^= 1;
+        std::fs::write(&partial, corrupt).unwrap();
+        let mut reader = open_reader(&src, None).await.unwrap();
+        assert!(
+            verify_prefix(&mut reader, &part, None, (CHUNK + 17) as u64, None)
+                .await
+                .is_err()
+        );
+        reader.finish().await.unwrap();
+        std::fs::write(&partial, &content[..19]).unwrap();
+        let mut reader = open_reader(&src, None).await.unwrap();
+        assert!(verify_prefix(&mut reader, &part, None, 100, None)
+            .await
+            .is_err());
+        reader.finish().await.unwrap();
+        let cancelled = AtomicBool::new(true);
+        let mut reader = open_reader(&src, None).await.unwrap();
+        assert_eq!(
+            verify_prefix(&mut reader, &part, None, 19, Some(&cancelled))
+                .await
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        reader.finish().await.unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[tokio::test]
+    async fn owned_backup_recovery_cleans_only_fingerprint_matched_files_after_commit() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-backup-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let target = Endpoint {
+            session: None,
+            path: root.join("target").to_string_lossy().into_owned(),
+        };
+        let backup = target.child(format!("{}.backup", target.path));
+        let temp = target.child(format!("{}.part", target.path));
+        let cancel = AtomicBool::new(false);
+        std::fs::write(&target.path, b"old target").unwrap();
+        std::fs::write(&temp.path, b"new complete file").unwrap();
+        let recorded = fingerprint_file(&target, None, &cancel).await.unwrap();
+        rename_endpoint(&target, &backup, None).await.unwrap();
+        // App restarts in the first rename window: old target remains intact.
+        assert_eq!(
+            fingerprint_file(&backup, None, &cancel).await.unwrap(),
+            recorded
+        );
+        assert!(!std::path::Path::new(&target.path).exists());
+        rename_endpoint(&temp, &target, None).await.unwrap();
+        // App restarts in the second rename window: the verified committed
+        // target and journal fingerprint allow removing only our old backup.
+        remove_verified_backup(&backup, None, &recorded, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(std::fs::read(&target.path).unwrap(), b"new complete file");
+        std::fs::write(&backup.path, b"another user's unrelated file").unwrap();
+        assert!(remove_verified_backup(&backup, None, &recorded, &cancel)
+            .await
+            .is_err());
+        assert_eq!(
+            std::fs::read(&backup.path).unwrap(),
+            b"another user's unrelated file"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn staging_names_remain_short_siblings_for_long_names_and_nested_paths() {
+        let id = "00000000-0000-0000-0000-000000000000";
+        let name = "x".repeat(240);
+        for directory in ["/", "/home/user/nested/"] {
+            let destination = Endpoint {
+                session: Some("session".into()),
+                path: format!("{directory}{name}"),
+            };
+            let stage = staging_endpoint(&destination, id, "part");
+            let backup = staging_endpoint(&destination, id, "backup");
+            assert_eq!(stage.session, destination.session);
+            assert_eq!(
+                stage.path.rsplit_once('/').unwrap().0,
+                destination.path.rsplit_once('/').unwrap().0
+            );
+            assert!(file_name_of(&stage.path).len() < 100);
+            assert!(file_name_of(&backup.path).len() < 100);
+            assert_ne!(stage.path, backup.path);
+            assert_eq!(stage.path, staging_endpoint(&destination, id, "part").path);
+            assert_ne!(
+                stage.path,
+                staging_endpoint(&destination.child(format!("{directory}other")), id, "part").path
+            );
+        }
+        let parent = std::env::temp_dir().join("nested");
+        let destination = Endpoint {
+            session: None,
+            path: parent.join(name).to_string_lossy().into_owned(),
+        };
+        let stage = staging_endpoint(&destination, id, "part");
+        assert_eq!(Path::new(&stage.path).parent().unwrap(), parent);
+        assert!(file_name_of(&stage.path).len() < 100);
+        #[cfg(windows)]
+        {
+            let target = Endpoint {
+                session: None,
+                path: format!(r"C:\Users\user\nested\{}", "z".repeat(240)),
+            };
+            let stage = staging_endpoint(&target, id, "part");
+            assert_eq!(
+                Path::new(&stage.path).parent(),
+                Path::new(&target.path).parent()
+            );
+            assert!(file_name_of(&stage.path).len() < 100);
+        }
+    }
+
+    #[test]
+    fn duplicate_transfer_registration_cannot_replace_active_task() {
+        let registry = TransferRegistry::default();
+        let flag = Arc::new(AtomicBool::new(false));
+        registry.register("same", flag.clone(), None).unwrap();
+        assert!(registry
+            .register("same", Arc::new(AtomicBool::new(false)), None)
+            .is_err());
+        registry.pause("same");
+        assert!(flag.load(Ordering::SeqCst));
+        assert!(registry.take_paused("same"));
+        assert!(!registry.take_paused("same"));
+    }
+
     #[test]
     fn target_directories_expand_home_and_relative_paths_without_guessing_a_session() {
         use super::requested_directory;

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, Mutex, OnceLock,
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 
@@ -64,29 +64,12 @@ pub fn validate_url(url: &str) -> AppResult<reqwest::Url> {
     Ok(value)
 }
 
-fn client() -> AppResult<&'static reqwest::Client> {
-    static CLIENT: OnceLock<Result<reqwest::Client, String>> = OnceLock::new();
-    CLIENT
-        .get_or_init(|| {
-            reqwest::Client::builder()
-                .https_only(true)
-                .connect_timeout(Duration::from_secs(15))
-                .timeout(Duration::from_secs(300))
-                .redirect(reqwest::redirect::Policy::limited(5))
-                .user_agent(concat!("Tunnelde/", env!("CARGO_PKG_VERSION")))
-                .build()
-                .map_err(|error| {
-                    let detail = diagnostic(&format!("{error:?}"));
-                    tracing::warn!(detail, "plugin HTTPS client initialization failed");
-                    detail
-                })
-        })
-        .as_ref()
-        .map_err(|_| AppError::internal("market.network"))
-}
-
-pub async fn fetch_json<T: DeserializeOwned>(url: &str, max: usize) -> AppResult<T> {
-    let response = client()?
+pub async fn fetch_json<T: DeserializeOwned>(
+    app: &AppHandle,
+    url: &str,
+    max: usize,
+) -> AppResult<T> {
+    let response = crate::network::http_client(app, "marketplace")?
         .get(validate_url(url)?)
         .timeout(Duration::from_secs(25))
         .send()
@@ -158,7 +141,8 @@ impl DownloadTask {
 
     pub async fn download(&self, url: &str, max: usize) -> AppResult<Vec<u8>> {
         self.check()?;
-        let request = client()?.get(validate_url(url)?).send();
+        let client = crate::network::http_client(&self.app, "marketplace")?;
+        let request = client.get(validate_url(url)?).send();
         let response = tokio::select! {
             result = request => result.map_err(network_error)?,
             _ = self.wait_cancel() => return Err(AppError::validation("market.cancelled")),

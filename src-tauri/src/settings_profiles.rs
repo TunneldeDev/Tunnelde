@@ -19,6 +19,7 @@ const MAX_PROFILES: usize = 32;
 
 // Deliberately explicit: newly added settings never become portable by accident.
 const PORTABLE_KEYS: &[&str] = &[
+    "network",
     "language",
     "theme",
     "accent",
@@ -32,6 +33,10 @@ const PORTABLE_KEYS: &[&str] = &[
     "rightPanelWidth",
     "userCss",
     "autoCheckUpdates",
+    "updateChannel",
+    "updateSource",
+    "updateSourceUrl",
+    "updateCheckInterval",
     "closeToTray",
     "showDockIconInBackground",
     "titleBarStyle",
@@ -132,6 +137,8 @@ fn normalize(value: Value) -> AppResult<Value> {
     }
     let original = serde_json::to_value(&settings)?;
     settings.sanitize();
+    settings.network.validate()?;
+    crate::update::validate_preferences(&settings)?;
     if original != serde_json::to_value(&settings)? {
         return Err(AppError::validation("profiles.invalidValue"));
     }

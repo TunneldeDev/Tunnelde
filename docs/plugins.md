@@ -26,6 +26,38 @@ Those are four separately installed integrations; Tunnelde AI does not aggregate
 
 Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure theme packs contain only a manifest and theme colors; they do not start a process or require Node.
 
+## SSHFS and data-only plugins (0.27.0+)
+
+Install **SSHFS** or **SSHFS Lite** from the independent marketplace. Both use the
+same native mount panel; Lite needs no Node runtime. Connect a saved SSH host first,
+then choose its session, browse the remote directory, and choose an empty local
+directory or unused Windows drive. Read-only access is the default. Mounts are
+manual and reuse the SSH session's credentials, host-key trust, proxy and jump hosts.
+
+System FUSE and a compatible SSHFS build are required. The panel checks both the
+driver and passive/stdin transport support, offers installation guidance, and never
+installs system components automatically. Close files before unmounting. Busy mounts
+can be retried or explicitly force-unmounted. Revoking a plugin or disconnecting its
+session immediately severs its authenticated transport, even if OS cleanup fails.
+Cleanup failures stay visible for a retry. Mounted filesystems and OS permissions
+still require platform testing with the installed driver distribution.
+
+The `mounts.read` permission covers dependency detection and owned mount listings;
+`mounts.write` covers mounting and unmounting. Plugins cannot unmount one another's
+resources or read SSH passwords/keys. Node plugins use `mounts.dependencies`,
+`mounts.list`, `mounts.mount` and `mounts.unmount` through the host API.
+
+Data-only plugins set `runtime: "declarative"` and point `main` to local JSON:
+
+```json
+{ "views": { "main": { "title": "SSHFS Lite", "blocks": [{ "type": "mounts" }] } } }
+```
+
+Declare `main` in the manifest's `views`. These packages have no executable commands
+and never evaluate JavaScript or resolve Node. The host still asks for declared
+permissions and checks the package fingerprint. Views are available through F1 and
+the command palette, like other plugin views.
+
 Assistant chat blocks can expose `commands.target` and an `execution` object containing
 `kind`, machine display metadata, `sessionId`/`hostId` for SSH, `cwd`, `home`, `platform`
 and optional executable/runtime overrides. The host renders a machine selector independently
@@ -54,7 +86,7 @@ hello/
 | `version`     | yes               | `major.minor` or `major.minor.patch`                               |
 | `apiVersion`  | yes               | Must be `1`                                                        |
 | `main`        | runtime dependent | Entry script inside the plugin folder; omit for pure theme packs   |
-| `runtime`     | no                | `node` (default), `wasm`, or data-only `theme`                     |
+| `runtime`     | no                | `node` (default), `wasm`, data-only `theme` or `declarative`       |
 | `description` | no                | One line shown in the list                                         |
 | `commands`    | no                | `[{ "id": "greet", "title": "Say hello" }]`                        |
 | `views`       | no                | `[{ "id": "status", "title": "Status" }]`                          |
