@@ -527,6 +527,21 @@ pub async fn ssh_probe(
 }
 
 #[tauri::command]
+pub async fn ssh_test_connection(
+    app: AppHandle,
+    id: String,
+    host_id: String,
+    jump_credentials: Option<std::collections::HashMap<String, ssh::session::HopCredential>>,
+) -> AppResult<ssh::diagnostics::ConnectionQuality> {
+    ssh::diagnostics::test(app, id, host_id, jump_credentials.unwrap_or_default()).await
+}
+
+#[tauri::command]
+pub fn ssh_cancel_test(state: State<'_, AppState>, id: String) {
+    ssh::diagnostics::cancel(&state.ssh, &id);
+}
+
+#[tauri::command]
 pub async fn ssh_trust(
     app: AppHandle,
     host_id: String,

@@ -1,3 +1,4 @@
+pub mod diagnostics;
 pub mod files;
 pub mod forward;
 pub mod keys;
