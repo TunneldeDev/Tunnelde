@@ -368,7 +368,16 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             ? { ...item, ...tab, pinned: item.pinned, preview: keepExisting ? false : item.preview }
             : item,
         )
-      : [...state.tabs.filter((item) => item.id !== replaced?.id), tab];
+      : [
+          ...state.tabs
+            .filter((item) => item.id !== replaced?.id)
+            .map((item) =>
+              tab.preview && item.preview && owner?.tabIds.includes(item.id)
+                ? { ...item, preview: false }
+                : item,
+            ),
+          tab,
+        ];
     const panes = placed
       ? withActiveTab(state.panes, ownerId, tab.id)
       : replaced
