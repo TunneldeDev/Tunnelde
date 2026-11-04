@@ -411,7 +411,19 @@
     "publishedAt": "Published",
     "rateLimited": "GitHub request quota is exhausted and the public release fallback is unavailable. Try again later or check the update proxy.",
     "connectionFailed": "Cannot connect to the update source. Check the network and the proxy configured for updates.",
-    "invalidChannel": "Choose the Stable or Public beta update channel."
+    "invalidChannel": "Choose the Stable or Public beta update channel.",
+    "historyTarget": "Target version",
+    "historyEmpty": "No release notes were published for this version.",
+    "historyLoading": "Loading changes between these versions…",
+    "historyComplete_one": "All published notes in this range are loaded ({{count}} release).",
+    "historyComplete_other": "All published notes in this range are loaded ({{count}} releases).",
+    "historyStable": "Stable releases in this version range.",
+    "historyBeta": "Stable and public beta releases in this version range.",
+    "historyUnavailable": "Release history could not be loaded completely. Available notes are shown below; checking and installing updates still work.",
+    "historyLimit": "Release history reached its loading limit. The notes below may be incomplete.",
+    "historyMissingTarget": "The target release is missing from the public history. Its update-source notes are shown; the history may be incomplete.",
+    "historyCustom": "This custom source provides notes for the target version only. Other release history is not available from this source.",
+    "historyComplete": "All published notes in this range are loaded ({{count}} releases)."
   },
   "about": {
     "version": "Version",

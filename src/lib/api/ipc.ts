@@ -38,6 +38,7 @@ import type {
   TransferEvent,
   FilePreviewInfo,
   UpdateState,
+  ReleaseHistory,
 } from "./types";
 
 export const isTauri = (): boolean =>
@@ -101,6 +102,7 @@ export const api = {
   updateState: () => invoke<UpdateState>("update_state"),
   checkUpdates: (force = true) => invoke<UpdateState>("update_check", { force }),
   installUpdate: () => invoke<UpdateState>("update_install"),
+  updateHistory: (version: string) => invoke<ReleaseHistory>("update_history", { version }),
   openReleasePage: () => invoke<void>("open_release_page"),
 
   openDataDir: () => invoke<void>("app_open_data_dir"),

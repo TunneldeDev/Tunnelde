@@ -20,6 +20,7 @@ const mock = vi.hoisted(() => ({
   install: vi.fn(),
   skip: vi.fn(),
   openReleasePage: vi.fn(),
+  loadHistory: vi.fn(),
   native: true,
 }));
 vi.mock("@/lib/api/ipc", () => ({
@@ -76,6 +77,8 @@ beforeEach(async () => {
     check: mock.check,
     install: mock.install,
     skip: mock.skip,
+    history: null,
+    loadHistory: mock.loadHistory,
   });
   useNavigation.setState({ settingsSection: "updates" });
   useWorkspace.getState().hydrate([]);
@@ -123,9 +126,13 @@ describe("updates inside settings", () => {
   it("renders collapsible Markdown notes and offers installation even after skipping a notification", () => {
     useUpdates.setState({ state: state({ skipped: true }) });
     render(<UpdateStatus />);
-    const details = screen.getByText("Release notes · v0.26.2").closest("details")!;
+    const details = screen.getByText("Release notes · v0.26.1 → v0.26.2").closest("details")!;
     expect(details.open).toBe(false);
+    expect(details.querySelector("h2")).toBeNull();
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
     expect(details.querySelector("h2")?.textContent).toBe("Fixes");
+    expect(mock.loadHistory).toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Download and install" }));
     expect(mock.install).toHaveBeenCalledOnce();
     expect(screen.queryByRole("button", { name: "Skip this version" })).toBeNull();
