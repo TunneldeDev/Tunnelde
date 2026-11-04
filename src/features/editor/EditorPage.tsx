@@ -1,12 +1,15 @@
-import { Save } from "lucide-react";
-import { matchesCommand } from "@/lib/keyboard/registry";
+import { Save, WandSparkles } from "lucide-react";
+import { matchesCommand, shortcutCommands } from "@/lib/keyboard/registry";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
-import { useEditors } from "@/store/editors";
+import { useEditors, undoEditorEdit } from "@/store/editors";
+import { usePlugins } from "@/store/plugins";
+import { formatEditorDocument, useFormatting } from "@/lib/plugins/formatting";
+import { runWorkbenchCommand } from "@/lib/keyboard/actions";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
@@ -31,9 +34,10 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const hostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
   const candidate = useSsh((state) => state.sessions.find((session) => session.hostId === hostId));
   const [reconnecting, setReconnecting] = useState(false);
+  const formatting = useFormatting((state) => state.busy.includes(tabId));
   const textarea = useRef<HTMLTextAreaElement>(null);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
-  useBackgroundGuard(reconnecting);
+  useBackgroundGuard(reconnecting || formatting);
   const location = useEditorLocation((state) => state.target);
   useEffect(() => {
     if (
@@ -86,15 +90,47 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     }
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
-      if (event.target instanceof Element && !event.target.closest(".editor-page")) return;
-      if (matchesCommand(event, "editor.save", useSettings.getState().settings.keyboardShortcuts)) {
+      if (
+        !(event.target instanceof Element) ||
+        event.target.closest(".editor-page") !== textarea.current?.closest(".editor-page")
+      )
+        return;
+      const definitions = shortcutCommands(usePlugins.getState().items);
+      const command = definitions.find(
+        (item) =>
+          item.scope === "editor" &&
+          matchesCommand(
+            event,
+            item.id,
+            useSettings.getState().settings.keyboardShortcuts,
+            definitions,
+          ),
+      );
+      if (!command) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (command.id === "editor.save") void save(tabId);
+      else if (command.id === "editor.format") formatEditorDocument(tabId);
+      else if (command.id === "editor.undo" || command.id === "editor.redo")
+        undoEditorEdit(tabId, command.id === "editor.redo");
+      else runWorkbenchCommand(command.id);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [active, save, tabId]);
+
+  useEffect(() => {
+    const element = textarea.current;
+    if (!element) return;
+    const beforeInput = (event: InputEvent) => {
+      if (event.inputType === "historyUndo" || event.inputType === "historyRedo") {
         event.preventDefault();
-        void save(tabId);
+        undoEditorEdit(tabId, event.inputType === "historyRedo");
       }
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [active, save, tabId]);
+    element.addEventListener("beforeinput", beforeInput);
+    return () => element.removeEventListener("beforeinput", beforeInput);
+  }, [tabId, entry?.loading, entry?.error]);
 
   if (!entry) {
     return (
@@ -115,9 +151,22 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           {entry.path}
         </span>
         <Button
+          variant="ghost"
+          size="sm"
+          leading={<WandSparkles size={13} />}
+          aria-label={t(formatting ? "editor.formatting" : "editor.format")}
+          title={t(formatting ? "editor.formatting" : "editor.format")}
+          disabled={formatting || entry.loading || !!entry.error || entry.disconnected}
+          onClick={() => formatEditorDocument(tabId)}
+        >
+          {t(formatting ? "editor.formatting" : "editor.format")}
+        </Button>
+        <Button
           variant="secondary"
           size="sm"
           leading={<Save size={13} />}
+          aria-label={t(entry.saving ? "editor.saving" : "editor.save")}
+          title={t(entry.saving ? "editor.saving" : "editor.save")}
           disabled={!dirty || entry.saving || entry.loading || entry.disconnected}
           onClick={() => void save(tabId)}
         >

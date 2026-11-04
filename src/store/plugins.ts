@@ -34,6 +34,7 @@ interface PluginsStore {
   start: (id: string) => Promise<void>;
   stop: (id: string) => Promise<void>;
   run: (id: string, command: string) => Promise<void>;
+  execute: (id: string, command: string, input: () => Record<string, unknown>) => Promise<unknown>;
   clearOutput: (id: string) => void;
 }
 
@@ -234,6 +235,22 @@ export const usePlugins = create<PluginsStore>((set, get) => {
           toast(translateError(error), "error");
         }
       }),
+
+    execute: async (id, command, input) => {
+      if (operations.has(id)) throw new Error("plugin.api.busy");
+      let result: unknown;
+      await operate(id, async () => {
+        const info = get().items.find((item) => item.id === id);
+        if (!info || info.status !== "running") throw new Error("plugin.notRunning");
+        if (isTauri()) {
+          const { ensurePluginPermission } = await import("@/store/pluginSecurity");
+          if (!(await ensurePluginPermission(info))) throw new Error("plugin.permissionDenied");
+        }
+        // Build editor input only after consent, so callers can reject stale snapshots.
+        result = await api.pluginRun(id, command, input());
+      });
+      return result;
+    },
 
     run: (id, command) =>
       operate(id, async () => {
