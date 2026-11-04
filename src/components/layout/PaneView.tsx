@@ -9,7 +9,6 @@ import {
   Info,
   LockKeyhole,
   LockKeyholeOpen,
-  Pin,
   PanelLeft,
   Server,
   ShieldCheck,
@@ -358,7 +357,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
                 }
               }}
             >
-              {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
+              <Icon size={13} />
               <span className="td-tab__label">
                 <TabLabel tab={tab} />
               </span>
