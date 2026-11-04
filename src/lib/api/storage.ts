@@ -28,6 +28,7 @@ export interface StorageStatus {
   locations: StorageLocation[];
   pending: { id: string; changes: StorageChange[] } | null;
   previous: Partial<Record<StorageCategory, string>>;
+  archives?: Partial<Record<StorageCategory, string>>;
   lastError: string | null;
 }
 
@@ -39,4 +40,17 @@ export function storageChild(parent: string, category: StorageCategory): string 
 
 export function displayStoragePath(path: string): string {
   return path.startsWith("\\\\?\\UNC\\") ? `\\\\${path.slice(8)}` : path.replace(/^\\\\\?\\/, "");
+}
+
+/** Compare displayed paths without changing case-sensitive Unix paths. */
+export function sameStoragePath(left: string, right: string): boolean {
+  const normalize = (path: string) => {
+    if (!path) return "";
+    const displayed = displayStoragePath(path);
+    const windows = /^[a-z]:[\\/]/i.test(displayed) || displayed.startsWith("\\\\");
+    const normalized =
+      (windows ? displayed.replace(/\\/g, "/") : displayed).replace(/\/+$/, "") || "/";
+    return windows ? normalized.toLowerCase() : normalized;
+  };
+  return normalize(left) === normalize(right);
 }
