@@ -20,6 +20,15 @@ function isEntry(value: unknown): value is MarketEntry {
     typeof entry.url === "string" &&
     typeof entry.sha256 === "string" &&
     (entry.runtime == null || ["node", "wasm", "theme", "declarative"].includes(entry.runtime)) &&
+    (entry.tags == null ||
+      (Array.isArray(entry.tags) &&
+        entry.tags.length <= 24 &&
+        entry.tags.every(
+          (tag) =>
+            typeof tag === "string" &&
+            /^[\p{L}\p{N}_.-]{1,64}$/u.test(tag) &&
+            new TextEncoder().encode(tag).length <= 64,
+        ))) &&
     CHECKSUM.test(entry.sha256) &&
     entry.url.startsWith("https://")
   );

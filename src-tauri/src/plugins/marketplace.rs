@@ -102,11 +102,14 @@ pub struct MarketEntry {
     pub api_version: Option<u32>,
     #[serde(default)]
     pub engines: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 impl MarketEntry {
     fn valid(&self) -> bool {
-        super::manifest::valid_id(&self.id)
+        super::manifest::valid_tags(&self.tags)
+            && super::manifest::valid_id(&self.id)
             && !self.name.trim().is_empty()
             && self.name.len() <= 160
             && super::manifest::normalized_version(&self.version).is_some()

@@ -1,8 +1,20 @@
 import { useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, Package, Palette, Plus, RefreshCw, Search, Settings2 } from "lucide-react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  FolderOpen,
+  Package,
+  Palette,
+  Plus,
+  RefreshCw,
+  Search,
+  Settings2,
+} from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
+import { Select } from "@/components/ui/form/Select";
+import { matchesPlugin, pluginTags, PLUGIN_PAGE_SIZE } from "@/lib/plugins/discovery";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { useMarketplace, boundTo, newerVersion } from "@/store/marketplace";
@@ -26,6 +38,10 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
     configError,
     configLoading,
     query,
+    tag,
+    page,
+    setTag,
+    setPage,
     scope,
     tasks,
     setQuery,
@@ -51,17 +67,12 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
       (p) => p.id === entry.id && boundTo(p, source) && newerVersion(entry.version, p.version),
     ),
   );
-  const search = query.trim().toLocaleLowerCase();
-  const matches = (p: {
-    id: string;
-    name: string;
-    description?: string | null;
-    author?: string | null;
-  }) =>
-    !search ||
-    `${p.name} ${p.id} ${p.description ?? ""} ${p.author ?? ""}`
-      .toLocaleLowerCase()
-      .includes(search);
+  const search = query.trim();
+  const matches = (p: Parameters<typeof matchesPlugin>[0]) => matchesPlugin(p, query, tag);
+  const tags = [
+    ...new Set([...items, ...entries.map(({ entry }) => entry)].flatMap(pluginTags)),
+  ].sort((a, b) => a.localeCompare(b));
+  if (tag && !tags.includes(tag)) tags.unshift(tag);
   const rows =
     scope === "installed"
       ? items.filter(matches).map((p) => ({
@@ -78,6 +89,18 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
             source,
             installed: items.find((p) => p.id === entry.id),
           }));
+  const pageCount = Math.max(1, Math.ceil(rows.length / PLUGIN_PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleRows = rows.slice(
+    currentPage * PLUGIN_PAGE_SIZE,
+    (currentPage + 1) * PLUGIN_PAGE_SIZE,
+  );
+  useEffect(() => {
+    if (page !== currentPage) setPage(currentPage);
+  }, [page, currentPage, setPage]);
+  useEffect(() => {
+    document.getElementById(`${id}-list`)?.scrollTo?.({ top: 0 });
+  }, [currentPage, query, tag, scope, id]);
   const tabs = [
     { key: "market", label: t("plugins.marketplace"), count: null },
     { key: "installed", label: t("plugins.installedTab"), count: items.length },
@@ -127,6 +150,19 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        {tags.length > 0 ? (
+          <div className="plugins-tag-filter">
+            <Select
+              label={t("market.tags")}
+              value={tag}
+              options={[
+                { value: "", label: t("market.allTags") },
+                ...tags.map((value) => ({ value, label: value })),
+              ]}
+              onChange={setTag}
+            />
+          </div>
+        ) : null}
       </div>
       <div
         className="plugins-sidebar__tabs"
@@ -233,7 +269,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
         {rows.length === 0 && !configLoading && loading.length === 0 && ready && !configError ? (
           <p className="plugins-sidebar__empty">
             {t(
-              search
+              search || tag
                 ? "common.noResults"
                 : scope === "installed"
                   ? "plugins.empty"
@@ -243,7 +279,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
             )}
           </p>
         ) : null}
-        {rows.map(({ info, entry, source, installed }) => {
+        {visibleRows.map(({ info, entry, source, installed }) => {
           const origin = scope === "installed" ? "local" : (source?.id ?? "local"),
             tabId = `extension:${origin}:${info.id}`;
           const own = !!installed && !!source && boundTo(installed, source);
@@ -277,6 +313,21 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                   ) : null}
                 </span>
               </button>
+              {pluginTags(info).length ? (
+                <div className="extension-row__tags">
+                  {pluginTags(info).map((value) => (
+                    <button
+                      type="button"
+                      key={value}
+                      aria-label={t("market.filterTag", { tag: value })}
+                      aria-pressed={tag === value}
+                      onClick={() => setTag(tag === value ? "" : value)}
+                    >
+                      {value}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               <div className="extension-row__footer">
                 <span
                   className="extension-row__source"
@@ -303,6 +354,29 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
           );
         })}
       </div>
+      {rows.length > PLUGIN_PAGE_SIZE ? (
+        <nav className="plugins-pagination" aria-label={t("market.pagination")}>
+          <IconButton
+            label={t("market.previousPage")}
+            size="sm"
+            disabled={currentPage === 0}
+            onClick={() => setPage(currentPage - 1)}
+          >
+            <ChevronLeft size={14} />
+          </IconButton>
+          <span role="status">
+            {t("market.pageInfo", { page: currentPage + 1, pages: pageCount, count: rows.length })}
+          </span>
+          <IconButton
+            label={t("market.nextPage")}
+            size="sm"
+            disabled={currentPage + 1 >= pageCount}
+            onClick={() => setPage(currentPage + 1)}
+          >
+            <ChevronRight size={14} />
+          </IconButton>
+        </nav>
+      ) : null}
       <div className="plugins-browser__foot">
         <Button
           size="sm"

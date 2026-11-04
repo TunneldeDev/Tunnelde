@@ -2,6 +2,19 @@
 
 ## Quick access and command results
 
+The plugin browser renders up to 24 matching entries per page, with previous/next
+navigation and a result count. Search accepts multiple words and exact `tag:pdf`
+filters; the tag dropdown combines with search. The current query, tag and page
+survive opening a detail tab. Clicking a tag in details reveals the plugin browser.
+Discovery reads metadata and does not start executable plugins. The static registry
+fetch remains bounded to 2 MiB / 2,000 entries per source; archives download only
+after installation is requested. This is UI pagination over cached metadata, not
+a server-side paginated registry protocol.
+
+Publishers may add a `tags` array to both manifests and registry entries. Up to 24
+case-insensitively distinct tags are allowed, each at most 64 UTF-8 bytes, with
+letters, digits, `_`, `-` and `.`. Old packages without tags remain compatible.
+
 Press F1 and type `> UUID` (or another plugin name/command) to open a contributed
 view or execute an installed plugin command. Listing commands reads manifest metadata
 and does not start Node. Execution retains runtime consent and plugin approval.

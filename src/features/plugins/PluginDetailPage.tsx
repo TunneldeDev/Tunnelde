@@ -16,6 +16,7 @@ import { PluginThemes } from "./PluginThemes";
 import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
+import { pluginTags } from "@/lib/plugins/discovery";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -105,6 +106,22 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
             <span> · {info.version}</span>
           </p>
           <p>{info.description}</p>
+          {pluginTags(info).length ? (
+            <div className="extension-row__tags">
+              {pluginTags(info).map((tag) => (
+                <button
+                  type="button"
+                  key={tag}
+                  onClick={() => {
+                    useMarketplace.getState().setTag(tag);
+                    useNavigation.getState().showSidebar("plugins");
+                  }}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
       <div className="plugin-detail__actions">

@@ -380,6 +380,7 @@ export interface PluginEvent {
 }
 
 export interface MarketEntry {
+  tags?: string[];
   id: string;
   name: string;
   version: string;
@@ -428,6 +429,7 @@ export interface NodeRuntimeInfo {
 }
 
 export interface PluginInfo {
+  tags?: string[];
   id: string;
   name: string;
   version: string;
