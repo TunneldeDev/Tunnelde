@@ -96,6 +96,11 @@ transfer, cut, copy, paste and drag all act on the whole selection.
 Window gestures:
 
 - Middle-click a tab closes it.
+- Drag the background transfer window's title to move it and any edge or corner to
+  resize it. Focus its title and use arrow keys to move; focus its bottom-right
+  handle and use arrow keys to resize. Shift changes the adjustment to one pixel.
+  Escape cancels an active drag; otherwise it closes the transfer list. Double-click
+  the title or use Reset layout to restore its default placement.
 - Pages and plugin details open in one reusable italic preview tab per pane. Selecting a
   different item replaces that preview. Selecting the same item again or double-clicking
   its tab keeps it open. Interacting with page controls or dragging the tab also keeps it.

@@ -193,8 +193,11 @@ a plugin also stop when its permissions are revoked or its runtime exits.
 
 ## SSHFS plugins
 
-The independent hub provides **SSHFS** (Node) and **SSHFS Lite** (declarative,
-without Node). Both require desktop 0.27.0+ and use the same native mount panel.
+The desktop provides native mount APIs for **SSHFS** (Node) and **SSHFS Lite**
+(declarative, without Node). The packages are under review in
+[Hub PR #1](https://github.com/TunneldeDev/tunnelde-hub/pull/1) and are not yet in
+the default marketplace catalogue. The following setup applies to those source
+packages. Both require desktop 0.27.0+ and use the same native mount panel.
 Open either from Quick Access or its contributed view, select a connected host,
 browse a remote directory, and choose a local empty directory or unused Windows
 drive such as `Z:\`. Mounts default to read only.
@@ -223,4 +226,17 @@ with a source switch. Local text is bounded to 512 KiB and remote text to the ex
 use the selected pane's SSH session. Close returns focus to the file list; the footer
 can open a local file with the OS or edit a connected remote text file.
 
-PDF/image viewers and contributed preview providers are not implemented by this change.
+Install **Common File Previews** from the default marketplace for images, audio,
+video and PDF, or another compatible preview provider. It needs no Node runtime or
+executable-plugin approval. Multiple matching providers appear in a selector;
+unsupported binary formats offer a marketplace search instead of displaying bytes.
+The **Common File Icons** pack supplies file-type icons independently of previewing.
+
+Images are limited to 32 MiB and PDFs to 128 MiB. Audio/video playback starts on
+user action and depends on available system codecs. PDF rendering loads on demand
+and does not execute document scripts. Remote media uses bounded range requests
+over the selected SSH session without a temporary copy on the remote machine.
+Closing the preview revokes its access ticket and closes its file handles. Built-in
+text/Markdown remains available without a plugin; provider-based text/Markdown is
+limited to 2 MiB. See [preview contribution APIs](plugins.md#file-preview-providers)
+for supported extensions and resource limits.

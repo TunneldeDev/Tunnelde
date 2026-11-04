@@ -24,9 +24,10 @@ login and model/provider configuration remain on the execution machine.
 
 1. Install and approve the plugin through Plugins → Marketplace, a local folder or ZIP.
 2. Select a plugin Node runtime. The application does not use system Node without consent.
-3. For a coding plugin, install and authenticate the corresponding CLI yourself on the
-   execution machine. A default connection is provided; override the executable in
-   configuration or workspace settings if it is not on that machine's PATH.
+3. For a coding plugin, use an installed and authenticated CLI on the execution
+   machine. Supported remote targets can also offer an explicitly approved private
+   installation during initialization. Local agents use their official installer.
+   Override the executable only when it is not on that machine's PATH.
 4. Connect an SSH host through the normal host connection UI. Trust and credentials stay
    in that UI; never paste them into AI messages.
 5. Open **Execution location** in the chat composer. Choose **Local** or a connected host.
@@ -34,7 +35,11 @@ login and model/provider configuration remain on the execution machine.
 6. The native SFTP resolver reads home/directory metadata without listing the home folder
    or executing a shell. No internal session ID needs to be copied. Optional working
    directories accept `~` and relative paths. Local folders have a native picker.
-7. Send a message. Selecting a target or opening a view does not start an agent.
+7. Click **Initialize** before sending the first message. It checks the agent's
+   protocol without sending a prompt. **Install and initialize**, where offered,
+   requires separate installation approval. Errors preserve the message draft;
+   Send becomes available after the selected target passes initialization.
+   Selecting a target or opening a view does not start an agent.
 
 The chosen target is remembered per conversation. Changing a populated conversation's
 machine or workspace creates another conversation and preserves the previous one. After
@@ -46,6 +51,15 @@ execution is supported; Windows SSH drive/SFTP mappings are explicitly rejected 
 of being interpreted as POSIX paths.
 
 ## Remote runtime consent and files
+
+The default marketplace currently supplies assistant packages **1.4.0**. Their
+deployment-cleanup update, **1.4.1**, is pending in
+[Hub PR #2](https://github.com/TunneldeDev/tunnelde-hub/pull/2). The directory layout
+and cleanup behavior described below apply to that update's source packages;
+updating the desktop alone does not update an installed assistant plugin.
+Marketplace 1.4.0 installations may still create the older `.tunnelde-*`
+deployment directories directly under the remote home. Do not remove a directory
+while its conversation or runtime is active.
 
 Codex and Claude Code directly start their selected binary through SSH. Pi first asks
 before uploading a permission extension into a newly created `.TunneldeAI/Chats/pi-permissions-*`
