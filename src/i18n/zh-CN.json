@@ -1601,6 +1601,14 @@
       "pause": "暂停任务",
       "resume": "继续任务",
       "retry": "重试任务"
-    }
+    },
+    "pausedCount": "{{count}} 项已暂停",
+    "aggregateProgress": "整体进度（按任务平均）：{{percent}}%",
+    "aggregateProgressLabel": "后台任务进度",
+    "progressUnknown": "正在执行，暂无法计算整体进度",
+    "attentionCount": "{{count}} 项任务需要处理",
+    "clearing": "正在清空…",
+    "clearHint": "一键清空可移除的已完成、已取消和失败记录，包含折叠分组中的记录。正在运行和暂停的任务会保留。",
+    "clearFailed": "{{count}} 项任务未能清空：{{error}}。相关记录已保留，可稍后重试。"
   }
 }

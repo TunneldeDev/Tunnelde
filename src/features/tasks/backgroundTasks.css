@@ -1,4 +1,5 @@
 .background-status {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -8,6 +9,74 @@
   color: var(--td-muted);
   background: transparent;
   font-size: 11px;
+  overflow: hidden;
+}
+.background-status.is-running {
+  color: var(--td-accent);
+  background: color-mix(in srgb, var(--td-accent) 12%, var(--td-panel));
+}
+.background-status.is-paused {
+  color: var(--td-text);
+}
+.background-status.needs-attention {
+  color: var(--td-orange);
+}
+.background-status__percent {
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+.background-status__pulse {
+  position: absolute;
+  inset: 0;
+  border: 1px solid currentColor;
+  pointer-events: none;
+  animation: background-task-start 700ms ease-out 3;
+  opacity: 0;
+}
+.background-status__progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  pointer-events: none;
+}
+.background-status__progress > span {
+  display: block;
+  height: 100%;
+  background: currentColor;
+  transition: width 160ms linear;
+}
+.background-status__progress.is-indeterminate > span {
+  width: 30%;
+  animation: background-task-indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes background-task-start {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes background-task-indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(340%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .background-status__pulse,
+  .background-status__progress.is-indeterminate > span {
+    animation: none;
+  }
+  .background-status__progress > span {
+    transition: none;
+  }
 }
 .background-status:hover,
 .background-status[aria-expanded="true"] {
@@ -167,9 +236,17 @@
   color: var(--td-muted);
   text-align: center;
 }
-.background-panel__footer {
+.background-panel__toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
   padding: 4px 8px;
-  border-top: 1px solid var(--td-border);
+  border-bottom: 1px solid var(--td-border);
+}
+.background-panel__clear-count {
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+  color: var(--td-muted);
 }
 .background-group__heading {
   display: flex;

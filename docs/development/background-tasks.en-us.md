@@ -8,6 +8,12 @@ The status-bar entry and the F1 **Background tasks** command open the same windo
 Tasks never open it automatically. Groups load twenty rows at a time; completed work
 starts collapsed. A task may set `visible: false` to keep it out of this UI.
 
+The task button highlights active work and shows progress, or an indeterminate indicator
+when totals are unknown. The fixed toolbar clears all removable finished records across
+collapsed groups and pages, including failures with a `clear` action. Running, paused,
+hidden and recovery-only tasks are retained. Clearing uses at most four concurrent source
+actions and waits for completion; one failed action does not stop the remaining records.
+
 ## Wrap asynchronous work
 
 ```ts

@@ -36,8 +36,15 @@ export function registerBackgroundTaskSources(): () => void {
                 updatedAt: item.updatedAt,
                 execution: "native",
                 progress: { completed: item.transferred, total: item.total, unit: "bytes" },
-                actions: ["done", "cancelled"].includes(item.status)
-                  ? [{ id: "clear", label: "", run: () => useTransfers.getState().clear(item.id) }]
+                actions: ["done", "cancelled", "failed"].includes(item.status)
+                  ? [
+                      {
+                        id: "clear",
+                        label: "",
+                        disabled: item.clearing,
+                        run: () => useTransfers.getState().clear(item.id),
+                      },
+                    ]
                   : [],
               }) as BackgroundTask,
           ),

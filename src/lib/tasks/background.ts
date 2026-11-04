@@ -105,6 +105,41 @@ export function registerBackgroundTaskSource(
 export const isFinishedTask = (task: BackgroundTask) =>
   task.status === "done" || task.status === "cancelled";
 
+/** A source may require recovery before its record can safely be dismissed. */
+export const canClearBackgroundTask = (task: BackgroundTask) =>
+  task.visible !== false &&
+  !["running", "paused"].includes(task.status) &&
+  !!task.actions?.some((action) => action.id === "clear" && !action.disabled);
+
+/** Clear the complete snapshot, including collapsed and paginated records. */
+export async function clearFinishedBackgroundTasks(): Promise<unknown[]> {
+  const pending = useBackgroundTasks
+    .getState()
+    .items.filter(canClearBackgroundTask)
+    .map((task) => ({
+      key: task.key,
+      source: task.source,
+      token: sources.get(task.source)?.token,
+    }));
+  const errors: unknown[] = [];
+  let index = 0;
+  const worker = async () => {
+    while (index < pending.length) {
+      const entry = pending[index++]!;
+      if (sources.get(entry.source)?.token !== entry.token) continue;
+      const current = useBackgroundTasks.getState().items.find((task) => task.key === entry.key);
+      if (!current || !canClearBackgroundTask(current)) continue;
+      try {
+        await current.actions!.find((action) => action.id === "clear" && !action.disabled)!.run();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, pending.length) }, worker));
+  return errors;
+}
+
 /** Hidden JS work still requires its WebView; native-backed sources can rehydrate. */
 export function backgroundTasksBlockSuspension(): boolean {
   return useBackgroundTasks

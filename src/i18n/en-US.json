@@ -1601,6 +1601,14 @@
       "pause": "Pause task",
       "resume": "Resume task",
       "retry": "Retry task"
-    }
+    },
+    "pausedCount": "{{count}} paused",
+    "aggregateProgress": "Overall progress (average per task): {{percent}}%",
+    "aggregateProgressLabel": "Background task progress",
+    "progressUnknown": "Working; total progress is not yet known",
+    "attentionCount": "{{count}} tasks need attention",
+    "clearing": "Clearing…",
+    "clearHint": "Clear all removable finished, cancelled and failed records, including collapsed groups. Running and paused tasks are kept.",
+    "clearFailed": "Could not clear {{count}} task(s): {{error}}. Their records are kept for retry."
   }
 }
