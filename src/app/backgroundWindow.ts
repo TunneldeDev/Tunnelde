@@ -14,7 +14,7 @@ import {
   viewStateSnapshot,
 } from "@/lib/session/viewState";
 import { useWorkspace } from "@/store/workspace";
-import { useEditors } from "@/store/editors";
+import { useEditors, editorHistorySnapshot, restoreEditorHistory } from "@/store/editors";
 import { useNavigation } from "@/store/navigation";
 import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
@@ -49,6 +49,7 @@ interface WindowSnapshot {
   workspace: ReturnType<typeof captureWorkspace>;
   navigation: ReturnType<typeof captureNavigation>;
   editors: ReturnType<typeof useEditors.getState>["entries"];
+  editorHistory?: ReturnType<typeof editorHistorySnapshot>;
   sessions: ReturnType<typeof useSsh.getState>["sessions"];
   outputs: ReturnType<typeof usePlugins.getState>["outputs"];
   storageDraft: ReturnType<typeof useStorage.getState>["draft"];
@@ -76,6 +77,7 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   restoreViewState(snapshot.views);
   restoreTerminalCheckpoints(snapshot.terminals);
   useEditors.setState({ entries: snapshot.editors });
+  restoreEditorHistory(snapshot.editorHistory);
   useSsh.setState({ sessions: snapshot.sessions });
   usePlugins.setState({ outputs: snapshot.outputs });
   useStorage.setState({ draft: snapshot.storageDraft });
@@ -143,6 +145,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
       workspace: captureWorkspace(),
       navigation: captureNavigation(),
       editors: useEditors.getState().entries,
+      editorHistory: editorHistorySnapshot(),
       sessions,
       terminals,
       outputs: usePlugins.getState().outputs,

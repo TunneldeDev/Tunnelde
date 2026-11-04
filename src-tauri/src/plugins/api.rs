@@ -47,6 +47,8 @@ macro_rules! method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk."),
+    method!("editor.replace", ["editor.write"], "{tabId:string,documentId:string,version:number,text:string}", "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents."),
     method!("mounts.browse", ["mounts.read"], "{sessionId:string,path?:string}", "Browse directories through an authenticated SFTP session for the mount chooser."),
     method!("mounts.open", ["mounts.write"], "{id:string}", "Open this plugin's mount in the system file manager."),
     method!("mounts.documentation", ["mounts.read"], "{}", "Open platform SSHFS installation instructions in the system browser."),
@@ -592,7 +594,10 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
-        name if name.starts_with("workspace.") || name.starts_with("ui.") => {
+        name if name.starts_with("workspace.")
+            || name.starts_with("ui.")
+            || name.starts_with("editor.") =>
+        {
             frontend_request(context, name, params).await
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
