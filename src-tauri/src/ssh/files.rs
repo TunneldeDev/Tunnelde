@@ -16,6 +16,7 @@ mod artifacts;
 pub mod bandwidth;
 pub mod durable;
 mod range_io;
+mod scheduler;
 pub mod search;
 mod segments;
 
@@ -73,6 +74,7 @@ pub struct TransferEvent {
 pub struct TransferRegistry {
     inner: std::sync::Mutex<TransferState>,
     pub bandwidth: Arc<bandwidth::Controller>,
+    scheduler: scheduler::Scheduler,
 }
 
 #[derive(Default)]
@@ -820,6 +822,7 @@ fn spawn_transfer_inner(
                 transferred: 0,
                 total: 0,
                 status: "running".into(),
+                phase: None,
                 error: None,
                 updated_at: crate::models::now_ms(),
             },
@@ -1943,6 +1946,25 @@ async fn run(
     cancel: &Arc<AtomicBool>,
     options: TransferOptions,
 ) -> Outcome {
+    let scheduler = app.state::<AppState>().transfers.scheduler.clone();
+    let waiting = async {
+        Ok(scheduler
+            .acquire(from.session.as_deref(), to.session.as_deref())
+            .await)
+    };
+    tokio::pin!(waiting);
+    let permit = match futures_util::poll!(&mut waiting) {
+        std::task::Poll::Ready(result) => result,
+        std::task::Poll::Pending => {
+            phase(app, id, "queued");
+            interruptible(Some(cancel), waiting).await
+        }
+    };
+    let _permit = match permit {
+        Ok(permit) => permit,
+        Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+    };
+    phase(app, id, "preparing");
     let TransferOptions {
         remove_source,
         overwrite,

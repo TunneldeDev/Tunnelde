@@ -105,3 +105,14 @@ it("keeps controls and order stable while other tasks report progress", () => {
   expect(screen.getAllByRole("article")[0]?.getAttribute("aria-label")).toBe("file");
   expect(document.activeElement).toBe(button);
 });
+
+it("shows queued work without a false speed and lets the user cancel or pause it", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({ ...item, phase: "queued" })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText("Queued")).toBeTruthy();
+  expect(screen.queryByText("Calculating speed…")).toBeNull();
+  expect(screen.getByRole("button", { name: "Pause transfer" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Cancel transfer" })).toBeTruthy();
+});
