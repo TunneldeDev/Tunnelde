@@ -180,8 +180,9 @@ and displayed in a collapsed Markdown section.
   version greater than the installed build. All source/channel changes invalidate a previous update
   selection, and cannot occur during an installation.
 
-Fresh installations default to their own channel: stable, Beta or Nightly. Saved preferences always
-take priority when upgrading an existing installation.
+Fresh installations always default to Stable, including Beta and Nightly builds. Public beta and
+Development require an explicit selection. Saved preferences take priority when upgrading an
+existing installation.
 
 The official source is **GitHub**. There is no bundled third-party mirror. A **custom HTTPS
 source** can serve standard Tauri manifests at a template such as

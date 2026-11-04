@@ -105,16 +105,7 @@ impl Default for Settings {
             right_panel_width: 296,
             user_css: String::new(),
             auto_check_updates: true,
-            update_channel: if env!("CARGO_PKG_VERSION").contains("-alpha.")
-                || env!("CARGO_PKG_VERSION").contains(".d.")
-            {
-                "nightly"
-            } else if env!("CARGO_PKG_VERSION").contains('-') {
-                "beta"
-            } else {
-                "stable"
-            }
-            .into(),
+            update_channel: "stable".into(),
             update_source: "github".into(),
             update_source_url: String::new(),
             update_check_interval: "daily".into(),
@@ -433,6 +424,7 @@ mod tests {
         settings.sanitize();
         assert_eq!(serde_json::to_value(&settings).unwrap(), before);
         assert_eq!(settings.theme, "system");
+        assert_eq!(settings.update_channel, "stable");
         assert_eq!(settings.accent, "blue");
         assert_eq!(settings.density, "comfortable");
         assert_eq!(settings.ui_font_size, 13);
