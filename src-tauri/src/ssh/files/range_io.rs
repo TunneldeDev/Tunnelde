@@ -6,6 +6,8 @@ use std::sync::atomic::AtomicU64;
 
 #[cfg(test)]
 mod live_tests;
+#[cfg(test)]
+mod protocol_tests;
 
 /// Dedicated data channels keep explicit-offset requests separate from metadata
 /// operations. Unlike AsyncRead prefetch, these never read past a segment boundary.
@@ -43,11 +45,12 @@ impl DataSession {
             .min(262131)
             .min(packet.saturating_sub(13))
             .max(1) as usize;
-        // 32 KiB also works with servers that do not advertise write limits.
+        // Use the server's advertised payload budget. Falling back to 32 KiB
+        // preserves compatibility with servers without limits@openssh.com.
         let write_size = limits
             .write_len
             .unwrap_or(32768)
-            .min(32768)
+            .min(262144)
             .min(packet.saturating_sub(1024))
             .max(1) as usize;
         raw.set_limits(limits);
@@ -268,13 +271,15 @@ impl<'a> Files<'a> {
                 && error.is_none()
                 && !stop.load(Ordering::SeqCst)
             {
-                let packet_size = self.sessions.source.as_ref().map_or(CHUNK, |session| {
-                    if self.sessions.target.is_some() {
-                        session.read_size.min(CHUNK)
-                    } else {
-                        session.read_size
-                    }
-                });
+                // Each future should represent one wire request per endpoint.
+                // A 64 KiB logical packet split into acknowledged 32 KiB writes
+                // serializes its halves and underfills a high-latency pipeline.
+                let packet_size = match (&self.sessions.source, &self.sessions.target) {
+                    (Some(source), Some(target)) => source.read_size.min(target.write_size),
+                    (Some(source), None) => source.read_size,
+                    (None, Some(target)) => target.write_size,
+                    (None, None) => CHUNK,
+                };
                 let mut length = (range.end - next).min(packet_size as u64) as usize;
                 let direction = match (&self.sessions.source, &self.sessions.target) {
                     (Some(_), Some(_)) => bandwidth::Direction::Both,

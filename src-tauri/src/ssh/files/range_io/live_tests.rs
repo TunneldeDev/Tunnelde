@@ -108,7 +108,12 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
         .join("../.tmp/qa")
         .join(format!("transfer-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&local_root).unwrap();
-    let content: Vec<_> = (0_usize..32 * 1024 * 1024 + 73)
+    let size_mib = std::env::var("TUNNELDE_TEST_SIZE_MIB")
+        .ok()
+        .and_then(|size| size.parse::<usize>().ok())
+        .unwrap_or(32)
+        .clamp(1, 256);
+    let content: Vec<_> = (0_usize..size_mib * 1024 * 1024 + 73)
         .map(|n| ((n * 73 + n / 257) % 251) as u8)
         .collect();
     std::fs::write(local_root.join("source.bin"), &content).unwrap();
@@ -206,4 +211,96 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
     sftp.close().await.unwrap();
     std::fs::remove_dir_all(local_root).unwrap();
     result.unwrap();
+}
+
+/// Compare negotiated packets against the legacy 32 KiB cap. Set
+/// TUNNELDE_TEST_COMPARE_NODELAY=1 to isolate TCP_NODELAY instead. Keeping this
+/// opt-in avoids deriving a performance guarantee from a shared CI network.
+#[tokio::test]
+#[ignore = "requires disposable SSH host credentials and explicitly trusted fingerprint"]
+async fn live_upload_compares_packet_budget_or_tcp_nodelay_with_identical_data() {
+    let host = std::env::var("TUNNELDE_TEST_HOST").expect("TUNNELDE_TEST_HOST");
+    let user = std::env::var("TUNNELDE_TEST_USER").expect("TUNNELDE_TEST_USER");
+    let password = std::env::var("TUNNELDE_TEST_PASSWORD").expect("TUNNELDE_TEST_PASSWORD");
+    let fingerprint =
+        std::env::var("TUNNELDE_TEST_FINGERPRINT").expect("TUNNELDE_TEST_FINGERPRINT");
+    let local_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.tmp/qa")
+        .join(format!("nodelay-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&local_root).unwrap();
+    let mut seed = 0x12345678_u32;
+    let content: Vec<_> = (0..8 * 1024 * 1024 + 17)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    let source = Endpoint {
+        session: None,
+        path: display_path(&local_root.join("source.bin")),
+    };
+    std::fs::write(&source.path, &content).unwrap();
+    let compare_nodelay = std::env::var("TUNNELDE_TEST_COMPARE_NODELAY").as_deref() == Ok("1");
+    for (round, enabled) in [false, true, false, true].into_iter().enumerate() {
+        let socket = tokio::net::TcpStream::connect((host.as_str(), 22))
+            .await
+            .unwrap();
+        socket.set_nodelay(compare_nodelay && enabled).unwrap();
+        let mut handle = client::connect_stream(
+            Arc::new(client::Config::default()),
+            socket,
+            TrustedServer(fingerprint.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(handle
+            .authenticate_password(&user, &password)
+            .await
+            .unwrap()
+            .success());
+        let channel = handle.channel_open_session().await.unwrap();
+        channel.request_subsystem(true, "sftp").await.unwrap();
+        let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
+        let folder = format!("/tmp/tunnelde-nodelay-test-{}", uuid::Uuid::new_v4());
+        std::fs::write(local_root.join(format!("remote-{round}.txt")), &folder).unwrap();
+        sftp.create_dir(&folder).await.unwrap();
+        let target = Endpoint {
+            session: Some("benchmark".into()),
+            path: format!("{folder}/payload.bin"),
+        };
+        let mut sessions = Sessions {
+            source: None,
+            target: Some(data_channel(&handle).await),
+        };
+        if !compare_nodelay && !enabled {
+            Arc::get_mut(sessions.target.as_mut().unwrap())
+                .unwrap()
+                .write_size = 32768;
+        }
+        let started = Instant::now();
+        let copied = parallel(&source, &target, &sftp, &sessions, content.len() as u64).await;
+        let seconds = started.elapsed().as_secs_f64();
+        println!(
+            "round={round} compare_nodelay={compare_nodelay} enabled={enabled} packet={}: {:.2} MiB/s ({seconds:.3}s)",
+            sessions.target.as_ref().unwrap().write_size,
+            content.len() as f64 / 1048576.0 / seconds
+        );
+        let verified = match &copied {
+            Ok(()) => sftp
+                .read(&target.path)
+                .await
+                .map(|actual| actual == content),
+            Err(_) => Ok(false),
+        };
+        let removed = sftp.remove_file(&target.path).await;
+        let directory_removed = sftp.remove_dir(&folder).await;
+        let _ = sftp.close().await;
+        copied.unwrap();
+        assert!(verified.unwrap(), "transferred bytes differ");
+        removed.unwrap();
+        directory_removed.unwrap();
+    }
+    std::fs::remove_dir_all(local_root).unwrap();
 }

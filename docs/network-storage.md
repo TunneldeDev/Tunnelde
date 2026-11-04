@@ -76,7 +76,10 @@ Changes apply on start/resume and travel with settings profiles.
 Concurrent segments use explicit file offsets over dedicated SFTP data channels. Uploads,
 downloads and remote-to-remote copies honor advertised server packet limits, handle short
 reads and do not prefetch past a segment boundary. Metadata and directory operations
-retain their own channels. A journal records the confirmed contiguous prefix before each
+retain their own channels. Upload packet sizes use the server's advertised write limit
+within a 256 KiB memory bound; servers without a write limit retain the compatible
+32 KiB fallback. Each queued packet fits both endpoints, avoiding sequential write
+acknowledgements inside a larger logical packet. A journal records the confirmed contiguous prefix before each
 window of segments. Resume discards an interrupted window before verifying the prefix;
 sparse writes are never interpreted as completed data. Workers stop and drain before file
 handles are closed or temporary files can be cleaned.
