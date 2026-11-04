@@ -73,7 +73,7 @@ describe("installed plugins sidebar", () => {
     mock.api.pluginsList.mockResolvedValue([themePack]);
     mock.api.pluginInspect.mockResolvedValue(themePack);
     render(<PluginsSidebar />);
-    expect(await screen.findByText("Theme pack")).toBeTruthy();
+    expect(await screen.findByText("Declarative pack")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Install plugin" }));
     const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: /archive/i }));

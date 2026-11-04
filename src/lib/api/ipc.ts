@@ -35,6 +35,7 @@ import type {
   SystemStats,
   TabRecord,
   TransferEvent,
+  FilePreviewInfo,
   UpdateState,
 } from "./types";
 
@@ -42,6 +43,9 @@ export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const api = {
+  filePreviewOpen: (id: string, providerId: string, path: string, sessionId: string | null) =>
+    invoke<FilePreviewInfo>("file_preview_open", { id, providerId, path, sessionId }),
+  filePreviewClose: (id: string) => invoke<void>("file_preview_close", { id }),
   mainWindowReady: () => invoke<void>("main_window_ready"),
   connectionRoute: (hostId: string) => invoke<ConnectionRoute>("connection_route_get", { hostId }),
   saveConnectionRoute: (hostId: string, route: ConnectionRoute) =>

@@ -446,6 +446,7 @@ export interface PluginInfo {
   runtime?: "node" | "wasm" | "theme" | "declarative";
   themes?: PluginTheme[];
   fileIconThemes?: PluginFileIconTheme[];
+  filePreviews?: PluginFilePreview[];
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;
@@ -470,6 +471,19 @@ export type FileIconSymbol =
   | "font"
   | "binary"
   | "markdown";
+
+export type FilePreviewRenderer = "image" | "audio" | "video" | "pdf" | "markdown" | "text";
+export interface PluginFilePreview {
+  id: string;
+  name: string;
+  renderer: FilePreviewRenderer;
+  extensions: string[];
+}
+export interface FilePreviewInfo {
+  id: string;
+  size: number;
+  renderer: FilePreviewRenderer;
+}
 export interface PluginFileIcon {
   symbol: FileIconSymbol;
   color?: string;
