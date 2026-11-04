@@ -283,6 +283,8 @@ export const api = {
 };
 
 export const events = {
+  onTransfersChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("sftp://changed", handler, signal),
   onPluginEvent: (
     handler: (payload: PluginEvent) => void,
     signal?: AbortSignal,

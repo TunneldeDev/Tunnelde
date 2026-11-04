@@ -27,6 +27,7 @@ export interface NativeEvents {
   "ssh://closed": SshClosedPayload;
   "plugin://state": PluginInfo;
   "sftp://transfer": TransferEvent;
+  "sftp://changed": null;
   "plugin://domain-changed": { domain: string; sessionId?: string | null };
   "plugin://workspace-request": {
     requestId: string;

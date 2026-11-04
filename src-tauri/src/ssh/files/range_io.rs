@@ -59,18 +59,22 @@ impl DataSession {
     }
 
     async fn connect(app: &AppHandle, session: &str) -> AppResult<Self> {
-        let channel = app
-            .state::<AppState>()
-            .ssh
-            .handle(session)?
-            .channel_open_session()
-            .await
-            .map_err(|e| AppError::Ssh(format!("sftp.channel: {e}")))?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| AppError::Ssh(format!("sftp.subsystem: {e}")))?;
-        Self::new(channel.into_stream()).await
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let channel = app
+                .state::<AppState>()
+                .ssh
+                .handle(session)?
+                .channel_open_session()
+                .await
+                .map_err(|e| AppError::Ssh(format!("sftp.channel: {e}")))?;
+            channel
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|e| AppError::Ssh(format!("sftp.subsystem: {e}")))?;
+            Self::new(channel.into_stream()).await
+        })
+        .await
+        .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
     }
 }
 

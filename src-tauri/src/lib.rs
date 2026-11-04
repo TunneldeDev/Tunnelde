@@ -82,6 +82,10 @@ pub fn run() {
             window::install_close_handler(&handle);
             window::configure_webview(&handle);
             update::spawn_auto_check(&handle);
+            let cleanup_app = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                ssh::files::durable::on_reconnect(&cleanup_app).await;
+            });
             tracing::info!(
                 version = %handle.package_info().version,
                 "Tunnelde started"

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
     onPluginState: vi.fn(),
     onPluginSecurity: vi.fn(),
     onTransfer: vi.fn(),
+    onTransfersChanged: vi.fn(),
     onSshClosed: vi.fn(),
   },
 }));
