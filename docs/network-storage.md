@@ -87,7 +87,11 @@ after an application restart or privilege revocation.
 
 Click **Port forwarding** in the SSH terminal toolbar to manage that host's rules,
 with the current terminal session preselected. You can also open the host's detail
-page and expand **Port forwarding**. Add a named rule:
+page and expand **Port forwarding**. Choose **Add forward**, then select **Access a remote
+service** or **Share a local service**. The editor separates the listening and service
+endpoints and names the computer that resolves each address. Names are optional and default
+to the service address and port. Choose **Save and start** with a live SSH connection,
+or **Save** to keep an inactive rule. An offline view always offers **Connect**.
 
 | Direction                       | Listener      | Destination is reached from |
 | ------------------------------- | ------------- | --------------------------- |
@@ -98,6 +102,12 @@ For a remote database listening on `127.0.0.1:5432`, a local rule could listen o
 `127.0.0.1:15432` and forward to `127.0.0.1:5432`. Applications then connect to
 local port 15432. For remote forwarding, the destination address refers to this
 computer's network rather than the remote host's network.
+
+The rule list keeps Start/Stop visible and puts Edit, Copy local connection address and
+Delete in each rule's actions menu. An active rule must be stopped before editing.
+Startup failures stay beside the saved rule so Start can retry without creating duplicates;
+save failures keep the editor draft. Other open forwarding views refresh after changes.
+Endpoint groups stack vertically in narrow panes.
 
 Rules persist, but listeners start manually after connecting. Loopback is the
 default; exposing a listener requires confirmation. Remote listeners depend on
