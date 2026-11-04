@@ -87,7 +87,10 @@
     "newHost": "New host",
     "newGroup": "New group",
     "empty": "No hosts",
-    "noResults": "No matches"
+    "noResults": "No matches",
+    "searchPlaceholder": "Search hosts · tag:production",
+    "searchHint": "Filter with tag:name or is:favorite. Combine with a host name or address.",
+    "clearSearch": "Clear host search"
   },
   "host": {
     "name": "Name",
