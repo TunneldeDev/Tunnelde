@@ -491,7 +491,27 @@
     "forgetBody": "移除 {{name}} 的已保存密码？下次连接需要重新输入。",
     "installKey": "配置免密登录",
     "installKeyDone": "公钥已安装，下次连接将使用密钥。",
-    "installKeyHint": "使用密码登录一次，将本应用的公钥添加到目标账号，保留已有的授权密钥。"
+    "installKeyHint": "使用密码登录一次，将本应用的公钥添加到目标账号，保留已有的授权密钥。",
+    "testTitle": "连接质量",
+    "test": "测试连接",
+    "testAgain": "重新测试",
+    "testMs": "{{value}} 毫秒",
+    "probeTime": "SSH 连接建立耗时 {{value}} 毫秒",
+    "testRunning": "正在进行最多 3 次 SSH 连接测试…",
+    "testHint": "测量 SSH 建立耗时，包含代理和跳板；不代表带宽或丢包率。",
+    "testTrustFirst": "请先完成整条连接路径的主机密钥验证与信任。",
+    "testMedian": "SSH 建立耗时（中位数）",
+    "testSpread": "耗时波动（最大值 − 最小值）",
+    "testSuccess": "成功次数",
+    "testSamples": "查看每次结果",
+    "testFailed": "失败",
+    "testQuality": {
+      "fast": "连接建立较快",
+      "normal": "连接建立正常",
+      "slow": "连接建立较慢",
+      "unstable": "部分连接失败",
+      "unreachable": "无法建立连接"
+    }
   },
   "terminal": {
     "connect": "连接",
@@ -522,7 +542,8 @@
     "startupOutputLimit": "终端启动输出超出限制",
     "invalidPayload": "终端输入无效",
     "noHostKey": "服务器未提供主机密钥",
-    "agentUnsupported": "暂不支持 Agent 认证"
+    "agentUnsupported": "暂不支持 Agent 认证",
+    "testCancelled": "已取消连接测试"
   },
   "sftp": {
     "title": "文件",

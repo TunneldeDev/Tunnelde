@@ -1,5 +1,8 @@
 # Network routes, transfers and SSHFS
 
+Connection tests and their limits are described in [English](connection-quality.en-us.md)
+and [简体中文](connection-quality.zh-cn.md).
+
 These features require desktop 0.27.0 or newer. Existing hosts
 and preferences keep their current values; no proxy or jump host is required.
 

@@ -284,6 +284,17 @@ export interface HostKeyInfo {
   algorithm: string;
   status: HostKeyStatus;
   knownFingerprint: string | null;
+  connectionTimeMs?: number | null;
+}
+
+export interface ConnectionQuality {
+  attempts: number;
+  successful: number;
+  samplesMs: (number | null)[];
+  medianMs: number | null;
+  spreadMs: number | null;
+  quality: "fast" | "normal" | "slow" | "unstable" | "unreachable";
+  lastError: string | null;
 }
 
 export interface InstalledKey {

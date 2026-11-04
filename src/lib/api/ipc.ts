@@ -39,6 +39,7 @@ import type {
   FilePreviewInfo,
   UpdateState,
   ReleaseHistory,
+  ConnectionQuality,
 } from "./types";
 
 export const isTauri = (): boolean =>
@@ -112,6 +113,12 @@ export const api = {
 
   sshProbe: (hostId: string, jumpCredentials?: SshConnectRequest["jumpCredentials"]) =>
     invoke<HostKeyInfo>("ssh_probe", { hostId, ...(jumpCredentials ? { jumpCredentials } : {}) }),
+  sshTestConnection: (
+    id: string,
+    hostId: string,
+    jumpCredentials: SshConnectRequest["jumpCredentials"],
+  ) => invoke<ConnectionQuality>("ssh_test_connection", { id, hostId, jumpCredentials }),
+  sshCancelTest: (id: string) => invoke<void>("ssh_cancel_test", { id }),
   sshTrust: (
     hostId: string,
     fingerprint: string,
