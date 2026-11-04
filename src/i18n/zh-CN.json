@@ -87,7 +87,10 @@
     "newHost": "新建主机",
     "newGroup": "新建分组",
     "empty": "暂无主机",
-    "noResults": "无匹配结果"
+    "noResults": "无匹配结果",
+    "searchPlaceholder": "搜索主机 · tag:生产环境",
+    "searchHint": "使用 tag:标签 或 is:favorite 筛选，可与主机名、地址组合。",
+    "clearSearch": "清空主机搜索"
   },
   "host": {
     "name": "名称",
