@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { Resizer } from "@/components/layout/Resizer";
@@ -11,6 +11,42 @@ function pointer(type: string, clientX: number, pointerId = 1, button = 0): Mous
 }
 
 describe("Resizer", () => {
+  it("coalesces pointer bursts per frame and flushes the last pixel before committing", () => {
+    const request = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+    const cancel = vi.spyOn(window, "cancelAnimationFrame");
+    const onChange = vi.fn();
+    const onCommit = vi.fn();
+    const { getByRole, unmount } = render(
+      <Resizer
+        value={300}
+        min={200}
+        max={600}
+        edge="right"
+        label="Panel"
+        onChange={onChange}
+        onCommit={onCommit}
+      />,
+    );
+    const handle = getByRole("separator");
+    Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false });
+    fireEvent(handle, pointer("pointerdown", 500));
+    for (let x = 501; x <= 560; x++) fireEvent(handle, pointer("pointermove", x));
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(onChange).not.toHaveBeenCalled();
+    act(() => request.mock.calls[0]![0](0));
+    expect(onChange).toHaveBeenCalledExactlyOnceWith(360);
+    fireEvent(handle, pointer("pointermove", 580));
+    fireEvent(handle, pointer("pointerup", 580));
+    expect(cancel).toHaveBeenCalledWith(42);
+    expect(onChange).toHaveBeenLastCalledWith(380);
+    expect(onCommit).toHaveBeenCalledExactlyOnceWith(380);
+    // No pending work may update the parent after unmount.
+    fireEvent(handle, pointer("pointerdown", 580));
+    fireEvent(handle, pointer("pointermove", 590));
+    unmount();
+    expect(cancel).toHaveBeenCalledTimes(2);
+  });
+
   it("reports whole pixels and commits the value the drag ended on", () => {
     const onChange = vi.fn();
     const onCommit = vi.fn();
@@ -38,7 +74,7 @@ describe("Resizer", () => {
     fireEvent(handle, pointer("pointermove", 548.2));
     fireEvent(handle, pointer("pointerup", 548.2));
 
-    expect(onChange).toHaveBeenNthCalledWith(1, 303);
+    expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenLastCalledWith(320);
     expect(onCommit).toHaveBeenCalledWith(320);
     // The commit must not fall back to the width the render started with.
