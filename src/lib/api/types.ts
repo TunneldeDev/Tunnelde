@@ -79,6 +79,8 @@ export interface Settings {
   transferConcurrency: number;
   transferChunkKib: number;
   transferRequests: number;
+  transferUploadLimitKib: number;
+  transferDownloadLimitKib: number;
   editorWordWrap: boolean;
   editorTabSize: number;
   editorSpellCheck: boolean;

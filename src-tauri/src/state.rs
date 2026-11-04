@@ -47,6 +47,10 @@ impl AppState {
             .settings
             .write()
             .unwrap_or_else(|error| error.into_inner());
+        self.transfers.bandwidth.configure(
+            next.transfer_upload_limit_kib,
+            next.transfer_download_limit_kib,
+        );
         *guard = next;
     }
 
@@ -102,6 +106,11 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     let _ = std::fs::create_dir_all(&plugins_dir);
 
     let settings = database.with(db::settings::load)?;
+    let transfers = TransferRegistry::default();
+    transfers.bandwidth.configure(
+        settings.transfer_upload_limit_kib,
+        settings.transfer_download_limit_kib,
+    );
     let version = app.package_info().version.to_string();
     let plugins = PluginsManager::load(plugins_dir);
     plugins.initialize_security(
@@ -117,7 +126,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         ssh: SshManager::default(),
         forwards: Default::default(),
         mounts: Default::default(),
-        transfers: TransferRegistry::default(),
+        transfers,
         monitor: MonitorCache::default(),
         plugins,
         downloads: crate::plugins::network::DownloadRegistry::default(),

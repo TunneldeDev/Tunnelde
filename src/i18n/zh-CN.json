@@ -321,7 +321,10 @@
     "seconds3": "3 秒",
     "seconds5": "5 秒",
     "seconds10": "10 秒",
-    "seconds30": "30 秒"
+    "seconds30": "30 秒",
+    "transferUploadLimitKib": "总上传速度上限",
+    "transferDownloadLimitKib": "总下载速度上限",
+    "transferSpeedLimitHint": "单位 KiB/s，由所有并发文件传输共享。0 表示不限速，修改后对正在传输的任务生效，关闭传输优化时仍然生效。"
   },
   "updates": {
     "installInProgress": "更新正在安装，请等待完成后再更改更新渠道或来源。",
@@ -604,7 +607,11 @@
     "verifyingTransfer": "正在校验已传数据…",
     "preview": "预览文件",
     "previewSource": "查看源文",
-    "previewRendered": "渲染 Markdown"
+    "previewRendered": "渲染 Markdown",
+    "taskSpeedLimit": "任务限速",
+    "taskSpeedLimitHint": "0 表示遵循「设置 → 文件」中的总限速。临时上限立即生效，总限速仍然适用。本地磁盘复制不受影响。",
+    "invalidSpeedLimit": "请输入 0 至 1048576 之间的整数，单位 KiB/s。",
+    "taskSpeedLimitValue": "任务上限：{{value}} KiB/s"
   },
   "processes": {
     "title": "进程",

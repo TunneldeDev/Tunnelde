@@ -52,6 +52,19 @@ SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
 
 ## Transfer performance
 
+In **Settings → Files → Transfers**, total upload and download limits are set
+independently in KiB/s. Both default to `0` (unlimited), apply immediately to
+running tasks, and share one budget across concurrent transfers and SFTP data
+channels. They remain active when transfer optimization is disabled. Remote to
+remote transfers use both budgets; local disk copies use neither. These limits
+cover file-transfer payload bytes rather than SSH framing or terminal traffic.
+
+The gauge button on a running transfer opens a temporary task limit. `0` follows
+the global limits; a positive value adds a task ceiling and cannot override the
+global ceiling. Pausing and resuming starts with the global limits again. Low
+speed transfers continue reporting progress, and pause/cancel can interrupt the
+limiter wait. Requests already dispatched when a limit changes may finish.
+
 **Settings → Files → Transfers** enables transfer optimization by default. Segment
 concurrency, segment size and SFTP requests per segment each default to **Automatic**.
 The application selects fewer segments for small files and up to four for larger remote

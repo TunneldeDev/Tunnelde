@@ -25,6 +25,10 @@ segment size and per-segment request depth default to Automatic and can be overr
 individually. Turning optimization off retains the manual choices for later use. Changes
 apply when starting/resuming a transfer; see [transfer behavior](network-storage.md#transfer-performance).
 
+Total upload/download limits default to `0` (unlimited), use KiB/s, and apply live
+across concurrent tasks. A running transfer's gauge button opens a temporary task
+ceiling; the total ceiling still applies. Both preferences travel with profiles.
+
 ## Quick Access and plugin shortcuts
 
 - F1 / Ctrl/Cmd+Shift+P opens Quick Access in command mode (`>`).

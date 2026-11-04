@@ -42,6 +42,21 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("defaults bandwidth limits to unlimited and keeps them available without optimization", () => {
+    useNavigation.setState({ settingsSection: "files" });
+    render(<SettingsPage />);
+    const upload = row("transferUploadLimitKib").getByRole("spinbutton") as HTMLInputElement;
+    const download = row("transferDownloadLimitKib").getByRole("spinbutton") as HTMLInputElement;
+    expect(upload.value).toBe("0");
+    expect(download.value).toBe("0");
+    fireEvent.click(row("transferOptimization").getByRole("switch"));
+    expect(upload.disabled).toBe(false);
+    expect(download.disabled).toBe(false);
+    fireEvent.change(upload, { target: { value: "512" } });
+    fireEvent.keyDown(upload, { key: "Enter" });
+    expect(update).toHaveBeenCalledWith({ transferUploadLimitKib: 512 });
+  });
+
   it("groups transfer optimization settings with automatic choices and disables overrides when off", async () => {
     useNavigation.setState({ settingsSection: "files" });
     render(<SettingsPage />);

@@ -13,6 +13,7 @@ use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
 mod artifacts;
+pub mod bandwidth;
 pub mod durable;
 mod range_io;
 pub mod search;
@@ -70,6 +71,7 @@ pub struct TransferEvent {
 #[derive(Default)]
 pub struct TransferRegistry {
     inner: std::sync::Mutex<TransferState>,
+    pub bandwidth: Arc<bandwidth::Controller>,
 }
 
 #[derive(Default)]
@@ -111,6 +113,7 @@ impl TransferRegistry {
         if let Ok(mut state) = self.inner.lock() {
             state.active.remove(id);
             state.paused.remove(id);
+            self.bandwidth.remove(id);
         }
     }
     pub fn is_active(&self, id: &str) -> bool {
@@ -179,6 +182,7 @@ impl TransferRegistry {
                 },
             },
         );
+        self.bandwidth.register(id);
         Ok(())
     }
 
@@ -193,6 +197,7 @@ impl TransferRegistry {
     fn complete(&self, mut event: TransferEvent) -> TransferEvent {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.remove(&event.id) {
+                self.bandwidth.remove(&event.id);
                 if event.status == TransferStatus::Cancelled {
                     event.transferred = event.transferred.max(transfer.event.transferred);
                     event.total = event.total.max(transfer.event.total);
@@ -893,6 +898,13 @@ struct Meter<'a> {
 }
 
 impl<'a> Meter<'a> {
+    fn throttle(&self) -> bandwidth::Throttle {
+        bandwidth::Throttle {
+            controller: self.app.state::<AppState>().transfers.bandwidth.clone(),
+            id: self.id.into(),
+        }
+    }
+
     fn new(app: &'a AppHandle, id: &'a str, name: &'a str, total: u64) -> Self {
         Self {
             app,
@@ -911,6 +923,8 @@ impl<'a> Meter<'a> {
         self.transferred += bytes;
         if (self.transferred - self.last >= PROGRESS_STEP
             && self.last_update.elapsed() >= std::time::Duration::from_millis(100))
+            || (self.transferred != self.last
+                && self.last_update.elapsed() >= std::time::Duration::from_millis(250))
             || self.transferred >= self.total
         {
             self.last = self.transferred;
@@ -1240,6 +1254,30 @@ async fn copy_entry(
             from, to, from_sftp, to_sftp, meter, cancel, overwrite, id, resuming,
         )
         .await;
+    }
+    if from_sftp.is_some() || to_sftp.is_some() {
+        let size = source_stamp(from, from_sftp).await?.0;
+        open_writer(to, to_sftp, overwrite).await?.finish().await?;
+        let channels = range_io::Sessions::open(meter.app, from, to).await?;
+        let files = range_io::Files::open(&channels, from, to)
+            .await?
+            .with_throttle(meter.throttle());
+        let plan = segments::Plan::for_file(&meter.settings, size, true);
+        let copied = async {
+            let mut offset = 0;
+            while offset < size {
+                let end = offset
+                    .saturating_add(plan.chunk * plan.workers as u64)
+                    .min(size);
+                segments::copy_window(&files, offset..end, plan, cancel, |bytes| meter.add(bytes))
+                    .await?;
+                offset = end;
+            }
+            Ok::<(), AppError>(())
+        }
+        .await;
+        let closed = files.close().await;
+        return copied.and(closed);
     }
     let mut reader = open_reader(from, from_sftp).await?;
     let result = async {
@@ -1634,7 +1672,7 @@ async fn durable_copy_file(
         stamp.0.saturating_sub(existing),
         from_sftp.is_some() || to_sftp.is_some(),
     );
-    let copied = if plan.workers > 1 {
+    let copied = if from_sftp.is_some() || to_sftp.is_some() {
         let (closed, read_closed) = tokio::join!(writer.finish(), reader.finish());
         closed?;
         read_closed?;
@@ -1787,7 +1825,9 @@ async fn parallel_copy_file(
         );
     }
     let channels = meter.data_channels.as_ref().unwrap().clone();
-    let files = range_io::Files::open(&channels, from, temp).await?;
+    let files = range_io::Files::open(&channels, from, temp)
+        .await?
+        .with_throttle(meter.throttle());
     let result = async {
         while offset < stamp.0 {
             if cancel.load(Ordering::SeqCst) {
@@ -3058,6 +3098,70 @@ mod tests {
                     state.closes.load(Ordering::SeqCst),
                     usize::from(remote_source) + usize::from(remote_target)
                 );
+                drop(sessions);
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
+
+        #[tokio::test]
+        async fn throttled_protocol_transfers_limit_all_workers_without_losing_bytes() {
+            for (remote_source, remote_target) in [(false, true), (true, false), (true, true)] {
+                let root = temp_root("limited-protocol");
+                let content: Vec<_> = (0..64 * 1024 + 17).map(|i| (i % 251) as u8).collect();
+                std::fs::write(root.join("source.bin"), &content).unwrap();
+                std::fs::write(root.join("target.part"), []).unwrap();
+                let state = Arc::new(State::default());
+                let sessions = range_io::Sessions {
+                    source: if remote_source {
+                        Some(data_client(&root, state.clone()).await)
+                    } else {
+                        None
+                    },
+                    target: if remote_target {
+                        Some(data_client(&root, state.clone()).await)
+                    } else {
+                        None
+                    },
+                };
+                let endpoint = |name: &str, remote: bool| Endpoint {
+                    session: remote.then(|| "test".into()),
+                    path: if remote {
+                        name.into()
+                    } else {
+                        display_path(&root.join(name))
+                    },
+                };
+                let source = endpoint("source.bin", remote_source);
+                let target = endpoint("target.part", remote_target);
+                let controller = Arc::new(bandwidth::Controller::default());
+                controller.register("test");
+                controller.configure(256, 256);
+                let files = range_io::Files::open(&sessions, &source, &target)
+                    .await
+                    .unwrap()
+                    .with_throttle(bandwidth::Throttle {
+                        controller,
+                        id: "test".into(),
+                    });
+                let start = std::time::Instant::now();
+                let mut progress = 0;
+                segments::copy_window(
+                    &files,
+                    0..content.len() as u64,
+                    segments::Plan {
+                        workers: 4,
+                        chunk: 16 * 1024,
+                        requests: 8,
+                    },
+                    &AtomicBool::new(false),
+                    |bytes| progress += bytes,
+                )
+                .await
+                .unwrap();
+                assert!(start.elapsed() >= std::time::Duration::from_millis(220));
+                files.close().await.unwrap();
+                assert_eq!(progress, content.len() as u64);
+                assert_eq!(std::fs::read(root.join("target.part")).unwrap(), content);
                 drop(sessions);
                 std::fs::remove_dir_all(root).unwrap();
             }

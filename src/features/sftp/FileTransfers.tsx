@@ -1,4 +1,4 @@
-import { Pause, Play, Trash2, X } from "lucide-react";
+import { Gauge, Pause, Play, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -7,11 +7,13 @@ import { durationParts, transferProgress } from "@/lib/files/transferProgress";
 import { cn, formatBytes } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { useTransfers } from "@/store/transfers";
+import { TransferSpeedLimit } from "./TransferSpeedLimit";
 
 export function FileTransfers() {
   const { t } = useTranslation();
   const items = useTransfers((state) => state.items);
   const [now, setNow] = useState(Date.now);
+  const [limitId, setLimitId] = useState<string | null>(null);
   const running = items.some((item) => item.status === "running");
   useEffect(() => {
     if (!running) return;
@@ -60,6 +62,18 @@ export function FileTransfers() {
             </span>
             <span className="transfer__state">{state}</span>
             <span className="transfer__actions">
+              {item.status === "running" ? (
+                <IconButton
+                  label={t("sftp.taskSpeedLimit")}
+                  size="sm"
+                  active={limitId === item.id || Boolean(item.speedLimitKib)}
+                  aria-expanded={limitId === item.id}
+                  disabled={item.cancelling || item.pausing}
+                  onClick={() => setLimitId(limitId === item.id ? null : item.id)}
+                >
+                  <Gauge size={12} />
+                </IconButton>
+              ) : null}
               {item.durable && item.status === "running" ? (
                 <IconButton
                   label={t("sftp.pauseTransfer")}
@@ -130,9 +144,20 @@ export function FileTransfers() {
                   {progress.eta !== null && progress.remaining !== 0 ? (
                     <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
                   ) : null}
+                  {item.speedLimitKib ? (
+                    <span>{t("sftp.taskSpeedLimitValue", { value: item.speedLimitKib })}</span>
+                  ) : null}
                 </>
               ) : null}
             </span>
+            {item.status === "running" && limitId === item.id ? (
+              <TransferSpeedLimit
+                key={item.id}
+                id={item.id}
+                value={item.speedLimitKib ?? 0}
+                onClose={() => setLimitId(null)}
+              />
+            ) : null}
             {item.error ? (
               <span className="transfer__error">
                 {translateError({ code: "ssh", message: item.error })}

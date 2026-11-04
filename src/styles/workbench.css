@@ -820,6 +820,34 @@
 .transfer__error {
   grid-column: 1 / -1;
 }
+.transfer__limit {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--td-border);
+  border-radius: 4px;
+  background: var(--td-panel);
+  min-width: 0;
+}
+.transfer__limit-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.transfer__limit-controls .td-input {
+  width: 110px;
+  min-width: 70px;
+  flex: 1;
+}
+.transfer__limit small,
+.transfer__limit-controls > span {
+  color: var(--td-muted);
+}
+.transfer__limit [role="alert"] {
+  color: var(--td-red);
+}
 .transfer__details {
   display: flex;
   flex-wrap: wrap;
