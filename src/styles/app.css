@@ -110,12 +110,9 @@
   flex: none;
 }
 
-.td-tab__pin {
-  color: var(--td-accent);
-}
-
 .td-tab__label {
   font-size: 12.5px;
+  font-style: normal;
   line-height: 1.5;
   min-width: 0;
   overflow: hidden;
