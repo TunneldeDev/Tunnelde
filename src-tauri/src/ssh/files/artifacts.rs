@@ -9,6 +9,73 @@ struct ResumeCheckpoint {
     partial: (u64, Option<i64>),
 }
 
+#[derive(Serialize, Deserialize)]
+struct ParallelCheckpoint {
+    source: (u64, Option<i64>),
+    offset: u64,
+}
+
+pub(super) fn begin_window(
+    app: &AppHandle,
+    key: &str,
+    source: (u64, Option<i64>),
+    offset: u64,
+) -> AppResult<()> {
+    put(
+        app,
+        &key.replacen("transfer-file:", "transfer-parallel:", 1),
+        serde_json::to_string(&ParallelCheckpoint { source, offset })?,
+    )
+}
+
+pub(super) fn end_window(app: &AppHandle, key: &str) -> AppResult<()> {
+    app.state::<AppState>().db.with(|conn| {
+        conn.execute(
+            "DELETE FROM settings WHERE key=?1",
+            [key.replacen("transfer-file:", "transfer-parallel:", 1)],
+        )?;
+        Ok(())
+    })
+}
+
+pub(super) async fn recover_window(
+    app: &AppHandle,
+    key: &str,
+    source: (u64, Option<i64>),
+    temp: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<()> {
+    let marker = get(
+        app,
+        &key.replacen("transfer-file:", "transfer-parallel:", 1),
+    )?;
+    let Some(marker) = marker else { return Ok(()) };
+    let checkpoint: ParallelCheckpoint = serde_json::from_str(&marker)?;
+    restore_window_prefix(checkpoint, source, temp, sftp).await?;
+    end_window(app, key)
+}
+
+async fn restore_window_prefix(
+    checkpoint: ParallelCheckpoint,
+    source: (u64, Option<i64>),
+    temp: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<()> {
+    if checkpoint.source != source || checkpoint.offset > source.0 {
+        return Err(AppError::validation("sftp.resumeSourceChanged"));
+    }
+    let length = file_length(temp, sftp).await?.unwrap_or(0);
+    if length < checkpoint.offset {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    if length > checkpoint.offset {
+        // Discard sparse or partially acknowledged writes from the interrupted
+        // window before any prefix can be trusted as resumable data.
+        segments::resize(temp, sftp, checkpoint.offset).await?;
+    }
+    Ok(())
+}
+
 fn get(app: &AppHandle, key: &str) -> AppResult<Option<String>> {
     app.state::<AppState>().db.with(|conn| {
         Ok(conn
@@ -53,6 +120,8 @@ pub(super) async fn checkpoint(
             &key.replacen("transfer-file:", "transfer-part:", 1),
             serde_json::to_string(&ResumeCheckpoint { source, partial })?,
         )?;
+    } else {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
     Ok(())
 }
@@ -279,6 +348,47 @@ async fn cleanup_legacy_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn interrupted_parallel_windows_trim_only_uncommitted_bytes_and_reject_changed_sources() {
+        let root = std::env::temp_dir().join(format!("tunnelde-window-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("owned.part")),
+        };
+        tokio::fs::write(&target.path, b"safeSPARSE UNCOMMITTED DATA")
+            .await
+            .unwrap();
+        let source = (1024, Some(123));
+        restore_window_prefix(
+            ParallelCheckpoint { source, offset: 4 },
+            source,
+            &target,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
+        assert!(restore_window_prefix(
+            ParallelCheckpoint { source, offset: 4 },
+            (1024, Some(124)),
+            &target,
+            None
+        )
+        .await
+        .is_err());
+        assert!(restore_window_prefix(
+            ParallelCheckpoint { source, offset: 5 },
+            source,
+            &target,
+            None
+        )
+        .await
+        .is_err());
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
 
     #[tokio::test]
     async fn cleanup_removes_partial_files_preserves_targets_and_restores_verified_backups() {

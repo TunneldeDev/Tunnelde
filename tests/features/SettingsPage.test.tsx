@@ -42,6 +42,39 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("groups transfer optimization settings with automatic choices and disables overrides when off", async () => {
+    useNavigation.setState({ settingsSection: "files" });
+    render(<SettingsPage />);
+    expect(document.querySelector('[data-settings-group="transfers"]')).toBeTruthy();
+    expect(row("transferOptimization").getByRole("switch").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    const concurrency = row("transferConcurrency").getByRole("button", {
+      name: "Concurrent segments",
+    });
+    expect(concurrency.textContent).toContain("Automatic");
+    fireEvent.click(concurrency);
+    expect(screen.getByRole("option", { name: "Automatic" })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("option", { name: "4" })));
+    expect(update).toHaveBeenLastCalledWith({ transferConcurrency: 4 });
+    await act(async () => fireEvent.click(row("transferOptimization").getByRole("switch")));
+    expect(
+      row("transferConcurrency")
+        .getByRole("button", { name: "Concurrent segments" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      row("transferChunkKib")
+        .getByRole("button", { name: "Segment size" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      row("transferRequests")
+        .getByRole("button", { name: "SFTP requests per segment" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(useSettings.getState().settings.transferConcurrency).toBe(4);
+  });
   it("offers direct host connection with an enabled default and persists turning it off", async () => {
     useNavigation.setState({ settingsSection: "workspace" });
     render(<SettingsPage />);

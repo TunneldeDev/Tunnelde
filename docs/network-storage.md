@@ -50,6 +50,26 @@ key is being reviewed, asks for any missing jump credentials, and verifies the
 destination before enabling Connect. Changing a route does not bypass key trust.
 SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
 
+## Transfer performance
+
+**Settings → Files → Transfers** enables transfer optimization by default. Segment
+concurrency, segment size and SFTP requests per segment each default to **Automatic**.
+The application selects fewer segments for small files and up to four for larger remote
+files; manual concurrency supports 1, 2, 4 or 8 segments. Local copies remain sequential.
+Segment size can be automatic or 256 KiB, 1 MiB, 4 MiB or 16 MiB. Request depth can be
+automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight requests.
+Changes apply on start/resume and travel with settings profiles.
+
+Concurrent segments use explicit file offsets over dedicated SFTP data channels. Uploads,
+downloads and remote-to-remote copies honor advertised server packet limits, handle short
+reads and do not prefetch past a segment boundary. Metadata and directory operations
+retain their own channels. A journal records the confirmed contiguous prefix before each
+window of segments. Resume discards an interrupted window before verifying the prefix;
+sparse writes are never interpreted as completed data. Workers stop and drain before file
+handles are closed or temporary files can be cleaned.
+
+This optimization does not yet compress files or batch a folder into an archive.
+
 ## Pause and resume transfers
 
 The transfer list offers Pause, Resume, Cancel and Clear. A desktop-owned transfer

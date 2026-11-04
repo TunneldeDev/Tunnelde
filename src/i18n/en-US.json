@@ -148,6 +148,15 @@
     "deleteBody": "Delete “{{name}}” and everything inside it? Hosts inside stay and move to Ungrouped."
   },
   "settings": {
+    "transferOptimization": "Optimize file transfers",
+    "transferOptimizationHint": "Use concurrent file segments and pipelined SFTP requests. Changes apply when a transfer starts or resumes.",
+    "transferConcurrency": "Concurrent segments",
+    "transferConcurrencyHint": "Automatic chooses up to four segments for large remote files. Smaller files use fewer segments; local copies remain sequential.",
+    "transferChunkKib": "Segment size",
+    "transferChunkKibHint": "Automatic chooses segment size from the file size. Completed segment windows form safe resume checkpoints.",
+    "transferRequests": "SFTP requests per segment",
+    "transferRequestsHint": "Automatic balances requests across segments. The application caps the total number of in-flight requests to limit memory use.",
+    "transferAutomatic": "Automatic",
     "filePaneDefaultsHint": "These are the defaults for new file panels. Open local and remote panels keep their own view preferences; use Reset view in each panel’s View options menu to apply these defaults.",
     "groups": {
       "theme": "Theme",
@@ -162,7 +171,8 @@
       "history": "History",
       "browsing": "Browsing",
       "sorting": "Sorting",
-      "preloading": "Preloading"
+      "preloading": "Preloading",
+      "transfers": "Transfers"
     },
     "title": "Settings",
     "general": "General",

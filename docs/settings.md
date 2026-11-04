@@ -18,6 +18,13 @@ page. Source selection and per-feature proxies are separate preferences. See
 切换到正式版不会自动降级当前 beta；软件会等待版本号更新的正式版。
 更新检查不自动下载安装包，安装会重启应用。更新源、渠道和检查频率也随设置 profile 保存。
 
+## File transfers
+
+File transfer optimization is enabled under **Settings → Files → Transfers**. Concurrency,
+segment size and per-segment request depth default to Automatic and can be overridden
+individually. Turning optimization off retains the manual choices for later use. Changes
+apply when starting/resuming a transfer; see [transfer behavior](network-storage.md#transfer-performance).
+
 ## Quick Access and plugin shortcuts
 
 - F1 / Ctrl/Cmd+Shift+P opens Quick Access in command mode (`>`).
