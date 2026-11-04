@@ -6270,6 +6270,7 @@ dependencies = [
  "keyring",
  "objc2-app-kit",
  "percent-encoding",
+ "quick-xml 0.42.0",
  "rand",
  "reqwest",
  "rusqlite",

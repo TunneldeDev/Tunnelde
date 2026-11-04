@@ -362,7 +362,9 @@
     "notes": "Release notes",
     "openRelease": "Open releases",
     "error": "Update failed",
-    "publishedAt": "Published"
+    "publishedAt": "Published",
+    "rateLimited": "GitHub request quota is exhausted and the public release fallback is unavailable. Try again later or check the update proxy.",
+    "connectionFailed": "Cannot connect to the update source. Check the network and the proxy configured for updates."
   },
   "about": {
     "version": "Version",
