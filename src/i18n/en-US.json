@@ -324,7 +324,9 @@
     "seconds30": "30 seconds",
     "transferUploadLimitKib": "Total upload speed limit",
     "transferDownloadLimitKib": "Total download speed limit",
-    "transferSpeedLimitHint": "KiB/s across all concurrent file transfers. 0 means unlimited. Changes apply to running transfers, even when transfer optimization is off."
+    "transferSpeedLimitHint": "KiB/s across all concurrent file transfers. 0 means unlimited. Changes apply to running transfers, even when transfer optimization is off.",
+    "fileIconTheme": "File icon theme",
+    "fileIconThemeHint": "Installed icon themes apply to local and remote files. Automatic uses the first available theme without running plugin code."
   },
   "updates": {
     "installInProgress": "Wait for the current update installation to finish before changing its channel or source.",
@@ -947,6 +949,9 @@
     },
     "tags": {
       "invalid": "Invalid plugin tags."
+    },
+    "fileIcons": {
+      "invalid": "The file icon theme is invalid or exceeds its limits."
     }
   },
   "themes": {
@@ -1450,5 +1455,10 @@
       "transport": "This SSHFS build lacks the required stdin/stdout transport. Choose a build advertising the slave or passive option."
     },
     "disconnected": "Disconnected session"
+  },
+  "fileIcons": {
+    "automatic": "Automatic",
+    "none": "Plain file icons",
+    "missing": "Unavailable theme ({{id}})"
   }
 }

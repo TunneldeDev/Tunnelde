@@ -24,6 +24,7 @@ export interface SettingDefinition {
     | "select"
     | "accent"
     | "colors"
+    | "fileIcons"
     | "css"
     | "shortcuts"
     | "network"
@@ -152,7 +153,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "browsing",
       label: "settings.groups.browsing",
-      keys: ["filesShowHidden", "filesFoldersFirst"],
+      keys: ["fileIconTheme", "filesShowHidden", "filesFoldersFirst"],
     },
     {
       id: "sorting",
@@ -377,6 +378,13 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     dependsOn: "transferOptimization" as const,
   })),
   toggle("filesFoldersFirst", "files"),
+  {
+    key: "fileIconTheme",
+    section: "files",
+    label: "settings.fileIconTheme",
+    hint: "settings.fileIconThemeHint",
+    kind: "fileIcons",
+  },
   select("filesSortBy", "files", [
     choice("name", "sftp.sortName"),
     choice("size", "sftp.sortSize"),

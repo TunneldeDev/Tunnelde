@@ -77,6 +77,7 @@ pub struct Settings {
     pub terminal_copy_on_select: bool,
     pub terminal_right_click: String,
     pub terminal_renderer: String,
+    pub file_icon_theme: String,
     pub files_show_hidden: bool,
     pub files_folders_first: bool,
     pub files_sort_by: String,
@@ -146,6 +147,7 @@ impl Default for Settings {
             terminal_copy_on_select: false,
             terminal_right_click: "menu".into(),
             terminal_renderer: "auto".into(),
+            file_icon_theme: "auto".into(),
             files_show_hidden: false,
             files_folders_first: true,
             files_sort_by: "name".into(),
@@ -253,6 +255,15 @@ impl Settings {
             }
             valid && shortcut_count <= 128
         });
+        if self.file_icon_theme.is_empty()
+            || self.file_icon_theme.len() > 129
+            || !self
+                .file_icon_theme
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b':' | b'.'))
+        {
+            self.file_icon_theme = "auto".into();
+        }
         let defaults = Self::default();
         if ![0, 1, 2, 4, 8].contains(&self.transfer_concurrency) {
             self.transfer_concurrency = 0;

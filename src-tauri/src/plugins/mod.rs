@@ -1,6 +1,7 @@
 pub mod api;
 pub mod config;
 mod declarative;
+pub mod file_icons;
 mod host;
 pub mod manifest;
 pub mod marketplace;
@@ -62,6 +63,7 @@ pub struct PluginInfo {
     pub source_url: Option<String>,
     pub themes: Vec<PluginTheme>,
     pub tags: Vec<String>,
+    pub file_icon_themes: Vec<file_icons::FileIconTheme>,
     pub fingerprint: String,
 }
 
@@ -159,6 +161,7 @@ impl Instance {
             source_id: marketplace::origin(&self.dir).map(|o| o.id),
             source_url: marketplace::origin(&self.dir).map(|o| o.url),
             themes: self.manifest.themes.clone(),
+            file_icon_themes: self.manifest.file_icon_themes.clone(),
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
         }
@@ -1581,6 +1584,63 @@ mod tests {
         assert_eq!(node::probe_count_for_test(), probes);
         manager.uninstall("theme-pack").await.unwrap();
         assert!(manager.list().await.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn file_icon_pack_round_trips_through_inspection_install_and_reload_without_node() {
+        let probes = node::probe_count_for_test();
+        let root = temp_root("file-icon-lifecycle");
+        let body = serde_json::json!({"id":"file-icons", "name":"File Icons", "version":"1.0.0", "apiVersion":1,
+            "runtime":"theme", "fileIconThemes":[{"id":"common", "name":"Common files",
+                "icons":{"ts":{"symbol":"code", "label":"TS", "color":"#3178C6"}},
+                "extensions":{"ts":"ts"}}]});
+        let archive = root.join("icons.zip");
+        write_archive_entries(&archive, &[(manifest::MANIFEST_FILE, &body.to_string())]);
+        assert_eq!(
+            inspect(archive.to_str().unwrap())
+                .unwrap()
+                .file_icon_themes
+                .len(),
+            1
+        );
+        let manager = PluginsManager::load(root.join("installed"));
+        let installed = manager.install(archive.to_str().unwrap()).await.unwrap();
+        assert_eq!(installed.file_icon_themes[0].extensions["ts"], "ts");
+        let restored = PluginsManager::load(root.join("installed"));
+        let list = restored.list().await;
+        assert_eq!(
+            list[0].file_icon_themes[0].icons["ts"].label.as_deref(),
+            Some("TS")
+        );
+        assert!(list[0].permissions.is_empty());
+        assert_eq!(list[0].runtime, "theme");
+        assert!(restored.run("file-icons", "run", None).await.is_err());
+        assert_eq!(node::probe_count_for_test(), probes);
+        restored.uninstall("file-icons").await.unwrap();
+        assert!(restored.list().await.is_empty());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "opt-in: set TUNNELDE_TEST_ICON_PACKAGE to a built hub ZIP"]
+    async fn live_hub_file_icon_archive_installs_without_a_runtime() {
+        let archive = std::env::var("TUNNELDE_TEST_ICON_PACKAGE").expect("icon package ZIP");
+        let root = temp_root("hub-icons");
+        let manager = PluginsManager::load(root.join("installed"));
+        let preview = inspect(&archive).unwrap();
+        assert_eq!(preview.id, "file-icons");
+        let info = manager.install(&archive).await.unwrap();
+        assert_eq!(info.runtime, "theme");
+        let theme = &info.file_icon_themes[0];
+        for extension in [
+            "mp3", "mp4", "pdf", "md", "png", "jpg", "gif", "tar.gz", "ts", "py", "rs",
+        ] {
+            assert!(theme.icons.contains_key(&theme.extensions[extension]));
+        }
+        assert!(info.permissions.is_empty());
+        assert!(manager.run("file-icons", "run", None).await.is_err());
+        manager.uninstall("file-icons").await.unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
 

@@ -89,6 +89,8 @@ pub struct PluginManifest {
     pub themes: Vec<PluginTheme>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub file_icon_themes: Vec<super::file_icons::FileIconTheme>,
 }
 
 pub(super) fn valid_tags(tags: &[String]) -> bool {
@@ -122,6 +124,9 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if !super::file_icons::valid_themes(&self.file_icon_themes) {
+            return Err(AppError::validation("plugin.fileIcons.invalid"));
+        }
         if !valid_tags(&self.tags) {
             return Err(AppError::validation("plugin.tags.invalid"));
         }
@@ -227,7 +232,7 @@ impl PluginManifest {
                 }
             }
             Some("theme") => {
-                if self.themes.is_empty()
+                if (self.themes.is_empty() && self.file_icon_themes.is_empty())
                     || !self.main.is_empty()
                     || !self.commands.is_empty()
                     || !self.views.is_empty()
@@ -362,6 +367,24 @@ mod tests {
         assert!(loaded.commands.is_empty());
         assert_eq!(loaded.themes[0].accent.as_deref(), Some("#AABBCC"));
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pure_icon_packages_need_no_executable_permissions_or_color_palettes() {
+        let dir = temp_dir("file-icons");
+        let mut data = serde_json::json!({"id":"file-icons", "name":"File icons", "version":"1.0.0", "apiVersion":1,
+            "runtime":"theme", "fileIconThemes":[{"id":"common", "name":"Common files",
+                "icons":{"ts":{"symbol":"code", "color":"#3178C6", "label":"TS"}},
+                "extensions":{"ts":"ts"}, "fileNames":{}}]});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.file_icon_themes.len(), 1);
+        assert!(loaded.main.is_empty());
+        assert!(loaded.themes.is_empty());
+        data["permissions"] = serde_json::json!(["fs.read"]);
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+        assert!(load(&dir).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

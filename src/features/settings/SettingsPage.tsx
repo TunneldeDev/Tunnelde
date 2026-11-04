@@ -38,6 +38,7 @@ import {
 } from "./catalog";
 import { NumberPreference } from "./NumberPreference";
 import { RegionColors } from "./RegionColors";
+import { FileIconThemeSetting } from "./FileIconThemeSetting";
 import { COLOR_REGIONS, previewColors, resolveAccent } from "@/lib/prefs/colors";
 import type { ResolvedTheme } from "@/lib/prefs/appearance";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
@@ -162,6 +163,13 @@ function PreferenceRow({
               label: optionLabel(option),
             }))}
             onChange={(next) => setValue(typeof defaultValue === "number" ? Number(next) : next)}
+          />
+        ) : null}
+        {definition.kind === "fileIcons" ? (
+          <FileIconThemeSetting
+            value={String(value)}
+            descriptionId={descriptionId}
+            onChange={setValue}
           />
         ) : null}
         {definition.kind === "accent" ? (

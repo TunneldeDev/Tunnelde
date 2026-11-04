@@ -324,7 +324,9 @@
     "seconds30": "30 秒",
     "transferUploadLimitKib": "总上传速度上限",
     "transferDownloadLimitKib": "总下载速度上限",
-    "transferSpeedLimitHint": "单位 KiB/s，由所有并发文件传输共享。0 表示不限速，修改后对正在传输的任务生效，关闭传输优化时仍然生效。"
+    "transferSpeedLimitHint": "单位 KiB/s，由所有并发文件传输共享。0 表示不限速，修改后对正在传输的任务生效，关闭传输优化时仍然生效。",
+    "fileIconTheme": "文件图标主题",
+    "fileIconThemeHint": "已安装的图标主题同时应用于本地与远端文件。自动选择可用主题，无需运行插件代码。"
   },
   "updates": {
     "installInProgress": "更新正在安装，请等待完成后再更改更新渠道或来源。",
@@ -947,6 +949,9 @@
     },
     "tags": {
       "invalid": "插件标签无效。"
+    },
+    "fileIcons": {
+      "invalid": "文件图标主题无效或超出限制。"
     }
   },
   "themes": {
@@ -1450,5 +1455,10 @@
       "transport": "当前 SSHFS 未提供所需的标准输入输出传输，请选择支持 slave 或 passive 选项的版本。"
     },
     "disconnected": "会话已断开"
+  },
+  "fileIcons": {
+    "automatic": "自动",
+    "none": "普通文件图标",
+    "missing": "主题不可用（{{id}}）"
   }
 }

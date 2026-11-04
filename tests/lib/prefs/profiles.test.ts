@@ -9,6 +9,7 @@ describe("portable settings snapshots", () => {
       skippedVersion: "2.0.0",
       lastUpdateCheck: 123,
       showDockIconInBackground: false,
+      fileIconTheme: "file-icons:common",
       colors: { background: "#123456" },
       keyboardShortcuts: { "app.settings": ["Mod+Comma"] },
       password: "should never be exported",
@@ -20,6 +21,7 @@ describe("portable settings snapshots", () => {
     expect(snapshot).not.toHaveProperty("password");
     expect(snapshot).not.toHaveProperty("pluginConfig");
     expect(snapshot.showDockIconInBackground).toBe(false);
+    expect(snapshot.fileIconTheme).toBe("file-icons:common");
     expect(snapshot.keyboardShortcuts).toEqual(settings.keyboardShortcuts);
     snapshot.colors!.background = "#ffffff";
     snapshot.keyboardShortcuts!["app.settings"]!.push("F2");

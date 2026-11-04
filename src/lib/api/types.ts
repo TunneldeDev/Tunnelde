@@ -71,6 +71,7 @@ export interface Settings {
   terminalCopyOnSelect: boolean;
   terminalRightClick: TerminalRightClick;
   terminalRenderer: TerminalRenderer;
+  fileIconTheme: string;
   filesShowHidden: boolean;
   filesFoldersFirst: boolean;
   filesSortBy: FileSortBy;
@@ -444,11 +445,43 @@ export interface PluginInfo {
   fingerprint?: string;
   runtime?: "node" | "wasm" | "theme" | "declarative";
   themes?: PluginTheme[];
+  fileIconThemes?: PluginFileIconTheme[];
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;
   sourceId?: string | null;
   sourceUrl?: string | null;
+}
+export type FileIconSymbol =
+  | "file"
+  | "code"
+  | "json"
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "archive"
+  | "pdf"
+  | "spreadsheet"
+  | "terminal"
+  | "settings"
+  | "key"
+  | "database"
+  | "font"
+  | "binary"
+  | "markdown";
+export interface PluginFileIcon {
+  symbol: FileIconSymbol;
+  color?: string;
+  label?: string;
+}
+export interface PluginFileIconTheme {
+  id: string;
+  name: string;
+  icons: Record<string, PluginFileIcon>;
+  extensions: Record<string, string>;
+  fileNames: Record<string, string>;
+  defaultIcon?: string;
 }
 export interface PluginTheme {
   id: string;

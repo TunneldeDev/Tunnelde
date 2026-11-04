@@ -1,5 +1,9 @@
 # Settings
 
+File icon themes are available under **Files → Browsing → File icon theme**. Automatic
+uses an installed icon theme; Plain file icons disables plugin icons. A specific selection
+is preserved in profiles and exports, even if that package is temporarily unavailable.
+
 ## Application updates
 
 **Settings → Updates** contains the current version, checks, installation progress and
