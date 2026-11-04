@@ -586,7 +586,10 @@
     "backupRecoveryRequired": "A previous destination backup needs recovery. The backup and transfer record have been kept.",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",
-    "verifyingTransfer": "Verifying existing data…"
+    "verifyingTransfer": "Verifying existing data…",
+    "preview": "Preview file",
+    "previewSource": "Show source",
+    "previewRendered": "Render Markdown"
   },
   "processes": {
     "title": "Processes",

@@ -34,7 +34,7 @@ import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/wo
 import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { usePlugins } from "@/store/plugins";
 import { useQuickAccess } from "@/store/quickAccess";
-import { LocalFilePreview } from "@/features/sftp/LocalFilePreview";
+import { FilePreview } from "@/features/sftp/FilePreview";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -280,7 +280,7 @@ export function AppShell() {
       <DialogHost />
       <ContextMenuHost />
       <CommandPalette />
-      <LocalFilePreview />
+      <FilePreview />
     </div>
   );
 }

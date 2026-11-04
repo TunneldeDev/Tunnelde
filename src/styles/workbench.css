@@ -947,3 +947,16 @@
   background: var(--td-accent);
   outline: none;
 }
+.file-preview__markdown {
+  height: 55vh;
+  min-height: 200px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--td-border);
+  border-radius: var(--td-radius);
+  background: var(--td-bg);
+}
+
+.file-preview .td-dialog__body {
+  min-height: 0;
+}
