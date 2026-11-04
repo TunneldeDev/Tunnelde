@@ -32,7 +32,9 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
 
 ## Workbench
 
-- Organize, search, tag, favorite and reorder hosts. Connect with passwords, key files
+- Organize, search, tag, favorite and reorder hosts. Filter inside the search field with
+  `tag:PublicNet`, `@tag PublicNet`, quoted tags or `is:favorite`; choose tag suggestions
+  with the mouse or arrow keys and Enter. Connect with passwords, key files
   or pasted private keys. Save passwords while editing a host and double click to
   connect directly; unknown or changed server keys still require explicit trust.
 - Use an xterm.js terminal with ANSI colors, Unicode grapheme widths, monospace fonts,
@@ -40,16 +42,19 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
 - Browse local/remote locations independently in details or Finder-style columns.
   Expand breadcrumb folders, edit the full path, type a name to select it, and resize
   or detach file panels. Sort, filter, group, rename inline, create files or folders,
-  connect file management directly to a saved host, and drag transfers.
+  connect file management directly to a saved host, and drag transfers. Select a file
+  and press Space or click Preview to read local/remote text and rendered Markdown.
 - Configure proxies per feature, connect through ordered SSH jump hosts, pause and
   resume file transfers with speed, remaining bytes and time estimates, and manage
-  local or remote TCP forwards from a host page. Removing an unfinished transfer
+  local or remote TCP forwards from a host page or the SSH terminal toolbar. Removing an unfinished transfer
   cleans its recorded staging files; a failed cleanup keeps the record for retry.
   Optional SSHFS and SSHFS Lite plugins mount remote directories through the same
   authenticated connection. See [network and storage](docs/network-storage.md)
   for 0.27+ features and dependency requirements.
-- Drag tabs and sidebar panels into splits. Lock a pane as the destination for new
-  pages; hide and restore docked panels with their placement and size remembered.
+- Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
+  italic preview tab; select the same item again, double-click its tab, or interact with
+  its controls to keep it open. Each pane has its own preview slot. Lock a pane as the
+  destination for new pages; hide and restore docked panels with placement and size remembered.
 - Inspect remote CPU, memory, network and disk I/O timelines with scales, timestamps
   and mouse or keyboard sample inspection. Process termination requires confirmation.
 - Customize themes, individual colors, fonts, terminal behavior and keyboard shortcuts.
