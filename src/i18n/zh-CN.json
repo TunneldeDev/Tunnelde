@@ -1572,5 +1572,35 @@
       "logs": "应用诊断日志。",
       "runners": "部署到远端机器的插件运行环境在本地保存的记录。"
     }
+  },
+  "tasks": {
+    "title": "后台任务",
+    "active_one": "{{count}} 个任务",
+    "active_other": "{{count}} 个任务",
+    "more": "再显示 {{count}} 项",
+    "empty": "暂无后台任务",
+    "inProgress": "进行中",
+    "attention": "需要处理",
+    "finished": "已结束",
+    "clearFinished": "清除已结束任务",
+    "moveHint": "移动任务窗口 · 方向键移动 · Shift 微调 · Escape 取消",
+    "resizeHint": "调整任务窗口大小 · 方向键调整 · Shift 微调",
+    "resetLayout": "重置任务窗口布局",
+    "keepOpen": "保持任务窗口打开",
+    "installPlugin": "安装 {{name}}",
+    "status": {
+      "running": "运行中",
+      "paused": "已暂停",
+      "attention": "需要处理",
+      "done": "已完成",
+      "cancelled": "已取消"
+    },
+    "action": {
+      "cancel": "取消任务",
+      "clear": "移除任务",
+      "pause": "暂停任务",
+      "resume": "继续任务",
+      "retry": "重试任务"
+    }
   }
 }

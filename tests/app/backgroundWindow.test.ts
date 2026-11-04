@@ -13,6 +13,7 @@ import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useTransferPanel } from "@/store/transferPanel";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { runBackgroundTask } from "@/lib/tasks/background";
 import {
   decodeViewSnapshot,
   encodeViewSnapshot,
@@ -39,6 +40,26 @@ vi.mock("@/features/terminal/terminalCheckpoint", () => ({
 }));
 
 import { restoreBackgroundSnapshot, suspendBackgroundWindow } from "@/app/backgroundWindow";
+
+it("defers WebView teardown for hidden JavaScript work and suspends once it settles", async () => {
+  let finish!: () => void;
+  const result = runBackgroundTask(
+    { title: "Hidden operation", visible: false },
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await suspendBackgroundWindow(71);
+  expect(mocks.suspend).toHaveBeenCalledWith(71, null);
+  expect(mocks.prepare).not.toHaveBeenCalled();
+  finish();
+  await result;
+  await suspendBackgroundWindow(72);
+  expect(mocks.prepare).toHaveBeenCalledOnce();
+  expect(mocks.suspend.mock.calls.at(-1)?.[0]).toBe(72);
+  expect(typeof mocks.suspend.mock.calls.at(-1)?.[1]).toBe("string");
+});
 
 beforeEach(() => {
   vi.clearAllMocks();

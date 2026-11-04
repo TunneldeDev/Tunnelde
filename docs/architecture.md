@@ -1,5 +1,9 @@
 # Architecture
 
+Background work uses a shared task service with lifecycle-owned source adapters and optional
+visibility. See [Background task integration](development/background-tasks.en-us.md)
+([简体中文](development/background-tasks.zh-cn.md)).
+
 ## Layers
 
 | Layer      | Location                                                                                                | Responsibility                                                                                                                         |

@@ -1572,5 +1572,35 @@
       "logs": "Application diagnostic logs.",
       "runners": "Local records of plugin runtimes deployed to remote machines."
     }
+  },
+  "tasks": {
+    "title": "Background tasks",
+    "active_one": "{{count}} task",
+    "active_other": "{{count}} tasks",
+    "more": "Show {{count}} more",
+    "empty": "No background tasks",
+    "inProgress": "In progress",
+    "attention": "Needs attention",
+    "finished": "Finished",
+    "clearFinished": "Clear finished tasks",
+    "moveHint": "Move task window · arrow keys move · Shift for fine adjustment · Escape cancels",
+    "resizeHint": "Resize task window · arrow keys resize · Shift for fine adjustment",
+    "resetLayout": "Reset task window layout",
+    "keepOpen": "Keep task window open",
+    "installPlugin": "Install {{name}}",
+    "status": {
+      "running": "Running",
+      "paused": "Paused",
+      "attention": "Needs attention",
+      "done": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "action": {
+      "cancel": "Cancel task",
+      "clear": "Remove task",
+      "pause": "Pause task",
+      "resume": "Resume task",
+      "retry": "Retry task"
+    }
   }
 }

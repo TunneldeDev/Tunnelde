@@ -17,6 +17,7 @@ import { createEventLifecycle, type Subscription } from "@/lib/events/lifecycle"
 import type { Dispose } from "@/lib/events/bus";
 import { reconcilePluginWorkspace, wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
 import { restoreBackgroundSnapshot } from "./backgroundWindow";
+import { registerBackgroundTaskSources } from "./backgroundTaskSources";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -58,6 +59,7 @@ export function disposeBootstrap(): void {
 if (import.meta.hot) import.meta.hot.dispose(disposeBootstrap);
 
 async function start(signal: AbortSignal): Promise<void> {
+  cleanups.push(registerBackgroundTaskSources());
   const initialTabs = useWorkspace.getState().tabs;
   window.addEventListener("contextmenu", (event) => event.preventDefault(), { signal });
 

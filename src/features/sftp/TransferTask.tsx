@@ -7,6 +7,7 @@ import { cn, formatBytes } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { useTransfers, type TransferItem } from "@/store/transfers";
 import { TransferSpeedLimit } from "./TransferSpeedLimit";
+import "./transferTasks.css";
 
 export function TransferTask({
   item,

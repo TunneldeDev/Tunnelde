@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { FileTransfers } from "@/features/sftp/FileTransfers";
 import { transferApi } from "@/lib/api/transfers";
@@ -7,7 +7,13 @@ import { useTransfers } from "@/store/transfers";
 import { useTransferPanel } from "@/store/transferPanel";
 import { viewIsBusy } from "@/lib/session/viewState";
 
+import { registerBackgroundTaskSources } from "@/app/backgroundTaskSources";
+
+let stopSources: () => void;
+afterEach(() => stopSources?.());
+
 beforeEach(async () => {
+  stopSources = registerBackgroundTaskSources();
   await i18n.changeLanguage("en-US");
   useTransferPanel.setState({ open: true, pinned: false, bounds: null });
   useTransfers.setState({
@@ -88,7 +94,7 @@ it("closes on Escape and restores focus to the invoking control", () => {
   document.body.append(trigger);
   trigger.focus();
   render(<FileTransfers />);
-  fireEvent.keyDown(screen.getByRole("dialog", { name: "Background transfers" }), {
+  fireEvent.keyDown(screen.getByRole("dialog", { name: "Background tasks" }), {
     key: "Escape",
   });
   expect(useTransferPanel.getState().open).toBe(false);
@@ -119,7 +125,7 @@ it("shows queued work without a false speed and lets the user cancel or pause it
 });
 
 function mockPanelRect() {
-  const panel = screen.getByRole("dialog", { name: "Background transfers" });
+  const panel = screen.getByRole("dialog", { name: "Background tasks" });
   vi.spyOn(panel, "getBoundingClientRect").mockImplementation(
     () =>
       ({
@@ -135,11 +141,11 @@ function mockPanelRect() {
 it("moves and resizes from the keyboard, restores on reopen and resets the saved layout", () => {
   render(<FileTransfers />);
   mockPanelRect();
-  fireEvent.keyDown(screen.getByRole("button", { name: "Background transfers" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Background tasks" }), {
     key: "ArrowLeft",
   });
   expect(useTransferPanel.getState().bounds?.x).toBe(290);
-  fireEvent.keyDown(screen.getByRole("button", { name: /Resize transfer window/ }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: /Resize task window/ }), {
     key: "ArrowDown",
     shiftKey: true,
   });
@@ -147,10 +153,10 @@ it("moves and resizes from the keyboard, restores on reopen and resets the saved
   const saved = useTransferPanel.getState().bounds;
   fireEvent.click(screen.getByRole("button", { name: "Close" }));
   act(() => useTransferPanel.getState().show());
-  const panel = screen.getByRole("dialog", { name: "Background transfers" });
+  const panel = screen.getByRole("dialog", { name: "Background tasks" });
   expect(panel.style.left).toBe(`${saved?.x}px`);
   expect(panel.style.height).toBe("301px");
-  fireEvent.click(screen.getByRole("button", { name: "Reset transfer window layout" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reset task window layout" }));
   expect(useTransferPanel.getState().bounds).toBeNull();
   expect(localStorage.getItem("tunnelde.transferPanel.bounds")).toBeNull();
   expect(panel.style.left).toBe("");
@@ -173,7 +179,7 @@ it("clamps a restored layout and repositions it when the viewport shrinks", () =
 it("previews pointer movement without persisting each step and Escape cancels without closing", () => {
   render(<FileTransfers />);
   const panel = mockPanelRect();
-  const handle = screen.getByRole("button", { name: "Background transfers" });
+  const handle = screen.getByRole("button", { name: "Background tasks" });
   Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false });
   const pointer = (name: string, x: number, y: number) => {
     const event = new MouseEvent(name, { bubbles: true, clientX: x, clientY: y, button: 0 });

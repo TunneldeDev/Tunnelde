@@ -35,7 +35,7 @@ import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { usePlugins } from "@/store/plugins";
 import { useQuickAccess } from "@/store/quickAccess";
 import { FilePreview } from "@/features/sftp/FilePreview";
-import { FileTransfers, TransferStatusButton } from "@/features/sftp/FileTransfers";
+import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
@@ -284,8 +284,8 @@ export function AppShell() {
       <ContextMenuHost />
       <CommandPalette />
       <FilePreview />
-      <FileTransfers />
-      {!settings.showStatusBar ? <TransferStatusButton floating /> : null}
+      <BackgroundTasks />
+      {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
     </div>
   );
 }
