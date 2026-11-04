@@ -2,12 +2,32 @@ import { usePlugins } from "@/store/plugins";
 import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
 import { pluginSidebarId } from "./sidebars";
+import { editorDocument } from "@/store/editors";
+import { runEditorPlugin } from "./formatting";
+import { toast } from "@/store/toasts";
+import i18n from "@/i18n/i18n";
 
 /** Metadata can be searched without starting code. Runtime consent happens on invocation. */
 export async function openPluginAction(action: { id: string; view?: string; command?: string }) {
   const store = usePlugins.getState();
   let plugin = store.items.find((item) => item.id === action.id);
   if (!plugin || plugin.runtime === "theme") return;
+  const editorCommand = action.command
+    ? plugin.commands.find((item) => item.id === action.command && item.editor)
+    : null;
+  if (editorCommand) {
+    const activeId = useWorkspace.getState().activeId;
+    const document = activeId ? editorDocument(activeId) : null;
+    if (!document) {
+      toast(i18n.t("editor.noDocument"), "info");
+      return;
+    }
+    await runEditorPlugin(
+      { id: plugin.id, command: editorCommand.id, title: editorCommand.title },
+      document,
+    );
+    return;
+  }
   if (plugin.status !== "running") await store.start(plugin.id);
   plugin = usePlugins.getState().items.find((item) => item.id === action.id);
   if (plugin?.status !== "running") return;

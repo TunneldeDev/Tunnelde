@@ -1,5 +1,8 @@
 # Plugins
 
+Editor command and formatter contributions:
+[English](editor-plugins.en-us.md) · [简体中文](editor-plugins.zh-cn.md).
+
 ## Quick access and command results
 
 The plugin browser renders up to 24 matching entries per page, with previous/next
@@ -15,7 +18,7 @@ Publishers may add a `tags` array to both manifests and registry entries. Up to 
 case-insensitively distinct tags are allowed, each at most 64 UTF-8 bytes, with
 letters, digits, `_`, `-` and `.`. Old packages without tags remain compatible.
 
-Press F1 and type `> UUID` (or another plugin name/command) to open a contributed
+Press F1 and type `> ` followed by a plugin name or command to open a contributed
 view or execute an installed plugin command. Listing commands reads manifest metadata
 and does not start Node. Execution retains runtime consent and plugin approval.
 Commands without views open a host-owned result page with scrollable, resizable,
@@ -249,7 +252,7 @@ Executable Node plugins can send JSON-RPC requests back to the host while handli
 command. Replies use the same ID; both directions continue reading concurrently, so
 an awaited host call does not block the command response. The independent hub supplies
 a zero-dependency SDK in `sdk/tunnelde-plugin.mjs`, TypeScript declarations and the full
-89-method catalogue in `sdk/api.md` and `sdk/api.json`.
+generated host method catalogue in `sdk/api.md` and `sdk/api.json`.
 
 ```js
 import { createPlugin } from "./tunnelde-plugin.mjs";

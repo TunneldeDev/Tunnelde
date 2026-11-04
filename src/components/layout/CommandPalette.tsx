@@ -143,7 +143,12 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
   const commands = useMemo<Command[]>(() => {
     if (mode === "commands")
       return definitions
-        .filter((item) => item.scope === "workbench" && item.id !== "palette.open")
+        .filter(
+          (item) =>
+            (item.scope === "workbench" ||
+              (item.scope === "editor" && !!entries[activeTabId ?? ""])) &&
+            item.id !== "palette.open",
+        )
         .map((item) => ({
           id: item.id,
           title:
@@ -246,6 +251,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
     searchKey,
     path,
     entries,
+    activeTabId,
     needle,
     sessionId,
   ]);

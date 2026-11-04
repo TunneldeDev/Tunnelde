@@ -10,6 +10,8 @@ import { usePlugins } from "@/store/plugins";
 import { useTransferPanel } from "@/store/transferPanel";
 import { shortcutCommands } from "./registry";
 import { openPluginAction } from "@/lib/plugins/actions";
+import { formatEditorDocument } from "@/lib/plugins/formatting";
+import { useEditors, undoEditorEdit } from "@/store/editors";
 
 /** One action implementation for keyboard and command-palette invocation. */
 export function runWorkbenchCommand(id: string, openPalette?: () => void): boolean {
@@ -20,6 +22,11 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
     else useQuickAccess.getState().show(">");
   } else if (id === "palette.files") useQuickAccess.getState().show("");
   else if (id === "palette.content") useQuickAccess.getState().show("%");
+  else if (id === "editor.format") formatEditorDocument();
+  else if (id === "editor.save" && workspace.activeId)
+    void useEditors.getState().save(workspace.activeId);
+  else if ((id === "editor.undo" || id === "editor.redo") && workspace.activeId)
+    undoEditorEdit(workspace.activeId, id === "editor.redo");
   else if (id.startsWith("plugin.")) {
     const action = shortcutCommands(usePlugins.getState().items).find(
       (item) => item.id === id,
