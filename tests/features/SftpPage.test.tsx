@@ -761,6 +761,21 @@ describe("SftpPage preloading", () => {
     expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
   });
 
+  it("suppresses speculative directory requests in lightweight mode and resumes them live", async () => {
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, preloadDirs: true, lightweightMode: true },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
+    act(() =>
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, preloadDirs: true, lightweightMode: false },
+      }),
+    );
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
+  });
+
   it.each(["name", "size", "modified"] as const)(
     "prioritizes visible %s order and changes targets without reloading the open directory",
     async (sortBy) => {

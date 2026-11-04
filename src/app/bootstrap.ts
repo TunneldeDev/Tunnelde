@@ -16,6 +16,7 @@ import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { createEventLifecycle, type Subscription } from "@/lib/events/lifecycle";
 import type { Dispose } from "@/lib/events/bus";
 import { reconcilePluginWorkspace, wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
+import { restoreBackgroundSnapshot } from "./backgroundWindow";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -78,11 +79,13 @@ async function start(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return;
   let restored = false;
   try {
-    const records = await api.tabs();
+    const resumed = await restoreBackgroundSnapshot();
+    const records = resumed ? [] : await api.tabs();
     if (signal.aborted) return;
     // A slow snapshot must not replace tabs opened while startup is in progress.
-    if (restoreWorkspace) {
-      if (useWorkspace.getState().tabs === initialTabs) useWorkspace.getState().hydrate(records);
+    if (resumed || restoreWorkspace) {
+      if (!resumed && useWorkspace.getState().tabs === initialTabs)
+        useWorkspace.getState().hydrate(records);
       restored = true;
     }
   } catch (error) {

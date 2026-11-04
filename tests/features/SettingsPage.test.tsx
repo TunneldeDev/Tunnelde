@@ -199,7 +199,7 @@ describe("settings discovery and scoped resets", () => {
     const search = screen.getByRole("textbox", { name: "Search settings" });
     for (const value of ["preloading", "预加载"]) {
       fireEvent.change(search, { target: { value } });
-      expect(document.querySelectorAll("[data-setting]")).toHaveLength(2);
+      expect(document.querySelectorAll("[data-setting]")).toHaveLength(3);
       expect(row("preloadDirs")).toBeTruthy();
       expect(row("preloadCount")).toBeTruthy();
       expect(screen.getByRole("heading", { name: "Preloading", level: 3 })).toBeTruthy();

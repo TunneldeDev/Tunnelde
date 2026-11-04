@@ -262,6 +262,8 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     label: "settings.titleBar",
   },
   { ...toggle("closeToTray", "general", "settings.closeToTrayHint"), hideOnMac: true },
+  toggle("releaseWebviewInTray", "general", "settings.releaseWebviewInTrayHint"),
+  toggle("lightweightMode", "general", "settings.lightweightModeHint"),
   {
     ...toggle("showDockIconInBackground", "general", "settings.showDockIconInBackgroundHint"),
     macOnly: true,

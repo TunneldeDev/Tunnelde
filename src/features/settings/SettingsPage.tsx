@@ -47,6 +47,7 @@ import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
 import { NetworkSettingsSection } from "./NetworkSettings";
 import { StorageSettings } from "./StorageSettings";
+import { useViewState } from "@/lib/session/viewState";
 import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
 const TerminalPreview = lazy(() =>
@@ -324,9 +325,9 @@ export function SettingsPage() {
   const confirm = useDialogs((state) => state.confirm);
   const section = useNavigation((state) => state.settingsSection);
   const selectSection = useNavigation((state) => state.selectSettings);
-  const [query, setQuery] = useState("");
-  const [modifiedOnly, setModifiedOnly] = useState(false);
-  const [cssDraft, setCssDraft] = useState<string | null>(null);
+  const [query, setQuery] = useViewState("settings:query", "");
+  const [modifiedOnly, setModifiedOnly] = useViewState("settings:modified", false);
+  const [cssDraft, setCssDraft] = useViewState<string | null>("settings:css", null);
   const [resetVersions, setResetVersions] = useState<Record<string, number>>({});
   const body = useRef<HTMLDivElement>(null);
   const settingsId = useId();

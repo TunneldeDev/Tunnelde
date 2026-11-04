@@ -20,6 +20,7 @@ vi.mock("@/lib/api/ipc", () => ({
   isTauri: () => true,
   events: mock.events,
   api: {
+    mainWindowSnapshot: async () => null,
     pluginsList: mock.list,
     pluginStart: mock.start,
     tabs: async () => [

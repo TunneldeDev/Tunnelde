@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { TabRecord } from "@/lib/api/types";
 
 const mocks = vi.hoisted(() => ({
+  mainWindowSnapshot: vi.fn(),
   tabs: vi.fn(),
   saveTabs: vi.fn(),
   hostLoad: vi.fn(),
@@ -95,6 +96,7 @@ beforeEach(() => {
   } as unknown as MediaQueryList);
   vi.useFakeTimers();
   mocks.tabs.mockReset().mockResolvedValue([record()]);
+  mocks.mainWindowSnapshot.mockReset().mockResolvedValue(null);
   mocks.saveTabs.mockReset().mockResolvedValue(undefined);
   mocks.hostLoad.mockReset().mockResolvedValue(true);
   mocks.sshRefresh.mockReset().mockResolvedValue(undefined);

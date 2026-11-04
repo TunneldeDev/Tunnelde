@@ -44,6 +44,7 @@ import { PluginChatConfigDialog } from "./PluginChatConfig";
 import { PluginExecutionDialog } from "./PluginExecutionDialog";
 import { PluginChatSessions } from "./PluginChatSessions";
 import "@/styles/pluginChat.css";
+import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 
 export function PluginChat({
   pluginId,
@@ -57,7 +58,10 @@ export function PluginChat({
   const { t, i18n } = useTranslation();
   const [block, setBlock] = useState(initial);
   const current = useRef(block);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useViewState<Record<string, string>>(
+    `chat:${pluginId}:${viewId}:${initial.id}`,
+    {},
+  );
   const [busy, setBusy] = useState<string | null>(null);
   const pending = useRef(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,6 +70,7 @@ export function PluginChat({
   const [configOpen, setConfigOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [executionOpen, setExecutionOpen] = useState<string | null>(null);
+  useBackgroundGuard(busy !== null || configOpen || executionOpen !== null || historyOpen);
   const sshSessions = useSsh((state) => state.sessions);
   const hosts = useHosts((state) => state.hosts);
   const [atBottom, setAtBottom] = useState(true);

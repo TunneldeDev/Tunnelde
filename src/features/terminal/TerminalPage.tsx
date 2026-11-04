@@ -190,6 +190,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         checkpointing.current = true;
         sequence = checkpoint.sequence;
         decodeOutput = createTerminalOutputDecoder(checkpoint.decoder);
+        capture.current = checkpoint.input;
       }
       const instance = new Terminal({
         ...terminalOptions(settings),
@@ -240,6 +241,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             data: serializer.serialize(),
             decoder: decodeOutput.checkpoint(),
             state: captureTerminalState(instance),
+            input: { ...capture.current },
           };
         },
         resume: async () => {

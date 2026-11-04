@@ -79,6 +79,7 @@ import { useTransfers } from "@/store/transfers";
 import { useWorkspace, type FilePaneOptions } from "@/store/workspace";
 import { useSearchRoots } from "@/store/searchRoots";
 import { useFilePreview } from "@/store/filePreview";
+import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 
 type PaneId = "a" | "b";
 
@@ -263,7 +264,8 @@ export function SftpPage({
     [],
   );
 
-  const [panes, setPanes] = useState<Record<PaneId, PaneModel>>(() => ({
+  const checkpointKey = `files:${scopeId ?? sessionId}`;
+  const [panes, setPanes] = useViewState<Record<PaneId, PaneModel>>(checkpointKey, () => ({
     a: {
       source: single?.source ?? LOCAL_SOURCE,
       state: EMPTY,
@@ -275,7 +277,8 @@ export function SftpPage({
       view: preferencesFor("b", { kind: "remote", sessionId }),
     },
   }));
-  const [active, setActive] = useState<PaneId>("a");
+  const [active, setActive] = useViewState<PaneId>(`${checkpointKey}:active`, "a");
+  useBackgroundGuard(panes.a.state.busy || panes.b.state.busy);
   const [remotePane, setRemotePane] = useState<PaneId | null>(null);
   const [dropTarget, setDropTarget] = useState<{ pane: PaneId; path: string } | null>(null);
   const [transferEpoch, setTransferEpoch] = useState(0);
@@ -355,16 +358,19 @@ export function SftpPage({
     };
   }, []);
 
-  const patch = useCallback((id: PaneId, next: Partial<PaneState>) => {
-    if (!mounted.current) return;
-    const current = panesRef.current;
-    const updated = {
-      ...current,
-      [id]: { ...current[id], state: { ...current[id].state, ...next } },
-    };
-    panesRef.current = updated;
-    setPanes(updated);
-  }, []);
+  const patch = useCallback(
+    (id: PaneId, next: Partial<PaneState>) => {
+      if (!mounted.current) return;
+      const current = panesRef.current;
+      const updated = {
+        ...current,
+        [id]: { ...current[id], state: { ...current[id].state, ...next } },
+      };
+      panesRef.current = updated;
+      setPanes(updated);
+    },
+    [setPanes],
+  );
 
   const reveal = useCallback((id: PaneId, path?: string, editing = false) => {
     requestAnimationFrame(() => {
@@ -397,7 +403,10 @@ export function SftpPage({
   const preloader = useRef<ReturnType<typeof createPrefetchQueue<Listing>> | null>(null);
   useEffect(() => {
     const queue = createPrefetchQueue<Listing>({
-      enabled: () => useSettings.getState().settings.preloadDirs,
+      enabled: () => {
+        const settings = useSettings.getState().settings;
+        return settings.preloadDirs && !settings.lightweightMode;
+      },
       cached: (key) => cache.current.has(key),
     });
     preloader.current = queue;
@@ -410,7 +419,10 @@ export function SftpPage({
   // Warm the parent and the first few child folders so moving around feels instant.
   const prefetch = useCallback(
     (id: PaneId, source: FsSource, listing: Listing) => {
-      if (!useSettings.getState().settings.preloadDirs) {
+      if (
+        !useSettings.getState().settings.preloadDirs ||
+        useSettings.getState().settings.lightweightMode
+      ) {
         return;
       }
       const preferences = useSettings.getState().settings;
@@ -442,7 +454,7 @@ export function SftpPage({
   );
 
   useEffect(() => {
-    if (!settings.preloadDirs) {
+    if (!settings.preloadDirs || settings.lightweightMode) {
       preloader.current?.invalidate();
       return;
     }
@@ -450,7 +462,15 @@ export function SftpPage({
       const pane = panesRef.current[id];
       if (pane.state.listing && !pane.state.busy) prefetch(id, pane.source, pane.state.listing);
     }
-  }, [settings.preloadDirs, settings.preloadCount, collator, prefetch, preloader, visiblePaneIds]);
+  }, [
+    settings.preloadDirs,
+    settings.preloadCount,
+    settings.lightweightMode,
+    collator,
+    prefetch,
+    preloader,
+    visiblePaneIds,
+  ]);
 
   const load = useCallback(
     async (
@@ -551,8 +571,12 @@ export function SftpPage({
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void load("a", single?.path);
-      if (!single) void load("b");
+      const first = panesRef.current.a.state;
+      void load("a", first.listing?.path ?? single?.path, first.cursor);
+      if (!single) {
+        const second = panesRef.current.b.state;
+        void load("b", second.listing?.path, second.cursor);
+      }
     }, 0);
     return () => window.clearTimeout(timer);
   }, [load, single]);
@@ -593,7 +617,7 @@ export function SftpPage({
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [sessions, load, preferencesFor, visiblePaneIds]);
+  }, [sessions, load, preferencesFor, visiblePaneIds, setPanes]);
 
   // Both panels refresh once a transfer they started has settled.
   useEffect(() => {
@@ -721,7 +745,7 @@ export function SftpPage({
         writeFileViewPreferences(key, view);
       }
     },
-    [collator, viewSelectors, prefetch, preferenceKey, preferenceCache],
+    [collator, viewSelectors, prefetch, preferenceKey, preferenceCache, setPanes],
   );
 
   const focusFilter = (id: PaneId) => {

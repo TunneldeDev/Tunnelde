@@ -29,6 +29,23 @@ Dock clicks and second launches share this readiness gate. Background update sta
 not delay presentation, and font failures use fallbacks. No animation-frame wait is used
 because hidden webviews can suspend those callbacks.
 
+With `releaseWebviewInTray` enabled, hiding the main window requests a frontend
+checkpoint. Native code accepts only the current request token while the window
+remains hidden, retains the bounded snapshot in memory and destroys the WebView.
+Dialogs and view-owned writes defer the checkpoint. A cancelled request reattaches
+any detached terminals. SSH terminal output uses a sequence barrier and a bounded
+4 MiB queue while detached; reaching the limit applies channel backpressure rather
+than truncating ANSI/UTF-8 data. Restoration uses xterm's serializer plus a pinned
+adapter for parser modes, saved cursors and partial control/UTF-8 sequences.
+
+The process remains alive without windows until an explicit quit. Tray/Dock and
+second-launch actions recreate the original window, restore native geometry and
+appearance on the main thread, and use the startup readiness gate again. WebView
+creation itself runs outside synchronous event callbacks to avoid a WebView2
+deadlock. Geometry restoration runs on the main thread to avoid a window-state
+cache/resize-event lock inversion. Bootstrap reconciles native sessions, transfers
+and plugin events after restoring the memory-only workspace and drafts.
+
 ## Data
 
 - Database: `<app data>/tunnelde.db` (SQLite, WAL).

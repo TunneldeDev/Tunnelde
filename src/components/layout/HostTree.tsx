@@ -10,6 +10,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useViewState } from "@/lib/session/viewState";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -394,8 +395,8 @@ export function HostTree() {
   const confirm = useDialogs((state) => state.confirm);
   const deleteGroup = useHosts((state) => state.deleteGroup);
   const moveToGroup = useHosts((state) => state.moveToGroup);
-  const [query, setQuery] = useState("");
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useViewState("hosts:query", "");
+  const [collapsed, setCollapsed] = useViewState<Set<string>>("hosts:collapsed", new Set());
 
   const tags = useMemo(
     () => Array.from(new Set(hosts.flatMap((host) => host.tags))).sort(),

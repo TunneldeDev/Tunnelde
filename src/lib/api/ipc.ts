@@ -54,6 +54,9 @@ export const api = {
     invoke<FilePreviewInfo>("file_preview_open", { id, providerId, path, sessionId }),
   filePreviewClose: (id: string) => invoke<void>("file_preview_close", { id }),
   mainWindowReady: () => invoke<void>("main_window_ready"),
+  mainWindowSnapshot: () => invoke<string | null>("main_window_snapshot"),
+  mainWindowSuspend: (token: number, snapshot: string | null) =>
+    invoke<boolean>("main_window_suspend", { token, snapshot }),
   connectionRoute: (hostId: string) => invoke<ConnectionRoute>("connection_route_get", { hostId }),
   saveConnectionRoute: (hostId: string, route: ConnectionRoute) =>
     invoke<void>("connection_route_save", { hostId, route }),
@@ -306,6 +309,10 @@ export const events = {
   ): Promise<UnlistenFn> => nativeEvents.on("update://state", handler, signal),
   onNavigate: (handler: (page: string) => void, signal?: AbortSignal): Promise<UnlistenFn> =>
     nativeEvents.on("ui://navigate", handler, signal),
+  onWindowSuspend: (handler: (token: number) => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("ui://suspend", handler, signal),
+  onWindowResume: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("ui://resume", handler, signal),
   onSshData: (
     handler: (payload: SshDataPayload) => void,
     signal?: AbortSignal,

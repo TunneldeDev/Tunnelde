@@ -20,6 +20,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(window::StartupWindow::default())
+        .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
@@ -51,6 +52,7 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
                 window.state::<preview::Registry>().clear();
+                platform::background::destroyed(window.app_handle());
             }
         })
         .plugin(tauri_plugin_opener::init())
@@ -88,6 +90,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             window::main_window_ready,
+            platform::background::main_window_snapshot,
+            platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
             ssh::files::durable::durable_transfer_list,
             ssh::files::durable::durable_transfer_clear,
@@ -222,6 +226,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Tunnelde")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested {
+                code: None, api, ..
+            } = &event
+            {
+                if platform::background::keep_alive(app) {
+                    api.prevent_exit();
+                }
+            }
             #[cfg(target_os = "macos")]
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
                 // A closed main window is retained for its sessions and drafts.

@@ -21,6 +21,8 @@ export const PORTABLE_SETTING_KEYS = [
   "updateSourceUrl",
   "updateCheckInterval",
   "closeToTray",
+  "releaseWebviewInTray",
+  "lightweightMode",
   "showDockIconInBackground",
   "titleBarStyle",
   "recordTerminalHistory",
