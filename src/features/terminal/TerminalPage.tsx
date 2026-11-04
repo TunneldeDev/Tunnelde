@@ -2,7 +2,7 @@ import { matchesCommand } from "@/lib/keyboard/registry";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { Clock, FolderTree, X } from "lucide-react";
+import { ArrowLeftRight, Clock, FolderTree, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -23,6 +23,9 @@ import {
   waitForCurrentTerminalFont,
 } from "./terminalRuntime";
 import { useSettings } from "@/store/settings";
+import { Dialog } from "@/components/ui/overlay/Dialog";
+import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
+import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { useDialogs } from "@/store/dialogs";
@@ -39,6 +42,8 @@ interface TerminalPageProps {
 export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
+  const host = useHosts((state) => state.hosts.find((item) => item.id === session?.hostId));
+  const [forwardingOpen, setForwardingOpen] = useState(false);
   const disconnect = useSsh((state) => state.disconnect);
   const openSftp = useWorkspace((state) => state.openSftp);
   const openHistory = useWorkspace((state) => state.openHistory);
@@ -70,7 +75,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   }, [recordTerminalHistory]);
   const lastSize = useRef({ sessionId: "", cols: 0, rows: 0 });
   const focus = useCallback(() => {
-    if (!activeRef.current || useDialogs.getState().dialog.kind !== "none") {
+    if (
+      !activeRef.current ||
+      document.querySelector("[role='dialog']") ||
+      useDialogs.getState().dialog.kind !== "none"
+    ) {
       return;
     }
     const focused = document.activeElement;
@@ -433,6 +442,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <FolderTree size={15} />
         </IconButton>
         <IconButton
+          label={t("forward.title")}
+          disabled={!session || !host || closed}
+          onClick={() => setForwardingOpen(true)}
+        >
+          <ArrowLeftRight size={15} />
+        </IconButton>
+        <IconButton
           label={t("terminal.disconnect")}
           disabled={!session || closed || disconnecting}
           onClick={() => {
@@ -442,6 +458,17 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <X size={15} />
         </IconButton>
       </header>
+      {forwardingOpen && host ? (
+        <Dialog
+          open
+          title={t("forward.title")}
+          closeLabel={t("common.close")}
+          onClose={() => setForwardingOpen(false)}
+          width={620}
+        >
+          <ForwardingSection host={host} initialSessionId={sessionId} embedded />
+        </Dialog>
+      ) : null}
       <div
         className="terminal-host"
         onContextMenu={(event) => {
