@@ -586,7 +586,10 @@
     "backupRecoveryRequired": "原目标文件的备份需要恢复，已保留备份和传输记录。",
     "resizePanels": "调整文件面板大小",
     "detachPanel": "作为独立面板打开",
-    "verifyingTransfer": "正在校验已传数据…"
+    "verifyingTransfer": "正在校验已传数据…",
+    "preview": "预览文件",
+    "previewSource": "查看源文",
+    "previewRendered": "渲染 Markdown"
   },
   "processes": {
     "title": "进程",

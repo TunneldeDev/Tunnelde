@@ -36,6 +36,7 @@ import { useSsh } from "@/store/ssh";
 import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
+import { useFilePreview } from "@/store/filePreview";
 import { DRAG_MIME } from "@/lib/files/dnd";
 import { useContextMenu } from "@/store/contextMenu";
 import * as clipboard from "@/lib/session/clipboard";
@@ -128,6 +129,30 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("previews the selected local or remote file from the toolbar or Space, without editing it", async () => {
+    useFilePreview.setState({ file: null });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const buttons = screen.getAllByRole("button", { name: "Preview file" });
+    expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText("src"));
+    expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText("notes.txt"));
+    fireEvent.click(buttons[0]!);
+    expect(useFilePreview.getState().file).toMatchObject({
+      path: "C:\\work\\notes.txt",
+      source: { kind: "local" },
+    });
+    fireEvent.click(screen.getByText("readme.md"));
+    const pane = document.querySelectorAll(".sftp-pane__body")[1]!;
+    fireEvent.keyDown(pane, { key: " " });
+    expect(useFilePreview.getState().file).toMatchObject({
+      path: "/srv/app/readme.md",
+      source: { kind: "remote", sessionId: "session-1" },
+    });
+    expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
+    expect(fsMock.openLocal).not.toHaveBeenCalled();
+  });
   it("opens a folder in the next column and preserves the parent for changing branches", async () => {
     fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
       if (source.kind === "local" && path === "C:\\work\\src")

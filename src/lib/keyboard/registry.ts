@@ -82,6 +82,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("files.newFile", "sftp.newFile", "files", ["Mod+N"]),
   command("files.newFolder", "sftp.newFolder", "files", ["Mod+Shift+N"]),
   command("files.open", "common.open", "files", ["Enter", "Meta+ArrowDown"]),
+  command("files.preview", "sftp.preview", "files", ["Space"]),
   command("files.rename", "sftp.rename", "files", ["F2"]),
   command("files.delete", "common.delete", "files", ["Delete"]),
 ];

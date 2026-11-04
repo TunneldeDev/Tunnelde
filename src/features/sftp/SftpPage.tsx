@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Eye,
   ChevronRight,
   Search,
   File as FileIcon,
@@ -74,6 +75,7 @@ import { toast } from "@/store/toasts";
 import { useTransfers } from "@/store/transfers";
 import { useWorkspace, type FilePaneOptions } from "@/store/workspace";
 import { useSearchRoots } from "@/store/searchRoots";
+import { useFilePreview } from "@/store/filePreview";
 
 type PaneId = "a" | "b";
 
@@ -1303,6 +1305,10 @@ export function SftpPage({
     copyText(entry.path);
   };
 
+  const previewEntry = (id: PaneId, entry: FileEntry) => {
+    if (!entry.isDir) useFilePreview.getState().show(entry.path, 0, 0, panesRef.current[id].source);
+  };
+
   const toggleHidden = (id: PaneId) =>
     updateView(id, { filesShowHidden: !panesRef.current[id].view.filesShowHidden });
 
@@ -1327,6 +1333,7 @@ export function SftpPage({
       if (entry.isDir) {
         items.push({ label: t("sftp.open"), onSelect: () => navigate(id, entry.path) });
       } else {
+        items.push({ label: t("sftp.preview"), onSelect: () => previewEntry(id, entry) });
         items.push({
           label: t(source.kind === "local" ? "sftp.openWith" : "sftp.edit"),
           onSelect: () => applyEntry(id, entry),
@@ -1404,6 +1411,7 @@ export function SftpPage({
       "newFile",
       "newFolder",
       "open",
+      "preview",
       "rename",
       "delete",
     ].find((id) => matches(`files.${id}`));
@@ -1426,6 +1434,7 @@ export function SftpPage({
         else if (action === "paste") pasteInto(id, state.listing?.path ?? "");
         else if (action === "newFile" || action === "newFolder")
           startCreate(id, action === "newFile" ? "file" : "folder");
+        else if (action === "preview" && primary) previewEntry(id, primary);
         else if (action === "open" && primary) {
           if (primary.isDir) navigate(id, primary.path);
           else applyEntry(id, primary);
@@ -1543,6 +1552,10 @@ export function SftpPage({
     const creating = state.creating;
     const selectedSet = new Set(state.selectedPaths);
     const selectedCount = entries.filter((entry) => selectedSet.has(entry.path)).length;
+    const previewTarget =
+      selectedCount === 1
+        ? entries.find((entry) => selectedSet.has(entry.path) && !entry.isDir)
+        : undefined;
     const cutSet =
       clip?.action === "cut" && sameSource(clip.source, source)
         ? new Set(clip.items.map((item) => item.path))
@@ -1787,6 +1800,14 @@ export function SftpPage({
               }
             >
               <RotateCw size={13} />
+            </IconButton>
+            <IconButton
+              label={t("sftp.preview")}
+              size="sm"
+              disabled={state.busy || !previewTarget}
+              onClick={() => previewTarget && previewEntry(id, previewTarget)}
+            >
+              <Eye size={13} />
             </IconButton>
             <IconButton
               label={t("sftp.newFile")}
