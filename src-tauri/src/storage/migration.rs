@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use super::config::{self, Change, Config, Pending};
 use super::inventory;
 use super::layout::{self, Category, Paths};
+use super::restore;
 use crate::error::{AppError, AppResult};
 
-const MARKER: &str = ".tunnelde-storage-migration";
+pub(super) const MARKER: &str = ".tunnelde-storage-migration";
 
 pub fn validate(paths: &Paths, changes: &[Change]) -> AppResult<Vec<Change>> {
     validate_plan(paths, changes, None)
@@ -36,26 +37,34 @@ fn validate_plan(
         if target == source {
             continue;
         }
-        if target.starts_with(&source) || source.starts_with(&target) {
-            return Err(AppError::validation("storage.pathOverlap"));
-        }
+        let resetting = target == layout::normalize(&paths.defaults[&change.category])?;
+        let targets = if resetting {
+            inventory::roots(change.category, &target)
+        } else {
+            vec![target.clone()]
+        };
         for (&other, directory) in &paths.dirs {
-            // The legacy DB/cache root contains other categories, but owns only named entries.
-            if matches!(other, Category::Database | Category::Cache) {
-                for root in inventory::roots(other, directory) {
-                    let root = layout::normalize(&root)?;
-                    if target.starts_with(&root) || root.starts_with(&target) {
+            for root in inventory::roots(other, directory) {
+                let root = layout::normalize(&root)?;
+                for destination in &targets {
+                    if destination.starts_with(&root) || root.starts_with(destination) {
                         return Err(AppError::validation("storage.pathOverlap"));
                     }
                 }
-                continue;
-            }
-            let directory = layout::normalize(directory)?;
-            if target.starts_with(&directory) || directory.starts_with(&target) {
-                return Err(AppError::validation("storage.pathOverlap"));
             }
         }
-        if !recovery.is_some_and(|id| owned(&target, id)) {
+        if resetting {
+            inventory::scan(change.category, &target)?;
+            let backup = layout::normalize(&restore::backup_root(change.category, &target)?)?;
+            for (&other, directory) in &paths.dirs {
+                for root in inventory::roots(other, directory) {
+                    let root = layout::normalize(&root)?;
+                    if backup.starts_with(&root) || root.starts_with(&backup) {
+                        return Err(AppError::validation("storage.pathOverlap"));
+                    }
+                }
+            }
+        } else if !recovery.is_some_and(|id| owned(&target, id)) {
             layout::empty_target(&target)?;
         }
         normalized.push(Change {
@@ -69,9 +78,12 @@ fn validate_plan(
     }
     for (i, change) in normalized.iter().enumerate() {
         for other in &normalized[i + 1..] {
-            if change.target.starts_with(&other.target) || other.target.starts_with(&change.target)
-            {
-                return Err(AppError::validation("storage.pathOverlap"));
+            for first in destination_roots(paths, change)? {
+                for second in destination_roots(paths, other)? {
+                    if first.starts_with(&second) || second.starts_with(&first) {
+                        return Err(AppError::validation("storage.pathOverlap"));
+                    }
+                }
             }
         }
     }
@@ -110,7 +122,15 @@ fn validate_plan(
     Ok(normalized)
 }
 
-fn stage(change: &Change, id: &str) -> AppResult<PathBuf> {
+fn destination_roots(paths: &Paths, change: &Change) -> AppResult<Vec<PathBuf>> {
+    if restore::is_default(paths, change)? {
+        Ok(inventory::roots(change.category, &change.target))
+    } else {
+        Ok(vec![change.target.clone()])
+    }
+}
+
+pub(super) fn stage(change: &Change, id: &str) -> AppResult<PathBuf> {
     if uuid::Uuid::parse_str(id).is_err() {
         return Err(AppError::validation("storage.invalidPlan"));
     }
@@ -124,7 +144,7 @@ fn stage(change: &Change, id: &str) -> AppResult<PathBuf> {
     )))
 }
 
-fn owned(path: &Path, id: &str) -> bool {
+pub(super) fn owned(path: &Path, id: &str) -> bool {
     std::fs::symlink_metadata(path)
         .is_ok_and(|metadata| !layout::linked(&metadata) && metadata.is_dir())
         && std::fs::symlink_metadata(path.join(MARKER)).is_ok_and(|metadata| {
@@ -151,7 +171,12 @@ fn entries(
     Ok(result)
 }
 
-fn equal_tree(from: &Path, to: &Path, depth: usize, count: &mut usize) -> AppResult<bool> {
+pub(super) fn equal_tree(
+    from: &Path,
+    to: &Path,
+    depth: usize,
+    count: &mut usize,
+) -> AppResult<bool> {
     *count += 1;
     if depth > 64 || *count > 200_000 {
         return Err(AppError::validation("storage.tooManyFiles"));
@@ -251,7 +276,16 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
     let mut staging = Vec::new();
     let prepared = (|| {
         for change in &changes {
-            if owned(&change.target, &pending.id) {
+            let resetting = restore::is_default(paths, change)?;
+            if resetting && restore::pending(change, &pending.id)? {
+                let destination = stage(change, &pending.id)?;
+                if !owned(&destination, &pending.id) {
+                    return Err(AppError::validation("storage.verificationFailed"));
+                }
+                staging.push(Some(destination));
+                continue;
+            }
+            if !resetting && owned(&change.target, &pending.id) {
                 verify_published(paths, change)?;
                 staging.push(None);
                 continue;
@@ -278,6 +312,10 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
             let Some(stage) = stage else {
                 continue;
             };
+            if restore::is_default(paths, change)? {
+                restore::publish(paths, change, &pending.id, stage)?;
+                continue;
+            }
             // Recheck directly before publication, including a directory changed during copying.
             layout::empty_target(&change.target)?;
             if change.target.exists() {
@@ -289,27 +327,60 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
         for change in &changes {
             next.previous
                 .insert(change.category, paths.dir(change.category).to_owned());
-            next.locations
-                .insert(change.category, change.target.clone());
+            if restore::is_default(paths, change)? {
+                next.locations.remove(&change.category);
+                next.archives.insert(
+                    change.category,
+                    restore::backup_root(change.category, &change.target)?
+                        .join(&pending.id)
+                        .join("original"),
+                );
+            } else {
+                next.locations
+                    .insert(change.category, change.target.clone());
+            }
         }
         next.pending = None;
         next.last_error = None;
         config::save(&paths.home, &next)?;
         *config = next;
         for change in &changes {
-            if owned(&change.target, &pending.id) {
+            if !restore::is_default(paths, change)? && owned(&change.target, &pending.id) {
                 let _ = std::fs::remove_file(change.target.join(MARKER));
             }
         }
         Ok::<_, AppError>(())
     })();
     // Only remove our reserved staging directories, never source or published destination data.
-    for directory in staging.into_iter().flatten() {
+    for (change, directory) in changes
+        .iter()
+        .zip(staging)
+        .filter_map(|(change, stage)| stage.map(|stage| (change, stage)))
+    {
+        if prepared.is_err()
+            && restore::is_default(paths, change)?
+            && restore::pending(change, &pending.id)?
+        {
+            continue;
+        }
         if owned(&directory, &pending.id) {
             let _ = std::fs::remove_dir_all(directory);
         }
     }
     prepared
+}
+
+pub fn cancel(paths: &Paths, config: &mut Config) -> AppResult<()> {
+    if let Some(pending) = &config.pending {
+        for change in &pending.changes {
+            if restore::is_default(paths, change)? {
+                restore::cancel(paths, change, &pending.id)?;
+            }
+        }
+    }
+    config.pending = None;
+    config.last_error = None;
+    config::save(&paths.home, config)
 }
 
 pub fn schedule(paths: &Paths, config: &mut Config, changes: Vec<Change>) -> AppResult<()> {

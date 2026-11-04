@@ -31,6 +31,7 @@ pub struct Config {
     pub locations: BTreeMap<Category, PathBuf>,
     pub pending: Option<Pending>,
     pub previous: BTreeMap<Category, PathBuf>,
+    pub archives: BTreeMap<Category, PathBuf>,
     pub last_error: Option<String>,
 }
 
