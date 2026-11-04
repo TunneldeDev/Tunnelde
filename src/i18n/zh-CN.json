@@ -660,7 +660,10 @@
     "cleanupPendingHint": "任务已丢弃，目标主机重连后将清理临时数据；已完成的文件会保留。",
     "retryCleanup": "重新连接并重试清理",
     "transferFrom": "来源",
-    "transferTo": "目标"
+    "transferTo": "目标",
+    "moveTasksHint": "拖动或按方向键移动 · 双击恢复默认布局",
+    "resetTasksLayout": "恢复传输窗口默认布局",
+    "resizeTasksHint": "调整传输窗口大小（方向键调整，Shift 精细调整）"
   },
   "processes": {
     "title": "进程",

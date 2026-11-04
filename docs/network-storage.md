@@ -110,6 +110,14 @@ finished tasks start collapsed. Large groups load 20 rows at a time. Expand a ta
 to inspect source/destination paths, remaining bytes and temporary speed limits.
 The file panes keep their full height while transfers run.
 
+Drag the transfer window's title to move it, or drag any edge or corner to resize
+it. Position and size survive closing, restarting and tray window recreation;
+shrinking the application keeps the window inside the visible workbench. Double-click
+the title or use Reset layout to restore the default corner placement. Focus the
+title and use arrow keys to move, or focus the bottom-right resize handle and use
+arrow keys to resize. Hold Shift for one-pixel adjustments. Escape during a drag
+cancels that adjustment; Escape otherwise closes the list.
+
 The transfer list offers Pause, Resume, Cancel and Clear. A desktop-owned transfer
 stores its task and per-file progress locally. After an interruption or restart,
 connect to the same saved host and resume from the list; changing terminal session

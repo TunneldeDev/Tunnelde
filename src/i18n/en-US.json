@@ -660,7 +660,10 @@
     "cleanupPendingHint": "Discarded. Temporary data will be cleaned when the destination reconnects; completed files are kept.",
     "retryCleanup": "Reconnect and retry cleanup",
     "transferFrom": "From",
-    "transferTo": "To"
+    "transferTo": "To",
+    "moveTasksHint": "Drag to move · Arrow keys to move · Double-click to reset",
+    "resetTasksLayout": "Reset transfer window layout",
+    "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)"
   },
   "processes": {
     "title": "Processes",

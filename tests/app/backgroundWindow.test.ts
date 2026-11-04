@@ -42,7 +42,7 @@ import { restoreBackgroundSnapshot, suspendBackgroundWindow } from "@/app/backgr
 
 beforeEach(() => {
   vi.clearAllMocks();
-  useTransferPanel.setState({ open: false, pinned: false });
+  useTransferPanel.setState({ open: false, pinned: false, bounds: null });
   mocks.snapshot.mockResolvedValue(null);
   mocks.prepare.mockResolvedValue({ one: { sequence: 7, data: "screen" } });
   mocks.resume.mockResolvedValue(undefined);
@@ -114,15 +114,16 @@ describe("background window checkpoint", () => {
     panel.setAttribute("role", "dialog");
     panel.setAttribute("aria-modal", "false");
     document.body.append(panel);
-    useTransferPanel.setState({ open: true, pinned: true });
+    const bounds = { x: 120, y: 90, width: 500, height: 360 };
+    useTransferPanel.setState({ open: true, pinned: true, bounds });
     try {
       await suspendBackgroundWindow(71);
       expect(mocks.suspend).toHaveBeenCalledWith(71, expect.any(String));
       const snapshot = mocks.suspend.mock.calls[0]![1] as string;
-      useTransferPanel.setState({ open: false, pinned: false });
+      useTransferPanel.setState({ open: false, pinned: false, bounds: null });
       mocks.snapshot.mockResolvedValue(snapshot);
       await restoreBackgroundSnapshot();
-      expect(useTransferPanel.getState()).toMatchObject({ open: true, pinned: true });
+      expect(useTransferPanel.getState()).toMatchObject({ open: true, pinned: true, bounds });
     } finally {
       panel.remove();
     }
