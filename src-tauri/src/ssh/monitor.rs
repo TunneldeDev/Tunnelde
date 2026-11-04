@@ -1,11 +1,12 @@
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use russh::ChannelMsg;
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
 
+use super::processes::{ProcessCache, BASE_SCRIPT, OPTIONAL_SCRIPT};
 use crate::error::{AppError, AppResult};
 use crate::models::now_ms;
 use crate::state::AppState;
@@ -27,7 +28,6 @@ done
 echo '#net'; awk 'NR>2 {rx+=$2; tx+=$10} END {print rx+0, tx+0}' /proc/net/dev
 echo '#uptime'; cut -d' ' -f1 /proc/uptime
 echo '#load'; cat /proc/loadavg
-echo '#ps'; ps -eo pid=,pcpu=,pmem=,rss=,comm= --sort=-pcpu | head -5
 echo '#nproc'; nproc
 "#;
 
@@ -39,6 +39,37 @@ pub struct RemoteProcess {
     pub cpu: f32,
     pub memory: f32,
     pub rss: u64,
+    /// Share of total machine CPU capacity, sampled over the most recent interval.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cpu_total: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at_ticks: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub group_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_pid: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub threads: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub state: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk_read_rate: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk_write_rate: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_rx_rate: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub network_tx_rate: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_percent: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gpu_memory: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -75,9 +106,21 @@ struct Counters {
 #[derive(Default)]
 pub struct MonitorCache {
     samples: Mutex<HashMap<String, Counters>>,
+    processes: ProcessCache,
+    gates: Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 impl MonitorCache {
+    async fn gate(&self, session_id: &str) -> AppResult<tokio::sync::OwnedMutexGuard<()>> {
+        let gate = self
+            .gates
+            .lock()
+            .map_err(|_| AppError::internal("monitor.lock"))?
+            .entry(session_id.to_owned())
+            .or_default()
+            .clone();
+        Ok(gate.lock_owned().await)
+    }
     fn previous(&self, session_id: &str) -> Counters {
         self.samples
             .lock()
@@ -93,6 +136,10 @@ impl MonitorCache {
     }
 
     pub fn forget(&self, session_id: &str) {
+        self.processes.forget(session_id);
+        if let Ok(mut gates) = self.gates.lock() {
+            gates.remove(session_id);
+        }
         if let Ok(mut samples) = self.samples.lock() {
             samples.remove(session_id);
         }
@@ -101,30 +148,36 @@ impl MonitorCache {
 
 async fn exec(app: &AppHandle, session_id: &str, command: &str) -> AppResult<String> {
     let handle = app.state::<AppState>().ssh.handle(session_id)?;
-    let mut channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|error| AppError::Ssh(format!("monitor.channel: {error}")))?;
-    channel
-        .exec(true, command)
-        .await
-        .map_err(|error| AppError::Ssh(format!("monitor.exec: {error}")))?;
-
     let collect = async {
+        let mut channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|error| AppError::Ssh(format!("monitor.channel: {error}")))?;
+        channel
+            .exec(true, command)
+            .await
+            .map_err(|error| AppError::Ssh(format!("monitor.exec: {error}")))?;
+
         let mut output = Vec::new();
         while let Some(message) = channel.wait().await {
             match message {
-                ChannelMsg::Data { data } => output.extend_from_slice(&data),
-                ChannelMsg::Eof | ChannelMsg::Close => break,
+                ChannelMsg::Data { data } => {
+                    if output.len().saturating_add(data.len()) > 8 * 1024 * 1024 {
+                        let _ = channel.close().await;
+                        return Err(AppError::Ssh("monitor.outputLimit".into()));
+                    }
+                    output.extend_from_slice(&data);
+                }
+                ChannelMsg::Close => break,
                 _ => {}
             }
         }
-        output
+        Ok::<_, AppError>(output)
     };
 
     let output = tokio::time::timeout(SAMPLE_TIMEOUT, collect)
         .await
-        .map_err(|_| AppError::Ssh("monitor.timeout".into()))?;
+        .map_err(|_| AppError::Ssh("monitor.timeout".into()))??;
 
     Ok(String::from_utf8_lossy(&output).into_owned())
 }
@@ -139,10 +192,18 @@ fn parse_kb(value: &str) -> u64 {
 }
 
 pub async fn sample(app: &AppHandle, session_id: &str) -> AppResult<RemoteStats> {
-    let raw = exec(app, session_id, SCRIPT).await?;
+    let _gate = app.state::<AppState>().monitor.gate(session_id).await?;
+    let raw = exec(app, session_id, &format!("{SCRIPT}\n{BASE_SCRIPT}")).await?;
     let cache = &app.state::<AppState>().monitor;
     let previous = cache.previous(session_id);
-    let (stats, counters) = parse_sample(&raw, &previous, Instant::now(), now_ms());
+    let (mut stats, counters) = parse_sample(&raw, &previous, Instant::now(), now_ms());
+    stats.processes = cache
+        .processes
+        .update(session_id, &raw, false)
+        .unwrap_or_default()
+        .into_iter()
+        .take(5)
+        .collect();
     cache.store(session_id, counters);
     Ok(stats)
 }
@@ -298,24 +359,43 @@ fn parse_process(line: &str) -> Option<RemoteProcess> {
         memory,
         rss,
         name: fields[4..].join(" "),
+        ..RemoteProcess::default()
     })
 }
 
-const PROCESS_SCRIPT: &str = r#"LANG=C
-ps -eo pid=,pcpu=,pmem=,rss=,comm= --sort=-pcpu | head -40
-"#;
-
 pub async fn processes(app: &AppHandle, session_id: &str) -> AppResult<Vec<RemoteProcess>> {
-    let raw = exec(app, session_id, PROCESS_SCRIPT).await?;
-    Ok(raw.lines().filter_map(parse_process).collect())
+    let _gate = app.state::<AppState>().monitor.gate(session_id).await?;
+    let cache = &app.state::<AppState>().monitor.processes;
+    if !cache.ready(session_id) {
+        let raw = exec(app, session_id, BASE_SCRIPT).await?;
+        cache.update(session_id, &raw, false)?;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    let raw = exec(
+        app,
+        session_id,
+        &format!("{BASE_SCRIPT}\n{OPTIONAL_SCRIPT}"),
+    )
+    .await?;
+    cache.update(session_id, &raw, true)
 }
 
-pub async fn kill(app: &AppHandle, session_id: &str, pid: u32) -> AppResult<()> {
+pub async fn kill(
+    app: &AppHandle,
+    session_id: &str,
+    pid: u32,
+    expected_start_ticks: Option<u64>,
+) -> AppResult<()> {
     if pid <= 1 {
         return Err(AppError::Ssh("monitor.killProtected".into()));
     }
-    let output = exec(app, session_id, &format!("kill -TERM {pid} 2>&1")).await?;
-    if output.trim().is_empty() {
+    let guard = expected_start_ticks.map(|start| format!(
+        "line=$(cat /proc/{pid}/stat 2>/dev/null); rest=${{line##*) }}; set -- $rest; [ \"${{20}}\" = \"{start}\" ] || {{ echo monitor.processChanged; exit 1; }}; "
+    )).unwrap_or_default();
+    let output = exec(app, session_id, &format!("{guard}kill -TERM {pid} 2>&1")).await?;
+    if output.trim() == "monitor.processChanged" {
+        Err(AppError::Ssh("monitor.processChanged".into()))
+    } else if output.trim().is_empty() {
         Ok(())
     } else {
         Err(AppError::Ssh(format!(
