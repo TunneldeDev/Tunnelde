@@ -291,6 +291,7 @@ export interface SshConnectRequest {
 export interface SshDataPayload {
   sessionId: string;
   data: string;
+  sequence: number;
 }
 
 export interface SshClosedPayload {

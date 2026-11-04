@@ -547,6 +547,11 @@ pub fn ssh_attach(app: AppHandle, session_id: String) -> AppResult<()> {
 }
 
 #[tauri::command]
+pub async fn ssh_detach(app: AppHandle, session_id: String) -> AppResult<u64> {
+    app.state::<AppState>().ssh.detach(&session_id).await
+}
+
+#[tauri::command]
 pub fn ssh_write(app: AppHandle, session_id: String, data: String) -> AppResult<()> {
     ssh::write(&app, &session_id, &data)
 }
