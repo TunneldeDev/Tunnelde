@@ -50,6 +50,7 @@ export const PORTABLE_SETTING_KEYS = [
   "filesSortBy",
   "filesSortDirection",
   "transferOptimization",
+  "transferCompression",
   "transferConcurrency",
   "transferChunkKib",
   "transferRequests",

@@ -12,9 +12,14 @@ mod protocol_tests;
 /// Dedicated data channels keep explicit-offset requests separate from metadata
 /// operations. Unlike AsyncRead prefetch, these never read past a segment boundary.
 pub(super) struct DataSession {
-    raw: RawSftpSession,
+    backend: Backend,
     read_size: usize,
     write_size: usize,
+}
+
+enum Backend {
+    Sftp(RawSftpSession),
+    Compressed(super::compressed::Session),
 }
 
 impl DataSession {
@@ -55,13 +60,34 @@ impl DataSession {
             .max(1) as usize;
         raw.set_limits(limits);
         Ok(Self {
-            raw,
+            backend: Backend::Sftp(raw),
             read_size,
             write_size,
         })
     }
 
-    async fn connect(app: &AppHandle, session: &str) -> AppResult<Self> {
+    async fn connect(
+        app: &AppHandle,
+        session: &str,
+        compress: bool,
+        sftp: &SftpSession,
+    ) -> AppResult<Self> {
+        if compress {
+            if let Ok(Ok(worker)) = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                super::compressed::Session::connect(app, session, sftp),
+            )
+            .await
+            {
+                tracing::debug!("Using adaptive compressed SSH transfer channel");
+                return Ok(Self {
+                    backend: Backend::Compressed(worker),
+                    read_size: 256 * 1024,
+                    write_size: 256 * 1024,
+                });
+            }
+            tracing::debug!("Compression worker unavailable; using SFTP data channel");
+        }
         tokio::time::timeout(std::time::Duration::from_secs(10), async {
             let channel = app
                 .state::<AppState>()
@@ -79,6 +105,53 @@ impl DataSession {
         .await
         .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
     }
+
+    async fn open(&self, path: &str, write: bool) -> AppResult<String> {
+        match &self.backend {
+            Backend::Compressed(worker) => worker.open(path, write).await,
+            Backend::Sftp(raw) => Ok(raw
+                .open(
+                    path,
+                    if write {
+                        OpenFlags::WRITE
+                    } else {
+                        OpenFlags::READ
+                    },
+                    russh_sftp::protocol::FileAttributes::empty(),
+                )
+                .await
+                .map_err(map_sftp)?
+                .handle),
+        }
+    }
+    async fn close(&self, handle: &str) -> AppResult<()> {
+        match &self.backend {
+            Backend::Compressed(worker) => worker.close(handle).await,
+            Backend::Sftp(raw) => {
+                raw.close(handle).await.map_err(map_sftp)?;
+                Ok(())
+            }
+        }
+    }
+    async fn read(&self, handle: &str, offset: u64, length: usize) -> AppResult<Vec<u8>> {
+        match &self.backend {
+            Backend::Compressed(worker) => worker.read(handle, offset, length).await,
+            Backend::Sftp(raw) => Ok(raw
+                .read(handle, offset, length as u32)
+                .await
+                .map_err(map_sftp)?
+                .data),
+        }
+    }
+    async fn write(&self, handle: &str, offset: u64, data: Vec<u8>) -> AppResult<()> {
+        match &self.backend {
+            Backend::Compressed(worker) => worker.write(handle, offset, data).await,
+            Backend::Sftp(raw) => {
+                raw.write(handle, offset, data).await.map_err(map_sftp)?;
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -88,13 +161,51 @@ pub(super) struct Sessions {
 }
 
 impl Sessions {
-    pub async fn open(app: &AppHandle, source: &Endpoint, target: &Endpoint) -> AppResult<Self> {
+    pub async fn open(
+        app: &AppHandle,
+        source: &Endpoint,
+        target: &Endpoint,
+        settings: &crate::settings::Settings,
+        source_sftp: Option<&SftpSession>,
+        target_sftp: Option<&SftpSession>,
+        total_size: u64,
+    ) -> AppResult<Self> {
+        // Directory tasks share the channel and use their combined payload size.
+        // Tiny standalone transfers avoid the helper startup entirely.
+        let enabled = settings.transfer_optimization
+            && settings.transfer_compression
+            && total_size >= 256 * 1024;
+        let compress = enabled
+            && matches!(
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(5),
+                    super::compressed::worthwhile(source, source_sftp),
+                )
+                .await,
+                Ok(Ok(true))
+            );
         let source = match &source.session {
-            Some(id) => Some(Arc::new(DataSession::connect(app, id).await?)),
+            Some(id) => Some(Arc::new(
+                DataSession::connect(
+                    app,
+                    id,
+                    compress,
+                    source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                )
+                .await?,
+            )),
             None => None,
         };
         let target = match &target.session {
-            Some(id) => Some(Arc::new(DataSession::connect(app, id).await?)),
+            Some(id) => Some(Arc::new(
+                DataSession::connect(
+                    app,
+                    id,
+                    compress,
+                    target_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                )
+                .await?,
+            )),
             None => None,
         };
         Ok(Self { source, target })
@@ -112,10 +223,9 @@ pub(super) struct Files<'a> {
 
 async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>) -> AppResult<()> {
     if let (Some(session), Some(handle)) = (session, handle) {
-        tokio::time::timeout(std::time::Duration::from_secs(5), session.raw.close(handle))
+        tokio::time::timeout(std::time::Duration::from_secs(5), session.close(&handle))
             .await
-            .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
-            .map_err(map_sftp)?;
+            .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??;
     }
     Ok(())
 }
@@ -141,36 +251,17 @@ impl<'a> Files<'a> {
         target: &'a Endpoint,
     ) -> AppResult<Self> {
         let source_handle = match &sessions.source {
-            Some(session) => Some(
-                session
-                    .raw
-                    .open(
-                        &source.path,
-                        OpenFlags::READ,
-                        russh_sftp::protocol::FileAttributes::empty(),
-                    )
-                    .await
-                    .map_err(map_sftp)?
-                    .handle,
-            ),
+            Some(session) => Some(session.open(&source.path, false).await?),
             None => None,
         };
         let target_handle = match &sessions.target {
-            Some(session) => match session
-                .raw
-                .open(
-                    &target.path,
-                    OpenFlags::WRITE,
-                    russh_sftp::protocol::FileAttributes::empty(),
-                )
-                .await
-            {
-                Ok(file) => Some(file.handle),
+            Some(session) => match session.open(&target.path, true).await {
+                Ok(handle) => Some(handle),
                 Err(error) => {
                     if let (Some(session), Some(handle)) = (&sessions.source, &source_handle) {
-                        let _ = session.raw.close(handle.as_str()).await;
+                        let _ = session.close(handle).await;
                     }
-                    return Err(map_sftp(error));
+                    return Err(error);
                 }
             },
             None => None,
@@ -214,17 +305,13 @@ impl<'a> Files<'a> {
             while data.len() < length {
                 let size = (length - data.len()).min(session.read_size);
                 let reply = interruptible(Some(stop), async {
-                    session
-                        .raw
-                        .read(handle, offset + data.len() as u64, size as u32)
-                        .await
-                        .map_err(map_sftp)
+                    session.read(handle, offset + data.len() as u64, size).await
                 })
                 .await?;
-                if reply.data.is_empty() || reply.data.len() > size {
+                if reply.is_empty() || reply.len() > size {
                     return Err(AppError::validation("sftp.resumeSourceChanged"));
                 }
-                data.extend_from_slice(&reply.data);
+                data.extend_from_slice(&reply);
             }
             data
         };
@@ -235,14 +322,12 @@ impl<'a> Files<'a> {
                 let size = (data.len() - written).min(session.write_size);
                 interruptible(Some(stop), async {
                     session
-                        .raw
                         .write(
                             handle,
                             offset + written as u64,
                             data[written..written + size].to_vec(),
                         )
-                        .await
-                        .map_err(map_sftp)?;
+                        .await?;
                     Ok(())
                 })
                 .await?;

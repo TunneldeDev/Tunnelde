@@ -144,6 +144,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
       label: "settings.groups.transfers",
       keys: [
         "transferOptimization",
+        "transferCompression",
         "transferConcurrency",
         "transferChunkKib",
         "transferRequests",
@@ -354,6 +355,10 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   toggle("recordTerminalHistory", "terminal", "settings.recordTerminalHistoryHint"),
   toggle("filesShowHidden", "files", "settings.filesShowHiddenHint"),
   toggle("transferOptimization", "files", "settings.transferOptimizationHint"),
+  {
+    ...toggle("transferCompression", "files", "settings.transferCompressionHint"),
+    dependsOn: "transferOptimization",
+  },
   ...(["transferUploadLimitKib", "transferDownloadLimitKib"] as const).map((key) => ({
     ...numeric(key, "files", 0, 1_048_576, 1, "KiB/s"),
     hint: "settings.transferSpeedLimitHint" as const,

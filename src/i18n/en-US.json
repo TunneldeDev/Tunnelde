@@ -356,7 +356,9 @@
     "transferDownloadLimitKib": "Total download speed limit",
     "transferSpeedLimitHint": "KiB/s across all concurrent file transfers. 0 means unlimited. Changes apply to running transfers, even when transfer optimization is off.",
     "fileIconTheme": "File icon theme",
-    "fileIconThemeHint": "Installed icon themes apply to local and remote files. Automatic uses the first available theme without running plugin code."
+    "fileIconThemeHint": "Installed icon themes apply to local and remote files. Automatic uses the first available theme without running plugin code.",
+    "transferCompression": "Compress transfer data automatically",
+    "transferCompressionHint": "Automatically compress data when it reduces network traffic. Small transfers and unsupported hosts use standard transfer; no remote installation is required. Applies when a transfer starts or resumes."
   },
   "updates": {
     "installInProgress": "Wait for the current update installation to finish before changing its channel or source.",
@@ -634,6 +636,8 @@
     "cleaningTransfer": "Cleaning temporary files…",
     "pausingTransfer": "Pausing…",
     "transferTimedOut": "The server did not respond in time. Reconnect and try again.",
+    "compressionProtocol": "The compressed transfer stream was interrupted or invalid. Reconnect and resume; you can disable transfer compression in Settings → Files if it persists.",
+    "compressionWorker": "The remote host could not read or write this transfer block. Check the file permissions, then reconnect and resume. Transfer compression can be disabled in Settings → Files.",
     "backupRecoveryRequired": "A previous destination backup needs recovery. The backup and transfer record have been kept.",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",

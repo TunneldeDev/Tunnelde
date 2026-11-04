@@ -29,6 +29,12 @@ segment size and per-segment request depth default to Automatic and can be overr
 individually. Turning optimization off retains the manual choices for later use. Changes
 apply when starting/resuming a transfer; see [transfer behavior](network-storage.md#transfer-performance).
 
+Automatic transfer compression also defaults to enabled. It compresses blocks only
+when this saves traffic, skips tiny tasks and falls back to SFTP on unsupported
+hosts without installing software. The compression toggle is independent of manual
+segment choices and is included in exported profiles. Turning optimization off
+also disables compression until optimization is enabled again.
+
 Total upload/download limits default to `0` (unlimited), use KiB/s, and apply live
 across concurrent tasks. A running transfer's gauge button opens a temporary task
 ceiling; the total ceiling still applies. Both preferences travel with profiles.
