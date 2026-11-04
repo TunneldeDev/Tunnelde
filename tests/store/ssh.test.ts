@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SshSession } from "@/lib/api/types";
 
-const { apiMock, closeSession } = vi.hoisted(() => ({
+const { apiMock, closeSession, forgetMonitor } = vi.hoisted(() => ({
   apiMock: {
     sshConnect: vi.fn(),
     sshDisconnect: vi.fn(),
@@ -9,9 +9,11 @@ const { apiMock, closeSession } = vi.hoisted(() => ({
     markHostUsed: vi.fn(),
   },
   closeSession: vi.fn(),
+  forgetMonitor: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
 vi.mock("@/store/workspace", () => ({ useWorkspace: { getState: () => ({ closeSession }) } }));
+vi.mock("@/store/monitor", () => ({ useMonitor: { getState: () => ({ forget: forgetMonitor }) } }));
 vi.mock("@/store/toasts", () => ({ toast: vi.fn() }));
 import { useSsh } from "@/store/ssh";
 
@@ -38,6 +40,34 @@ beforeEach(() => {
 });
 
 describe("SSH session lifecycle", () => {
+  it("reconciles missed close notifications from an authoritative session snapshot", async () => {
+    const connected = { ...session, id: "still-connected" };
+    useSsh.setState({ sessions: [session, connected] });
+    apiMock.sshSessions.mockResolvedValue([connected]);
+    await useSsh.getState().refresh();
+    expect(useSsh.getState().sessions).toEqual([connected]);
+    expect(closeSession).toHaveBeenCalledExactlyOnceWith(session.id);
+    expect(forgetMonitor).toHaveBeenCalledExactlyOnceWith(session.id);
+    expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+  });
+
+  it("does not resurrect sessions from a slower, older refresh", async () => {
+    let resolveOld!: (sessions: SshSession[]) => void;
+    apiMock.sshSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    const old = useSsh.getState().refresh();
+    apiMock.sshSessions.mockResolvedValueOnce([]);
+    await useSsh.getState().refresh();
+    resolveOld([session]);
+    await old;
+    expect(useSsh.getState().sessions).toEqual([]);
+    expect(closeSession).toHaveBeenCalledExactlyOnceWith(session.id);
+  });
+
   it("updates all connection titles after renaming a host and ignores an older refresh", async () => {
     let resolveSnapshot!: (sessions: SshSession[]) => void;
     const others = { ...session, id: "other-host", hostId: "other", title: "Other" };

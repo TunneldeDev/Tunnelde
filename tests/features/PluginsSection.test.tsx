@@ -42,11 +42,38 @@ beforeEach(async () => {
 });
 
 describe("installed plugins sidebar", () => {
+  it("pages large lists and resets to the first page when filtering tags", async () => {
+    mock.api.pluginsList.mockResolvedValue(
+      Array.from({ length: 55 }, (_, i) => ({
+        ...plugin,
+        id: `p${i}`,
+        name: `Plugin ${i}`,
+        tags: [i % 2 ? "tools" : "preview"],
+      })),
+    );
+    render(<PluginsSidebar />);
+    await screen.findByText("Plugin 0", { selector: "strong" });
+    expect(document.querySelectorAll(".extension-row").length).toBe(24);
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getByText("Plugin 24", { selector: "strong" })).toBeTruthy();
+    expect(screen.queryByText("Plugin 0", { selector: "strong" })).toBeNull();
+    fireEvent.click(screen.getAllByRole("button", { name: "Filter tag: preview" })[0]!);
+    expect(useMarketplace.getState()).toMatchObject({ tag: "preview", page: 0 });
+    expect(screen.getByText("Plugin 0", { selector: "strong" })).toBeTruthy();
+    expect(screen.queryByText("Plugin 1", { selector: "strong" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "Search plugins" }), {
+      target: { value: "tag:preview p54" },
+    });
+    expect(document.querySelectorAll(".extension-row").length).toBe(1);
+    expect(screen.getByText("Plugin 54", { selector: "strong" })).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Plugin pages" })).toBeNull();
+  });
+
   it("distinguishes theme packs and previews their themes before local installation", async () => {
     mock.api.pluginsList.mockResolvedValue([themePack]);
     mock.api.pluginInspect.mockResolvedValue(themePack);
     render(<PluginsSidebar />);
-    expect(await screen.findByText("Theme pack")).toBeTruthy();
+    expect(await screen.findByText("Declarative pack")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Install plugin" }));
     const dialog = screen.getByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: /archive/i }));

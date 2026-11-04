@@ -263,7 +263,7 @@ test("immutable source reads retry transient GitHub server errors only", async (
 });
 
 test("stable and beta transforms update all eight versions, are idempotent, and reject missing metadata", () => {
-  for (const version of ["0.26.2", "0.26.2-beta.1", "0.26.2-beta.12.1"]) {
+  for (const version of ["0.26.2", "0.26.2-beta.1", "0.26.2-beta.2"]) {
     const updated = versionContents(versionFiles, version);
     for (const path of VERSION_PATHS) assert.ok(updated[path].includes(version), path);
     assert.deepEqual(versionContents(updated, version), updated);
@@ -766,8 +766,8 @@ test("Beta uses versioned manifests, its own immutable tag and does not become l
 test("beta sequences advance numerically using tags even after releases are retired", async () => {
   const f = fixture({
     refs: {
-      "tags/v0.26.2-beta.9": baseline,
-      "tags/v0.26.2-beta.10": oldHead,
+      "tags/v0.26.2-beta.7": baseline,
+      "tags/v0.26.2-beta.8": oldHead,
       "tags/v0.26.2-beta.99-invalid": main,
     },
     messages: {
@@ -775,8 +775,8 @@ test("beta sequences advance numerically using tags even after releases are reti
       [oldHead]: `Release-source: ${oldHead}`,
     },
   });
-  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.11");
-  assert.equal(f.references["tags/v0.26.2-beta.10"], oldHead);
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.9");
+  assert.equal(f.references["tags/v0.26.2-beta.8"], oldHead);
 });
 
 test("each target stable version starts its own beta sequence at one", async () => {
@@ -787,19 +787,60 @@ test("each target stable version starts its own beta sequence at one", async () 
   }
 });
 
-test("legacy beta tags reserve their original sequence and remain recoverable", async () => {
-  const tag = "v0.26.2-beta.2.1";
-  const f = fixture({
-    refs: { [`tags/${tag}`]: oldHead },
-    messages: { [oldHead]: `Release-source: ${oldHead}` },
-  });
-  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.3");
+test("beta.9 can be retried but a new source cannot allocate beta.10 or recycle historical numbers", async () => {
+  for (const suffix of [".9", ".10", ".11", "12", ".99.2"]) {
+    const tag = `v0.26.2-beta${suffix}`;
+    const f = fixture({
+      refs: { [`tags/${tag}`]: oldHead },
+      messages: { [oldHead]: `Release-source: ${oldHead}` },
+    });
+    await assert.rejects(
+      prepareBeta({ ...f, plan: await planDevelopment(f) }),
+      /sequence exhausted/,
+    );
+    assert.equal(
+      f.calls.some((call) => call.commit || call.tree || call.createRef || call.createRelease),
+      false,
+    );
+    assert.equal(f.references[`tags/${tag}`], oldHead);
+  }
+  const tag = "v0.26.2-beta.9";
   const retry = fixture({ refs: { [`tags/${tag}`]: generated } });
   assert.equal(await prepareBeta({ ...retry, plan: await planDevelopment(retry) }), tag);
   assert.equal(
     retry.calls.some((call) => call.commit),
     false,
   );
+});
+
+test("all publishing entry points reject out-of-policy Beta tags before mutation", async () => {
+  for (const tag of ["v0.26.2-beta.10", "v0.26.2-beta.11", "v0.26.2-beta12", "v0.26.2-beta.2.1"]) {
+    for (const operation of [prepareTaggedRelease, publishRelease]) {
+      const f = publicationFixture(tag);
+      await assert.rejects(operation({ ...f, tag }), /Release policy/);
+      assert.deepEqual(f.calls, []);
+    }
+    const f = fixture({ refs: { [`tags/${tag}`]: generated } });
+    await assert.rejects(
+      ensureRelease({ ...f, tag, sha: generated, body: "Notes" }),
+      /Release policy/,
+    );
+    await assert.rejects(prepareBeta({ ...f, plan: await planDevelopment(f) }), /Release policy/);
+    assert.equal(
+      f.calls.some((call) => call.commit || call.tree || call.createRef || call.createRelease),
+      false,
+    );
+  }
+});
+
+test("historical multipart Beta tags reserve their original sequence", async () => {
+  const tag = "v0.26.2-beta.2.1";
+  const f = fixture({
+    refs: { [`tags/${tag}`]: oldHead },
+    messages: { [oldHead]: `Release-source: ${oldHead}` },
+  });
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.3");
+  assert.equal(f.references[`tags/${tag}`], oldHead);
 });
 
 test("an interrupted preparation resumes the reserved tag and a published source is skipped", async () => {
@@ -908,7 +949,7 @@ function publicationFixture(tag, options = {}) {
 }
 
 test("tagged Beta publication retains historical releases and uses its full version title", async () => {
-  const tag = "v0.26.2-beta.12.1";
+  const tag = "v0.26.2-beta.2";
   const f = publicationFixture(tag, {
     releases: [
       { id: 2, name: "Nightly", tag_name: "v0.26.2-beta.11.1", draft: false, prerelease: true },
@@ -939,7 +980,7 @@ test("a tagged snapshot can publish after dev advances, but divergent history is
 });
 
 test("older Beta recovery preserves newer versions and cannot change latest stable", async () => {
-  const tag = "v0.26.2-beta.12.1";
+  const tag = "v0.26.2-beta.2";
   const f = publicationFixture(tag, {
     releases: [
       {
@@ -1019,6 +1060,22 @@ test("Nightly after Beta extends that milestone and skips a Beta's exact source"
     unchanged.calls.some((call) => call.commit || call.createRelease),
     false,
   );
+});
+
+test("Nightly ignores out-of-policy Beta anchors and retains valid milestone history", async () => {
+  const beta = "v0.26.2-beta.9";
+  const f = fixture({
+    refs: {
+      [`tags/${beta}`]: oldHead,
+      "tags/v0.26.2-beta.11": baseline,
+      "tags/v0.26.2-beta12": main,
+    },
+    messages: { [oldHead]: `Release-source: ${baseline}` },
+  });
+  const tag = await prepareNightly({ ...f, plan: await planDevelopment(f) });
+  assert.equal(tag, `v0.26.2-beta.9.d.1.g${dev.slice(0, 12)}`);
+  assert.equal(f.references[`tags/${beta}`], oldHead);
+  assert.equal(f.references["tags/v0.26.2-beta.10"], undefined);
 });
 
 test("Nightly publication is a versioned public prerelease and leaves Beta history intact", async () => {

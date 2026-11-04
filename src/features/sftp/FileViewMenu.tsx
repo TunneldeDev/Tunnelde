@@ -20,7 +20,13 @@ export function FileViewMenu({ view, onChange, onReset }: FileViewMenuProps) {
     <Menu
       label={t("sftp.viewOptions")}
       items={[
+        ...(["details", "columns"] as const).map((layout) => ({
+          label: t(layout === "details" ? "sftp.detailsView" : "sftp.columnsView"),
+          checked: (view.filesLayout ?? "details") === layout,
+          onSelect: () => onChange({ filesLayout: layout }),
+        })),
         {
+          separatorBefore: true,
           label: t("sftp.showHidden"),
           icon: check(view.filesShowHidden),
           onSelect: () => onChange({ filesShowHidden: !view.filesShowHidden }),

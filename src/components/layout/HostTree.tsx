@@ -5,16 +5,17 @@ import {
   LoaderCircle,
   Pencil,
   Plus,
-  Search,
   Server,
   Star,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useViewState } from "@/lib/session/viewState";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { Input } from "@/components/ui/form/Field";
+import { HostSearch } from "@/components/layout/HostSearch";
+import { parseHostQuery, matchesHostQuery } from "@/lib/hosts/query";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn, hostSubtitle } from "@/lib/text/format";
@@ -35,7 +36,7 @@ const HOST_MIME = "application/x-tunnelde-host";
 function activateHost(host: Host): void {
   switch (useSettings.getState().settings.hostActivation) {
     case "details":
-      useWorkspace.getState().openHost(host);
+      useWorkspace.getState().openHost(host, { preview: false });
       return;
     case "edit":
       useDialogs.getState().openHost(host);
@@ -52,21 +53,9 @@ interface Filtered {
   groups: Array<{ group: Group; hosts: Host[]; children: Array<{ group: Group; hosts: Host[] }> }>;
 }
 
-function matches(host: Host, query: string): boolean {
-  if (!query) {
-    return true;
-  }
-  const needle = query.toLowerCase();
-  return (
-    host.name.toLowerCase().includes(needle) ||
-    host.host.toLowerCase().includes(needle) ||
-    host.username.toLowerCase().includes(needle) ||
-    host.tags.some((tag) => tag.toLowerCase().includes(needle))
-  );
-}
-
 function buildTree(groups: Group[], hosts: Host[], query: string): Filtered {
-  const visible = hosts.filter((host) => matches(host, query));
+  const filter = parseHostQuery(query);
+  const visible = hosts.filter((host) => matchesHostQuery(host, filter));
   const rest = visible.filter((host) => !host.favorite);
   const byGroup = new Map<string, Host[]>();
   for (const host of rest) {
@@ -406,23 +395,15 @@ export function HostTree() {
   const confirm = useDialogs((state) => state.confirm);
   const deleteGroup = useHosts((state) => state.deleteGroup);
   const moveToGroup = useHosts((state) => state.moveToGroup);
-  const [query, setQuery] = useState("");
-  const [tagFilter, setTagFilter] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useViewState("hosts:query", "");
+  const [collapsed, setCollapsed] = useViewState<Set<string>>("hosts:collapsed", new Set());
 
   const tags = useMemo(
     () => Array.from(new Set(hosts.flatMap((host) => host.tags))).sort(),
     [hosts],
   );
-  const visibleHosts = useMemo(
-    () => (tagFilter ? hosts.filter((host) => host.tags.includes(tagFilter)) : hosts),
-    [hosts, tagFilter],
-  );
-  const tree = useMemo(
-    () => buildTree(groups, visibleHosts, query.trim()),
-    [groups, visibleHosts, query],
-  );
-  const searching = query.trim().length > 0 || !!tagFilter;
+  const tree = useMemo(() => buildTree(groups, hosts, query.trim()), [groups, hosts, query]);
+  const searching = query.trim().length > 0;
   const canReorder = !searching;
 
   const toggle = (id: string) => {
@@ -447,7 +428,7 @@ export function HostTree() {
     const row = rows.find((item) => item.dataset.hostId === focusId);
     row?.scrollIntoView?.({ block: "nearest" });
     if (focusId && !row) setFocusId(null);
-  }, [focusId, query, tagFilter, collapsed, hosts]);
+  }, [focusId, query, collapsed, hosts]);
 
   const dropHandlers = (groupId: string | null, favorite = false) => ({
     onDragOver: (event: React.DragEvent<HTMLElement>) => {
@@ -536,32 +517,8 @@ export function HostTree() {
         <SidebarDockControls view="hosts" />
       </div>
       <div className="sidebar__search">
-        <div className="sidebar__filter">
-          <Search size={13} aria-hidden="true" />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("sidebar.search")}
-            aria-label={t("sidebar.search")}
-            spellCheck={false}
-          />
-        </div>
+        <HostSearch query={query} tags={tags} onChange={setQuery} />
       </div>
-
-      {tags.length > 0 ? (
-        <div className="sidebar__tags">
-          {tags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className={cn("sidebar__tag", tagFilter === tag && "is-active")}
-              onClick={() => setTagFilter(tagFilter === tag ? null : tag)}
-            >
-              {tag}
-            </button>
-          ))}
-        </div>
-      ) : null}
 
       <div
         ref={bodyRef}

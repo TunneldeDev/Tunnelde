@@ -28,7 +28,7 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    **Publish version** builds Windows, Linux, Apple Silicon and Intel macOS packages.
 6. Every build first shares one staging draft. Only after all desktop artifacts, signatures and
    `latest.json` pass verification does it become public. Titles are the complete version tag,
-   e.g. `v0.27.1-beta.4` or `v0.27.1`. Beta and Nightly always use `prerelease: true` and
+   e.g. `v0.28.0-beta.3` or `v0.27.1`. Beta and Nightly always use `prerelease: true` and
    `make_latest: false`. Stable uses `/releases/latest/`; an older recovered stable version cannot
    move that pointer backwards. Historical releases and immutable tags are retained.
 7. After preparing a stable tag, refresh development automation for work accumulated since the
@@ -44,7 +44,7 @@ an interrupted draft is reused. Tagged releases and daily development snapshots 
 Versions contain the target stable base, the commit distance and the source hash:
 
 - Before a Beta milestone: `v0.27.1-alpha.1.d.3.g7ec5d7a8c51c`.
-- After `v0.27.1-beta.4`: `v0.27.1-beta.4.d.2.g0123456789ab`.
+- After `v0.28.0-beta.3`: `v0.28.0-beta.3.d.2.g0123456789ab`.
 - No commits since that Beta: skip Nightly rather than build identical code again.
 
 The most recent applicable Beta is the anchor; its source must be an ancestor of current dev.
@@ -58,15 +58,29 @@ all four desktop targets using Tunnelde's signed updater packages.
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
 Explicit Beta versions use the same next stable base with a unique sequence suffix.
-The suffix is `beta.N`, counted separately for each target stable version. For example,
-`0.26.2-beta.1`, `0.26.2-beta.2`, then stable `0.26.2`; the first beta for the next patch
-is `0.26.3-beta.1`. A change to the target minor/major version also starts at `beta.1`.
-Automation reads immutable tags rather than the workflow's global run counter or the
-display title of a release. Failed builds reserve their number; retrying the same source
-reuses its existing tag and draft without changing published packages. Legacy tags such
-as `0.26.2-beta.2.1` remain valid and reserve sequence 2, so the next new source for that
-same target uses `0.26.2-beta.3`. Update discovery compares complete semantic versions, so
-a larger target version supersedes older betas even when its sequence restarts at 1.
+The suffix is **`beta.N`, where N is 1 through 9**. Do not publish `beta.10`
+or higher. For example, `0.28.0-beta.1`, `0.28.0-beta.2`, then stable `0.28.0`;
+the first Beta for the next target is `0.28.1-beta.1`. Before a tenth milestone
+would be needed, review and publish the stable promotion PR. If the release is
+not ready, fix it and use Nightly for intermediate testing; automation stops
+rather than publishing an unreviewed stable release or recycling a number.
+
+Allocation reads tags rather than workflow run counters or display titles.
+Failed builds reserve their number. Retrying the same permitted source/tag
+reuses its draft, including beta.9. Historical formats remain readable and
+reserve their original sequence, but cannot be newly published or recovered
+outside the current policy. New target versions restart at beta.1.
+
+Updates compare semantic versions across all pages and include stable releases
+in the Beta channel. Users on historical `0.28.0-beta.10` or `.11` can therefore
+update to `0.28.0` without a compatibility build. Do not rename a release or tag
+while keeping binaries with a different embedded version. Exceptional removal
+of obsolete releases requires explicit authorization, a metadata/tag backup,
+and a verified public replacement with installers and its updater manifest.
+Normal publication retains history and never moves existing tags.
+
+The maintained version policy is available in [English](versioning.en-us.md)
+and [简体中文](versioning.zh-cn.md).
 
 All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
 and lockfiles, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous
@@ -169,13 +183,20 @@ and displayed in a collapsed Markdown section.
   on Beta tags. Those snapshots are excluded from the public Beta channel.
 - Discovery follows GitHub release pagination and compares SemVer rather than titles or list order.
   Drafts, incomplete releases and mismatched prerelease flags are excluded. A source outage is an
-  error rather than an up-to-date result. Discovery is bounded to ten pages; an incomplete scan fails.
+  error rather than an up-to-date result. API discovery is bounded to ten pages.
+- If the GitHub API is rate limited or unavailable, Beta/Nightly checks use GitHub's public Atom
+  feed of recent published releases through the same configured proxy. This fallback covers recent
+  entries, not the full release history. It compares SemVer and verifies each selected tag against
+  its `latest.json`; stale entries whose manifest returns 404 are skipped. Network errors and invalid
+  manifests still fail the check. It never disables HTTPS, version checks or package signatures.
+  Timeout, connection and API quota failures have distinct messages.
 - Switching back to Stable never automatically downgrades a newer prerelease. It waits for a stable
   version greater than the installed build. All source/channel changes invalidate a previous update
   selection, and cannot occur during an installation.
 
-Fresh installations default to their own channel: stable, Beta or Nightly. Saved preferences always
-take priority when upgrading an existing installation.
+Fresh installations always default to Stable, including Beta and Nightly builds. Public beta and
+Development require an explicit selection. Saved preferences take priority when upgrading an
+existing installation.
 
 The official source is **GitHub**. There is no bundled third-party mirror. A **custom HTTPS
 source** can serve standard Tauri manifests at a template such as

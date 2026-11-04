@@ -1,11 +1,15 @@
 # Settings
 
+File icon themes are available under **Files → Browsing → File icon theme**. Automatic
+uses an installed icon theme; Plain file icons disables plugin icons. A specific selection
+is preserved in profiles and exports, even if that package is temporarily unavailable.
+
 ## Application updates
 
 **Settings → Updates** contains the current version, checks, installation progress and
 collapsible release notes. All update actions use this section instead of opening a new
 page. Choose **Stable**, **Public beta (Beta)** or **Development (Nightly)**, and **GitHub** or a compatible custom
-HTTPS source. Default: Stable for stable builds, Public beta for new Beta installations, Nightly for new Nightly installations,
+HTTPS source. Default: Stable for all builds, including Beta and Nightly installations,
 GitHub source, automatic checks once a day, manual download/installation. Existing saved
 channel choices are preserved. Every-startup and weekly checks are also available.
 
@@ -17,6 +21,30 @@ page. Source selection and per-feature proxies are separate preferences. See
 
 切换到正式版不会自动降级当前 beta；软件会等待版本号更新的正式版。
 更新检查不自动下载安装包，安装会重启应用。更新源、渠道和检查频率也随设置 profile 保存。
+
+## File transfers
+
+File transfer optimization is enabled under **Settings → Files → Transfers**. Concurrency,
+segment size and per-segment request depth default to Automatic and can be overridden
+individually. Turning optimization off retains the manual choices for later use. Changes
+apply when starting/resuming a transfer; see [transfer behavior](network-storage.md#transfer-performance).
+
+Automatic transfer compression also defaults to enabled. It compresses blocks only
+when this saves traffic, skips tiny tasks and falls back to SFTP on unsupported
+hosts without installing software. The compression toggle is independent of manual
+segment choices and is included in exported profiles. Turning optimization off
+also disables compression until optimization is enabled again.
+
+Total upload/download limits default to `0` (unlimited), use KiB/s, and apply live
+across concurrent tasks. A running transfer's gauge button opens a temporary task
+ceiling; the total ceiling still applies. Both preferences travel with profiles.
+
+Open **Transfers** in the status bar, or F1 → **Background transfers**, to inspect
+tasks from any page. Pin the list to keep it open while working. Drag its title to
+move it and its edges/corners to resize it. The layout is remembered across reopen,
+restart and tray restoration; Reset layout or double-clicking the title restores
+the default placement. See [transfer controls](network-storage.md#pause-and-resume-transfers)
+for keyboard adjustments and reconnect/cleanup behavior.
 
 ## Quick Access and plugin shortcuts
 
@@ -98,19 +126,19 @@ monitor panel. Windows uses compact window controls; macOS and Linux use the
 system title bar. Updates retain previously saved preferences. New fields receive
 their defaults without overwriting existing choices.
 
-| Category           | Controls                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| General            | Language, window title bar, close to tray on Windows/Linux, background Dock visibility on macOS         |
-| Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                 |
-| Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                           |
-| Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history |
-| Keyboard shortcuts | Search commands, record bindings, detect conflicts, disable bindings and restore defaults               |
-| Files              | Hidden entries, folders first, sort field/direction, directory preloading                               |
-| Text editor        | Word wrap, tab width, spellcheck                                                                        |
-| Monitoring         | Local and remote refresh interval                                                                       |
-| Network & proxies  | Named HTTP/SOCKS5 proxies, per-feature/plugin routing, credential storage and connection tests          |
-| Updates            | Automatic checks and access to the update page                                                          |
-| Advanced           | Custom CSS, data/log folders, full preference reset                                                     |
+| Category           | Controls                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| General            | Language, title bar, close to tray, release background WebView, lightweight mode, macOS Dock visibility         |
+| Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                         |
+| Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                                   |
+| Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history         |
+| Keyboard shortcuts | Search commands, record bindings, detect conflicts, disable bindings and restore defaults                       |
+| Files              | Hidden entries, folders first, sorting, directory preloading, icon themes, transfer tuning and bandwidth limits |
+| Text editor        | Word wrap, tab width, spellcheck                                                                                |
+| Monitoring         | Local and remote refresh interval                                                                               |
+| Network & proxies  | Named HTTP/SOCKS5 proxies, per-feature/plugin routing, credential storage and connection tests                  |
+| Updates            | Channel, source, check frequency, download/install progress and release notes                                   |
+| Advanced           | Custom CSS, individual/batch storage relocation, full preference reset                                          |
 
 Host-specific proxies and ordered jump hosts live in the host editor's collapsed
 **Proxy & jump hosts** section. Port forwards live on the host detail page. See
@@ -136,6 +164,41 @@ does not create another host.
 Workspace restoration restores tabs and layout on the next launch; it does not
 automatically reconnect SSH sessions.
 
+## Storage locations
+
+**Advanced → Storage locations** separates the database, installed plugins, plugin data
+and chats, managed SSH keys, managed Node runtimes, cache/temporary files, logs and remote
+deployment records. Choose an empty or new destination using the native folder picker.
+Select multiple categories and **Choose parent folder** to give each its own subfolder.
+Copying existing data is enabled by default; switching it off starts that category empty
+and is explicitly shown in the review. Review all source/destination paths before scheduling.
+
+Changes apply on the next full application start, before opening SQLite, log writers or
+plugin processes. Fully quit, including tray operation, and reopen after finishing active
+work. Closing only the window does not migrate data. Current resources continue to use
+their current locations until then. The settings page can cancel a scheduled plan.
+
+Migration checks path conflicts, nesting, available space on recognized local disks and
+unsupported links. It copies into separate staging directories, verifies SHA-256 for every
+file, and switches all selected locations only after every copy is ready. Originals remain
+as recovery copies; Tunnelde does not delete them. An interrupted publication is reused
+only when its contents still match the source. A conflicting destination is preserved and
+the app continues using original locations, with recovery details in Settings. Correct the
+conflict or cancel and select new empty destinations. Individual inventories are bounded to
+200,000 entries and 64 directory levels. Other processes should not write application data
+while it is being migrated.
+
+`storage.json` is a small bootstrap index in the original app-data directory. It retains
+pending changes and previous locations. Storage locations are machine-specific and are
+excluded from profiles and settings exports. `TUNNELDE_PLUGINS_DIR`, when set, owns the
+plugin location and disables relocation of that category in Settings.
+
+System keychain credentials, external key files, workspaces, transfer destinations and
+remote files are not relocated. The database and cache migrate only their named resources,
+not unrelated files in their original shared parent. Managed key and runtime references
+are adjusted when their copied destination exists. Plugin-owned absolute paths may require
+adjustment inside that plugin. User-authored directories are never merged or overwritten.
+
 Hosts, Plugins and Trusted Hosts can move from the sidebar into workspace tabs using
 their title drag handles or title menus. Drag a panel to a tab group or workspace edge
 to reorder or split it, then drag it back to the activity bar/sidebar or choose Return
@@ -144,11 +207,29 @@ icon hides and restores a docked panel while retaining its position, size and li
 The panel menu also provides Return to sidebar. Each pane can be locked as the destination
 for new pages, independently of keyboard focus.
 
-macOS retains the main window and sessions when its close button is used. **General →
+macOS keeps the application and sessions running when its close button is used. **General →
 Show in Dock while running in the background** defaults to on. With it off, closing
 the window removes its running Dock presence; use the menu-bar tray or launch the app
 again to restore it. Restoring returns normal Dock behavior. Minimizing retains the
 Dock icon, and Quit exits rather than hiding the window.
+
+**General → Release WebView while in tray** is on by default. After closing to the
+tray (automatic on macOS, opt-in on Windows/Linux), the application checkpoints its
+workspace and destroys the hidden window. Native SSH sessions, transfers, forwards
+and plugin processes continue; restoring from the tray, Dock or a second launch
+recreates the window. Terminal screens, scrollback, incomplete input, editor drafts
+and caret, file locations and view drafts remain in process memory. These snapshots
+are not saved to disk and do not survive Quit or a crash. In-flight view operations
+and dialogs defer suspension until they finish. If a checkpoint cannot be created,
+the hidden window stays alive to retain the user's work. Turning the setting off
+keeps the hidden WebView alive instead.
+
+**General → Lightweight mode** is off by default. Turning it on releases terminal
+GPU renderers, suppresses speculative directory preloads and sets local/remote
+monitor sampling to at least five seconds. Manual navigation, transfers and SSH
+connections continue normally. Existing renderer, preloading and sampling
+preferences are preserved and resume when lightweight mode is turned off. Both
+background preferences participate in settings export/import and named profiles.
 
 Plugins settings also provide restricted mode, per-plugin approval/revocation, runtime
 selection and marketplace sources. `--safe-mode` and `--restricted-mode` force restricted
@@ -190,3 +271,10 @@ not close sessions or discard editor drafts. Remote CPU, memory, network and dis
 read/write use timestamped timelines with labeled dashed scales and mouse/keyboard
 sample inspection. Missing disk samples are shown as unavailable rather than invented
 zero readings.
+
+## Remote process management
+
+The remote process manager supports automatic refresh, CPU/memory, disk I/O,
+available TCP/GPU telemetry, searchable user/group details and sortable, paginated
+rows. See the [English guide](monitoring.en-us.md) or
+[中文说明](monitoring.zh-cn.md) for permissions and metric definitions.

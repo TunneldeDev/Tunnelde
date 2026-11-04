@@ -42,6 +42,57 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("defaults bandwidth limits to unlimited and keeps them available without optimization", () => {
+    useNavigation.setState({ settingsSection: "files" });
+    render(<SettingsPage />);
+    const upload = row("transferUploadLimitKib").getByRole("spinbutton") as HTMLInputElement;
+    const download = row("transferDownloadLimitKib").getByRole("spinbutton") as HTMLInputElement;
+    expect(upload.value).toBe("0");
+    expect(download.value).toBe("0");
+    fireEvent.click(row("transferOptimization").getByRole("switch"));
+    expect(upload.disabled).toBe(false);
+    expect(download.disabled).toBe(false);
+    fireEvent.change(upload, { target: { value: "512" } });
+    fireEvent.keyDown(upload, { key: "Enter" });
+    expect(update).toHaveBeenCalledWith({ transferUploadLimitKib: 512 });
+  });
+
+  it("groups transfer optimization settings with automatic choices and disables overrides when off", async () => {
+    useNavigation.setState({ settingsSection: "files" });
+    render(<SettingsPage />);
+    expect(document.querySelector('[data-settings-group="transfers"]')).toBeTruthy();
+    const compression = row("transferCompression").getByRole("switch");
+    expect(compression.getAttribute("aria-checked")).toBe("true");
+    expect(row("transferOptimization").getByRole("switch").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    const concurrency = row("transferConcurrency").getByRole("button", {
+      name: "Concurrent segments",
+    });
+    expect(concurrency.textContent).toContain("Automatic");
+    fireEvent.click(concurrency);
+    expect(screen.getByRole("option", { name: "Automatic" })).toBeTruthy();
+    await act(async () => fireEvent.click(screen.getByRole("option", { name: "4" })));
+    expect(update).toHaveBeenLastCalledWith({ transferConcurrency: 4 });
+    await act(async () => fireEvent.click(row("transferOptimization").getByRole("switch")));
+    expect(compression.hasAttribute("disabled")).toBe(true);
+    expect(
+      row("transferConcurrency")
+        .getByRole("button", { name: "Concurrent segments" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      row("transferChunkKib")
+        .getByRole("button", { name: "Segment size" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(
+      row("transferRequests")
+        .getByRole("button", { name: "SFTP requests per segment" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(useSettings.getState().settings.transferConcurrency).toBe(4);
+  });
   it("offers direct host connection with an enabled default and persists turning it off", async () => {
     useNavigation.setState({ settingsSection: "workspace" });
     render(<SettingsPage />);
@@ -151,7 +202,7 @@ describe("settings discovery and scoped resets", () => {
     const search = screen.getByRole("textbox", { name: "Search settings" });
     for (const value of ["preloading", "预加载"]) {
       fireEvent.change(search, { target: { value } });
-      expect(document.querySelectorAll("[data-setting]")).toHaveLength(2);
+      expect(document.querySelectorAll("[data-setting]")).toHaveLength(3);
       expect(row("preloadDirs")).toBeTruthy();
       expect(row("preloadCount")).toBeTruthy();
       expect(screen.getByRole("heading", { name: "Preloading", level: 3 })).toBeTruthy();

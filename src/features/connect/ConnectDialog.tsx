@@ -8,7 +8,13 @@ import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { cn } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
-import { isIpcError, type Host, type HostKeyInfo, type SshConnectRequest } from "@/lib/api/types";
+import {
+  isIpcError,
+  type Host,
+  type HostKeyInfo,
+  type SshConnectRequest,
+  type SshSession,
+} from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
@@ -27,6 +33,7 @@ interface ConnectDialogProps {
   intent?: "connect" | "installKey";
   initialError?: string;
   onClose: () => void;
+  onConnected?: (session: SshSession) => void;
 }
 
 export function ConnectDialog({
@@ -35,6 +42,7 @@ export function ConnectDialog({
   intent = "connect",
   initialError,
   onClose,
+  onConnected,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
@@ -265,7 +273,9 @@ export function ConnectDialog({
         }
       }
     }
-    if (after === "sftp") {
+    if (onConnected) {
+      if (alive.current) onConnected(session);
+    } else if (after === "sftp") {
       openSftp(session);
     } else {
       openTerminal(session);

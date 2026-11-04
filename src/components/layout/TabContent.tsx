@@ -50,7 +50,13 @@ function TabBody({
     case "terminal":
       return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
-      return <SftpPage sessionId={tab.id.replace("sftp:", "")} />;
+      return (
+        <SftpPage
+          sessionId={tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "")}
+          single={tab.filePane}
+          scopeId={tab.filePane ? tab.id : undefined}
+        />
+      );
     case "editor":
       return <EditorPage tabId={tab.id} active={active} />;
     case "history":
@@ -108,11 +114,31 @@ export function TabContent({ paneId }: { paneId?: string }) {
       if (useWorkspace.getState().activePaneId !== pane.id)
         useWorkspace.getState().activatePane(pane.id);
     };
+    // Promote before edits or actions run, including plugin chat drafts and sends.
+    const keep = (event: Event) => {
+      if (
+        event.type === "click" &&
+        (!(event.target instanceof Element) ||
+          !event.target.closest(
+            "button,input,select,textarea,[role=button],[role=switch],[role=checkbox]",
+          ))
+      )
+        return;
+      const id = (event.target as Element | null)?.closest<HTMLElement>("[data-content-tab-id]")
+        ?.dataset.contentTabId;
+      if (id) useWorkspace.getState().keepTab(id);
+    };
     target.addEventListener("mousedown", focus);
     target.addEventListener("focusin", focus);
+    target.addEventListener("input", keep, true);
+    target.addEventListener("change", keep, true);
+    target.addEventListener("click", keep, true);
     return () => {
       target.removeEventListener("mousedown", focus);
       target.removeEventListener("focusin", focus);
+      target.removeEventListener("input", keep, true);
+      target.removeEventListener("change", keep, true);
+      target.removeEventListener("click", keep, true);
     };
   }, [pane]);
 

@@ -1,5 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { domainEvents } from "@/lib/events/domain";
+import { nativeEvents } from "@/lib/events/native";
+import { createSubscriptionGroup } from "@/lib/events/bus";
 import i18n from "@/i18n/i18n";
 import { api } from "@/lib/api/ipc";
 import { closeTab } from "@/lib/session/tabActions";
@@ -83,7 +86,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const kind = text(params, "kind");
       const page = PAGES.find((item) => item === kind);
       if (!page) throw new Error("invalid:kind");
-      workspace.openPage(page);
+      workspace.openPage(page, { preview: false });
       break;
     }
     case "workspace.openHost": {
@@ -93,7 +96,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const host = snapshot.hosts.find((item) => item.id === hostId);
       if (!host) throw new Error("host.notFound");
       useHosts.setState({ ...snapshot, loaded: true });
-      useWorkspace.getState().openHost(host);
+      useWorkspace.getState().openHost(host, { preview: false });
       break;
     }
     case "workspace.openTerminal":
@@ -214,75 +217,98 @@ function confirmPlugin(requestId: string, pluginId: string, message: string): Pr
   });
 }
 
-export async function wirePluginWorkspaceBridge(): Promise<UnlistenFn> {
-  const registrations = await Promise.allSettled([
-    listen<PluginWorkspaceRequest>("plugin://workspace-request", ({ payload }) => {
-      void (async () => {
-        try {
-          const result = await runPluginWorkspaceRequest(payload);
-          await invoke("plugin_workspace_reply", {
-            requestId: payload.requestId,
-            result,
-            error: null,
-          });
-        } catch (error) {
-          const message = error instanceof Error ? error.message : "requestFailed";
-          await invoke("plugin_workspace_reply", {
-            requestId: payload.requestId,
-            result: null,
-            error: message,
-          }).catch(() => {});
-        }
-      })();
-    }),
-    listen<{ requestId: string }>("plugin://workspace-cancelled", ({ payload }) => {
-      pendingConfirmations.get(payload.requestId)?.();
-    }),
-    listen<{ domain: string; sessionId?: string | null }>(
-      "plugin://domain-changed",
-      ({ payload }) => {
-        if (payload.domain === "hosts")
-          void useHosts
-            .getState()
-            .load()
-            .then((loaded) => {
-              if (!loaded) return;
-              const current = useHosts.getState().hosts;
-              for (const tab of useWorkspace.getState().tabs) {
-                if (tab.kind !== "host" || !tab.hostId) continue;
-                const host = current.find((item) => item.id === tab.hostId);
-                if (host) useWorkspace.getState().renameHost(host.id, host.name);
-                else useWorkspace.getState().removeHost(tab.hostId);
-              }
+async function refreshPluginHosts(signal?: AbortSignal): Promise<void> {
+  const loaded = await useHosts.getState().load();
+  if (!loaded || signal?.aborted) return;
+  const current = useHosts.getState().hosts;
+  for (const tab of useWorkspace.getState().tabs) {
+    if (tab.kind !== "host" || !tab.hostId) continue;
+    const host = current.find((item) => item.id === tab.hostId);
+    if (host) useWorkspace.getState().renameHost(host.id, host.name);
+    else useWorkspace.getState().removeHost(tab.hostId);
+  }
+}
+
+/** Reconcile domain invalidations missed while the bridge was unavailable. */
+export async function reconcilePluginWorkspace(signal: AbortSignal): Promise<void> {
+  await Promise.all([refreshPluginHosts(signal), useSsh.getState().refresh()]);
+  if (signal.aborted) return;
+  domainEvents.historyChanged();
+  domainEvents.filesChanged({ source: { kind: "local" }, origin: "event-recovery" });
+  for (const session of useSsh.getState().sessions)
+    domainEvents.filesChanged({
+      source: { kind: "remote", sessionId: session.id },
+      origin: "event-recovery",
+    });
+}
+
+export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<UnlistenFn> {
+  if (signal?.aborted) return () => {};
+  const group = createSubscriptionGroup([
+    (lifetime) =>
+      nativeEvents.on(
+        "plugin://workspace-request",
+        (payload) => {
+          void (async () => {
+            try {
+              const result = await runPluginWorkspaceRequest(payload);
+              await invoke("plugin_workspace_reply", {
+                requestId: payload.requestId,
+                result,
+                error: null,
+              });
+            } catch (error) {
+              const message = error instanceof Error ? error.message : "requestFailed";
+              await invoke("plugin_workspace_reply", {
+                requestId: payload.requestId,
+                result: null,
+                error: message,
+              }).catch(() => {});
+            }
+          })();
+        },
+        lifetime,
+      ),
+    (lifetime) =>
+      nativeEvents.on(
+        "plugin://workspace-cancelled",
+        (payload) => {
+          pendingConfirmations.get(payload.requestId)?.();
+        },
+        lifetime,
+      ),
+    (lifetime) =>
+      nativeEvents.on(
+        "plugin://domain-changed",
+        (payload) => {
+          if (payload.domain === "hosts") void refreshPluginHosts(lifetime);
+          if (payload.domain === "sessions") void useSsh.getState().refresh();
+          if (payload.domain === "history") domainEvents.historyChanged();
+          if (payload.domain === "files")
+            domainEvents.filesChanged({
+              source: payload.sessionId
+                ? { kind: "remote", sessionId: payload.sessionId }
+                : { kind: "local" },
+              origin: "plugin-api",
             });
-        if (payload.domain === "sessions") void useSsh.getState().refresh();
-        if (payload.domain === "history")
-          window.dispatchEvent(new Event("tunnelde:history-changed"));
-        if (payload.domain === "files")
-          window.dispatchEvent(
-            new CustomEvent("tunnelde:files-changed", {
-              detail: {
-                source: payload.sessionId
-                  ? { kind: "remote", sessionId: payload.sessionId }
-                  : { kind: "local" },
-                origin: "plugin-api",
-              },
-            }),
-          );
-      },
-    ),
+        },
+        lifetime,
+      ),
   ]);
   let disposed = false;
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
-    for (const item of registrations) if (item.status === "fulfilled") item.value();
+    signal?.removeEventListener("abort", cleanup);
+    group.dispose();
     for (const cancel of pendingConfirmations.values()) cancel();
   };
-  const failed = registrations.find((item) => item.status === "rejected");
-  if (failed?.status === "rejected") {
+  signal?.addEventListener("abort", cleanup, { once: true });
+  try {
+    await group.start();
+  } catch (error) {
     cleanup();
-    throw failed.reason;
+    throw error;
   }
   return cleanup;
 }

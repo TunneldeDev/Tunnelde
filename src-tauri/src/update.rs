@@ -13,6 +13,7 @@ use crate::models::now_ms;
 use crate::settings::Settings;
 use crate::state::AppState;
 
+mod atom;
 mod channels;
 mod feeds;
 

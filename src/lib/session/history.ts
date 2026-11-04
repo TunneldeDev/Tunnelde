@@ -1,8 +1,9 @@
+import { domainEvents } from "@/lib/events/domain";
 import { api } from "@/lib/api/ipc";
 import { useSettings } from "@/store/settings";
 
 export function notifyHistoryChanged(hostId: string) {
-  window.dispatchEvent(new CustomEvent("tunnelde:history-changed", { detail: { hostId } }));
+  domainEvents.historyChanged(hostId);
 }
 
 /** Notify mounted history panels only after the new entry is persisted. */

@@ -50,6 +50,8 @@ export interface Settings {
   skippedVersion: string | null;
   lastUpdateCheck: number | null;
   closeToTray: boolean;
+  releaseWebviewInTray: boolean;
+  lightweightMode: boolean;
   showDockIconInBackground: boolean;
   titleBarStyle: TitleBarStyle;
   recordTerminalHistory: boolean;
@@ -71,10 +73,18 @@ export interface Settings {
   terminalCopyOnSelect: boolean;
   terminalRightClick: TerminalRightClick;
   terminalRenderer: TerminalRenderer;
+  fileIconTheme: string;
   filesShowHidden: boolean;
   filesFoldersFirst: boolean;
   filesSortBy: FileSortBy;
   filesSortDirection: SortDirection;
+  transferOptimization: boolean;
+  transferCompression: boolean;
+  transferConcurrency: number;
+  transferChunkKib: number;
+  transferRequests: number;
+  transferUploadLimitKib: number;
+  transferDownloadLimitKib: number;
   editorWordWrap: boolean;
   editorTabSize: number;
   editorSpellCheck: boolean;
@@ -284,6 +294,7 @@ export interface SshConnectRequest {
 export interface SshDataPayload {
   sessionId: string;
   data: string;
+  sequence: number;
 }
 
 export interface SshClosedPayload {
@@ -309,9 +320,11 @@ export interface Listing {
 export type FsSource = { kind: "local" } | { kind: "remote"; sessionId: string };
 
 export type TransferDirection = "transfer";
-export type TransferStatus = "running" | "done" | "failed" | "cancelled" | "paused";
+export type TransferStatus =
+  "running" | "done" | "failed" | "cancelled" | "paused" | "cleanupPending";
 
 export interface TransferEvent {
+  phase?: "queued" | "preparing" | "verifying" | "cleaning";
   id: string;
   direction: TransferDirection;
   name: string;
@@ -326,6 +339,22 @@ export interface RemoteProcess {
   cpu: number;
   memory: number;
   rss: number;
+  /** Recent interval, normalized to total machine capacity (0–100). */
+  cpuTotal?: number;
+  startedAtTicks?: number;
+  uid?: number;
+  gid?: number;
+  userName?: string;
+  groupName?: string;
+  parentPid?: number;
+  threads?: number;
+  state?: string;
+  diskReadRate?: number;
+  diskWriteRate?: number;
+  networkRxRate?: number;
+  networkTxRate?: number;
+  gpuPercent?: number;
+  gpuMemory?: number;
 }
 
 export interface RemoteStats {
@@ -373,6 +402,7 @@ export interface PluginEvent {
 }
 
 export interface MarketEntry {
+  tags?: string[];
   id: string;
   name: string;
   version: string;
@@ -421,6 +451,7 @@ export interface NodeRuntimeInfo {
 }
 
 export interface PluginInfo {
+  tags?: string[];
   id: string;
   name: string;
   version: string;
@@ -435,11 +466,57 @@ export interface PluginInfo {
   fingerprint?: string;
   runtime?: "node" | "wasm" | "theme" | "declarative";
   themes?: PluginTheme[];
+  fileIconThemes?: PluginFileIconTheme[];
+  filePreviews?: PluginFilePreview[];
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;
   sourceId?: string | null;
   sourceUrl?: string | null;
+}
+export type FileIconSymbol =
+  | "file"
+  | "code"
+  | "json"
+  | "text"
+  | "image"
+  | "audio"
+  | "video"
+  | "archive"
+  | "pdf"
+  | "spreadsheet"
+  | "terminal"
+  | "settings"
+  | "key"
+  | "database"
+  | "font"
+  | "binary"
+  | "markdown";
+
+export type FilePreviewRenderer = "image" | "audio" | "video" | "pdf" | "markdown" | "text";
+export interface PluginFilePreview {
+  id: string;
+  name: string;
+  renderer: FilePreviewRenderer;
+  extensions: string[];
+}
+export interface FilePreviewInfo {
+  id: string;
+  size: number;
+  renderer: FilePreviewRenderer;
+}
+export interface PluginFileIcon {
+  symbol: FileIconSymbol;
+  color?: string;
+  label?: string;
+}
+export interface PluginFileIconTheme {
+  id: string;
+  name: string;
+  icons: Record<string, PluginFileIcon>;
+  extensions: Record<string, string>;
+  fileNames: Record<string, string>;
+  defaultIcon?: string;
 }
 export interface PluginTheme {
   id: string;

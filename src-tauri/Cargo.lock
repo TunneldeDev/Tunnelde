@@ -6261,15 +6261,17 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelde"
-version = "0.27.1"
+version = "0.28.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
  "flate2",
+ "futures-util",
  "hyper-util",
  "keyring",
  "objc2-app-kit",
  "percent-encoding",
+ "quick-xml 0.42.0",
  "rand",
  "reqwest",
  "rusqlite",

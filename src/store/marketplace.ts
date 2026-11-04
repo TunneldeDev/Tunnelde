@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createSubscriptionGroup } from "@/lib/events/bus";
 
 import { api, events, isTauri } from "@/lib/api/ipc";
 import type {
@@ -64,6 +65,10 @@ interface MarketplaceStore {
   cancelling: string[];
   taskErrors: Record<string, string>;
   query: string;
+  tag: string;
+  page: number;
+  setTag: (tag: string) => void;
+  setPage: (page: number) => void;
   scope: "installed" | "market" | "updates";
   selected: string | null;
   setQuery: (value: string) => void;
@@ -82,9 +87,6 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
   const cancelled = new Set<string>();
   const started = new Set<string>();
   let configRevision = 0;
-  let configListening = false;
-  let downloadListening = false;
-  let listenerRequest: Promise<void> | null = null;
   const activeLoads = (config: PluginConfig) => [
     ...new Set(
       [...loads.values()]
@@ -109,44 +111,34 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
       loading: activeLoads(config),
     }));
   };
-  const ensureListeners = () => {
-    if (!isTauri() || (configListening && downloadListening)) return Promise.resolve();
-    if (listenerRequest) return listenerRequest;
-    listenerRequest = Promise.resolve()
-      .then(async () => {
-        const listeners = await Promise.allSettled([
-          configListening
-            ? Promise.resolve()
-            : events
-                .onPluginConfig((next) => {
-                  applyConfig(next);
-                  void get().load();
-                })
-                .then(() => {
-                  configListening = true;
-                }),
-          downloadListening
-            ? Promise.resolve()
-            : events
-                .onPluginDownload((payload) =>
-                  set((state) => {
-                    const owner = Object.entries(state.tasks).find(
-                      ([, task]) => task.taskId === payload.taskId,
-                    )?.[0];
-                    return owner ? { tasks: { ...state.tasks, [owner]: payload } } : state;
-                  }),
-                )
-                .then(() => {
-                  downloadListening = true;
-                }),
-        ]);
-        const failed = listeners.find((result) => result.status === "rejected");
-        if (failed?.status === "rejected") throw failed.reason;
-      })
-      .finally(() => {
-        listenerRequest = null;
-      });
-    return listenerRequest;
+  const listeners = createSubscriptionGroup([
+    (signal) =>
+      events.onPluginConfig((next) => {
+        applyConfig(next);
+        void get().load();
+      }, signal),
+    (signal) =>
+      events.onPluginDownload(
+        (payload) =>
+          set((state) => {
+            const owner = Object.entries(state.tasks).find(
+              ([, task]) => task.taskId === payload.taskId,
+            )?.[0];
+            return owner ? { tasks: { ...state.tasks, [owner]: payload } } : state;
+          }),
+        signal,
+      ),
+  ]);
+  if (import.meta.hot) import.meta.hot.dispose(() => listeners.dispose());
+  let observedRegistration: Promise<void> | undefined;
+  const ensureListeners = async () => {
+    if (!isTauri()) return;
+    const registration = listeners.start();
+    const recovered = observedRegistration !== undefined && observedRegistration !== registration;
+    observedRegistration = registration;
+    await registration;
+    // A retry may have missed source edits while no listener was attached.
+    if (recovered) set({ ready: false });
   };
   const config = async () => {
     await ensureListeners().catch(() => undefined);
@@ -222,8 +214,12 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
     query: "",
     scope: "market",
     selected: null,
-    setQuery: (query) => set({ query }),
-    setScope: (scope) => set({ scope }),
+    setQuery: (query) => set({ query, page: 0 }),
+    tag: "",
+    page: 0,
+    setTag: (tag) => set({ tag, page: 0 }),
+    setPage: (page) => set({ page: Number.isFinite(page) ? Math.max(0, Math.trunc(page)) : 0 }),
+    setScope: (scope) => set({ scope, page: 0 }),
     select: (selected) => set({ selected }),
     load: async (refresh = false) => {
       await config();

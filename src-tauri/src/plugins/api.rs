@@ -563,6 +563,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                 app.clone(),
                 field(&params, "sessionId")?,
                 field(&params, "pid")?,
+                None,
             )
             .await?;
             Ok(Value::Null)
@@ -712,8 +713,7 @@ async fn execute(context: &HostContext, params: &Value) -> AppResult<Value> {
 }
 
 fn storage_path(root: &Path, id: &str) -> PathBuf {
-    root.join("plugin-data")
-        .join(format!("{:x}.json", Sha256::digest(id.as_bytes())))
+    root.join(format!("{:x}.json", Sha256::digest(id.as_bytes())))
 }
 
 fn storage_key(params: &Value) -> AppResult<String> {
@@ -770,7 +770,14 @@ async fn storage(context: &HostContext, method: &str, params: &Value) -> AppResu
         .lock()
         .await;
     authorize(context, &[])?;
-    let path = storage_path(&context.app.state::<AppState>().data_dir, &context.id);
+    let path = storage_path(
+        context
+            .app
+            .state::<AppState>()
+            .storage
+            .dir(crate::storage::layout::Category::PluginData),
+        &context.id,
+    );
     let mut values: Map<String, Value> = match tokio::fs::File::open(&path).await {
         Ok(file) => {
             let mut bytes = Vec::new();
@@ -999,10 +1006,7 @@ mod tests {
         let a = storage_path(root, "plugin-a");
         assert_ne!(a, storage_path(root, "plugin-b"));
         assert_eq!(a, storage_path(root, "plugin-a"));
-        assert_eq!(
-            storage_path(root, "../../secret").parent(),
-            Some(root.join("plugin-data").as_path())
-        );
+        assert_eq!(storage_path(root, "../../secret").parent(), Some(root));
     }
 
     #[test]

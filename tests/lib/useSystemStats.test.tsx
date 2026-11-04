@@ -56,6 +56,23 @@ async function flushRequests() {
 }
 
 describe("local system stats sampling", () => {
+  it("limits lightweight sampling to five seconds and restores the saved interval live", async () => {
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 1000, lightweightMode: true },
+    });
+    renderHook(() => useSystemStats());
+    await flushRequests();
+    await act(() => vi.advanceTimersByTimeAsync(4999));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(1);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(2);
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, monitorIntervalMs: 1000 } }));
+    await flushRequests();
+    const calls = apiMock.systemStats.mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(1000));
+    expect(apiMock.systemStats).toHaveBeenCalledTimes(calls + 1);
+  });
+
   it("adopts configured intervals live without overlapping a pending request", async () => {
     let finish!: (value: SystemStats) => void;
     apiMock.systemStats.mockReturnValueOnce(

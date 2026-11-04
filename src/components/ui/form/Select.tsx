@@ -19,6 +19,7 @@ export interface SelectProps {
   className?: string;
   disabled?: boolean;
   descriptionId?: string;
+  footerAction?: { label: string; onSelect: () => void };
 }
 
 const POPUP_MAX_HEIGHT = 280;
@@ -37,6 +38,7 @@ export function Select({
   className,
   disabled,
   descriptionId,
+  footerAction,
 }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -60,14 +62,14 @@ export function Select({
       return;
     }
     const rect = buttonRef.current.getBoundingClientRect();
-    const height = Math.min(POPUP_MAX_HEIGHT, options.length * 28 + 8);
+    const height = Math.min(POPUP_MAX_HEIGHT, options.length * 28 + 8 + (footerAction ? 37 : 0));
     const flip = rect.bottom + height + 8 > window.innerHeight;
     setPosition({
       top: flip ? Math.max(8, rect.top - height - 4) : rect.bottom + 4,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - rect.width - 8)),
       width: rect.width,
     });
-  }, [open, options.length]);
+  }, [open, options.length, footerAction]);
 
   useEffect(() => {
     if (!open) {
@@ -120,6 +122,7 @@ export function Select({
 
   const onKeyDown = (event: React.KeyboardEvent) => {
     if (disabled || event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if ((event.target as HTMLElement).closest(".td-select__action")) return;
     if (event.key === "Escape" && open) {
       event.preventDefault();
       event.stopPropagation();
@@ -144,6 +147,11 @@ export function Select({
       return;
     }
     if (event.key === "Tab") {
+      if (open && footerAction && !event.shiftKey) {
+        event.preventDefault();
+        popupRef.current?.querySelector<HTMLButtonElement>(".td-select__action")?.focus();
+        return;
+      }
       setOpen(false);
       return;
     }
@@ -212,32 +220,52 @@ export function Select({
         ? createPortal(
             <div
               ref={popupRef}
-              id={listId}
-              role="listbox"
-              aria-label={label}
               tabIndex={-1}
               className="td-select__popup"
               style={{ top: position.top, left: position.left, minWidth: position.width }}
               onKeyDown={onKeyDown}
             >
-              {options.map((option, index) => (
+              <div id={listId} role="listbox" aria-label={label}>
+                {options.map((option, index) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="option"
+                    id={`${listId}-${index}`}
+                    data-option-index={index}
+                    tabIndex={-1}
+                    aria-selected={option.value === value}
+                    className={cn("td-select__option", index === highlight && "is-highlight")}
+                    onMouseEnter={() => setHighlight(index)}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => commit(index)}
+                  >
+                    <span>{option.label}</span>
+                    {option.value === value ? <Check size={12} aria-hidden="true" /> : null}
+                  </button>
+                ))}
+              </div>
+              {footerAction ? (
                 <button
-                  key={option.value}
                   type="button"
-                  role="option"
-                  id={`${listId}-${index}`}
-                  data-option-index={index}
-                  tabIndex={-1}
-                  aria-selected={option.value === value}
-                  className={cn("td-select__option", index === highlight && "is-highlight")}
-                  onMouseEnter={() => setHighlight(index)}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => commit(index)}
+                  className="td-select__action"
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape" || event.key === "ArrowUp") {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      if (event.key === "Escape") setOpen(false);
+                      else setHighlight(options.length - 1);
+                      buttonRef.current?.focus();
+                    } else if (event.key === "Tab") setOpen(false);
+                  }}
+                  onClick={() => {
+                    setOpen(false);
+                    footerAction.onSelect();
+                  }}
                 >
-                  <span>{option.label}</span>
-                  {option.value === value ? <Check size={12} aria-hidden="true" /> : null}
+                  {footerAction.label}
                 </button>
-              ))}
+              ) : null}
             </div>,
             document.body,
           )

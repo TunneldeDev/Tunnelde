@@ -87,6 +87,26 @@ pub struct PluginManifest {
     pub engines: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub themes: Vec<PluginTheme>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+    #[serde(default)]
+    pub file_icon_themes: Vec<super::file_icons::FileIconTheme>,
+    #[serde(default)]
+    pub file_previews: Vec<crate::preview::providers::Provider>,
+}
+
+pub(super) fn valid_tags(tags: &[String]) -> bool {
+    let mut unique = std::collections::HashSet::new();
+    tags.len() <= 24
+        && tags.iter().all(|tag| {
+            !tag.is_empty()
+                && tag.len() <= 64
+                && tag.trim() == tag
+                && tag
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                && unique.insert(tag.to_lowercase())
+        })
 }
 
 pub fn load(dir: &Path) -> AppResult<PluginManifest> {
@@ -106,6 +126,15 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if !crate::preview::providers::valid(&self.file_previews) {
+            return Err(AppError::validation("preview.invalidProvider"));
+        }
+        if !super::file_icons::valid_themes(&self.file_icon_themes) {
+            return Err(AppError::validation("plugin.fileIcons.invalid"));
+        }
+        if !valid_tags(&self.tags) {
+            return Err(AppError::validation("plugin.tags.invalid"));
+        }
         if !valid_id(&self.id) {
             return Err(AppError::validation("plugin.id.invalid"));
         }
@@ -208,7 +237,9 @@ impl PluginManifest {
                 }
             }
             Some("theme") => {
-                if self.themes.is_empty()
+                if (self.themes.is_empty()
+                    && self.file_icon_themes.is_empty()
+                    && self.file_previews.is_empty())
                     || !self.main.is_empty()
                     || !self.commands.is_empty()
                     || !self.views.is_empty()
@@ -286,6 +317,22 @@ pub fn valid_command_id(value: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn tags_are_optional_bounded_distinct_and_support_unicode() {
+        assert!(valid_tags(&[]));
+        assert!(valid_tags(&["preview".into(), "文件".into()]));
+        for tags in [
+            vec!["PDF".into(), "pdf".into()],
+            vec!["".into()],
+            vec!["a b".into()],
+            vec![" tag".into()],
+            vec!["a".repeat(65)],
+            vec!["tag".into(); 25],
+        ] {
+            assert!(!valid_tags(&tags));
+        }
+    }
+
     fn write(dir: &Path, main: &str) -> PluginManifest {
         let payload = format!(
             r#"{{"id":"hello","name":"Hello","version":"0.1.0","apiVersion":1,"main":"{main}"}}"#
@@ -327,6 +374,24 @@ mod tests {
         assert!(loaded.commands.is_empty());
         assert_eq!(loaded.themes[0].accent.as_deref(), Some("#AABBCC"));
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn pure_icon_packages_need_no_executable_permissions_or_color_palettes() {
+        let dir = temp_dir("file-icons");
+        let mut data = serde_json::json!({"id":"file-icons", "name":"File icons", "version":"1.0.0", "apiVersion":1,
+            "runtime":"theme", "fileIconThemes":[{"id":"common", "name":"Common files",
+                "icons":{"ts":{"symbol":"code", "color":"#3178C6", "label":"TS"}},
+                "extensions":{"ts":"ts"}, "fileNames":{}}]});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert_eq!(loaded.file_icon_themes.len(), 1);
+        assert!(loaded.main.is_empty());
+        assert!(loaded.themes.is_empty());
+        data["permissions"] = serde_json::json!(["fs.read"]);
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&data).unwrap()).unwrap();
+        assert!(load(&dir).is_err());
         std::fs::remove_dir_all(dir).unwrap();
     }
 

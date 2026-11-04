@@ -13,9 +13,11 @@ import { pluginSidebarId } from "@/lib/plugins/sidebars";
 import i18n from "@/i18n/i18n";
 import { PluginError } from "./PluginError";
 import { PluginThemes } from "./PluginThemes";
+import { PluginFileIconThemes } from "./PluginFileIconThemes";
 import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
+import { pluginTags } from "@/lib/plugins/discovery";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -105,6 +107,22 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
             <span> · {info.version}</span>
           </p>
           <p>{info.description}</p>
+          {pluginTags(info).length ? (
+            <div className="extension-row__tags">
+              {pluginTags(info).map((tag) => (
+                <button
+                  type="button"
+                  key={tag}
+                  onClick={() => {
+                    useMarketplace.getState().setTag(tag);
+                    useNavigation.getState().showSidebar("plugins");
+                  }}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </header>
       <div className="plugin-detail__actions">
@@ -230,6 +248,25 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
       </dl>
       {own && installed.themes?.length ? (
         <PluginThemes themes={installed.themes} disabled={busy || !!task} />
+      ) : null}
+      {own && installed.fileIconThemes?.length ? (
+        <PluginFileIconThemes plugin={installed} disabled={busy || !!task} />
+      ) : null}
+      {own && installed.filePreviews?.length ? (
+        <section className="plugin-detail__themes" aria-label={t("preview.providers")}>
+          <h2>{t("preview.providers")}</h2>
+          <p className="settings-hint">{t("preview.providerHint")}</p>
+          <div className="plugin-theme-list">
+            {installed.filePreviews.map((provider) => (
+              <article className="plugin-theme" key={provider.id}>
+                <h3>{provider.name}</h3>
+                <p className="settings-hint">
+                  {provider.extensions.map((extension) => `.${extension}`).join(" · ")}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
       ) : null}
       {own && !themeOnly && installed.views.length ? (
         <section className="plugin-detail__tools">

@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ConnectionRoute } from "./network";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { nativeEvents } from "@/lib/events/native";
 import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
 
 import type {
@@ -34,6 +36,7 @@ import type {
   SystemStats,
   TabRecord,
   TransferEvent,
+  FilePreviewInfo,
   UpdateState,
 } from "./types";
 
@@ -41,7 +44,19 @@ export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const api = {
+  storageStatus: () => invoke<StorageStatus>("storage_status"),
+  storageSchedule: (changes: StorageChange[]) =>
+    invoke<StorageStatus>("storage_schedule", { changes }),
+  storageCancel: () => invoke<StorageStatus>("storage_cancel"),
+  storageOpen: (category: StorageCategory) => invoke<void>("storage_open", { category }),
+  storagePick: () => invoke<string | null>("storage_pick"),
+  filePreviewOpen: (id: string, providerId: string, path: string, sessionId: string | null) =>
+    invoke<FilePreviewInfo>("file_preview_open", { id, providerId, path, sessionId }),
+  filePreviewClose: (id: string) => invoke<void>("file_preview_close", { id }),
   mainWindowReady: () => invoke<void>("main_window_ready"),
+  mainWindowSnapshot: () => invoke<string | null>("main_window_snapshot"),
+  mainWindowSuspend: (token: number, snapshot: string | null) =>
+    invoke<boolean>("main_window_suspend", { token, snapshot }),
   connectionRoute: (hostId: string) => invoke<ConnectionRoute>("connection_route_get", { hostId }),
   saveConnectionRoute: (hostId: string, route: ConnectionRoute) =>
     invoke<void>("connection_route_save", { hostId, route }),
@@ -109,6 +124,7 @@ export const api = {
     }),
   sshConnect: (request: SshConnectRequest) => invoke<SshSession>("ssh_connect", { request }),
   sshAttach: (sessionId: string) => invoke<void>("ssh_attach", { sessionId }),
+  sshDetach: (sessionId: string) => invoke<number>("ssh_detach", { sessionId }),
   sshWrite: (sessionId: string, data: string) => invoke<void>("ssh_write", { sessionId, data }),
   sshResize: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
@@ -194,7 +210,8 @@ export const api = {
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
     invoke<RemoteProcess[]>("remote_processes", { sessionId }),
-  remoteKill: (sessionId: string, pid: number) => invoke<void>("remote_kill", { sessionId, pid }),
+  remoteKill: (sessionId: string, pid: number, expectedStartTicks?: number) =>
+    invoke<void>("remote_kill", { sessionId, pid, expectedStartTicks }),
 
   sftpList: (sessionId: string, path?: string | null) =>
     invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),
@@ -267,26 +284,52 @@ export const api = {
 };
 
 export const events = {
-  onPluginEvent: (handler: (payload: PluginEvent) => void): Promise<UnlistenFn> =>
-    listen<PluginEvent>("plugin://event", (event) => handler(event.payload)),
-  onPluginSecurity: (handler: (payload: PluginSecurityState) => void): Promise<UnlistenFn> =>
-    listen<PluginSecurityState>("plugin:security-changed", (event) => handler(event.payload)),
-  onPluginDownload: (handler: (payload: PluginDownload) => void): Promise<UnlistenFn> =>
-    listen<PluginDownload>("plugins://download", (event) => handler(event.payload)),
-  onPluginConfig: (handler: (payload: PluginConfig) => void): Promise<UnlistenFn> =>
-    listen<PluginConfig>("plugins://config", (event) => handler(event.payload)),
-  onSettingsChanged: (handler: (settings: Settings) => void): Promise<UnlistenFn> =>
-    listen<Settings>("settings://changed", (event) => handler(event.payload)),
-  onUpdateState: (handler: (state: UpdateState) => void): Promise<UnlistenFn> =>
-    listen<UpdateState>("update://state", (event) => handler(event.payload)),
-  onNavigate: (handler: (page: string) => void): Promise<UnlistenFn> =>
-    listen<string>("ui://navigate", (event) => handler(event.payload)),
-  onSshData: (handler: (payload: SshDataPayload) => void): Promise<UnlistenFn> =>
-    listen<SshDataPayload>("ssh://data", (event) => handler(event.payload)),
-  onSshClosed: (handler: (payload: SshClosedPayload) => void): Promise<UnlistenFn> =>
-    listen<SshClosedPayload>("ssh://closed", (event) => handler(event.payload)),
-  onPluginState: (handler: (payload: PluginInfo) => void): Promise<UnlistenFn> =>
-    listen<PluginInfo>("plugin://state", (event) => handler(event.payload)),
-  onTransfer: (handler: (payload: TransferEvent) => void): Promise<UnlistenFn> =>
-    listen<TransferEvent>("sftp://transfer", (event) => handler(event.payload)),
+  onTransfersChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("sftp://changed", handler, signal),
+  onPluginEvent: (
+    handler: (payload: PluginEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugin://event", handler, signal),
+  onPluginSecurity: (
+    handler: (payload: PluginSecurityState) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugin:security-changed", handler, signal),
+  onPluginDownload: (
+    handler: (payload: PluginDownload) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugins://download", handler, signal),
+  onPluginConfig: (
+    handler: (payload: PluginConfig) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugins://config", handler, signal),
+  onSettingsChanged: (
+    handler: (settings: Settings) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("settings://changed", handler, signal),
+  onUpdateState: (
+    handler: (state: UpdateState) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("update://state", handler, signal),
+  onNavigate: (handler: (page: string) => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("ui://navigate", handler, signal),
+  onWindowSuspend: (handler: (token: number) => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("ui://suspend", handler, signal),
+  onWindowResume: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("ui://resume", handler, signal),
+  onSshData: (
+    handler: (payload: SshDataPayload) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("ssh://data", handler, signal),
+  onSshClosed: (
+    handler: (payload: SshClosedPayload) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("ssh://closed", handler, signal),
+  onPluginState: (
+    handler: (payload: PluginInfo) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugin://state", handler, signal),
+  onTransfer: (
+    handler: (payload: TransferEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("sftp://transfer", handler, signal),
 };

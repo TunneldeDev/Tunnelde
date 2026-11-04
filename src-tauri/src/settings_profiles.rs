@@ -38,6 +38,8 @@ const PORTABLE_KEYS: &[&str] = &[
     "updateSourceUrl",
     "updateCheckInterval",
     "closeToTray",
+    "releaseWebviewInTray",
+    "lightweightMode",
     "showDockIconInBackground",
     "titleBarStyle",
     "recordTerminalHistory",
@@ -59,10 +61,18 @@ const PORTABLE_KEYS: &[&str] = &[
     "terminalCopyOnSelect",
     "terminalRightClick",
     "terminalRenderer",
+    "fileIconTheme",
     "filesShowHidden",
     "filesFoldersFirst",
     "filesSortBy",
     "filesSortDirection",
+    "transferOptimization",
+    "transferCompression",
+    "transferConcurrency",
+    "transferChunkKib",
+    "transferRequests",
+    "transferUploadLimitKib",
+    "transferDownloadLimitKib",
     "editorWordWrap",
     "editorTabSize",
     "editorSpellCheck",
@@ -334,6 +344,7 @@ mod tests {
     #[test]
     fn portable_snapshot_excludes_runtime_metadata_and_all_unrelated_data() {
         let settings = Settings {
+            transfer_compression: false,
             skipped_version: Some("1.0.0".into()),
             last_update_check: Some(123),
             ..Settings::default()
@@ -343,6 +354,7 @@ mod tests {
         assert!(value.get("lastUpdateCheck").is_none());
         assert!(value.get("hosts").is_none());
         assert!(value.get("password").is_none());
+        assert_eq!(value["transferCompression"], false);
         assert_eq!(normalize(value.clone()).unwrap(), value);
     }
 
@@ -373,6 +385,7 @@ mod tests {
         let doc = parse_document(text).unwrap();
         assert_eq!(doc.settings["theme"], "dark");
         assert!(doc.settings.get("monoFont").is_some());
+        assert_eq!(doc.settings["transferCompression"], true);
         assert_eq!(
             parse_document(&serde_json::to_string(&doc).unwrap())
                 .unwrap()

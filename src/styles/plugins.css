@@ -240,6 +240,41 @@
   border-top: 1px solid var(--td-border);
   padding: 6px 10px;
 }
+.plugins-tag-filter {
+  margin-top: 6px;
+}
+.extension-row__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.extension-row__tags > button {
+  border: 1px solid var(--td-border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  color: var(--td-muted);
+  background: var(--td-panel);
+  font-size: 10px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.extension-row__tags > button:hover,
+.extension-row__tags > button[aria-pressed="true"] {
+  color: var(--td-accent);
+  border-color: var(--td-accent);
+}
+.plugins-pagination {
+  display: flex;
+  flex: none;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  border-top: 1px solid var(--td-border);
+  padding: 6px 10px;
+  color: var(--td-muted);
+  font-size: 11px;
+}
 .plugins-sidebar__tabs {
   gap: 12px;
 }

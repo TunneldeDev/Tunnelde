@@ -61,7 +61,7 @@ it("migrates old updates tabs into a single settings tab while preserving pane p
   expect(state().panes[0]!.tabIds).toEqual(["page:settings"]);
   expect(state().panes[0]!.activeId).toBe("page:settings");
   expect(state().activePaneId).toBe("right");
-  state().openPage("updates");
+  state().openPage("updates", { preview: false });
   expect(state().tabs).toHaveLength(1);
   expect(useNavigation.getState().settingsSection).toBe("updates");
 });
@@ -82,9 +82,139 @@ beforeEach(() => {
   });
 });
 
+describe("preview navigation tabs", () => {
+  it("keeps a dirty preview and promotes it before opening another preview", () => {
+    const tabId = "editor:session-one:/file.txt";
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: tabId,
+          kind: "editor",
+          title: "file.txt",
+          hostId: null,
+          pinned: false,
+          preview: true,
+        },
+      ],
+      panes: [{ id: "pane-1", tabIds: [tabId], activeId: tabId }],
+      activeId: tabId,
+    });
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: "session-one",
+          path: "/file.txt",
+          name: "file.txt",
+          content: "changed",
+          baseline: "original",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    state().openPage("about");
+    expect(state().tabs.find((tab) => tab.id === tabId)?.preview).toBe(false);
+    expect(
+      state()
+        .tabs.filter((tab) => tab.preview)
+        .map((tab) => tab.id),
+    ).toEqual(["page:about"]);
+    expect(useEditors.getState().isDirty(tabId)).toBe(true);
+  });
+
+  it("reuses one preview slot in place across plugins, host details and pages", () => {
+    state().openPage("welcome");
+    state().openPluginDetail("official", "uuid", "UUID");
+    state().openPage("settings");
+    state().openHost(host("a", "Alpha"));
+    expect(state().panes[0]?.tabIds).toEqual(["page:welcome", "host:a"]);
+    expect(state().tabs.find((tab) => tab.id === "host:a")?.preview).toBe(true);
+    expect(state().activeId).toBe("host:a");
+  });
+
+  it("keeps a preview on the second selection and creates a new preview for the next item", () => {
+    state().openPluginDetail("official", "uuid", "UUID");
+    state().openPluginDetail("official", "uuid", "UUID");
+    expect(state().tabs[0]).toMatchObject({ preview: false, pinned: false });
+    state().openPluginDetail("official", "other", "Other");
+    state().openPage("about");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["extension:official:uuid", "page:about"]);
+  });
+
+  it("uses an independent preview slot in each pane and respects the locked destination", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().splitTab("page:settings", "row");
+    const second = state().activePaneId;
+    state().openPage("about");
+    state().activatePane("pane-1");
+    state().openHost(host("a", "Alpha"));
+    expect(state().tabs.filter((tab) => tab.preview)).toHaveLength(2);
+    state().togglePaneLock(second);
+    state().openPluginDetail("official", "uuid", "UUID");
+    expect(state().tabs.some((tab) => tab.id === "page:about")).toBe(false);
+    expect(state().tabs.some((tab) => tab.id === "host:a")).toBe(true);
+    expect(state().panes.find((pane) => pane.id === second)?.tabIds).toContain(
+      "extension:official:uuid",
+    );
+  });
+
+  it("keeps an existing fixed page fixed and activates its owning pane", () => {
+    state().openPage("welcome");
+    state().openPage("settings", { preview: false });
+    state().splitTab("page:settings", "row");
+    const owner = state().activePaneId;
+    state().activatePane("pane-1");
+    state().openPage("settings");
+    expect(state().activePaneId).toBe(owner);
+    expect(state().tabs.find((tab) => tab.id === "page:settings")?.preview).not.toBe(true);
+  });
+
+  it("never replaces terminals or explicitly opened file editors", () => {
+    state().openTerminal(session("s1", "Terminal"));
+    state().openSftp(session("s1", "Files"));
+    state().openPage("settings");
+    state().openPage("about");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["terminal:s1", "sftp:s1", "page:about"]);
+  });
+
+  it("promotes previews when pinned, moved or merged so groups retain at most one preview", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().togglePin("page:settings");
+    expect(state().tabs.find((tab) => tab.id === "page:settings")).toMatchObject({
+      preview: false,
+      pinned: true,
+    });
+    state().openPage("about");
+    state().splitTab("page:about", "row");
+    state().openHost(host("a", "Alpha"));
+    const second = state().activePaneId;
+    state().activatePane("pane-1");
+    state().openPluginView("uuid", "main", "UUID");
+    state().closePane(second);
+    expect(state().tabs.filter((tab) => tab.preview)).toHaveLength(1);
+    expect(state().tabs.find((tab) => tab.id === "host:a")?.preview).toBe(false);
+  });
+
+  it("persists the replaceable state and restores it without changing pinned semantics", () => {
+    state().openPage("welcome");
+    state().openPage("settings");
+    state().hydrate(workspaceRecords());
+    expect(state().tabs.find((tab) => tab.id === "page:settings")).toMatchObject({
+      preview: true,
+      pinned: false,
+    });
+    state().openPage("about");
+    expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome", "page:about"]);
+  });
+});
+
 describe("workspace tabs", () => {
   it("collapses docked sidebars without changing their saved groups, position or ratios", () => {
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:plugins", "row", "after", "pane-1");
     const pluginPane = state().panes.find((pane) => pane.tabIds.includes("sidebar:plugins"))!;
     const initialLayout = state().layout;
@@ -108,12 +238,12 @@ describe("workspace tabs", () => {
   });
 
   it("programmatic opens reveal only the requested sidebar and persist other collapsed slots", () => {
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:plugins", "row", "after", "pane-1");
     state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
     state().toggleDockedSidebar("plugins");
     state().toggleDockedSidebar("knownHosts");
-    state().openPage("about");
+    state().openPage("about", { preview: false });
     expect(
       state()
         .tabs.filter((tab) => tab.hidden)
@@ -133,12 +263,12 @@ describe("workspace tabs", () => {
 
   it("activates a docked background tab before collapsing it and preserves hidden tabs on Close others", () => {
     state().openSidebar("plugins");
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().toggleDockedSidebar("plugins");
     expect(state().activeId).toBe("sidebar:plugins");
     expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).not.toBe(true);
     state().toggleDockedSidebar("plugins");
-    state().openPage("about");
+    state().openPage("about", { preview: false });
     state().closeOthers("page:about");
     expect(state().tabs.map((tab) => tab.id)).toEqual(["sidebar:plugins", "page:about"]);
     expect(state().tabs[0]?.hidden).toBe(true);
@@ -147,14 +277,14 @@ describe("workspace tabs", () => {
   });
 
   it("keeps exactly one default group and sends ordinary new pages there without moving existing tabs", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
     state().splitTab("page:settings", "row");
     const second = state().activePaneId;
     state().togglePaneLock("pane-1");
-    state().openPage("about");
+    state().openPage("about", { preview: false });
     expect(state().activePaneId).toBe("pane-1");
-    state().openPage("settings");
+    state().openPage("settings", { preview: false });
     expect(state().activePaneId).toBe(second);
     expect(state().panes.find((pane) => pane.id === second)?.tabIds).toEqual(["page:settings"]);
     state().togglePaneLock(second);
@@ -168,8 +298,8 @@ describe("workspace tabs", () => {
   });
 
   it("keeps an empty locked default group through close, persistence and welcome recovery", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
     state().splitTab("page:settings", "row");
     state().togglePaneLock("pane-1");
     state().close("page:welcome");
@@ -190,8 +320,8 @@ describe("workspace tabs", () => {
   });
 
   it("restores an entirely empty locked group without exposing its metadata as a tab", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
     state().splitTab("page:settings", "row");
     const lockedPane = state().activePaneId;
     state().togglePaneLock(lockedPane);
@@ -225,7 +355,7 @@ describe("workspace tabs", () => {
 
   it("keeps an unlocked empty workspace free of metadata records", () => {
     expect(workspaceRecords()).toEqual([]);
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().togglePaneLock("pane-1");
     state().close("page:welcome");
     state().togglePaneLock("pane-1");
@@ -240,26 +370,26 @@ describe("workspace tabs", () => {
   });
 
   it("closing a locked group keeps its tabs while removing the closed default destination", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
     state().splitTab("page:settings", "row");
     state().togglePaneLock("pane-1");
     state().closePane("pane-1");
     expect(state().panes).toHaveLength(1);
     expect(state().tabs).toHaveLength(2);
     expect(state().panes.some((pane) => pane.locked)).toBe(false);
-    state().openPage("about");
+    state().openPage("about", { preview: false });
     expect(state().panes[0]?.tabIds).toContain("page:about");
   });
 
   it("opens ordinary content in a collapsed default group while keeping its sidebar collapsed", () => {
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:plugins", "row", "after", "pane-1");
     const defaultPane = state().activePaneId;
     state().togglePaneLock(defaultPane);
     const layout = state().layout;
     state().toggleDockedSidebar("plugins");
-    state().openPage("settings");
+    state().openPage("settings", { preview: false });
     expect(state().activePaneId).toBe(defaultPane);
     expect(state().activeId).toBe("page:settings");
     expect(state().tabs.find((tab) => tab.id === "sidebar:plugins")?.hidden).toBe(true);
@@ -280,7 +410,7 @@ describe("workspace tabs", () => {
   it.each(["before", "after"] as const)(
     "preserves sidebar width when docking %s a workspace that expands after its sidebar closes",
     (position) => {
-      state().openPage("welcome");
+      state().openPage("welcome", { preview: false });
       const workspace = document.createElement("div");
       workspace.className = "workspace";
       const sidebar = document.createElement("div");
@@ -313,7 +443,7 @@ describe("workspace tabs", () => {
   it.each(["row", "column"] as const)(
     "preserves a docked panel's %s size when moving it beside the surviving group",
     (direction) => {
-      state().openPage("welcome");
+      state().openPage("welcome", { preview: false });
       state().splitTab("sidebar:plugins", direction, "after", "pane-1");
       const workspace = document.createElement("div");
       workspace.className = "workspace";
@@ -347,7 +477,7 @@ describe("workspace tabs", () => {
   );
 
   it("materializes a sidebar only after a valid drop, and opens each view once", () => {
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().moveTab("sidebar:plugins", "missing-pane");
     expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
     state().moveTab("sidebar:plugins", "pane-1", "page:welcome");
@@ -359,7 +489,7 @@ describe("workspace tabs", () => {
   });
 
   it("saves and restores sidebar panels in nested splits without accepting arbitrary sidebar ids", () => {
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:hosts", "row", "before", "pane-1");
     state().splitTab("sidebar:plugins", "column", "after", "pane-1");
     const layout = state().layout;
@@ -379,7 +509,7 @@ describe("workspace tabs", () => {
 
   it("focuses docked lists through activity navigation without changing the visible side view", () => {
     state().openSidebar("plugins");
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     useNavigation.getState().showSidebar("knownHosts");
     useNavigation.getState().selectSidebar("plugins");
     expect(state().activeId).toBe("sidebar:plugins");
@@ -389,7 +519,7 @@ describe("workspace tabs", () => {
   });
 
   it("returns a closed sidebar tab to its original side view and prunes the empty group", () => {
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
     state().close("sidebar:knownHosts");
     expect(state().panes).toHaveLength(1);
@@ -410,8 +540,8 @@ describe("workspace tabs", () => {
   });
 
   it("opens a page once", () => {
-    useWorkspace.getState().openPage("settings");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("settings", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     const { tabs, activeId } = useWorkspace.getState();
     expect(tabs).toHaveLength(1);
     expect(activeId).toBe("page:settings");
@@ -426,15 +556,15 @@ describe("workspace tabs", () => {
   });
 
   it("activates the neighbouring tab when closing", () => {
-    useWorkspace.getState().openPage("welcome");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     useWorkspace.getState().close("page:settings");
     expect(useWorkspace.getState().activeId).toBe("page:welcome");
   });
 
   it("reorders tabs inside the active pane", () => {
-    useWorkspace.getState().openPage("welcome");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     useWorkspace.getState().reorder(0, 1);
     const state = useWorkspace.getState();
     const kinds = (state.panes[0]?.tabIds ?? []).map(
@@ -444,8 +574,8 @@ describe("workspace tabs", () => {
   });
 
   it("splits a tab into a second pane", () => {
-    useWorkspace.getState().openPage("welcome");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     useWorkspace.getState().splitTab("page:settings", "row");
 
     const state = useWorkspace.getState();
@@ -456,8 +586,8 @@ describe("workspace tabs", () => {
   });
 
   it("moves a tab between panes", () => {
-    useWorkspace.getState().openPage("welcome");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     useWorkspace.getState().splitTab("page:settings", "row");
     useWorkspace.getState().moveTab("page:welcome", state().panes[1]?.id ?? "");
 
@@ -468,8 +598,8 @@ describe("workspace tabs", () => {
   });
 
   it("collapses a pane when its last tab closes", () => {
-    useWorkspace.getState().openPage("welcome");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     useWorkspace.getState().splitTab("page:settings", "column");
     useWorkspace.getState().close("page:settings");
 
@@ -479,8 +609,8 @@ describe("workspace tabs", () => {
   });
 
   it("merges panes when one is closed", () => {
-    useWorkspace.getState().openPage("welcome");
-    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().openPage("settings", { preview: false });
     useWorkspace.getState().splitTab("page:settings", "row");
     useWorkspace.getState().closePane(state().panes[0]?.id ?? "");
 
@@ -532,7 +662,7 @@ describe("workspace tabs", () => {
 
   it("closes the tab when its session goes away", () => {
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
-    useWorkspace.getState().openPage("welcome");
+    useWorkspace.getState().openPage("welcome", { preview: false });
     useWorkspace.getState().closeSession("s1");
     expect(useWorkspace.getState().tabs.map((tab) => tab.kind)).toEqual(["welcome"]);
   });
@@ -568,9 +698,9 @@ describe("split placement", () => {
   });
 
   it("nests another split inside a specific group", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
-    state().openPage("about");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
+    state().openPage("about", { preview: false });
     state().splitTab("page:settings", "row");
     const first = state().panes[0]!;
     state().splitTab("page:about", "column", "before", first.id);
@@ -589,13 +719,13 @@ describe("split placement", () => {
   });
 
   it("activates the owning pane and preserves pinned status when reopening a tab", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
     state().togglePin("page:settings");
     state().splitTab("page:settings", "row");
     const owner = state().activePaneId;
     state().activate("page:welcome");
-    state().openPage("settings");
+    state().openPage("settings", { preview: false });
     expect(state().activePaneId).toBe(owner);
     expect(state().tabs.find((tab) => tab.id === "page:settings")?.pinned).toBe(true);
     expect(
@@ -604,9 +734,9 @@ describe("split placement", () => {
   });
 
   it("restores nested layout, active tabs and displayed ordering", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
-    state().openPage("about");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
+    state().openPage("about", { preview: false });
     state().splitTab("page:settings", "row");
     state().splitTab("page:about", "column", "before", state().panes[0]!.id);
     const expected = {
@@ -650,9 +780,9 @@ describe("split placement", () => {
   });
 
   it("only closes other unpinned tabs in the requested group", () => {
-    state().openPage("welcome");
-    state().openPage("settings");
-    state().openPage("about");
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
+    state().openPage("about", { preview: false });
     state().splitTab("page:about", "row");
     state().closeOthers("page:welcome");
     expect(
@@ -685,7 +815,7 @@ describe("split placement", () => {
       tabs: [{ id, kind: "editor", title: "a.txt", hostId: "a", pinned: false }],
       panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
     });
-    state().openPage("welcome");
+    state().openPage("welcome", { preview: false });
     state().closeOthers("page:welcome");
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(state().tabs).toHaveLength(2);

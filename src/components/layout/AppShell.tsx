@@ -34,7 +34,9 @@ import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/wo
 import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { usePlugins } from "@/store/plugins";
 import { useQuickAccess } from "@/store/quickAccess";
-import { LocalFilePreview } from "@/features/sftp/LocalFilePreview";
+import { FilePreview } from "@/features/sftp/FilePreview";
+import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
+import { useBackgroundWindow } from "@/app/backgroundWindow";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -46,6 +48,7 @@ const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosi
 export function AppShell() {
   useInternalDrag();
   useWindowCloseGuard();
+  useBackgroundWindow();
   const settings = useSettings((state) => state.settings);
   const os = useSettings((state) => state.info?.os);
   const updateSettings = useSettings((state) => state.update);
@@ -280,7 +283,9 @@ export function AppShell() {
       <DialogHost />
       <ContextMenuHost />
       <CommandPalette />
-      <LocalFilePreview />
+      <FilePreview />
+      <BackgroundTasks />
+      {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}
     </div>
   );
 }

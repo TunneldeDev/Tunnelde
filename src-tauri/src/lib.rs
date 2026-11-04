@@ -6,10 +6,12 @@ mod mounts;
 mod network;
 mod platform;
 mod plugins;
+mod preview;
 mod settings;
 mod settings_profiles;
 mod ssh;
 mod state;
+mod storage;
 mod update;
 mod vault;
 
@@ -18,6 +20,25 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(window::StartupWindow::default())
+        .manage(platform::background::BackgroundWindow::default())
+        .manage(preview::Registry::default())
+        .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
+            let app = context.app_handle().clone();
+            let origin = if cfg!(dev) {
+                "http://localhost:1420"
+            } else if cfg!(target_os = "windows") {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            }
+            .to_string();
+            tauri::async_runtime::spawn(async move {
+                use tauri::Manager;
+                responder.respond(
+                    preview::serve(&app.state::<preview::Registry>(), request, origin).await,
+                );
+            });
+        })
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             use tauri::Manager;
             if plugins::security::cli_restricted(args.iter()) {
@@ -27,6 +48,13 @@ pub fn run() {
             }
             window::show_main(app);
         }))
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                use tauri::Manager;
+                window.state::<preview::Registry>().clear();
+                platform::background::destroyed(window.app_handle());
+            }
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -54,6 +82,10 @@ pub fn run() {
             window::install_close_handler(&handle);
             window::configure_webview(&handle);
             update::spawn_auto_check(&handle);
+            let cleanup_app = handle.clone();
+            tauri::async_runtime::spawn(async move {
+                ssh::files::durable::on_reconnect(&cleanup_app).await;
+            });
             tracing::info!(
                 version = %handle.package_info().version,
                 "Tunnelde started"
@@ -62,11 +94,14 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             window::main_window_ready,
+            platform::background::main_window_snapshot,
+            platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
             ssh::files::durable::durable_transfer_list,
             ssh::files::durable::durable_transfer_clear,
             ssh::files::durable::durable_transfer_pause,
             ssh::files::durable::durable_transfer_resume,
+            ssh::files::bandwidth::transfer_set_speed_limit,
             ssh::forward::forwarding_list,
             ssh::forward::forwarding_save,
             ssh::forward::forwarding_remove,
@@ -82,6 +117,11 @@ pub fn run() {
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             commands::app_info,
+            storage::storage_status,
+            storage::storage_schedule,
+            storage::storage_cancel,
+            storage::storage_open,
+            storage::storage_pick,
             commands::clipboard_read_text,
             commands::clipboard_write_text,
             commands::settings_get,
@@ -120,6 +160,7 @@ pub fn run() {
             commands::ssh_trust,
             commands::ssh_connect,
             commands::ssh_attach,
+            commands::ssh_detach,
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,
@@ -143,6 +184,8 @@ pub fn run() {
             commands::files_search,
             commands::files_search_cancel,
             commands::search_preview_local,
+            preview::file_preview_open,
+            preview::file_preview_close,
             commands::local_mkdir,
             commands::local_rename,
             commands::local_delete,
@@ -187,6 +230,14 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Tunnelde")
         .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested {
+                code: None, api, ..
+            } = &event
+            {
+                if platform::background::keep_alive(app) {
+                    api.prevent_exit();
+                }
+            }
             #[cfg(target_os = "macos")]
             if matches!(event, tauri::RunEvent::Reopen { .. }) {
                 // A closed main window is retained for its sessions and drafts.

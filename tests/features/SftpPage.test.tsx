@@ -36,6 +36,7 @@ import { useSsh } from "@/store/ssh";
 import { useTransfers } from "@/store/transfers";
 import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
+import { useFilePreview } from "@/store/filePreview";
 import { DRAG_MIME } from "@/lib/files/dnd";
 import { useContextMenu } from "@/store/contextMenu";
 import * as clipboard from "@/lib/session/clipboard";
@@ -115,7 +116,106 @@ beforeEach(() => {
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: false } });
 });
 
+function openPath(index = 0): HTMLInputElement {
+  const pane = document.querySelectorAll<HTMLElement>(".sftp-pane")[index]!;
+  const existing = within(pane).queryByRole("textbox", { name: "Path" });
+  if (existing) return existing as HTMLInputElement;
+  fireEvent.click(within(pane).getByRole("button", { name: "Edit path" }));
+  return within(pane).getByRole("textbox", { name: "Path" }) as HTMLInputElement;
+}
+function currentPath(index = 0): string | null {
+  const pane = document.querySelectorAll(".sftp-pane")[index]!;
+  return pane.querySelector('[aria-current="location"]')?.getAttribute("title") ?? null;
+}
+
 describe("SftpPage", () => {
+  it("previews the selected local or remote file from the toolbar or Space, without editing it", async () => {
+    useFilePreview.setState({ file: null });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const buttons = screen.getAllByRole("button", { name: "Preview file" });
+    expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText("src"));
+    expect((buttons[0] as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText("notes.txt"));
+    fireEvent.click(buttons[0]!);
+    expect(useFilePreview.getState().file).toMatchObject({
+      path: "C:\\work\\notes.txt",
+      source: { kind: "local" },
+    });
+    fireEvent.click(screen.getByText("readme.md"));
+    const pane = document.querySelectorAll(".sftp-pane__body")[1]!;
+    fireEvent.keyDown(pane, { key: " " });
+    expect(useFilePreview.getState().file).toMatchObject({
+      path: "/srv/app/readme.md",
+      source: { kind: "remote", sessionId: "session-1" },
+    });
+    expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
+    expect(fsMock.openLocal).not.toHaveBeenCalled();
+  });
+  it("opens a folder in the next column and preserves the parent for changing branches", async () => {
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+      if (source.kind === "local" && path === "C:\\work\\src")
+        return {
+          path,
+          entries: [{ ...localListing.entries[0], name: "child.ts", path: `${path}\\child.ts` }],
+        };
+      return listingFor(source);
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Column view" }));
+    fireEvent.click(screen.getByText("src"));
+    expect(await screen.findByText("child.ts")).toBeTruthy();
+    expect(screen.getByText("notes.txt")).toBeTruthy();
+    const columns = document.querySelectorAll('.sftp-miller__column [role="listbox"]');
+    expect(columns.length).toBe(2);
+    fireEvent.keyDown(columns[1]!, { key: "ArrowLeft" });
+    expect(screen.queryByText("child.ts")).toBeNull();
+    expect(currentPath()).toBe("C:\\work");
+  });
+
+  it("commits Chinese IME input once and selects the matching file", async () => {
+    fsMock.list.mockImplementation(async (source: FsSource) =>
+      source.kind === "local"
+        ? {
+            ...localListing,
+            entries: [
+              ...localListing.entries,
+              {
+                ...localListing.entries[0],
+                name: "微信-Installer.exe",
+                path: "C:\\work\\微信-Installer.exe",
+              },
+            ],
+          }
+        : remoteListing,
+    );
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    const proxy = within(local).getByRole("textbox", { name: "Type to select a file or folder" });
+    fireEvent.compositionStart(proxy);
+    fireEvent.compositionEnd(proxy, { data: "微信" });
+    fireEvent.change(proxy, { target: { value: "微信" } });
+    expect(within(local).getByRole("option", { selected: true }).textContent).toContain(
+      "微信-Installer.exe",
+    );
+  });
+
+  it("loads breadcrumb child folders only on expansion and navigates through the menu", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const before = fsMock.list.mock.calls.length;
+    fireEvent.click(screen.getByRole("button", { name: "Subfolders of C:\\work" }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: "src" }));
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work\\src"),
+    );
+    expect(fsMock.list.mock.calls.length).toBeGreaterThan(before);
+  });
+
   it("uses customized file bindings and consumes them before global workbench commands", async () => {
     useSettings.setState({
       settings: {
@@ -146,28 +246,32 @@ describe("SftpPage", () => {
       render(<SftpPage sessionId="session-1" />);
       await screen.findByText("notes.txt");
       await screen.findByText("readme.md");
-      const paths = screen.getAllByRole("textbox", { name: "Path" }) as HTMLInputElement[];
       const local = screen.getAllByRole("listbox")[0]!;
       local.focus();
       expect(fireEvent.keyDown(local, { key: "l", ...modifier })).toBe(false);
-      expect(document.activeElement).toBe(paths[0]);
-      expect(paths[0]!.selectionStart).toBe(0);
-      expect(paths[0]!.selectionEnd).toBe(paths[0]!.value.length);
+      const localPath = screen.getByRole("textbox", { name: "Path" }) as HTMLInputElement;
+      expect(document.activeElement).toBe(localPath);
+      expect(localPath.selectionStart).toBe(0);
+      expect(localPath.selectionEnd).toBe(localPath.value.length);
+      fireEvent.keyDown(localPath, { key: "Escape" });
 
-      const remotePane = paths[1]!.closest(".sftp-pane") as HTMLElement;
+      const remotePane = document.querySelectorAll<HTMLElement>(".sftp-pane")[1]!;
       const refresh = within(remotePane).getByRole("button", { name: "Refresh" });
       refresh.focus();
       fireEvent.keyDown(refresh, { key: "l", ...modifier });
-      expect(document.activeElement).toBe(paths[1]);
-      expect(paths[1]!.selectionStart).toBe(0);
-      expect(paths[1]!.selectionEnd).toBe(paths[1]!.value.length);
+      const remotePath = within(remotePane).getByRole("textbox", {
+        name: "Path",
+      }) as HTMLInputElement;
+      expect(document.activeElement).toBe(remotePath);
+      expect(remotePath.selectionStart).toBe(0);
+      expect(remotePath.selectionEnd).toBe(remotePath.value.length);
 
-      fireEvent.change(paths[1]!, { target: { value: "/draft/path" } });
-      paths[1]!.setSelectionRange(4, 4);
-      fireEvent.keyDown(paths[1]!, { key: "l", ...modifier });
-      expect(paths[1]!.value).toBe("/draft/path");
-      expect(paths[1]!.selectionStart).toBe(0);
-      expect(paths[1]!.selectionEnd).toBe("/draft/path".length);
+      fireEvent.change(remotePath, { target: { value: "/draft/path" } });
+      remotePath.setSelectionRange(4, 4);
+      fireEvent.keyDown(remotePath, { key: "l", ...modifier });
+      expect(remotePath.value).toBe("/draft/path");
+      expect(remotePath.selectionStart).toBe(0);
+      expect(remotePath.selectionEnd).toBe("/draft/path".length);
     },
   );
 
@@ -224,7 +328,7 @@ describe("SftpPage", () => {
         fireEvent.click(row);
         fireEvent.click(within(pane).getByRole("button", { name: "Refresh" }));
       } else {
-        const path = within(pane).getByRole("textbox", { name: "Path" });
+        const path = openPath(1);
         fireEvent.change(path, { target: { value: "/srv/other" } });
         fireEvent.keyDown(path, { key: "Enter" });
       }
@@ -383,7 +487,7 @@ describe("SftpPage asynchronous interactions", () => {
     });
     render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");
-    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    const path = openPath();
     fireEvent.change(path, { target: { value: "C:\\next" } });
     fireEvent.keyDown(path, { key: "Enter" });
     expect(pending).toHaveLength(1);
@@ -399,7 +503,7 @@ describe("SftpPage asynchronous interactions", () => {
     await act(async () =>
       pending[0]!({ ...localListing, path: "C:\\obsolete", entries: localListing.entries }),
     );
-    expect((path as HTMLInputElement).value).toBe("C:\\next");
+    expect(currentPath()).toBe("C:\\next");
     expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
   });
 
@@ -417,7 +521,7 @@ describe("SftpPage asynchronous interactions", () => {
     const oldInput = document.querySelector(".sftp-row.is-creating input")!;
     fireEvent.change(oldInput, { target: { value: "first.txt" } });
     fireEvent.keyDown(oldInput, { key: "Enter" });
-    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    const path = openPath();
     fireEvent.change(path, { target: { value: "C:\\elsewhere" } });
     fireEvent.keyDown(path, { key: "Enter" });
     await waitFor(() =>
@@ -434,7 +538,7 @@ describe("SftpPage asynchronous interactions", () => {
         (document.querySelector(".sftp-row.is-creating input") as HTMLInputElement)?.value,
       ).toBe("second.txt"),
     );
-    expect((path as HTMLInputElement).value).toBe("C:\\elsewhere");
+    expect(currentPath()).toBe("C:\\elsewhere");
   });
 
   it("refreshes both panels when completion arrives before the transfer id response", async () => {
@@ -497,28 +601,29 @@ describe("SftpPage asynchronous interactions", () => {
     });
     render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");
-    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    const path = openPath();
     fireEvent.change(path, { target: { value: "C:\\slow" } });
     fireEvent.keyDown(path, { key: "Enter" });
-    fireEvent.change(path, { target: { value: "C:\\fast" } });
-    fireEvent.keyDown(path, { key: "Enter" });
-    await waitFor(() => expect((path as HTMLInputElement).value).toBe("C:\\fast"));
+    const nextPath = openPath();
+    fireEvent.change(nextPath, { target: { value: "C:\\fast" } });
+    fireEvent.keyDown(nextPath, { key: "Enter" });
+    await waitFor(() => expect(currentPath()).toBe("C:\\fast"));
     await act(async () => resolveSlow({ ...localListing, path: "C:\\slow" }));
-    expect((path as HTMLInputElement).value).toBe("C:\\fast");
+    expect(currentPath()).toBe("C:\\fast");
   });
 
   it("returns to navigation history rather than assuming the parent folder", async () => {
     render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");
-    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    const path = openPath();
     fireEvent.change(path, { target: { value: "D:\\other" } });
     fireEvent.keyDown(path, { key: "Enter" });
-    await waitFor(() => expect((path as HTMLInputElement).value).toBe("D:\\other"));
+    await waitFor(() => expect(currentPath()).toBe("D:\\other"));
     const body = screen.getAllByRole("listbox")[0]!;
     fireEvent.keyDown(body, { key: "ArrowLeft", altKey: true });
-    await waitFor(() => expect((path as HTMLInputElement).value).toBe("C:\\work"));
+    await waitFor(() => expect(currentPath()).toBe("C:\\work"));
     fireEvent.keyDown(body, { key: "ArrowRight", altKey: true });
-    await waitFor(() => expect((path as HTMLInputElement).value).toBe("D:\\other"));
+    await waitFor(() => expect(currentPath()).toBe("D:\\other"));
   });
 
   it("contracts an extended keyboard selection using its cursor", async () => {
@@ -656,6 +761,21 @@ describe("SftpPage preloading", () => {
     expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
   });
 
+  it("suppresses speculative directory requests in lightweight mode and resumes them live", async () => {
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, preloadDirs: true, lightweightMode: true },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\");
+    act(() =>
+      useSettings.setState({
+        settings: { ...DEFAULT_SETTINGS, preloadDirs: true, lightweightMode: false },
+      }),
+    );
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
+  });
+
   it.each(["name", "size", "modified"] as const)(
     "prioritizes visible %s order and changes targets without reloading the open directory",
     async (sortBy) => {
@@ -772,7 +892,7 @@ describe("SftpPage visible file interactions", () => {
     withHidden();
     render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");
-    const path = screen.getAllByRole("textbox", { name: "Path" })[0]!;
+    const path = openPath();
     fireEvent.keyDown(path, { key: "h", ctrlKey: true });
     expect(useSettings.getState().settings.filesShowHidden).toBe(false);
     const body = screen.getAllByRole("listbox")[0]!;
@@ -866,11 +986,7 @@ describe("SftpPage visible file interactions", () => {
       );
       expect(useSettings.getState().settings.filesShowHidden).toBe(false);
       fireEvent.keyDown(body, { key: "Backspace" });
-      await waitFor(() =>
-        expect(
-          (screen.getAllByRole("textbox", { name: "Path" })[0] as HTMLInputElement).value,
-        ).toBe("C:\\"),
-      );
+      await waitFor(() => expect(currentPath()).toBe("C:\\"));
       expect(within(body).queryByText(".env")).toBeNull();
     },
   );
@@ -950,7 +1066,7 @@ describe("SftpPage visible file interactions", () => {
       ]);
       fireEvent.keyDown(filter, { key: "Escape" });
       expect(screen.queryByRole("textbox", { name: "Filter files" })).toBeNull();
-      expect(document.activeElement).toBe(local);
+      expect(local.contains(document.activeElement)).toBe(true);
       expect(within(local).getByText("src")).toBeTruthy();
     },
   );

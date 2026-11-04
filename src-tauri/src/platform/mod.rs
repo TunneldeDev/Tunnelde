@@ -1,3 +1,4 @@
+pub mod background;
 pub mod locale;
 pub mod logging;
 pub mod menu;

@@ -9,7 +9,6 @@ import {
   Info,
   LockKeyhole,
   LockKeyholeOpen,
-  Pin,
   PanelLeft,
   Server,
   ShieldCheck,
@@ -24,6 +23,8 @@ import { useTranslation } from "react-i18next";
 
 import { TabContent } from "@/components/layout/TabContent";
 import { EmptyState } from "@/components/ui/display/Misc";
+import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
+import { useFileIconResolver } from "@/lib/files/icons";
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { sidebarMoveActions } from "@/components/layout/SidebarDockControls";
@@ -116,10 +117,12 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
 }
 
 function TabStrip({ pane }: { pane: WorkspacePane }) {
+  const resolveFileIcon = useFileIconResolver();
   const { t } = useTranslation();
   const tabs = useWorkspace((state) => state.tabs);
   const activate = useWorkspace((state) => state.activate);
   const togglePin = useWorkspace((state) => state.togglePin);
+  const keepTab = useWorkspace((state) => state.keepTab);
   const reorderTab = useWorkspace((state) => state.reorderTab);
   const moveTab = useWorkspace((state) => state.moveTab);
   const closeOthers = useWorkspace((state) => state.closeOthers);
@@ -259,33 +262,50 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               data-tab-id={tab.id}
               role="tab"
               aria-selected={active}
-              title={tabTitle(tab)}
+              title={tab.preview ? `${tabTitle(tab)} · ${t("tab.previewHint")}` : tabTitle(tab)}
               tabIndex={active ? 0 : -1}
               draggable
               className={cn(
                 "td-tab",
                 active && "is-active",
                 tab.pinned && "is-pinned",
+                tab.preview && "is-preview",
                 before === tab.id && "is-drop-before",
               )}
               onDragStart={(event) => {
+                keepTab(tab.id);
                 event.dataTransfer.setData(TAB_MIME, tab.id);
                 const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
                 if (sidebar) event.dataTransfer.setData(SIDEBAR_MIME, sidebar);
                 event.dataTransfer.effectAllowed = "move";
               }}
-              onClick={() => activate(tab.id)}
+              onClick={() => {
+                if (active && tab.preview) keepTab(tab.id);
+                activate(tab.id);
+              }}
               onAuxClick={(event) => {
                 if (event.button === 1) {
                   event.preventDefault();
                   requestClose(tab);
                 }
               }}
-              onDoubleClick={() => togglePin(tab.id)}
+              onDoubleClick={(event) => {
+                if (event.target instanceof Element && event.target.closest("button")) return;
+                keepTab(tab.id);
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 const items = [
+                  {
+                    label: t("tab.keepOpen"),
+                    disabled: !tab.preview,
+                    onSelect: () => keepTab(tab.id),
+                  },
+                  {
+                    label: t(tab.pinned ? "tab.unpin" : "tab.pin"),
+                    onSelect: () => togglePin(tab.id),
+                  },
                   { label: t("tab.close"), onSelect: () => requestClose(tab) },
                   { label: t("tab.closeOthers"), onSelect: () => closeOthers(tab.id) },
                   {
@@ -336,10 +356,15 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   activate(tab.id);
+                  if (event.key === "Enter") keepTab(tab.id);
                 }
               }}
             >
-              {tab.pinned ? <Pin size={11} className="td-tab__pin" /> : <Icon size={13} />}
+              {tab.kind === "editor" ? (
+                <FileTypeIcon icon={resolveFileIcon(tab.title)} size={16} />
+              ) : (
+                <Icon size={13} />
+              )}
               <span className="td-tab__label">
                 <TabLabel tab={tab} />
               </span>

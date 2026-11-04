@@ -2,7 +2,9 @@ pub mod files;
 pub mod forward;
 pub mod keys;
 pub mod monitor;
+mod processes;
 pub mod session;
+mod terminal_output;
 
 pub use keys::InstalledKey;
 pub use session::{

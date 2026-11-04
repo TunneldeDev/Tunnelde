@@ -21,12 +21,15 @@ import { useFilePreview } from "@/store/filePreview";
 import { toast } from "@/store/toasts";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
+import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
+import { useFileIconResolver } from "@/lib/files/icons";
 import "@/styles/shortcuts.css";
 
 interface Command {
   id: string;
   title: string;
   detail?: string;
+  fileName?: string;
   run: () => void;
 }
 type Match = Awaited<ReturnType<typeof api.filesSearch>>["matches"][number];
@@ -37,6 +40,7 @@ export function CommandPalette() {
 }
 
 function QuickAccess({ initialQuery }: { initialQuery: string }) {
+  const resolveFileIcon = useFileIconResolver();
   const { t } = useTranslation();
   const hosts = useHosts((state) => state.hosts);
   const plugins = usePlugins((state) => state.items);
@@ -174,6 +178,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
             .map((tab) => ({
               id: `tab:${tab.id}`,
               title: tab.title,
+              fileName: tab.kind === "editor" ? tab.title : undefined,
               detail: t("palette.openTab"),
               run: () => useWorkspace.getState().activate(tab.id),
             }))
@@ -209,6 +214,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
       list.push({
         id: `file:${match.path}:${match.line}`,
         title: mode === "content" ? match.preview : fileName(match.path),
+        fileName: fileName(match.path),
         detail: `${match.path}${match.line ? `:${match.line}:${match.column}` : ""}`,
         run: () => {
           if (!sessionId) {
@@ -422,6 +428,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => run(command)}
             >
+              {command.fileName ? <FileTypeIcon icon={resolveFileIcon(command.fileName)} /> : null}
               <span className="td-palette__label">
                 <span>{command.title}</span>
                 {command.detail && <small title={command.detail}>{command.detail}</small>}

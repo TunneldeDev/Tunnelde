@@ -1,5 +1,9 @@
 # Architecture
 
+Background work uses a shared task service with lifecycle-owned source adapters and optional
+visibility. See [Background task integration](development/background-tasks.en-us.md)
+([简体中文](development/background-tasks.zh-cn.md)).
+
 ## Layers
 
 | Layer      | Location                                                                                                | Responsibility                                                                                                                         |
@@ -28,6 +32,23 @@ Only then does the native layer restore fullscreen and reveal the window. Tray a
 Dock clicks and second launches share this readiness gate. Background update status does
 not delay presentation, and font failures use fallbacks. No animation-frame wait is used
 because hidden webviews can suspend those callbacks.
+
+With `releaseWebviewInTray` enabled, hiding the main window requests a frontend
+checkpoint. Native code accepts only the current request token while the window
+remains hidden, retains the bounded snapshot in memory and destroys the WebView.
+Dialogs and view-owned writes defer the checkpoint. A cancelled request reattaches
+any detached terminals. SSH terminal output uses a sequence barrier and a bounded
+4 MiB queue while detached; reaching the limit applies channel backpressure rather
+than truncating ANSI/UTF-8 data. Restoration uses xterm's serializer plus a pinned
+adapter for parser modes, saved cursors and partial control/UTF-8 sequences.
+
+The process remains alive without windows until an explicit quit. Tray/Dock and
+second-launch actions recreate the original window, restore native geometry and
+appearance on the main thread, and use the startup readiness gate again. WebView
+creation itself runs outside synchronous event callbacks to avoid a WebView2
+deadlock. Geometry restoration runs on the main thread to avoid a window-state
+cache/resize-event lock inversion. Bootstrap reconciles native sessions, transfers
+and plugin events after restoring the memory-only workspace and drafts.
 
 ## Data
 
@@ -67,10 +88,20 @@ and jump handles stay owned by the destination session.
 
 Durable desktop transfers journal tasks under `transfer:<id>`, per-file checkpoints
 under `transfer-file:<id>:…`, and overwrite recovery intent under
-`transfer-backup:<id>:…`. Stable host IDs rebind tasks after reconnecting. Full
-prefix verification, source stamps and owned-backup checks protect resume and
+`transfer-backup:<id>:…`. Stable host IDs and endpoint addresses rebind tasks after
+reconnecting. Clean unchanged checkpoints use bounded head/tail verification;
+crashed, changed or legacy checkpoints retain full prefix verification. Source stamps and owned-backup checks protect resume and
 overwrite recovery. Plugin transfers retain runtime ownership instead of acquiring
 restart-persistent permissions.
+
+The transfer scheduler atomically reserves source and destination channel budgets
+before opening files. At most four tasks run globally; each remote endpoint reserves
+two slots from its SSH connection's four-slot transfer budget. Waiting tasks retain
+Pause/Cancel controls and do not open transfer channels. Independent connections can
+progress around a task blocked on another connection. Explicit-offset SFTP pipelines
+remain polled while bandwidth credits are pending, with bounded request and buffer
+budgets. The background task window previews geometry without updating React on
+each pointer move, persists layout on release, and includes it in tray checkpoints.
 
 The forwarding registry owns listeners, active sockets and remote forwarding
 routes, with cancellation tickets covering setup as well as active connections.
@@ -87,11 +118,34 @@ native UI blocks and executable host calls share the same authorization and owne
 
 ## Events
 
+`src/lib/events` owns typed native and local domain subscriptions. Native events share one
+transport listener per event name. Each caller owns an independent, idempotent disposer and
+can supply an `AbortSignal`; disposing during registration also releases a late listener.
+Listener failures are isolated, and diagnostics contain names and subscriber counts rather
+than payloads. The bus retains no event history or application state. SSH byte chunks are
+delivered in arrival order without debounce, coalescing or replay.
+
+Bootstrap owns its listeners, appearance observers, workspace subscription and persistence
+timer. Failed native registrations retry independently with a bounded backoff; recovery reads
+the corresponding settings, plugins, security, sessions, updates or transfer snapshot. Stores
+remain responsible for rejecting stale snapshots. Disposing bootstrap aborts pending setup,
+releases subscriptions and flushes scheduled workspace persistence. Closing to the tray
+uses this lifecycle when WebView release is enabled, as described in
+[startup and window presentation](#startup-and-window-presentation).
+
+Subscription groups provide transactional registration for plugin workspace requests and
+marketplace listeners: partial failure releases successful and late listeners, and the group
+can restart. Marketplace recovery reads configuration again to reconcile edits missed during
+registration failure. Local history and file invalidations use typed helpers while preserving
+the browser CustomEvent boundary for integrations. History registers before its first read
+and uses request revisions to prevent an older read from replacing a newer result.
+
 | Event                | Payload                                                       |
 | -------------------- | ------------------------------------------------------------- |
 | `ssh://data`         | Terminal bytes from a session                                 |
 | `ssh://closed`       | Session id and reason                                         |
 | `sftp://transfer`    | Transfer progress, completion and errors                      |
+| `sftp://changed`     | Reconcile durable tasks after creation or deferred cleanup    |
 | `plugin://state`     | Plugin status after start, stop or failure                    |
 | `plugin://event`     | Plugin identity, runtime generation and bounded event payload |
 | `settings://changed` | Committed application preferences                             |

@@ -106,6 +106,10 @@ describe("release preparation", () => {
     for (const version of [
       "0.19.0-beta.12.1",
       "0.19.0-beta.13",
+      "0.19.0-beta01",
+      "0.19.0-beta12",
+      "0.19.0-beta99",
+      "0.19.0-beta12.d.2.gabcdef012345",
       "0.19.0-alpha.1.d.10.gabcdef012345",
       "0.19.0-beta.13.d.2.gabcdef012345",
     ]) {
@@ -198,6 +202,36 @@ describe("native helper packaging", () => {
 });
 
 describe("release publishing", () => {
+  it("restricts the build workflow to stable, beta.1–beta.9 and source-derived Nightly", () => {
+    const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
+    const pattern = /if \[\[ ! "\$\{TAG\}" =~ (.+) \]\]; then/.exec(workflow)?.[1];
+    expect(pattern).toBeTruthy();
+    const gate = new RegExp(pattern!);
+    for (const tag of [
+      "v0.28.0",
+      "v0.28.0-beta.1",
+      "v0.28.0-beta.9",
+      "v0.28.0-beta.9.d.2.gabcdef012345",
+      "v0.28.0-alpha.1.d.10.gabcdef012345",
+    ]) {
+      expect(gate.test(tag), tag).toBe(true);
+    }
+    for (const tag of [
+      "v0.28.0-beta.10",
+      "v0.28.0-beta.11",
+      "v0.28.0-beta.0",
+      "v0.28.0-beta.01",
+      "v0.28.0-beta01",
+      "v0.28.0-beta.2.1",
+      "v0.28.0-beta.10.d.2.gabcdef012345",
+      "v0.28.0-beta.1.d.02.gabcdef012345",
+      "v00.28.0",
+      "v0.28.0-beta.b12",
+      "main",
+    ]) {
+      expect(gate.test(tag), tag).toBe(false);
+    }
+  });
   it("includes the tagged changelog notes in stable and beta OTA manifests", () => {
     const config = JSON.parse(
       readFileSync(join(process.cwd(), "src-tauri/tauri.conf.json"), "utf8"),
@@ -219,6 +253,8 @@ describe("release publishing", () => {
       "v0.27.0",
       "v0.27.1-beta.3.1",
       "v0.27.1-beta.4",
+      "v0.27.1-beta12",
+      "v0.27.1-beta12.d.2.gabcdef012345",
       "v0.27.1-alpha.1.d.10.gabcdef012345",
       "v0.27.1-beta.4.d.2.gabcdef012345",
     ]) {
