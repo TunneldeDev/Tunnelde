@@ -85,12 +85,14 @@ after an application restart or privilege revocation.
 
 ## Local and remote port forwarding
 
-Open a host's detail page and expand **Port forwarding**. Add a named rule:
+Click **Port forwarding** in the SSH terminal toolbar to manage that host's rules,
+with the current terminal session preselected. You can also open the host's detail
+page and expand **Port forwarding**. Add a named rule:
 
-| Direction      | Listener      | Destination is reached from |
-| -------------- | ------------- | --------------------------- |
-| Local → remote | This computer | The SSH host                |
-| Remote → local | The SSH host  | This computer               |
+| Direction                       | Listener      | Destination is reached from |
+| ------------------------------- | ------------- | --------------------------- |
+| Local listener → remote service | This computer | The SSH host                |
+| Remote listener → local service | The SSH host  | This computer               |
 
 For a remote database listening on `127.0.0.1:5432`, a local rule could listen on
 `127.0.0.1:15432` and forward to `127.0.0.1:5432`. Applications then connect to
@@ -125,3 +127,14 @@ close authenticated access and attempt normal cleanup. If a directory is busy,
 close files using it and retry; forced unmount requires confirmation. Mounts do
 not automatically restart. Driver compatibility and platform-specific mount
 behavior must also be tested with the installed SSHFS distribution.
+
+## File previews
+
+Select one file in either pane and press Space, click the Preview toolbar button, or
+choose Preview from its context menu. Text previews are read only; Markdown opens rendered
+with a source switch. Local text is bounded to 512 KiB and remote text to the existing
+2 MiB read limit. Unsupported or binary files report a preview error. Remote previews
+use the selected pane's SSH session. Close returns focus to the file list; the footer
+can open a local file with the OS or edit a connected remote text file.
+
+PDF/image viewers and contributed preview providers are not implemented by this change.
