@@ -35,12 +35,20 @@ const initial = (hostId: string): ForwardRule => ({
   targetPort: 80,
 });
 
-export function ForwardingSection({ host }: { host: Host }) {
+export function ForwardingSection({
+  host,
+  initialSessionId = "",
+  embedded = false,
+}: {
+  host: Host;
+  initialSessionId?: string;
+  embedded?: boolean;
+}) {
   const { t } = useTranslation();
   const id = useId();
   const sessions = useSsh((s) => s.sessions);
   const available = sessions.filter((s) => s.hostId === host.id);
-  const [sessionId, setSessionId] = useState("");
+  const [sessionId, setSessionId] = useState(initialSessionId);
   const session = available.find((s) => s.id === sessionId) ?? available[0];
   const [rules, setRules] = useState<ForwardInfo[]>([]);
   const [form, setForm] = useState<ForwardRule | null>(null);
@@ -106,9 +114,9 @@ export function ForwardingSection({ host }: { host: Host }) {
     else await action();
   };
   return (
-    <section className="card">
+    <section className={embedded ? undefined : "card"}>
       <div className="field-row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-        <h2 className="card__title">{t("forward.title")}</h2>
+        <h2 className="card__title">{embedded ? host.name : t("forward.title")}</h2>
         <Button
           size="sm"
           variant="secondary"
@@ -196,7 +204,10 @@ export function ForwardingSection({ host }: { host: Host }) {
             </Button>
           </div>
           <code style={{ display: "block", overflowWrap: "anywhere", marginTop: 6 }}>
-            {rule.bindHost}:{rule.bindPort} → {rule.targetHost}:{rule.targetPort}
+            {t(rule.mode === "local" ? "forward.localEndpoint" : "forward.remoteEndpoint")}{" "}
+            {rule.bindHost}:{rule.bindPort} →{" "}
+            {t(rule.mode === "local" ? "forward.remoteEndpoint" : "forward.localEndpoint")}{" "}
+            {rule.targetHost}:{rule.targetPort}
           </code>
         </div>
       ))}
@@ -234,7 +245,11 @@ export function ForwardingSection({ host }: { host: Host }) {
             />
           </Field>
           <div className="form-row">
-            <Field label={t("forward.bindHost")} className="grow" htmlFor={`${id}-bind-host`}>
+            <Field
+              label={t(`forward.${form.mode === "local" ? "local" : "remote"}BindHost`)}
+              className="grow"
+              htmlFor={`${id}-bind-host`}
+            >
               <Input
                 id={`${id}-bind-host`}
                 required
@@ -242,7 +257,11 @@ export function ForwardingSection({ host }: { host: Host }) {
                 onChange={(e) => setForm({ ...form, bindHost: e.target.value })}
               />
             </Field>
-            <Field label={t("forward.bindPort")} className="port" htmlFor={`${id}-bind-port`}>
+            <Field
+              label={t(`forward.${form.mode === "local" ? "local" : "remote"}BindPort`)}
+              className="port"
+              htmlFor={`${id}-bind-port`}
+            >
               <Input
                 id={`${id}-bind-port`}
                 required
@@ -255,7 +274,11 @@ export function ForwardingSection({ host }: { host: Host }) {
             </Field>
           </div>
           <div className="form-row">
-            <Field label={t("forward.targetHost")} className="grow" htmlFor={`${id}-target-host`}>
+            <Field
+              label={t(`forward.${form.mode === "local" ? "local" : "remote"}TargetHost`)}
+              className="grow"
+              htmlFor={`${id}-target-host`}
+            >
               <Input
                 id={`${id}-target-host`}
                 required
@@ -263,7 +286,11 @@ export function ForwardingSection({ host }: { host: Host }) {
                 onChange={(e) => setForm({ ...form, targetHost: e.target.value })}
               />
             </Field>
-            <Field label={t("forward.targetPort")} className="port" htmlFor={`${id}-target-port`}>
+            <Field
+              label={t(`forward.${form.mode === "local" ? "local" : "remote"}TargetPort`)}
+              className="port"
+              htmlFor={`${id}-target-port`}
+            >
               <Input
                 id={`${id}-target-port`}
                 required

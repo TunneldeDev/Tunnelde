@@ -80,10 +80,43 @@ it("requires confirmation before saving a listener exposed to other devices", as
   });
   fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Public" } });
-  fireEvent.change(screen.getByLabelText("Listen address"), { target: { value: "0.0.0.0" } });
+  fireEvent.change(screen.getByLabelText("Local listen address"), { target: { value: "0.0.0.0" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(useDialogs.getState().confirm).toHaveBeenCalledWith(
     expect.objectContaining({ danger: true }),
   );
   expect(invokeMock).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
+});
+
+it("explains endpoint ownership when changing direction and starts in the originating terminal session", async () => {
+  useSsh.setState({
+    sessions: ["other", "current"].map((id) => ({
+      id,
+      hostId: "host",
+      title: id,
+      address: "server:22",
+      cols: 80,
+      rows: 24,
+      connectedAt: 0,
+    })),
+  });
+  await act(async () => {
+    render(<ForwardingSection host={host} initialSessionId="current" />);
+  });
+  expect(screen.getByRole("button", { name: "SSH session" }).textContent).toContain("current");
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  expect(screen.getByLabelText("Local listen address")).toBeTruthy();
+  expect(screen.getByLabelText("Remote service address")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Direction" }));
+  fireEvent.click(
+    screen.getByRole("option", { name: "Remote listener → local service (share local)" }),
+  );
+  expect(screen.getByLabelText("Remote listen address")).toBeTruthy();
+  expect(screen.getByLabelText("Local service address")).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Share local app" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText("Share local app");
+  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  await screen.findByText("Running");
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "rule", sessionId: "current" });
 });
