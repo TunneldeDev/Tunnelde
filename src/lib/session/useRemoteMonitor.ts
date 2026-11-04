@@ -14,6 +14,11 @@ interface Poller {
 
 const pollers = new Map<string, Poller>();
 
+function samplingInterval() {
+  const settings = useSettings.getState().settings;
+  return Math.max(settings.monitorIntervalMs, settings.lightweightMode ? 5000 : 0);
+}
+
 /** One completion-based polling loop per session, shared by visible consumers. */
 export function subscribeRemoteMonitor(sessionId: string): () => void {
   let poller = pollers.get(sessionId);
@@ -38,10 +43,7 @@ export function subscribeRemoteMonitor(sessionId: string): () => void {
         } finally {
           next.busy = false;
           if (pollers.get(sessionId) === next && document.visibilityState === "visible") {
-            next.timer = window.setTimeout(
-              () => void next.tick(),
-              useSettings.getState().settings.monitorIntervalMs,
-            );
+            next.timer = window.setTimeout(() => void next.tick(), samplingInterval());
           }
         }
       },
@@ -55,11 +57,15 @@ export function subscribeRemoteMonitor(sessionId: string): () => void {
     poller = next;
     pollers.set(sessionId, next);
     next.unsubscribeSettings = useSettings.subscribe((state, previous) => {
-      if (state.settings.monitorIntervalMs === previous.settings.monitorIntervalMs) return;
+      if (
+        state.settings.monitorIntervalMs === previous.settings.monitorIntervalMs &&
+        state.settings.lightweightMode === previous.settings.lightweightMode
+      )
+        return;
       window.clearTimeout(next.timer);
       // A pending sample finishes first, then schedules with the latest value.
       if (!next.busy && document.visibilityState === "visible") {
-        next.timer = window.setTimeout(() => void next.tick(), state.settings.monitorIntervalMs);
+        next.timer = window.setTimeout(() => void next.tick(), samplingInterval());
       }
     });
     document.addEventListener("visibilitychange", next.visibility);

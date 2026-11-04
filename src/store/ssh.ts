@@ -10,6 +10,7 @@ import { useMonitor } from "@/store/monitor";
 const connections = new Map<string, Promise<SshSession | null>>();
 const disconnections = new Map<string, Promise<void>>();
 let sessionVersion = 0;
+let snapshotVersion = 0;
 
 interface SshStore {
   sessions: SshSession[];
@@ -43,10 +44,17 @@ export const useSsh = create<SshStore>((set, get) => ({
 
   refresh: async () => {
     const version = sessionVersion;
+    const request = ++snapshotVersion;
     try {
       const sessions = await api.sshSessions();
-      if (sessionVersion === version) {
+      if (sessionVersion === version && snapshotVersion === request) {
+        const alive = new Set(sessions.map((session) => session.id));
+        const ended = get().sessions.filter((session) => !alive.has(session.id));
         set({ sessions });
+        for (const session of ended) {
+          useMonitor.getState().forget(session.id);
+          useWorkspace.getState().closeSession(session.id);
+        }
       }
     } catch {
       // A missing session list never blocks the workspace.

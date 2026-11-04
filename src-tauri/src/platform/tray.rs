@@ -1,6 +1,6 @@
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Manager};
 
 use crate::state::AppState;
 
@@ -96,16 +96,13 @@ fn handle_menu(app: &AppHandle, id: &str) {
     match id {
         "show" => crate::platform::window::show_main(app),
         "settings" => {
-            crate::platform::window::show_main(app);
-            let _ = app.emit("ui://navigate", "settings");
+            crate::platform::background::navigate(app, "settings");
         }
         "about" => {
-            crate::platform::window::show_main(app);
-            let _ = app.emit("ui://navigate", "about");
+            crate::platform::background::navigate(app, "about");
         }
         "updates" => {
-            crate::platform::window::show_main(app);
-            let _ = app.emit("ui://navigate", "updates");
+            crate::platform::background::navigate(app, "updates");
             crate::update::spawn_check(app.clone());
         }
         "quit" => app.exit(0),

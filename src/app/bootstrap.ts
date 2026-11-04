@@ -13,23 +13,62 @@ import { useTransfers } from "@/store/transfers";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
-import { wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
+import { createEventLifecycle, type Subscription } from "@/lib/events/lifecycle";
+import type { Dispose } from "@/lib/events/bus";
+import { reconcilePluginWorkspace, wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
+import { restoreBackgroundSnapshot } from "./backgroundWindow";
+import { registerBackgroundTaskSources } from "./backgroundTaskSources";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
 let pendingRecords: TabRecord[] | undefined;
 let saving = false;
+let lifetime: AbortController | undefined;
+const cleanups: Dispose[] = [];
 
 export function bootstrap(): Promise<void> {
-  return (startup ??= start());
+  if (startup) return startup;
+  const controller = new AbortController();
+  lifetime = controller;
+  const task = start(controller.signal).catch((error) => {
+    if (lifetime === controller) disposeBootstrap();
+    throw error;
+  });
+  startup = task;
+  return task;
 }
 
-async function start(): Promise<void> {
+/** Release view-owned resources; native SSH sessions and transfers keep running. */
+export function disposeBootstrap(): void {
+  lifetime?.abort();
+  lifetime = undefined;
+  startup = undefined;
+  if (persistTimer !== undefined) pendingRecords = workspaceRecords();
+  window.clearTimeout(persistTimer);
+  persistTimer = undefined;
+  for (const stop of cleanups.splice(0).reverse()) {
+    try {
+      stop();
+    } catch (error) {
+      console.error("Failed to release a view resource", error);
+    }
+  }
+  if (pendingRecords) void persistLatest();
+}
+
+if (import.meta.hot) import.meta.hot.dispose(disposeBootstrap);
+
+async function start(signal: AbortSignal): Promise<void> {
+  cleanups.push(registerBackgroundTaskSources());
   const initialTabs = useWorkspace.getState().tabs;
-  window.addEventListener("contextmenu", (event) => event.preventDefault());
+  window.addEventListener("contextmenu", (event) => event.preventDefault(), { signal });
+
+  if (isTauri()) await wireEvents();
+  if (signal.aborted) return;
 
   await useSettings.getState().load();
-  observeSystemAppearance(() => useSettings.getState().settings);
+  if (signal.aborted) return;
+  cleanups.push(observeSystemAppearance(() => useSettings.getState().settings));
   const restoreWorkspace = useSettings.getState().settings.restoreWorkspace !== false;
 
   if (!isTauri()) {
@@ -37,35 +76,45 @@ async function start(): Promise<void> {
     return;
   }
 
-  await wireEvents();
   // Discover view contributions before restoring their tabs; discovery does not execute plugins.
   await Promise.all([usePluginSecurity.getState().load(), usePlugins.getState().load()]);
+  if (signal.aborted) return;
   let restored = false;
   try {
-    const records = await api.tabs();
+    const resumed = await restoreBackgroundSnapshot();
+    const records = resumed ? [] : await api.tabs();
+    if (signal.aborted) return;
     // A slow snapshot must not replace tabs opened while startup is in progress.
-    if (restoreWorkspace) {
-      if (useWorkspace.getState().tabs === initialTabs) useWorkspace.getState().hydrate(records);
+    if (resumed || restoreWorkspace) {
+      if (!resumed && useWorkspace.getState().tabs === initialTabs)
+        useWorkspace.getState().hydrate(records);
       restored = true;
     }
   } catch (error) {
+    if (signal.aborted) return;
     toast(translateError(error), "error");
   }
   const hostsLoaded = await useHosts.getState().load();
+  if (signal.aborted) return;
   if (hostsLoaded) pruneMissingHosts();
   await useSsh.getState().refresh();
+  if (signal.aborted) return;
+  // The global background task list must work before any file page is opened.
+  void useTransfers.getState().hydrate();
   useWorkspace.getState().ensureWelcome();
 
-  useWorkspace.subscribe((state, previous) => {
-    if (
-      state.tabs === previous.tabs &&
-      state.panes === previous.panes &&
-      state.layout === previous.layout &&
-      state.activePaneId === previous.activePaneId
-    )
-      return;
-    schedulePersistence();
-  });
+  cleanups.push(
+    useWorkspace.subscribe((state, previous) => {
+      if (
+        state.tabs === previous.tabs &&
+        state.panes === previous.panes &&
+        state.layout === previous.layout &&
+        state.activePaneId === previous.activePaneId
+      )
+        return;
+      schedulePersistence();
+    }),
+  );
   // Save pruned/normalized restoration, but never overwrite an unreadable snapshot.
   if (restored) schedulePersistence();
   void useUpdates.getState().refresh();
@@ -74,6 +123,7 @@ async function start(): Promise<void> {
 function schedulePersistence(): void {
   window.clearTimeout(persistTimer);
   persistTimer = window.setTimeout(() => {
+    persistTimer = undefined;
     pendingRecords = workspaceRecords();
     void persistLatest();
   }, 400);
@@ -107,47 +157,79 @@ function pruneMissingHosts(): void {
 }
 
 async function wireEvents(): Promise<void> {
-  const listeners = await Promise.allSettled([
-    wirePluginWorkspaceBridge(),
-    events.onSettingsChanged((settings) => {
-      useSettings.getState().applyRemote(settings);
-    }),
-
-    events.onUpdateState((state) => {
-      useUpdates.getState().apply(state);
-    }),
-
-    events.onNavigate((page) => {
-      if (
-        page === "welcome" ||
-        page === "settings" ||
-        page === "about" ||
-        page === "updates" ||
-        page === "knownHosts"
-      ) {
-        useWorkspace.getState().openPage(page);
-      }
-    }),
-
-    events.onPluginState((payload) => {
-      usePlugins.getState().apply(payload);
-      if (payload.status === "failed" && payload.error)
-        reportPluginExecutionFailure({ code: "validation", message: payload.error });
-    }),
-    events.onPluginSecurity((payload) => usePluginSecurity.getState().apply(payload)),
-
-    events.onTransfer((payload) => {
-      useTransfers.getState().apply(payload);
-    }),
-
-    events.onSshClosed((payload) => {
-      const known = useSsh.getState().sessions.some((session) => session.id === payload.sessionId);
-      useSsh.getState().forget(payload.sessionId);
-      useMonitor.getState().forget(payload.sessionId);
-      useWorkspace.getState().closeSession(payload.sessionId);
-      if (known) toast(i18n.t("ssh.sessionEnded"), "info");
-    }),
-  ]);
-  const failed = listeners.find((listener) => listener.status === "rejected");
-  if (failed?.status === "rejected") toast(translateError(failed.reason), "error");
+  const subscriptions: Subscription[] = [
+    {
+      register: (signal) => wirePluginWorkspaceBridge(signal),
+      recover: reconcilePluginWorkspace,
+    },
+    {
+      register: (signal) =>
+        events.onSettingsChanged((settings) => {
+          useSettings.getState().applyRemote(settings);
+        }, signal),
+      recover: () => useSettings.getState().load(),
+    },
+    {
+      register: (signal) =>
+        events.onUpdateState((state) => useUpdates.getState().apply(state), signal),
+      recover: () => useUpdates.getState().refresh(),
+    },
+    {
+      register: (signal) =>
+        events.onNavigate((page) => {
+          if (
+            page === "welcome" ||
+            page === "settings" ||
+            page === "about" ||
+            page === "updates" ||
+            page === "knownHosts"
+          ) {
+            useWorkspace.getState().openPage(page);
+          }
+        }, signal),
+    },
+    {
+      register: (signal) =>
+        events.onPluginState((payload) => {
+          usePlugins.getState().apply(payload);
+          if (payload.status === "failed" && payload.error)
+            reportPluginExecutionFailure({ code: "validation", message: payload.error });
+        }, signal),
+      recover: () => usePlugins.getState().load(),
+    },
+    {
+      register: (signal) =>
+        events.onPluginSecurity((payload) => usePluginSecurity.getState().apply(payload), signal),
+      recover: () => usePluginSecurity.getState().load(true),
+    },
+    {
+      register: (signal) =>
+        events.onTransfer((payload) => useTransfers.getState().apply(payload), signal),
+      recover: () => useTransfers.getState().hydrate(),
+    },
+    {
+      register: (signal) =>
+        events.onTransfersChanged(() => {
+          void useTransfers.getState().hydrate();
+        }, signal),
+    },
+    {
+      register: (signal) =>
+        events.onSshClosed((payload) => {
+          const known = useSsh
+            .getState()
+            .sessions.some((session) => session.id === payload.sessionId);
+          useSsh.getState().forget(payload.sessionId);
+          useMonitor.getState().forget(payload.sessionId);
+          useWorkspace.getState().closeSession(payload.sessionId);
+          if (known) toast(i18n.t("ssh.sessionEnded"), "info");
+        }, signal),
+      recover: () => useSsh.getState().refresh(),
+    },
+  ];
+  const listeners = createEventLifecycle(subscriptions, (error) =>
+    toast(translateError(error), "error"),
+  );
+  cleanups.push(() => listeners.dispose());
+  await listeners.start();
 }

@@ -19,7 +19,8 @@ function readStats(): Promise<SystemStats> {
 /** Completion-based sampling while both the consumer and document are visible. */
 export function useSystemStats(intervalMs?: number, enabled = true): SystemStats | null {
   const configuredInterval = useSettings((state) => state.settings.monitorIntervalMs);
-  const interval = intervalMs ?? configuredInterval;
+  const lightweight = useSettings((state) => state.settings.lightweightMode);
+  const interval = Math.max(intervalMs ?? configuredInterval, lightweight ? 5000 : 0);
   const [stats, setStats] = useState<SystemStats | null>(null);
 
   useEffect(() => {

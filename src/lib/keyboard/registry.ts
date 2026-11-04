@@ -40,6 +40,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("sidebar.plugins", "settings.plugins", "workbench", []),
   command("update.check", "updates.check", "workbench", []),
   command("panel.toggle", "shortcuts.togglePanel", "workbench", []),
+  command("transfers.show", "tasks.title", "workbench", [], { input: true }),
   command("theme.cycle", "shortcuts.cycleTheme", "workbench", []),
   command("font.increase", "shortcuts.fontIncrease", "workbench", [
     "Mod+Equal",
@@ -49,6 +50,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("font.decrease", "shortcuts.fontDecrease", "workbench", ["Mod+Minus"]),
   command("font.reset", "shortcuts.fontReset", "workbench", ["Mod+0"]),
   command("tab.close", "tab.close", "workbench", ["Mod+W"]),
+  command("tab.keepOpen", "tab.keepOpen", "workbench", []),
   command("pane.close", "shortcuts.closePane", "workbench", ["Mod+Shift+W"]),
   command("tab.splitRight", "tab.splitRight", "workbench", ["Mod+Backslash"]),
   command("tab.splitDown", "tab.splitDown", "workbench", ["Mod+Shift+Backslash"]),
@@ -82,6 +84,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("files.newFile", "sftp.newFile", "files", ["Mod+N"]),
   command("files.newFolder", "sftp.newFolder", "files", ["Mod+Shift+N"]),
   command("files.open", "common.open", "files", ["Enter", "Meta+ArrowDown"]),
+  command("files.preview", "sftp.preview", "files", ["Space"]),
   command("files.rename", "sftp.rename", "files", ["F2"]),
   command("files.delete", "common.delete", "files", ["Delete"]),
 ];

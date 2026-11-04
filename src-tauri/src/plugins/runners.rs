@@ -39,8 +39,8 @@ fn metadata(context: &HostContext) -> PathBuf {
     context
         .app
         .state::<AppState>()
-        .data_dir
-        .join("plugin-runners")
+        .storage
+        .dir(crate::storage::layout::Category::Runners)
         .join(format!("{}.json", context.id))
 }
 fn load(context: &HostContext) -> AppResult<Vec<Record>> {
@@ -604,7 +604,11 @@ async fn flush_pending(context: &HostContext, records: &mut [Record]) {
 /// Retry recorded stops on SSH reconnect, even when safe mode prevents plugin startup.
 pub async fn on_reconnect(app: &tauri::AppHandle) {
     let _mutation = MUTATIONS.lock().await;
-    let directory = app.state::<AppState>().data_dir.join("plugin-runners");
+    let directory = app
+        .state::<AppState>()
+        .storage
+        .dir(crate::storage::layout::Category::Runners)
+        .to_owned();
     let Ok(entries) = std::fs::read_dir(directory) else {
         return;
     };

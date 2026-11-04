@@ -214,7 +214,9 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
                   <span className="proc-row__name" title={process.name}>
                     {process.name}
                   </span>
-                  <span className="proc-row__cpu">{formatPercent(process.cpu)}</span>
+                  <span className="proc-row__cpu" title={t("processes.cpuHint")}>
+                    {process.cpuTotal == null ? "—" : formatPercent(process.cpuTotal)}
+                  </span>
                 </div>
               ))
             ) : (

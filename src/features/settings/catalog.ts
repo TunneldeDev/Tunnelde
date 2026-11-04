@@ -24,6 +24,7 @@ export interface SettingDefinition {
     | "select"
     | "accent"
     | "colors"
+    | "fileIcons"
     | "css"
     | "shortcuts"
     | "network"
@@ -34,7 +35,7 @@ export interface SettingDefinition {
   max?: number;
   step?: number;
   unit?: string;
-  dependsOn?: "preloadDirs" | "autoCheckUpdates";
+  dependsOn?: "preloadDirs" | "autoCheckUpdates" | "transferOptimization";
   hideOnMac?: boolean;
   macOnly?: boolean;
 }
@@ -77,6 +78,7 @@ export interface SettingsGroup {
 
 /** Navigation and inline headings share the same groups; no extra settings pages. */
 export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsGroup[]>> = {
+  advanced: [{ id: "storage", label: "storage.title", keys: [] }],
   updates: [
     {
       id: "update-checks",
@@ -138,9 +140,22 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
   ],
   files: [
     {
+      id: "transfers",
+      label: "settings.groups.transfers",
+      keys: [
+        "transferOptimization",
+        "transferCompression",
+        "transferConcurrency",
+        "transferChunkKib",
+        "transferRequests",
+        "transferUploadLimitKib",
+        "transferDownloadLimitKib",
+      ],
+    },
+    {
       id: "browsing",
       label: "settings.groups.browsing",
-      keys: ["filesShowHidden", "filesFoldersFirst"],
+      keys: ["fileIconTheme", "filesShowHidden", "filesFoldersFirst"],
     },
     {
       id: "sorting",
@@ -248,6 +263,8 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     label: "settings.titleBar",
   },
   { ...toggle("closeToTray", "general", "settings.closeToTrayHint"), hideOnMac: true },
+  toggle("releaseWebviewInTray", "general", "settings.releaseWebviewInTrayHint"),
+  toggle("lightweightMode", "general", "settings.lightweightModeHint"),
   {
     ...toggle("showDockIconInBackground", "general", "settings.showDockIconInBackgroundHint"),
     macOnly: true,
@@ -337,7 +354,45 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   ),
   toggle("recordTerminalHistory", "terminal", "settings.recordTerminalHistoryHint"),
   toggle("filesShowHidden", "files", "settings.filesShowHiddenHint"),
+  toggle("transferOptimization", "files", "settings.transferOptimizationHint"),
+  {
+    ...toggle("transferCompression", "files", "settings.transferCompressionHint"),
+    dependsOn: "transferOptimization",
+  },
+  ...(["transferUploadLimitKib", "transferDownloadLimitKib"] as const).map((key) => ({
+    ...numeric(key, "files", 0, 1_048_576, 1, "KiB/s"),
+    hint: "settings.transferSpeedLimitHint" as const,
+  })),
+  ...(
+    [
+      ["transferConcurrency", [1, 2, 4, 8]],
+      ["transferChunkKib", [256, 1024, 4096, 16384]],
+      ["transferRequests", [1, 4, 8, 16, 32]],
+    ] as const
+  ).map(([key, choices]) => ({
+    ...select(
+      key,
+      "files",
+      [
+        choice(0, "settings.transferAutomatic"),
+        ...choices.map((value) => ({
+          value,
+          label: key === "transferChunkKib" ? `${value} KiB` : String(value),
+          literal: true as const,
+        })),
+      ],
+      `settings.${key}Hint`,
+    ),
+    dependsOn: "transferOptimization" as const,
+  })),
   toggle("filesFoldersFirst", "files"),
+  {
+    key: "fileIconTheme",
+    section: "files",
+    label: "settings.fileIconTheme",
+    hint: "settings.fileIconThemeHint",
+    kind: "fileIcons",
+  },
   select("filesSortBy", "files", [
     choice("name", "sftp.sortName"),
     choice("size", "sftp.sortSize"),

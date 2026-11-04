@@ -8,6 +8,7 @@ import { PaneLayout } from "@/components/layout/PaneLayout";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
+import { useContextMenu } from "@/store/contextMenu";
 
 beforeEach(() => {
   useSettings.setState({ settings: DEFAULT_SETTINGS });
@@ -38,6 +39,47 @@ beforeEach(() => {
 });
 
 describe("workspace group actions", () => {
+  it("marks navigation previews and keeps them open by double click or context menu", () => {
+    useWorkspace.getState().openPage("settings");
+    render(<PaneLayout />);
+    const tab = screen.getByRole("tab", { name: "Settings" });
+    const originalIcon = tab.querySelector(":scope > svg")?.outerHTML;
+    expect(tab.classList.contains("is-preview")).toBe(true);
+    fireEvent.doubleClick(tab);
+    expect(tab.classList.contains("is-preview")).toBe(false);
+    expect(tab.querySelector(":scope > svg")?.outerHTML).toBe(originalIcon);
+    fireEvent.doubleClick(tab);
+    expect(tab.querySelector(":scope > svg")?.outerHTML).toBe(originalIcon);
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:settings")?.pinned).toBe(
+      false,
+    );
+    act(() => useWorkspace.getState().openPage("about"));
+    fireEvent.contextMenu(screen.getByRole("tab", { name: "About" }));
+    // The action is available independently of the old pinned-tab behavior.
+    const action = useContextMenu.getState().menu?.items.find((item) => item.label === "Keep open");
+    act(() => action?.onSelect?.());
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:about")?.preview).toBe(
+      false,
+    );
+  });
+  it("retains page icons for saved pinned tabs and when pinning through the menu", () => {
+    useWorkspace.getState().openPage("settings");
+    useWorkspace.getState().togglePin("page:settings");
+    render(<PaneLayout />);
+    const tab = screen.getByRole("tab", { name: "Settings" });
+    expect(tab.querySelector(".lucide-settings")).toBeTruthy();
+    expect(tab.querySelector(".lucide-pin")).toBeNull();
+    expect(tab.classList.contains("is-preview")).toBe(false);
+    fireEvent.contextMenu(tab);
+    const action = useContextMenu.getState().menu?.items.find((item) => item.label === "Unpin tab");
+    expect(action).toBeTruthy();
+    act(() => action?.onSelect?.());
+    expect(useWorkspace.getState().tabs.find((item) => item.id === "page:settings")?.pinned).toBe(
+      false,
+    );
+    expect(tab.querySelector(".lucide-settings")).toBeTruthy();
+    expect(tab.classList.contains("is-preview")).toBe(false);
+  });
   it("marks the locked destination and routes a new page there after another pane is focused", () => {
     const { container } = render(<PaneLayout />);
     const first = container.querySelector('[data-pane-id="first"]') as HTMLElement;

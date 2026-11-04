@@ -22,6 +22,30 @@ fn stable_and_beta_channels_use_semver_without_implicit_downgrades() {
         ("0.26.3-beta.99.1", "0.26.4-beta.1", "beta", true),
         ("0.26.3-beta.2.1", "0.26.3-beta.3", "beta", true),
         ("0.26.4-beta.9", "0.26.4-beta.10", "beta", true),
+        ("0.26.4-beta.11", "0.26.4-beta12", "beta", true),
+        ("0.26.4-beta09", "0.26.4-beta10", "beta", true),
+        ("0.26.4-beta11", "0.26.4-beta12", "beta", true),
+        ("0.26.4-beta12", "0.26.4-beta11", "beta", false),
+        ("0.26.4-beta12", "0.26.4", "stable", true),
+        ("0.26.4-beta99", "0.26.5-beta01", "beta", true),
+        (
+            "0.26.4-beta12",
+            "0.26.4-beta12.d.1.gabcdef012345",
+            "beta",
+            false,
+        ),
+        (
+            "0.26.4-beta12",
+            "0.26.4-beta12.d.1.gabcdef012345",
+            "nightly",
+            true,
+        ),
+        (
+            "0.26.4-beta12.d.1.gabcdef012345",
+            "0.26.4-beta13",
+            "nightly",
+            true,
+        ),
         ("0.26.4-beta.1", "0.26.4", "stable", true),
         ("0.26.1", "0.27.0-alpha.1", "beta", false),
         ("0.26.1", "0.26.2-beta.1.d.2.gabcdef012345", "beta", false),
@@ -146,6 +170,42 @@ fn beta_discovery_chooses_newest_eligible_published_package_not_list_order() {
         Some(version("0.26.3-beta.1"))
     );
     assert!(github_channel_feed(&[], "beta").is_err());
+}
+
+#[test]
+fn compatibility_bridge_connects_legacy_clients_to_compact_beta_channels() {
+    let releases = vec![
+        release("v0.28.0-beta13", true, false, true),
+        release("v0.28.0-beta.9", true, false, true),
+        release("v0.28.0-beta.12", true, false, true),
+        release("v0.28.0-beta.11", true, false, true),
+    ];
+    // The installed legacy parser can discover the bridge even with newer compact tags present.
+    let legacy = releases
+        .iter()
+        .filter_map(|release| Version::parse(&release.tag_name[1..]).ok())
+        .filter(|version| version.pre.as_str().starts_with("beta."))
+        .max()
+        .unwrap();
+    assert_eq!(legacy, version("0.28.0-beta.12"));
+    assert_eq!(
+        github_channel_feed(&releases, "beta").unwrap().version,
+        Some(version("0.28.0-beta13"))
+    );
+    assert!(accepts_version(&legacy, &version("0.28.0-beta13"), "beta"));
+    for invalid in [
+        "beta00",
+        "beta1",
+        "beta001",
+        "beta100",
+        "betamax",
+        "beta13.d.2.gabcdef1",
+    ] {
+        assert!(!channels::channel_accepts(
+            &version(&format!("0.28.0-{invalid}")),
+            "beta"
+        ));
+    }
 }
 
 #[test]

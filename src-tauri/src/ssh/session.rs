@@ -9,9 +9,10 @@ use russh::keys::{HashAlg, PrivateKeyWithHashAlg, PublicKeyOrCertificate};
 use russh::{Channel, ChannelMsg};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 
+use super::terminal_output::TerminalOutput;
 use crate::db;
 use crate::error::{AppError, AppResult};
 use crate::models::{now_ms, Host};
@@ -90,6 +91,7 @@ pub struct SessionInfo {
 struct DataPayload {
     session_id: String,
     data: String,
+    sequence: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -156,6 +158,7 @@ impl client::Handler for ClientHandler {
 
 enum WriterMsg {
     Attach,
+    Detach(oneshot::Sender<u64>),
     Data(Vec<u8>),
     Resize { cols: u32, rows: u32 },
     Close,
@@ -219,6 +222,7 @@ impl SshManager {
             .map(|sessions| {
                 sessions
                     .values()
+                    .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
                     .map(|handle| handle.info.clone())
                     .collect()
             })
@@ -261,6 +265,28 @@ impl SshManager {
             .writer
             .try_send(WriterMsg::Attach)
             .map_err(|_| AppError::Ssh("ssh.sessionBusy".into()))
+    }
+
+    pub async fn detach(&self, session_id: &str) -> AppResult<u64> {
+        let writer = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?
+            .get(session_id)
+            .map(|session| session.writer.clone())
+            .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
+        tokio::time::timeout(Duration::from_secs(2), async move {
+            let (reply, received) = oneshot::channel();
+            writer
+                .send(WriterMsg::Detach(reply))
+                .await
+                .map_err(|_| AppError::Ssh("ssh.sessionMissing".into()))?;
+            received
+                .await
+                .map_err(|_| AppError::Ssh("ssh.sessionMissing".into()))
+        })
+        .await
+        .map_err(|_| AppError::Ssh("ssh.sessionBusy".into()))?
     }
 
     pub fn resize(&self, session_id: &str, cols: u32, rows: u32) -> AppResult<()> {
@@ -383,12 +409,13 @@ async fn authenticate(
     }
 }
 
-fn emit_data(app: &AppHandle, session_id: &str, data: &[u8]) {
+fn emit_data(app: &AppHandle, session_id: &str, sequence: u64, data: &[u8]) {
     let _ = app.emit(
         DATA_EVENT,
         DataPayload {
             session_id: session_id.to_string(),
             data: BASE64.encode(data),
+            sequence,
         },
     );
 }
@@ -454,18 +481,18 @@ async fn open_terminal_channel(
 async fn pump_terminal(
     channel: Channel<client::Msg>,
     mut outgoing: mpsc::Receiver<WriterMsg>,
-    mut startup: Vec<u8>,
-    mut emit: impl FnMut(&[u8]),
+    startup: Vec<u8>,
+    mut emit: impl FnMut(u64, &[u8]),
 ) {
     let (mut reader, writer) = channel.split();
-    let mut attached = false;
+    let mut output = TerminalOutput::new(startup);
     loop {
         tokio::select! {
             // Until both frontend listeners exist, SSH's channel queue/window
             // buffers output without losing a prompt's first ANSI bytes.
-            incoming = reader.wait(), if attached => {
+            incoming = reader.wait(), if output.can_read() => {
                 match incoming {
-                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => emit(&data),
+                    Some(ChannelMsg::Data { data }) | Some(ChannelMsg::ExtendedData { data, .. }) => output.receive(&data, &mut emit),
                     Some(ChannelMsg::Close) | None => break,
                     _ => {}
                 }
@@ -473,13 +500,10 @@ async fn pump_terminal(
             message = outgoing.recv() => {
                 match message {
                     Some(WriterMsg::Attach) => {
-                        if !attached {
-                            attached = true;
-                            if !startup.is_empty() {
-                                emit(&startup);
-                                startup.clear();
-                            }
-                        }
+                        output.attach(&mut emit);
+                    }
+                    Some(WriterMsg::Detach(reply)) => {
+                        let _ = reply.send(output.detach());
                     }
                     Some(WriterMsg::Data(bytes)) => {
                         if writer.data_bytes(bytes).await.is_err() { break; }
@@ -707,8 +731,8 @@ async fn connect_for_auth(
     let task_handle = Arc::clone(&shared_handle);
     let task = tokio::spawn(async move {
         let _session = task_handle;
-        pump_terminal(channel, rx, startup, |data| {
-            emit_data(&task_app, &task_session, data)
+        pump_terminal(channel, rx, startup, |sequence, data| {
+            emit_data(&task_app, &task_session, sequence, data)
         })
         .await;
 
@@ -739,6 +763,7 @@ async fn connect_for_auth(
     tracing::info!(host = %host.name, session = %session_id, "ssh session opened");
     let runner_app = app.clone();
     tokio::spawn(async move {
+        crate::ssh::files::durable::on_reconnect(&runner_app).await;
         crate::plugins::runners::on_reconnect(&runner_app).await;
     });
     Ok(info)
@@ -856,6 +881,16 @@ mod tests {
             }
             Ok(())
         }
+
+        async fn data(
+            &mut self,
+            channel: ChannelId,
+            data: &[u8],
+            session: &mut Session,
+        ) -> Result<(), Self::Error> {
+            session.data(channel, data.to_vec())?;
+            Ok(())
+        }
     }
 
     async fn server(
@@ -924,7 +959,7 @@ mod tests {
         let (tx, rx) = mpsc::channel(8);
         let (output, mut received) = mpsc::unbounded_channel();
         let task = tokio::spawn(async move {
-            pump_terminal(channel, rx, startup, |bytes| {
+            pump_terminal(channel, rx, startup, |_, bytes| {
                 output.send(bytes.to_vec()).unwrap();
             })
             .await;
@@ -941,6 +976,56 @@ mod tests {
             tokio::time::timeout(Duration::from_millis(30), received.recv())
                 .await
                 .is_err()
+        );
+        tx.send(WriterMsg::Close).await.unwrap();
+        task.await.unwrap();
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn detaches_without_closing_the_pty_and_replays_background_output_on_attach() {
+        let (client, _, server) = server(false, false).await;
+        let (channel, startup) = open_terminal_channel(&client, 80, 24).await.unwrap();
+        let (tx, rx) = mpsc::channel(8);
+        let (output, mut received) = mpsc::unbounded_channel();
+        let task = tokio::spawn(async move {
+            pump_terminal(channel, rx, startup, |sequence, bytes| {
+                output.send((sequence, bytes.to_vec())).unwrap();
+            })
+            .await;
+        });
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert_eq!(received.recv().await.unwrap(), (1, PROMPT.to_vec()));
+        let (reply, detached) = oneshot::channel();
+        tx.send(WriterMsg::Detach(reply)).await.unwrap();
+        assert_eq!(detached.await.unwrap(), 1);
+        let background = "\x1b[33m后台任务已完成\x1b[0m\r\n".as_bytes().to_vec();
+        tx.send(WriterMsg::Data(background.clone())).await.unwrap();
+        assert!(
+            tokio::time::timeout(Duration::from_millis(50), received.recv())
+                .await
+                .is_err()
+        );
+        let (reply, detached) = oneshot::channel();
+        tx.send(WriterMsg::Detach(reply)).await.unwrap();
+        assert_eq!(detached.await.unwrap(), 1);
+        tx.send(WriterMsg::Attach).await.unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), received.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            (2, background)
+        );
+        tx.send(WriterMsg::Data(b"still alive".to_vec()))
+            .await
+            .unwrap();
+        assert_eq!(
+            tokio::time::timeout(Duration::from_secs(2), received.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            (3, b"still alive".to_vec())
         );
         tx.send(WriterMsg::Close).await.unwrap();
         task.await.unwrap();

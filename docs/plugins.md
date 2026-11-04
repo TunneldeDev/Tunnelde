@@ -2,6 +2,19 @@
 
 ## Quick access and command results
 
+The plugin browser renders up to 24 matching entries per page, with previous/next
+navigation and a result count. Search accepts multiple words and exact `tag:pdf`
+filters; the tag dropdown combines with search. The current query, tag and page
+survive opening a detail tab. Clicking a tag in details reveals the plugin browser.
+Discovery reads metadata and does not start executable plugins. The static registry
+fetch remains bounded to 2 MiB / 2,000 entries per source; archives download only
+after installation is requested. This is UI pagination over cached metadata, not
+a server-side paginated registry protocol.
+
+Publishers may add a `tags` array to both manifests and registry entries. Up to 24
+case-insensitively distinct tags are allowed, each at most 64 UTF-8 bytes, with
+letters, digits, `_`, `-` and `.`. Old packages without tags remain compatible.
+
 Press F1 and type `> UUID` (or another plugin name/command) to open a contributed
 view or execute an installed plugin command. Listing commands reads manifest metadata
 and does not start Node. Execution retains runtime consent and plugin approval.
@@ -16,8 +29,11 @@ Quick Access accepts an initial query but never automatically executes it.
 AI views group intermediate messages, native thinking summaries, and tool activity
 per user turn in collapsible sections. Final answers and approval prompts stay visible.
 Activity output is bounded and displayed as text/Markdown without arbitrary HTML.
-See the [official extension investigation](reviews/2026-11-02-vscode-agent-extensions.md)
-for the source and licensing findings; arbitrary VSIX packages are not supported.
+Arbitrary VSIX packages are not supported. Tunnelde plugins use this application's
+manifest and host APIs. A VS Code extension expects the VS Code extension host,
+workspace services, webviews and authentication APIs; unpacking its VSIX does not
+provide those services. The independent coding plugins invoke the actual installed
+agent binaries through their structured protocols.
 
 The independent marketplace and official source packages live in
 [TunneldeDev/tunnelde-hub](https://github.com/TunneldeDev/tunnelde-hub). For installing and
@@ -28,8 +44,10 @@ Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure the
 
 ## SSHFS and data-only plugins (0.27.0+)
 
-Install **SSHFS** or **SSHFS Lite** from the independent marketplace. Both use the
-same native mount panel; Lite needs no Node runtime. Connect a saved SSH host first,
+**SSHFS** and **SSHFS Lite** source packages are pending in
+[Hub PR #1](https://github.com/TunneldeDev/tunnelde-hub/pull/1); they are not yet in
+the default marketplace. Install from their source folder or ZIP to test them.
+Both use the same native mount panel; Lite needs no Node runtime. Connect a saved SSH host first,
 then choose its session, browse the remote directory, and choose an empty local
 directory or unused Windows drive. Read-only access is the default. Mounts are
 manual and reuse the SSH session's credentials, host-key trust, proxy and jump hosts.
@@ -116,7 +134,7 @@ OS sandbox**. Trust only known publishers. WASM plugins retain the restricted ex
 ## Theme packs
 
 Any plugin can provide one or more themes through a `themes` array. Pure theme packs use
-`"runtime": "theme"`, omit `main` and `engines`, and have no commands, views or permissions:
+`"runtime": "theme"`, omit `main` and Node engines, and have no commands, views or permissions:
 
 ```json
 {
@@ -152,6 +170,56 @@ one changes the base appearance, accent and full color map in one settings save;
 regions follow the base appearance. Installing a theme pack does not change the current
 appearance. Removing or updating a plugin preserves already applied color values until the
 user selects another theme. Executable plugins can contribute palettes without being started.
+
+## File icon themes
+
+Install Common File Icons from the hub package ZIP or folder. **Settings → Files → File icon
+theme** offers Automatic, Plain file icons and installed themes. Automatic uses the first
+available theme in plugin/theme ID order; choose a specific theme to preserve that selection
+when installing other packages. Details pages also offer Apply theme. Removing a selected
+package falls back to plain icons and retains its identity for later reinstallation.
+
+Plugins contribute one or more `fileIconThemes` entries without running code:
+
+```json
+{
+  "id": "my-icons",
+  "name": "My File Icons",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "runtime": "theme",
+  "permissions": [],
+  "fileIconThemes": [
+    {
+      "id": "common",
+      "name": "Common files",
+      "icons": {
+        "typescript": { "symbol": "code", "color": "#3178c6", "label": "TS" },
+        "archive": { "symbol": "archive", "color": "#c5a35e" }
+      },
+      "extensions": { "ts": "typescript", "tar.gz": "archive" },
+      "fileNames": { "Dockerfile": "typescript" }
+    }
+  ]
+}
+```
+
+Exact filenames match first, followed by the longest extension suffix; matching ignores
+case. The same resolver serves local/remote file rows in every browser view, editor tabs
+and file-preview headers. It reads filenames only. Folders keep the application's folder
+glyph. Selection is included in settings exports and profiles.
+
+Each package may contain up to 16 themes. A theme has up to 256 icon definitions, 512
+extension mappings and 128 exact filename mappings. Definition/theme IDs use plugin ID
+syntax; extension keys omit the leading dot. Optional `defaultIcon` names a defined icon.
+Available symbols are `file`, `code`, `json`, `text`, `image`, `audio`, `video`, `archive`,
+`pdf`, `spreadsheet`, `terminal`, `settings`, `key`, `database`, `font`, `binary`, `markdown`.
+Colors must be six-digit HEX; optional labels contain 1–4 ASCII letters/digits. Unknown
+symbols/references, duplicate case-insensitive mappings and excessive contributions are
+rejected. Icons are host-rendered glyphs or short badges; manifests cannot inject SVG,
+scripts, URLs, stylesheets or fonts. Data-only icon packs work in restricted mode and do
+not require Node or file-access permissions. Executable plugins can contribute these same
+metadata entries independently of their runtime.
 
 ## Protocol
 
@@ -485,3 +553,45 @@ installers. Tunnelde never executes existing user Node without consent. See the 
 - **Reload** rescans the directory, stopping running hosts first.
 - **Uninstall** stops the host and deletes the folder.
 - `examples/plugins/hello` in the repository is a complete minimal plugin.
+
+## File preview providers
+
+A package can contribute one or more `filePreviews` entries. This contribution is declarative:
+Tunnelde owns rendering and file access; the plugin receives neither bytes nor preview tickets.
+A package containing only themes/icons/previews uses `runtime: "theme"`, no `main`, commands,
+views or permissions. It needs no Node runtime. Executable packages may also contribute providers.
+
+```json
+{
+  "filePreviews": [
+    {
+      "id": "pictures",
+      "name": "Pictures",
+      "renderer": "image",
+      "extensions": ["png", "jpg", "gif"]
+    },
+    { "id": "pdf", "name": "PDF", "renderer": "pdf", "extensions": ["pdf"] }
+  ]
+}
+```
+
+Renderers are `image`, `audio`, `video`, `pdf`, `markdown` or `text`. Provider IDs use the same
+bounded plugin ID syntax; names are at most 120 UTF-8 bytes. A package has at most 16 providers,
+each with 1–128 unique case-insensitive extensions of at most 64 ASCII bytes. No URLs, HTML,
+scripts, styles or external viewers are accepted. Declare `engines.tunnelde` for a supporting build.
+
+Select a file and press Space or use Preview. Matching is case-insensitive and supports compound
+extensions. Multiple providers appear in a selector; otherwise installation is sufficient. Missing
+binary providers offer a marketplace search for the `preview` tag. Built-in text/Markdown preview
+continues working without a plugin. Installed providers refresh immediately after install/removal.
+
+Native tickets use opaque UUIDs, expire after 30 idle minutes, are revoked on close/window destruction,
+and retain opened file handles rather than resolving arbitrary protocol paths. At most eight tickets
+and two concurrent requests per ticket are allowed. Requests support GET/HEAD and single byte ranges
+capped at 1 MiB; multipart ranges are rejected. Whole-file reads are capped at 32 MiB. Revocation
+interrupts queued/active reads; remote file and SFTP handles close without creating remote files.
+
+Images are limited to 32 MiB, PDFs to 128 MiB, text/Markdown to 2 MiB; audio/video use bounded Range
+requests. Playback depends on OS codecs and starts only on user action. PDF.js is lazy-loaded with
+local fonts/CMaps/decoders, fetches ranges on demand, renders one page to a bounded canvas and does
+not run document scripts or interactive forms. Password-protected PDFs require an external viewer.

@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -61,6 +61,13 @@ vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
     fit = vi.fn();
+  },
+}));
+vi.mock("@xterm/addon-serialize", () => ({
+  SerializeAddon: class {
+    activate = vi.fn();
+    serialize = vi.fn(() => "");
+    dispose = vi.fn();
   },
 }));
 vi.mock("@xterm/addon-webgl", () => ({
@@ -136,6 +143,8 @@ import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
+import { useHosts } from "@/store/hosts";
+import type { Host } from "@/lib/api/types";
 import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useContextMenu } from "@/store/contextMenu";
 import { previewColors } from "@/lib/prefs/colors";
@@ -350,7 +359,7 @@ describe("terminal lifecycle", () => {
     expect(apiMock.sshAttach).not.toHaveBeenCalled();
   });
 
-  it("attaches only after both listeners exist and retains early ANSI output during font loading", async () => {
+  it("attaches after both listeners and the terminal are ready, retaining the first ANSI bytes", async () => {
     let registerClosed!: (unsubscribe: () => void) => void;
     let finishFont!: () => void;
     eventMock.onSshClosed.mockImplementation(
@@ -372,9 +381,10 @@ describe("terminal lifecycle", () => {
     await act(async () => undefined);
     expect(apiMock.sshAttach).not.toHaveBeenCalled();
     await act(async () => registerClosed(vi.fn()));
-    expect(apiMock.sshAttach).toHaveBeenCalledWith("s1");
+    expect(apiMock.sshAttach).not.toHaveBeenCalled();
     expect(instances).toHaveLength(0);
     await act(async () => finishFont());
+    expect(apiMock.sshAttach).toHaveBeenCalledWith("s1");
     expect(instances[0]!.write.mock.calls[0]![0]).toBe("\x1b[32mprompt\x1b[0m");
   });
 
@@ -539,6 +549,21 @@ describe("live terminal settings", () => {
     expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
     view.unmount();
     expect(webglInstances[1]!.dispose).toHaveBeenCalledOnce();
+  });
+
+  it("releases the GPU in lightweight mode and restores the saved renderer without reconnecting", async () => {
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    expect(webglInstances).toHaveLength(1);
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, lightweightMode: true } }));
+    expect(webglInstances[0]!.dispose).toHaveBeenCalledOnce();
+    expect(useSettings.getState().settings.terminalRenderer).toBe("auto");
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, lightweightMode: false } }));
+    expect(webglInstances).toHaveLength(2);
+    expect(instances).toHaveLength(1);
+    expect(apiMock.sshAttach).toHaveBeenCalledTimes(1);
+    expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+    view.unmount();
   });
 
   it("follows OS reduced motion live and honors explicit motion overrides", async () => {
@@ -973,4 +998,18 @@ describe("live command history", () => {
     expect(apiMock.historyRecord).toHaveBeenCalledTimes(2);
     expect(apiMock.historyList).toHaveBeenCalledTimes(2);
   });
+});
+
+it("opens forwarding directly from the SSH toolbar and restores toolbar focus on close", async () => {
+  useHosts.setState({ hosts: [{ id: "h1", name: "My server" } as Host] });
+  render(<TerminalPage sessionId="s1" active />);
+  const button = screen.getByRole("button", { name: "Port forwarding" });
+  button.focus();
+  fireEvent.click(button);
+  const dialog = await screen.findByRole("dialog", { name: "Port forwarding" });
+  expect(dialog.textContent).toContain("My server");
+  expect(screen.getByRole("button", { name: "Add forward" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog", { name: "Port forwarding" })).toBeNull();
+  expect(document.activeElement).toBe(button);
 });

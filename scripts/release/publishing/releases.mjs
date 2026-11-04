@@ -1,5 +1,10 @@
 import { SHA, branchSha, readText, resolveTag, assertAncestor } from "../github/sources.mjs";
-import { compareReleaseTags, releaseChannel, releaseTitle } from "../metadata/channels.mjs";
+import {
+  assertPublishableTag,
+  compareReleaseTags,
+  releaseChannel,
+  releaseTitle,
+} from "../metadata/channels.mjs";
 import { VERSION_PATHS, assertVersionContents } from "../metadata/version-files.mjs";
 import { releaseSection } from "../metadata/notes.mjs";
 
@@ -11,6 +16,7 @@ export async function ensureRelease({
   body,
   prerelease = releaseChannel(tag) !== "stable",
 }) {
+  assertPublishableTag(tag);
   if (!SHA.test(sha) || (releaseChannel(tag) !== "stable") !== prerelease || !body?.trim())
     throw new Error("Invalid release source, channel or notes");
   const repo = context.repo;
@@ -48,6 +54,7 @@ export async function ensureRelease({
 }
 
 export async function prepareTaggedRelease({ github, context, tag }) {
+  assertPublishableTag(tag);
   const channel = releaseChannel(tag);
   const sha = await resolveTag(github, context.repo, tag);
   const version = tag.slice(1);
@@ -74,6 +81,7 @@ export async function prepareTaggedRelease({ github, context, tag }) {
 }
 
 export async function publishRelease({ github, context, tag }) {
+  assertPublishableTag(tag);
   const repo = context.repo;
   const channel = releaseChannel(tag);
   const prerelease = channel !== "stable";

@@ -6,6 +6,82 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.28.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.1...v0.28.0) - 2026-11-04
+
+### 更新概览 | Highlights
+
+- 文件浏览支持按层级展开的分栏视图、可复用的预览标签，以及插件提供的文件图标与内容预览。File browsing adds hierarchical columns, reusable preview tabs, and plugin-provided icons and previews.
+- 传输增加并发、断点续传、限速和适用时的压缩；公共后台任务面板提供进度反馈、拖动缩放及批量清理。Transfers add concurrency, resume checkpoints, bandwidth limits and adaptive compression; shared background tasks provide progress, movable/resizable UI and bulk cleanup.
+- 远端进程管理支持自动刷新、区间 CPU 统计、用户与用户组，以及系统权限允许时的磁盘、网络和 GPU 数据。Remote process management adds automatic refresh, interval CPU measurements, ownership details, and disk, network and GPU metrics where available.
+- 存储分类支持位置设置与重启迁移；托盘驻留可释放 WebView，并恢复工作区和终端状态。Storage categories support custom locations and restart migration; tray suspension can release the WebView and restore workspace and terminal state.
+- 公测编号统一为 beta.1～beta.9，达到上限后必须先审查并发布正式版；更新检查保留历史版本兼容。Beta milestones are limited to beta.1–beta.9 before reviewed stable promotion, while update discovery retains historical compatibility.
+
+<details open>
+<summary>详细变更 | Details (42)</summary>
+
+### 新增 | New
+
+- **files:** add column browsing and reliable transfer cleanup ([#26](https://github.com/TunneldeDev/Tunnelde/pull/26)) @quyansiyuanwang
+- **files:** add direct local and remote file previews ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28), [29819aa](https://github.com/TunneldeDev/Tunnelde/commit/29819aae2a8479fd4debdfab478ada885025593f)) @quyansiyuanwang
+- **hosts:** move tag filters into search suggestions ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28), [41ca75d](https://github.com/TunneldeDev/Tunnelde/commit/41ca75db3a07766871b12890d1492e883b461429)) @quyansiyuanwang
+- **workspace:** reuse preview tabs until kept open ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28), [856a314](https://github.com/TunneldeDev/Tunnelde/commit/856a314da280a9f40fe3debe98cb9faefe4eec24)) @quyansiyuanwang
+- **ssh:** expose forwarding with clear endpoint directions ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28), [6148d69](https://github.com/TunneldeDev/Tunnelde/commit/6148d696e8b3bc35282fd871c04f2462812b7eaa)) @quyansiyuanwang
+- **forwarding:** simplify setup and rule management ([#29](https://github.com/TunneldeDev/Tunnelde/pull/29)) @quyansiyuanwang
+- **transfers:** add bounded parallel SFTP transfers and resume checkpoints ([#31](https://github.com/TunneldeDev/Tunnelde/pull/31), [f899fa1](https://github.com/TunneldeDev/Tunnelde/commit/f899fa1ca83828317cce4e6c9155085c3c7d72aa)) @quyansiyuanwang
+- **transfers:** add live shared bandwidth and per-task limits ([#31](https://github.com/TunneldeDev/Tunnelde/pull/31), [ec05c4f](https://github.com/TunneldeDev/Tunnelde/commit/ec05c4f6e5ae1b4c2fab4134f2bd6a3d5bafcc95)) @quyansiyuanwang
+- **plugins:** add paged discovery and searchable tags ([#32](https://github.com/TunneldeDev/Tunnelde/pull/32)) @quyansiyuanwang
+- **events:** add typed shared subscriptions with abortable lifetimes ([#33](https://github.com/TunneldeDev/Tunnelde/pull/33), [f70562a](https://github.com/TunneldeDev/Tunnelde/commit/f70562afbf87f76269972419a3cae787d41fee19)) @quyansiyuanwang
+- **plugins:** support declarative file icon themes ([#34](https://github.com/TunneldeDev/Tunnelde/pull/34)) @quyansiyuanwang
+- **files:** add plugin previews with bounded local and SSH reads ([#35](https://github.com/TunneldeDev/Tunnelde/pull/35)) @quyansiyuanwang
+- **storage:** add per-category locations and verified restart migrations ([#36](https://github.com/TunneldeDev/Tunnelde/pull/36)) @quyansiyuanwang
+- **terminal:** checkpoint terminal state and buffer detached SSH output ([#37](https://github.com/TunneldeDev/Tunnelde/pull/37), [977f16e](https://github.com/TunneldeDev/Tunnelde/commit/977f16ed64e749d5ca7a7dbdc382ab2c5adb0e34)) @quyansiyuanwang
+- **workspace:** release tray WebView and restore live workspaces ([#37](https://github.com/TunneldeDev/Tunnelde/pull/37)) @quyansiyuanwang
+- **transfers:** show compact background tasks from every page ([#39](https://github.com/TunneldeDev/Tunnelde/pull/39), [f6b8c78](https://github.com/TunneldeDev/Tunnelde/commit/f6b8c78e5e108414a140ed1369af33a7aa3c77b8)) @quyansiyuanwang
+- **transfers:** queue tasks within shared SSH channel budgets ([#41](https://github.com/TunneldeDev/Tunnelde/pull/41), [405fa23](https://github.com/TunneldeDev/Tunnelde/commit/405fa235e39b00e67e20809ba55076d8e31e4383)) @quyansiyuanwang
+- **transfers:** move and resize the background task window ([#41](https://github.com/TunneldeDev/Tunnelde/pull/41)) @quyansiyuanwang
+- **transfers:** compress beneficial data over ephemeral SSH workers ([#43](https://github.com/TunneldeDev/Tunnelde/pull/43)) @quyansiyuanwang
+- **tasks:** share background work across application features ([#46](https://github.com/TunneldeDev/Tunnelde/pull/46), [c3e4ad8](https://github.com/TunneldeDev/Tunnelde/commit/c3e4ad8effd55e653bae955a2f27b0decc548eee)) @quyansiyuanwang
+- **tasks:** show live progress and bulk clear finished records ([#46](https://github.com/TunneldeDev/Tunnelde/pull/46)) @quyansiyuanwang
+- **monitor:** sample interval CPU and per-process resource counters ([#48](https://github.com/TunneldeDev/Tunnelde/pull/48), [ffa536d](https://github.com/TunneldeDev/Tunnelde/commit/ffa536d9ff19f4fc87d275377604803a6512f5f4)) @quyansiyuanwang
+- **monitor:** add live process management and resource details ([#48](https://github.com/TunneldeDev/Tunnelde/pull/48)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **transfers:** fill SFTP pipelines with negotiated packet sizes ([#40](https://github.com/TunneldeDev/Tunnelde/pull/40)) @quyansiyuanwang
+- isolate monitor curves and batch sidebar resizing ([#45](https://github.com/TunneldeDev/Tunnelde/pull/45)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **updates:** recover channel discovery when GitHub API is unavailable ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28), [d577be6](https://github.com/TunneldeDev/Tunnelde/commit/d577be615882b7a01519557931d617e53923a03c)) @quyansiyuanwang
+- **workspace:** preserve plugin API pages and modified preview tabs ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28), [0fdd79d](https://github.com/TunneldeDev/Tunnelde/commit/0fdd79dc424743b08c470787d20927d9e723ada9)) @quyansiyuanwang
+- **tabs:** preserve page icons when keeping tabs open ([#29](https://github.com/TunneldeDev/Tunnelde/pull/29), [414a17f](https://github.com/TunneldeDev/Tunnelde/commit/414a17fee41d91a254492a5a45d6d6a761b1ece3)) @quyansiyuanwang
+- **updates:** default all builds to stable channel ([#30](https://github.com/TunneldeDev/Tunnelde/pull/30)) @quyansiyuanwang
+- **quick-access:** focus the complete search field ([#31](https://github.com/TunneldeDev/Tunnelde/pull/31), [bfb8068](https://github.com/TunneldeDev/Tunnelde/commit/bfb8068016d82f332bd46a0c58fb79b1519d72fb)) @quyansiyuanwang
+- **transfers:** clean cancelled staging and retain pause checkpoints ([#31](https://github.com/TunneldeDev/Tunnelde/pull/31)) @quyansiyuanwang
+- **events:** reconcile missed changes and release view subscriptions ([#33](https://github.com/TunneldeDev/Tunnelde/pull/33)) @quyansiyuanwang
+- **preview:** restore playable sources after media lifecycle cleanup ([#38](https://github.com/TunneldeDev/Tunnelde/pull/38)) @quyansiyuanwang
+- **transfers:** recover across SSH reconnects and defer offline cleanup ([#39](https://github.com/TunneldeDev/Tunnelde/pull/39), [eeefc7f](https://github.com/TunneldeDev/Tunnelde/commit/eeefc7fd22b4f4eed213bfe17a1b058f24ee6f4b)) @quyansiyuanwang
+- **transfers:** reconcile startup tasks and preserve tray panel state ([#39](https://github.com/TunneldeDev/Tunnelde/pull/39)) @quyansiyuanwang
+- **transfers:** keep SFTP requests moving while throttled ([#41](https://github.com/TunneldeDev/Tunnelde/pull/41), [7dec9ca](https://github.com/TunneldeDev/Tunnelde/commit/7dec9cab5ffe1afb9e43c5b4e5a91b1f51d109ee)) @quyansiyuanwang
+- **releases:** use two-digit semver-compatible beta identifiers ([#47](https://github.com/TunneldeDev/Tunnelde/pull/47), [046710f](https://github.com/TunneldeDev/Tunnelde/commit/046710f88b2c0a44cfeb307efea1a1902cd89dde)) @quyansiyuanwang
+- **releases:** simplify beta names and bridge older updaters ([#47](https://github.com/TunneldeDev/Tunnelde/pull/47)) @quyansiyuanwang
+- **releases:** cap beta milestones before stable promotion ([#49](https://github.com/TunneldeDev/Tunnelde/pull/49)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- explain previews host filters and SSH forwarding ([#28](https://github.com/TunneldeDev/Tunnelde/pull/28)) @quyansiyuanwang
+- align feature guides with implementation and marketplace ([#42](https://github.com/TunneldeDev/Tunnelde/pull/42)) @quyansiyuanwang
+
+### 其他 | Other
+
+- remove unused brand copies and legacy plugin directory ([#44](https://github.com/TunneldeDev/Tunnelde/pull/44)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.27.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.0...v0.27.1) - 2026-11-03
 
 ### 更新概览 | Highlights

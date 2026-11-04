@@ -9,6 +9,7 @@ const mock = vi.hoisted(() => ({
   checkUpdates: vi.fn(),
   toast: vi.fn(),
   update: vi.fn(),
+  updateState: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: mock }));
 vi.mock("@/store/toasts", () => ({ toast: mock.toast }));
@@ -39,6 +40,21 @@ beforeEach(() => {
 });
 
 describe("update operation state", () => {
+  it("retains a newer event when an older status snapshot arrives late", async () => {
+    let resolve!: (value: UpdateState) => void;
+    mock.updateState.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = useUpdates.getState().refresh();
+    const downloading = { ...state, phase: "downloading" as const, progress: 50 };
+    useUpdates.getState().apply(downloading);
+    resolve(state);
+    await pending;
+    expect(useUpdates.getState().state).toBe(downloading);
+  });
+
   it("ignores duplicate install and check calls while an install is pending", async () => {
     let resolve!: () => void;
     mock.installUpdate.mockReturnValueOnce(

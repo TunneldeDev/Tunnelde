@@ -26,33 +26,56 @@ Tunnelde asks before discovering or using your system Node. Windows and macOS pa
 are currently unsigned.
 
 Update controls live in **Settings → Updates**: choose **Stable**, **Public beta (Beta)** or **Development (Nightly)**, and the official **GitHub** source or a compatible **custom HTTPS source**.
+The update channel defaults to Stable, including on Beta and Nightly installations.
 Automatic checks default to once daily; downloading and installing remain manual.
 Windows and AppImage use signed full-package updates. Switching to Stable never
 automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.md#in-app-channels-sources-and-ota).
 
 ## Workbench
 
-- Organize, search, tag, favorite and reorder hosts. Connect with passwords, key files
+- Organize, search, tag, favorite and reorder hosts. Filter inside the search field with
+  `tag:PublicNet`, `@tag PublicNet`, quoted tags or `is:favorite`; choose tag suggestions
+  with the mouse or arrow keys and Enter. Connect with passwords, key files
   or pasted private keys. Save passwords while editing a host and double click to
   connect directly; unknown or changed server keys still require explicit trust.
 - Use an xterm.js terminal with ANSI colors, Unicode grapheme widths, monospace fonts,
   native clipboard integration, configurable mouse behavior and live command history.
-- Browse any two local/remote locations independently. Sort, filter, group, rename
-  inline, create files or folders, drag transfers and edit remote text files.
+- Browse local/remote locations independently in details or Finder-style columns.
+  Expand breadcrumb folders, edit the full path, type a name to select it, and resize
+  or detach file panels. Sort, filter, group, rename inline, create files or folders,
+  connect file management directly to a saved host, and drag transfers. Select a file
+  and press Space or click Preview to read local/remote text and rendered Markdown.
+  Install **Common File Icons** for file-type icons and **Common File Previews** for
+  images, audio, video and PDF. Both are available in the default marketplace and
+  need no Node runtime. Media playback depends on the operating system's codecs.
 - Configure proxies per feature, connect through ordered SSH jump hosts, pause and
-  resume file transfers, and manage local or remote TCP forwards from a host page.
-  Optional SSHFS and SSHFS Lite plugins mount remote directories through the same
-  authenticated connection. See [network and storage](docs/network-storage.md)
-  for 0.27+ features and dependency requirements.
-- Drag tabs and sidebar panels into splits. Lock a pane as the destination for new
-  pages; hide and restore docked panels with their placement and size remembered.
+  resume file transfers with speed, remaining bytes and time estimates, and manage
+  local or remote TCP forwards from a host page or the SSH terminal toolbar. Removing an unfinished transfer
+  cleans its recorded staging files; offline cleanup retries after reconnection.
+  A compact status-bar entry opens background transfers from any page, with grouped
+  tasks, expandable details and temporary speed limits. Drag its title to move it,
+  resize from any edge or corner, and retain its layout across reopen and restart.
+  Optimized transfers use bounded SFTP request pipelines, automatic segmentation
+  and shared connection budgets; compression and archive batching are still pending.
+  See [network and storage](docs/network-storage.md) for behavior and limitations.
+- Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
+  italic preview tab; select the same item again, double-click its tab, or interact with
+  its controls to keep it open. Each pane has its own preview slot. Lock a pane as the
+  destination for new pages; hide and restore docked panels with placement and size remembered.
 - Inspect remote CPU, memory, network and disk I/O timelines with scales, timestamps
   and mouse or keyboard sample inspection. Process termination requires confirmation.
 - Customize themes, individual colors, fonts, terminal behavior and keyboard shortcuts.
   Export preferences and switch named profiles without exporting hosts or credentials.
-- Choose native or compact title bars. On macOS, closing retains the window and SSH
-  sessions; clicking the Dock or tray restores it. Settings → General controls whether
-  the Dock icon remains visible in the background. Use Quit to exit.
+- Relocate settings/database, plugin packages and data, managed keys/runtimes, cache, logs
+  and deployment records in **Settings → Advanced → Storage locations**. Choose folders
+  individually or in a batch, review destinations, and fully quit/reopen to apply.
+  Copies are verified before switching, and originals are retained for recovery.
+- Choose native or compact title bars. Closing to the tray releases the WebView by
+  default while native SSH sessions and transfers continue. Reopening restores the
+  workspace, terminal screens and unsaved drafts. General settings also offer a
+  lightweight mode that avoids GPU terminal rendering, directory preloading and
+  frequent monitor sampling. On macOS, background Dock visibility is configurable.
+  Use Quit to exit.
 
 ## Independent AI plugins
 
@@ -92,6 +115,14 @@ fresh user directory. API calls originate there; configuration and API keys trav
 SSH stdin and are not written into the deployment files. Pi asks before uploading its
 small permission extension. Neither operation installs Node, installs an agent, or
 changes system services.
+
+The default marketplace currently supplies assistant plugins **1.4.0**. The cleanup
+changes in **1.4.1**, including `~/.TunneldeAI/Chats/` and `~/.TunneldeAI/Runtimes/`,
+are pending in the Hub repository and are not included in marketplace installations yet.
+The same applies to **SSHFS** and **SSHFS Lite**: desktop mount APIs are implemented,
+but these packages are awaiting catalogue publication. See the
+[assistant guide](docs/ai-assistants.md#remote-runtime-consent-and-files) and
+[SSHFS guide](docs/network-storage.md#sshfs-plugins) before testing source packages.
 
 Four modes are available: **Ask for approval**, **Approve for me**, **Full Access** and
 **ReadOnly**. Independent review needs a separate API reviewer; failure or denial falls

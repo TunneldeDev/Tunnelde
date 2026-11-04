@@ -50,38 +50,165 @@ key is being reviewed, asks for any missing jump credentials, and verifies the
 destination before enabling Connect. Changing a route does not bypass key trust.
 SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
 
+## Transfer performance
+
+In **Settings → Files → Transfers**, total upload and download limits are set
+independently in KiB/s. Both default to `0` (unlimited), apply immediately to
+running tasks, and share one budget across concurrent transfers and SFTP data
+channels. They remain active when transfer optimization is disabled. Remote to
+remote transfers use both budgets; local disk copies use neither. These limits
+cover file-transfer payload bytes rather than SSH framing or terminal traffic.
+
+The gauge button on a running transfer opens a temporary task limit. `0` follows
+the global limits; a positive value adds a task ceiling and cannot override the
+global ceiling. Pausing and resuming starts with the global limits again. Low
+speed transfers continue reporting progress, and pause/cancel can interrupt the
+limiter wait. Requests already dispatched when a limit changes may finish.
+Waiting for bandwidth credit continues driving existing SFTP requests instead of
+serializing the transfer. Each segment retains its bounded request pipeline with
+both global and task limits; changing a limit does not restart the file or reset
+its offsets.
+
+**Settings → Files → Transfers** enables transfer optimization by default. Segment
+concurrency, segment size and SFTP requests per segment each default to **Automatic**.
+The application selects fewer segments for small files and up to four for larger remote
+files; manual concurrency supports 1, 2, 4 or 8 segments. Local copies remain sequential.
+Segment size can be automatic or 256 KiB, 1 MiB, 4 MiB or 16 MiB. Request depth can be
+automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight requests.
+Changes apply on start/resume and travel with settings profiles.
+
+Background tasks share a scheduler: up to four tasks run at once across the
+application. Each SSH connection has a budget of four transfer subsystem channels;
+an endpoint reserves one metadata and one data channel. This normally allows two
+uploads/downloads, or one remote copy using both endpoints on that connection.
+Other tasks show **Queued** before opening channels. Independent connections can
+continue while one connection is busy; tasks sharing an endpoint keep their queue
+order. Pause/cancel also work while queued. Waiting does not consume file handles,
+and cancelling or stopping a plugin releases its queue reservation. Restarted
+tasks remain paused until explicitly resumed.
+
+Concurrent segments use explicit file offsets over dedicated SFTP data channels. Uploads,
+downloads and remote-to-remote copies honor advertised server packet limits, handle short
+reads and do not prefetch past a segment boundary. Metadata and directory operations
+retain their own channels. Upload packet sizes use the server's advertised write limit
+within a 256 KiB memory bound; servers without a write limit retain the compatible
+32 KiB fallback. Each queued packet fits both endpoints, avoiding sequential write
+acknowledgements inside a larger logical packet. A journal records the confirmed contiguous prefix before each
+window of segments. Resume discards an interrupted window before verifying the prefix;
+sparse writes are never interpreted as completed data. Workers stop and drain before file
+handles are closed or temporary files can be cleaned.
+
+### Adaptive transfer compression
+
+**Compress transfer data automatically** is enabled by default with transfer
+optimization. Tasks totaling less than 256 KiB keep the standard SFTP path. Larger
+tasks first sample up to 16 KiB from the first source file. When it is compressible,
+they try a temporary Python 3 worker over the existing authenticated SSH connection.
+Incompressible tasks retain the SFTP pipeline. Directory tasks reuse that initial
+transport choice; each subsequent block still decides whether compression helps.
+It uses only the remote standard library, installs no scripts, starts no service,
+and exits when its SSH stream closes. Hosts without the required Python/POSIX file
+operations, exec access, or matching SFTP/exec home paths fall back to SFTP.
+
+Each bounded block is sampled first. Fast compression is used only when both
+the sample and full block save at least 10%; already compressed or random data
+usually travels unchanged. Uploads, downloads and remote copies retain their
+explicit offsets, shared request limits, bandwidth limits and durable checkpoints.
+The worker opens existing regular files only; it never creates or truncates files.
+Compressed reads and writes validate their output lengths and reject truncated or
+trailing data. Pause, resume and cancellation use the same task-owned staging and
+cleanup rules as ordinary SFTP. Disable compression separately under Files if a host
+requires the standard SFTP data path. Changes apply on start or resume and travel
+with settings profiles.
+
+Progress and speed describe original file bytes, including when fewer compressed
+bytes cross the network. Compression benefits depend on file contents and CPU/network
+limits. Small-file archive batching is not yet implemented.
+
 ## Pause and resume transfers
+
+The status-bar **Transfers** entry opens a compact background task list from any
+page; F1 → **Background transfers** opens the same list. When the status bar is
+hidden, the entry appears in the bottom corner. Pin the list to keep it open while
+working elsewhere. Running/paused, attention and finished groups can be collapsed;
+finished tasks start collapsed. Large groups load 20 rows at a time. Expand a task
+to inspect source/destination paths, remaining bytes and temporary speed limits.
+The file panes keep their full height while transfers run.
+
+Drag the transfer window's title to move it, or drag any edge or corner to resize
+it. Position and size survive closing, restarting and tray window recreation;
+shrinking the application keeps the window inside the visible workbench. Double-click
+the title or use Reset layout to restore the default corner placement. Focus the
+title and use arrow keys to move, or focus the bottom-right resize handle and use
+arrow keys to resize. Hold Shift for one-pixel adjustments. Escape during a drag
+cancels that adjustment; Escape otherwise closes the list.
 
 The transfer list offers Pause, Resume, Cancel and Clear. A desktop-owned transfer
 stores its task and per-file progress locally. After an interruption or restart,
 connect to the same saved host and resume from the list; changing terminal session
-IDs does not require recreating the task. Local transfers can resume immediately.
+IDs does not require recreating the task. Resume can open the connection dialog for
+a missing host, including its usual password and host-key checks. The newest live
+connection matching the original saved host and recorded address is used; changing
+the host's address does not silently redirect an existing transfer. Local transfers
+can resume immediately.
 
-Data is written into a task-owned `.tunnelde-….part` sibling. Resume verifies the
-entire existing prefix against the source before appending, and verifies completed
-files before skipping them. A changed source or mismatched partial file is rejected.
+Data is written into a task-owned `.tunnelde-….part` sibling. A clean pause saves
+its closed file's size and modification time. If both source and staging metadata
+still match, resume verifies the first and last blocks and continues at the saved
+offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
+verification. A changed source or mismatched partial file is rejected. Verification
+has its own visible status and can be cancelled while awaiting network reads.
+
 Overwrite uses a recoverable, verified backup of the previous destination. For a
 move, source removal happens after the copy succeeds and is checkpointed separately.
-Reading an existing prefix adds verification I/O but avoids trusting unrelated data.
+Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
+temporary data before reporting completion. It keeps already completed destination
+files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails
+(e.g. the remote disconnected), the task becomes **Cleanup pending**, cannot be
+resumed, and automatically retries when the destination reconnects. Its retry
+button can open the connection dialog. The trash action
+**Remove transfer and clean temporary files** deletes task-owned staging files before
+removing the journal. It restores a verified original destination backup if a commit
+was interrupted. Completed destination files and source files are preserved.
 
-Pause and interruption retain partial data. Clearing a task removes its journal;
-it does not delete files from either endpoint. Cancelling leaves partial files too.
+An offline removal persists its cleanup intent before accessing the connection;
+the journal is retained until owned artifacts are cleaned, including across app
+restarts. Each cleanup attempt has a bounded wait and cannot run alongside Resume.
+Legacy directory transfers with an unidentified original backup keep that backup and
+report that recovery is needed. Completed records can be removed while offline.
+
+The transfer list shows transferred and remaining bytes, recent throughput and an
+estimated remaining time. Throughput history resets on resume; existing bytes do not
+count as newly transferred traffic.
+
 Executable-plugin transfers remain tied to the authorized runtime and cannot resume
 after an application restart or privilege revocation.
 
 ## Local and remote port forwarding
 
-Open a host's detail page and expand **Port forwarding**. Add a named rule:
+Click **Port forwarding** in the SSH terminal toolbar to manage that host's rules,
+with the current terminal session preselected. You can also open the host's detail
+page and expand **Port forwarding**. Choose **Add forward**, then select **Access a remote
+service** or **Share a local service**. The editor separates the listening and service
+endpoints and names the computer that resolves each address. Names are optional and default
+to the service address and port. Choose **Save and start** with a live SSH connection,
+or **Save** to keep an inactive rule. An offline view always offers **Connect**.
 
-| Direction      | Listener      | Destination is reached from |
-| -------------- | ------------- | --------------------------- |
-| Local → remote | This computer | The SSH host                |
-| Remote → local | The SSH host  | This computer               |
+| Direction                       | Listener      | Destination is reached from |
+| ------------------------------- | ------------- | --------------------------- |
+| Local listener → remote service | This computer | The SSH host                |
+| Remote listener → local service | The SSH host  | This computer               |
 
 For a remote database listening on `127.0.0.1:5432`, a local rule could listen on
 `127.0.0.1:15432` and forward to `127.0.0.1:5432`. Applications then connect to
 local port 15432. For remote forwarding, the destination address refers to this
 computer's network rather than the remote host's network.
+
+The rule list keeps Start/Stop visible and puts Edit, Copy local connection address and
+Delete in each rule's actions menu. An active rule must be stopped before editing.
+Startup failures stay beside the saved rule so Start can retry without creating duplicates;
+save failures keep the editor draft. Other open forwarding views refresh after changes.
+Endpoint groups stack vertically in narrow panes.
 
 Rules persist, but listeners start manually after connecting. Loopback is the
 default; exposing a listener requires confirmation. Remote listeners depend on
@@ -91,8 +218,11 @@ a plugin also stop when its permissions are revoked or its runtime exits.
 
 ## SSHFS plugins
 
-The independent hub provides **SSHFS** (Node) and **SSHFS Lite** (declarative,
-without Node). Both require desktop 0.27.0+ and use the same native mount panel.
+The desktop provides native mount APIs for **SSHFS** (Node) and **SSHFS Lite**
+(declarative, without Node). The packages are under review in
+[Hub PR #1](https://github.com/TunneldeDev/tunnelde-hub/pull/1) and are not yet in
+the default marketplace catalogue. The following setup applies to those source
+packages. Both require desktop 0.27.0+ and use the same native mount panel.
 Open either from Quick Access or its contributed view, select a connected host,
 browse a remote directory, and choose a local empty directory or unused Windows
 drive such as `Z:\`. Mounts default to read only.
@@ -111,3 +241,27 @@ close authenticated access and attempt normal cleanup. If a directory is busy,
 close files using it and retry; forced unmount requires confirmation. Mounts do
 not automatically restart. Driver compatibility and platform-specific mount
 behavior must also be tested with the installed SSHFS distribution.
+
+## File previews
+
+Select one file in either pane and press Space, click the Preview toolbar button, or
+choose Preview from its context menu. Text previews are read only; Markdown opens rendered
+with a source switch. Local text is bounded to 512 KiB and remote text to the existing
+2 MiB read limit. Unsupported or binary files report a preview error. Remote previews
+use the selected pane's SSH session. Close returns focus to the file list; the footer
+can open a local file with the OS or edit a connected remote text file.
+
+Install **Common File Previews** from the default marketplace for images, audio,
+video and PDF, or another compatible preview provider. It needs no Node runtime or
+executable-plugin approval. Multiple matching providers appear in a selector;
+unsupported binary formats offer a marketplace search instead of displaying bytes.
+The **Common File Icons** pack supplies file-type icons independently of previewing.
+
+Images are limited to 32 MiB and PDFs to 128 MiB. Audio/video playback starts on
+user action and depends on available system codecs. PDF rendering loads on demand
+and does not execute document scripts. Remote media uses bounded range requests
+over the selected SSH session without a temporary copy on the remote machine.
+Closing the preview revokes its access ticket and closes its file handles. Built-in
+text/Markdown remains available without a plugin; provider-based text/Markdown is
+limited to 2 MiB. See [preview contribution APIs](plugins.md#file-preview-providers)
+for supported extensions and resource limits.

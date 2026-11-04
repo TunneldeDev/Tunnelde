@@ -70,8 +70,36 @@ mod tests {
         let corrupt = load_json("invalid json");
         let defaults = Settings::default();
         assert_eq!(fresh.theme, defaults.theme);
+        assert_eq!(fresh.update_channel, "stable");
+        assert_eq!(corrupt.update_channel, "stable");
         assert_eq!(corrupt.theme, defaults.theme);
         assert_eq!(corrupt.language, defaults.language);
+    }
+
+    #[test]
+    fn update_channel_defaults_to_stable_and_preserves_saved_choices() {
+        let mut legacy = load_json(r#"{"theme":"dark"}"#);
+        legacy.sanitize();
+        assert_eq!(legacy.update_channel, "stable");
+        assert_eq!(legacy.theme, "dark");
+
+        let mut invalid = load_json(r#"{"updateChannel":"unknown"}"#);
+        invalid.sanitize();
+        assert_eq!(invalid.update_channel, "stable");
+
+        let database = Database::in_memory().unwrap();
+        for channel in ["stable", "beta", "nightly"] {
+            let mut settings = load_json(&format!(r#"{{"updateChannel":"{channel}"}}"#));
+            settings.sanitize();
+            assert_eq!(settings.update_channel, channel);
+            database
+                .with(|conn| {
+                    save(conn, &settings)?;
+                    assert_eq!(load(conn)?.update_channel, channel);
+                    Ok(())
+                })
+                .unwrap();
+        }
     }
 
     #[test]
@@ -113,5 +141,33 @@ mod tests {
                 .expect("saved settings");
             assert_eq!(restored.language, language);
         }
+    }
+
+    #[test]
+    fn icon_theme_selection_migrates_sanitizes_and_persists_uninstalled_identities() {
+        assert_eq!(load_json(r#"{"theme":"dark"}"#).file_icon_theme, "auto");
+        let database = Database::in_memory().unwrap();
+        for selection in [
+            "auto",
+            "none",
+            "file-icons:common",
+            "removed-plugin:old-theme",
+        ] {
+            let mut settings = Settings {
+                file_icon_theme: selection.into(),
+                ..Settings::default()
+            };
+            settings.sanitize();
+            database
+                .with(|conn| {
+                    save(conn, &settings)?;
+                    assert_eq!(load(conn)?.file_icon_theme, selection);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let mut invalid = load_json(r#"{"fileIconTheme":"../../escape"}"#);
+        invalid.sanitize();
+        assert_eq!(invalid.file_icon_theme, "auto");
     }
 }

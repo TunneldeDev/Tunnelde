@@ -52,6 +52,10 @@ pub struct Settings {
     pub skipped_version: Option<String>,
     pub last_update_check: Option<i64>,
     pub close_to_tray: bool,
+    /// Destroy the hidden WebView after a successful in-memory checkpoint.
+    pub release_webview_in_tray: bool,
+    /// Prefer the CPU terminal renderer and avoid speculative file preloading.
+    pub lightweight_mode: bool,
     /// macOS: keep the Dock icon after closing the main window.
     pub show_dock_icon_in_background: bool,
     /// "system" uses native chrome; "compact" integrates the window controls.
@@ -77,10 +81,20 @@ pub struct Settings {
     pub terminal_copy_on_select: bool,
     pub terminal_right_click: String,
     pub terminal_renderer: String,
+    pub file_icon_theme: String,
     pub files_show_hidden: bool,
     pub files_folders_first: bool,
     pub files_sort_by: String,
     pub files_sort_direction: String,
+    pub transfer_optimization: bool,
+    pub transfer_compression: bool,
+    /// Zero chooses concurrency and block size automatically.
+    pub transfer_concurrency: u16,
+    pub transfer_chunk_kib: u32,
+    pub transfer_requests: u16,
+    /// KiB/s shared across tasks; zero is unlimited.
+    pub transfer_upload_limit_kib: u32,
+    pub transfer_download_limit_kib: u32,
     pub editor_word_wrap: bool,
     pub editor_tab_size: u16,
     pub editor_spell_check: bool,
@@ -105,22 +119,15 @@ impl Default for Settings {
             right_panel_width: 296,
             user_css: String::new(),
             auto_check_updates: true,
-            update_channel: if env!("CARGO_PKG_VERSION").contains("-alpha.")
-                || env!("CARGO_PKG_VERSION").contains(".d.")
-            {
-                "nightly"
-            } else if env!("CARGO_PKG_VERSION").contains('-') {
-                "beta"
-            } else {
-                "stable"
-            }
-            .into(),
+            update_channel: "stable".into(),
             update_source: "github".into(),
             update_source_url: String::new(),
             update_check_interval: "daily".into(),
             skipped_version: None,
             last_update_check: None,
             close_to_tray: false,
+            release_webview_in_tray: true,
+            lightweight_mode: false,
             show_dock_icon_in_background: true,
             title_bar_style: if cfg!(target_os = "windows") {
                 "compact"
@@ -147,10 +154,18 @@ impl Default for Settings {
             terminal_copy_on_select: false,
             terminal_right_click: "menu".into(),
             terminal_renderer: "auto".into(),
+            file_icon_theme: "auto".into(),
             files_show_hidden: false,
             files_folders_first: true,
             files_sort_by: "name".into(),
             files_sort_direction: "asc".into(),
+            transfer_optimization: true,
+            transfer_compression: true,
+            transfer_concurrency: 0,
+            transfer_chunk_kib: 0,
+            transfer_requests: 0,
+            transfer_upload_limit_kib: 0,
+            transfer_download_limit_kib: 0,
             editor_word_wrap: false,
             editor_tab_size: 4,
             editor_spell_check: false,
@@ -248,7 +263,27 @@ impl Settings {
             }
             valid && shortcut_count <= 128
         });
+        if self.file_icon_theme.is_empty()
+            || self.file_icon_theme.len() > 129
+            || !self
+                .file_icon_theme
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_' | b':' | b'.'))
+        {
+            self.file_icon_theme = "auto".into();
+        }
         let defaults = Self::default();
+        if ![0, 1, 2, 4, 8].contains(&self.transfer_concurrency) {
+            self.transfer_concurrency = 0;
+        }
+        if ![0, 256, 1024, 4096, 16384].contains(&self.transfer_chunk_kib) {
+            self.transfer_chunk_kib = 0;
+        }
+        if ![0, 1, 4, 8, 16, 32].contains(&self.transfer_requests) {
+            self.transfer_requests = 0;
+        }
+        self.transfer_upload_limit_kib = self.transfer_upload_limit_kib.min(1_048_576);
+        self.transfer_download_limit_kib = self.transfer_download_limit_kib.min(1_048_576);
         if !["stable", "beta", "nightly"].contains(&self.update_channel.as_str()) {
             self.update_channel = defaults.update_channel.clone();
         }
@@ -433,6 +468,7 @@ mod tests {
         settings.sanitize();
         assert_eq!(serde_json::to_value(&settings).unwrap(), before);
         assert_eq!(settings.theme, "system");
+        assert_eq!(settings.update_channel, "stable");
         assert_eq!(settings.accent, "blue");
         assert_eq!(settings.density, "comfortable");
         assert_eq!(settings.ui_font_size, 13);
@@ -453,6 +489,69 @@ mod tests {
             } else {
                 "system"
             }
+        );
+    }
+
+    #[test]
+    fn bandwidth_limits_migrate_clamp_and_roundtrip() {
+        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            (
+                settings.transfer_upload_limit_kib,
+                settings.transfer_download_limit_kib
+            ),
+            (0, 0)
+        );
+        settings.transfer_upload_limit_kib = u32::MAX;
+        settings.transfer_download_limit_kib = 1024;
+        settings.sanitize();
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(
+            (
+                restored.transfer_upload_limit_kib,
+                restored.transfer_download_limit_kib
+            ),
+            (1_048_576, 1024)
+        );
+    }
+
+    #[test]
+    fn transfer_settings_migrate_sanitize_and_round_trip() {
+        let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert!(legacy.transfer_optimization);
+        assert!(legacy.transfer_compression);
+        assert_eq!(legacy.transfer_concurrency, 0);
+        assert_eq!(legacy.transfer_chunk_kib, 0);
+        assert_eq!(legacy.transfer_requests, 0);
+        for (concurrency, chunk, requests) in [(0, 0, 0), (1, 256, 1), (8, 16384, 32), (4, 4096, 8)]
+        {
+            let mut settings: Settings = serde_json::from_value(serde_json::json!({
+                "transferOptimization": false, "transferCompression": false, "transferConcurrency": concurrency,
+                "transferChunkKib": chunk, "transferRequests": requests
+            }))
+            .unwrap();
+            settings.sanitize();
+            let restored: Settings =
+                serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+            assert!(!restored.transfer_optimization);
+            assert!(!restored.transfer_compression);
+            assert_eq!(restored.transfer_concurrency, concurrency);
+            assert_eq!(restored.transfer_chunk_kib, chunk);
+            assert_eq!(restored.transfer_requests, requests);
+        }
+        let mut invalid: Settings = serde_json::from_value(serde_json::json!({
+            "transferConcurrency": 999, "transferChunkKib": 99, "transferRequests": 65535
+        }))
+        .unwrap();
+        invalid.sanitize();
+        assert_eq!(
+            (
+                invalid.transfer_concurrency,
+                invalid.transfer_chunk_kib,
+                invalid.transfer_requests
+            ),
+            (0, 0, 0)
         );
     }
 

@@ -360,38 +360,23 @@ def main() -> None:
     resources = ROOT / "resources"
     tauri_icons = ROOT / "src-tauri" / "icons"
     renderer_brand = ROOT / "public" / "brand"
-    src_brand = ROOT / "src" / "assets" / "brand"
     preview_dir = ROOT / ".tmp" / "brand"
     for directory in (
         brand_dir,
         build_dir,
-        build_dir / "icons",
         resources,
-        resources / "icons",
         tauri_icons,
         renderer_brand,
-        src_brand,
         preview_dir,
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
     master.save(brand_dir / "tunnelde-mark-1024.png", optimize=True)
-    master.save(build_dir / "icon.png", optimize=True)
 
     images = {size: resize(master, size) for size in PNG_SIZES}
-    iconset = build_dir / "icons"
-    iconset.mkdir(parents=True, exist_ok=True)
-    for size in (16, 24, 32, 48, 64, 96, 128, 256, 512):
-        images[size].save(iconset / f"{size}x{size}.png", optimize=True)
-
-    # Runtime / renderer copies
-    for size in (16, 32, 48, 64, 128, 256, 512):
-        images[size].save(resources / "icons" / f"{size}.png", optimize=True)
-    for size in (64, 256, 512):
-        images[size].save(renderer_brand / f"mark-{size}.png", optimize=True)
-    images[256].save(renderer_brand / "icon.png", optimize=True)
+    # Only generate renderer assets consumed by the application.
+    images[256].save(renderer_brand / "mark-256.png", optimize=True)
     images[64].save(renderer_brand / "favicon.png", optimize=True)
-    images[512].save(src_brand / "mark-512.png", optimize=True)
 
     # Tauri expects these exact names.
     images[32].save(tauri_icons / "32x32.png", optimize=True)
@@ -400,10 +385,6 @@ def main() -> None:
     images[512].save(tauri_icons / "icon.png", optimize=True)
     write_ico({size: images[size] for size in ICO_SIZES}, tauri_icons / "icon.ico")
     write_icns(images, tauri_icons / "icon.icns")
-
-    # Compatibility copies for the NSIS/DMG tooling and old Electron-era scripts.
-    write_ico({size: images[size] for size in ICO_SIZES}, build_dir / "icon.ico")
-    write_icns(images, build_dir / "icon.icns")
 
     make_nsis_images(master, build_dir, preview_dir)
     make_tray(master, resources, preview_dir)

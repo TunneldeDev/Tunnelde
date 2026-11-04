@@ -57,10 +57,51 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("keeps tags in search suggestions and supports @tag filtering and one-click clear", () => {
+    useHosts.setState({
+      hosts: [
+        { ...host("a", "alpha", 0), tags: ["PublicNet"] },
+        { ...host("b", "beta", 1), tags: ["private"] },
+      ],
+    });
+    const { container } = render(<HostTree />);
+    expect(container.querySelector(".sidebar__tags")).toBeNull();
+    expect(screen.queryByRole("listbox")).toBeNull();
+    const input = screen.getByRole("combobox", { name: "Search hosts" });
+    fireEvent.focus(input);
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    fireEvent.change(input, { target: { value: "@tag PublicNet" } });
+    expect(screen.getAllByRole("treeitem")).toHaveLength(1);
+    expect(screen.getByRole("treeitem").textContent).toContain("alpha");
+    fireEvent.click(screen.getByRole("button", { name: "Clear host search" }));
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+  });
+
+  it("completes tags by keyboard, combines them with text, and dismisses suggestions with Escape", () => {
+    useHosts.setState({
+      hosts: [
+        { ...host("a", "alpha", 0), tags: ["PublicNet"] },
+        { ...host("b", "beta", 1), tags: ["PublicNet"] },
+      ],
+    });
+    render(<HostTree />);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: "alpha tag:Pub" } });
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect((input as HTMLInputElement).value).toBe("alpha tag:PublicNet ");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(1);
+    fireEvent.change(input, { target: { value: "tag:Pub" } });
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Escape" });
+    expect(screen.queryByRole("listbox")).toBeNull();
+    expect((input as HTMLInputElement).value).toBe("tag:Pub");
+  });
+
   it("keeps creation actions in the header and search below without repeating app branding", () => {
     const { container } = render(<HostTree />);
     const toolbar = screen.getByRole("toolbar", { name: "Hosts" });
-    expect(toolbar.contains(screen.getByRole("textbox"))).toBe(false);
+    expect(toolbar.contains(screen.getByRole("combobox"))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "New host" }));
     expect(useDialogs.getState().openHost).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "New group" }));
@@ -104,7 +145,7 @@ describe("HostTree keyboard navigation", () => {
     expect(
       screen.getAllByRole("treeitem").every((row) => row.getAttribute("draggable") === "true"),
     ).toBe(true);
-    fireEvent.change(screen.getByRole("textbox"), { target: { value: "alpha" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "alpha" } });
     expect(screen.getAllByRole("treeitem")).toHaveLength(1);
     expect(screen.getByRole("treeitem").getAttribute("draggable")).toBe("false");
   });

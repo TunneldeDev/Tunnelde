@@ -26,11 +26,20 @@ interface MenuProps {
   className?: string;
   menuClassName?: string;
   disabled?: boolean;
+  onOpen?: () => void;
 }
 
 const MENU_WIDTH = 184;
 
-export function Menu({ label, items, trigger, className, menuClassName, disabled }: MenuProps) {
+export function Menu({
+  label,
+  items,
+  trigger,
+  className,
+  menuClassName,
+  disabled,
+  onOpen,
+}: MenuProps) {
   const [open, setOpen] = useState(false);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -110,6 +119,7 @@ export function Menu({ label, items, trigger, className, menuClassName, disabled
           event.stopPropagation();
           if (open) close();
           else {
+            onOpen?.();
             openLast.current = false;
             setOpen(true);
           }
@@ -120,7 +130,10 @@ export function Menu({ label, items, trigger, className, menuClassName, disabled
           event.stopPropagation();
           openLast.current = event.key === "ArrowUp";
           if (open) focusMenuItem(menuRef.current, openLast.current);
-          else setOpen(true);
+          else {
+            onOpen?.();
+            setOpen(true);
+          }
         }}
       >
         {trigger ?? <MoreHorizontal size={14} />}

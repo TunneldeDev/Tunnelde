@@ -16,6 +16,8 @@ interface UpdatesStore {
   apply: (state: UpdateState) => void;
 }
 
+let refreshVersion = 0;
+
 export function matchingUpdateState(
   state: UpdateState | null,
   settings: Settings,
@@ -35,8 +37,11 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
     if (!isTauri()) {
       return;
     }
+    const request = ++refreshVersion;
+    const previous = get().state;
     try {
-      set({ state: await api.updateState() });
+      const state = await api.updateState();
+      if (request === refreshVersion && get().state === previous) set({ state });
     } catch {
       // A missing update state is not worth interrupting startup.
     }

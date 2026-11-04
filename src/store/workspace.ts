@@ -1,7 +1,8 @@
 import { create } from "zustand";
 
 import { api } from "@/lib/api/ipc";
-import type { Host, SshSession, TabKind, TabRecord } from "@/lib/api/types";
+import type { Host, SshSession, TabKind, TabRecord, FsSource } from "@/lib/api/types";
+import type { FileViewPreferences } from "@/lib/files/view";
 import { fileName, useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
@@ -22,8 +23,18 @@ export interface WorkspaceTab {
   title: string;
   hostId: string | null;
   pinned: boolean;
+  /** One replaceable navigation preview per pane; independent of pinned tabs. */
+  preview?: boolean;
   /** Collapsed docked sidebars remain in their original group and layout. */
   hidden?: boolean;
+  filePane?: FilePaneOptions;
+}
+
+export interface FilePaneOptions {
+  source: FsSource;
+  path: string | null;
+  ownerSessionId: string;
+  view?: FileViewPreferences;
 }
 
 export interface WorkspacePane {
@@ -48,6 +59,9 @@ export type WorkspaceLayout =
 export type PanePosition = "before" | "after";
 
 export type PageKind = "welcome" | "settings" | "about" | "updates" | "knownHosts";
+export interface OpenTabOptions {
+  preview?: boolean;
+}
 
 const PAGE_TITLES: Record<PageKind, string> = {
   welcome: "welcome",
@@ -78,18 +92,30 @@ interface WorkspaceStore {
   activeId: string | null;
   split: SplitDirection | null;
   layout: WorkspaceLayout;
-  openPage: (kind: PageKind) => void;
+  openPage: (kind: PageKind, options?: OpenTabOptions) => void;
   openSidebar: (view: SidebarView) => void;
   toggleDockedSidebar: (view: SidebarView) => void;
   returnSidebar: (view: SidebarView) => void;
-  openHost: (host: Host) => void;
+  openHost: (host: Host, options?: OpenTabOptions) => void;
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
+  openFilePane: (options: FilePaneOptions, title: string) => string;
   openEditor: (session: SshSession, path: string) => void;
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
-  openPluginView: (pluginId: string, viewId: string, title: string) => void;
-  openPluginDetail: (sourceId: string, pluginId: string, title: string) => void;
+  openPluginView: (
+    pluginId: string,
+    viewId: string,
+    title: string,
+    options?: OpenTabOptions,
+  ) => void;
+  openPluginDetail: (
+    sourceId: string,
+    pluginId: string,
+    title: string,
+    options?: OpenTabOptions,
+  ) => void;
+  keepTab: (id: string) => void;
   closeSession: (sessionId: string) => void;
   close: (id: string) => void;
   closeOthers: (id: string) => void;
@@ -319,14 +345,52 @@ function dropTab(panes: WorkspacePane[], tabId: string): WorkspacePane[] {
 export const useWorkspace = create<WorkspaceStore>((set) => {
   const insert = (state: WorkspaceStore, tab: WorkspaceTab): Partial<WorkspaceStore> => {
     const existing = state.tabs.find((item) => item.id === tab.id);
-    const tabs = existing
-      ? state.tabs.map((item) => (item.id === tab.id ? { ...tab, pinned: item.pinned } : item))
-      : [...state.tabs, tab];
     const placed = state.panes.find((item) => item.tabIds.includes(tab.id));
     const ownerId = placed?.id ?? state.panes.find((item) => item.locked)?.id ?? state.activePaneId;
+    // Reopening the active preview is the user's second click: keep it open.
+    const keepExisting = existing && (!tab.preview || placed?.activeId === tab.id);
+    const owner = state.panes.find((item) => item.id === ownerId);
+    const replaced =
+      !existing && tab.preview
+        ? state.tabs.find(
+            (item) =>
+              item.preview &&
+              !item.pinned &&
+              !item.hidden &&
+              owner?.tabIds.includes(item.id) &&
+              !useEditors.getState().isDirty(item.id),
+          )
+        : undefined;
+    if (replaced?.kind === "editor") useEditors.getState().discard(replaced.id);
+    const tabs = existing
+      ? state.tabs.map((item) =>
+          item.id === tab.id
+            ? { ...item, ...tab, pinned: item.pinned, preview: keepExisting ? false : item.preview }
+            : item,
+        )
+      : [
+          ...state.tabs
+            .filter((item) => item.id !== replaced?.id)
+            .map((item) =>
+              tab.preview && item.preview && owner?.tabIds.includes(item.id)
+                ? { ...item, preview: false }
+                : item,
+            ),
+          tab,
+        ];
     const panes = placed
       ? withActiveTab(state.panes, ownerId, tab.id)
-      : addTabTo(state.panes, ownerId, tab.id);
+      : replaced
+        ? state.panes.map((item) =>
+            item.id === ownerId
+              ? {
+                  ...item,
+                  tabIds: item.tabIds.map((id) => (id === replaced.id ? tab.id : id)),
+                  activeId: tab.id,
+                }
+              : item,
+          )
+        : addTabTo(state.panes, ownerId, tab.id);
     return { tabs, ...settle(panes, ownerId, state.split, state.layout, tabs) };
   };
 
@@ -404,7 +468,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       useWorkspace.getState().close(sidebarTabId(view));
     },
 
-    openPage: (kind) => {
+    openPage: (kind, options) => {
       if (kind === "updates") {
         useNavigation.getState().selectSettings("updates");
         kind = "settings";
@@ -417,11 +481,12 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           title: PAGE_TITLES[kind],
           hostId: null,
           pinned: false,
+          preview: options?.preview ?? kind !== "welcome",
         }),
       );
     },
 
-    openHost: (host) => {
+    openHost: (host, options) => {
       const id = `host:${host.id}`;
       set((state) =>
         insert(state, {
@@ -430,6 +495,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           title: host.name,
           hostId: host.id,
           pinned: false,
+          preview: options?.preview ?? true,
         }),
       );
     },
@@ -456,6 +522,21 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           pinned: false,
         }),
       );
+    },
+
+    openFilePane: (filePane, title) => {
+      const id = `files:${crypto.randomUUID()}`;
+      set((state) =>
+        insert(state, {
+          id,
+          kind: "sftp",
+          title,
+          pinned: false,
+          filePane,
+          hostId: null,
+        }),
+      );
+      return id;
     },
 
     openEditor: (session, path) => {
@@ -498,7 +579,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       );
     },
 
-    openPluginView: (pluginId, viewId, title) => {
+    openPluginView: (pluginId, viewId, title, options) => {
       set((state) =>
         insert(state, {
           id: `plugin:${pluginId}:${viewId}`,
@@ -506,11 +587,12 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           title,
           hostId: null,
           pinned: false,
+          preview: options?.preview ?? true,
         }),
       );
     },
 
-    openPluginDetail: (sourceId, pluginId, title) => {
+    openPluginDetail: (sourceId, pluginId, title, options) => {
       set((state) =>
         insert(state, {
           id: `extension:${sourceId}:${pluginId}`,
@@ -518,6 +600,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           title,
           hostId: null,
           pinned: false,
+          preview: options?.preview ?? true,
         }),
       );
     },
@@ -658,9 +741,20 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         return settle(panes, state.activePaneId, state.split, state.layout, state.tabs);
       }),
 
+    keepTab: (id) =>
+      set((state) =>
+        state.tabs.some((tab) => tab.id === id && tab.preview)
+          ? {
+              tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, preview: false } : tab)),
+            }
+          : state,
+      ),
+
     togglePin: (id) =>
       set((state) => ({
-        tabs: state.tabs.map((tab) => (tab.id === id ? { ...tab, pinned: !tab.pinned } : tab)),
+        tabs: state.tabs.map((tab) =>
+          tab.id === id ? { ...tab, pinned: !tab.pinned, preview: false } : tab,
+        ),
       })),
 
     reorder: (from, to) =>
@@ -684,6 +778,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       }),
 
     splitTab: (tabId, direction, position = "after", targetPaneId) => {
+      useWorkspace.getState().keepTab(tabId);
       const view = sidebarViewOf(tabId);
       if (view) useNavigation.getState().rememberSidebar(view);
       set((current) => {
@@ -768,6 +863,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       }));
     },
     moveTab: (tabId, targetPaneId, beforeTabId) => {
+      useWorkspace.getState().keepTab(tabId);
       const view = sidebarViewOf(tabId);
       if (view) useNavigation.getState().rememberSidebar(view);
       set((current) => {
@@ -795,6 +891,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     reorderTab: (tabId, beforeTabId) => {
+      useWorkspace.getState().keepTab(tabId);
       set((state) => {
         const origin = state.panes.find((item) => item.tabIds.includes(tabId));
         if (!origin || tabId === beforeTabId) {
@@ -825,7 +922,10 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         const panes = remaining.map((item) =>
           item.id === target.id ? { ...item, tabIds: [...item.tabIds, ...closing.tabIds] } : item,
         );
-        return settle(panes, target.id, state.split, state.layout, state.tabs);
+        const tabs = state.tabs.map((tab) =>
+          closing.tabIds.includes(tab.id) && tab.preview ? { ...tab, preview: false } : tab,
+        );
+        return { tabs, ...settle(panes, target.id, state.split, state.layout, tabs) };
       });
     },
 
@@ -876,6 +976,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
               panes?: WorkspacePane[];
               activePaneId?: string;
               hiddenTabIds?: unknown;
+              previewTabIds?: unknown;
             })
           : null;
         const layout = readLayout(snapshot?.layout);
@@ -883,6 +984,11 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           const hidden = new Set(
             Array.isArray(snapshot.hiddenTabIds)
               ? snapshot.hiddenTabIds.filter((id): id is string => typeof id === "string")
+              : [],
+          );
+          const previews = new Set(
+            Array.isArray(snapshot.previewTabIds)
+              ? snapshot.previewTabIds.filter((id): id is string => typeof id === "string")
               : [],
           );
           const seen = new Set<string>();
@@ -925,6 +1031,20 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             ) {
               for (const tab of tabs)
                 if (tab.kind === "sidebar" && hidden.has(tab.id)) tab.hidden = true;
+              for (const pane of panes) {
+                const preview = pane.tabIds.find(
+                  (id) =>
+                    previews.has(id) &&
+                    tabs.some(
+                      (tab) =>
+                        tab.id === id &&
+                        !tab.pinned &&
+                        ["host", "settings", "about", "knownHosts"].includes(tab.kind),
+                    ),
+                );
+                const tab = tabs.find((tab) => tab.id === preview);
+                if (tab) tab.preview = true;
+              }
               restored = settle(panes, snapshot.activePaneId ?? panes[0]!.id, null, layout, tabs);
             }
           }
@@ -995,6 +1115,7 @@ export function workspaceRecords(): TabRecord[] {
     layout,
     activePaneId,
     hiddenTabIds: tabs.filter((tab) => tab.kind === "sidebar" && tab.hidden).map((tab) => tab.id),
+    previewTabIds: tabs.filter((tab) => tab.preview).map((tab) => tab.id),
   });
   if (ordered.length === 0 && panes.some((pane) => pane.locked))
     return [

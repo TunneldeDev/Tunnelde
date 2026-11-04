@@ -87,6 +87,7 @@ File panes:
 | `Ctrl+A`                            | Select every entry                              |
 | `Home` / `End`                      | Select the first / last entry                   |
 | `Ctrl+N` / `Ctrl+Shift+N`           | Create a file / folder in the focused file pane |
+| `Space`                             | Preview the selected local or remote file       |
 | `Esc`                               | Clear the selection                             |
 
 With the mouse, `Ctrl/Cmd+click` adds or removes one row and `Shift+click` selects a range. Delete,
@@ -95,7 +96,16 @@ transfer, cut, copy, paste and drag all act on the whole selection.
 Window gestures:
 
 - Middle-click a tab closes it.
-- Double-click a tab pins or unpins it.
+- Drag the background transfer window's title to move it and any edge or corner to
+  resize it. Focus its title and use arrow keys to move; focus its bottom-right
+  handle and use arrow keys to resize. Shift changes the adjustment to one pixel.
+  Escape cancels an active drag; otherwise it closes the transfer list. Double-click
+  the title or use Reset layout to restore its default placement.
+- Pages and plugin details open in one reusable italic preview tab per pane. Selecting a
+  different item replaces that preview. Selecting the same item again or double-clicking
+  its tab keeps it open. Interacting with page controls or dragging the tab also keeps it.
+- Use a tab's context menu to **Keep open** or separately **Pin / Unpin**. The `tab.keepOpen`
+  command is available in Quick Access and can be assigned a shortcut.
 - Drag a tab onto another pane's strip to move it, or onto a window edge to
   create a pane on that side.
 - Right-click a tab, host or file for its context menu.
