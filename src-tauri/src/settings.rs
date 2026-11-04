@@ -284,7 +284,7 @@ impl Settings {
         }
         self.transfer_upload_limit_kib = self.transfer_upload_limit_kib.min(1_048_576);
         self.transfer_download_limit_kib = self.transfer_download_limit_kib.min(1_048_576);
-        if !["stable", "beta", "nightly"].contains(&self.update_channel.as_str()) {
+        if !["stable", "beta"].contains(&self.update_channel.as_str()) {
             self.update_channel = defaults.update_channel.clone();
         }
         if !["github", "custom"].contains(&self.update_source.as_str()) {
@@ -459,6 +459,21 @@ mod tests {
         }
         settings.sanitize();
         assert_eq!(settings.keyboard_shortcuts.len(), 128);
+    }
+
+    #[test]
+    fn legacy_development_update_preferences_migrate_to_stable() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({
+            "updateChannel": "nightly",
+            "theme": "dark"
+        }))
+        .unwrap();
+        settings.sanitize();
+        assert_eq!(settings.update_channel, "stable");
+        assert_eq!(settings.theme, "dark");
+        settings.update_channel = "beta".into();
+        settings.sanitize();
+        assert_eq!(settings.update_channel, "beta");
     }
 
     #[test]
@@ -755,7 +770,7 @@ mod tests {
             ("density", &DENSITIES),
             ("monoFont", &MONO_FONTS),
             ("titleBarStyle", &TITLE_BAR_STYLES),
-            ("updateChannel", &["stable", "beta", "nightly"]),
+            ("updateChannel", &["stable", "beta"]),
             ("updateSource", &["github", "custom"]),
             ("updateCheckInterval", &["startup", "daily", "weekly"]),
             ("motion", &["system", "reduced", "full"]),

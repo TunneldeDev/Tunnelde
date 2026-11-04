@@ -74,9 +74,11 @@ outside the current policy. New target versions restart at beta.1.
 Updates compare semantic versions across all pages and include stable releases
 in the Beta channel. Users on historical `0.28.0-beta.10` or `.11` can therefore
 update to `0.28.0` without a compatibility build. Do not rename a release or tag
-while keeping binaries with a different embedded version. Exceptional removal
-of obsolete releases requires explicit authorization, a metadata/tag backup,
-and a verified public replacement with installers and its updater manifest.
+while keeping binaries with a different embedded version. Exceptional cleanup
+or reissue requires explicit authorization, a metadata/tag-history backup, a
+validated replacement source and fresh verified installers. Same-version or
+downgrade replacements require manual installation; update checks retain their
+normal version and signature checks.
 Normal publication retains history and never moves existing tags.
 
 The maintained version policy is available in [English](versioning.en-us.md)
@@ -179,12 +181,12 @@ and displayed in a collapsed Markdown section.
 
 - **Stable** uses the latest public stable manifest and excludes prereleases.
 - **Public beta (Beta)** selects the greatest published stable/Beta version with `latest.json`.
-- **Development (Nightly)** additionally accepts daily snapshots, including Nightly builds based
-  on Beta tags. Those snapshots are excluded from the public Beta channel.
+- Developer Nightly packages are not an in-app update channel. Legacy Nightly preferences migrate
+  to Stable. Stable/Beta discovery excludes daily snapshots.
 - Discovery follows GitHub release pagination and compares SemVer rather than titles or list order.
   Drafts, incomplete releases and mismatched prerelease flags are excluded. A source outage is an
   error rather than an up-to-date result. API discovery is bounded to ten pages.
-- If the GitHub API is rate limited or unavailable, Beta/Nightly checks use GitHub's public Atom
+- If the GitHub API is rate limited or unavailable, Beta checks use GitHub's public Atom
   feed of recent published releases through the same configured proxy. This fallback covers recent
   entries, not the full release history. It compares SemVer and verifies each selected tag against
   its `latest.json`; stale entries whose manifest returns 404 are skipped. Network errors and invalid
@@ -194,16 +196,16 @@ and displayed in a collapsed Markdown section.
   version greater than the installed build. All source/channel changes invalidate a previous update
   selection, and cannot occur during an installation.
 
-Fresh installations always default to Stable, including Beta and Nightly builds. Public beta and
-Development require an explicit selection. Saved preferences take priority when upgrading an
-existing installation.
+Fresh installations always default to Stable, including Beta and Nightly builds. Public beta
+requires an explicit selection; development snapshots are not offered. Existing Stable/Beta
+preferences are retained, while legacy Nightly preferences migrate to Stable.
 
 The official source is **GitHub**. There is no bundled third-party mirror. A **custom HTTPS
 source** can serve standard Tauri manifests at a template such as
 `https://updates.example.com/{channel}/latest.json`. The placeholder must occur exactly
-once in the path, expanding to `stable`, `beta` or `nightly`. Credentials, query strings and fragments
-are rejected. A Beta check queries stable/Beta; a Nightly check queries all three
-concurrently and chooses the newest eligible version. An unavailable channel can return HTTP 204.
+once in the path, expanding to `stable` or `beta`. Credentials, query strings and fragments
+are rejected. A Beta check queries stable/Beta concurrently and chooses the newest eligible
+version. An unavailable channel can return HTTP 204.
 The requested endpoints must otherwise be reachable. This is a manifest service, not a generic GitHub proxy prefix.
 
 Mirror operators copy verified `latest.json` and the corresponding signed updater packages
