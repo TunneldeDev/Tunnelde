@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   securityLoad: vi.fn(),
   pluginLoad: vi.fn(),
   pluginStart: vi.fn(),
+  transferHydrate: vi.fn(async () => {}),
   hosts: [] as { id: string }[],
   events: {
     onSettingsChanged: vi.fn(),
@@ -61,7 +62,9 @@ vi.mock("@/store/pluginSecurity", () => ({
     getState: () => ({ load: mocks.securityLoad, apply: vi.fn(), reportFailure: vi.fn() }),
   },
 }));
-vi.mock("@/store/transfers", () => ({ useTransfers: { getState: () => ({ apply: vi.fn() }) } }));
+vi.mock("@/store/transfers", () => ({
+  useTransfers: { getState: () => ({ apply: vi.fn(), hydrate: mocks.transferHydrate }) },
+}));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
 vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
 vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key } }));

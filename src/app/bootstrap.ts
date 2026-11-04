@@ -97,6 +97,8 @@ async function start(signal: AbortSignal): Promise<void> {
   if (hostsLoaded) pruneMissingHosts();
   await useSsh.getState().refresh();
   if (signal.aborted) return;
+  // The global background task list must work before any file page is opened.
+  void useTransfers.getState().hydrate();
   useWorkspace.getState().ensureWelcome();
 
   cleanups.push(
