@@ -1594,10 +1594,22 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 8px;
   padding: 0 12px;
   height: 40px;
-  border-bottom: 1px solid var(--td-border);
-  color: var(--td-faint);
+  border: 1px solid var(--td-border-strong);
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg);
+  color: var(--td-muted);
+}
+
+.td-palette__input:focus-within {
+  border-color: var(--td-accent);
+  box-shadow: var(--td-focus);
+}
+
+.td-palette__input > svg {
+  flex-shrink: 0;
 }
 
 .td-palette__input input {
@@ -1610,6 +1622,7 @@
   font: inherit;
   font-size: 13px;
   outline: none;
+  box-shadow: none;
 }
 
 .td-palette__list {
