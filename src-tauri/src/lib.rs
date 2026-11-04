@@ -158,6 +158,8 @@ pub fn run() {
             commands::key_import,
             commands::key_pick,
             commands::ssh_probe,
+            commands::ssh_test_connection,
+            commands::ssh_cancel_test,
             commands::ssh_trust,
             commands::ssh_connect,
             commands::ssh_attach,
