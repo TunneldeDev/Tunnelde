@@ -11,6 +11,7 @@ import { useStorage } from "@/store/storage";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
+import { useTransferPanel } from "@/store/transferPanel";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import {
   decodeViewSnapshot,
@@ -41,6 +42,7 @@ import { restoreBackgroundSnapshot, suspendBackgroundWindow } from "@/app/backgr
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useTransferPanel.setState({ open: false, pinned: false });
   mocks.snapshot.mockResolvedValue(null);
   mocks.prepare.mockResolvedValue({ one: { sequence: 7, data: "screen" } });
   mocks.resume.mockResolvedValue(undefined);
@@ -107,6 +109,24 @@ beforeEach(() => {
 });
 
 describe("background window checkpoint", () => {
+  it("releases a WebView with a pinned nonmodal task list and restores its state", async () => {
+    const panel = document.createElement("aside");
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-modal", "false");
+    document.body.append(panel);
+    useTransferPanel.setState({ open: true, pinned: true });
+    try {
+      await suspendBackgroundWindow(71);
+      expect(mocks.suspend).toHaveBeenCalledWith(71, expect.any(String));
+      const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+      useTransferPanel.setState({ open: false, pinned: false });
+      mocks.snapshot.mockResolvedValue(snapshot);
+      await restoreBackgroundSnapshot();
+      expect(useTransferPanel.getState()).toMatchObject({ open: true, pinned: true });
+    } finally {
+      panel.remove();
+    }
+  });
   it("keeps drafts, pane locks, tool results and live sessions in memory across recreation", async () => {
     await suspendBackgroundWindow(1);
     expect(mocks.prepare).toHaveBeenCalledWith(["one"]);

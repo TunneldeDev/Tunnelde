@@ -26,6 +26,7 @@ import { useMonitorHistory } from "@/store/monitorHistory";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
+import { useTransferPanel } from "@/store/transferPanel";
 
 function captureWorkspace() {
   const { tabs, panes, activePaneId, activeId, split, layout } = useWorkspace.getState();
@@ -50,6 +51,7 @@ interface WindowSnapshot {
   clipboard: ReturnType<typeof useFileClipboard.getState>["clip"];
   views: Record<string, unknown>;
   terminals: Record<string, TerminalCheckpoint>;
+  transferPanel?: { open: boolean; pinned: boolean };
 }
 
 /** Resume only the still-running native process; this data is never written to disk. */
@@ -75,6 +77,7 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   useFileClipboard.setState({ clip: snapshot.clipboard });
   useWorkspace.setState(snapshot.workspace);
   useNavigation.setState(snapshot.navigation);
+  if (snapshot.transferPanel) useTransferPanel.setState(snapshot.transferPanel);
   return true;
 }
 
@@ -83,7 +86,7 @@ function busy() {
   const security = usePluginSecurity.getState();
   return (
     viewIsBusy() ||
-    document.querySelector('[role="dialog"]') !== null ||
+    document.querySelector('[role="dialog"]:not([aria-modal="false"])') !== null ||
     useDialogs.getState().dialog.kind !== "none" ||
     Object.values(useEditors.getState().entries).some((entry) => entry.loading || entry.saving) ||
     ssh.connectingHostIds.length > 0 ||
@@ -123,6 +126,10 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
     if (cancellation !== revision || busy()) return;
     const snapshot: WindowSnapshot = {
       version: 1,
+      transferPanel: {
+        open: useTransferPanel.getState().open,
+        pinned: useTransferPanel.getState().pinned,
+      },
       workspace: captureWorkspace(),
       navigation: captureNavigation(),
       editors: useEditors.getState().entries,
