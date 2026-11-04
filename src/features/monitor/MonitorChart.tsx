@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { formatBytes, formatPercent } from "@/lib/text/format";
 import type { MonitorSample } from "@/store/monitorHistory";
@@ -6,9 +6,57 @@ import type { MonitorSample } from "@/store/monitorHistory";
 type MetricKey = "cpu" | "memory" | "rx" | "tx" | "diskRead" | "diskWrite";
 type ChartKind = "cpu" | "memory" | "network" | "disk";
 const TICKS = [1, 0.75, 0.5, 0.25, 0];
+const TONES: Record<ChartKind, string[]> = {
+  cpu: ["accent"],
+  memory: ["green"],
+  network: ["accent", "orange"],
+  disk: ["green", "orange"],
+};
+
+// Geometry changes with samples, not panel width or tooltip selection. Keep the
+// SVG subtree independent so resizing only needs the browser's vector scaling.
+const ChartLines = memo(function ChartLines({
+  paths,
+  kind,
+}: {
+  paths: string[][][];
+  kind: ChartKind;
+}) {
+  return (
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+      {TICKS.map((tick) => (
+        <line
+          key={tick}
+          x1="0"
+          x2="100"
+          y1={96 - tick * 92}
+          y2={96 - tick * 92}
+          className="monitor-chart__grid"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+      {paths.map((segments, lineIndex) => (
+        <g key={lineIndex} className={`monitor-chart__series is-${TONES[kind][lineIndex]}`}>
+          {segments.map((points, segment) =>
+            points.length === 1 ? (
+              <circle
+                key={segment}
+                cx={points[0]!.split(",")[0]}
+                cy={points[0]!.split(",")[1]}
+                r="1"
+              />
+            ) : (
+              <polyline key={segment} points={points.join(" ")} vectorEffect="non-scaling-stroke" />
+            ),
+          )}
+        </g>
+      ))}
+    </svg>
+  );
+});
 
 /** A shared, timestamp-based view of the bounded session history. */
-export function MonitorChart({
+export const MonitorChart = memo(function MonitorChart({
   samples,
   kind,
   label,
@@ -142,49 +190,14 @@ export function MonitorChart({
           setSelectedAt(samples[Math.min(samples.length - 1, Math.max(0, next))]!.at);
         }}
       >
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-          {TICKS.map((tick) => (
-            <line
-              key={tick}
-              x1="0"
-              x2="100"
-              y1={96 - tick * 92}
-              y2={96 - tick * 92}
-              className="monitor-chart__grid"
-              vectorEffect="non-scaling-stroke"
-            />
-          ))}
-          {series.map((item, lineIndex) => (
-            <g key={item.key} className={`monitor-chart__series is-${item.tone}`}>
-              {paths[lineIndex]!.map((points, segment) =>
-                points.length === 1 ? (
-                  <circle
-                    key={segment}
-                    cx={points[0]!.split(",")[0]}
-                    cy={points[0]!.split(",")[1]}
-                    r="1"
-                  />
-                ) : (
-                  <polyline
-                    key={segment}
-                    points={points.join(" ")}
-                    vectorEffect="non-scaling-stroke"
-                  />
-                ),
-              )}
-            </g>
-          ))}
-          {selectedAt !== null && selected ? (
-            <line
-              x1={cursor}
-              x2={cursor}
-              y1="0"
-              y2="100"
-              className="monitor-chart__cursor"
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : null}
-        </svg>
+        <ChartLines paths={paths} kind={kind} />
+        {selectedAt !== null && selected ? (
+          <div
+            className="monitor-chart__cursor"
+            style={{ left: `${cursor}%` }}
+            aria-hidden="true"
+          />
+        ) : null}
         {!samples.length ? <p className="monitor-chart__empty">{t("panel.waiting")}</p> : null}
         {kind === "disk" &&
         samples.length > 0 &&
@@ -233,4 +246,4 @@ export function MonitorChart({
       ) : null}
     </div>
   );
-}
+});

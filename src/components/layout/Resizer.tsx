@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent } from "react";
+import { useEffect, useRef, type PointerEvent } from "react";
 
 import { cn } from "@/lib/text/format";
 
@@ -18,12 +18,29 @@ interface ResizerProps {
  */
 export function Resizer({ value, min, max, edge, label, onChange, onCommit }: ResizerProps) {
   const drag = useRef({ startX: 0, startValue: 0, latest: 0, active: false, pointerId: -1 });
+  const frame = useRef<number | null>(null);
+  const reported = useRef(value);
+
+  useEffect(
+    () => () => {
+      if (frame.current !== null) cancelAnimationFrame(frame.current);
+    },
+    [],
+  );
+
+  const report = () => {
+    frame.current = null;
+    if (reported.current === drag.current.latest) return;
+    reported.current = drag.current.latest;
+    onChange(drag.current.latest);
+  };
 
   const clamp = (next: number) => Math.round(Math.min(max, Math.max(min, next)));
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.button !== 0 || drag.current.active) return;
     event.preventDefault();
+    reported.current = value;
     drag.current = {
       startX: event.clientX,
       startValue: value,
@@ -46,7 +63,7 @@ export function Resizer({ value, min, max, edge, label, onChange, onCommit }: Re
       return;
     }
     drag.current.latest = next;
-    onChange(next);
+    if (frame.current === null) frame.current = requestAnimationFrame(report);
   };
 
   const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -54,6 +71,8 @@ export function Resizer({ value, min, max, edge, label, onChange, onCommit }: Re
       return;
     }
     drag.current.active = false;
+    if (frame.current !== null) cancelAnimationFrame(frame.current);
+    report();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
