@@ -84,10 +84,20 @@ and jump handles stay owned by the destination session.
 
 Durable desktop transfers journal tasks under `transfer:<id>`, per-file checkpoints
 under `transfer-file:<id>:…`, and overwrite recovery intent under
-`transfer-backup:<id>:…`. Stable host IDs rebind tasks after reconnecting. Full
-prefix verification, source stamps and owned-backup checks protect resume and
+`transfer-backup:<id>:…`. Stable host IDs and endpoint addresses rebind tasks after
+reconnecting. Clean unchanged checkpoints use bounded head/tail verification;
+crashed, changed or legacy checkpoints retain full prefix verification. Source stamps and owned-backup checks protect resume and
 overwrite recovery. Plugin transfers retain runtime ownership instead of acquiring
 restart-persistent permissions.
+
+The transfer scheduler atomically reserves source and destination channel budgets
+before opening files. At most four tasks run globally; each remote endpoint reserves
+two slots from its SSH connection's four-slot transfer budget. Waiting tasks retain
+Pause/Cancel controls and do not open transfer channels. Independent connections can
+progress around a task blocked on another connection. Explicit-offset SFTP pipelines
+remain polled while bandwidth credits are pending, with bounded request and buffer
+budgets. The background task window previews geometry without updating React on
+each pointer move, persists layout on release, and includes it in tray checkpoints.
 
 The forwarding registry owns listeners, active sockets and remote forwarding
 routes, with cancellation tickets covering setup as well as active connections.
@@ -115,8 +125,9 @@ Bootstrap owns its listeners, appearance observers, workspace subscription and p
 timer. Failed native registrations retry independently with a bounded backoff; recovery reads
 the corresponding settings, plugins, security, sessions, updates or transfer snapshot. Stores
 remain responsible for rejecting stale snapshots. Disposing bootstrap aborts pending setup,
-releases subscriptions and flushes scheduled workspace persistence. This prepares the lifecycle
-for window recreation; it does not yet destroy the WebView when hiding to the tray.
+releases subscriptions and flushes scheduled workspace persistence. Closing to the tray
+uses this lifecycle when WebView release is enabled, as described in
+[startup and window presentation](#startup-and-window-presentation).
 
 Subscription groups provide transactional registration for plugin workspace requests and
 marketplace listeners: partial failure releases successful and late listeners, and the group

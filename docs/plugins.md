@@ -29,8 +29,11 @@ Quick Access accepts an initial query but never automatically executes it.
 AI views group intermediate messages, native thinking summaries, and tool activity
 per user turn in collapsible sections. Final answers and approval prompts stay visible.
 Activity output is bounded and displayed as text/Markdown without arbitrary HTML.
-See the [official extension investigation](reviews/2026-11-02-vscode-agent-extensions.md)
-for the source and licensing findings; arbitrary VSIX packages are not supported.
+Arbitrary VSIX packages are not supported. Tunnelde plugins use this application's
+manifest and host APIs. A VS Code extension expects the VS Code extension host,
+workspace services, webviews and authentication APIs; unpacking its VSIX does not
+provide those services. The independent coding plugins invoke the actual installed
+agent binaries through their structured protocols.
 
 The independent marketplace and official source packages live in
 [TunneldeDev/tunnelde-hub](https://github.com/TunneldeDev/tunnelde-hub). For installing and
@@ -41,8 +44,10 @@ Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure the
 
 ## SSHFS and data-only plugins (0.27.0+)
 
-Install **SSHFS** or **SSHFS Lite** from the independent marketplace. Both use the
-same native mount panel; Lite needs no Node runtime. Connect a saved SSH host first,
+**SSHFS** and **SSHFS Lite** source packages are pending in
+[Hub PR #1](https://github.com/TunneldeDev/tunnelde-hub/pull/1); they are not yet in
+the default marketplace. Install from their source folder or ZIP to test them.
+Both use the same native mount panel; Lite needs no Node runtime. Connect a saved SSH host first,
 then choose its session, browse the remote directory, and choose an empty local
 directory or unused Windows drive. Read-only access is the default. Mounts are
 manual and reuse the SSH session's credentials, host-key trust, proxy and jump hosts.

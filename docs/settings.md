@@ -33,6 +33,13 @@ Total upload/download limits default to `0` (unlimited), use KiB/s, and apply li
 across concurrent tasks. A running transfer's gauge button opens a temporary task
 ceiling; the total ceiling still applies. Both preferences travel with profiles.
 
+Open **Transfers** in the status bar, or F1 → **Background transfers**, to inspect
+tasks from any page. Pin the list to keep it open while working. Drag its title to
+move it and its edges/corners to resize it. The layout is remembered across reopen,
+restart and tray restoration; Reset layout or double-clicking the title restores
+the default placement. See [transfer controls](network-storage.md#pause-and-resume-transfers)
+for keyboard adjustments and reconnect/cleanup behavior.
+
 ## Quick Access and plugin shortcuts
 
 - F1 / Ctrl/Cmd+Shift+P opens Quick Access in command mode (`>`).
@@ -113,19 +120,19 @@ monitor panel. Windows uses compact window controls; macOS and Linux use the
 system title bar. Updates retain previously saved preferences. New fields receive
 their defaults without overwriting existing choices.
 
-| Category           | Controls                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| General            | Language, title bar, close to tray, release background WebView, lightweight mode, macOS Dock visibility |
-| Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                 |
-| Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                           |
-| Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history |
-| Keyboard shortcuts | Search commands, record bindings, detect conflicts, disable bindings and restore defaults               |
-| Files              | Hidden entries, folders first, sort field/direction, directory preloading                               |
-| Text editor        | Word wrap, tab width, spellcheck                                                                        |
-| Monitoring         | Local and remote refresh interval                                                                       |
-| Network & proxies  | Named HTTP/SOCKS5 proxies, per-feature/plugin routing, credential storage and connection tests          |
-| Updates            | Automatic checks and access to the update page                                                          |
-| Advanced           | Custom CSS, individual/batch storage relocation, full preference reset                                  |
+| Category           | Controls                                                                                                        |
+| ------------------ | --------------------------------------------------------------------------------------------------------------- |
+| General            | Language, title bar, close to tray, release background WebView, lightweight mode, macOS Dock visibility         |
+| Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                         |
+| Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                                   |
+| Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history         |
+| Keyboard shortcuts | Search commands, record bindings, detect conflicts, disable bindings and restore defaults                       |
+| Files              | Hidden entries, folders first, sorting, directory preloading, icon themes, transfer tuning and bandwidth limits |
+| Text editor        | Word wrap, tab width, spellcheck                                                                                |
+| Monitoring         | Local and remote refresh interval                                                                               |
+| Network & proxies  | Named HTTP/SOCKS5 proxies, per-feature/plugin routing, credential storage and connection tests                  |
+| Updates            | Channel, source, check frequency, download/install progress and release notes                                   |
+| Advanced           | Custom CSS, individual/batch storage relocation, full preference reset                                          |
 
 Host-specific proxies and ordered jump hosts live in the host editor's collapsed
 **Proxy & jump hosts** section. Port forwards live on the host detail page. See
