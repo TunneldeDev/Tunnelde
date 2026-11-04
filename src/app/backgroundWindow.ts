@@ -51,7 +51,7 @@ interface WindowSnapshot {
   clipboard: ReturnType<typeof useFileClipboard.getState>["clip"];
   views: Record<string, unknown>;
   terminals: Record<string, TerminalCheckpoint>;
-  transferPanel?: { open: boolean; pinned: boolean };
+  transferPanel?: Pick<ReturnType<typeof useTransferPanel.getState>, "open" | "pinned" | "bounds">;
 }
 
 /** Resume only the still-running native process; this data is never written to disk. */
@@ -129,6 +129,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
       transferPanel: {
         open: useTransferPanel.getState().open,
         pinned: useTransferPanel.getState().pinned,
+        bounds: useTransferPanel.getState().bounds,
       },
       workspace: captureWorkspace(),
       navigation: captureNavigation(),

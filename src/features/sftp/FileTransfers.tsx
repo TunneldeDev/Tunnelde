@@ -1,7 +1,8 @@
-import { ArrowDownUp, CheckCheck, Pin, X } from "lucide-react";
+import { ArrowDownUp, CheckCheck, Pin, RotateCcw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
+import { useFloatingPanel } from "@/components/layout/useFloatingPanel";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { cn } from "@/lib/text/format";
 import { useHosts } from "@/store/hosts";
@@ -99,6 +100,8 @@ function TransferPanelContent() {
   const items = useTransfers((s) => s.items);
   const pinned = useTransferPanel((s) => s.pinned);
   const panel = useRef<HTMLElement>(null);
+  const bounds = useTransferPanel((s) => s.bounds);
+  const floating = useFloatingPanel(panel, bounds, useTransferPanel.getState().setBounds);
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previousFocus] = useState(() => document.activeElement as HTMLElement | null);
   const [now, setNow] = useState(Date.now);
@@ -169,8 +172,19 @@ function TransferPanelContent() {
         }}
       >
         <header className="transfer-panel__header">
-          <ArrowDownUp size={15} />
-          <strong>{t("sftp.backgroundTasks")}</strong>
+          <button
+            type="button"
+            className="transfer-panel__drag"
+            title={t("sftp.moveTasksHint")}
+            {...floating.handle("move")}
+            onDoubleClick={floating.reset}
+          >
+            <ArrowDownUp size={15} />
+            <strong>{t("sftp.backgroundTasks")}</strong>
+          </button>
+          <IconButton size="sm" label={t("sftp.resetTasksLayout")} onClick={floating.reset}>
+            <RotateCcw size={13} />
+          </IconButton>
           <IconButton
             size="sm"
             active={pinned}
@@ -219,6 +233,16 @@ function TransferPanelContent() {
             </Button>
           </footer>
         ) : null}
+        {(["n", "e", "s", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
+          <div
+            key={edge}
+            className={`transfer-panel__resize transfer-panel__resize--${edge}`}
+            {...floating.handle(edge)}
+            {...(edge === "se"
+              ? { role: "button", tabIndex: 0, "aria-label": t("sftp.resizeTasksHint") }
+              : { "aria-hidden": true })}
+          />
+        ))}
       </aside>
       {host && connecting ? (
         <ConnectDialog

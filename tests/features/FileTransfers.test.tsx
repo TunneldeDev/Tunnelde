@@ -5,10 +5,11 @@ import { FileTransfers } from "@/features/sftp/FileTransfers";
 import { transferApi } from "@/lib/api/transfers";
 import { useTransfers } from "@/store/transfers";
 import { useTransferPanel } from "@/store/transferPanel";
+import { viewIsBusy } from "@/lib/session/viewState";
 
 beforeEach(async () => {
   await i18n.changeLanguage("en-US");
-  useTransferPanel.setState({ open: true, pinned: false });
+  useTransferPanel.setState({ open: true, pinned: false, bounds: null });
   useTransfers.setState({
     items: [
       {
@@ -115,4 +116,83 @@ it("shows queued work without a false speed and lets the user cancel or pause it
   expect(screen.queryByText("Calculating speed…")).toBeNull();
   expect(screen.getByRole("button", { name: "Pause transfer" })).toBeTruthy();
   expect(screen.getByRole("button", { name: "Cancel transfer" })).toBeTruthy();
+});
+
+function mockPanelRect() {
+  const panel = screen.getByRole("dialog", { name: "Background transfers" });
+  vi.spyOn(panel, "getBoundingClientRect").mockImplementation(
+    () =>
+      ({
+        x: parseFloat(panel.style.left || "300"),
+        y: parseFloat(panel.style.top || "200"),
+        width: parseFloat(panel.style.width || "460"),
+        height: parseFloat(panel.style.height || "300"),
+      }) as DOMRect,
+  );
+  return panel;
+}
+
+it("moves and resizes from the keyboard, restores on reopen and resets the saved layout", () => {
+  render(<FileTransfers />);
+  mockPanelRect();
+  fireEvent.keyDown(screen.getByRole("button", { name: "Background transfers" }), {
+    key: "ArrowLeft",
+  });
+  expect(useTransferPanel.getState().bounds?.x).toBe(290);
+  fireEvent.keyDown(screen.getByRole("button", { name: /Resize transfer window/ }), {
+    key: "ArrowDown",
+    shiftKey: true,
+  });
+  expect(useTransferPanel.getState().bounds?.height).toBe(301);
+  const saved = useTransferPanel.getState().bounds;
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  act(() => useTransferPanel.getState().show());
+  const panel = screen.getByRole("dialog", { name: "Background transfers" });
+  expect(panel.style.left).toBe(`${saved?.x}px`);
+  expect(panel.style.height).toBe("301px");
+  fireEvent.click(screen.getByRole("button", { name: "Reset transfer window layout" }));
+  expect(useTransferPanel.getState().bounds).toBeNull();
+  expect(localStorage.getItem("tunnelde.transferPanel.bounds")).toBeNull();
+  expect(panel.style.left).toBe("");
+});
+
+it("clamps a restored layout and repositions it when the viewport shrinks", () => {
+  useTransferPanel.setState({ bounds: { x: 2000, y: 2000, width: 460, height: 300 } });
+  render(<FileTransfers />);
+  const panel = mockPanelRect();
+  expect(parseFloat(panel.style.left) + parseFloat(panel.style.width)).toBeLessThanOrEqual(
+    innerWidth,
+  );
+  expect(parseFloat(panel.style.top) + parseFloat(panel.style.height)).toBeLessThanOrEqual(
+    innerHeight,
+  );
+  fireEvent(window, new Event("resize"));
+  expect(useTransferPanel.getState().bounds?.x).toBe(parseFloat(panel.style.left));
+});
+
+it("previews pointer movement without persisting each step and Escape cancels without closing", () => {
+  render(<FileTransfers />);
+  const panel = mockPanelRect();
+  const handle = screen.getByRole("button", { name: "Background transfers" });
+  Object.assign(handle, { setPointerCapture: vi.fn(), hasPointerCapture: () => false });
+  const pointer = (name: string, x: number, y: number) => {
+    const event = new MouseEvent(name, { bubbles: true, clientX: x, clientY: y, button: 0 });
+    Object.defineProperty(event, "pointerId", { value: 1 });
+    fireEvent(handle, event);
+  };
+  pointer("pointerdown", 350, 220);
+  expect(viewIsBusy()).toBe(true);
+  pointer("pointermove", 250, 120);
+  expect(panel.style.left).toBe("200px");
+  expect(useTransferPanel.getState().bounds).toBeNull();
+  fireEvent.keyDown(handle, { key: "Escape" });
+  expect(useTransferPanel.getState().open).toBe(true);
+  expect(panel.style.left).toBe("");
+  expect(document.body.style.cursor).toBe("");
+  expect(viewIsBusy()).toBe(false);
+  pointer("pointerdown", 350, 220);
+  pointer("pointermove", 250, 120);
+  pointer("pointerup", 250, 120);
+  expect(useTransferPanel.getState().bounds).toMatchObject({ x: 200, y: 100 });
+  expect(viewIsBusy()).toBe(false);
 });
