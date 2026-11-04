@@ -102,6 +102,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     if (
       !previous ||
       previous.status === "running" ||
+      previous.status === "cancelled" ||
       previous.clearing ||
       previous.status === "done"
     )

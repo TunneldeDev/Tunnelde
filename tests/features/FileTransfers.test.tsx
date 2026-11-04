@@ -48,3 +48,19 @@ it("Escape discards a draft without changing the active limit", () => {
   expect(screen.queryByRole("spinbutton")).toBeNull();
   expect(save).not.toHaveBeenCalled();
 });
+
+it("offers resume only for retained partial data and keeps cancelled cleanup retryable", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cancelled",
+      error: "sftp.cancelCleanupFailed",
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Remove transfer and clean temporary files" }),
+  ).toBeTruthy();
+  expect(screen.getByText(/Temporary data could not be fully removed/)).toBeTruthy();
+});

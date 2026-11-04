@@ -47,6 +47,16 @@ describe("transfer cancellation", () => {
 });
 
 describe("durable transfer controls", () => {
+  it("does not resume cancelled transfers after their temporary data was discarded", () => {
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "cancelled", durable: true, updatedAt: 1 }],
+    });
+    useTransfers.getState().resume(running.id);
+    expect(resume).not.toHaveBeenCalled();
+    expect(useTransfers.getState().items[0]?.status).toBe("cancelled");
+  });
+
   it("prevents duplicate pause requests and keeps pending pause through progress events", async () => {
     vi.spyOn(transferApi, "pause").mockResolvedValue(undefined);
     useTransfers.setState({ items: [{ ...running, durable: true, updatedAt: 1 }] });

@@ -288,7 +288,7 @@ pub(super) async fn cleanup(
     }
     .await;
     if let Some(sftp) = sftp {
-        let _ = sftp.close().await;
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
     }
     result
 }

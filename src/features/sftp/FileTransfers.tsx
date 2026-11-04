@@ -41,11 +41,13 @@ export function FileTransfers() {
               ? t("sftp.pausingTransfer")
               : item.cancelling
                 ? t("sftp.cancelling")
-                : item.phase === "verifying"
-                  ? t("sftp.verifyingTransfer")
-                  : progress.percent === null
-                    ? t("sftp.preparingTransfer")
-                    : `${Math.floor(progress.percent)}%`
+                : item.phase === "cleaning"
+                  ? t("sftp.cleaningTransfer")
+                  : item.phase === "verifying"
+                    ? t("sftp.verifyingTransfer")
+                    : progress.percent === null
+                      ? t("sftp.preparingTransfer")
+                      : `${Math.floor(progress.percent)}%`
             : t(
                 item.status === "done"
                   ? "sftp.done"
@@ -84,7 +86,7 @@ export function FileTransfers() {
                   <Pause size={12} />
                 </IconButton>
               ) : null}
-              {item.durable && ["paused", "failed", "cancelled"].includes(item.status) ? (
+              {item.durable && ["paused", "failed"].includes(item.status) ? (
                 <IconButton
                   label={t("sftp.resumeTransfer")}
                   size="sm"
