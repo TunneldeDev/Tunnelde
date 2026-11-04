@@ -4,14 +4,29 @@ import "@/i18n/i18n";
 import { FilePreview } from "@/features/sftp/FilePreview";
 import { useFilePreview } from "@/store/filePreview";
 import { api } from "@/lib/api/ipc";
+import { usePlugins } from "@/store/plugins";
+import { plugin } from "../fixtures/plugins";
+import { useMarketplace } from "@/store/marketplace";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (id: string) => `preview://localhost/${id}`,
+}));
 
 vi.mock("@/lib/api/ipc", () => ({
-  api: { searchPreviewLocal: vi.fn(), sftpReadText: vi.fn(), openLocalPath: vi.fn() },
+  api: {
+    searchPreviewLocal: vi.fn(),
+    sftpReadText: vi.fn(),
+    openLocalPath: vi.fn(),
+    filePreviewOpen: vi.fn(),
+    filePreviewClose: vi.fn(),
+  },
 }));
 
 beforeEach(() => {
   useFilePreview.setState({ file: null });
+  usePlugins.setState({ items: [] });
   vi.clearAllMocks();
+  vi.mocked(api.filePreviewClose).mockResolvedValue();
 });
 
 describe("file preview", () => {
@@ -60,5 +75,75 @@ describe("file preview", () => {
     await screen.findByRole("textbox");
     await act(async () => finish("old content"));
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("new content");
+  });
+
+  it("offers preview extensions for binary files without attempting a text read", () => {
+    useFilePreview.getState().show("/photo.png");
+    render(<FilePreview />);
+    fireEvent.click(screen.getByRole("button", { name: "Find preview plugins" }));
+    expect(useMarketplace.getState().tag).toBe("preview");
+    expect(useFilePreview.getState().file).toBeNull();
+    expect(api.searchPreviewLocal).not.toHaveBeenCalled();
+  });
+
+  it("opens remote image providers without an editor action and revokes on close", async () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          id: "previews",
+          runtime: "theme",
+          filePreviews: [{ id: "image", name: "Images", renderer: "image", extensions: ["png"] }],
+        },
+      ],
+    });
+    vi.mocked(api.filePreviewOpen).mockImplementation(async (id) => ({
+      id,
+      size: 123,
+      renderer: "image",
+    }));
+    useFilePreview
+      .getState()
+      .show("/photo.PNG", 0, 0, { kind: "remote", sessionId: "ssh-preview" });
+    render(<FilePreview />);
+    const image = await screen.findByRole("img", { name: "photo.PNG" });
+    expect(image.getAttribute("src")).toMatch(/^preview:\/\/localhost\//);
+    expect(api.filePreviewOpen).toHaveBeenCalledWith(
+      expect.any(String),
+      "previews:image",
+      "/photo.PNG",
+      "ssh-preview",
+    );
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(api.filePreviewClose).toHaveBeenCalledWith(
+      vi.mocked(api.filePreviewOpen).mock.calls[0]![0],
+    );
+    expect(api.sftpReadText).not.toHaveBeenCalled();
+  });
+
+  it("revokes late responses after close and reacts to removed providers", async () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          filePreviews: [{ id: "image", name: "Images", renderer: "image", extensions: ["png"] }],
+        },
+      ],
+    });
+    let finish!: () => void;
+    vi.mocked(api.filePreviewOpen).mockImplementation(
+      (id) =>
+        new Promise((resolve) => {
+          finish = () => resolve({ id, size: 12, renderer: "image" });
+        }),
+    );
+    useFilePreview.getState().show("/photo.png");
+    render(<FilePreview />);
+    act(() => usePlugins.setState({ items: [] }));
+    expect(screen.getByRole("button", { name: "Find preview plugins" })).toBeTruthy();
+    await act(async () => finish());
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(api.filePreviewClose).toHaveBeenCalledTimes(2);
   });
 });

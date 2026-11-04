@@ -184,16 +184,18 @@ Plugins contribute one or more `fileIconThemes` entries without running code:
   "apiVersion": 1,
   "runtime": "theme",
   "permissions": [],
-  "fileIconThemes": [{
-    "id": "common",
-    "name": "Common files",
-    "icons": {
-      "typescript": { "symbol": "code", "color": "#3178c6", "label": "TS" },
-      "archive": { "symbol": "archive", "color": "#c5a35e" }
-    },
-    "extensions": { "ts": "typescript", "tar.gz": "archive" },
-    "fileNames": { "Dockerfile": "typescript" }
-  }]
+  "fileIconThemes": [
+    {
+      "id": "common",
+      "name": "Common files",
+      "icons": {
+        "typescript": { "symbol": "code", "color": "#3178c6", "label": "TS" },
+        "archive": { "symbol": "archive", "color": "#c5a35e" }
+      },
+      "extensions": { "ts": "typescript", "tar.gz": "archive" },
+      "fileNames": { "Dockerfile": "typescript" }
+    }
+  ]
 }
 ```
 
@@ -546,3 +548,45 @@ installers. Tunnelde never executes existing user Node without consent. See the 
 - **Reload** rescans the directory, stopping running hosts first.
 - **Uninstall** stops the host and deletes the folder.
 - `examples/plugins/hello` in the repository is a complete minimal plugin.
+
+## File preview providers
+
+A package can contribute one or more `filePreviews` entries. This contribution is declarative:
+Tunnelde owns rendering and file access; the plugin receives neither bytes nor preview tickets.
+A package containing only themes/icons/previews uses `runtime: "theme"`, no `main`, commands,
+views or permissions. It needs no Node runtime. Executable packages may also contribute providers.
+
+```json
+{
+  "filePreviews": [
+    {
+      "id": "pictures",
+      "name": "Pictures",
+      "renderer": "image",
+      "extensions": ["png", "jpg", "gif"]
+    },
+    { "id": "pdf", "name": "PDF", "renderer": "pdf", "extensions": ["pdf"] }
+  ]
+}
+```
+
+Renderers are `image`, `audio`, `video`, `pdf`, `markdown` or `text`. Provider IDs use the same
+bounded plugin ID syntax; names are at most 120 UTF-8 bytes. A package has at most 16 providers,
+each with 1–128 unique case-insensitive extensions of at most 64 ASCII bytes. No URLs, HTML,
+scripts, styles or external viewers are accepted. Declare `engines.tunnelde` for a supporting build.
+
+Select a file and press Space or use Preview. Matching is case-insensitive and supports compound
+extensions. Multiple providers appear in a selector; otherwise installation is sufficient. Missing
+binary providers offer a marketplace search for the `preview` tag. Built-in text/Markdown preview
+continues working without a plugin. Installed providers refresh immediately after install/removal.
+
+Native tickets use opaque UUIDs, expire after 30 idle minutes, are revoked on close/window destruction,
+and retain opened file handles rather than resolving arbitrary protocol paths. At most eight tickets
+and two concurrent requests per ticket are allowed. Requests support GET/HEAD and single byte ranges
+capped at 1 MiB; multipart ranges are rejected. Whole-file reads are capped at 32 MiB. Revocation
+interrupts queued/active reads; remote file and SFTP handles close without creating remote files.
+
+Images are limited to 32 MiB, PDFs to 128 MiB, text/Markdown to 2 MiB; audio/video use bounded Range
+requests. Playback depends on OS codecs and starts only on user action. PDF.js is lazy-loaded with
+local fonts/CMaps/decoders, fetches ranges on demand, renders one page to a bounded canvas and does
+not run document scripts or interactive forms. Password-protected PDFs require an external viewer.

@@ -252,6 +252,22 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
       {own && installed.fileIconThemes?.length ? (
         <PluginFileIconThemes plugin={installed} disabled={busy || !!task} />
       ) : null}
+      {own && installed.filePreviews?.length ? (
+        <section className="plugin-detail__themes" aria-label={t("preview.providers")}>
+          <h2>{t("preview.providers")}</h2>
+          <p className="settings-hint">{t("preview.providerHint")}</p>
+          <div className="plugin-theme-list">
+            {installed.filePreviews.map((provider) => (
+              <article className="plugin-theme" key={provider.id}>
+                <h3>{provider.name}</h3>
+                <p className="settings-hint">
+                  {provider.extensions.map((extension) => `.${extension}`).join(" · ")}
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+      ) : null}
       {own && !themeOnly && installed.views.length ? (
         <section className="plugin-detail__tools">
           <h2>{t("market.openTool")}</h2>

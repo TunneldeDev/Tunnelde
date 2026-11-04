@@ -188,3 +188,7 @@ Citation metadata is available in [CITATION.cff](CITATION.cff).
 
 [GNU GPL version 3 only](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
 Copyright © 2026 quyansiyuanwang (TunneldeDev).
+
+File icon and preview packs extend local and remote browsing without a Node runtime. Install an
+icon pack for familiar file-type badges; use Space or Preview for supported images, audio, video,
+PDF and Markdown. See [plugin contribution APIs](docs/plugins.md) for format declarations and limits.

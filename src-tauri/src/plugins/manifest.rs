@@ -91,6 +91,8 @@ pub struct PluginManifest {
     pub tags: Vec<String>,
     #[serde(default)]
     pub file_icon_themes: Vec<super::file_icons::FileIconTheme>,
+    #[serde(default)]
+    pub file_previews: Vec<crate::preview::providers::Provider>,
 }
 
 pub(super) fn valid_tags(tags: &[String]) -> bool {
@@ -124,6 +126,9 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if !crate::preview::providers::valid(&self.file_previews) {
+            return Err(AppError::validation("preview.invalidProvider"));
+        }
         if !super::file_icons::valid_themes(&self.file_icon_themes) {
             return Err(AppError::validation("plugin.fileIcons.invalid"));
         }
@@ -232,7 +237,9 @@ impl PluginManifest {
                 }
             }
             Some("theme") => {
-                if (self.themes.is_empty() && self.file_icon_themes.is_empty())
+                if (self.themes.is_empty()
+                    && self.file_icon_themes.is_empty()
+                    && self.file_previews.is_empty())
                     || !self.main.is_empty()
                     || !self.commands.is_empty()
                     || !self.views.is_empty()

@@ -6,6 +6,7 @@ mod mounts;
 mod network;
 mod platform;
 mod plugins;
+mod preview;
 mod settings;
 mod settings_profiles;
 mod ssh;
@@ -18,6 +19,24 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(window::StartupWindow::default())
+        .manage(preview::Registry::default())
+        .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
+            let app = context.app_handle().clone();
+            let origin = if cfg!(dev) {
+                "http://localhost:1420"
+            } else if cfg!(target_os = "windows") {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            }
+            .to_string();
+            tauri::async_runtime::spawn(async move {
+                use tauri::Manager;
+                responder.respond(
+                    preview::serve(&app.state::<preview::Registry>(), request, origin).await,
+                );
+            });
+        })
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             use tauri::Manager;
             if plugins::security::cli_restricted(args.iter()) {
@@ -27,6 +46,12 @@ pub fn run() {
             }
             window::show_main(app);
         }))
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                use tauri::Manager;
+                window.state::<preview::Registry>().clear();
+            }
+        })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -144,6 +169,8 @@ pub fn run() {
             commands::files_search,
             commands::files_search_cancel,
             commands::search_preview_local,
+            preview::file_preview_open,
+            preview::file_preview_close,
             commands::local_mkdir,
             commands::local_rename,
             commands::local_delete,

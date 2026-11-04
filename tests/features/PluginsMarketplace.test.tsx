@@ -57,7 +57,7 @@ describe("conventional marketplace sidebar", () => {
     mock.api.marketplaceDownload.mockResolvedValue(themePack);
     render(<PluginsSidebar />);
     await screen.findByText(themePack.name, { selector: "strong" });
-    expect(screen.getByText("Theme pack")).toBeTruthy();
+    expect(screen.getByText("Declarative pack")).toBeTruthy();
     fireEvent.click(within(getRow(themePack.name)).getByRole("button", { name: "Install" }));
     const confirmation = useDialogs.getState().dialog;
     if (confirmation.kind !== "confirm") throw new Error("Missing theme confirmation");

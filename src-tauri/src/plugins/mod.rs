@@ -64,6 +64,7 @@ pub struct PluginInfo {
     pub themes: Vec<PluginTheme>,
     pub tags: Vec<String>,
     pub file_icon_themes: Vec<file_icons::FileIconTheme>,
+    pub file_previews: Vec<crate::preview::providers::Provider>,
     pub fingerprint: String,
 }
 
@@ -162,6 +163,7 @@ impl Instance {
             source_url: marketplace::origin(&self.dir).map(|o| o.url),
             themes: self.manifest.themes.clone(),
             file_icon_themes: self.manifest.file_icon_themes.clone(),
+            file_previews: self.manifest.file_previews.clone(),
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
         }
@@ -1641,6 +1643,30 @@ mod tests {
         assert!(info.permissions.is_empty());
         assert!(manager.run("file-icons", "run", None).await.is_err());
         manager.uninstall("file-icons").await.unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    #[ignore = "opt-in: set TUNNELDE_TEST_PREVIEW_PACKAGE to a built hub ZIP"]
+    async fn live_hub_preview_archive_installs_without_a_runtime() {
+        let archive = std::env::var("TUNNELDE_TEST_PREVIEW_PACKAGE").expect("preview ZIP");
+        let root = temp_root("hub-previews");
+        let manager = PluginsManager::load(root.join("installed"));
+        let info = manager.install(&archive).await.unwrap();
+        assert_eq!(info.id, "file-previews");
+        assert_eq!(info.runtime, "theme");
+        assert!(info.permissions.is_empty());
+        for extension in ["mp3", "mp4", "pdf", "md", "png", "jpg", "gif"] {
+            assert!(info
+                .file_previews
+                .iter()
+                .any(|provider| provider.matches(&format!("test.{extension}"))));
+        }
+        assert!(manager.run("file-previews", "run", None).await.is_err());
+        let restored = PluginsManager::load(root.join("installed"));
+        assert_eq!(restored.list().await[0].file_previews.len(), 6);
+        restored.uninstall("file-previews").await.unwrap();
+        assert!(restored.list().await.is_empty());
         std::fs::remove_dir_all(root).unwrap();
     }
 
