@@ -7,6 +7,7 @@ import { closeTab } from "@/lib/session/tabActions";
 import { DEFAULT_SETTINGS, MONO_FONT_SIZE_MAX, MONO_FONT_SIZE_MIN } from "@/lib/prefs/defaults";
 import { useQuickAccess } from "@/store/quickAccess";
 import { usePlugins } from "@/store/plugins";
+import { useTransferPanel } from "@/store/transferPanel";
 import { shortcutCommands } from "./registry";
 import { openPluginAction } from "@/lib/plugins/actions";
 
@@ -34,6 +35,7 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "sidebar.toggle") useNavigation.getState().toggleSidebar();
   else if (id === "sidebar.knownHosts") useNavigation.getState().showSidebar("knownHosts");
   else if (id === "sidebar.plugins") useNavigation.getState().showSidebar("plugins");
+  else if (id === "transfers.show") useTransferPanel.getState().show();
   else if (id === "update.check") {
     workspace.openPage("updates");
     void useUpdates.getState().check(true);

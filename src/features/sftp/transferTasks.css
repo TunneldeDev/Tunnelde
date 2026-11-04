@@ -1,0 +1,219 @@
+.transfer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 6px;
+  border: 0;
+  color: var(--td-muted);
+  background: transparent;
+  font-size: 11px;
+}
+.transfer-status:hover,
+.transfer-status[aria-expanded="true"] {
+  background: var(--td-hover);
+  color: var(--td-text);
+}
+.transfer-status__badge {
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  color: var(--td-orange);
+  background: var(--td-raised);
+  text-align: center;
+}
+.transfer-status.is-floating {
+  position: fixed;
+  right: 12px;
+  bottom: 8px;
+  z-index: 40;
+  height: 28px;
+  border: 1px solid var(--td-border);
+  border-radius: 4px;
+  background: var(--td-panel);
+}
+.transfer-panel {
+  position: fixed;
+  right: 12px;
+  bottom: calc(var(--td-statusbar-h) + 8px);
+  z-index: 65;
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(560px, calc(100vh - 96px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--td-border-strong);
+  border-radius: 6px;
+  background: var(--td-panel);
+  box-shadow: var(--td-shadow);
+  font-size: 12px;
+}
+.is-statusbar-hidden .transfer-panel {
+  bottom: 44px;
+}
+.transfer-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 5px 9px 5px 12px;
+  border-bottom: 1px solid var(--td-border);
+  flex-shrink: 0;
+}
+.transfer-panel__header strong {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 500;
+}
+.transfer-panel__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.transfer-panel__empty {
+  padding: 32px 16px;
+  color: var(--td-muted);
+  text-align: center;
+}
+.transfer-panel__footer {
+  padding: 4px 8px;
+  border-top: 1px solid var(--td-border);
+}
+.transfer-group__heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 8px 12px;
+  color: var(--td-muted);
+  border: 0;
+  background: var(--td-bg);
+  font-size: 11px;
+  text-align: left;
+}
+.transfer-group__count {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-group__more {
+  margin: 6px 12px;
+}
+.transfer-task {
+  display: grid;
+  gap: 6px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--td-border);
+  min-width: 0;
+}
+.transfer-task__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.transfer-task__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 3px 0;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+.transfer-task__toggle svg {
+  flex-shrink: 0;
+  color: var(--td-muted);
+  transform: rotate(-90deg);
+}
+.transfer-task__toggle svg.is-expanded {
+  transform: none;
+}
+.transfer-task__toggle span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transfer-task__state {
+  flex-shrink: 0;
+  color: var(--td-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-task > .transfer__meter {
+  display: block;
+  width: 100%;
+  height: 2px;
+}
+.transfer-task.is-failed .transfer__meter > span {
+  background: var(--td-red);
+}
+.transfer-task.is-done .transfer__meter > span {
+  background: var(--td-green);
+}
+.transfer-task.is-cleanupPending .transfer__meter > span {
+  background: var(--td-orange);
+}
+.transfer-task__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  color: var(--td-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+.transfer-task__error,
+.transfer-task__notice {
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.transfer-task__error {
+  color: var(--td-red);
+}
+.transfer-task__notice {
+  color: var(--td-orange);
+}
+.transfer-task__details {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding-top: 5px;
+  color: var(--td-muted);
+  font-size: 11px;
+}
+.transfer-task__details p {
+  display: flex;
+  gap: 10px;
+  overflow-wrap: anywhere;
+}
+.transfer-task__details code {
+  min-width: 0;
+  font-size: 10px;
+  user-select: text;
+}
+.transfer-task__details p > span {
+  flex-shrink: 0;
+}
+.transfer-task__details .transfer__limit {
+  grid-column: auto;
+}
+@media (max-width: 520px) {
+  .transfer-task {
+    padding-inline: 9px;
+  }
+  .transfer-task__row {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .transfer-task__toggle {
+    flex-basis: 55%;
+  }
+  .transfer-task__state {
+    margin-left: auto;
+  }
+  .transfer-task .transfer__actions {
+    margin-left: auto;
+  }
+}

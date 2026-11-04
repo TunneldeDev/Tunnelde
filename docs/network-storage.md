@@ -85,10 +85,22 @@ This optimization does not yet compress files or batch a folder into an archive.
 
 ## Pause and resume transfers
 
+The status-bar **Transfers** entry opens a compact background task list from any
+page; F1 → **Background transfers** opens the same list. When the status bar is
+hidden, the entry appears in the bottom corner. Pin the list to keep it open while
+working elsewhere. Running/paused, attention and finished groups can be collapsed;
+finished tasks start collapsed. Large groups load 20 rows at a time. Expand a task
+to inspect source/destination paths, remaining bytes and temporary speed limits.
+The file panes keep their full height while transfers run.
+
 The transfer list offers Pause, Resume, Cancel and Clear. A desktop-owned transfer
 stores its task and per-file progress locally. After an interruption or restart,
 connect to the same saved host and resume from the list; changing terminal session
-IDs does not require recreating the task. Local transfers can resume immediately.
+IDs does not require recreating the task. Resume can open the connection dialog for
+a missing host, including its usual password and host-key checks. The newest live
+connection matching the original saved host and recorded address is used; changing
+the host's address does not silently redirect an existing transfer. Local transfers
+can resume immediately.
 
 Data is written into a task-owned `.tunnelde-….part` sibling. A clean pause saves
 its closed file's size and modification time. If both source and staging metadata
@@ -102,14 +114,16 @@ move, source removal happens after the copy succeeds and is checkpointed separat
 Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
 temporary data before reporting completion. It keeps already completed destination
 files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails
-(e.g. the remote disconnected), the record explains that cleanup needs a retry;
-reconnect and use the trash action. The trash action
+(e.g. the remote disconnected), the task becomes **Cleanup pending**, cannot be
+resumed, and automatically retries when the destination reconnects. Its retry
+button can open the connection dialog. The trash action
 **Remove transfer and clean temporary files** deletes task-owned staging files before
 removing the journal. It restores a verified original destination backup if a commit
 was interrupted. Completed destination files and source files are preserved.
 
-Reconnect a remote destination before cleaning an unfinished task. Failed cleanup
-keeps the record for retry, and cleanup and resume cannot run at the same time.
+An offline removal persists its cleanup intent before accessing the connection;
+the journal is retained until owned artifacts are cleaned, including across app
+restarts. Each cleanup attempt has a bounded wait and cannot run alongside Resume.
 Legacy directory transfers with an unidentified original backup keep that backup and
 report that recovery is needed. Completed records can be removed while offline.
 
