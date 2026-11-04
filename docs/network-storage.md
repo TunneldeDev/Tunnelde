@@ -64,6 +64,10 @@ the global limits; a positive value adds a task ceiling and cannot override the
 global ceiling. Pausing and resuming starts with the global limits again. Low
 speed transfers continue reporting progress, and pause/cancel can interrupt the
 limiter wait. Requests already dispatched when a limit changes may finish.
+Waiting for bandwidth credit continues driving existing SFTP requests instead of
+serializing the transfer. Each segment retains its bounded request pipeline with
+both global and task limits; changing a limit does not restart the file or reset
+its offsets.
 
 **Settings → Files → Transfers** enables transfer optimization by default. Segment
 concurrency, segment size and SFTP requests per segment each default to **Automatic**.
