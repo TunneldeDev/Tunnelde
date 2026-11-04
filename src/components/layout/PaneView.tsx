@@ -23,6 +23,8 @@ import { useTranslation } from "react-i18next";
 
 import { TabContent } from "@/components/layout/TabContent";
 import { EmptyState } from "@/components/ui/display/Misc";
+import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
+import { useFileIconResolver } from "@/lib/files/icons";
 import { IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { sidebarMoveActions } from "@/components/layout/SidebarDockControls";
@@ -115,6 +117,7 @@ function TabLabel({ tab }: { tab: WorkspaceTab }) {
 }
 
 function TabStrip({ pane }: { pane: WorkspacePane }) {
+  const resolveFileIcon = useFileIconResolver();
   const { t } = useTranslation();
   const tabs = useWorkspace((state) => state.tabs);
   const activate = useWorkspace((state) => state.activate);
@@ -357,7 +360,11 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
                 }
               }}
             >
-              <Icon size={13} />
+              {tab.kind === "editor" ? (
+                <FileTypeIcon icon={resolveFileIcon(tab.title)} size={16} />
+              ) : (
+                <Icon size={13} />
+              )}
               <span className="td-tab__label">
                 <TabLabel tab={tab} />
               </span>

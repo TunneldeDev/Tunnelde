@@ -42,6 +42,7 @@ export const PORTABLE_SETTING_KEYS = [
   "terminalCopyOnSelect",
   "terminalRightClick",
   "terminalRenderer",
+  "fileIconTheme",
   "filesShowHidden",
   "filesFoldersFirst",
   "filesSortBy",

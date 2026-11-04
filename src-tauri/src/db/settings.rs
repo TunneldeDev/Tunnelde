@@ -142,4 +142,32 @@ mod tests {
             assert_eq!(restored.language, language);
         }
     }
+
+    #[test]
+    fn icon_theme_selection_migrates_sanitizes_and_persists_uninstalled_identities() {
+        assert_eq!(load_json(r#"{"theme":"dark"}"#).file_icon_theme, "auto");
+        let database = Database::in_memory().unwrap();
+        for selection in [
+            "auto",
+            "none",
+            "file-icons:common",
+            "removed-plugin:old-theme",
+        ] {
+            let mut settings = Settings {
+                file_icon_theme: selection.into(),
+                ..Settings::default()
+            };
+            settings.sanitize();
+            database
+                .with(|conn| {
+                    save(conn, &settings)?;
+                    assert_eq!(load(conn)?.file_icon_theme, selection);
+                    Ok(())
+                })
+                .unwrap();
+        }
+        let mut invalid = load_json(r#"{"fileIconTheme":"../../escape"}"#);
+        invalid.sanitize();
+        assert_eq!(invalid.file_icon_theme, "auto");
+    }
 }

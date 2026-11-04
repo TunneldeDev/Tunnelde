@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
+import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
+import { useFileIconResolver } from "@/lib/files/icons";
 import { PluginMarkdown } from "@/features/plugins/PluginMarkdown";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
@@ -22,6 +24,7 @@ export function FilePreview() {
 }
 function Preview({ file }: { file: PreviewFile }) {
   const { t } = useTranslation();
+  const resolveFileIcon = useFileIconResolver();
   const [content, setContent] = useState<string | null>(null);
   const [error, setError] = useState("");
   const textarea = useRef<HTMLTextAreaElement>(null);
@@ -97,8 +100,12 @@ function Preview({ file }: { file: PreviewFile }) {
         </>
       }
     >
-      <p className="settings-hint" style={{ overflowWrap: "anywhere" }}>
-        {file.path}
+      <p
+        className="settings-hint"
+        style={{ overflowWrap: "anywhere", display: "flex", gap: 8, alignItems: "center" }}
+      >
+        <FileTypeIcon icon={resolveFileIcon(file.path)} />
+        <span>{file.path}</span>
       </p>
       {error ? (
         <p role="alert">{error}</p>

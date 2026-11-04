@@ -129,7 +129,7 @@ OS sandbox**. Trust only known publishers. WASM plugins retain the restricted ex
 ## Theme packs
 
 Any plugin can provide one or more themes through a `themes` array. Pure theme packs use
-`"runtime": "theme"`, omit `main` and `engines`, and have no commands, views or permissions:
+`"runtime": "theme"`, omit `main` and Node engines, and have no commands, views or permissions:
 
 ```json
 {
@@ -165,6 +165,54 @@ one changes the base appearance, accent and full color map in one settings save;
 regions follow the base appearance. Installing a theme pack does not change the current
 appearance. Removing or updating a plugin preserves already applied color values until the
 user selects another theme. Executable plugins can contribute palettes without being started.
+
+## File icon themes
+
+Install Common File Icons from the hub package ZIP or folder. **Settings → Files → File icon
+theme** offers Automatic, Plain file icons and installed themes. Automatic uses the first
+available theme in plugin/theme ID order; choose a specific theme to preserve that selection
+when installing other packages. Details pages also offer Apply theme. Removing a selected
+package falls back to plain icons and retains its identity for later reinstallation.
+
+Plugins contribute one or more `fileIconThemes` entries without running code:
+
+```json
+{
+  "id": "my-icons",
+  "name": "My File Icons",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "runtime": "theme",
+  "permissions": [],
+  "fileIconThemes": [{
+    "id": "common",
+    "name": "Common files",
+    "icons": {
+      "typescript": { "symbol": "code", "color": "#3178c6", "label": "TS" },
+      "archive": { "symbol": "archive", "color": "#c5a35e" }
+    },
+    "extensions": { "ts": "typescript", "tar.gz": "archive" },
+    "fileNames": { "Dockerfile": "typescript" }
+  }]
+}
+```
+
+Exact filenames match first, followed by the longest extension suffix; matching ignores
+case. The same resolver serves local/remote file rows in every browser view, editor tabs
+and file-preview headers. It reads filenames only. Folders keep the application's folder
+glyph. Selection is included in settings exports and profiles.
+
+Each package may contain up to 16 themes. A theme has up to 256 icon definitions, 512
+extension mappings and 128 exact filename mappings. Definition/theme IDs use plugin ID
+syntax; extension keys omit the leading dot. Optional `defaultIcon` names a defined icon.
+Available symbols are `file`, `code`, `json`, `text`, `image`, `audio`, `video`, `archive`,
+`pdf`, `spreadsheet`, `terminal`, `settings`, `key`, `database`, `font`, `binary`, `markdown`.
+Colors must be six-digit HEX; optional labels contain 1–4 ASCII letters/digits. Unknown
+symbols/references, duplicate case-insensitive mappings and excessive contributions are
+rejected. Icons are host-rendered glyphs or short badges; manifests cannot inject SVG,
+scripts, URLs, stylesheets or fonts. Data-only icon packs work in restricted mode and do
+not require Node or file-access permissions. Executable plugins can contribute these same
+metadata entries independently of their runtime.
 
 ## Protocol
 

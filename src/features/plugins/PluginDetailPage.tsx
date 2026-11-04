@@ -13,6 +13,7 @@ import { pluginSidebarId } from "@/lib/plugins/sidebars";
 import i18n from "@/i18n/i18n";
 import { PluginError } from "./PluginError";
 import { PluginThemes } from "./PluginThemes";
+import { PluginFileIconThemes } from "./PluginFileIconThemes";
 import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
@@ -247,6 +248,9 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
       </dl>
       {own && installed.themes?.length ? (
         <PluginThemes themes={installed.themes} disabled={busy || !!task} />
+      ) : null}
+      {own && installed.fileIconThemes?.length ? (
+        <PluginFileIconThemes plugin={installed} disabled={busy || !!task} />
       ) : null}
       {own && !themeOnly && installed.views.length ? (
         <section className="plugin-detail__tools">

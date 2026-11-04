@@ -59,6 +59,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "terminalCopyOnSelect",
     "terminalRightClick",
     "terminalRenderer",
+    "fileIconTheme",
     "filesShowHidden",
     "filesFoldersFirst",
     "filesSortBy",

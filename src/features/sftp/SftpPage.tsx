@@ -20,6 +20,8 @@ import { useTranslation } from "react-i18next";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
+import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
+import { useFileIconResolver } from "@/lib/files/icons";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
@@ -201,6 +203,7 @@ export function SftpPage({
   const setClip = useFileClipboard((state) => state.set);
   const openMenu = useContextMenu((state) => state.open);
   const settings = useSettings((state) => state.settings);
+  const resolveFileIcon = useFileIconResolver();
   const [preferenceCache] = useState(() => new Map<string, FileViewPreferences>());
   const preferenceKey = useCallback(
     (id: PaneId, source: FsSource) => {
@@ -1658,7 +1661,11 @@ export function SftpPage({
           }}
         >
           <span className={cn("sftp-row__icon", entry.isDir && "is-dir")}>
-            {entry.isDir ? <Folder size={13} /> : <FileIcon size={13} />}
+            <FileTypeIcon
+              isDir={entry.isDir}
+              icon={entry.isDir ? undefined : resolveFileIcon(entry.name)}
+              size={16}
+            />
           </span>
           {renaming?.path === entry.path ? (
             <Input
