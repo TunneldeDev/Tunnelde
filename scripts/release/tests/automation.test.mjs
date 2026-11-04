@@ -291,6 +291,31 @@ test("release plans use authoritative heads and last promoted dev SHA across squ
   assert.equal((await planDevelopment(f)).version, undefined);
 });
 
+test("release highlights ignore an unchanged promoted summary and retain a newly edited one", async () => {
+  const f = fixture();
+  const withSummary = (summary) =>
+    history.replace("## [Unreleased]\n", `## [Unreleased]\n\n${summary}\n`);
+  f.contents.set(`${baseline}:CHANGELOG.md`, withSummary("- Previous release summary."));
+  f.contents.set(
+    `${dev}:CHANGELOG.md`,
+    withSummary("- Previous release summary.").replace(/\n/g, "\r\n"),
+  );
+  const unchanged = await planDevelopment(f);
+  assert.match(unchanged.release.notes, /Highlights\n\n- \*\*terminal:\*\* restore paste/);
+  assert.doesNotMatch(unchanged.release.notes, /Previous release summary/);
+
+  f.contents.set(`${dev}:CHANGELOG.md`, withSummary("- New release summary."));
+  const edited = await planDevelopment(f);
+  assert.match(edited.release.notes, /Highlights\n\n- New release summary\./);
+  assert.doesNotMatch(edited.release.notes, /Previous release summary/);
+
+  f.contents.set(`${dev}:CHANGELOG.md`, history);
+  assert.match(
+    (await planDevelopment(f)).release.notes,
+    /Highlights\n\n- \*\*terminal:\*\* restore paste/,
+  );
+});
+
 test("migration waits for main metadata, and an identical source creates no release", async () => {
   const f = fixture({ commits: [] });
   assert.equal((await planDevelopment(f)).version, undefined);
