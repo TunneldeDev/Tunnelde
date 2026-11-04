@@ -25,6 +25,7 @@ export function TransferTask({
   const busy = item.clearing || item.cancelling || item.pausing;
   const pending = item.status === "cleanupPending";
   const running = item.status === "running";
+  const waiting = item.phase === "queued" || item.phase === "preparing";
   const state = item.clearing
     ? t("sftp.cleaningTransfer")
     : pending
@@ -34,13 +35,17 @@ export function TransferTask({
           ? t("sftp.pausingTransfer")
           : item.cancelling
             ? t("sftp.cancelling")
-            : item.phase === "cleaning"
-              ? t("sftp.cleaningTransfer")
-              : item.phase === "verifying"
-                ? t("sftp.verifyingTransfer")
-                : progress.percent === null
-                  ? t("sftp.preparingTransfer")
-                  : `${Math.floor(progress.percent)}%`
+            : item.phase === "queued"
+              ? t("sftp.queuedTransfer")
+              : item.phase === "preparing"
+                ? t("sftp.preparingTransfer")
+                : item.phase === "cleaning"
+                  ? t("sftp.cleaningTransfer")
+                  : item.phase === "verifying"
+                    ? t("sftp.verifyingTransfer")
+                    : progress.percent === null
+                      ? t("sftp.preparingTransfer")
+                      : `${Math.floor(progress.percent)}%`
         : t(
             item.status === "done"
               ? "sftp.done"
@@ -150,14 +155,14 @@ export function TransferTask({
           {formatBytes(progress.transferred)}
           {progress.total !== null ? ` / ${formatBytes(progress.total)}` : ""}
         </span>
-        {running ? (
+        {running && !waiting ? (
           <span>
             {progress.speed === null
               ? t("sftp.calculatingSpeed")
               : t("sftp.transferSpeed", { value: formatBytes(progress.speed) })}
           </span>
         ) : null}
-        {running && progress.eta !== null && progress.remaining !== 0 ? (
+        {running && !waiting && progress.eta !== null && progress.remaining !== 0 ? (
           <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
         ) : null}
       </div>

@@ -323,7 +323,7 @@ export type TransferStatus =
   "running" | "done" | "failed" | "cancelled" | "paused" | "cleanupPending";
 
 export interface TransferEvent {
-  phase?: "verifying" | "cleaning";
+  phase?: "queued" | "preparing" | "verifying" | "cleaning";
   id: string;
   direction: TransferDirection;
   name: string;

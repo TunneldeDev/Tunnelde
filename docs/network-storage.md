@@ -77,6 +77,16 @@ Segment size can be automatic or 256 KiB, 1 MiB, 4 MiB or 16 MiB. Request depth 
 automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight requests.
 Changes apply on start/resume and travel with settings profiles.
 
+Background tasks share a scheduler: up to four tasks run at once across the
+application. Each SSH connection has a budget of four transfer subsystem channels;
+an endpoint reserves one metadata and one data channel. This normally allows two
+uploads/downloads, or one remote copy using both endpoints on that connection.
+Other tasks show **Queued** before opening channels. Independent connections can
+continue while one connection is busy; tasks sharing an endpoint keep their queue
+order. Pause/cancel also work while queued. Waiting does not consume file handles,
+and cancelling or stopping a plugin releases its queue reservation. Restarted
+tasks remain paused until explicitly resumed.
+
 Concurrent segments use explicit file offsets over dedicated SFTP data channels. Uploads,
 downloads and remote-to-remote copies honor advertised server packet limits, handle short
 reads and do not prefetch past a segment boundary. Metadata and directory operations

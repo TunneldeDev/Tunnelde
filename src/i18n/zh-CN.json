@@ -589,6 +589,7 @@
     "transferSpeed": "{{value}}/秒",
     "calculatingSpeed": "正在计算速度…",
     "preparingTransfer": "正在准备…",
+    "queuedTransfer": "等待传输",
     "remainingTime": "预计剩余 {{value}}",
     "durationHours": "{{hours}} 小时 {{minutes}} 分钟",
     "durationMinutes": "{{minutes}} 分钟 {{seconds}} 秒",

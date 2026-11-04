@@ -26,6 +26,8 @@ pub struct DurableTransfer {
     pub transferred: u64,
     pub total: u64,
     pub status: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
     pub error: Option<String>,
     pub updated_at: i64,
 }
@@ -149,6 +151,14 @@ pub fn durable_transfer_list(app: AppHandle) -> AppResult<Vec<DurableTransfer>> 
             row.error = Some("sftp.restartRecovery".into());
         }
         row.status = recovered_status(&row.status, active).into();
+        row.phase = app
+            .state::<AppState>()
+            .transfers
+            .inner
+            .lock()
+            .ok()
+            .and_then(|state| state.active.get(&row.id).and_then(|task| task.event.phase))
+            .map(str::to_owned);
     }
     Ok(rows)
 }

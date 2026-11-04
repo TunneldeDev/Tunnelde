@@ -589,6 +589,7 @@
     "transferSpeed": "{{value}}/s",
     "calculatingSpeed": "Calculating speed…",
     "preparingTransfer": "Preparing…",
+    "queuedTransfer": "Queued",
     "remainingTime": "About {{value}} left",
     "durationHours": "{{hours}}h {{minutes}}m",
     "durationMinutes": "{{minutes}}m {{seconds}}s",
