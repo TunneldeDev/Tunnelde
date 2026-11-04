@@ -724,7 +724,18 @@
     "reconnect": "恢复连接",
     "saving": "正在保存…",
     "conflictTitle": "远端文件已更改",
-    "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？"
+    "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？",
+    "format": "格式化文档",
+    "formatting": "正在格式化…",
+    "undo": "撤销",
+    "redo": "重做",
+    "chooseFormatter": "选择格式化器",
+    "noDocument": "请先打开可编辑的文档。",
+    "noFormatter": "尚未安装支持此文件类型的格式化器。请从扩展中安装对应插件。",
+    "documentChanged": "格式化期间文档已变化，已保留你的最新编辑，请重新格式化。",
+    "formatTooLarge": "文档超出插件格式化的大小限制。",
+    "formatRevoked": "格式化插件已停止、更新或被撤销权限，文档内容未被替换。",
+    "invalidFormatResult": "格式化器未返回有效文本。"
   },
   "plugins": {
     "search": "搜索插件",
@@ -1123,7 +1134,9 @@
       "mountsRead": "检查 SSHFS 依赖并查看此插件的挂载",
       "mountsWrite": "通过已认证 SSH 挂载或卸载远端文件系统",
       "forwardsRead": "查看已保存的端口转发规则",
-      "forwardsWrite": "管理、启动本地或远程端口转发"
+      "forwardsWrite": "管理、启动本地或远程端口转发",
+      "editorRead": "读取已打开编辑器中的文档",
+      "editorWrite": "修改编辑器缓冲区（不会自动保存）"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {

@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { useWorkspace } from "@/store/workspace";
-import { useEditors } from "@/store/editors";
+import {
+  useEditors,
+  editorDocument,
+  replaceEditorDocument,
+  undoEditorEdit,
+  restoreEditorHistory,
+} from "@/store/editors";
 import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
@@ -130,6 +136,22 @@ beforeEach(() => {
 });
 
 describe("background window checkpoint", () => {
+  it("preserves undo and redo across WebView recreation without writing editor history to disk", async () => {
+    restoreEditorHistory();
+    const document = editorDocument("draft")!;
+    replaceEditorDocument(document, "formatted buffer");
+    await suspendBackgroundWindow(73);
+    const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+    restoreEditorHistory();
+    useEditors.setState({ entries: {} });
+    mocks.snapshot.mockResolvedValue(snapshot);
+    await restoreBackgroundSnapshot();
+    expect(useEditors.getState().entries.draft?.content).toBe("formatted buffer");
+    expect(undoEditorEdit("draft")).toBe(true);
+    expect(useEditors.getState().entries.draft?.content).toBe(document.content);
+    expect(undoEditorEdit("draft", true)).toBe(true);
+    expect(useEditors.getState().entries.draft?.content).toBe("formatted buffer");
+  });
   it("releases a WebView with a pinned nonmodal task list and restores its state", async () => {
     const panel = document.createElement("aside");
     panel.setAttribute("role", "dialog");

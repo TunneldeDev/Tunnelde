@@ -384,6 +384,10 @@ export type PluginStatus = "stopped" | "running" | "failed";
 export interface PluginCommand {
   id: string;
   title: string;
+  keybindings?: string[];
+  macKeybindings?: string[];
+  /** Explicit user invocation receives a document snapshot and returns {text}. */
+  editor?: { extensions: string[]; format?: boolean };
 }
 
 export interface PluginView {

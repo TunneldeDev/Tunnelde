@@ -13,6 +13,67 @@ pub const MANIFEST_FILE: &str = "tunnelde-plugin.json";
 pub struct PluginCommand {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keybindings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac_keybindings: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<EditorCommand>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorCommand {
+    pub extensions: Vec<String>,
+    #[serde(default)]
+    pub format: bool,
+}
+
+fn valid_keybindings(bindings: &[String]) -> bool {
+    bindings.len() <= 4
+        && bindings.iter().all(|binding| {
+            let parts: Vec<_> = binding.split('+').collect();
+            let Some((key, modifiers)) = parts.split_last() else {
+                return false;
+            };
+            let mut unique = std::collections::HashSet::new();
+            let modifier_ok = modifiers.iter().all(|part| {
+                matches!(*part, "Mod" | "Ctrl" | "Meta" | "Shift" | "Alt") && unique.insert(*part)
+            });
+            let exclusive = !((unique.contains("Mod")
+                && (unique.contains("Ctrl") || unique.contains("Meta")))
+                || (unique.contains("Ctrl") && unique.contains("Meta")));
+            let key_ok = (key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric())
+                || key
+                    .strip_prefix('F')
+                    .and_then(|n| n.parse::<u8>().ok())
+                    .is_some_and(|n| (1..=24).contains(&n))
+                || matches!(
+                    *key,
+                    "Comma"
+                        | "Period"
+                        | "Backslash"
+                        | "Equal"
+                        | "Plus"
+                        | "Minus"
+                        | "Space"
+                        | "Escape"
+                        | "Tab"
+                        | "Enter"
+                        | "Backspace"
+                        | "Delete"
+                        | "Insert"
+                        | "Home"
+                        | "End"
+                        | "PageUp"
+                        | "PageDown"
+                        | "ArrowUp"
+                        | "ArrowDown"
+                        | "ArrowLeft"
+                        | "ArrowRight"
+                );
+            modifier_ok && exclusive && key_ok
+        })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -175,6 +236,24 @@ impl PluginManifest {
             if !valid_command_id(&command.id)
                 || command.title.trim().is_empty()
                 || !command_ids.insert(&command.id)
+                || !valid_keybindings(&command.keybindings)
+                || command
+                    .mac_keybindings
+                    .as_ref()
+                    .is_some_and(|keys| !valid_keybindings(keys))
+                || command.editor.as_ref().is_some_and(|editor| {
+                    editor.extensions.is_empty()
+                        || editor.extensions.len() > 64
+                        || editor.extensions.iter().any(|ext| {
+                            ext.is_empty()
+                                || ext.len() > 64
+                                || !ext.bytes().all(|c| {
+                                    c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-' | b'_')
+                                })
+                        })
+                        || !self.permissions.iter().any(|p| p == "editor.read")
+                        || !self.permissions.iter().any(|p| p == "editor.write")
+                })
             {
                 return Err(AppError::validation("plugin.command.invalid"));
             }
@@ -316,6 +395,58 @@ pub fn valid_command_id(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_commands_require_permissions_and_validate_shortcuts() {
+        let dir = temp_dir("editor-commands");
+        std::fs::write(dir.join("index.js"), "").unwrap();
+        let base = serde_json::json!({"id":"formatter","name":"Formatter","version":"1.0.0",
+            "apiVersion":1,"main":"index.js","permissions":["editor.read","editor.write"],
+            "commands":[{"id":"format","title":"Format document","keybindings":["Mod+Alt+J"],
+            "macKeybindings":["Meta+Shift+J"],"editor":{"extensions":["json","config.json"],"format":true}}]});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&base).unwrap()).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert!(loaded.commands[0].editor.as_ref().unwrap().format);
+        assert_eq!(loaded.commands[0].keybindings, ["Mod+Alt+J"]);
+        let mut cases = Vec::new();
+        for permissions in [
+            serde_json::json!([]),
+            serde_json::json!(["editor.read"]),
+            serde_json::json!(["editor.write"]),
+        ] {
+            let mut value = base.clone();
+            value["permissions"] = permissions;
+            cases.push(value);
+        }
+        for keys in [
+            serde_json::json!(["Mod+Ctrl+F"]),
+            serde_json::json!(["Ctrl+Meta+F"]),
+            serde_json::json!(["Ctrl+Ctrl+F"]),
+            serde_json::json!(["Mod+F25"]),
+            serde_json::json!([""]),
+            serde_json::json!(["Mod+A", "Mod+B", "Mod+C", "Mod+D", "Mod+E"]),
+        ] {
+            let mut value = base.clone();
+            value["commands"][0]["keybindings"] = keys;
+            cases.push(value);
+        }
+        for extensions in [
+            serde_json::json!([]),
+            serde_json::json!(["../json"]),
+            serde_json::json!([""]),
+            serde_json::json!(["json/"]),
+            serde_json::json!(["x".repeat(65)]),
+        ] {
+            let mut value = base.clone();
+            value["commands"][0]["editor"]["extensions"] = extensions;
+            cases.push(value);
+        }
+        for value in cases {
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&value).unwrap()).unwrap();
+            assert!(load(&dir).is_err(), "{value}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn tags_are_optional_bounded_distinct_and_support_unicode() {

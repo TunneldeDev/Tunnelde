@@ -724,7 +724,18 @@
     "reconnect": "Restore connection",
     "saving": "Saving…",
     "conflictTitle": "Remote file changed",
-    "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?"
+    "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?",
+    "format": "Format document",
+    "formatting": "Formatting…",
+    "undo": "Undo",
+    "redo": "Redo",
+    "chooseFormatter": "Choose a formatter",
+    "noDocument": "Open an editable document first.",
+    "noFormatter": "No formatter is installed for this file type. Install a matching formatter from Extensions.",
+    "documentChanged": "The document changed while formatting. Your latest edits were kept. Run formatting again.",
+    "formatTooLarge": "This document exceeds the plugin formatting size limit.",
+    "formatRevoked": "The formatter was stopped, updated, or its permission was revoked. Your document was kept unchanged.",
+    "invalidFormatResult": "The formatter did not return valid text."
   },
   "plugins": {
     "search": "Search plugins",
@@ -1123,7 +1134,9 @@
       "mountsRead": "Inspect SSHFS dependencies and this plugin’s mounts",
       "mountsWrite": "Mount and unmount remote filesystems via authenticated SSH",
       "forwardsRead": "View saved port forwarding rules",
-      "forwardsWrite": "Manage and start local or remote port forwarding"
+      "forwardsWrite": "Manage and start local or remote port forwarding",
+      "editorRead": "Read documents in open editors",
+      "editorWrite": "Modify editor buffers (without saving automatically)"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {

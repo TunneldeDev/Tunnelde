@@ -5,6 +5,8 @@ import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
 
+export const EDITOR_DOCUMENT_MAX_BYTES = 128 * 1024;
+
 export interface EditorEntry {
   tabId: string;
   sessionId: string;
@@ -16,6 +18,8 @@ export interface EditorEntry {
   saving: boolean;
   error: string | null;
   disconnected?: boolean;
+  documentId?: string;
+  version?: number;
 }
 
 interface EditorsStore {
@@ -35,6 +39,142 @@ interface EditorsStore {
 
 const versions = new Map<string, symbol>();
 const saves = new Map<string, Promise<boolean>>();
+type EditHistory = { undo: string[]; redo: string[]; typedAt: number };
+const histories = new Map<string, EditHistory>();
+
+/** Only native in-memory tray checkpoints retain undo text; never persist it on disk. */
+export interface EditorHistoryCheckpoint {
+  documentId: string;
+  undo: string[];
+  redo: string[];
+}
+export function editorHistorySnapshot(): Record<string, EditorHistoryCheckpoint> {
+  return Object.fromEntries(
+    [...histories].flatMap(([tabId, history]) => {
+      const entry = useEditors.getState().entries[tabId];
+      return entry?.documentId
+        ? [
+            [
+              tabId,
+              { documentId: entry.documentId, undo: [...history.undo], redo: [...history.redo] },
+            ],
+          ]
+        : [];
+    }),
+  );
+}
+
+export function restoreEditorHistory(snapshot: ReturnType<typeof editorHistorySnapshot> = {}) {
+  histories.clear();
+  for (const [tabId, history] of Object.entries(snapshot)) {
+    if (useEditors.getState().entries[tabId]?.documentId !== history.documentId) continue;
+    const undo = [...history.undo],
+      redo = [...history.redo];
+    trimHistory(undo);
+    trimHistory(redo);
+    histories.set(tabId, { undo, redo, typedAt: 0 });
+  }
+}
+
+function trimHistory(items: string[]) {
+  let size = items.reduce((sum, item) => sum + item.length * 2, 0);
+  while (items.length > 50 || size > 4 * 1024 * 1024) size -= items.shift()!.length * 2;
+}
+
+function recordEdit(entry: EditorEntry, typing: boolean) {
+  const history = histories.get(entry.tabId) ?? { undo: [], redo: [], typedAt: 0 };
+  const now = Date.now();
+  if (!typing || !history.typedAt || now - history.typedAt > 750) history.undo.push(entry.content);
+  trimHistory(history.undo);
+  history.redo = [];
+  history.typedAt = typing ? now : 0;
+  histories.set(entry.tabId, history);
+}
+
+export interface EditorDocument {
+  tabId: string;
+  documentId: string;
+  version: number;
+  path: string;
+  name: string;
+  content: string;
+  dirty: boolean;
+}
+
+/** Upgrade an older window checkpoint lazily, without exposing internal editor state. */
+export function editorDocument(tabId: string): EditorDocument | null {
+  let entry = useEditors.getState().entries[tabId];
+  if (!entry || entry.loading || entry.error || entry.disconnected) return null;
+  if (!entry.documentId || entry.version === undefined) {
+    entry = { ...entry, documentId: crypto.randomUUID(), version: 0 };
+    const upgraded = entry;
+    useEditors.setState((state) => ({ entries: { ...state.entries, [tabId]: upgraded } }));
+  }
+  return {
+    tabId,
+    documentId: entry.documentId!,
+    version: entry.version!,
+    path: entry.path,
+    name: entry.name,
+    content: entry.content,
+    dirty: entry.content !== entry.baseline,
+  };
+}
+
+export function replaceEditorDocument(
+  document: Pick<EditorDocument, "tabId" | "documentId" | "version">,
+  text: string,
+) {
+  const entry = useEditors.getState().entries[document.tabId];
+  if (
+    !entry ||
+    entry.loading ||
+    entry.error ||
+    entry.disconnected ||
+    entry.documentId !== document.documentId ||
+    entry.version !== document.version
+  )
+    throw new Error("editor.documentChanged");
+  if (entry.content !== text) {
+    recordEdit(entry, false);
+    useEditors.setState((state) => ({
+      entries: {
+        ...state.entries,
+        [entry.tabId]: {
+          ...entry,
+          content: text,
+          version: document.version + 1,
+        },
+      },
+    }));
+  }
+  return editorDocument(entry.tabId)!;
+}
+
+export function undoEditorEdit(tabId: string, redo = false): boolean {
+  const entry = useEditors.getState().entries[tabId];
+  const history = histories.get(tabId);
+  if (!entry || entry.loading || entry.error || !history) return false;
+  const source = redo ? history.redo : history.undo;
+  const text = source.pop();
+  if (text === undefined) return false;
+  const target = redo ? history.undo : history.redo;
+  target.push(entry.content);
+  trimHistory(target);
+  history.typedAt = 0;
+  useEditors.setState((state) => ({
+    entries: {
+      ...state.entries,
+      [tabId]: {
+        ...entry,
+        content: text,
+        documentId: entry.documentId ?? crypto.randomUUID(),
+        version: (entry.version ?? 0) + 1,
+      },
+    },
+  }));
+  return true;
+}
 
 export function fileName(path: string): string {
   const parts = path.split(/[\\/]/);
@@ -45,6 +185,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   entries: {},
 
   open: async (tabId, sessionId, path) => {
+    histories.delete(tabId);
     const version = Symbol();
     versions.set(tabId, version);
     set((state) => ({
@@ -61,6 +202,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           saving: false,
           error: null,
           disconnected: false,
+          documentId: crypto.randomUUID(),
+          version: 0,
         },
       },
     }));
@@ -108,7 +251,19 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       if (!current || current.loading) {
         return state;
       }
-      return { entries: { ...state.entries, [tabId]: { ...current, content } } };
+      if (current.content === content) return state;
+      recordEdit(current, true);
+      return {
+        entries: {
+          ...state.entries,
+          [tabId]: {
+            ...current,
+            content,
+            documentId: current.documentId ?? crypto.randomUUID(),
+            version: (current.version ?? 0) + 1,
+          },
+        },
+      };
     });
   },
 
@@ -168,6 +323,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   },
 
   discard: (tabId) => {
+    histories.delete(tabId);
     versions.delete(tabId);
     saves.delete(tabId);
     set((state) => {
@@ -210,6 +366,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           [tabId]: {
             ...entry,
             sessionId,
+            documentId: crypto.randomUUID(),
+            version: 0,
             baseline: file.content,
             disconnected: false,
             error: null,
