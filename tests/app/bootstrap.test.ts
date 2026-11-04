@@ -28,6 +28,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, events: mocks.events, isTauri: () => true }));
+vi.mock("@/app/backgroundTaskSources", () => ({ registerBackgroundTaskSources: () => () => {} }));
 vi.mock("@/app/pluginWorkspaceBridge", () => ({
   wirePluginWorkspaceBridge: vi.fn(async () => vi.fn()),
   reconcilePluginWorkspace: vi.fn(async () => {}),

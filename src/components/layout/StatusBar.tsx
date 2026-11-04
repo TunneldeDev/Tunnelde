@@ -8,7 +8,7 @@ import { PluginSecurityBadge } from "@/features/plugins/PluginSecuritySection";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
-import { TransferStatusButton } from "@/features/sftp/FileTransfers";
+import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 
 interface StatusBarProps {
   panelOpen: boolean;
@@ -30,7 +30,7 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
         <span className="statusbar__muted">{t("status.hosts", { count: hostCount })}</span>
       </div>
       <div className="statusbar__group">
-        <TransferStatusButton />
+        <BackgroundTaskStatusButton />
         <UpdatePill />
         <PluginSecurityBadge />
         <IconButton

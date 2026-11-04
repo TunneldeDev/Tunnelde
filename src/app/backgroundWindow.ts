@@ -27,6 +27,11 @@ import { useFileClipboard } from "@/store/fileClipboard";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useTransferPanel } from "@/store/transferPanel";
+import {
+  backgroundTasksBlockSuspension,
+  backgroundTaskHistory,
+  restoreBackgroundTaskHistory,
+} from "@/lib/tasks/background";
 
 function captureWorkspace() {
   const { tabs, panes, activePaneId, activeId, split, layout } = useWorkspace.getState();
@@ -52,6 +57,7 @@ interface WindowSnapshot {
   views: Record<string, unknown>;
   terminals: Record<string, TerminalCheckpoint>;
   transferPanel?: Pick<ReturnType<typeof useTransferPanel.getState>, "open" | "pinned" | "bounds">;
+  backgroundTaskHistory?: ReturnType<typeof backgroundTaskHistory>;
 }
 
 /** Resume only the still-running native process; this data is never written to disk. */
@@ -78,6 +84,7 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   useWorkspace.setState(snapshot.workspace);
   useNavigation.setState(snapshot.navigation);
   if (snapshot.transferPanel) useTransferPanel.setState(snapshot.transferPanel);
+  if (snapshot.backgroundTaskHistory) restoreBackgroundTaskHistory(snapshot.backgroundTaskHistory);
   return true;
 }
 
@@ -86,6 +93,7 @@ function busy() {
   const security = usePluginSecurity.getState();
   return (
     viewIsBusy() ||
+    backgroundTasksBlockSuspension() ||
     document.querySelector('[role="dialog"]:not([aria-modal="false"])') !== null ||
     useDialogs.getState().dialog.kind !== "none" ||
     Object.values(useEditors.getState().entries).some((entry) => entry.loading || entry.saving) ||
@@ -126,6 +134,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
     if (cancellation !== revision || busy()) return;
     const snapshot: WindowSnapshot = {
       version: 1,
+      backgroundTaskHistory: backgroundTaskHistory(),
       transferPanel: {
         open: useTransferPanel.getState().open,
         pinned: useTransferPanel.getState().pinned,

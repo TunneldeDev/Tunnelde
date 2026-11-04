@@ -40,7 +40,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("sidebar.plugins", "settings.plugins", "workbench", []),
   command("update.check", "updates.check", "workbench", []),
   command("panel.toggle", "shortcuts.togglePanel", "workbench", []),
-  command("transfers.show", "sftp.backgroundTasks", "workbench", [], { input: true }),
+  command("transfers.show", "tasks.title", "workbench", [], { input: true }),
   command("theme.cycle", "shortcuts.cycleTheme", "workbench", []),
   command("font.increase", "shortcuts.fontIncrease", "workbench", [
     "Mod+Equal",
