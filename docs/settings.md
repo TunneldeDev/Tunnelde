@@ -8,10 +8,11 @@ is preserved in profiles and exports, even if that package is temporarily unavai
 
 **Settings → Updates** contains the current version, checks, installation progress and
 collapsible release notes. All update actions use this section instead of opening a new
-page. Choose **Stable**, **Public beta (Beta)** or **Development (Nightly)**, and **GitHub** or a compatible custom
-HTTPS source. Default: Stable for all builds, including Beta and Nightly installations,
-GitHub source, automatic checks once a day, manual download/installation. Existing saved
-channel choices are preserved. Every-startup and weekly checks are also available.
+page. Choose **Stable** or **Public beta (Beta)**, and **GitHub** or a compatible custom
+HTTPS source. Development snapshots are not offered by in-app updates. Default:
+Stable for all builds, GitHub source, automatic checks once a day, manual download/installation.
+Legacy Nightly preferences migrate to Stable; saved Stable/Beta choices are preserved.
+Every-startup and weekly checks are also available.
 
 Custom source addresses use exactly one `{channel}` in the URL path, e.g.
 `https://updates.example.com/{channel}/latest.json`; use **Apply** to save an edited

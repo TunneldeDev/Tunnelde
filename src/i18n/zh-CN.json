@@ -365,14 +365,13 @@
     "channel": "更新渠道",
     "stable": "正式版",
     "beta": "公测版（Beta）",
-    "nightly": "开发版（Nightly）",
-    "channelHint": "正式版接收稳定发布；公测版额外接收 Beta；开发版额外接收每日开发快照。切换渠道不会自动降级当前版本。",
+    "channelHint": "正式版接收稳定发布；公测版额外接收 Beta。软件更新不提供开发快照。切换渠道不会自动降级当前版本。",
     "source": "更新源",
     "github": "GitHub（官方）",
     "custom": "自定义 HTTPS 源",
     "sourceHint": "使用 GitHub 或兼容的更新服务。如需代理，可在网络设置中单独配置应用更新代理。所有更新包均须通过 Tunnelde 签名验证。",
     "sourceUrl": "自定义源地址",
-    "sourceUrlHint": "填写路径包含 {channel} 的 HTTPS 更新索引地址，例如 https://updates.example.com/{channel}/latest.json。服务需提供所选渠道及其更稳定渠道的索引（stable、beta、nightly）；暂无版本可返回 HTTP 204。加速下载还需镜像安装包地址。",
+    "sourceUrlHint": "填写路径包含 {channel} 的 HTTPS 更新索引地址，例如 https://updates.example.com/{channel}/latest.json。服务需提供所选渠道及其更稳定渠道的索引（stable、beta）；暂无版本可返回 HTTP 204。加速下载还需镜像安装包地址。",
     "sourceDraft": "点击“应用”以保存此更新源地址。",
     "invalidSource": "请输入路径包含且仅包含一个 {channel} 的 HTTPS 地址，不得含账号密码、查询参数或片段。",
     "checkPreferences": "更新检查",
@@ -411,7 +410,8 @@
     "error": "更新失败",
     "publishedAt": "发布时间",
     "rateLimited": "GitHub 的请求额度已用尽，公共发布源也暂时不可用。请稍后重试，或检查更新代理。",
-    "connectionFailed": "无法连接更新源，请检查网络与更新功能的代理设置。"
+    "connectionFailed": "无法连接更新源，请检查网络与更新功能的代理设置。",
+    "invalidChannel": "请选择正式版或公测版更新渠道。"
   },
   "about": {
     "version": "版本",
