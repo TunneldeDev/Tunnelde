@@ -148,6 +148,7 @@ pub fn run() {
             commands::update_state,
             commands::update_check,
             commands::update_install,
+            commands::update_history,
             commands::open_release_page,
             commands::open_log_dir,
             commands::open_local_path,

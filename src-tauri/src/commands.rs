@@ -346,6 +346,14 @@ pub async fn update_install(app: AppHandle) -> AppResult<UpdateState> {
 }
 
 #[tauri::command]
+pub async fn update_history(
+    app: AppHandle,
+    version: String,
+) -> AppResult<update::history::ReleaseHistory> {
+    update::history::load(app, version).await
+}
+
+#[tauri::command]
 pub fn open_release_page(app: AppHandle) -> AppResult<()> {
     let state = app.state::<AppState>();
     let snapshot = state.update.snapshot();
