@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   BUILD_VERSION,
+  assertPublishableTag,
   betaSequence,
   betaVersion,
   compareReleaseTags,
@@ -62,17 +63,38 @@ test("Nightly distance, Beta milestones and new target versions follow SemVer or
   assert.deepEqual([...ordered].reverse().sort(compareReleaseTags), ordered);
 });
 
-test("two-digit alphanumeric Beta identifiers are valid, lexical and SemVer order agree", () => {
+test("new publications allow only beta.1 through beta.9 and reset with each target", () => {
   const ordered = Array.from(
-    { length: 99 },
+    { length: 9 },
     (_, index) => `v${betaVersion("0.28.0", BigInt(index + 1))}`,
   );
   assert.deepEqual([...ordered].reverse().sort(), ordered);
   assert.deepEqual([...ordered].reverse().sort(compareReleaseTags), ordered);
-  for (const tag of ordered) assert.equal(BUILD_VERSION.test(tag.slice(1)), true);
+  for (const tag of [
+    ...ordered,
+    "v0.28.0",
+    "v0.29.0-beta.1",
+    "v0.28.0-beta.9.d.1000.gabcdef012345",
+    "v0.28.0-alpha.1.d.1.gabcdef012345",
+  ])
+    assert.doesNotThrow(() => assertPublishableTag(tag));
+  for (const tag of [
+    "v0.28.0-beta.0",
+    "v0.28.0-beta.10",
+    "v0.28.0-beta.11",
+    "v0.28.0-beta.01",
+    "v0.28.0-beta01",
+    "v0.28.0-beta.2.1",
+    "v0.28.0-beta.10.d.1.gabcdef012345",
+    "v0.28.0-beta12.d.1.gabcdef012345",
+    "v00.28.0",
+    "main",
+  ])
+    assert.throws(() => assertPublishableTag(tag), /Release policy/);
   assert.equal(betaSequence("v0.28.0-beta.11"), 11n);
   assert.equal(betaSequence("v0.28.0-beta.11.2"), 11n);
   assert.equal(betaSequence("v0.28.0-beta12"), 12n);
-  assert.throws(() => betaVersion("0.28.0", 100n), /exhausted/);
+  assert.throws(() => betaVersion("0.28.0", 10n), /exhausted/);
   assert.throws(() => betaVersion("0.28.0", 0n), /exhausted/);
+  assert.equal(betaVersion("0.29.0", 1n), "0.29.0-beta.1");
 });

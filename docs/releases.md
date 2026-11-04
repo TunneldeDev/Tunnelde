@@ -17,7 +17,7 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    rebuilt with a forced update; dev, main and existing tags are never force updated.
 3. Dev pushes do not publish installers. Use **Prepare Beta → Run workflow** to select the
    current dev snapshot, synchronize its eight version files and changelog in an isolated commit,
-   and create the next immutable `vX.Y.Z-betaNN` tag. Beta is an explicit testing milestone.
+   and create the next immutable `vX.Y.Z-beta.N` tag. Beta is an explicit testing milestone.
 4. **Publish version** listens to `push.tags: ["v*"]`. Stable tags publish stable releases; Beta
    tags publish prereleases. Direct tag pushes must already have matching version manifests and
    release notes and belong to the correct branch history. Lightweight and annotated tags work.
@@ -28,7 +28,7 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    **Publish version** builds Windows, Linux, Apple Silicon and Intel macOS packages.
 6. Every build first shares one staging draft. Only after all desktop artifacts, signatures and
    `latest.json` pass verification does it become public. Titles are the complete version tag,
-   e.g. `v0.28.0-beta12` or `v0.27.1`. Beta and Nightly always use `prerelease: true` and
+   e.g. `v0.28.0-beta.3` or `v0.27.1`. Beta and Nightly always use `prerelease: true` and
    `make_latest: false`. Stable uses `/releases/latest/`; an older recovered stable version cannot
    move that pointer backwards. Historical releases and immutable tags are retained.
 7. After preparing a stable tag, refresh development automation for work accumulated since the
@@ -44,7 +44,7 @@ an interrupted draft is reused. Tagged releases and daily development snapshots 
 Versions contain the target stable base, the commit distance and the source hash:
 
 - Before a Beta milestone: `v0.27.1-alpha.1.d.3.g7ec5d7a8c51c`.
-- After `v0.28.0-beta12`: `v0.28.0-beta12.d.2.g0123456789ab`.
+- After `v0.28.0-beta.3`: `v0.28.0-beta.3.d.2.g0123456789ab`.
 - No commits since that Beta: skip Nightly rather than build identical code again.
 
 The most recent applicable Beta is the anchor; its source must be an ancestor of current dev.
@@ -58,28 +58,29 @@ all four desktop targets using Tunnelde's signed updater packages.
 Breaking changes marked with `!` or a `BREAKING CHANGE:` footer increase minor before 1.0,
 and major after 1.0. Release commits are omitted from summaries. A batch uses its highest bump.
 Explicit Beta versions use the same next stable base with a unique sequence suffix.
-The suffix is `betaNN`, with two digits from `01` to `99`, counted separately for
-each target stable version. For example, `0.28.0-beta01`, `0.28.0-beta02`, then
-stable `0.28.0`; the first beta for the next patch is `0.28.1-beta01`. A change to
-the target minor/major version also starts at `beta01`. The name and number form
-one alphanumeric SemVer identifier: a separate numeric `beta.01` would be invalid.
-Fixed width aligns lexical prerelease ordering with sequence numbers. At `beta99`, automation
-stops before creating another snapshot; review promotion or choose a new target.
-Automation reads immutable tags rather than the workflow's global run counter or the
-display title of a release. Failed builds reserve their number; retrying the same source
-reuses its existing tag and draft without changing published packages. Legacy tags such
-as `0.26.2-beta.2.1` remain valid and reserve sequence 2, so the next new source for that
-same target uses `0.26.2-beta03`. Existing `0.28.0-beta.11` advances to
-`0.28.0-beta12`; published tags, assets and URLs remain unchanged. Before the first
-compact-named build, dispatch **Prepare Beta** once with `legacy_updater_bridge: true`.
-This publishes a legacy `beta.N` build containing both channel parsers, so older
-clients first update to the bridge and can then discover `betaNN` without reinstalling.
-For the current cycle this means `beta.11 → beta.12` (bridge) `→ beta13`.
-The bridge option is rejected after a compact tag exists for that target version.
-Update discovery
-compares complete semantic versions across all pages, so a larger target version
-supersedes older betas even when its sequence restarts at 1. It never assumes the
-first release returned by GitHub is newest.
+The suffix is **`beta.N`, where N is 1 through 9**. Do not publish `beta.10`
+or higher. For example, `0.28.0-beta.1`, `0.28.0-beta.2`, then stable `0.28.0`;
+the first Beta for the next target is `0.28.1-beta.1`. Before a tenth milestone
+would be needed, review and publish the stable promotion PR. If the release is
+not ready, fix it and use Nightly for intermediate testing; automation stops
+rather than publishing an unreviewed stable release or recycling a number.
+
+Allocation reads tags rather than workflow run counters or display titles.
+Failed builds reserve their number. Retrying the same permitted source/tag
+reuses its draft, including beta.9. Historical formats remain readable and
+reserve their original sequence, but cannot be newly published or recovered
+outside the current policy. New target versions restart at beta.1.
+
+Updates compare semantic versions across all pages and include stable releases
+in the Beta channel. Users on historical `0.28.0-beta.10` or `.11` can therefore
+update to `0.28.0` without a compatibility build. Do not rename a release or tag
+while keeping binaries with a different embedded version. Exceptional removal
+of obsolete releases requires explicit authorization, a metadata/tag backup,
+and a verified public replacement with installers and its updater manifest.
+Normal publication retains history and never moves existing tags.
+
+The maintained version policy is available in [English](versioning.en-us.md)
+and [简体中文](versioning.zh-cn.md).
 
 All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
 and lockfiles, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous

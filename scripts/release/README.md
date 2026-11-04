@@ -21,22 +21,21 @@ date or string comparison. Version selection uses numeric SemVer ordering across
 all pages; a release is eligible only after publication with matching channel
 metadata and `latest.json`.
 
-New Beta milestones use `vX.Y.Z-beta01` through `vX.Y.Z-beta99`. The
-alphanumeric identifier permits a fixed two-digit sequence under SemVer and
-keeps lexical order aligned with numeric order. Pure numeric `beta.01` would be
-invalid SemVer. The name and number are one identifier, with no extra separator or letter.
-Legacy `beta.N` and `beta.N.M` tags remain valid and reserve their original
-number; after `beta.11`, the next compact preparation is `beta12`. A new target
-version resets to `beta01`. Before switching an existing release line, publish one
-legacy-named compatibility build with the **Prepare Beta** workflow's
-`legacy_updater_bridge` option. Its updated channel parser lets old clients reach
-subsequent compact Betas through automatic updates (`beta.11 → beta.12 → beta13`).
-The bridge option refuses to run after a compact Beta tag exists for that target.
-Preparation refuses to allocate milestone 100 before
-creating a commit or tag, requiring a reviewed promotion or a new target.
-Nightly builds retain the latest Beta base plus `.d.<distance>.g<source>` and
-do not consume Beta numbers. Existing published tags and package bytes never
-change as part of this migration.
+New Beta milestones use **`vX.Y.Z-beta.1` through `vX.Y.Z-beta.9` only**.
+The counter restarts at 1 for each new target stable version. Before a tenth
+milestone would be needed, review and publish the stable release through the
+promotion PR. At the cap, preparation stops before creating a commit, tag or
+draft; it never promotes unfinished software automatically. Use Nightly for
+intermediate testing. Same-source retries of beta.9 remain possible.
+
+Allocation reads immutable tags, including historical formats and tags whose
+release was retired, so numbers cannot silently be recycled. New publication
+and recovery reject beta.10+, multipart Beta suffixes and compact betaNN names.
+Historical metadata remains readable and comparable; the updater accepts stable
+releases above already installed beta.10/11 builds. Nightly retains a permitted
+Beta base plus `.d.<distance>.g<source>` without consuming Beta milestones.
+See the version policy in [English](../../docs/versioning.en-us.md) /
+[简体中文](../../docs/versioning.zh-cn.md).
 
 The desktop updater has the same separation: `src-tauri/src/update/channels.rs` owns channel
 eligibility; `update/feeds.rs` discovers GitHub/custom feeds; `update.rs` owns state, checks,

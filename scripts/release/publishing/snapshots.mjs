@@ -2,6 +2,7 @@ import { assertSources, commitTree, resolveTag } from "../github/sources.mjs";
 import {
   betaSequence,
   betaVersion,
+  assertPublishableTag,
   compareReleaseTags,
   releaseChannel,
 } from "../metadata/channels.mjs";
@@ -26,11 +27,11 @@ function snapshotNotes(plan, version) {
   };
 }
 
-export async function prepareBeta({ github, context, plan, legacyUpdaterBridge = false }) {
+export async function prepareBeta({ github, context, plan }) {
   if (!plan.version) return "";
   const repo = context.repo;
   await assertSources(github, repo, { dev: plan.dev });
-  // Only explicit Beta preparations allocate betaNN; legacy beta.N reserves its number.
+  // Only explicit Beta preparations allocate a milestone; historical tags reserve numbers.
   const { data: refs } = await github.rest.git.listMatchingRefs({
     ...repo,
     ref: `tags/v${plan.version}-beta`,
@@ -39,8 +40,6 @@ export async function prepareBeta({ github, context, plan, legacyUpdaterBridge =
     .map((ref) => ({ ...ref, tag: ref.ref.replace(/^refs\/tags\//, "") }))
     .filter(({ tag }) => betaMilestone(tag) && tag.startsWith(`v${plan.version}-beta`))
     .sort((a, b) => compareReleaseTags(b.tag, a.tag));
-  if (legacyUpdaterBridge && tags.some(({ tag }) => /-beta\d/.test(tag)))
-    throw new Error("A legacy updater bridge must be published before compact Beta tags exist");
   const latest = tags[0];
   const body = `Development build from ${plan.dev}.\n\n${plan.release.notes}`;
   if (latest) {
@@ -50,6 +49,7 @@ export async function prepareBeta({ github, context, plan, legacyUpdaterBridge =
       commit_sha: existingSha,
     });
     if (/^Release-source: ([a-f0-9]{40})$/m.exec(commit.message)?.[1] === plan.dev) {
+      assertPublishableTag(latest.tag);
       await assertSources(github, repo, { dev: plan.dev });
       return ensureRelease({
         github,
@@ -65,9 +65,7 @@ export async function prepareBeta({ github, context, plan, legacyUpdaterBridge =
       const number = betaSequence(tag);
       return number > highest ? number : highest;
     }, 0n) + 1n;
-  const compactVersion = betaVersion(plan.version, sequence);
-  // A one-time legacy-named build lets older clients acquire compact channel support by OTA.
-  const version = legacyUpdaterBridge ? `${plan.version}-beta.${sequence}` : compactVersion;
+  const version = betaVersion(plan.version, sequence);
   const release = snapshotNotes(plan, version);
   const sha = await commitTree({
     github,
@@ -103,7 +101,15 @@ export async function prepareNightly({ github, context, plan }) {
   });
   const betas = refs
     .map((ref) => ref.ref.replace(/^refs\/tags\//, ""))
-    .filter((tag) => betaMilestone(tag))
+    .filter((tag) => {
+      if (!betaMilestone(tag)) return false;
+      try {
+        assertPublishableTag(tag);
+        return true;
+      } catch {
+        return false;
+      }
+    })
     .sort((a, b) => compareReleaseTags(b, a));
   for (const beta of betas) {
     const betaSha = await resolveTag(github, context.repo, beta);
