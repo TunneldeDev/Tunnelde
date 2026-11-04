@@ -152,6 +152,7 @@ pub fn run() {
             commands::ssh_trust,
             commands::ssh_connect,
             commands::ssh_attach,
+            commands::ssh_detach,
             commands::ssh_write,
             commands::ssh_resize,
             commands::ssh_disconnect,

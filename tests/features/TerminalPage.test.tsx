@@ -63,6 +63,13 @@ vi.mock("@xterm/addon-fit", () => ({
     fit = vi.fn();
   },
 }));
+vi.mock("@xterm/addon-serialize", () => ({
+  SerializeAddon: class {
+    activate = vi.fn();
+    serialize = vi.fn(() => "");
+    dispose = vi.fn();
+  },
+}));
 vi.mock("@xterm/addon-webgl", () => ({
   WebglAddon: class {
     activate = vi.fn(() => {
@@ -352,7 +359,7 @@ describe("terminal lifecycle", () => {
     expect(apiMock.sshAttach).not.toHaveBeenCalled();
   });
 
-  it("attaches only after both listeners exist and retains early ANSI output during font loading", async () => {
+  it("attaches after both listeners and the terminal are ready, retaining the first ANSI bytes", async () => {
     let registerClosed!: (unsubscribe: () => void) => void;
     let finishFont!: () => void;
     eventMock.onSshClosed.mockImplementation(
@@ -374,9 +381,10 @@ describe("terminal lifecycle", () => {
     await act(async () => undefined);
     expect(apiMock.sshAttach).not.toHaveBeenCalled();
     await act(async () => registerClosed(vi.fn()));
-    expect(apiMock.sshAttach).toHaveBeenCalledWith("s1");
+    expect(apiMock.sshAttach).not.toHaveBeenCalled();
     expect(instances).toHaveLength(0);
     await act(async () => finishFont());
+    expect(apiMock.sshAttach).toHaveBeenCalledWith("s1");
     expect(instances[0]!.write.mock.calls[0]![0]).toBe("\x1b[32mprompt\x1b[0m");
   });
 

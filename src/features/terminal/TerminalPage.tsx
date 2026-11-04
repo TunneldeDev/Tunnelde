@@ -1,5 +1,6 @@
 import { matchesCommand } from "@/lib/keyboard/registry";
 import { FitAddon } from "@xterm/addon-fit";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/xterm";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { ArrowLeftRight, Clock, FolderTree, X } from "lucide-react";
@@ -33,6 +34,8 @@ import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
 import { createTerminalOutputDecoder } from "./terminalOutput";
 import { bindTerminalClipboard } from "./terminalClipboard";
+import { registerTerminalCheckpoint, takeTerminalCheckpoint } from "./terminalCheckpoint";
+import { captureTerminalState, restoreTerminalState } from "./terminalState";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -74,6 +77,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     capture.current = { text: "", escape: 0 };
   }, [recordTerminalHistory]);
   const lastSize = useRef({ sessionId: "", cols: 0, rows: 0 });
+  const checkpointing = useRef(false);
   const focus = useCallback(() => {
     if (
       !activeRef.current ||
@@ -93,6 +97,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   }, []);
 
   const fit = useCallback(() => {
+    if (checkpointing.current) return;
     const terminal = terminalRef.current;
     const addon = fitRef.current;
     const element = containerRef.current;
@@ -136,7 +141,26 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     let copiedSelection = "";
     const subscriptions: UnlistenFn[] = [];
     const pending: string[] = [];
-    const decodeOutput = createTerminalOutputDecoder();
+    let decodeOutput = createTerminalOutputDecoder();
+    let sequence = 0;
+    let unregisterCheckpoint: (() => void) | undefined;
+    const sequenceWaiters = new Set<() => void>();
+    const waitForSequence = (target: number) =>
+      new Promise<void>((resolve, reject) => {
+        if (sequence >= target) return resolve();
+        const timer = window.setTimeout(() => {
+          sequenceWaiters.delete(check);
+          reject(new Error("terminal.checkpointBusy"));
+        }, 2000);
+        const check = () => {
+          if (sequence < target && !disposed && !ended) return;
+          window.clearTimeout(timer);
+          sequenceWaiters.delete(check);
+          if (disposed) reject(new Error("terminal.checkpointBusy"));
+          else resolve();
+        };
+        sequenceWaiters.add(check);
+      });
     const write = (chunk: Uint8Array) => {
       if (disposed) {
         return;
@@ -161,8 +185,15 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
 
       // Preferences may change while the first font is still loading.
       const settings = useSettings.getState().settings;
+      const checkpoint = takeTerminalCheckpoint(sessionId);
+      if (checkpoint) {
+        checkpointing.current = true;
+        sequence = checkpoint.sequence;
+        decodeOutput = createTerminalOutputDecoder(checkpoint.decoder);
+      }
       const instance = new Terminal({
         ...terminalOptions(settings),
+        ...(checkpoint ? { cols: checkpoint.cols, rows: checkpoint.rows } : {}),
       });
       terminal = instance;
       addon = new FitAddon();
@@ -171,6 +202,52 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       terminalRef.current = instance;
       fitRef.current = addon;
       runtime = bindTerminalSettings(instance, fit);
+      const serializer = new SerializeAddon();
+      instance.loadAddon(serializer);
+      if (checkpoint) {
+        await new Promise<void>((resolve) => instance.write(checkpoint.data, resolve));
+        if (disposed) return;
+        restoreTerminalState(instance, checkpoint.state);
+        if (checkpoint.decoder.control) {
+          await new Promise<void>((resolve) => instance.write(checkpoint.decoder.control, resolve));
+          if (disposed) return;
+        }
+        instance.scrollToLine(checkpoint.viewportY);
+        checkpointing.current = false;
+      }
+      unregisterCheckpoint = registerTerminalCheckpoint(sessionId, {
+        prepare: async () => {
+          checkpointing.current = true;
+          const barrier = ended ? sequence : await api.sshDetach(sessionId);
+          await waitForSequence(barrier);
+          // write callbacks run after xterm has parsed every preceding packet.
+          await new Promise<void>((resolve, reject) => {
+            const timer = window.setTimeout(
+              () => reject(new Error("terminal.checkpointBusy")),
+              2000,
+            );
+            instance.write("", () => {
+              window.clearTimeout(timer);
+              resolve();
+            });
+          });
+          if (disposed) throw new Error("terminal.checkpointBusy");
+          return {
+            sequence,
+            cols: instance.cols,
+            rows: instance.rows,
+            viewportY: instance.buffer.active.viewportY,
+            data: serializer.serialize(),
+            decoder: decodeOutput.checkpoint(),
+            state: captureTerminalState(instance),
+          };
+        },
+        resume: async () => {
+          checkpointing.current = false;
+          if (!disposed && !ended) await api.sshAttach(sessionId);
+          runtime?.requestLayout();
+        },
+      });
       const writeClipboard = (text: string) =>
         isTauri() ? api.clipboardWriteText(text) : navigator.clipboard.writeText(text);
       applicationClipboard = bindTerminalClipboard(
@@ -279,7 +356,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       }
 
       dataListener = instance.onData((data) => {
-        if (!isTauri() || disposed || ended) {
+        if (!isTauri() || disposed || ended || checkpointing.current) {
           return;
         }
         void api.sshWrite(sessionId, encodeBase64(data)).catch(() => undefined);
@@ -304,7 +381,9 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       });
     };
 
-    // Listen before the terminal exists so early output is buffered, not lost.
+    const started = start();
+
+    // Listeners precede attach; restored screen/modes must precede new output.
     if (isTauri()) {
       const retain = (unlisten: UnlistenFn) => {
         if (disposed || registrationFailed) {
@@ -330,7 +409,10 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       const dataReady = events
         .onSshData((payload) => {
           if (!disposed && payload.sessionId === sessionId) {
+            if (payload.sequence <= sequence) return;
             write(decodeBase64(payload.data));
+            sequence = payload.sequence ?? sequence + 1;
+            sequenceWaiters.forEach((check) => check());
           }
         })
         .then(retain)
@@ -345,6 +427,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             return;
           }
           ended = true;
+          sequenceWaiters.forEach((check) => check());
           setClosed(true);
           write(new TextEncoder().encode(`\r\n\x1b[38;5;245m[${t("ssh.closed")}]\x1b[0m\r\n`));
         })
@@ -353,7 +436,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           fail(error);
           throw error;
         });
-      void Promise.all([dataReady, closedReady])
+      void Promise.all([dataReady, closedReady, started])
         .then(async () => {
           if (!disposed && !registrationFailed && !ended) {
             await api.sshAttach(sessionId);
@@ -374,10 +457,15 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       }
     });
 
-    void start();
+    void started.catch((error) => {
+      if (!disposed) toast(translateError(error), "error");
+    });
 
     return () => {
       disposed = true;
+      checkpointing.current = false;
+      unregisterCheckpoint?.();
+      sequenceWaiters.forEach((check) => check());
       observer?.disconnect();
       subscriptions.forEach((unlisten) => unlisten());
       dataListener?.dispose();

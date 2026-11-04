@@ -121,6 +121,7 @@ export const api = {
     }),
   sshConnect: (request: SshConnectRequest) => invoke<SshSession>("ssh_connect", { request }),
   sshAttach: (sessionId: string) => invoke<void>("ssh_attach", { sessionId }),
+  sshDetach: (sessionId: string) => invoke<number>("ssh_detach", { sessionId }),
   sshWrite: (sessionId: string, data: string) => invoke<void>("ssh_write", { sessionId, data }),
   sshResize: (sessionId: string, cols: number, rows: number) =>
     invoke<void>("ssh_resize", { sessionId, cols, rows }),
