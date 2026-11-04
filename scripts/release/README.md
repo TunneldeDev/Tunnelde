@@ -21,13 +21,18 @@ date or string comparison. Version selection uses numeric SemVer ordering across
 all pages; a release is eligible only after publication with matching channel
 metadata and `latest.json`.
 
-New Beta milestones use `vX.Y.Z-beta.b01` through `vX.Y.Z-beta.b99`. The
+New Beta milestones use `vX.Y.Z-beta01` through `vX.Y.Z-beta99`. The
 alphanumeric identifier permits a fixed two-digit sequence under SemVer and
 keeps lexical order aligned with numeric order. Pure numeric `beta.01` would be
-invalid SemVer. The `beta.` prefix preserves older clients' channel recognition.
+invalid SemVer. The name and number are one identifier, with no extra separator or letter.
 Legacy `beta.N` and `beta.N.M` tags remain valid and reserve their original
-number; after `beta.11`, the next preparation is `beta.b12`. A new target
-version resets to `b01`. Preparation refuses to allocate milestone 100 before
+number; after `beta.11`, the next compact preparation is `beta12`. A new target
+version resets to `beta01`. Before switching an existing release line, publish one
+legacy-named compatibility build with the **Prepare Beta** workflow's
+`legacy_updater_bridge` option. Its updated channel parser lets old clients reach
+subsequent compact Betas through automatic updates (`beta.11 → beta.12 → beta13`).
+The bridge option refuses to run after a compact Beta tag exists for that target.
+Preparation refuses to allocate milestone 100 before
 creating a commit or tag, requiring a reviewed promotion or a new target.
 Nightly builds retain the latest Beta base plus `.d.<distance>.g<source>` and
 do not consume Beta numbers. Existing published tags and package bytes never

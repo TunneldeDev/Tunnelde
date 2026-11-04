@@ -1,15 +1,15 @@
 // Keep version validation, release titles and channel identity shared by all publishers.
 const CORE = "(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)";
 const NUMBER = "(?:0|[1-9]\\d*)";
-const BETA_SEQUENCE = `(?:b(?:0[1-9]|[1-9]\\d)|${NUMBER}(?:\\.${NUMBER})?)`;
+const BETA_SEQUENCE = `(?:0[1-9]|[1-9]\\d|\\.${NUMBER}(?:\\.${NUMBER})?)`;
 export const BUILD_VERSION = new RegExp(
-  `^${CORE}(?:-beta\\.${BETA_SEQUENCE}(?:\\.d\\.${NUMBER}\\.g[a-f0-9]{7,40})?|-alpha\\.1\\.d\\.${NUMBER}\\.g[a-f0-9]{7,40})?$`,
+  `^${CORE}(?:-beta${BETA_SEQUENCE}(?:\\.d\\.${NUMBER}\\.g[a-f0-9]{7,40})?|-alpha\\.1\\.d\\.${NUMBER}\\.g[a-f0-9]{7,40})?$`,
 );
 
-/** Numeric legacy beta.N and fixed-width beta.bNN share one allocation sequence. */
+/** Numeric legacy beta.N and fixed-width betaNN share one allocation sequence. */
 export function betaSequence(tag) {
   if (releaseChannel(tag) !== "beta") throw new Error("Expected a Beta milestone tag");
-  return BigInt(/-beta\.(?:b)?(\d+)/.exec(tag)[1]);
+  return BigInt(/-beta\.?(\d+)/.exec(tag)[1]);
 }
 
 export function betaVersion(version, sequence) {
@@ -17,13 +17,13 @@ export function betaVersion(version, sequence) {
     throw new Error(
       "Beta sequence exhausted (01–99). Promote the reviewed release to main or choose a new target version before preparing another Beta.",
     );
-  return `${version}-beta.b${String(sequence).padStart(2, "0")}`;
+  return `${version}-beta${String(sequence).padStart(2, "0")}`;
 }
 
 export function releaseChannel(tag) {
   if (typeof tag !== "string" || !tag.startsWith("v") || !BUILD_VERSION.test(tag.slice(1)))
     throw new Error("Invalid release tag");
-  return tag.includes(".d.") ? "nightly" : tag.includes("-beta.") ? "beta" : "stable";
+  return tag.includes(".d.") ? "nightly" : tag.includes("-beta") ? "beta" : "stable";
 }
 
 export function releaseTitle(tag) {
