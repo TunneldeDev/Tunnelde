@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, events: mocks.events, isTauri: () => true }));
 vi.mock("@/app/pluginWorkspaceBridge", () => ({
   wirePluginWorkspaceBridge: vi.fn(async () => vi.fn()),
+  reconcilePluginWorkspace: vi.fn(async () => {}),
 }));
 vi.mock("@/store/hosts", () => ({
   useHosts: { getState: () => ({ load: mocks.hostLoad, hosts: mocks.hosts }) },
@@ -82,13 +83,15 @@ const deferred = <T>() => {
 const fresh = async () => {
   const { useWorkspace } = await import("@/store/workspace");
   const { bootstrap } = await import("@/app/bootstrap");
-  return { useWorkspace, bootstrap };
+  const { disposeBootstrap } = await import("@/app/bootstrap");
+  return { useWorkspace, bootstrap, disposeBootstrap };
 };
 
 beforeEach(() => {
   vi.resetModules();
   vi.mocked(window.matchMedia).mockReturnValue({
     addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
   } as unknown as MediaQueryList);
   vi.useFakeTimers();
   mocks.tabs.mockReset().mockResolvedValue([record()]);
@@ -105,7 +108,9 @@ beforeEach(() => {
   mocks.settings = { theme: "dark", motion: "system", restoreWorkspace: true };
   Object.values(mocks.events).forEach((mock) => mock.mockReset().mockResolvedValue(vi.fn()));
 });
-afterEach(() => {
+afterEach(async () => {
+  const { disposeBootstrap } = await import("@/app/bootstrap");
+  disposeBootstrap();
   vi.clearAllTimers();
   vi.useRealTimers();
 });
@@ -193,6 +198,51 @@ describe("workspace startup and persistence", () => {
     expect(useWorkspace.getState().tabs[0]?.id).toBe("page:about");
     expect(mocks.events.onSshClosed).toHaveBeenCalledTimes(1);
     expect(mocks.hostLoad).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a failed listener and refreshes its snapshot without duplicating healthy listeners", async () => {
+    mocks.events.onSettingsChanged.mockRejectedValueOnce(new Error("listener failed"));
+    const { bootstrap } = await fresh();
+    await bootstrap();
+    expect(mocks.settingsLoad).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.events.onSettingsChanged).toHaveBeenCalledTimes(2);
+    expect(mocks.settingsLoad).toHaveBeenCalledTimes(2);
+    expect(mocks.events.onSshClosed).toHaveBeenCalledOnce();
+    expect(mocks.events.onNavigate).toHaveBeenCalledOnce();
+  });
+
+  it("registers listeners before reading settings and releases every view subscription", async () => {
+    const cleanups = Object.values(mocks.events).map((registration) => {
+      const stop = vi.fn();
+      registration.mockResolvedValue(stop);
+      return stop;
+    });
+    const { bootstrap, disposeBootstrap, useWorkspace } = await fresh();
+    await bootstrap();
+    expect(mocks.events.onSettingsChanged.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.settingsLoad.mock.invocationCallOrder[0]!,
+    );
+    disposeBootstrap();
+    expect(cleanups.every((stop) => stop.mock.calls.length === 1)).toBe(true);
+    const saved = mocks.saveTabs.mock.calls.length;
+    useWorkspace.getState().openPage("settings");
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mocks.saveTabs).toHaveBeenCalledTimes(saved);
+  });
+
+  it("does not restore a disposed startup over a newer workspace", async () => {
+    const old = deferred<TabRecord[]>();
+    mocks.tabs.mockReturnValueOnce(old.promise).mockResolvedValueOnce([record("page:settings")]);
+    const { bootstrap, disposeBootstrap, useWorkspace } = await fresh();
+    const starting = bootstrap();
+    await vi.waitFor(() => expect(mocks.tabs).toHaveBeenCalledOnce());
+    disposeBootstrap();
+    await bootstrap();
+    old.resolve([record()]);
+    await starting;
+    expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:settings"]);
+    expect(mocks.events.onNavigate).toHaveBeenCalledTimes(2);
   });
 
   it("does not write a fallback workspace over a failed snapshot read", async () => {

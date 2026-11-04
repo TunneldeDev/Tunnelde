@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { createSubscriptionGroup } from "@/lib/events/bus";
 
 import { api, events, isTauri } from "@/lib/api/ipc";
 import type {
@@ -86,9 +87,6 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
   const cancelled = new Set<string>();
   const started = new Set<string>();
   let configRevision = 0;
-  let configListening = false;
-  let downloadListening = false;
-  let listenerRequest: Promise<void> | null = null;
   const activeLoads = (config: PluginConfig) => [
     ...new Set(
       [...loads.values()]
@@ -113,44 +111,34 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
       loading: activeLoads(config),
     }));
   };
-  const ensureListeners = () => {
-    if (!isTauri() || (configListening && downloadListening)) return Promise.resolve();
-    if (listenerRequest) return listenerRequest;
-    listenerRequest = Promise.resolve()
-      .then(async () => {
-        const listeners = await Promise.allSettled([
-          configListening
-            ? Promise.resolve()
-            : events
-                .onPluginConfig((next) => {
-                  applyConfig(next);
-                  void get().load();
-                })
-                .then(() => {
-                  configListening = true;
-                }),
-          downloadListening
-            ? Promise.resolve()
-            : events
-                .onPluginDownload((payload) =>
-                  set((state) => {
-                    const owner = Object.entries(state.tasks).find(
-                      ([, task]) => task.taskId === payload.taskId,
-                    )?.[0];
-                    return owner ? { tasks: { ...state.tasks, [owner]: payload } } : state;
-                  }),
-                )
-                .then(() => {
-                  downloadListening = true;
-                }),
-        ]);
-        const failed = listeners.find((result) => result.status === "rejected");
-        if (failed?.status === "rejected") throw failed.reason;
-      })
-      .finally(() => {
-        listenerRequest = null;
-      });
-    return listenerRequest;
+  const listeners = createSubscriptionGroup([
+    (signal) =>
+      events.onPluginConfig((next) => {
+        applyConfig(next);
+        void get().load();
+      }, signal),
+    (signal) =>
+      events.onPluginDownload(
+        (payload) =>
+          set((state) => {
+            const owner = Object.entries(state.tasks).find(
+              ([, task]) => task.taskId === payload.taskId,
+            )?.[0];
+            return owner ? { tasks: { ...state.tasks, [owner]: payload } } : state;
+          }),
+        signal,
+      ),
+  ]);
+  if (import.meta.hot) import.meta.hot.dispose(() => listeners.dispose());
+  let observedRegistration: Promise<void> | undefined;
+  const ensureListeners = async () => {
+    if (!isTauri()) return;
+    const registration = listeners.start();
+    const recovered = observedRegistration !== undefined && observedRegistration !== registration;
+    observedRegistration = registration;
+    await registration;
+    // A retry may have missed source edits while no listener was attached.
+    if (recovered) set({ ready: false });
   };
   const config = async () => {
     await ensureListeners().catch(() => undefined);

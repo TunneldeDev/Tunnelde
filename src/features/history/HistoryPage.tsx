@@ -9,6 +9,7 @@ import { encodeBase64 } from "@/lib/text/base64";
 import { notifyHistoryChanged, recordTerminalCommand } from "@/lib/session/history";
 import { translateError } from "@/lib/api/errors";
 import { formatRelative } from "@/lib/text/format";
+import { domainEvents } from "@/lib/events/domain";
 import { api } from "@/lib/api/ipc";
 import type { HistoryEntry } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
@@ -41,15 +42,14 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
           if (alive && revision === requested) toast(translateError(error), "error");
         });
     };
-    const changed = (event: Event) => {
-      const changedHost = (event as CustomEvent<{ hostId?: string }>).detail?.hostId;
+    const lifetime = new AbortController();
+    void domainEvents.onHistory(({ hostId: changedHost }) => {
       if (!changedHost || changedHost === hostId) load();
-    };
+    }, lifetime.signal);
     load();
-    window.addEventListener("tunnelde:history-changed", changed);
     return () => {
       alive = false;
-      window.removeEventListener("tunnelde:history-changed", changed);
+      lifetime.abort();
     };
   }, [hostId]);
 
