@@ -913,7 +913,14 @@
       "done": "已安装"
     },
     "themeInstallBody": "{{name}} {{version}}\n{{source}}\n\n此包只提供主题配色，不执行代码，也不需要 Node。",
-    "themeUpdateBody": "从以下来源将 {{name}} 更新至 {{version}}：\n{{source}}\n\n已应用的配色会保留，直到你重新选择主题。"
+    "themeUpdateBody": "从以下来源将 {{name}} 更新至 {{version}}：\n{{source}}\n\n已应用的配色会保留，直到你重新选择主题。",
+    "tags": "按标签筛选",
+    "allTags": "全部标签",
+    "filterTag": "筛选标签：{{tag}}",
+    "pagination": "插件分页",
+    "previousPage": "上一页",
+    "nextPage": "下一页",
+    "pageInfo": "{{page}} / {{pages}} · 共 {{count}} 个插件"
   },
   "node": {
     "required": "启动此插件前请配置 Node。",
@@ -937,6 +944,9 @@
     "theme": {
       "invalid": "插件主题无效，请检查主题 ID、明暗模式和 HEX 颜色。",
       "noRuntime": "此插件提供主题配色，无需启动。"
+    },
+    "tags": {
+      "invalid": "插件标签无效。"
     }
   },
   "themes": {

@@ -61,6 +61,7 @@ pub struct PluginInfo {
     pub source_id: Option<String>,
     pub source_url: Option<String>,
     pub themes: Vec<PluginTheme>,
+    pub tags: Vec<String>,
     pub fingerprint: String,
 }
 
@@ -158,6 +159,7 @@ impl Instance {
             source_id: marketplace::origin(&self.dir).map(|o| o.id),
             source_url: marketplace::origin(&self.dir).map(|o| o.url),
             themes: self.manifest.themes.clone(),
+            tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
         }
     }

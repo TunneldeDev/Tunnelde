@@ -913,7 +913,14 @@
       "done": "Installed"
     },
     "themeInstallBody": "{{name}} {{version}}\n{{source}}\n\nThis package provides theme colors only. It does not execute code or require Node.",
-    "themeUpdateBody": "Update {{name}} to {{version}} from:\n{{source}}\n\nApplied colors remain until you choose another theme."
+    "themeUpdateBody": "Update {{name}} to {{version}} from:\n{{source}}\n\nApplied colors remain until you choose another theme.",
+    "tags": "Filter by tag",
+    "allTags": "All tags",
+    "filterTag": "Filter tag: {{tag}}",
+    "pagination": "Plugin pages",
+    "previousPage": "Previous page",
+    "nextPage": "Next page",
+    "pageInfo": "{{page}} / {{pages}} · {{count}} plugins"
   },
   "node": {
     "required": "Set up Node to start this plugin.",
@@ -937,6 +944,9 @@
     "theme": {
       "invalid": "The plugin theme is invalid. Check theme IDs, appearance and HEX colors.",
       "noRuntime": "This plugin provides theme colors and does not need to be started."
+    },
+    "tags": {
+      "invalid": "Invalid plugin tags."
     }
   },
   "themes": {

@@ -87,6 +87,22 @@ pub struct PluginManifest {
     pub engines: std::collections::BTreeMap<String, String>,
     #[serde(default)]
     pub themes: Vec<PluginTheme>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+pub(super) fn valid_tags(tags: &[String]) -> bool {
+    let mut unique = std::collections::HashSet::new();
+    tags.len() <= 24
+        && tags.iter().all(|tag| {
+            !tag.is_empty()
+                && tag.len() <= 64
+                && tag.trim() == tag
+                && tag
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                && unique.insert(tag.to_lowercase())
+        })
 }
 
 pub fn load(dir: &Path) -> AppResult<PluginManifest> {
@@ -106,6 +122,9 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if !valid_tags(&self.tags) {
+            return Err(AppError::validation("plugin.tags.invalid"));
+        }
         if !valid_id(&self.id) {
             return Err(AppError::validation("plugin.id.invalid"));
         }
@@ -285,6 +304,22 @@ pub fn valid_command_id(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tags_are_optional_bounded_distinct_and_support_unicode() {
+        assert!(valid_tags(&[]));
+        assert!(valid_tags(&["preview".into(), "文件".into()]));
+        for tags in [
+            vec!["PDF".into(), "pdf".into()],
+            vec!["".into()],
+            vec!["a b".into()],
+            vec![" tag".into()],
+            vec!["a".repeat(65)],
+            vec!["tag".into(); 25],
+        ] {
+            assert!(!valid_tags(&tags));
+        }
+    }
 
     fn write(dir: &Path, main: &str) -> PluginManifest {
         let payload = format!(

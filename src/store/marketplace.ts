@@ -64,6 +64,10 @@ interface MarketplaceStore {
   cancelling: string[];
   taskErrors: Record<string, string>;
   query: string;
+  tag: string;
+  page: number;
+  setTag: (tag: string) => void;
+  setPage: (page: number) => void;
   scope: "installed" | "market" | "updates";
   selected: string | null;
   setQuery: (value: string) => void;
@@ -222,8 +226,12 @@ export const useMarketplace = create<MarketplaceStore>((set, get) => {
     query: "",
     scope: "market",
     selected: null,
-    setQuery: (query) => set({ query }),
-    setScope: (scope) => set({ scope }),
+    setQuery: (query) => set({ query, page: 0 }),
+    tag: "",
+    page: 0,
+    setTag: (tag) => set({ tag, page: 0 }),
+    setPage: (page) => set({ page: Number.isFinite(page) ? Math.max(0, Math.trunc(page)) : 0 }),
+    setScope: (scope) => set({ scope, page: 0 }),
     select: (selected) => set({ selected }),
     load: async (refresh = false) => {
       await config();
