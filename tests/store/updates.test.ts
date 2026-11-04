@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Settings, UpdateState } from "@/lib/api/types";
+import type { ReleaseHistory, Settings, UpdateState } from "@/lib/api/types";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import { matchingUpdateState, useUpdates } from "@/store/updates";
 import { useSettings } from "@/store/settings";
@@ -10,6 +10,7 @@ const mock = vi.hoisted(() => ({
   toast: vi.fn(),
   update: vi.fn(),
   updateState: vi.fn(),
+  updateHistory: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: mock }));
 vi.mock("@/store/toasts", () => ({ toast: mock.toast }));
@@ -35,8 +36,88 @@ const state: UpdateState = {
 };
 beforeEach(() => {
   vi.clearAllMocks();
-  useUpdates.setState({ state: { ...state }, busy: false });
+  useUpdates.setState({ state: { ...state }, busy: false, history: null });
   useSettings.setState({ settings: { ...settings }, update: mock.update });
+});
+
+describe("release history independent of installation", () => {
+  const history: ReleaseHistory = {
+    currentVersion: state.currentVersion,
+    version: state.version!,
+    entries: [{ version: state.version!, notes: "Target notes", publishedAt: null }],
+    complete: true,
+    reason: null,
+  };
+
+  it("deduplicates loads, caches the result and leaves update actions enabled", async () => {
+    let resolve!: (value: ReleaseHistory) => void;
+    mock.updateHistory.mockReturnValueOnce(
+      new Promise<ReleaseHistory>((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = useUpdates.getState().loadHistory();
+    await useUpdates.getState().loadHistory();
+    expect(mock.updateHistory).toHaveBeenCalledExactlyOnceWith(state.version);
+    expect(useUpdates.getState().busy).toBe(false);
+    expect(useUpdates.getState().state?.phase).toBe("available");
+    resolve(history);
+    await pending;
+    await useUpdates.getState().loadHistory();
+    expect(mock.updateHistory).toHaveBeenCalledOnce();
+    expect(useUpdates.getState().history?.data).toBe(history);
+  });
+
+  it("ignores a late history result when settings change and allows loading after switching back", async () => {
+    let resolve!: (value: ReleaseHistory) => void;
+    mock.updateHistory.mockReturnValueOnce(
+      new Promise<ReleaseHistory>((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = useUpdates.getState().loadHistory();
+    useSettings.setState({ settings: { ...settings, updateChannel: "beta" } });
+    resolve(history);
+    await pending;
+    expect(useUpdates.getState().history).toBeNull();
+    useSettings.setState({ settings: { ...settings } });
+    mock.updateHistory.mockResolvedValueOnce(history);
+    await useUpdates.getState().loadHistory();
+    expect(useUpdates.getState().history?.data).toBe(history);
+    expect(mock.updateHistory).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains a newer request when an old check finishes late", async () => {
+    let resolve!: (value: ReleaseHistory) => void;
+    mock.updateHistory.mockReturnValueOnce(
+      new Promise<ReleaseHistory>((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = useUpdates.getState().loadHistory();
+    useUpdates.getState().apply({ ...state, lastChecked: 2 });
+    const newer = {
+      ...history,
+      entries: [{ version: state.version!, notes: "New", publishedAt: null }],
+    };
+    mock.updateHistory.mockResolvedValueOnce(newer);
+    await useUpdates.getState().loadHistory();
+    resolve(history);
+    await pending;
+    expect(useUpdates.getState().history?.data).toBe(newer);
+  });
+
+  it("reports history errors inline, retries and preserves installation state", async () => {
+    mock.updateHistory.mockRejectedValueOnce(new Error("history unavailable"));
+    await useUpdates.getState().loadHistory();
+    expect(useUpdates.getState().history?.error).toBe("history unavailable");
+    expect(useUpdates.getState().state).toEqual(state);
+    expect(mock.toast).not.toHaveBeenCalled();
+    mock.updateHistory.mockResolvedValueOnce(history);
+    await useUpdates.getState().loadHistory(true);
+    expect(useUpdates.getState().history?.data).toBe(history);
+    expect(useUpdates.getState().history?.error).toBeNull();
+  });
 });
 
 describe("update operation state", () => {

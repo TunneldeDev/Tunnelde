@@ -411,7 +411,19 @@
     "publishedAt": "发布时间",
     "rateLimited": "GitHub 的请求额度已用尽，公共发布源也暂时不可用。请稍后重试，或检查更新代理。",
     "connectionFailed": "无法连接更新源，请检查网络与更新功能的代理设置。",
-    "invalidChannel": "请选择正式版或公测版更新渠道。"
+    "invalidChannel": "请选择正式版或公测版更新渠道。",
+    "historyTarget": "目标版本",
+    "historyEmpty": "此版本未发布更新说明。",
+    "historyLoading": "正在加载这些版本之间的更新说明…",
+    "historyComplete": "已加载此范围内的全部公开说明（{{count}} 个版本）。",
+    "historyStable": "此版本范围内的正式版更新。",
+    "historyBeta": "此版本范围内的正式版和公测版更新。",
+    "historyUnavailable": "未能完整加载历史说明，下方保留已获取的内容；不影响检查和安装更新。",
+    "historyLimit": "历史说明已达到加载上限，下方内容可能不完整。",
+    "historyMissingTarget": "公开历史中未找到目标版本，已保留更新源提供的目标说明；历史内容可能不完整。",
+    "historyCustom": "此自定义更新源仅提供目标版本的说明，暂不支持获取其他版本的历史说明。",
+    "historyComplete_one": "已加载此范围内的全部公开说明（{{count}} 个版本）。",
+    "historyComplete_other": "已加载此范围内的全部公开说明（{{count}} 个版本）。"
   },
   "about": {
     "version": "版本",

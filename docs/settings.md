@@ -12,7 +12,9 @@ page. Choose **Stable** or **Public beta (Beta)**, and **GitHub** or a compatibl
 HTTPS source. Development snapshots are not offered by in-app updates. Default:
 Stable for all builds, GitHub source, automatic checks once a day, manual download/installation.
 Legacy Nightly preferences migrate to Stable; saved Stable/Beta choices are preserved.
-Every-startup and weekly checks are also available.
+Every-startup and weekly checks are also available. Expand the release notes to review
+the published changes between the installed and target versions. See the update guide
+in [English](updates.en-us.md) or [简体中文](updates.zh-cn.md) for history coverage and limits.
 
 Custom source addresses use exactly one `{channel}` in the URL path, e.g.
 `https://updates.example.com/{channel}/latest.json`; use **Apply** to save an edited

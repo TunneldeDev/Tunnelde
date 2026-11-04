@@ -242,6 +242,25 @@ export interface UpdateState {
   skipped: boolean;
 }
 
+export interface ReleaseNotes {
+  version: string;
+  notes: string | null;
+  publishedAt: number | null;
+}
+
+export interface ReleaseHistory {
+  currentVersion: string;
+  version: string;
+  entries: ReleaseNotes[];
+  complete: boolean;
+  reason:
+    | "updates.historyUnavailable"
+    | "updates.historyLimit"
+    | "updates.historyMissingTarget"
+    | "updates.historyCustom"
+    | null;
+}
+
 export interface IpcError {
   code: string;
   message: string;

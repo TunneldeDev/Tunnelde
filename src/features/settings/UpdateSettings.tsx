@@ -4,12 +4,12 @@ import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
-import { PluginMarkdown } from "@/features/plugins/PluginMarkdown";
+import { UpdateNotes } from "@/features/settings/UpdateNotes";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { formatBytes, formatDateTime } from "@/lib/text/format";
 import { useSettings } from "@/store/settings";
-import { matchingUpdateState, useUpdates } from "@/store/updates";
+import { matchingUpdateState, updateHistoryKey, useUpdates } from "@/store/updates";
 import { toast } from "@/store/toasts";
 
 export function validUpdateSource(value: string): boolean {
@@ -277,19 +277,8 @@ export function UpdateStatus() {
         <p className="settings-row__hint">{t("updates.waitForStable")}</p>
       ) : null}
       <p className="settings-row__hint">{t("updates.installHint")}</p>
-      {state?.notes ? (
-        <details className="settings-update__notes" key={`${state.source}:${state.version}`}>
-          <summary>
-            {t("updates.notes")}
-            {state.version ? ` · v${state.version}` : ""}
-          </summary>
-          {state.publishedAt ? (
-            <p className="updates__meta">
-              {t("updates.publishedAt")}: {formatDateTime(state.publishedAt, locale)}
-            </p>
-          ) : null}
-          <PluginMarkdown source={state.notes} />
-        </details>
+      {state?.available && state.version ? (
+        <UpdateNotes key={updateHistoryKey(state)} state={{ ...state, version: state.version }} />
       ) : null}
     </div>
   );
