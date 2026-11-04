@@ -47,7 +47,9 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
 - Configure proxies per feature, connect through ordered SSH jump hosts, pause and
   resume file transfers with speed, remaining bytes and time estimates, and manage
   local or remote TCP forwards from a host page or the SSH terminal toolbar. Removing an unfinished transfer
-  cleans its recorded staging files; a failed cleanup keeps the record for retry.
+  cleans its recorded staging files; offline cleanup retries after reconnection.
+  A compact status-bar entry opens background transfers from any page, with grouped
+  tasks, expandable details and temporary speed limits.
   Optional SSHFS and SSHFS Lite plugins mount remote directories through the same
   authenticated connection. See [network and storage](docs/network-storage.md)
   for 0.27+ features and dependency requirements.

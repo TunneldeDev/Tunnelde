@@ -130,6 +130,7 @@ and uses request revisions to prevent an older read from replacing a newer resul
 | `ssh://data`         | Terminal bytes from a session                                 |
 | `ssh://closed`       | Session id and reason                                         |
 | `sftp://transfer`    | Transfer progress, completion and errors                      |
+| `sftp://changed`     | Reconcile durable tasks after creation or deferred cleanup    |
 | `plugin://state`     | Plugin status after start, stop or failure                    |
 | `plugin://event`     | Plugin identity, runtime generation and bounded event payload |
 | `settings://changed` | Committed application preferences                             |

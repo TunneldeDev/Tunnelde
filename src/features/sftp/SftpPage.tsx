@@ -29,7 +29,6 @@ import { FileViewMenu } from "./FileViewMenu";
 import { FilePathBar } from "./FilePathBar";
 import { FileRemoteDialog } from "./FileRemoteDialog";
 import { FileTypeSelect } from "./FileTypeSelect";
-import { FileTransfers } from "./FileTransfers";
 import { FileSplitView } from "./FileSplitView";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
@@ -2309,8 +2308,6 @@ export function SftpPage({
           right={renderPane("b")}
         />
       )}
-
-      <FileTransfers />
     </div>
   );
   /* eslint-enable react-hooks/refs */
