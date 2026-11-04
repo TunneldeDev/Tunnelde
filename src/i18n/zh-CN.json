@@ -611,7 +611,8 @@
     "taskSpeedLimit": "任务限速",
     "taskSpeedLimitHint": "0 表示遵循「设置 → 文件」中的总限速。临时上限立即生效，总限速仍然适用。本地磁盘复制不受影响。",
     "invalidSpeedLimit": "请输入 0 至 1048576 之间的整数，单位 KiB/s。",
-    "taskSpeedLimitValue": "任务上限：{{value}} KiB/s"
+    "taskSpeedLimitValue": "任务上限：{{value}} KiB/s",
+    "cancelCleanupFailed": "临时数据未能全部清理，请重新连接目标主机后点击垃圾桶重试。已完成的文件会保留。"
   },
   "processes": {
     "title": "进程",

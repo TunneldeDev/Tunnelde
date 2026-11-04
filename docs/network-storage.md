@@ -99,7 +99,11 @@ has its own visible status and can be cancelled while awaiting network reads.
 
 Overwrite uses a recoverable, verified backup of the previous destination. For a
 move, source removal happens after the copy succeeds and is checkpointed separately.
-Pause and Cancel retain partial data so Resume remains possible. The trash action
+Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
+temporary data before reporting completion. It keeps already completed destination
+files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails
+(e.g. the remote disconnected), the record explains that cleanup needs a retry;
+reconnect and use the trash action. The trash action
 **Remove transfer and clean temporary files** deletes task-owned staging files before
 removing the journal. It restores a verified original destination backup if a commit
 was interrupted. Completed destination files and source files are preserved.

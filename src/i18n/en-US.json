@@ -611,7 +611,8 @@
     "taskSpeedLimit": "Task speed limit",
     "taskSpeedLimitHint": "0 follows the total limits in Settings → Files. This temporary limit applies immediately to this task; the total limits still apply. Local disk copies are unaffected.",
     "invalidSpeedLimit": "Enter a whole number from 0 to 1048576 KiB/s.",
-    "taskSpeedLimitValue": "Task limit: {{value}} KiB/s"
+    "taskSpeedLimitValue": "Task limit: {{value}} KiB/s",
+    "cancelCleanupFailed": "Temporary data could not be fully removed. Reconnect the destination and use the trash button to retry cleanup. Completed files are kept."
   },
   "processes": {
     "title": "Processes",

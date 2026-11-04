@@ -125,8 +125,10 @@ impl TransferRegistry {
     pub fn pause(&self, id: &str) {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(t) = state.active.get(id) {
-                t.cancel();
-                state.paused.insert(id.into());
+                if !t.cancel.load(Ordering::SeqCst) {
+                    t.cancel();
+                    state.paused.insert(id.into());
+                }
             }
         }
     }
@@ -638,7 +640,7 @@ impl Outcome {
     }
 }
 
-fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
+async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let state = app.state::<AppState>();
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
@@ -677,6 +679,30 @@ fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         event.status = TransferStatus::Paused;
     }
     if let Ok(mut row) = durable::Journal::get(app, id) {
+        if event.status == TransferStatus::Cancelled {
+            row.status = "cancelling".into();
+            row.error = Some("sftp.cancelCleanupFailed".into());
+            if let Err(error) = durable::Journal::upsert(app, row.clone()) {
+                tracing::error!(%error, "Cannot persist cancellation intent");
+            }
+            phase(app, id, "cleaning");
+            let cleaned = tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                durable::cleanup_artifacts(app, &row),
+            )
+            .await;
+            match cleaned {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    tracing::warn!(%error, transfer_id=id, "Cancelled transfer cleanup must be retried");
+                    event.error = Some("sftp.cancelCleanupFailed".into());
+                }
+                Err(_) => {
+                    tracing::warn!(transfer_id = id, "Cancelled transfer cleanup timed out");
+                    event.error = Some("sftp.cancelCleanupFailed".into());
+                }
+            }
+        }
         if matches!(
             event.status,
             TransferStatus::Cancelled | TransferStatus::Paused | TransferStatus::Failed
@@ -811,7 +837,7 @@ fn spawn_transfer_inner(
         } else {
             operation.await
         };
-        finish(&app_handle, &transfer_id, &name, outcome);
+        finish(&app_handle, &transfer_id, &name, outcome).await;
         if plugin_transfer {
             let _ = app_handle.emit(
                 "plugin://domain-changed",
@@ -829,7 +855,7 @@ pub(crate) fn resume_transfer(
     to: Endpoint,
     row: durable::DurableTransfer,
 ) -> AppResult<()> {
-    if row.status == "done" {
+    if matches!(row.status.as_str(), "done" | "cancelled" | "cancelling") {
         return Err(AppError::validation("sftp.transferAlreadyComplete"));
     }
     let cancel = Arc::new(AtomicBool::new(false));
@@ -862,7 +888,7 @@ pub(crate) fn resume_transfer(
             },
         )
         .await;
-        finish(&app2, &id, &name, out);
+        finish(&app2, &id, &name, out).await;
     });
     Ok(())
 }
@@ -2489,6 +2515,30 @@ mod tests {
             );
             assert!(file_name_of(&stage.path).len() < 100);
         }
+    }
+
+    #[test]
+    fn cancellation_cannot_be_reversed_by_a_late_pause_and_reserves_cleanup() {
+        let registry = TransferRegistry::default();
+        registry
+            .register("test", Arc::new(AtomicBool::new(false)), None)
+            .unwrap();
+        registry.cancel("test");
+        registry.pause("test");
+        assert!(!registry.take_paused("test"));
+        assert!(registry.is_active("test"));
+        assert!(registry
+            .register("test", Arc::new(AtomicBool::new(false)), None)
+            .is_err());
+        registry.release("test");
+        assert!(!registry.is_active("test"));
+
+        registry
+            .register("test", Arc::new(AtomicBool::new(false)), None)
+            .unwrap();
+        registry.pause("test");
+        registry.cancel("test");
+        assert!(!registry.take_paused("test"));
     }
 
     #[test]
