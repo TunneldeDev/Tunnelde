@@ -87,6 +87,27 @@ native UI blocks and executable host calls share the same authorization and owne
 
 ## Events
 
+`src/lib/events` owns typed native and local domain subscriptions. Native events share one
+transport listener per event name. Each caller owns an independent, idempotent disposer and
+can supply an `AbortSignal`; disposing during registration also releases a late listener.
+Listener failures are isolated, and diagnostics contain names and subscriber counts rather
+than payloads. The bus retains no event history or application state. SSH byte chunks are
+delivered in arrival order without debounce, coalescing or replay.
+
+Bootstrap owns its listeners, appearance observers, workspace subscription and persistence
+timer. Failed native registrations retry independently with a bounded backoff; recovery reads
+the corresponding settings, plugins, security, sessions, updates or transfer snapshot. Stores
+remain responsible for rejecting stale snapshots. Disposing bootstrap aborts pending setup,
+releases subscriptions and flushes scheduled workspace persistence. This prepares the lifecycle
+for window recreation; it does not yet destroy the WebView when hiding to the tray.
+
+Subscription groups provide transactional registration for plugin workspace requests and
+marketplace listeners: partial failure releases successful and late listeners, and the group
+can restart. Marketplace recovery reads configuration again to reconcile edits missed during
+registration failure. Local history and file invalidations use typed helpers while preserving
+the browser CustomEvent boundary for integrations. History registers before its first read
+and uses request revisions to prevent an older read from replacing a newer result.
+
 | Event                | Payload                                                       |
 | -------------------- | ------------------------------------------------------------- |
 | `ssh://data`         | Terminal bytes from a session                                 |

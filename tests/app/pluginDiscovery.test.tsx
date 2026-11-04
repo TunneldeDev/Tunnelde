@@ -36,7 +36,10 @@ vi.mock("@/lib/api/ipc", () => ({
     saveTabs: vi.fn(async () => undefined),
   },
 }));
-vi.mock("@/app/pluginWorkspaceBridge", () => ({ wirePluginWorkspaceBridge: async () => vi.fn() }));
+vi.mock("@/app/pluginWorkspaceBridge", () => ({
+  wirePluginWorkspaceBridge: async () => vi.fn(),
+  reconcilePluginWorkspace: async () => {},
+}));
 vi.mock("@/store/settings", () => ({
   useSettings: {
     getState: () => ({ load: async () => undefined, settings: { restoreWorkspace: true } }),

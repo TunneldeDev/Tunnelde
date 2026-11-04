@@ -51,6 +51,19 @@ beforeEach(async () => {
 });
 
 describe("marketplace request ownership", () => {
+  it("rolls back a partial listener failure and reloads sources after recovering", async () => {
+    const stopConfig = vi.fn();
+    mock.events.onPluginConfig.mockResolvedValueOnce(stopConfig);
+    mock.events.onPluginDownload.mockRejectedValueOnce(new Error("registration failed"));
+    await useMarketplace.getState().load();
+    expect(stopConfig).toHaveBeenCalledOnce();
+    mock.api.pluginConfig.mockResolvedValue(config([official, community]));
+    await useMarketplace.getState().load();
+    expect(mock.events.onPluginConfig).toHaveBeenCalledTimes(2);
+    expect(mock.events.onPluginDownload).toHaveBeenCalledTimes(2);
+    expect(mock.api.pluginConfig).toHaveBeenCalledTimes(2);
+    expect(useMarketplace.getState().config.sources).toHaveLength(2);
+  });
   it("deduplicates concurrent configuration and per-source catalogue requests", async () => {
     mock.api.pluginConfig.mockResolvedValue(config([official, community]));
     const response = deferred<ReturnType<typeof catalogue>>();

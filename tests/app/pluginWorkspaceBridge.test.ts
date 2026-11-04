@@ -4,6 +4,7 @@ import {
   pluginWorkspaceSnapshot,
   runPluginWorkspaceRequest,
   wirePluginWorkspaceBridge,
+  reconcilePluginWorkspace,
   type PluginWorkspaceRequest,
 } from "@/app/pluginWorkspaceBridge";
 import { useDialogs } from "@/store/dialogs";
@@ -93,6 +94,30 @@ afterEach(() => {
 });
 
 describe("plugin workspace bridge authorization and live state", () => {
+  it("reconciles host titles and invalidates local and remote views after event recovery", async () => {
+    useWorkspace.getState().openHost(host);
+    mocks.hostsSnapshot.mockResolvedValue({
+      hosts: [{ ...host, name: "Recovered name" }],
+      groups: [],
+    });
+    const files = vi.fn(),
+      history = vi.fn();
+    const lifetime = new AbortController();
+    window.addEventListener("tunnelde:files-changed", files, { signal: lifetime.signal });
+    window.addEventListener("tunnelde:history-changed", history, { signal: lifetime.signal });
+    try {
+      await reconcilePluginWorkspace(lifetime.signal);
+      expect(useWorkspace.getState().tabs[0]?.title).toBe("Recovered name");
+      expect(files.mock.calls.map(([event]) => event.detail.source)).toEqual([
+        { kind: "local" },
+        { kind: "remote", sessionId: session.id },
+      ]);
+      expect(history).toHaveBeenCalledOnce();
+    } finally {
+      lifetime.abort();
+    }
+  });
+
   it("opens a query without executing it and applies pane locks idempotently", async () => {
     await runPluginWorkspaceRequest(request("workspace.showQuickAccess", { query: "> UUID" }));
     expect(useQuickAccess.getState().query).toBe("> UUID");

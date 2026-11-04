@@ -31,6 +31,7 @@ import { FileTransfers } from "./FileTransfers";
 import { FileSplitView } from "./FileSplitView";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
+import { domainEvents, type FilesChanged } from "@/lib/events/domain";
 import { translateError } from "@/lib/api/errors";
 import { isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
@@ -81,7 +82,6 @@ type PaneId = "a" | "b";
 
 const PANE_IDS: PaneId[] = ["a", "b"];
 const SINGLE_PANE_IDS: PaneId[] = ["a"];
-const FILES_CHANGED = "tunnelde:files-changed";
 
 interface RenameState {
   path: string;
@@ -555,9 +555,7 @@ export function SftpPage({
   }, [load, single]);
 
   useEffect(() => {
-    const onChanged = (event: Event) => {
-      const { source, origin } = (event as CustomEvent<{ source: FsSource; origin: string }>)
-        .detail;
+    const onChanged = ({ source, origin }: FilesChanged) => {
       if (origin === instanceId) return;
       preloader.current?.invalidate();
       cache.current.clear();
@@ -566,8 +564,9 @@ export function SftpPage({
           void load(id, requested.current[id].path);
       }
     };
-    window.addEventListener(FILES_CHANGED, onChanged);
-    return () => window.removeEventListener(FILES_CHANGED, onChanged);
+    const lifetime = new AbortController();
+    void domainEvents.onFiles(onChanged, lifetime.signal);
+    return () => lifetime.abort();
   }, [cache, instanceId, load, preloader, visiblePaneIds]);
 
   // A panel that points at a session which has ended falls back to this computer.
@@ -612,11 +611,7 @@ export function SftpPage({
         preloader.current?.invalidate();
         cache.current.clear();
         void load(id, requested.current[id].path);
-        window.dispatchEvent(
-          new CustomEvent(FILES_CHANGED, {
-            detail: { source: panesRef.current[id].source, origin: instanceId },
-          }),
-        );
+        domainEvents.filesChanged({ source: panesRef.current[id].source, origin: instanceId });
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -886,9 +881,7 @@ export function SftpPage({
   const refreshSource = async (source: FsSource) => {
     preloader.current?.invalidate();
     cache.current.clear();
-    window.dispatchEvent(
-      new CustomEvent(FILES_CHANGED, { detail: { source, origin: instanceId } }),
-    );
+    domainEvents.filesChanged({ source, origin: instanceId });
     await Promise.all(
       visiblePaneIds
         .filter((id) => sameSource(panesRef.current[id].source, source))
