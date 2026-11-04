@@ -32,7 +32,9 @@ impl Plan {
         Self {
             workers,
             chunk,
-            requests: if settings.transfer_requests == 0 {
+            requests: if !settings.transfer_optimization {
+                1
+            } else if settings.transfer_requests == 0 {
                 32 / workers
             } else {
                 usize::from(settings.transfer_requests).clamp(1, 64 / workers)
@@ -160,6 +162,7 @@ mod tests {
         }
         settings.transfer_optimization = false;
         assert_eq!(Plan::for_file(&settings, u64::MAX, true).workers, 1);
+        assert_eq!(Plan::for_file(&settings, u64::MAX, true).requests, 1);
         assert_eq!(config(&settings).max_concurrent_reads, 1);
     }
 }

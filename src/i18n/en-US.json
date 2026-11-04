@@ -321,7 +321,10 @@
     "seconds3": "3 seconds",
     "seconds5": "5 seconds",
     "seconds10": "10 seconds",
-    "seconds30": "30 seconds"
+    "seconds30": "30 seconds",
+    "transferUploadLimitKib": "Total upload speed limit",
+    "transferDownloadLimitKib": "Total download speed limit",
+    "transferSpeedLimitHint": "KiB/s across all concurrent file transfers. 0 means unlimited. Changes apply to running transfers, even when transfer optimization is off."
   },
   "updates": {
     "installInProgress": "Wait for the current update installation to finish before changing its channel or source.",
@@ -604,7 +607,11 @@
     "verifyingTransfer": "Verifying existing data…",
     "preview": "Preview file",
     "previewSource": "Show source",
-    "previewRendered": "Render Markdown"
+    "previewRendered": "Render Markdown",
+    "taskSpeedLimit": "Task speed limit",
+    "taskSpeedLimitHint": "0 follows the total limits in Settings → Files. This temporary limit applies immediately to this task; the total limits still apply. Local disk copies are unaffected.",
+    "invalidSpeedLimit": "Enter a whole number from 0 to 1048576 KiB/s.",
+    "taskSpeedLimitValue": "Task limit: {{value}} KiB/s"
   },
   "processes": {
     "title": "Processes",

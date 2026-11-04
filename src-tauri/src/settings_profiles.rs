@@ -67,6 +67,8 @@ const PORTABLE_KEYS: &[&str] = &[
     "transferConcurrency",
     "transferChunkKib",
     "transferRequests",
+    "transferUploadLimitKib",
+    "transferDownloadLimitKib",
     "editorWordWrap",
     "editorTabSize",
     "editorSpellCheck",

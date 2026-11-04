@@ -58,6 +58,8 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     transferConcurrency: 0,
     transferChunkKib: 0,
     transferRequests: 0,
+  transferUploadLimitKib: 0,
+  transferDownloadLimitKib: 0,
     editorWordWrap: false,
     editorTabSize: 4,
     editorSpellCheck: false,

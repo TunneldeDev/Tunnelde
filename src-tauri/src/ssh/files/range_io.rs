@@ -100,6 +100,7 @@ pub(super) struct Files<'a> {
     target: &'a Endpoint,
     source_handle: Option<String>,
     target_handle: Option<String>,
+    throttle: Option<bandwidth::Throttle>,
 }
 
 async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>) -> AppResult<()> {
@@ -159,7 +160,13 @@ impl<'a> Files<'a> {
             target,
             source_handle,
             target_handle,
+            throttle: None,
         })
+    }
+
+    pub fn with_throttle(mut self, throttle: bandwidth::Throttle) -> Self {
+        self.throttle = Some(throttle);
+        self
     }
 
     pub async fn close(self) -> AppResult<()> {
@@ -202,20 +209,23 @@ impl<'a> Files<'a> {
         };
         if let Some(session) = &self.sessions.target {
             let handle = self.target_handle.as_deref().expect("target handle");
-            for (index, bytes) in data.chunks(session.write_size).enumerate() {
+            let mut written = 0;
+            while written < data.len() {
+                let size = (data.len() - written).min(session.write_size);
                 interruptible(Some(stop), async {
                     session
                         .raw
                         .write(
                             handle,
-                            offset + (index * session.write_size) as u64,
-                            bytes.to_vec(),
+                            offset + written as u64,
+                            data[written..written + size].to_vec(),
                         )
                         .await
                         .map_err(map_sftp)?;
                     Ok(())
                 })
                 .await?;
+                written += size;
             }
         }
         Ok((offset, data))
@@ -254,18 +264,33 @@ impl<'a> Files<'a> {
                 && error.is_none()
                 && !stop.load(Ordering::SeqCst)
             {
-                let packet_size = self
-                    .sessions
-                    .source
-                    .as_ref()
-                    .map_or(CHUNK, |session| {
-                        if self.sessions.target.is_some() {
-                            session.read_size.min(CHUNK)
-                        } else {
-                            session.read_size
+                let packet_size = self.sessions.source.as_ref().map_or(CHUNK, |session| {
+                    if self.sessions.target.is_some() {
+                        session.read_size.min(CHUNK)
+                    } else {
+                        session.read_size
+                    }
+                });
+                let mut length = (range.end - next).min(packet_size as u64) as usize;
+                let direction = match (&self.sessions.source, &self.sessions.target) {
+                    (Some(_), Some(_)) => bandwidth::Direction::Both,
+                    (Some(_), None) => bandwidth::Direction::Download,
+                    _ => bandwidth::Direction::Upload,
+                };
+                let limited = self.throttle.as_ref().is_some_and(|t| t.limited(direction));
+                if limited && !pending.is_empty() {
+                    break;
+                }
+                if let Some(throttle) = &self.throttle {
+                    match throttle.acquire(direction, length, stop).await {
+                        Ok(allowed) => length = allowed,
+                        Err(failure) => {
+                            error = Some(failure);
+                            stop.store(true, Ordering::SeqCst);
+                            break;
                         }
-                    });
-                let length = (range.end - next).min(packet_size as u64) as usize;
+                    }
+                }
                 let input = if let Some(reader) = &mut reader {
                     let mut bytes = vec![0; length];
                     match interruptible(Some(stop), async {
@@ -286,6 +311,9 @@ impl<'a> Files<'a> {
                 };
                 pending.push(self.packet(next, length, input, stop));
                 next += length as u64;
+                if limited {
+                    break;
+                }
             }
             if let Some(result) = pending.next().await {
                 match result {

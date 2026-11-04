@@ -16,6 +16,7 @@ export interface TransferItem extends Omit<TransferEvent, "status"> {
   pausing?: boolean;
   clearing?: boolean;
   rate?: TransferRate;
+  speedLimitKib?: number;
 }
 
 interface TransfersStore {
@@ -26,12 +27,28 @@ interface TransfersStore {
   pause: (id: string) => void;
   resume: (id: string) => void;
   clear: (id: string) => void;
+  setSpeedLimit: (id: string, kib: number) => Promise<boolean>;
 }
 
 const KEEP_FINISHED = 6;
 
 export const useTransfers = create<TransfersStore>((set, get) => ({
   items: [],
+  setSpeedLimit: async (id, kib) => {
+    const item = get().items.find((x) => x.id === id);
+    if (!item || item.status !== "running" || item.cancelling || item.pausing || item.clearing)
+      return false;
+    try {
+      await transferApi.setSpeedLimit(id, kib);
+      set((state) => ({
+        items: state.items.map((x) => (x.id === id ? { ...x, speedLimitKib: kib } : x)),
+      }));
+      return true;
+    } catch (error) {
+      toast(translateError(error), "error");
+      return false;
+    }
+  },
   hydrate: async () => {
     if (!isTauri()) return;
     try {
@@ -52,6 +69,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               ...item,
               durable: true,
               clearing: previous?.clearing,
+              speedLimitKib: previous?.speedLimitKib,
               pausing: previous?.pausing,
               rate:
                 item.status === "running"
@@ -98,6 +116,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               pausing: false,
               error: null,
               rate: sampleTransfer(undefined, x.transferred, Date.now()),
+              speedLimitKib: undefined,
             }
           : x,
       ),
@@ -133,6 +152,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       if (previous && previous.status !== "running" && event.status === "running") return state;
       next.durable = previous?.durable;
       next.clearing = previous?.clearing;
+      next.speedLimitKib = previous?.speedLimitKib;
       next.total = Math.max(event.total, previous?.total ?? 0);
       if (event.status === "running") {
         next.cancelling = previous?.cancelling;

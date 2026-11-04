@@ -50,6 +50,8 @@ export const PORTABLE_SETTING_KEYS = [
   "transferConcurrency",
   "transferChunkKib",
   "transferRequests",
+  "transferUploadLimitKib",
+  "transferDownloadLimitKib",
   "editorWordWrap",
   "editorTabSize",
   "editorSpellCheck",

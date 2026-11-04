@@ -67,6 +67,7 @@ pub fn run() {
             ssh::files::durable::durable_transfer_clear,
             ssh::files::durable::durable_transfer_pause,
             ssh::files::durable::durable_transfer_resume,
+            ssh::files::bandwidth::transfer_set_speed_limit,
             ssh::forward::forwarding_list,
             ssh::forward::forwarding_save,
             ssh::forward::forwarding_remove,

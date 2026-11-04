@@ -86,6 +86,9 @@ pub struct Settings {
     pub transfer_concurrency: u16,
     pub transfer_chunk_kib: u32,
     pub transfer_requests: u16,
+    /// KiB/s shared across tasks; zero is unlimited.
+    pub transfer_upload_limit_kib: u32,
+    pub transfer_download_limit_kib: u32,
     pub editor_word_wrap: bool,
     pub editor_tab_size: u16,
     pub editor_spell_check: bool,
@@ -151,6 +154,8 @@ impl Default for Settings {
             transfer_concurrency: 0,
             transfer_chunk_kib: 0,
             transfer_requests: 0,
+            transfer_upload_limit_kib: 0,
+            transfer_download_limit_kib: 0,
             editor_word_wrap: false,
             editor_tab_size: 4,
             editor_spell_check: false,
@@ -258,6 +263,8 @@ impl Settings {
         if ![0, 1, 4, 8, 16, 32].contains(&self.transfer_requests) {
             self.transfer_requests = 0;
         }
+        self.transfer_upload_limit_kib = self.transfer_upload_limit_kib.min(1_048_576);
+        self.transfer_download_limit_kib = self.transfer_download_limit_kib.min(1_048_576);
         if !["stable", "beta", "nightly"].contains(&self.update_channel.as_str()) {
             self.update_channel = defaults.update_channel.clone();
         }
@@ -463,6 +470,30 @@ mod tests {
             } else {
                 "system"
             }
+        );
+    }
+
+    #[test]
+    fn bandwidth_limits_migrate_clamp_and_roundtrip() {
+        let mut settings: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            (
+                settings.transfer_upload_limit_kib,
+                settings.transfer_download_limit_kib
+            ),
+            (0, 0)
+        );
+        settings.transfer_upload_limit_kib = u32::MAX;
+        settings.transfer_download_limit_kib = 1024;
+        settings.sanitize();
+        let restored: Settings =
+            serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
+        assert_eq!(
+            (
+                restored.transfer_upload_limit_kib,
+                restored.transfer_download_limit_kib
+            ),
+            (1_048_576, 1024)
         );
     }
 
