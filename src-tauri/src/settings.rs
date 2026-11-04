@@ -87,6 +87,7 @@ pub struct Settings {
     pub files_sort_by: String,
     pub files_sort_direction: String,
     pub transfer_optimization: bool,
+    pub transfer_compression: bool,
     /// Zero chooses concurrency and block size automatically.
     pub transfer_concurrency: u16,
     pub transfer_chunk_kib: u32,
@@ -159,6 +160,7 @@ impl Default for Settings {
             files_sort_by: "name".into(),
             files_sort_direction: "asc".into(),
             transfer_optimization: true,
+            transfer_compression: true,
             transfer_concurrency: 0,
             transfer_chunk_kib: 0,
             transfer_requests: 0,
@@ -518,13 +520,14 @@ mod tests {
     fn transfer_settings_migrate_sanitize_and_round_trip() {
         let legacy: Settings = serde_json::from_str("{}").unwrap();
         assert!(legacy.transfer_optimization);
+        assert!(legacy.transfer_compression);
         assert_eq!(legacy.transfer_concurrency, 0);
         assert_eq!(legacy.transfer_chunk_kib, 0);
         assert_eq!(legacy.transfer_requests, 0);
         for (concurrency, chunk, requests) in [(0, 0, 0), (1, 256, 1), (8, 16384, 32), (4, 4096, 8)]
         {
             let mut settings: Settings = serde_json::from_value(serde_json::json!({
-                "transferOptimization": false, "transferConcurrency": concurrency,
+                "transferOptimization": false, "transferCompression": false, "transferConcurrency": concurrency,
                 "transferChunkKib": chunk, "transferRequests": requests
             }))
             .unwrap();
@@ -532,6 +535,7 @@ mod tests {
             let restored: Settings =
                 serde_json::from_str(&serde_json::to_string(&settings).unwrap()).unwrap();
             assert!(!restored.transfer_optimization);
+            assert!(!restored.transfer_compression);
             assert_eq!(restored.transfer_concurrency, concurrency);
             assert_eq!(restored.transfer_chunk_kib, chunk);
             assert_eq!(restored.transfer_requests, requests);

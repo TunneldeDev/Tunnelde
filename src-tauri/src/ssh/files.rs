@@ -14,6 +14,7 @@ use crate::state::AppState;
 
 mod artifacts;
 pub mod bandwidth;
+mod compressed;
 pub mod durable;
 mod range_io;
 mod scheduler;
@@ -1321,7 +1322,16 @@ async fn copy_entry(
     if from_sftp.is_some() || to_sftp.is_some() {
         let size = source_stamp(from, from_sftp).await?.0;
         open_writer(to, to_sftp, overwrite).await?.finish().await?;
-        let channels = range_io::Sessions::open(meter.app, from, to).await?;
+        let channels = range_io::Sessions::open(
+            meter.app,
+            from,
+            to,
+            &meter.settings,
+            from_sftp,
+            to_sftp,
+            meter.total,
+        )
+        .await?;
         let files = range_io::Files::open(&channels, from, to)
             .await?
             .with_throttle(meter.throttle());
@@ -1868,7 +1878,7 @@ async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> App
 async fn parallel_copy_file(
     from: &Endpoint,
     temp: &Endpoint,
-    _from_sftp: Option<&SftpSession>,
+    from_sftp: Option<&SftpSession>,
     to_sftp: Option<&SftpSession>,
     meter: &mut Meter<'_>,
     cancel: &AtomicBool,
@@ -1882,7 +1892,15 @@ async fn parallel_copy_file(
         meter.data_channels = Some(
             interruptible(
                 Some(cancel),
-                range_io::Sessions::open(meter.app, from, temp),
+                range_io::Sessions::open(
+                    meter.app,
+                    from,
+                    temp,
+                    &meter.settings,
+                    from_sftp,
+                    to_sftp,
+                    meter.total,
+                ),
             )
             .await?,
         );

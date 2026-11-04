@@ -58,6 +58,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     filesSortBy: "name",
     filesSortDirection: "asc",
     transferOptimization: true,
+    transferCompression: true,
     transferConcurrency: 0,
     transferChunkKib: 0,
     transferRequests: 0,

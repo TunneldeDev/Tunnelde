@@ -61,6 +61,8 @@ describe("settings discovery and scoped resets", () => {
     useNavigation.setState({ settingsSection: "files" });
     render(<SettingsPage />);
     expect(document.querySelector('[data-settings-group="transfers"]')).toBeTruthy();
+    const compression = row("transferCompression").getByRole("switch");
+    expect(compression.getAttribute("aria-checked")).toBe("true");
     expect(row("transferOptimization").getByRole("switch").getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -73,6 +75,7 @@ describe("settings discovery and scoped resets", () => {
     await act(async () => fireEvent.click(screen.getByRole("option", { name: "4" })));
     expect(update).toHaveBeenLastCalledWith({ transferConcurrency: 4 });
     await act(async () => fireEvent.click(row("transferOptimization").getByRole("switch")));
+    expect(compression.hasAttribute("disabled")).toBe(true);
     expect(
       row("transferConcurrency")
         .getByRole("button", { name: "Concurrent segments" })

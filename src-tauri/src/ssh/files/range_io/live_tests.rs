@@ -20,7 +20,37 @@ impl client::Handler for TrustedServer {
 }
 
 async fn data_channel(handle: &client::Handle<TrustedServer>) -> Arc<DataSession> {
+    configured_data_channel(
+        handle,
+        std::env::var_os("TUNNELDE_TEST_COMPRESSED").is_some(),
+    )
+    .await
+}
+
+async fn configured_data_channel(
+    handle: &client::Handle<TrustedServer>,
+    compressed: bool,
+) -> Arc<DataSession> {
     let channel = handle.channel_open_session().await.unwrap();
+    if compressed {
+        let metadata = handle.channel_open_session().await.unwrap();
+        metadata.request_subsystem(true, "sftp").await.unwrap();
+        let metadata = SftpSession::new(metadata.into_stream()).await.unwrap();
+        let home = metadata.canonicalize(".").await.unwrap();
+        metadata.close().await.unwrap();
+        channel
+            .exec(true, super::super::compressed::Session::command(&home))
+            .await
+            .unwrap();
+        let worker = super::super::compressed::Session::new(channel.into_stream())
+            .await
+            .unwrap();
+        return Arc::new(DataSession {
+            backend: Backend::Compressed(worker),
+            read_size: 256 * 1024,
+            write_size: 256 * 1024,
+        });
+    }
     channel.request_subsystem(true, "sftp").await.unwrap();
     Arc::new(DataSession::new(channel.into_stream()).await.unwrap())
 }
@@ -134,9 +164,18 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
         .and_then(|size| size.parse::<usize>().ok())
         .unwrap_or(32)
         .clamp(1, 256);
-    let content: Vec<_> = (0_usize..size_mib * 1024 * 1024 + 73)
+    let mut content: Vec<_> = (0_usize..size_mib * 1024 * 1024 + 73)
         .map(|n| ((n * 73 + n / 257) % 251) as u8)
         .collect();
+    if std::env::var_os("TUNNELDE_TEST_RANDOM").is_some() {
+        let mut seed = 0x12af45f1_u32;
+        for byte in &mut content {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            *byte = seed as u8;
+        }
+    }
     std::fs::write(local_root.join("source.bin"), &content).unwrap();
     let remote_root = format!("/tmp/tunnelde-transfer-test-{}", uuid::Uuid::new_v4());
     std::fs::write(local_root.join("remote-root.txt"), &remote_root).unwrap();
@@ -163,7 +202,15 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
             source: upload_sessions.target.clone(),
             target: download_sessions.source.clone(),
         };
-        for (label, source, target, sessions, optimized) in [
+        let plain_upload_sessions = Sessions {
+            source: None,
+            target: Some(configured_data_channel(&handle, false).await),
+        };
+        let plain_download_sessions = Sessions {
+            source: Some(configured_data_channel(&handle, false).await),
+            target: None,
+        };
+        let mut cases = vec![
             (
                 "baseline-upload",
                 endpoint("source.bin", false),
@@ -199,7 +246,52 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
                 &copy_sessions,
                 true,
             ),
-        ] {
+        ];
+        if std::env::var_os("TUNNELDE_TEST_COMPRESSED").is_some() {
+            cases.push((
+                "sftp-pipeline-upload",
+                endpoint("source.bin", false),
+                endpoint("sftp-pipeline.bin", true),
+                &plain_upload_sessions,
+                true,
+            ));
+            cases.push((
+                "sftp-pipeline-download",
+                endpoint("sftp-pipeline.bin", true),
+                endpoint("sftp-pipeline-download.bin", false),
+                &plain_download_sessions,
+                true,
+            ));
+            cases.push((
+                "sftp-pipeline-upload-repeat",
+                endpoint("source.bin", false),
+                endpoint("sftp-pipeline-2.bin", true),
+                &plain_upload_sessions,
+                true,
+            ));
+            cases.push((
+                "sftp-pipeline-download-repeat",
+                endpoint("sftp-pipeline-2.bin", true),
+                endpoint("sftp-pipeline-download-2.bin", false),
+                &plain_download_sessions,
+                true,
+            ));
+            cases.push((
+                "compressed-upload-repeat",
+                endpoint("source.bin", false),
+                endpoint("parallel-2.bin", true),
+                &upload_sessions,
+                true,
+            ));
+            cases.push((
+                "compressed-download-repeat",
+                endpoint("parallel-2.bin", true),
+                endpoint("parallel-download-2.bin", false),
+                &download_sessions,
+                true,
+            ));
+        }
+        for (label, source, target, sessions, optimized) in cases {
             let started = Instant::now();
             if optimized {
                 parallel(&source, &target, &sftp, sessions, content.len() as u64).await?;
@@ -220,7 +312,14 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
         Ok::<(), AppError>(())
     }
     .await;
-    for name in ["baseline.bin", "parallel.bin", "remote-copy.bin"] {
+    for name in [
+        "baseline.bin",
+        "parallel.bin",
+        "remote-copy.bin",
+        "sftp-pipeline.bin",
+        "sftp-pipeline-2.bin",
+        "parallel-2.bin",
+    ] {
         match sftp.remove_file(format!("{remote_root}/{name}")).await {
             Ok(()) => {}
             Err(russh_sftp::client::error::Error::Status(status))

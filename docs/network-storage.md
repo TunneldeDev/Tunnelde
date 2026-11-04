@@ -98,7 +98,32 @@ window of segments. Resume discards an interrupted window before verifying the p
 sparse writes are never interpreted as completed data. Workers stop and drain before file
 handles are closed or temporary files can be cleaned.
 
-This optimization does not yet compress files or batch a folder into an archive.
+### Adaptive transfer compression
+
+**Compress transfer data automatically** is enabled by default with transfer
+optimization. Tasks totaling less than 256 KiB keep the standard SFTP path. Larger
+tasks first sample up to 16 KiB from the first source file. When it is compressible,
+they try a temporary Python 3 worker over the existing authenticated SSH connection.
+Incompressible tasks retain the SFTP pipeline. Directory tasks reuse that initial
+transport choice; each subsequent block still decides whether compression helps.
+It uses only the remote standard library, installs no scripts, starts no service,
+and exits when its SSH stream closes. Hosts without the required Python/POSIX file
+operations, exec access, or matching SFTP/exec home paths fall back to SFTP.
+
+Each bounded block is sampled first. Fast compression is used only when both
+the sample and full block save at least 10%; already compressed or random data
+usually travels unchanged. Uploads, downloads and remote copies retain their
+explicit offsets, shared request limits, bandwidth limits and durable checkpoints.
+The worker opens existing regular files only; it never creates or truncates files.
+Compressed reads and writes validate their output lengths and reject truncated or
+trailing data. Pause, resume and cancellation use the same task-owned staging and
+cleanup rules as ordinary SFTP. Disable compression separately under Files if a host
+requires the standard SFTP data path. Changes apply on start or resume and travel
+with settings profiles.
+
+Progress and speed describe original file bytes, including when fewer compressed
+bytes cross the network. Compression benefits depend on file contents and CPU/network
+limits. Small-file archive batching is not yet implemented.
 
 ## Pause and resume transfers
 

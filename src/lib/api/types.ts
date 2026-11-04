@@ -79,6 +79,7 @@ export interface Settings {
   filesSortBy: FileSortBy;
   filesSortDirection: SortDirection;
   transferOptimization: boolean;
+  transferCompression: boolean;
   transferConcurrency: number;
   transferChunkKib: number;
   transferRequests: number;
