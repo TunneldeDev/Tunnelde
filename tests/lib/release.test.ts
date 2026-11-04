@@ -202,28 +202,30 @@ describe("native helper packaging", () => {
 });
 
 describe("release publishing", () => {
-  it("allows compact Beta tags through the build workflow before manifest verification", () => {
+  it("restricts the build workflow to stable, beta.1–beta.9 and source-derived Nightly", () => {
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
     const pattern = /if \[\[ ! "\$\{TAG\}" =~ (.+) \]\]; then/.exec(workflow)?.[1];
     expect(pattern).toBeTruthy();
     const gate = new RegExp(pattern!);
     for (const tag of [
       "v0.28.0",
-      "v0.28.0-beta01",
-      "v0.28.0-beta09",
-      "v0.28.0-beta10",
-      "v0.28.0-beta99",
-      "v0.28.0-beta13.d.2.gabcdef012345",
-      "v0.28.0-beta.12",
-      "v0.28.0-beta.2.1",
+      "v0.28.0-beta.1",
+      "v0.28.0-beta.9",
+      "v0.28.0-beta.9.d.2.gabcdef012345",
+      "v0.28.0-alpha.1.d.10.gabcdef012345",
     ]) {
       expect(gate.test(tag), tag).toBe(true);
     }
     for (const tag of [
-      "v0.28.0-beta00",
-      "v0.28.0-beta1",
-      "v0.28.0-beta001",
-      "v0.28.0-beta100",
+      "v0.28.0-beta.10",
+      "v0.28.0-beta.11",
+      "v0.28.0-beta.0",
+      "v0.28.0-beta.01",
+      "v0.28.0-beta01",
+      "v0.28.0-beta.2.1",
+      "v0.28.0-beta.10.d.2.gabcdef012345",
+      "v0.28.0-beta.1.d.02.gabcdef012345",
+      "v00.28.0",
       "v0.28.0-beta.b12",
       "main",
     ]) {

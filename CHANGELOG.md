@@ -6,6 +6,12 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+- 文件浏览支持按层级展开的分栏视图、可复用的预览标签，以及插件提供的文件图标与内容预览。File browsing adds hierarchical columns, reusable preview tabs, and plugin-provided icons and previews.
+- 传输增加并发、断点续传、限速和适用时的压缩；公共后台任务面板提供进度反馈、拖动缩放及批量清理。Transfers add concurrency, resume checkpoints, bandwidth limits and adaptive compression; shared background tasks provide progress, movable/resizable UI and bulk cleanup.
+- 远端进程管理支持自动刷新、区间 CPU 统计、用户与用户组，以及系统权限允许时的磁盘、网络和 GPU 数据。Remote process management adds automatic refresh, interval CPU measurements, ownership details, and disk, network and GPU metrics where available.
+- 存储分类支持位置设置与重启迁移；托盘驻留可释放 WebView，并恢复工作区和终端状态。Storage categories support custom locations and restart migration; tray suspension can release the WebView and restore workspace and terminal state.
+- 公测编号统一为 beta.1～beta.9，达到上限后必须先审查并发布正式版；更新检查保留历史版本兼容。Beta milestones are limited to beta.1–beta.9 before reviewed stable promotion, while update discovery retains historical compatibility.
+
 ## [0.26.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.26.0...v0.26.1) - 2026-11-03
 
 ### 更新概览 | Highlights

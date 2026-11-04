@@ -23,3 +23,24 @@ pub(super) fn source_channels(channel: &str) -> &'static [&'static str] {
         _ => &["stable"],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stable_replacement_upgrades_installed_historical_betas_without_a_bridge() {
+        let stable = Version::parse("0.28.0").unwrap();
+        for installed in ["0.28.0-beta.9", "0.28.0-beta.10", "0.28.0-beta.11"] {
+            let installed = Version::parse(installed).unwrap();
+            for channel in ["stable", "beta", "nightly"] {
+                assert!(accepts_version(&installed, &stable, channel));
+                assert!(source_channels(channel).contains(&"stable"));
+                assert!(!accepts_version(&stable, &installed, channel));
+            }
+        }
+        let next_beta = Version::parse("0.28.1-beta.1").unwrap();
+        assert!(accepts_version(&stable, &next_beta, "beta"));
+        assert!(!accepts_version(&stable, &next_beta, "stable"));
+    }
+}
