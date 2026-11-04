@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { apiMock } = vi.hoisted(() => ({
@@ -6,6 +6,8 @@ const { apiMock } = vi.hoisted(() => ({
     connectionRoute: vi.fn(),
     saveConnectionRoute: vi.fn(),
     sshProbe: vi.fn(),
+    sshTestConnection: vi.fn(),
+    sshCancelTest: vi.fn(),
     sshTrust: vi.fn(),
     credentialStatus: vi.fn(),
     credentialSave: vi.fn(),
@@ -61,6 +63,8 @@ beforeEach(() => {
     knownFingerprint: "SHA256:abc",
   });
   apiMock.connectionRoute.mockReset().mockResolvedValue({ proxy: "", jumpHosts: [] });
+  apiMock.sshTestConnection.mockReset();
+  apiMock.sshCancelTest.mockReset().mockResolvedValue(undefined);
   apiMock.saveConnectionRoute.mockReset().mockResolvedValue(undefined);
   apiMock.credentialStatus.mockReset().mockResolvedValue(false);
   apiMock.credentialSave.mockReset().mockResolvedValue(undefined);
@@ -76,6 +80,44 @@ beforeEach(() => {
 });
 
 describe("ConnectDialog", () => {
+  it("disables connecting during a quality test and cancels it when closed", async () => {
+    apiMock.credentialStatus.mockResolvedValue(true);
+    apiMock.sshTestConnection.mockReturnValue(new Promise(() => undefined));
+    const { unmount } = render(<ConnectDialog host={host} onClose={() => undefined} />);
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Test connection" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(connect).not.toHaveBeenCalled();
+    unmount();
+    expect(apiMock.sshCancelTest).toHaveBeenCalledExactlyOnceWith(
+      apiMock.sshTestConnection.mock.calls[0]![0],
+    );
+  });
+
+  it("discards a previous host's trust and password immediately when the target changes", async () => {
+    const { rerender } = render(<ConnectDialog host={host} onClose={() => undefined} />);
+    await screen.findByText("Trusted");
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "old-secret" } });
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+    apiMock.sshProbe.mockReturnValueOnce(new Promise(() => undefined));
+    await act(async () =>
+      rerender(<ConnectDialog host={{ ...host, id: "other" }} onClose={() => undefined} />),
+    );
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(screen.queryByText("Trusted")).toBeNull();
+  });
+
   it("requires explicit approval of an unknown key even when a password is saved", async () => {
     apiMock.sshProbe.mockResolvedValue({
       fingerprint: "SHA256:abc",

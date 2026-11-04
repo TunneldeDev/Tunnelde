@@ -491,7 +491,27 @@
     "forgetBody": "Remove the saved password for {{name}}? The next connection asks for it again.",
     "installKey": "Set up key login",
     "installKeyDone": "Public key installed. The next connection uses it.",
-    "installKeyHint": "Sign in once with a password to add this application’s public key to the account. Existing authorized keys are preserved."
+    "installKeyHint": "Sign in once with a password to add this application’s public key to the account. Existing authorized keys are preserved.",
+    "testTitle": "Connection quality",
+    "test": "Test connection",
+    "testAgain": "Test again",
+    "testMs": "{{value}} ms",
+    "probeTime": "SSH connection established in {{value}} ms",
+    "testRunning": "Testing up to 3 SSH connections…",
+    "testHint": "Measures SSH setup time, including proxies and jump hosts. This is not a bandwidth or packet-loss test.",
+    "testTrustFirst": "Verify and trust the complete host-key route before testing.",
+    "testMedian": "SSH setup (median)",
+    "testSpread": "Setup variation (max − min)",
+    "testSuccess": "Successful attempts",
+    "testSamples": "Individual attempts",
+    "testFailed": "Failed",
+    "testQuality": {
+      "fast": "Fast connection setup",
+      "normal": "Normal connection setup",
+      "slow": "Slow connection setup",
+      "unstable": "Some attempts failed",
+      "unreachable": "Could not establish a connection"
+    }
   },
   "terminal": {
     "connect": "Connect",
@@ -522,7 +542,8 @@
     "startupOutputLimit": "Terminal startup output exceeded the limit",
     "invalidPayload": "Invalid terminal input",
     "noHostKey": "The server did not present a host key",
-    "agentUnsupported": "Agent authentication is not available yet"
+    "agentUnsupported": "Agent authentication is not available yet",
+    "testCancelled": "Connection test cancelled"
   },
   "sftp": {
     "title": "Files",

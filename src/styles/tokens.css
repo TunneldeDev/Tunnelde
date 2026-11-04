@@ -60,12 +60,17 @@
 
   --td-text: #131a28;
   --td-muted: #5a6779;
-  --td-faint: #8794a8;
+  --td-faint: #606e83;
 
   --td-accent: #2563eb;
   --td-accent-strong: #1d4fd8;
   --td-accent-soft: rgba(37, 99, 235, 0.12);
   --td-focus: 0 0 0 2px rgba(37, 99, 235, 0.35);
+
+  --td-cyan: #007892;
+  --td-green: #12764a;
+  --td-orange: #966000;
+  --td-red: #c42d42;
 
   --td-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
 }
