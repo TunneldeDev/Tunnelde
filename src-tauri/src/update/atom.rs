@@ -160,6 +160,27 @@ mod tests {
     }
 
     #[test]
+    fn fixed_width_beta_migration_and_nightly_follow_semver_in_public_feed() {
+        let xml = atom(&[
+            "v0.28.0-beta.9",
+            "v0.28.0-beta.11",
+            "v0.28.0-beta.b09",
+            "v0.28.0-beta.b12",
+            "v0.28.0-beta.b10",
+            "v0.28.0-beta.b12.d.2.gabcdef1",
+        ]);
+        for (channel, expected) in [
+            ("beta", "0.28.0-beta.b12"),
+            ("nightly", "0.28.0-beta.b12.d.2.gabcdef1"),
+        ] {
+            assert_eq!(
+                candidates(xml.as_bytes(), channel).unwrap()[0].version,
+                Some(Version::parse(expected).unwrap())
+            );
+        }
+    }
+
+    #[test]
     fn ignores_external_links_invalid_tags_and_links_outside_entries() {
         let xml = format!(
             r#"<feed><link rel="alternate" href="{RELEASES}/tag/v99.0.0"/>
