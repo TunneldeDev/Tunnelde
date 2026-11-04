@@ -221,6 +221,15 @@ async fn remote_copy_respects_both_servers_and_preserves_offsets() {
 
 #[tokio::test]
 async fn cancellation_interrupts_pending_remote_requests() {
+    cancel_pending_requests(false).await;
+}
+
+#[tokio::test]
+async fn cancellation_interrupts_a_pending_budget_and_remote_request_together() {
+    cancel_pending_requests(true).await;
+}
+
+async fn cancel_pending_requests(limited: bool) {
     let (source_session, input) = server(Some(131072), Duration::from_secs(1)).await;
     input.lock().unwrap().data = vec![1; 1024 * 1024];
     let (target_session, _) = server(Some(131072), Duration::ZERO).await;
@@ -236,7 +245,16 @@ async fn cancellation_interrupts_pending_remote_requests() {
         session: Some("target".into()),
         path: "/target".into(),
     };
-    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let mut files = Files::open(&sessions, &from, &to).await.unwrap();
+    if limited {
+        let controller = Arc::new(bandwidth::Controller::default());
+        controller.register("cancel");
+        controller.configure(1, 0);
+        files = files.with_throttle(bandwidth::Throttle {
+            controller,
+            id: "cancel".into(),
+        });
+    }
     let stop = AtomicBool::new(false);
     let count = AtomicU64::new(0);
     let (result, _) = tokio::time::timeout(Duration::from_millis(500), async {
@@ -250,4 +268,124 @@ async fn cancellation_interrupts_pending_remote_requests() {
     assert!(result.is_err());
     assert_eq!(count.load(Ordering::Relaxed), 0);
     files.close().await.unwrap();
+}
+
+async fn limited_transfer(upload: bool) {
+    let (session, state) = server(Some(131072), Duration::from_millis(60)).await;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.tmp/qa")
+        .join(format!("sftp-limited-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&root).await.unwrap();
+    let bytes: Vec<u8> = (0..2 * 1024 * 1024 + 71).map(|n| (n % 251) as u8).collect();
+    let local = Endpoint {
+        session: None,
+        path: display_path(&root.join("payload.bin")),
+    };
+    let remote = Endpoint {
+        session: Some("mock".into()),
+        path: "/payload.bin".into(),
+    };
+    tokio::fs::write(&local.path, if upload { bytes.as_slice() } else { &[] })
+        .await
+        .unwrap();
+    if !upload {
+        state.lock().unwrap().data = bytes.clone();
+    }
+    let sessions = Sessions {
+        source: (!upload).then(|| session.clone()),
+        target: upload.then_some(session),
+    };
+    let (source, target) = if upload {
+        (&local, &remote)
+    } else {
+        (&remote, &local)
+    };
+    let controller = Arc::new(bandwidth::Controller::default());
+    controller.register("limited");
+    controller.configure(16384, 16384);
+    // Small grants exercise offsets and keep local input intact when a packet
+    // completes while the next preparation is still waiting for credit.
+    controller.set_task("limited", 4096).unwrap();
+    let files = Files::open(&sessions, source, target)
+        .await
+        .unwrap()
+        .with_throttle(bandwidth::Throttle {
+            controller,
+            id: "limited".into(),
+        });
+    let count = AtomicU64::new(0);
+    files
+        .segment(0..bytes.len() as u64, 8, &AtomicBool::new(false), &count)
+        .await
+        .unwrap();
+    files.close().await.unwrap();
+    if upload {
+        assert_eq!(state.lock().unwrap().data, bytes);
+    } else {
+        assert_eq!(tokio::fs::read(&local.path).await.unwrap(), bytes);
+    }
+    assert_eq!(count.load(Ordering::Relaxed), bytes.len() as u64);
+    let peak = state.lock().unwrap().peak;
+    tokio::fs::remove_dir_all(root).await.unwrap();
+    assert!(
+        peak > 1 && peak <= 8,
+        "limited transfer serialized requests: peak={peak}"
+    );
+}
+
+#[tokio::test]
+async fn limited_upload_keeps_requests_in_flight_while_waiting_for_budget() {
+    limited_transfer(true).await;
+}
+
+#[tokio::test]
+async fn limited_download_keeps_requests_in_flight_while_waiting_for_budget() {
+    limited_transfer(false).await;
+}
+
+#[tokio::test]
+async fn changing_a_limit_during_io_keeps_remote_copy_offsets_and_bytes() {
+    let (source_session, input) = server(Some(131072), Duration::from_millis(60)).await;
+    let (target_session, output) = server(Some(65536), Duration::from_millis(40)).await;
+    let bytes: Vec<u8> = (0..1024 * 1024 + 53).map(|n| (n % 239) as u8).collect();
+    input.lock().unwrap().data = bytes.clone();
+    let sessions = Sessions {
+        source: Some(source_session),
+        target: Some(target_session),
+    };
+    let from = Endpoint {
+        session: Some("source".into()),
+        path: "/source".into(),
+    };
+    let to = Endpoint {
+        session: Some("target".into()),
+        path: "/target".into(),
+    };
+    let controller = Arc::new(bandwidth::Controller::default());
+    controller.register("changing");
+    controller.configure(128, 64);
+    let files = Files::open(&sessions, &from, &to)
+        .await
+        .unwrap()
+        .with_throttle(bandwidth::Throttle {
+            controller: controller.clone(),
+            id: "changing".into(),
+        });
+    let count = AtomicU64::new(0);
+    let stop = AtomicBool::new(false);
+    let (result, ()) = tokio::join!(
+        files.segment(0..bytes.len() as u64, 8, &stop, &count),
+        async {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            controller.configure(16384, 16384);
+            tokio::time::sleep(Duration::from_millis(40)).await;
+            controller.configure(0, 0);
+        }
+    );
+    result.unwrap();
+    files.close().await.unwrap();
+    assert_eq!(output.lock().unwrap().data, bytes);
+    assert_eq!(count.load(Ordering::Relaxed), bytes.len() as u64);
+    assert!(input.lock().unwrap().peak > 1);
+    assert!(output.lock().unwrap().peak <= 8);
 }

@@ -120,6 +120,20 @@ async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>
     Ok(())
 }
 
+async fn complete_packet(
+    result: AppResult<(u64, Vec<u8>)>,
+    writer: &mut Option<tokio::fs::File>,
+    transferred: &AtomicU64,
+) -> AppResult<()> {
+    let (offset, bytes) = result?;
+    if let Some(writer) = writer {
+        writer.seek(std::io::SeekFrom::Start(offset)).await?;
+        writer.write_all(&bytes).await?;
+    }
+    transferred.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+    Ok(())
+}
+
 impl<'a> Files<'a> {
     pub async fn open(
         sessions: &'a Sessions,
@@ -238,6 +252,36 @@ impl<'a> Files<'a> {
         Ok((offset, data))
     }
 
+    async fn prepare_packet(
+        &self,
+        reader: &mut Option<tokio::fs::File>,
+        length: usize,
+        stop: &AtomicBool,
+    ) -> AppResult<(usize, Option<Vec<u8>>)> {
+        let direction = match (&self.sessions.source, &self.sessions.target) {
+            (Some(_), Some(_)) => bandwidth::Direction::Both,
+            (Some(_), None) => bandwidth::Direction::Download,
+            _ => bandwidth::Direction::Upload,
+        };
+        let length = match &self.throttle {
+            Some(throttle) => throttle.acquire(direction, length, stop).await?,
+            None => length,
+        };
+        let input = match reader {
+            Some(reader) => {
+                let mut bytes = vec![0; length];
+                interruptible(Some(stop), async {
+                    reader.read_exact(&mut bytes).await?;
+                    Ok(())
+                })
+                .await?;
+                Some(bytes)
+            }
+            None => None,
+        };
+        Ok((length, input))
+    }
+
     pub async fn segment(
         &self,
         range: Range<u64>,
@@ -266,7 +310,7 @@ impl<'a> Files<'a> {
         let mut next = range.start;
         let mut error = None;
         while next < range.end || !pending.is_empty() {
-            while next < range.end
+            if next < range.end
                 && pending.len() < requests
                 && error.is_none()
                 && !stop.load(Ordering::SeqCst)
@@ -280,77 +324,40 @@ impl<'a> Files<'a> {
                     (None, Some(target)) => target.write_size,
                     (None, None) => CHUNK,
                 };
-                let mut length = (range.end - next).min(packet_size as u64) as usize;
-                let direction = match (&self.sessions.source, &self.sessions.target) {
-                    (Some(_), Some(_)) => bandwidth::Direction::Both,
-                    (Some(_), None) => bandwidth::Direction::Download,
-                    _ => bandwidth::Direction::Upload,
-                };
-                let limited = self.throttle.as_ref().is_some_and(|t| t.limited(direction));
-                if limited && !pending.is_empty() {
-                    break;
-                }
-                if let Some(throttle) = &self.throttle {
-                    match throttle.acquire(direction, length, stop).await {
-                        Ok(allowed) => length = allowed,
-                        Err(failure) => {
-                            error = Some(failure);
-                            stop.store(true, Ordering::SeqCst);
+                let length = (range.end - next).min(packet_size as u64) as usize;
+                let prepared = self.prepare_packet(&mut reader, length, stop);
+                tokio::pin!(prepared);
+                // Keep both the limiter and existing IO progressing. Keep this
+                // preparation alive across completions: restarting it could lose
+                // already granted credits or partially consumed local input.
+                loop {
+                    tokio::select! {
+                        result = &mut prepared => {
+                            match result {
+                                Ok((length, input)) => {
+                                    pending.push(self.packet(next, length, input, stop));
+                                    next += length as u64;
+                                }
+                                Err(failure) => {
+                                    error.get_or_insert(failure);
+                                    stop.store(true, Ordering::SeqCst);
+                                }
+                            }
                             break;
                         }
-                    }
-                }
-                let input = if let Some(reader) = &mut reader {
-                    let mut bytes = vec![0; length];
-                    match interruptible(Some(stop), async {
-                        reader.read_exact(&mut bytes).await?;
-                        Ok(())
-                    })
-                    .await
-                    {
-                        Ok(()) => Some(bytes),
-                        Err(failure) => {
-                            error = Some(failure);
-                            stop.store(true, Ordering::SeqCst);
-                            break;
-                        }
-                    }
-                } else {
-                    None
-                };
-                pending.push(self.packet(next, length, input, stop));
-                next += length as u64;
-                if limited {
-                    break;
-                }
-            }
-            if let Some(result) = pending.next().await {
-                match result {
-                    Ok((offset, bytes)) => {
-                        let written = if let Some(writer) = &mut writer {
-                            async {
-                                writer.seek(std::io::SeekFrom::Start(offset)).await?;
-                                writer.write_all(&bytes).await?;
-                                Ok::<(), AppError>(())
-                            }
-                            .await
-                        } else {
-                            Ok(())
-                        };
-                        match written {
-                            Ok(()) => {
-                                transferred.fetch_add(bytes.len() as u64, Ordering::Relaxed);
-                            }
-                            Err(failure) => {
+                        Some(result) = pending.next(), if !pending.is_empty() => {
+                            if let Err(failure) = complete_packet(result, &mut writer, transferred).await {
                                 error.get_or_insert(failure);
                                 stop.store(true, Ordering::SeqCst);
+                                break;
                             }
                         }
                     }
-                    Err(failure) => {
-                        error.get_or_insert(failure);
-                        stop.store(true, Ordering::SeqCst);
-                    }
+                }
+            } else if let Some(result) = pending.next().await {
+                if let Err(failure) = complete_packet(result, &mut writer, transferred).await {
+                    error.get_or_insert(failure);
+                    stop.store(true, Ordering::SeqCst);
                 }
             } else {
                 break;

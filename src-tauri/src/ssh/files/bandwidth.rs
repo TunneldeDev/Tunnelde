@@ -156,16 +156,6 @@ pub(super) struct Throttle {
 }
 
 impl Throttle {
-    pub fn limited(&self, direction: Direction) -> bool {
-        let budgets = self.controller.0.lock().unwrap_or_else(|e| e.into_inner());
-        let applicable = |pair: &[Bucket; 2]| match direction {
-            Direction::Upload => pair[0].rate != 0,
-            Direction::Download => pair[1].rate != 0,
-            Direction::Both => pair.iter().any(|bucket| bucket.rate != 0),
-        };
-        applicable(&budgets.global) || budgets.tasks.get(&self.id).is_some_and(applicable)
-    }
-
     pub async fn acquire(
         &self,
         direction: Direction,

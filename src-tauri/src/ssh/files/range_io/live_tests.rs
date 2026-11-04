@@ -57,7 +57,21 @@ async fn parallel(
         .await?
         .finish()
         .await?;
-    let files = Files::open(sessions, source, target).await?;
+    let controller = Arc::new(bandwidth::Controller::default());
+    controller.register("live");
+    let limit = std::env::var("TUNNELDE_TEST_LIMIT_KIB")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(0)
+        .min(bandwidth::MAX_KIB);
+    controller.configure(limit, limit);
+    let started = Instant::now();
+    let files = Files::open(sessions, source, target)
+        .await?
+        .with_throttle(bandwidth::Throttle {
+            controller,
+            id: "live".into(),
+        });
     let result = async {
         let mut offset = 0;
         while offset < length {
@@ -76,6 +90,13 @@ async fn parallel(
     }
     .await;
     let closed = files.close().await;
+    if result.is_ok() && limit > 0 {
+        let minimum_seconds = length as f64 / (f64::from(limit) * 1024.0);
+        assert!(
+            started.elapsed().as_secs_f64() >= minimum_seconds * 0.9,
+            "live transfer bypassed its bandwidth ceiling"
+        );
+    }
     result.and(closed)
 }
 
