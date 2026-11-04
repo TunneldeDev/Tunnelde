@@ -30,6 +30,7 @@ pub struct AppState {
     pub system: Mutex<System>,
     pub disks: Mutex<Disks>,
     pub data_dir: PathBuf,
+    pub storage: crate::storage::layout::Paths,
     pub log_dir: PathBuf,
     _log_guard: Mutex<Option<WorkerGuard>>,
 }
@@ -88,9 +89,19 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
             .app_log_dir()
             .map_err(|error| AppError::internal(error.to_string()))?,
     };
+    let storage = crate::storage::initialize(
+        data_dir.clone(),
+        log_dir,
+        std::env::var_os("TUNNELDE_PLUGINS_DIR").map(PathBuf::from),
+    )?;
+    let log_dir = storage
+        .dir(crate::storage::layout::Category::Logs)
+        .to_owned();
     let guard = crate::platform::logging::init(&log_dir)?;
 
-    let db_path = data_dir.join("tunnelde.db");
+    let db_path = storage
+        .dir(crate::storage::layout::Category::Database)
+        .join("tunnelde.db");
     let database = match Database::open(&db_path) {
         Ok(database) => database,
         Err(error) => {
@@ -100,9 +111,10 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         }
     };
 
-    let plugins_dir = std::env::var_os("TUNNELDE_PLUGINS_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| data_dir.join("plugins"));
+    crate::storage::relocate_key_references(&database, &storage)?;
+    let plugins_dir = storage
+        .dir(crate::storage::layout::Category::Plugins)
+        .to_owned();
     let _ = std::fs::create_dir_all(&plugins_dir);
 
     let settings = database.with(db::settings::load)?;
@@ -134,6 +146,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         system: Mutex::new(System::new_all()),
         disks: Mutex::new(Disks::new_with_refreshed_list()),
         data_dir,
+        storage,
         log_dir,
         _log_guard: Mutex::new(Some(guard)),
     });

@@ -1,4 +1,4 @@
-import { FileCode2, FolderOpen, RotateCcw, Search, X } from "lucide-react";
+import { FileCode2, RotateCcw, Search, X } from "lucide-react";
 import {
   Fragment,
   lazy,
@@ -46,6 +46,7 @@ import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection"
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
 import { NetworkSettingsSection } from "./NetworkSettings";
+import { StorageSettings } from "./StorageSettings";
 import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
 const TerminalPreview = lazy(() =>
@@ -347,6 +348,23 @@ export function SettingsPage() {
     !samePreference(settings[item.key], defaults[item.key]) ||
     (item.key === "userCss" && cssDraft !== null && cssDraft !== settings.userCss);
   const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const storageText = [
+    "storage",
+    "migration",
+    ...["en-US", "zh-CN"].flatMap((language) => {
+      const translate = i18n.getFixedT(language);
+      return [
+        translate("storage.title"),
+        translate("storage.description"),
+        translate("storage.searchTerms"),
+      ];
+    }),
+  ]
+    .join(" ")
+    .toLocaleLowerCase();
+  const showStorage =
+    !modifiedOnly &&
+    (!filtering ? section === "advanced" : words.every((word) => storageText.includes(word)));
   const visible = definitions.filter((item) => {
     if (!filtering && item.section !== section) return false;
     if (modifiedOnly && !isModified(item)) return false;
@@ -478,7 +496,9 @@ export function SettingsPage() {
         <div className="settings__body" ref={body}>
           {filtering ? (
             <div className="settings-results">
-              <span>{t("settings.resultCount", { count: visible.length })}</span>
+              <span>
+                {t("settings.resultCount", { count: visible.length + Number(showStorage) })}
+              </span>
               <Button size="sm" variant="ghost" onClick={clearFilters}>
                 {t("settings.clearFilters")}
               </Button>
@@ -487,6 +507,7 @@ export function SettingsPage() {
           {SETTINGS_SECTIONS.filter(
             (item) =>
               visible.some((definition) => definition.section === item) ||
+              (item === "advanced" && showStorage) ||
               (!filtering && item === section),
           ).map((item) => (
             <section className="settings-section" key={item} aria-label={t(SECTION_LABELS[item])}>
@@ -609,37 +630,20 @@ export function SettingsPage() {
                     </div>
                   </div>
                 ))}
+                {item === "advanced" && showStorage ? (
+                  <div
+                    id={`${settingsId}-storage`}
+                    className="settings-preference-group"
+                    data-settings-group="storage"
+                  >
+                    <h3 className="settings-preference-group__title">{t("storage.title")}</h3>
+                    <div className="settings-preference-group__body">
+                      <StorageSettings />
+                    </div>
+                  </div>
+                ) : null}
                 {!filtering && item === "advanced" ? (
                   <>
-                    <div className="settings-locations">
-                      {(
-                        [
-                          ["settings.dataDir", info?.dataDir, api.openDataDir],
-                          ["settings.logDir", info?.logDir, api.openLogDir],
-                        ] as const
-                      ).map(([key, path, open]) => (
-                        <div className="settings-location" key={key}>
-                          <span>{t(key)}</span>
-                          <code title={path}>{path ?? "—"}</code>
-                          <IconButton
-                            size="sm"
-                            label={t(
-                              key === "settings.dataDir"
-                                ? "settings.openData"
-                                : "settings.openLogs",
-                            )}
-                            disabled={!isTauri()}
-                            onClick={() =>
-                              void open().catch((failure) =>
-                                toast(translateError(failure), "error"),
-                              )
-                            }
-                          >
-                            <FolderOpen size={14} />
-                          </IconButton>
-                        </div>
-                      ))}
-                    </div>
                     <div className="settings-actions">
                       <Button
                         variant="ghost-danger"
@@ -666,7 +670,7 @@ export function SettingsPage() {
               </div>
             </section>
           ))}
-          {filtering && visible.length === 0 ? (
+          {filtering && visible.length === 0 && !showStorage ? (
             <div className="settings-empty">
               <Search size={24} aria-hidden="true" />
               <p>{t("common.noResults")}</p>

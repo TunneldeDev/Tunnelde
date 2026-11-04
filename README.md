@@ -59,6 +59,10 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   and mouse or keyboard sample inspection. Process termination requires confirmation.
 - Customize themes, individual colors, fonts, terminal behavior and keyboard shortcuts.
   Export preferences and switch named profiles without exporting hosts or credentials.
+- Relocate settings/database, plugin packages and data, managed keys/runtimes, cache, logs
+  and deployment records in **Settings → Advanced → Storage locations**. Choose folders
+  individually or in a batch, review destinations, and fully quit/reopen to apply.
+  Copies are verified before switching, and originals are retained for recovery.
 - Choose native or compact title bars. On macOS, closing retains the window and SSH
   sessions; clicking the Dock or tray restores it. Settings → General controls whether
   the Dock icon remains visible in the background. Use Quit to exit.

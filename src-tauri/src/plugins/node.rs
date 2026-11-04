@@ -423,7 +423,7 @@ async fn login_shell() -> PathBuf {
 }
 
 fn runtime_root(data_dir: &Path) -> PathBuf {
-    data_dir.join("runtimes/node")
+    data_dir.join("node")
 }
 
 fn managed_path(data_dir: &Path) -> Option<PathBuf> {
@@ -684,7 +684,11 @@ pub async fn install(app: &AppHandle, task_id: &str) -> AppResult<NodeRuntimeInf
         return Err(AppError::validation("node.checksumMismatch"));
     }
     task.check()?;
-    let data_dir = app.state::<crate::state::AppState>().data_dir.clone();
+    let data_dir = app
+        .state::<crate::state::AppState>()
+        .storage
+        .dir(crate::storage::layout::Category::Runtimes)
+        .to_owned();
     let root = runtime_root(&data_dir);
     std::fs::create_dir_all(&root)?;
     let stage = Stage(root.join(format!(".stage-{}", uuid::Uuid::new_v4())));

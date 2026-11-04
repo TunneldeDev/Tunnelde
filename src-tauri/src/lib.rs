@@ -11,6 +11,7 @@ mod settings;
 mod settings_profiles;
 mod ssh;
 mod state;
+mod storage;
 mod update;
 mod vault;
 
@@ -108,6 +109,11 @@ pub fn run() {
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             commands::app_info,
+            storage::storage_status,
+            storage::storage_schedule,
+            storage::storage_cancel,
+            storage::storage_open,
+            storage::storage_pick,
             commands::clipboard_read_text,
             commands::clipboard_write_text,
             commands::settings_get,

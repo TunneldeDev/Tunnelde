@@ -425,8 +425,8 @@ pub fn key_import(state: State<'_, AppState>, content: String) -> AppResult<Stri
     if content.len() > 64 * 1024 || !content.contains("PRIVATE KEY") {
         return Err(AppError::validation("key.invalid"));
     }
-    let directory = state.data_dir.join("keys");
-    std::fs::create_dir_all(&directory)?;
+    let directory = state.storage.dir(crate::storage::layout::Category::Keys);
+    std::fs::create_dir_all(directory)?;
     let path = directory.join(format!("{}.key", uuid::Uuid::new_v4()));
     std::fs::write(&path, content.as_bytes())?;
     #[cfg(unix)]
@@ -1009,7 +1009,13 @@ pub async fn marketplace_catalogue(
         .into_iter()
         .find(|source| source.id == source_id && source.enabled)
         .ok_or_else(|| AppError::validation("market.sourceDisabled"))?;
-    plugins::marketplace::catalogue(&app, &state.data_dir, &source, refresh).await
+    plugins::marketplace::catalogue(
+        &app,
+        state.storage.dir(crate::storage::layout::Category::Cache),
+        &source,
+        refresh,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -1040,7 +1046,9 @@ pub async fn node_detect(app: AppHandle) -> AppResult<plugins::node::NodeRuntime
     let state = app.state::<AppState>();
     let config = state.db.with(plugins::config::load)?;
     plugins::node::resolve(
-        &state.data_dir,
+        state
+            .storage
+            .dir(crate::storage::layout::Category::Runtimes),
         config.node_path.as_deref().map(std::path::Path::new),
         config.node_system_allowed,
     )
@@ -1072,7 +1080,9 @@ pub async fn node_set_path(
     let state = app.state::<AppState>();
     let previous = state.db.with(plugins::config::load)?;
     let info = plugins::node::resolve(
-        &state.data_dir,
+        state
+            .storage
+            .dir(crate::storage::layout::Category::Runtimes),
         path.as_deref().map(std::path::Path::new),
         previous.node_system_allowed,
     )
@@ -1107,7 +1117,9 @@ pub async fn node_allow_system(
         state.plugins.stop_system_nodes(&app).await;
     }
     plugins::node::resolve(
-        &state.data_dir,
+        state
+            .storage
+            .dir(crate::storage::layout::Category::Runtimes),
         next.node_path.as_deref().map(std::path::Path::new),
         allowed,
     )

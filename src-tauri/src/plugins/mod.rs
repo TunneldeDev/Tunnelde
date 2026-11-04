@@ -503,7 +503,9 @@ impl PluginsManager {
             .guard(
                 &lease,
                 node::resolve(
-                    &state.data_dir,
+                    state
+                        .storage
+                        .dir(crate::storage::layout::Category::Runtimes),
                     config.node_path.as_deref().map(Path::new),
                     config.node_system_allowed,
                 ),

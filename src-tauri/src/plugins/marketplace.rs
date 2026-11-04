@@ -49,7 +49,10 @@ pub async fn install_archive(
     }
 
     let state = app.state::<AppState>();
-    let directory = state.data_dir.join("tmp");
+    let directory = state
+        .storage
+        .dir(crate::storage::layout::Category::Cache)
+        .join("tmp");
     std::fs::create_dir_all(&directory)?;
     let path = directory.join(format!("{id}-{}.zip", uuid::Uuid::new_v4()));
     std::fs::write(&path, &bytes)?;
@@ -284,7 +287,7 @@ pub async fn install_remote(
         .ok_or_else(|| AppError::validation("market.sourceDisabled"))?;
     let task = super::network::DownloadTask::begin(app, task_id)?;
     let catalogue = tokio::select! {
-        result = catalogue(app, &state.data_dir, &source, false) => result?,
+        result = catalogue(app, state.storage.dir(crate::storage::layout::Category::Cache), &source, false) => result?,
         _ = task.wait_cancel() => return Err(AppError::validation("market.cancelled")),
     };
     task.check()?;
