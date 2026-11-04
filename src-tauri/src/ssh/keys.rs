@@ -26,8 +26,8 @@ fn key_error(error: impl std::fmt::Display) -> AppError {
 /// Tunnelde keeps one dedicated key pair under its data folder. It is created
 /// on first use and never leaves the machine except as the public half.
 fn ensure_keypair(data_dir: &Path) -> AppResult<(PathBuf, String)> {
-    let directory = data_dir.join("keys");
-    std::fs::create_dir_all(&directory)?;
+    let directory = data_dir;
+    std::fs::create_dir_all(directory)?;
     let private = directory.join("tunnelde_ed25519");
 
     if !private.exists() {
@@ -117,7 +117,7 @@ pub async fn install(
 ) -> AppResult<InstalledKey> {
     let state = app.state::<AppState>();
     state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
-    let (path, public) = ensure_keypair(&state.data_dir)?;
+    let (path, public) = ensure_keypair(state.storage.dir(crate::storage::layout::Category::Keys))?;
 
     let session = connect_with_password(
         app.clone(),

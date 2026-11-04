@@ -125,7 +125,7 @@ their defaults without overwriting existing choices.
 | Monitoring         | Local and remote refresh interval                                                                       |
 | Network & proxies  | Named HTTP/SOCKS5 proxies, per-feature/plugin routing, credential storage and connection tests          |
 | Updates            | Automatic checks and access to the update page                                                          |
-| Advanced           | Custom CSS, data/log folders, full preference reset                                                     |
+| Advanced           | Custom CSS, individual/batch storage relocation, full preference reset                                  |
 
 Host-specific proxies and ordered jump hosts live in the host editor's collapsed
 **Proxy & jump hosts** section. Port forwards live on the host detail page. See
@@ -150,6 +150,41 @@ does not create another host.
 
 Workspace restoration restores tabs and layout on the next launch; it does not
 automatically reconnect SSH sessions.
+
+## Storage locations
+
+**Advanced → Storage locations** separates the database, installed plugins, plugin data
+and chats, managed SSH keys, managed Node runtimes, cache/temporary files, logs and remote
+deployment records. Choose an empty or new destination using the native folder picker.
+Select multiple categories and **Choose parent folder** to give each its own subfolder.
+Copying existing data is enabled by default; switching it off starts that category empty
+and is explicitly shown in the review. Review all source/destination paths before scheduling.
+
+Changes apply on the next full application start, before opening SQLite, log writers or
+plugin processes. Fully quit, including tray operation, and reopen after finishing active
+work. Closing only the window does not migrate data. Current resources continue to use
+their current locations until then. The settings page can cancel a scheduled plan.
+
+Migration checks path conflicts, nesting, available space on recognized local disks and
+unsupported links. It copies into separate staging directories, verifies SHA-256 for every
+file, and switches all selected locations only after every copy is ready. Originals remain
+as recovery copies; Tunnelde does not delete them. An interrupted publication is reused
+only when its contents still match the source. A conflicting destination is preserved and
+the app continues using original locations, with recovery details in Settings. Correct the
+conflict or cancel and select new empty destinations. Individual inventories are bounded to
+200,000 entries and 64 directory levels. Other processes should not write application data
+while it is being migrated.
+
+`storage.json` is a small bootstrap index in the original app-data directory. It retains
+pending changes and previous locations. Storage locations are machine-specific and are
+excluded from profiles and settings exports. `TUNNELDE_PLUGINS_DIR`, when set, owns the
+plugin location and disables relocation of that category in Settings.
+
+System keychain credentials, external key files, workspaces, transfer destinations and
+remote files are not relocated. The database and cache migrate only their named resources,
+not unrelated files in their original shared parent. Managed key and runtime references
+are adjusted when their copied destination exists. Plugin-owned absolute paths may require
+adjustment inside that plugin. User-authored directories are never merged or overwritten.
 
 Hosts, Plugins and Trusted Hosts can move from the sidebar into workspace tabs using
 their title drag handles or title menus. Drag a panel to a tab group or workspace edge

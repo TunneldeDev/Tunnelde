@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { ConnectionRoute } from "./network";
+import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
 import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
@@ -43,6 +44,12 @@ export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const api = {
+  storageStatus: () => invoke<StorageStatus>("storage_status"),
+  storageSchedule: (changes: StorageChange[]) =>
+    invoke<StorageStatus>("storage_schedule", { changes }),
+  storageCancel: () => invoke<StorageStatus>("storage_cancel"),
+  storageOpen: (category: StorageCategory) => invoke<void>("storage_open", { category }),
+  storagePick: () => invoke<string | null>("storage_pick"),
   filePreviewOpen: (id: string, providerId: string, path: string, sessionId: string | null) =>
     invoke<FilePreviewInfo>("file_preview_open", { id, providerId, path, sessionId }),
   filePreviewClose: (id: string) => invoke<void>("file_preview_close", { id }),

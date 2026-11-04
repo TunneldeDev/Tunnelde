@@ -78,6 +78,7 @@ export interface SettingsGroup {
 
 /** Navigation and inline headings share the same groups; no extra settings pages. */
 export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsGroup[]>> = {
+  advanced: [{ id: "storage", label: "storage.title", keys: [] }],
   updates: [
     {
       id: "update-checks",
