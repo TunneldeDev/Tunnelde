@@ -90,7 +90,9 @@ Release Please action is replaced by repository scripts; the manifest remains ve
 
 The changelog has bilingual categories, highlights, expandable detail, PR/commit links and
 contributors. Duplicate titles retain their source references and authors. History on main is
-preserved byte for byte. Optional Unreleased notes from dev become the new release highlights.
+preserved byte for byte. Optional Unreleased notes edited since the last promoted dev source
+become the new release highlights. An unchanged summary is ignored, so an older cycle cannot
+silently describe a newer release; without a new summary, highlights come from current changes.
 Generation is deterministic for fixed inputs and date, requires no AI service, and happens in
 the PR before main is changed. PR bodies stay short and link to that exact changelog SHA.
 
