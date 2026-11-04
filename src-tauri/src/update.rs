@@ -16,6 +16,7 @@ use crate::state::AppState;
 mod atom;
 mod channels;
 mod feeds;
+pub mod history;
 
 use channels::accepts_version;
 use feeds::{feeds, Feed};
