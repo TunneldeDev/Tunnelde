@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { api } from "@/lib/api/ipc";
 import { transferApi } from "@/lib/api/transfers";
+import * as ipc from "@/lib/api/ipc";
 import { useTransfers } from "@/store/transfers";
 import type { TransferEvent } from "@/lib/api/types";
 
@@ -74,8 +75,8 @@ describe("durable transfer controls", () => {
     let finish!: () => void;
     vi.spyOn(transferApi, "clear").mockImplementation(
       () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
+        new Promise<null>((resolve) => {
+          finish = () => resolve(null);
         }),
     );
     const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
@@ -100,6 +101,63 @@ describe("durable transfer controls", () => {
     });
     await act(async () => useTransfers.getState().clear(running.id));
     expect(useTransfers.getState().items[0]).toMatchObject({ status: "paused", clearing: false });
+  });
+
+  it("keeps deferred cleanup visible and prevents accidentally resuming discarded data", async () => {
+    const pending = {
+      ...running,
+      status: "cleanupPending" as const,
+      updatedAt: 2,
+      fromHostId: null,
+      toHostId: "host",
+      error: "sftp.reconnectRequired",
+    };
+    vi.spyOn(transferApi, "clear").mockResolvedValue(pending);
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "failed", durable: true, updatedAt: 1 }],
+    });
+    await act(async () => useTransfers.getState().clear(running.id));
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      status: "cleanupPending",
+      clearing: false,
+    });
+    useTransfers.getState().resume(running.id);
+    expect(resume).not.toHaveBeenCalled();
+    vi.mocked(transferApi.clear).mockResolvedValue(null);
+    await act(async () => useTransfers.getState().clear(running.id));
+    expect(useTransfers.getState().items).toHaveLength(0);
+  });
+
+  it("reconciles tasks removed by native background cleanup", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    vi.spyOn(transferApi, "list").mockResolvedValue([]);
+    useTransfers.setState({
+      items: [
+        { ...running, status: "cleanupPending", durable: true, updatedAt: 1 },
+        { ...running, id: "plugin", updatedAt: 1 },
+      ],
+    });
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items.map((item) => item.id)).toEqual(["plugin"]);
+  });
+
+  it("ignores old snapshots that finish after a newer deletion snapshot", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    let finish!: (rows: Awaited<ReturnType<typeof transferApi.list>>) => void;
+    const list = vi.spyOn(transferApi, "list").mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    useTransfers.setState({ items: [{ ...running, durable: true, updatedAt: 1 }] });
+    const older = useTransfers.getState().hydrate();
+    list.mockResolvedValue([]);
+    await useTransfers.getState().hydrate();
+    finish([{ ...running, updatedAt: 1, fromHostId: null, toHostId: "host" }]);
+    await older;
+    expect(useTransfers.getState().items).toHaveLength(0);
   });
 
   it("resumes before progress arrives and never overwrites a fast completion", async () => {

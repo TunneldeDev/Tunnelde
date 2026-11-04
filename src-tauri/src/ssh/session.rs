@@ -222,6 +222,7 @@ impl SshManager {
             .map(|sessions| {
                 sessions
                     .values()
+                    .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
                     .map(|handle| handle.info.clone())
                     .collect()
             })
@@ -762,6 +763,7 @@ async fn connect_for_auth(
     tracing::info!(host = %host.name, session = %session_id, "ssh session opened");
     let runner_app = app.clone();
     tokio::spawn(async move {
+        crate::ssh::files::durable::on_reconnect(&runner_app).await;
         crate::plugins::runners::on_reconnect(&runner_app).await;
     });
     Ok(info)

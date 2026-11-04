@@ -205,6 +205,12 @@ async function wireEvents(): Promise<void> {
     },
     {
       register: (signal) =>
+        events.onTransfersChanged(() => {
+          void useTransfers.getState().hydrate();
+        }, signal),
+    },
+    {
+      register: (signal) =>
         events.onSshClosed((payload) => {
           const known = useSsh
             .getState()

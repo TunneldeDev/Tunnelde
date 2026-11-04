@@ -52,6 +52,7 @@ pub enum TransferStatus {
     Failed,
     Cancelled,
     Paused,
+    CleanupPending,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -381,18 +382,22 @@ async fn session_with_config(
     session_id: &str,
     config: russh_sftp::client::Config,
 ) -> AppResult<SftpSession> {
-    let handle = app.state::<AppState>().ssh.handle(session_id)?;
-    let channel = handle
-        .channel_open_session()
-        .await
-        .map_err(|error| AppError::Ssh(format!("sftp.channel: {error}")))?;
-    channel
-        .request_subsystem(true, "sftp")
-        .await
-        .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
-    SftpSession::new_with_config(channel.into_stream(), config)
-        .await
-        .map_err(map_sftp)
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let handle = app.state::<AppState>().ssh.handle(session_id)?;
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|error| AppError::Ssh(format!("sftp.channel: {error}")))?;
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
+        SftpSession::new_with_config(channel.into_stream(), config)
+            .await
+            .map_err(map_sftp)
+    })
+    .await
+    .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
 }
 
 fn requested_directory(home: &str, input: Option<&str>) -> AppResult<String> {
@@ -687,7 +692,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             }
             phase(app, id, "cleaning");
             let cleaned = tokio::time::timeout(
-                std::time::Duration::from_secs(30),
+                std::time::Duration::from_secs(5),
                 durable::cleanup_artifacts(app, &row),
             )
             .await;
@@ -696,16 +701,21 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
                 Ok(Err(error)) => {
                     tracing::warn!(%error, transfer_id=id, "Cancelled transfer cleanup must be retried");
                     event.error = Some("sftp.cancelCleanupFailed".into());
+                    event.status = TransferStatus::CleanupPending;
                 }
                 Err(_) => {
                     tracing::warn!(transfer_id = id, "Cancelled transfer cleanup timed out");
                     event.error = Some("sftp.cancelCleanupFailed".into());
+                    event.status = TransferStatus::CleanupPending;
                 }
             }
         }
         if matches!(
             event.status,
-            TransferStatus::Cancelled | TransferStatus::Paused | TransferStatus::Failed
+            TransferStatus::Cancelled
+                | TransferStatus::Paused
+                | TransferStatus::Failed
+                | TransferStatus::CleanupPending
         ) {
             event.transferred = event.transferred.max(row.transferred);
         }
@@ -715,6 +725,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             TransferStatus::Cancelled => "cancelled",
             TransferStatus::Paused => "paused",
             TransferStatus::Failed => "failed",
+            TransferStatus::CleanupPending => "cleanupPending",
         }
         .into();
         row.transferred = event.transferred;
@@ -728,8 +739,15 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     if let Ok(row) = durable::Journal::get(app, id) {
         event.total = event.total.max(row.total);
     }
+    let retry_cleanup = event.status == TransferStatus::CleanupPending;
     let event = state.transfers.complete(event);
     emit(app, event);
+    if retry_cleanup {
+        let cleanup_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            durable::on_reconnect(&cleanup_app).await;
+        });
+    }
 }
 
 /// Copies one endpoint onto another, whatever the two sides are: disk to disk,
@@ -777,6 +795,11 @@ fn spawn_transfer_inner(
                 .and_then(|id| sessions.iter().find(|s| &s.id == id))
                 .map(|s| s.host_id.clone())
         };
+        let address = |id: &Option<String>| {
+            id.as_ref()
+                .and_then(|id| sessions.iter().find(|s| &s.id == id))
+                .map(|s| s.address.clone())
+        };
         durable::Journal::upsert(
             &app,
             durable::DurableTransfer {
@@ -785,9 +808,11 @@ fn spawn_transfer_inner(
                 name: file_name_of(&from.path),
                 from_session: from.session.clone(),
                 from_host_id: host(&from.session),
+                from_address: address(&from.session),
                 from_path: from.path.clone(),
                 to_session: to.session.clone(),
                 to_host_id: host(&to.session),
+                to_address: address(&to.session),
                 to_path: to.path.clone(),
                 remove_source,
                 deleting_source: false,
@@ -812,6 +837,9 @@ fn spawn_transfer_inner(
         .transfers
         .register(&id, cancel.clone(), transfer_owner)?;
     progress(&app, &id, &name, 0, 0);
+    if owner.is_none() {
+        let _ = app.emit("sftp://changed", ());
+    }
 
     let transfer_id = id.clone();
     tauri::async_runtime::spawn(async move {
@@ -855,7 +883,10 @@ pub(crate) fn resume_transfer(
     to: Endpoint,
     row: durable::DurableTransfer,
 ) -> AppResult<()> {
-    if matches!(row.status.as_str(), "done" | "cancelled" | "cancelling") {
+    if matches!(
+        row.status.as_str(),
+        "done" | "cancelled" | "cancelling" | "cleanupPending"
+    ) {
         return Err(AppError::validation("sftp.transferAlreadyComplete"));
     }
     let cancel = Arc::new(AtomicBool::new(false));
@@ -866,8 +897,11 @@ pub(crate) fn resume_transfer(
         .transfers
         .register(&id, cancel.clone(), None)?;
     let mut row = row;
+    row.from_session = from.session.clone();
+    row.to_session = to.session.clone();
     row.status = "running".into();
     row.error = None;
+    row.updated_at = crate::models::now_ms();
     if let Err(error) = durable::Journal::upsert(&app, row.clone()) {
         app.state::<AppState>().transfers.release(&id);
         return Err(error);

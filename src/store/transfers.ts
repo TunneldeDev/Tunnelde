@@ -17,6 +17,12 @@ export interface TransferItem extends Omit<TransferEvent, "status"> {
   clearing?: boolean;
   rate?: TransferRate;
   speedLimitKib?: number;
+  fromHostId?: string | null;
+  toHostId?: string | null;
+  fromAddress?: string | null;
+  toAddress?: string | null;
+  fromPath?: string;
+  toPath?: string;
 }
 
 interface TransfersStore {
@@ -31,6 +37,7 @@ interface TransfersStore {
 }
 
 const KEEP_FINISHED = 6;
+let snapshotRequest = 0;
 
 export const useTransfers = create<TransfersStore>((set, get) => ({
   items: [],
@@ -51,11 +58,16 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
   },
   hydrate: async () => {
     if (!isTauri()) return;
+    const request = ++snapshotRequest;
+    const before = get().items;
     try {
       const rows = await transferApi.list();
+      if (request !== snapshotRequest) return;
       set((state) => ({
         items: [
-          ...state.items.filter((x) => !rows.some((r) => r.id === x.id)),
+          ...state.items.filter(
+            (x) => !rows.some((r) => r.id === x.id) && (!x.durable || !before.includes(x)),
+          ),
           ...rows.map((row) => {
             const previous = state.items.find((x) => x.id === row.id);
             const newer =
@@ -70,7 +82,8 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               durable: true,
               clearing: previous?.clearing,
               speedLimitKib: previous?.speedLimitKib,
-              pausing: previous?.pausing,
+              cancelling: item.status === "running" ? previous?.cancelling : undefined,
+              pausing: item.status === "running" ? previous?.pausing : undefined,
               rate:
                 item.status === "running"
                   ? (previous?.rate ?? sampleTransfer(undefined, item.transferred, Date.now()))
@@ -80,6 +93,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
         ],
       }));
     } catch (error) {
+      if (request !== snapshotRequest) return;
       toast(translateError(error), "error");
     }
   },
@@ -103,6 +117,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       !previous ||
       previous.status === "running" ||
       previous.status === "cancelled" ||
+      previous.status === "cleanupPending" ||
       previous.clearing ||
       previous.status === "done"
     )
@@ -132,12 +147,26 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
   clear: (id) => {
     const item = get().items.find((x) => x.id === id);
     if (!item || item.status === "running" || item.clearing) return;
+    if (!item.durable) {
+      set((state) => ({ items: state.items.filter((x) => x.id !== id) }));
+      return;
+    }
     set((state) => ({
       items: state.items.map((x) => (x.id === id ? { ...x, clearing: true } : x)),
     }));
     void transferApi
       .clear(id)
-      .then(() => set((state) => ({ items: state.items.filter((x) => x.id !== id) })))
+      .then((pending) =>
+        set((state) => ({
+          items: pending
+            ? state.items.map((x) =>
+                x.id === id
+                  ? { ...x, ...pending, durable: true, clearing: false, rate: undefined }
+                  : x,
+              )
+            : state.items.filter((x) => x.id !== id),
+        })),
+      )
       .catch((error) => {
         set((state) => ({
           items: state.items.map((x) => (x.id === id ? { ...x, clearing: false } : x)),
@@ -154,6 +183,12 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       next.durable = previous?.durable;
       next.clearing = previous?.clearing;
       next.speedLimitKib = previous?.speedLimitKib;
+      next.fromHostId = previous?.fromHostId;
+      next.toHostId = previous?.toHostId;
+      next.fromAddress = previous?.fromAddress;
+      next.toAddress = previous?.toAddress;
+      next.fromPath = previous?.fromPath;
+      next.toPath = previous?.toPath;
       next.total = Math.max(event.total, previous?.total ?? 0);
       if (event.status === "running") {
         next.cancelling = previous?.cancelling;
@@ -162,8 +197,10 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
         next.transferred = Math.max(event.transferred, previous?.transferred ?? 0);
         next.rate = sampleTransfer(previous?.rate, next.transferred, next.updatedAt);
       }
-      const others = state.items.filter((item) => item.id !== event.id);
-      const merged = [...others, next].sort((left, right) => left.updatedAt - right.updatedAt);
+      // Progress must not reorder rows while a user is clicking their controls.
+      const merged = previous
+        ? state.items.map((item) => (item.id === event.id ? next : item))
+        : [...state.items, next];
       const finished = merged.filter((item) => !item.durable && item.status !== "running");
       const running = merged.filter((item) => item.durable || item.status === "running");
       const trimmed = [...running, ...finished.slice(-KEEP_FINISHED)];

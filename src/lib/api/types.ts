@@ -319,7 +319,8 @@ export interface Listing {
 export type FsSource = { kind: "local" } | { kind: "remote"; sessionId: string };
 
 export type TransferDirection = "transfer";
-export type TransferStatus = "running" | "done" | "failed" | "cancelled" | "paused";
+export type TransferStatus =
+  "running" | "done" | "failed" | "cancelled" | "paused" | "cleanupPending";
 
 export interface TransferEvent {
   phase?: "verifying" | "cleaning";
