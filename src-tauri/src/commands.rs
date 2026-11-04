@@ -762,8 +762,13 @@ pub async fn remote_processes(
 }
 
 #[tauri::command]
-pub async fn remote_kill(app: AppHandle, session_id: String, pid: u32) -> AppResult<()> {
-    monitor::kill(&app, &session_id, pid).await
+pub async fn remote_kill(
+    app: AppHandle,
+    session_id: String,
+    pid: u32,
+    expected_start_ticks: Option<u64>,
+) -> AppResult<()> {
+    monitor::kill(&app, &session_id, pid, expected_start_ticks).await
 }
 
 #[tauri::command]

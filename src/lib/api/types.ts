@@ -339,6 +339,22 @@ export interface RemoteProcess {
   cpu: number;
   memory: number;
   rss: number;
+  /** Recent interval, normalized to total machine capacity (0–100). */
+  cpuTotal?: number;
+  startedAtTicks?: number;
+  uid?: number;
+  gid?: number;
+  userName?: string;
+  groupName?: string;
+  parentPid?: number;
+  threads?: number;
+  state?: string;
+  diskReadRate?: number;
+  diskWriteRate?: number;
+  networkRxRate?: number;
+  networkTxRate?: number;
+  gpuPercent?: number;
+  gpuMemory?: number;
 }
 
 export interface RemoteStats {

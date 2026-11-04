@@ -210,7 +210,8 @@ export const api = {
   remoteStats: (sessionId: string) => invoke<RemoteStats>("remote_stats", { sessionId }),
   remoteProcesses: (sessionId: string) =>
     invoke<RemoteProcess[]>("remote_processes", { sessionId }),
-  remoteKill: (sessionId: string, pid: number) => invoke<void>("remote_kill", { sessionId, pid }),
+  remoteKill: (sessionId: string, pid: number, expectedStartTicks?: number) =>
+    invoke<void>("remote_kill", { sessionId, pid, expectedStartTicks }),
 
   sftpList: (sessionId: string, path?: string | null) =>
     invoke<Listing>("sftp_list", { sessionId, path: path ?? null }),

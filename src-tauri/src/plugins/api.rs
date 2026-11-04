@@ -563,6 +563,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                 app.clone(),
                 field(&params, "sessionId")?,
                 field(&params, "pid")?,
+                None,
             )
             .await?;
             Ok(Value::Null)
