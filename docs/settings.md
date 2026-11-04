@@ -271,3 +271,10 @@ not close sessions or discard editor drafts. Remote CPU, memory, network and dis
 read/write use timestamped timelines with labeled dashed scales and mouse/keyboard
 sample inspection. Missing disk samples are shown as unavailable rather than invented
 zero readings.
+
+## Remote process management
+
+The remote process manager supports automatic refresh, CPU/memory, disk I/O,
+available TCP/GPU telemetry, searchable user/group details and sortable, paginated
+rows. See the [English guide](monitoring.en-us.md) or
+[中文说明](monitoring.zh-cn.md) for permissions and metric definitions.
