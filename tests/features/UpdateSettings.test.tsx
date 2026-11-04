@@ -82,17 +82,19 @@ beforeEach(async () => {
 });
 
 describe("updates inside settings", () => {
-  it("offers separate Stable, Beta and Nightly channels and persists the selection", async () => {
+  it("offers only Stable and Beta channels and persists the selection", async () => {
     render(<SettingsPage />);
     const row = within(document.querySelector('[data-setting="updateChannel"]') as HTMLElement);
     fireEvent.click(row.getByRole("button", { name: "Update channel" }));
     expect(screen.getByRole("option", { name: "Stable" })).toBeTruthy();
     expect(screen.getByRole("option", { name: "Public beta (Beta)" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("option", { name: "Development (Nightly)" }));
-    await waitFor(() => expect(update).toHaveBeenCalledWith({ updateChannel: "nightly" }));
-    expect(useSettings.getState().settings.updateChannel).toBe("nightly");
+    expect(screen.queryByRole("option", { name: /Nightly|Development/ })).toBeNull();
+    expect(screen.getAllByRole("option")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("option", { name: "Public beta (Beta)" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({ updateChannel: "beta" }));
+    expect(useSettings.getState().settings.updateChannel).toBe("beta");
     expect(document.querySelector(".settings-update__channel")?.textContent).toBe(
-      "Development (Nightly)",
+      "Public beta (Beta)",
     );
   });
 

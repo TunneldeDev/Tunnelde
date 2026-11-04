@@ -338,3 +338,17 @@ fn nightly_discovery_includes_beta_and_stable_but_beta_excludes_nightly() {
     assert_eq!(source_channels("beta"), &["stable", "beta"]);
     assert_eq!(source_channels("stable"), &["stable"]);
 }
+
+#[test]
+fn public_update_preferences_reject_development_channels() {
+    for channel in ["stable", "beta", "nightly", "unknown"] {
+        let settings = Settings {
+            update_channel: channel.into(),
+            ..Settings::default()
+        };
+        assert_eq!(
+            validate_preferences(&settings).is_ok(),
+            ["stable", "beta"].contains(&channel)
+        );
+    }
+}

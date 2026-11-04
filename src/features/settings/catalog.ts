@@ -439,7 +439,6 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     ...select("updateChannel", "updates", [
       choice("stable", "updates.stable"),
       choice("beta", "updates.beta"),
-      choice("nightly", "updates.nightly"),
     ]),
     label: "updates.channel",
     hint: "updates.channelHint",

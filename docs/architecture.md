@@ -174,7 +174,9 @@ The reusable Release workflow builds all four desktop targets and validates sign
 installer and `latest.json` before making a draft public. Release titles include full version tags.
 Tagged sources remain valid when dev advances during a build; ancestry is still verified. Historical
 releases and tags remain available. Beta and Nightly cannot become the latest stable release.
-The app exposes Stable, Beta and Nightly channels and chooses by SemVer, never release-list order.
+The app exposes only Stable and Beta channels and chooses by SemVer, never release-list order.
+Developer Nightly packages are distributed separately and are not offered in app updates.
+Legacy Nightly preferences migrate to Stable; the update boundary rejects unsupported channels.
 Helpers remain Actions artifacts and are rejected in desktop release downloads.
 
 The repository token explicitly dispatches CI on generated PR heads and writes PR-policy status;

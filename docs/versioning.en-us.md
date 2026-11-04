@@ -39,10 +39,18 @@ public prereleases; only the current stable publication becomes Latest.
 Update selection compares semantic versions across all fetched pages rather
 than relying on GitHub's display order or string comparison.
 
-Historical releases normally remain immutable. Exceptional cleanup needs
-explicit authorization, a local backup of release metadata and tag targets,
-and a verified public replacement before removing superseded downloads.
-Installed software keeps its embedded version after a remote tag is deleted.
+Historical releases normally remain immutable. Exceptional cleanup or reissue
+needs explicit authorization and a local backup of release metadata and tag
+history. Validate the replacement source before deleting superseded downloads;
+build fresh packages from that source and verify them before publication.
+Never rename old binaries as the replacement. Reusing a version is a maintenance
+exception, not a way to reset Beta allocation. Existing installations at the same
+or a higher version need manual installation: update checks do not offer an
+equal version or an automatic downgrade. Deleting a remote tag does not change
+the version embedded in installed software.
 
 See [release operations](releases.md) for workflow triggers and recovery.
 [简体中文](versioning.zh-cn.md)
+
+In-app updates offer only Stable and Public beta. Developer Nightly snapshots
+are excluded; legacy Nightly preferences migrate to Stable.
