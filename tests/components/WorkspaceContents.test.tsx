@@ -39,6 +39,24 @@ beforeEach(() => {
 });
 
 describe("workspace page ownership", () => {
+  it("keeps a preview before a user edits its form so navigating cannot lose the draft", () => {
+    useWorkspace.setState((state) => ({
+      tabs: state.tabs.map((tab) => (tab.id === "terminal:a" ? { ...tab, preview: true } : tab)),
+    }));
+    render(
+      <>
+        <PaneLayout />
+        <WorkspaceContents />
+      </>,
+    );
+    fireEvent.input(screen.getByLabelText("terminal a"), { target: { value: "unsent draft" } });
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "terminal:a")?.preview).toBe(
+      false,
+    );
+    act(() => useWorkspace.getState().openPage("settings"));
+    expect((screen.getByLabelText("terminal a") as HTMLTextAreaElement).value).toBe("unsent draft");
+  });
+
   it("keeps page instances and DOM state when splitting, moving and merging groups", () => {
     render(
       <>

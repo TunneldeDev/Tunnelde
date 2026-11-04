@@ -124,6 +124,10 @@
   flex: 1 1 auto;
 }
 
+.td-tab.is-preview .td-tab__label {
+  font-style: italic;
+}
+
 .td-tab__close {
   width: 20px;
   height: 20px;

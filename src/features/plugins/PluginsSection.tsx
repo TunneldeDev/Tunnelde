@@ -259,6 +259,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                 className="extension-row__open"
                 aria-current={active === tabId ? "page" : undefined}
                 onClick={() => useWorkspace.getState().openPluginDetail(origin, info.id, info.name)}
+                onDoubleClick={() => useWorkspace.getState().keepTab(tabId)}
               >
                 {info.runtime === "theme" ? (
                   <Palette size={29} aria-hidden="true" />

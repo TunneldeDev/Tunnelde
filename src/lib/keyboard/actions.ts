@@ -60,7 +60,8 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
             ),
           );
     if (next !== settings.settings.monoFontSize) void settings.update({ monoFontSize: next });
-  } else if (id === "pane.close" && workspace.panes.length > 1)
+  } else if (id === "tab.keepOpen" && workspace.activeId) workspace.keepTab(workspace.activeId);
+  else if (id === "pane.close" && workspace.panes.length > 1)
     workspace.closePane(workspace.activePaneId);
   else if (id === "tab.close" || id === "pane.close") {
     const tab = workspace.tabs.find((item) => item.id === workspace.activeId);

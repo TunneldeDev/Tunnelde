@@ -120,6 +120,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
   const tabs = useWorkspace((state) => state.tabs);
   const activate = useWorkspace((state) => state.activate);
   const togglePin = useWorkspace((state) => state.togglePin);
+  const keepTab = useWorkspace((state) => state.keepTab);
   const reorderTab = useWorkspace((state) => state.reorderTab);
   const moveTab = useWorkspace((state) => state.moveTab);
   const closeOthers = useWorkspace((state) => state.closeOthers);
@@ -259,33 +260,50 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
               data-tab-id={tab.id}
               role="tab"
               aria-selected={active}
-              title={tabTitle(tab)}
+              title={tab.preview ? `${tabTitle(tab)} · ${t("tab.previewHint")}` : tabTitle(tab)}
               tabIndex={active ? 0 : -1}
               draggable
               className={cn(
                 "td-tab",
                 active && "is-active",
                 tab.pinned && "is-pinned",
+                tab.preview && "is-preview",
                 before === tab.id && "is-drop-before",
               )}
               onDragStart={(event) => {
+                keepTab(tab.id);
                 event.dataTransfer.setData(TAB_MIME, tab.id);
                 const sidebar = tab.kind === "sidebar" ? sidebarViewOf(tab.id) : null;
                 if (sidebar) event.dataTransfer.setData(SIDEBAR_MIME, sidebar);
                 event.dataTransfer.effectAllowed = "move";
               }}
-              onClick={() => activate(tab.id)}
+              onClick={() => {
+                if (active && tab.preview) keepTab(tab.id);
+                activate(tab.id);
+              }}
               onAuxClick={(event) => {
                 if (event.button === 1) {
                   event.preventDefault();
                   requestClose(tab);
                 }
               }}
-              onDoubleClick={() => togglePin(tab.id)}
+              onDoubleClick={(event) => {
+                if (event.target instanceof Element && event.target.closest("button")) return;
+                keepTab(tab.id);
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 const items = [
+                  {
+                    label: t("tab.keepOpen"),
+                    disabled: !tab.preview,
+                    onSelect: () => keepTab(tab.id),
+                  },
+                  {
+                    label: t(tab.pinned ? "tab.unpin" : "tab.pin"),
+                    onSelect: () => togglePin(tab.id),
+                  },
                   { label: t("tab.close"), onSelect: () => requestClose(tab) },
                   { label: t("tab.closeOthers"), onSelect: () => closeOthers(tab.id) },
                   {
@@ -336,6 +354,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
                 if (event.key === "Enter" || event.key === " ") {
                   event.preventDefault();
                   activate(tab.id);
+                  if (event.key === "Enter") keepTab(tab.id);
                 }
               }}
             >

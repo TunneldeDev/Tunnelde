@@ -35,7 +35,7 @@ const HOST_MIME = "application/x-tunnelde-host";
 function activateHost(host: Host): void {
   switch (useSettings.getState().settings.hostActivation) {
     case "details":
-      useWorkspace.getState().openHost(host);
+      useWorkspace.getState().openHost(host, { preview: false });
       return;
     case "edit":
       useDialogs.getState().openHost(host);
