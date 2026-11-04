@@ -123,6 +123,9 @@ describe("plugin workspace bridge authorization and live state", () => {
 
   it("reads current pane state after opening, splitting and moving tabs", async () => {
     await runPluginWorkspaceRequest(request("workspace.openPage", { kind: "settings" }));
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "page:settings")?.preview).toBe(
+      false,
+    );
     useWorkspace.getState().openPage("about");
     await runPluginWorkspaceRequest(
       request("workspace.split", {

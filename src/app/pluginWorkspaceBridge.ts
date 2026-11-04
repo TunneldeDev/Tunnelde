@@ -83,7 +83,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const kind = text(params, "kind");
       const page = PAGES.find((item) => item === kind);
       if (!page) throw new Error("invalid:kind");
-      workspace.openPage(page);
+      workspace.openPage(page, { preview: false });
       break;
     }
     case "workspace.openHost": {
@@ -93,7 +93,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const host = snapshot.hosts.find((item) => item.id === hostId);
       if (!host) throw new Error("host.notFound");
       useHosts.setState({ ...snapshot, loaded: true });
-      useWorkspace.getState().openHost(host);
+      useWorkspace.getState().openHost(host, { preview: false });
       break;
     }
     case "workspace.openTerminal":

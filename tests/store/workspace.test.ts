@@ -83,6 +83,47 @@ beforeEach(() => {
 });
 
 describe("preview navigation tabs", () => {
+  it("keeps a dirty preview and promotes it before opening another preview", () => {
+    const tabId = "editor:session-one:/file.txt";
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: tabId,
+          kind: "editor",
+          title: "file.txt",
+          hostId: null,
+          pinned: false,
+          preview: true,
+        },
+      ],
+      panes: [{ id: "pane-1", tabIds: [tabId], activeId: tabId }],
+      activeId: tabId,
+    });
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: "session-one",
+          path: "/file.txt",
+          name: "file.txt",
+          content: "changed",
+          baseline: "original",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    state().openPage("about");
+    expect(state().tabs.find((tab) => tab.id === tabId)?.preview).toBe(false);
+    expect(
+      state()
+        .tabs.filter((tab) => tab.preview)
+        .map((tab) => tab.id),
+    ).toEqual(["page:about"]);
+    expect(useEditors.getState().isDirty(tabId)).toBe(true);
+  });
+
   it("reuses one preview slot in place across plugins, host details and pages", () => {
     state().openPage("welcome");
     state().openPluginDetail("official", "uuid", "UUID");
