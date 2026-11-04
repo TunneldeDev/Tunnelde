@@ -312,6 +312,7 @@ export type TransferDirection = "transfer";
 export type TransferStatus = "running" | "done" | "failed" | "cancelled" | "paused";
 
 export interface TransferEvent {
+  phase?: "verifying";
   id: string;
   direction: TransferDirection;
   name: string;

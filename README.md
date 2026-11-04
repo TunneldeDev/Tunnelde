@@ -37,10 +37,14 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   connect directly; unknown or changed server keys still require explicit trust.
 - Use an xterm.js terminal with ANSI colors, Unicode grapheme widths, monospace fonts,
   native clipboard integration, configurable mouse behavior and live command history.
-- Browse any two local/remote locations independently. Sort, filter, group, rename
-  inline, create files or folders, drag transfers and edit remote text files.
+- Browse local/remote locations independently in details or Finder-style columns.
+  Expand breadcrumb folders, edit the full path, type a name to select it, and resize
+  or detach file panels. Sort, filter, group, rename inline, create files or folders,
+  connect file management directly to a saved host, and drag transfers.
 - Configure proxies per feature, connect through ordered SSH jump hosts, pause and
-  resume file transfers, and manage local or remote TCP forwards from a host page.
+  resume file transfers with speed, remaining bytes and time estimates, and manage
+  local or remote TCP forwards from a host page. Removing an unfinished transfer
+  cleans its recorded staging files; a failed cleanup keeps the record for retry.
   Optional SSHFS and SSHFS Lite plugins mount remote directories through the same
   authenticated connection. See [network and storage](docs/network-storage.md)
   for 0.27+ features and dependency requirements.
@@ -92,6 +96,11 @@ fresh user directory. API calls originate there; configuration and API keys trav
 SSH stdin and are not written into the deployment files. Pi asks before uploading its
 small permission extension. Neither operation installs Node, installs an agent, or
 changes system services.
+
+Assistant plugins 1.4.1 keep remote source deployments under `~/.TunneldeAI/Chats/`
+and private runtimes under `~/.TunneldeAI/Runtimes/`. Conversation deletion verifies
+and cleans recorded source files. Known old deployment directories migrate into
+`Chats` at the next approved initialization; untracked or modified files are preserved.
 
 Four modes are available: **Ask for approval**, **Approve for me**, **Full Access** and
 **ReadOnly**. Independent review needs a separate API reviewer; failure or denial falls

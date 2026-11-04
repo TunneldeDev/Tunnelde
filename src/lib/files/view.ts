@@ -1,6 +1,7 @@
 import type { FileEntry } from "@/lib/api/types";
 
 export interface FileViewPreferences {
+  filesLayout?: "details" | "columns";
   filesShowHidden: boolean;
   filesFoldersFirst: boolean;
   filesSortBy: "name" | "size" | "modified" | "type";

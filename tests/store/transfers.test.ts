@@ -47,6 +47,51 @@ describe("transfer cancellation", () => {
 });
 
 describe("durable transfer controls", () => {
+  it("prevents duplicate pause requests and keeps pending pause through progress events", async () => {
+    vi.spyOn(transferApi, "pause").mockResolvedValue(undefined);
+    useTransfers.setState({ items: [{ ...running, durable: true, updatedAt: 1 }] });
+    const store = useTransfers.getState();
+    store.pause(running.id);
+    store.pause(running.id);
+    store.apply({ ...running, transferred: 25 });
+    expect(useTransfers.getState().items[0]?.pausing).toBe(true);
+    expect(transferApi.pause).toHaveBeenCalledTimes(1);
+    store.apply({ ...running, status: "paused", transferred: 25 });
+    expect(useTransfers.getState().items[0]?.pausing).toBeUndefined();
+  });
+
+  it("keeps the row until cleanup completes and prevents resume during cleanup", async () => {
+    let finish!: () => void;
+    vi.spyOn(transferApi, "clear").mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "cancelled", durable: true, updatedAt: 1 }],
+    });
+    const store = useTransfers.getState();
+    store.clear(running.id);
+    store.clear(running.id);
+    store.resume(running.id);
+    expect(useTransfers.getState().items[0]?.clearing).toBe(true);
+    expect(transferApi.clear).toHaveBeenCalledTimes(1);
+    expect(resume).not.toHaveBeenCalled();
+    await act(async () => finish());
+    expect(useTransfers.getState().items).toHaveLength(0);
+  });
+
+  it("retains a failed cleanup so a disconnected host can be reconnected and retried", async () => {
+    vi.spyOn(transferApi, "clear").mockRejectedValue(new Error("reconnectRequired"));
+    useTransfers.setState({
+      items: [{ ...running, status: "paused", durable: true, updatedAt: 1 }],
+    });
+    await act(async () => useTransfers.getState().clear(running.id));
+    expect(useTransfers.getState().items[0]).toMatchObject({ status: "paused", clearing: false });
+  });
+
   it("resumes before progress arrives and never overwrites a fast completion", async () => {
     let finish!: () => void;
     vi.spyOn(transferApi, "resume").mockImplementation(

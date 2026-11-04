@@ -6,12 +6,16 @@ import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TransferEvent } from "@/lib/api/types";
+import { sampleTransfer, type TransferRate } from "@/lib/files/transferProgress";
 
 export interface TransferItem extends Omit<TransferEvent, "status"> {
   status: TransferEvent["status"] | "paused";
   durable?: boolean;
   updatedAt: number;
   cancelling?: boolean;
+  pausing?: boolean;
+  clearing?: boolean;
+  rate?: TransferRate;
 }
 
 interface TransfersStore {
@@ -43,7 +47,17 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
                 (previous.updatedAt === row.updatedAt &&
                   previous.status !== "running" &&
                   row.status === "running"));
-            return { ...(newer ? previous : row), durable: true };
+            const item = newer ? previous : row;
+            return {
+              ...item,
+              durable: true,
+              clearing: previous?.clearing,
+              pausing: previous?.pausing,
+              rate:
+                item.status === "running"
+                  ? (previous?.rate ?? sampleTransfer(undefined, item.transferred, Date.now()))
+                  : undefined,
+            };
           }),
         ],
       }));
@@ -52,14 +66,40 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     }
   },
   pause: (id) => {
-    void transferApi.pause(id).catch((error) => toast(translateError(error), "error"));
+    const item = get().items.find((x) => x.id === id);
+    if (!item || item.status !== "running" || item.pausing || item.cancelling || item.clearing)
+      return;
+    set((state) => ({
+      items: state.items.map((x) => (x.id === id ? { ...x, pausing: true } : x)),
+    }));
+    void transferApi.pause(id).catch((error) => {
+      set((state) => ({
+        items: state.items.map((x) => (x.id === id ? { ...x, pausing: false } : x)),
+      }));
+      toast(translateError(error), "error");
+    });
   },
   resume: (id) => {
     const previous = get().items.find((x) => x.id === id);
-    if (!previous || previous.status === "running") return;
+    if (
+      !previous ||
+      previous.status === "running" ||
+      previous.clearing ||
+      previous.status === "done"
+    )
+      return;
     set((state) => ({
       items: state.items.map((x) =>
-        x.id === id ? { ...x, status: "running", cancelling: false, error: null } : x,
+        x.id === id
+          ? {
+              ...x,
+              status: "running",
+              cancelling: false,
+              pausing: false,
+              error: null,
+              rate: sampleTransfer(undefined, x.transferred, Date.now()),
+            }
+          : x,
       ),
     }));
     void transferApi.resume(id).catch((error) => {
@@ -70,10 +110,20 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     });
   },
   clear: (id) => {
+    const item = get().items.find((x) => x.id === id);
+    if (!item || item.status === "running" || item.clearing) return;
+    set((state) => ({
+      items: state.items.map((x) => (x.id === id ? { ...x, clearing: true } : x)),
+    }));
     void transferApi
       .clear(id)
       .then(() => set((state) => ({ items: state.items.filter((x) => x.id !== id) })))
-      .catch((error) => toast(translateError(error), "error"));
+      .catch((error) => {
+        set((state) => ({
+          items: state.items.map((x) => (x.id === id ? { ...x, clearing: false } : x)),
+        }));
+        toast(translateError(error), "error");
+      });
   },
 
   apply: (event) => {
@@ -82,7 +132,15 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       const previous = state.items.find((item) => item.id === event.id);
       if (previous && previous.status !== "running" && event.status === "running") return state;
       next.durable = previous?.durable;
-      if (event.status === "running") next.cancelling = previous?.cancelling;
+      next.clearing = previous?.clearing;
+      next.total = Math.max(event.total, previous?.total ?? 0);
+      if (event.status === "running") {
+        next.cancelling = previous?.cancelling;
+        next.pausing = previous?.pausing;
+        // Resumed jobs emit an initial zero before verifying existing target bytes.
+        next.transferred = Math.max(event.transferred, previous?.transferred ?? 0);
+        next.rate = sampleTransfer(previous?.rate, next.transferred, next.updatedAt);
+      }
       const others = state.items.filter((item) => item.id !== event.id);
       const merged = [...others, next].sort((left, right) => left.updatedAt - right.updatedAt);
       const finished = merged.filter((item) => !item.durable && item.status !== "running");
@@ -94,7 +152,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
 
   cancel: (id) => {
     const item = get().items.find((entry) => entry.id === id);
-    if (item && item.status === "running" && !item.cancelling) {
+    if (item && item.status === "running" && !item.cancelling && !item.pausing && !item.clearing) {
       set((state) => ({
         items: state.items.map((entry) =>
           entry.id === id ? { ...entry, cancelling: true } : entry,

@@ -1,7 +1,7 @@
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,11 +60,13 @@ impl Journal {
     pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
         app.state::<AppState>().db.with(|conn| {
             conn.execute(
-                "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1",
+                "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1 OR instr(key,?4)=1 OR instr(key,?5)=1",
                 rusqlite::params![
                     format!("transfer:{id}"),
                     format!("transfer-file:{id}:"),
-                    format!("transfer-backup:{id}:")
+                    format!("transfer-backup:{id}:"),
+                    format!("transfer-part:{id}:"),
+                    format!("transfer-artifact:{id}:")
                 ],
             )?;
             Ok(())
@@ -83,11 +85,33 @@ pub fn durable_transfer_list(app: AppHandle) -> AppResult<Vec<DurableTransfer>> 
     Ok(rows)
 }
 #[tauri::command]
-pub fn durable_transfer_clear(app: AppHandle, id: String) -> AppResult<()> {
-    if app.state::<AppState>().transfers.is_active(&id) {
-        return Err(AppError::validation("sftp.transferBusy"));
+pub async fn durable_transfer_clear(app: AppHandle, id: String) -> AppResult<()> {
+    let row = Journal::get(&app, &id)?;
+    // Reserve the same registry entry as resume so cleanup and writing cannot race.
+    app.state::<AppState>().transfers.register(
+        &id,
+        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        None,
+    )?;
+    let result = async {
+        if row.status == "done" {
+            return Journal::remove(&app, &id);
+        }
+        let to = super::Endpoint {
+            session: resolve_session(&app, row.to_host_id.clone(), row.to_session.clone())?,
+            path: row.to_path.clone(),
+        };
+        super::artifacts::cleanup(&app, &row, &to).await?;
+        Journal::remove(&app, &id)?;
+        let _ = app.emit(
+            "plugin://domain-changed",
+            serde_json::json!({"domain":"files","sessionId":to.session}),
+        );
+        Ok(())
     }
-    Journal::remove(&app, &id)
+    .await;
+    app.state::<AppState>().transfers.release(&id);
+    result
 }
 #[tauri::command]
 pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
@@ -98,30 +122,35 @@ pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
 #[tauri::command]
 pub fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
     let row = Journal::get(&app, &id)?;
-    let sessions = app.state::<AppState>().ssh.list();
-    let resolve = |host: Option<String>, old: Option<String>| -> AppResult<Option<String>> {
-        match host {
-            Some(host) => sessions
-                .iter()
-                .find(|s| s.host_id == host)
-                .map(|s| Some(s.id.clone()))
-                .ok_or_else(|| AppError::validation("sftp.reconnectRequired")),
-            None => {
-                if old.is_some() {
-                    Err(AppError::validation("sftp.reconnectRequired"))
-                } else {
-                    Ok(None)
-                }
-            }
-        }
-    };
     let from = super::Endpoint {
-        session: resolve(row.from_host_id.clone(), row.from_session.clone())?,
+        session: resolve_session(&app, row.from_host_id.clone(), row.from_session.clone())?,
         path: row.from_path.clone(),
     };
     let to = super::Endpoint {
-        session: resolve(row.to_host_id.clone(), row.to_session.clone())?,
+        session: resolve_session(&app, row.to_host_id.clone(), row.to_session.clone())?,
         path: row.to_path.clone(),
     };
     super::resume_transfer(app, from, to, row)
+}
+
+fn resolve_session(
+    app: &AppHandle,
+    host: Option<String>,
+    old: Option<String>,
+) -> AppResult<Option<String>> {
+    let sessions = app.state::<AppState>().ssh.list();
+    match host {
+        Some(host) => sessions
+            .iter()
+            .find(|s| s.host_id == host)
+            .map(|s| Some(s.id.clone()))
+            .ok_or_else(|| AppError::validation("sftp.reconnectRequired")),
+        None => {
+            if old.is_some() {
+                Err(AppError::validation("sftp.reconnectRequired"))
+            } else {
+                Ok(None)
+            }
+        }
+    }
 }
