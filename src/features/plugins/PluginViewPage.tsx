@@ -22,6 +22,7 @@ import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginChat } from "./PluginChat";
 import { PluginMounts } from "./PluginMounts";
 import "@/styles/pluginTools.css";
+import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 
 interface PluginViewPageProps {
   pluginId: string;
@@ -151,7 +152,14 @@ function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) 
               );
             }
             if (block.type === "form") {
-              return <PluginToolForm key={`form:${block.id}`} pluginId={pluginId} block={block} />;
+              return (
+                <PluginToolForm
+                  key={`form:${block.id}`}
+                  pluginId={pluginId}
+                  viewId={viewId}
+                  block={block}
+                />
+              );
             }
             if (block.type === "heading") {
               return (
@@ -206,14 +214,27 @@ function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) 
   );
 }
 
-function PluginToolForm({ pluginId, block }: { pluginId: string; block: PluginFormBlock }) {
+function PluginToolForm({
+  pluginId,
+  viewId,
+  block,
+}: {
+  pluginId: string;
+  viewId: string;
+  block: PluginFormBlock;
+}) {
   const { t, i18n } = useTranslation();
   const id = useId();
   // Workspace tabs remain mounted while inactive, preserving each tool's drafts and results.
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const [result, setResult] = useState<ReturnType<typeof normalizeResult> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const key = `tool:${pluginId}:${viewId}:${block.id}`;
+  const [draft, setDraft] = useViewState<Record<string, string>>(`${key}:draft`, {});
+  const [result, setResult] = useViewState<ReturnType<typeof normalizeResult> | null>(
+    `${key}:result`,
+    null,
+  );
+  const [error, setError] = useViewState<string | null>(`${key}:error`, null);
   const [busy, setBusy] = useState<string | null>(null);
+  useBackgroundGuard(busy !== null);
   const pending = useRef(false);
   const generation = useRef(0);
   useEffect(

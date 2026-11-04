@@ -12,6 +12,7 @@ import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useEditorLocation } from "@/store/editorLocation";
+import { useViewElementState, useBackgroundGuard } from "@/lib/session/viewState";
 
 interface EditorPageProps {
   tabId: string;
@@ -31,6 +32,8 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const candidate = useSsh((state) => state.sessions.find((session) => session.hostId === hostId));
   const [reconnecting, setReconnecting] = useState(false);
   const textarea = useRef<HTMLTextAreaElement>(null);
+  useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
+  useBackgroundGuard(reconnecting);
   const location = useEditorLocation((state) => state.target);
   useEffect(() => {
     if (

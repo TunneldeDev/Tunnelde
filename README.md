@@ -63,9 +63,12 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   and deployment records in **Settings → Advanced → Storage locations**. Choose folders
   individually or in a batch, review destinations, and fully quit/reopen to apply.
   Copies are verified before switching, and originals are retained for recovery.
-- Choose native or compact title bars. On macOS, closing retains the window and SSH
-  sessions; clicking the Dock or tray restores it. Settings → General controls whether
-  the Dock icon remains visible in the background. Use Quit to exit.
+- Choose native or compact title bars. Closing to the tray releases the WebView by
+  default while native SSH sessions and transfers continue. Reopening restores the
+  workspace, terminal screens and unsaved drafts. General settings also offer a
+  lightweight mode that avoids GPU terminal rendering, directory preloading and
+  frequent monitor sampling. On macOS, background Dock visibility is configurable.
+  Use Quit to exit.
 
 ## Independent AI plugins
 

@@ -135,7 +135,7 @@ export function bindTerminalSettings(
     const fontChanged = requestedFont !== fontFamily || requestedSize !== fontSize;
     const dimensionsChanged = terminal.options.lineHeight !== next.lineHeight;
     Object.assign(terminal.options, otherOptions);
-    updateRenderer(settings.terminalRenderer);
+    updateRenderer(settings.lightweightMode ? "dom" : settings.terminalRenderer);
     if (dimensionsChanged) requestLayout();
     if (fontChanged) {
       requestedFont = fontFamily;

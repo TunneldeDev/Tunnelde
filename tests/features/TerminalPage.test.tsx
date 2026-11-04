@@ -551,6 +551,21 @@ describe("live terminal settings", () => {
     expect(webglInstances[1]!.dispose).toHaveBeenCalledOnce();
   });
 
+  it("releases the GPU in lightweight mode and restores the saved renderer without reconnecting", async () => {
+    const view = render(<TerminalPage sessionId="s1" active={false} />);
+    await waitFor(() => expect(inputs).toHaveLength(1));
+    expect(webglInstances).toHaveLength(1);
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, lightweightMode: true } }));
+    expect(webglInstances[0]!.dispose).toHaveBeenCalledOnce();
+    expect(useSettings.getState().settings.terminalRenderer).toBe("auto");
+    act(() => useSettings.setState({ settings: { ...DEFAULT_SETTINGS, lightweightMode: false } }));
+    expect(webglInstances).toHaveLength(2);
+    expect(instances).toHaveLength(1);
+    expect(apiMock.sshAttach).toHaveBeenCalledTimes(1);
+    expect(apiMock.sshDisconnect).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
   it("follows OS reduced motion live and honors explicit motion overrides", async () => {
     let changed!: () => void;
     const motion = {

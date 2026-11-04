@@ -52,6 +52,10 @@ pub struct Settings {
     pub skipped_version: Option<String>,
     pub last_update_check: Option<i64>,
     pub close_to_tray: bool,
+    /// Destroy the hidden WebView after a successful in-memory checkpoint.
+    pub release_webview_in_tray: bool,
+    /// Prefer the CPU terminal renderer and avoid speculative file preloading.
+    pub lightweight_mode: bool,
     /// macOS: keep the Dock icon after closing the main window.
     pub show_dock_icon_in_background: bool,
     /// "system" uses native chrome; "compact" integrates the window controls.
@@ -121,6 +125,8 @@ impl Default for Settings {
             skipped_version: None,
             last_update_check: None,
             close_to_tray: false,
+            release_webview_in_tray: true,
+            lightweight_mode: false,
             show_dock_icon_in_background: true,
             title_bar_style: if cfg!(target_os = "windows") {
                 "compact"

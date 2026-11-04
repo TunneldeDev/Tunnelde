@@ -115,7 +115,7 @@ their defaults without overwriting existing choices.
 
 | Category           | Controls                                                                                                |
 | ------------------ | ------------------------------------------------------------------------------------------------------- |
-| General            | Language, window title bar, close to tray on Windows/Linux, background Dock visibility on macOS         |
+| General            | Language, title bar, close to tray, release background WebView, lightweight mode, macOS Dock visibility |
 | Appearance         | Theme, accent, density, UI/monospace font sizes, monospace font, motion                                 |
 | Workspace          | Status bar, monitor panel, panel widths, startup restoration, host activation                           |
 | Terminal           | Scrollback, line height, cursor styles/blinking, scrolling, clipboard behavior, renderer, input history |
@@ -194,11 +194,29 @@ icon hides and restores a docked panel while retaining its position, size and li
 The panel menu also provides Return to sidebar. Each pane can be locked as the destination
 for new pages, independently of keyboard focus.
 
-macOS retains the main window and sessions when its close button is used. **General →
+macOS keeps the application and sessions running when its close button is used. **General →
 Show in Dock while running in the background** defaults to on. With it off, closing
 the window removes its running Dock presence; use the menu-bar tray or launch the app
 again to restore it. Restoring returns normal Dock behavior. Minimizing retains the
 Dock icon, and Quit exits rather than hiding the window.
+
+**General → Release WebView while in tray** is on by default. After closing to the
+tray (automatic on macOS, opt-in on Windows/Linux), the application checkpoints its
+workspace and destroys the hidden window. Native SSH sessions, transfers, forwards
+and plugin processes continue; restoring from the tray, Dock or a second launch
+recreates the window. Terminal screens, scrollback, incomplete input, editor drafts
+and caret, file locations and view drafts remain in process memory. These snapshots
+are not saved to disk and do not survive Quit or a crash. In-flight view operations
+and dialogs defer suspension until they finish. If a checkpoint cannot be created,
+the hidden window stays alive to retain the user's work. Turning the setting off
+keeps the hidden WebView alive instead.
+
+**General → Lightweight mode** is off by default. Turning it on releases terminal
+GPU renderers, suppresses speculative directory preloads and sets local/remote
+monitor sampling to at least five seconds. Manual navigation, transfers and SSH
+connections continue normally. Existing renderer, preloading and sampling
+preferences are preserved and resume when lightweight mode is turned off. Both
+background preferences participate in settings export/import and named profiles.
 
 Plugins settings also provide restricted mode, per-plugin approval/revocation, runtime
 selection and marketplace sources. `--safe-mode` and `--restricted-mode` force restricted

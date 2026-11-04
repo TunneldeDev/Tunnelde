@@ -21,6 +21,8 @@ export interface NativeEvents {
   "settings://changed": Settings;
   "update://state": UpdateState;
   "ui://navigate": string;
+  "ui://suspend": number;
+  "ui://resume": null;
   "ssh://data": SshDataPayload;
   "ssh://closed": SshClosedPayload;
   "plugin://state": PluginInfo;

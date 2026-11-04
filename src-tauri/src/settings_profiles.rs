@@ -38,6 +38,8 @@ const PORTABLE_KEYS: &[&str] = &[
     "updateSourceUrl",
     "updateCheckInterval",
     "closeToTray",
+    "releaseWebviewInTray",
+    "lightweightMode",
     "showDockIconInBackground",
     "titleBarStyle",
     "recordTerminalHistory",

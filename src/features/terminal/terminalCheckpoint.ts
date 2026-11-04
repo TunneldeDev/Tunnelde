@@ -1,5 +1,6 @@
 import type { TerminalDecoderState } from "./terminalOutput";
 import type { TerminalState } from "./terminalState";
+import type { CommandCapture } from "@/lib/session/terminalInput";
 
 export interface TerminalCheckpoint {
   sequence: number;
@@ -9,6 +10,7 @@ export interface TerminalCheckpoint {
   data: string;
   decoder: TerminalDecoderState;
   state: TerminalState;
+  input: CommandCapture;
 }
 
 export interface TerminalParticipant {

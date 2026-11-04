@@ -15,6 +15,22 @@ pub const SAVED_STATE_FLAGS: StateFlags = StateFlags::SIZE
 #[derive(Default)]
 pub struct StartupWindow(AtomicBool);
 
+pub fn is_ready(app: &AppHandle) -> bool {
+    app.state::<StartupWindow>().0.load(Ordering::Acquire)
+}
+
+pub fn reset_readiness(app: &AppHandle) {
+    app.state::<StartupWindow>()
+        .0
+        .store(false, Ordering::Release);
+}
+
+pub fn set_readiness(app: &AppHandle) {
+    app.state::<StartupWindow>()
+        .0
+        .store(true, Ordering::Release);
+}
+
 pub fn restore_main_geometry(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         // Defer fullscreen: native fullscreen transitions can reveal a window.
@@ -34,12 +50,16 @@ pub fn main_window_ready(app: AppHandle, window: tauri::WebviewWindow) -> AppRes
         if let Err(error) = window.restore_state(StateFlags::FULLSCREEN) {
             tracing::warn!(%error, "could not restore fullscreen state");
         }
+        super::background::ready(&app);
         show_main(&app);
     }
     Ok(())
 }
 
 pub fn show_main(app: &AppHandle) {
+    if super::background::show_or_create(app) {
+        return;
+    }
     // A second launch, Dock click or tray action must not expose startup frames.
     if !app.state::<StartupWindow>().0.load(Ordering::Acquire) {
         return;
@@ -79,7 +99,7 @@ pub fn apply_background_dock_preference(app: &AppHandle) {
             let visible = handle
                 .get_webview_window("main")
                 .and_then(|window| window.is_visible().ok())
-                .unwrap_or(true);
+                .unwrap_or(false);
             let show_in_background = handle
                 .try_state::<AppState>()
                 .map(|state| state.settings().show_dock_icon_in_background)
@@ -191,6 +211,7 @@ pub fn install_close_handler(app: &AppHandle) {
                 api.prevent_close();
                 if target.hide().is_ok() {
                     apply_background_dock_preference(&handle);
+                    super::background::request(&handle);
                 }
             }
         }

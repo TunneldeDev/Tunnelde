@@ -9,6 +9,7 @@ import { usePlugins } from "@/store/plugins";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { defaultNetwork, type ProxyProfile } from "@/lib/api/network";
+import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 
 export function NetworkSettingsSection() {
   const { t } = useTranslation();
@@ -16,14 +17,15 @@ export function NetworkSettingsSection() {
   const settings = useSettings((s) => s.settings.network) ?? defaultNetwork();
   const update = useSettings((s) => s.update);
   const plugins = usePlugins((s) => s.items);
-  const [editing, setEditing] = useState<ProxyProfile | null>(null);
-  const [password, setPassword] = useState("");
-  const [clearPassword, setClearPassword] = useState(false);
+  const [editing, setEditing] = useViewState<ProxyProfile | null>("network:editing", null);
+  const [password, setPassword] = useViewState("network:password", "");
+  const [clearPassword, setClearPassword] = useViewState("network:clearPassword", false);
   const [testProxy, setTestProxy] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const busy = saving || testing;
+  useBackgroundGuard(busy);
   const [testHost, setTestHost] = useState("github.com");
   const [testPort, setTestPort] = useState("443");
   const [result, setResult] = useState("");

@@ -35,6 +35,7 @@ import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { usePlugins } from "@/store/plugins";
 import { useQuickAccess } from "@/store/quickAccess";
 import { FilePreview } from "@/features/sftp/FilePreview";
+import { useBackgroundWindow } from "@/app/backgroundWindow";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -46,6 +47,7 @@ const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosi
 export function AppShell() {
   useInternalDrag();
   useWindowCloseGuard();
+  useBackgroundWindow();
   const settings = useSettings((state) => state.settings);
   const os = useSettings((state) => state.info?.os);
   const updateSettings = useSettings((state) => state.update);
