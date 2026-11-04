@@ -362,7 +362,9 @@
     "notes": "更新说明",
     "openRelease": "打开发布页",
     "error": "更新失败",
-    "publishedAt": "发布时间"
+    "publishedAt": "发布时间",
+    "rateLimited": "GitHub 的请求额度已用尽，公共发布源也暂时不可用。请稍后重试，或检查更新代理。",
+    "connectionFailed": "无法连接更新源，请检查网络与更新功能的代理设置。"
   },
   "about": {
     "version": "版本",

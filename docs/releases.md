@@ -169,7 +169,13 @@ and displayed in a collapsed Markdown section.
   on Beta tags. Those snapshots are excluded from the public Beta channel.
 - Discovery follows GitHub release pagination and compares SemVer rather than titles or list order.
   Drafts, incomplete releases and mismatched prerelease flags are excluded. A source outage is an
-  error rather than an up-to-date result. Discovery is bounded to ten pages; an incomplete scan fails.
+  error rather than an up-to-date result. API discovery is bounded to ten pages.
+- If the GitHub API is rate limited or unavailable, Beta/Nightly checks use GitHub's public Atom
+  feed of recent published releases through the same configured proxy. This fallback covers recent
+  entries, not the full release history. It compares SemVer and verifies each selected tag against
+  its `latest.json`; stale entries whose manifest returns 404 are skipped. Network errors and invalid
+  manifests still fail the check. It never disables HTTPS, version checks or package signatures.
+  Timeout, connection and API quota failures have distinct messages.
 - Switching back to Stable never automatically downgrades a newer prerelease. It waits for a stable
   version greater than the installed build. All source/channel changes invalidate a previous update
   selection, and cannot occur during an installation.
