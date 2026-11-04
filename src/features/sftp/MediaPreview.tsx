@@ -16,13 +16,16 @@ export function MediaPreview({
   const media = useRef<HTMLMediaElement | null>(null);
   useEffect(() => {
     const element = media.current;
+    if (!element) return;
+    // Cleanup also runs during StrictMode's mount replay and before URL
+    // changes. Restore the source in setup so a surviving player can reload.
+    if (element.getAttribute("src") !== url) element.setAttribute("src", url);
     return () => {
-      if (!element) return;
       element.pause();
       element.removeAttribute("src");
       element.load();
     };
-  }, [url]);
+  }, [kind, url]);
   return (
     <div className={`file-preview__media file-preview__media--${kind}`}>
       {kind === "image" ? (
