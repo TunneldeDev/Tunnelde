@@ -6,7 +6,7 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
-## [0.28.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.1...v0.28.0) - 2026-11-04
+## [0.28.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.1...v0.28.0) - 2026-11-05
 
 ### 更新概览 | Highlights
 
@@ -15,9 +15,10 @@ All notable changes to Tunnelde are documented here. The format follows
 - 远端进程管理支持自动刷新、区间 CPU 统计、用户与用户组，以及系统权限允许时的磁盘、网络和 GPU 数据。Remote process management adds automatic refresh, interval CPU measurements, ownership details, and disk, network and GPU metrics where available.
 - 存储分类支持位置设置与重启迁移；托盘驻留可释放 WebView，并恢复工作区和终端状态。Storage categories support custom locations and restart migration; tray suspension can release the WebView and restore workspace and terminal state.
 - 公测编号统一为 beta.1～beta.9，达到上限后必须先审查并发布正式版；更新检查保留历史版本兼容。Beta milestones are limited to beta.1–beta.9 before reviewed stable promotion, while update discovery retains historical compatibility.
+- 软件更新只提供正式版和公测版；历史开发版渠道设置迁移为正式版，防止误更新到开发快照。In-app updates offer only Stable and Public beta; legacy development-channel preferences migrate to Stable.
 
 <details open>
-<summary>详细变更 | Details (42)</summary>
+<summary>详细变更 | Details (43)</summary>
 
 ### 新增 | New
 
@@ -66,6 +67,7 @@ All notable changes to Tunnelde are documented here. The format follows
 - **releases:** use two-digit semver-compatible beta identifiers ([#47](https://github.com/TunneldeDev/Tunnelde/pull/47), [046710f](https://github.com/TunneldeDev/Tunnelde/commit/046710f88b2c0a44cfeb307efea1a1902cd89dde)) @quyansiyuanwang
 - **releases:** simplify beta names and bridge older updaters ([#47](https://github.com/TunneldeDev/Tunnelde/pull/47)) @quyansiyuanwang
 - **releases:** cap beta milestones before stable promotion ([#49](https://github.com/TunneldeDev/Tunnelde/pull/49)) @quyansiyuanwang
+- **updates:** restrict public update channels to stable and beta ([#50](https://github.com/TunneldeDev/Tunnelde/pull/50)) @quyansiyuanwang
 
 ### 文档 | Docs
 

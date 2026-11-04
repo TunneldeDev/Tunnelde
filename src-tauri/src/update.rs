@@ -201,6 +201,9 @@ pub fn capability() -> Capability {
 /// Custom sources serve ordinary Tauri manifests for both channels. No source may replace
 /// the embedded verification key or disable HTTPS / package signature verification.
 pub fn validate_preferences(settings: &Settings) -> AppResult<()> {
+    if !["stable", "beta"].contains(&settings.update_channel.as_str()) {
+        return Err(AppError::validation("updates.invalidChannel"));
+    }
     if settings.update_source_url.is_empty() {
         return Ok(());
     }

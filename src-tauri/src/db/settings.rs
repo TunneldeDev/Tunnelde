@@ -77,7 +77,7 @@ mod tests {
     }
 
     #[test]
-    fn update_channel_defaults_to_stable_and_preserves_saved_choices() {
+    fn update_channel_preserves_public_choices_and_migrates_legacy_development() {
         let mut legacy = load_json(r#"{"theme":"dark"}"#);
         legacy.sanitize();
         assert_eq!(legacy.update_channel, "stable");
@@ -88,14 +88,18 @@ mod tests {
         assert_eq!(invalid.update_channel, "stable");
 
         let database = Database::in_memory().unwrap();
-        for channel in ["stable", "beta", "nightly"] {
+        for (channel, expected) in [
+            ("stable", "stable"),
+            ("beta", "beta"),
+            ("nightly", "stable"),
+        ] {
             let mut settings = load_json(&format!(r#"{{"updateChannel":"{channel}"}}"#));
             settings.sanitize();
-            assert_eq!(settings.update_channel, channel);
+            assert_eq!(settings.update_channel, expected);
             database
                 .with(|conn| {
                     save(conn, &settings)?;
-                    assert_eq!(load(conn)?.update_channel, channel);
+                    assert_eq!(load(conn)?.update_channel, expected);
                     Ok(())
                 })
                 .unwrap();
