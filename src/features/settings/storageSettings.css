@@ -18,6 +18,12 @@
 .storage-settings__toolbar {
   flex-wrap: wrap;
 }
+.storage-settings__actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 235px;
+  gap: 6px;
+}
 .storage-settings__check {
   font-size: 12px;
   cursor: pointer;
