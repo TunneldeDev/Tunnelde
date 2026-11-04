@@ -26,19 +26,21 @@ function snapshotNotes(plan, version) {
   };
 }
 
-export async function prepareBeta({ github, context, plan }) {
+export async function prepareBeta({ github, context, plan, legacyUpdaterBridge = false }) {
   if (!plan.version) return "";
   const repo = context.repo;
   await assertSources(github, repo, { dev: plan.dev });
-  // Only explicit Beta preparations allocate beta.bNN; legacy beta.N reserves its number.
+  // Only explicit Beta preparations allocate betaNN; legacy beta.N reserves its number.
   const { data: refs } = await github.rest.git.listMatchingRefs({
     ...repo,
-    ref: `tags/v${plan.version}-beta.`,
+    ref: `tags/v${plan.version}-beta`,
   });
   const tags = refs
     .map((ref) => ({ ...ref, tag: ref.ref.replace(/^refs\/tags\//, "") }))
-    .filter(({ tag }) => betaMilestone(tag) && tag.startsWith(`v${plan.version}-beta.`))
+    .filter(({ tag }) => betaMilestone(tag) && tag.startsWith(`v${plan.version}-beta`))
     .sort((a, b) => compareReleaseTags(b.tag, a.tag));
+  if (legacyUpdaterBridge && tags.some(({ tag }) => /-beta\d/.test(tag)))
+    throw new Error("A legacy updater bridge must be published before compact Beta tags exist");
   const latest = tags[0];
   const body = `Development build from ${plan.dev}.\n\n${plan.release.notes}`;
   if (latest) {
@@ -63,7 +65,9 @@ export async function prepareBeta({ github, context, plan }) {
       const number = betaSequence(tag);
       return number > highest ? number : highest;
     }, 0n) + 1n;
-  const version = betaVersion(plan.version, sequence);
+  const compactVersion = betaVersion(plan.version, sequence);
+  // A one-time legacy-named build lets older clients acquire compact channel support by OTA.
+  const version = legacyUpdaterBridge ? `${plan.version}-beta.${sequence}` : compactVersion;
   const release = snapshotNotes(plan, version);
   const sha = await commitTree({
     github,
@@ -95,7 +99,7 @@ export async function prepareNightly({ github, context, plan }) {
   let distance = plan.distance;
   const { data: refs } = await github.rest.git.listMatchingRefs({
     ...context.repo,
-    ref: `tags/v${plan.version}-beta.`,
+    ref: `tags/v${plan.version}-beta`,
   });
   const betas = refs
     .map((ref) => ref.ref.replace(/^refs\/tags\//, ""))

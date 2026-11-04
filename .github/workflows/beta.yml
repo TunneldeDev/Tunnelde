@@ -2,6 +2,11 @@ name: Prepare Beta
 
 on:
   workflow_dispatch:
+    inputs:
+      legacy_updater_bridge:
+        description: One-time legacy-named Beta so older clients can acquire compact Beta support
+        type: boolean
+        default: false
 
 concurrency:
   group: beta-preparation
@@ -26,7 +31,8 @@ jobs:
             const {planDevelopment} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/planning/promotion.mjs`);
             const {prepareBeta} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/publishing/snapshots.mjs`);
             const plan = await planDevelopment({github, context});
-            const tag = await prepareBeta({github, context, plan});
+            const legacyUpdaterBridge = context.payload.inputs?.legacy_updater_bridge === 'true';
+            const tag = await prepareBeta({github, context, plan, legacyUpdaterBridge});
             if (!tag) { core.notice('No new Beta snapshot to publish.'); return; }
             // Tags created with GITHUB_TOKEN do not trigger push workflows.
             await github.rest.actions.createWorkflowDispatch({...context.repo,

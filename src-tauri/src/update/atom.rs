@@ -164,14 +164,14 @@ mod tests {
         let xml = atom(&[
             "v0.28.0-beta.9",
             "v0.28.0-beta.11",
-            "v0.28.0-beta.b09",
-            "v0.28.0-beta.b12",
-            "v0.28.0-beta.b10",
-            "v0.28.0-beta.b12.d.2.gabcdef1",
+            "v0.28.0-beta09",
+            "v0.28.0-beta12",
+            "v0.28.0-beta10",
+            "v0.28.0-beta12.d.2.gabcdef1",
         ]);
         for (channel, expected) in [
-            ("beta", "0.28.0-beta.b12"),
-            ("nightly", "0.28.0-beta.b12.d.2.gabcdef1"),
+            ("beta", "0.28.0-beta12"),
+            ("nightly", "0.28.0-beta12.d.2.gabcdef1"),
         ] {
             assert_eq!(
                 candidates(xml.as_bytes(), channel).unwrap()[0].version,

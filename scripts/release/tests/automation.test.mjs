@@ -754,13 +754,13 @@ test("Beta uses versioned manifests, its own immutable tag and does not become l
   const f = fixture();
   const plan = await planDevelopment(f);
   const tag = await prepareBeta({ ...f, plan });
-  assert.equal(tag, "v0.26.2-beta.b01");
+  assert.equal(tag, "v0.26.2-beta01");
   const release = f.calls.find((call) => call.createRelease).createRelease;
   assert.equal(release.prerelease, true);
   assert.equal(release.make_latest, "false");
   assert.equal(release.name, tag);
   assert.deepEqual(f.calls.find((call) => call.commit).commit.parents, [dev]);
-  assert.ok(f.contents.get(`${generated}:CITATION.cff`).includes("0.26.2-beta.b01"));
+  assert.ok(f.contents.get(`${generated}:CITATION.cff`).includes("0.26.2-beta01"));
 });
 
 test("beta sequences advance numerically using tags even after releases are retired", async () => {
@@ -775,7 +775,7 @@ test("beta sequences advance numerically using tags even after releases are reti
       [oldHead]: `Release-source: ${oldHead}`,
     },
   });
-  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.b11");
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta11");
   assert.equal(f.references["tags/v0.26.2-beta.10"], oldHead);
 });
 
@@ -783,29 +783,29 @@ test("each target stable version starts its own beta sequence at one", async () 
   for (const version of ["0.26.3", "0.27.0", "1.0.0"]) {
     const f = fixture({ refs: { "tags/v0.26.2-beta.99.2": oldHead } });
     const plan = { ...(await planDevelopment(f)), version };
-    assert.equal(await prepareBeta({ ...f, plan }), `v${version}-beta.b01`);
+    assert.equal(await prepareBeta({ ...f, plan }), `v${version}-beta01`);
   }
 });
 
 test("fixed-width Beta migration continues legacy numbers and refuses milestone 100 before mutation", async () => {
   for (const [previous, expected] of [
-    ["11", "b12"],
-    ["b09", "b10"],
-    ["b98", "b99"],
+    [".11", "12"],
+    ["09", "10"],
+    ["98", "99"],
   ]) {
-    const tag = `v0.26.2-beta.${previous}`;
+    const tag = `v0.26.2-beta${previous}`;
     const f = fixture({
       refs: { [`tags/${tag}`]: oldHead },
       messages: { [oldHead]: `Release-source: ${oldHead}` },
     });
     assert.equal(
       await prepareBeta({ ...f, plan: await planDevelopment(f) }),
-      `v0.26.2-beta.${expected}`,
+      `v0.26.2-beta${expected}`,
     );
     assert.equal(f.references[`tags/${tag}`], oldHead);
   }
   const f = fixture({
-    refs: { "tags/v0.26.2-beta.b99": oldHead },
+    refs: { "tags/v0.26.2-beta99": oldHead },
     messages: { [oldHead]: `Release-source: ${oldHead}` },
   });
   await assert.rejects(prepareBeta({ ...f, plan: await planDevelopment(f) }), /sequence exhausted/);
@@ -813,11 +813,39 @@ test("fixed-width Beta migration continues legacy numbers and refuses milestone 
     f.calls.some((call) => call.commit || call.tree || call.createRef || call.createRelease),
     false,
   );
-  const tag = "v0.26.2-beta.b12";
+  const tag = "v0.26.2-beta12";
   const retry = fixture({ refs: { [`tags/${tag}`]: generated } });
   assert.equal(await prepareBeta({ ...retry, plan: await planDevelopment(retry) }), tag);
   assert.equal(
     retry.calls.some((call) => call.commit),
+    false,
+  );
+});
+
+test("one-time legacy updater bridge keeps old clients on an automatic upgrade path", async () => {
+  const f = fixture({
+    refs: { "tags/v0.26.2-beta.11": oldHead },
+    messages: { [oldHead]: `Release-source: ${oldHead}` },
+  });
+  const plan = await planDevelopment(f);
+  assert.equal(await prepareBeta({ ...f, plan, legacyUpdaterBridge: true }), "v0.26.2-beta.12");
+  assert.ok(f.contents.get(`${generated}:package.json`).includes("0.26.2-beta.12"));
+  // A later source switches to compact numbering while preserving the bridge tag.
+  const later = fixture({
+    refs: { "tags/v0.26.2-beta.12": oldHead },
+    messages: { [oldHead]: `Release-source: ${oldHead}` },
+  });
+  assert.equal(
+    await prepareBeta({ ...later, plan: await planDevelopment(later) }),
+    "v0.26.2-beta13",
+  );
+  const compact = fixture({ refs: { "tags/v0.26.2-beta13": oldHead } });
+  await assert.rejects(
+    prepareBeta({ ...compact, plan, legacyUpdaterBridge: true }),
+    /before compact/,
+  );
+  assert.equal(
+    compact.calls.some((call) => call.commit || call.tree || call.createRef),
     false,
   );
 });
@@ -828,7 +856,7 @@ test("legacy beta tags reserve their original sequence and remain recoverable", 
     refs: { [`tags/${tag}`]: oldHead },
     messages: { [oldHead]: `Release-source: ${oldHead}` },
   });
-  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta.b03");
+  assert.equal(await prepareBeta({ ...f, plan: await planDevelopment(f) }), "v0.26.2-beta03");
   const retry = fixture({ refs: { [`tags/${tag}`]: generated } });
   assert.equal(await prepareBeta({ ...retry, plan: await planDevelopment(retry) }), tag);
   assert.equal(
@@ -1057,15 +1085,15 @@ test("Nightly after Beta extends that milestone and skips a Beta's exact source"
 });
 
 test("Nightly recognizes fixed-width Beta milestones without allocating another Beta", async () => {
-  const beta = "v0.26.2-beta.b12";
+  const beta = "v0.26.2-beta12";
   const f = fixture({
     refs: { [`tags/${beta}`]: oldHead },
     messages: { [oldHead]: `Release-source: ${baseline}` },
   });
   const tag = await prepareNightly({ ...f, plan: await planDevelopment(f) });
-  assert.equal(tag, `v0.26.2-beta.b12.d.1.g${dev.slice(0, 12)}`);
+  assert.equal(tag, `v0.26.2-beta12.d.1.g${dev.slice(0, 12)}`);
   assert.equal(f.references[`tags/${beta}`], oldHead);
-  assert.equal(f.references["tags/v0.26.2-beta.b13"], undefined);
+  assert.equal(f.references["tags/v0.26.2-beta13"], undefined);
 });
 
 test("Nightly publication is a versioned public prerelease and leaves Beta history intact", async () => {
