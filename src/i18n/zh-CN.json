@@ -763,11 +763,13 @@
     "closeOthers": "关闭其他",
     "closePane": "关闭窗格",
     "close": "关闭标签页",
-    "pin": "固定标签页",
-    "unpin": "取消固定",
+    "pin": "置顶标签页",
+    "unpin": "取消置顶",
     "resizeGroup": "调整编辑组大小",
     "lockPane": "锁定为新页面默认打开的窗格",
-    "unlockPane": "解除新页面默认打开窗格的锁定"
+    "unlockPane": "解除新页面默认打开窗格的锁定",
+    "keepOpen": "保持打开",
+    "previewHint": "预览 · 双击后保持打开"
   },
   "panel": {
     "system": "本机",

@@ -767,7 +767,9 @@
     "unpin": "Unpin tab",
     "resizeGroup": "Resize editor group",
     "lockPane": "Lock as the default pane for new pages",
-    "unlockPane": "Unlock the default pane for new pages"
+    "unlockPane": "Unlock the default pane for new pages",
+    "keepOpen": "Keep open",
+    "previewHint": "Preview · Double-click to keep open"
   },
   "panel": {
     "system": "This machine",

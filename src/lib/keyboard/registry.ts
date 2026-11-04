@@ -49,6 +49,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("font.decrease", "shortcuts.fontDecrease", "workbench", ["Mod+Minus"]),
   command("font.reset", "shortcuts.fontReset", "workbench", ["Mod+0"]),
   command("tab.close", "tab.close", "workbench", ["Mod+W"]),
+  command("tab.keepOpen", "tab.keepOpen", "workbench", []),
   command("pane.close", "shortcuts.closePane", "workbench", ["Mod+Shift+W"]),
   command("tab.splitRight", "tab.splitRight", "workbench", ["Mod+Backslash"]),
   command("tab.splitDown", "tab.splitDown", "workbench", ["Mod+Shift+Backslash"]),
