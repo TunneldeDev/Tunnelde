@@ -75,6 +75,10 @@ export interface Settings {
   filesFoldersFirst: boolean;
   filesSortBy: FileSortBy;
   filesSortDirection: SortDirection;
+  transferOptimization: boolean;
+  transferConcurrency: number;
+  transferChunkKib: number;
+  transferRequests: number;
   editorWordWrap: boolean;
   editorTabSize: number;
   editorSpellCheck: boolean;

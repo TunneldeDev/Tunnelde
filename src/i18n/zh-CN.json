@@ -148,6 +148,15 @@
     "deleteBody": "删除“{{name}}”及其中的全部内容？组内主机保留并移到未分组。"
   },
   "settings": {
+    "transferOptimization": "优化文件传输",
+    "transferOptimizationHint": "使用文件分段并发和 SFTP 请求流水线。更改在开始或恢复传输时生效。",
+    "transferConcurrency": "并发分段数",
+    "transferConcurrencyHint": "自动模式为较大的远端文件选择最多 4 个并发分段，小文件减少并发，本地复制保持顺序处理。",
+    "transferChunkKib": "分段大小",
+    "transferChunkKibHint": "自动模式根据文件大小选择分段大小，整批分段完成后生成可安全恢复的检查点。",
+    "transferRequests": "每个分段的 SFTP 请求数",
+    "transferRequestsHint": "自动模式在分段之间分配请求数。程序会限制同时进行的请求总数，控制内存用量。",
+    "transferAutomatic": "自动",
     "filePaneDefaultsHint": "这里设置新文件面板的默认值。已打开的本地、远端面板各自保存视图偏好；可在对应面板的“视图选项”菜单中恢复默认视图，以应用这些默认值。",
     "groups": {
       "theme": "主题",
@@ -162,7 +171,8 @@
       "history": "历史记录",
       "browsing": "浏览",
       "sorting": "排序",
-      "preloading": "预加载"
+      "preloading": "预加载",
+      "transfers": "文件传输"
     },
     "title": "设置",
     "general": "通用",

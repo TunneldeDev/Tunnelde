@@ -60,13 +60,14 @@ impl Journal {
     pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
         app.state::<AppState>().db.with(|conn| {
             conn.execute(
-                "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1 OR instr(key,?4)=1 OR instr(key,?5)=1",
+                "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1 OR instr(key,?4)=1 OR instr(key,?5)=1 OR instr(key,?6)=1",
                 rusqlite::params![
                     format!("transfer:{id}"),
                     format!("transfer-file:{id}:"),
                     format!("transfer-backup:{id}:"),
                     format!("transfer-part:{id}:"),
-                    format!("transfer-artifact:{id}:")
+                    format!("transfer-artifact:{id}:"),
+                    format!("transfer-parallel:{id}:")
                 ],
             )?;
             Ok(())
