@@ -106,6 +106,10 @@ describe("release preparation", () => {
     for (const version of [
       "0.19.0-beta.12.1",
       "0.19.0-beta.13",
+      "0.19.0-beta.b01",
+      "0.19.0-beta.b12",
+      "0.19.0-beta.b99",
+      "0.19.0-beta.b12.d.2.gabcdef012345",
       "0.19.0-alpha.1.d.10.gabcdef012345",
       "0.19.0-beta.13.d.2.gabcdef012345",
     ]) {
@@ -219,6 +223,8 @@ describe("release publishing", () => {
       "v0.27.0",
       "v0.27.1-beta.3.1",
       "v0.27.1-beta.4",
+      "v0.27.1-beta.b12",
+      "v0.27.1-beta.b12.d.2.gabcdef012345",
       "v0.27.1-alpha.1.d.10.gabcdef012345",
       "v0.27.1-beta.4.d.2.gabcdef012345",
     ]) {

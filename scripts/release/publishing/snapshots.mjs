@@ -1,10 +1,21 @@
 import { assertSources, commitTree, resolveTag } from "../github/sources.mjs";
-import { compareReleaseTags } from "../metadata/channels.mjs";
+import {
+  betaSequence,
+  betaVersion,
+  compareReleaseTags,
+  releaseChannel,
+} from "../metadata/channels.mjs";
 import { versionContents } from "../metadata/version-files.mjs";
 import { replacePendingRelease } from "../metadata/notes.mjs";
 import { ensureRelease } from "./releases.mjs";
 
-const BETA_TAG = /^v\d+\.\d+\.\d+-beta\.(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*))?$/;
+function betaMilestone(tag) {
+  try {
+    return releaseChannel(tag) === "beta";
+  } catch {
+    return false;
+  }
+}
 
 function snapshotNotes(plan, version) {
   return {
@@ -19,14 +30,14 @@ export async function prepareBeta({ github, context, plan }) {
   if (!plan.version) return "";
   const repo = context.repo;
   await assertSources(github, repo, { dev: plan.dev });
-  // Only explicit Beta preparations allocate beta.N; Nightly builds never consume it.
+  // Only explicit Beta preparations allocate beta.bNN; legacy beta.N reserves its number.
   const { data: refs } = await github.rest.git.listMatchingRefs({
     ...repo,
     ref: `tags/v${plan.version}-beta.`,
   });
   const tags = refs
     .map((ref) => ({ ...ref, tag: ref.ref.replace(/^refs\/tags\//, "") }))
-    .filter(({ tag }) => BETA_TAG.test(tag) && tag.startsWith(`v${plan.version}-beta.`))
+    .filter(({ tag }) => betaMilestone(tag) && tag.startsWith(`v${plan.version}-beta.`))
     .sort((a, b) => compareReleaseTags(b.tag, a.tag));
   const latest = tags[0];
   const body = `Development build from ${plan.dev}.\n\n${plan.release.notes}`;
@@ -47,8 +58,12 @@ export async function prepareBeta({ github, context, plan }) {
       });
     }
   }
-  const sequence = latest ? BigInt(/-beta\.(\d+)/.exec(latest.tag)[1]) + 1n : 1n;
-  const version = `${plan.version}-beta.${sequence}`;
+  const sequence =
+    tags.reduce((highest, { tag }) => {
+      const number = betaSequence(tag);
+      return number > highest ? number : highest;
+    }, 0n) + 1n;
+  const version = betaVersion(plan.version, sequence);
   const release = snapshotNotes(plan, version);
   const sha = await commitTree({
     github,
@@ -84,7 +99,7 @@ export async function prepareNightly({ github, context, plan }) {
   });
   const betas = refs
     .map((ref) => ref.ref.replace(/^refs\/tags\//, ""))
-    .filter((tag) => BETA_TAG.test(tag))
+    .filter((tag) => betaMilestone(tag))
     .sort((a, b) => compareReleaseTags(b, a));
   for (const beta of betas) {
     const betaSha = await resolveTag(github, context.repo, beta);

@@ -233,6 +233,100 @@ async fn api_feed(client: &reqwest::Client, channel: &str) -> AppResult<Feed> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn github_lexical_beta_order_never_controls_update_selection() {
+        // Captured ordering from GitHub on 2026-11-04: beta.9 precedes .11 and .10.
+        let tags = [
+            "v0.28.0-beta.9",
+            "v0.28.0-beta.8",
+            "v0.28.0-beta.2",
+            "v0.28.0-beta.11",
+            "v0.28.0-beta.10",
+            "v0.28.0-beta.1",
+            "v0.27.1",
+        ];
+        let mut releases: Vec<GitHubRelease> = tags
+            .iter()
+            .map(|tag| GitHubRelease {
+                tag_name: (*tag).into(),
+                draft: false,
+                prerelease: tag.contains('-'),
+                assets: vec![ReleaseAsset {
+                    name: "latest.json".into(),
+                }],
+                body: Some(format!("Notes for {tag}")),
+            })
+            .collect();
+        for channel in ["beta", "nightly"] {
+            let feed = github_channel_feed(&releases, channel).unwrap();
+            assert_eq!(
+                feed.version.unwrap(),
+                Version::parse("0.28.0-beta.11").unwrap()
+            );
+            assert!(feed.url.as_str().ends_with("/v0.28.0-beta.11/latest.json"));
+            assert_eq!(feed.notes.as_deref(), Some("Notes for v0.28.0-beta.11"));
+        }
+        assert_eq!(
+            github_channel_feed(&releases, "stable")
+                .unwrap()
+                .version
+                .unwrap(),
+            Version::parse("0.27.1").unwrap()
+        );
+        for tag in ["v0.28.0-beta.99", "v0.28.0-beta.100", "v0.29.0-beta.1"] {
+            releases.push(GitHubRelease {
+                tag_name: tag.into(),
+                draft: false,
+                prerelease: true,
+                assets: vec![ReleaseAsset {
+                    name: "latest.json".into(),
+                }],
+                body: None,
+            });
+            assert_eq!(
+                github_channel_feed(&releases, "beta")
+                    .unwrap()
+                    .version
+                    .unwrap(),
+                Version::parse(&tag[1..]).unwrap()
+            );
+        }
+        // Incomplete or mismarked releases never supersede verified channel packages.
+        releases.push(GitHubRelease {
+            tag_name: "v0.29.0-beta.2".into(),
+            draft: true,
+            prerelease: true,
+            assets: vec![ReleaseAsset {
+                name: "latest.json".into(),
+            }],
+            body: None,
+        });
+        releases.push(GitHubRelease {
+            tag_name: "v0.29.0-beta.3".into(),
+            draft: false,
+            prerelease: true,
+            assets: vec![],
+            body: None,
+        });
+        releases.push(GitHubRelease {
+            tag_name: "v0.29.0-beta.4".into(),
+            draft: false,
+            prerelease: false,
+            assets: vec![ReleaseAsset {
+                name: "latest.json".into(),
+            }],
+            body: None,
+        });
+        releases.reverse();
+        assert_eq!(
+            github_channel_feed(&releases, "beta")
+                .unwrap()
+                .version
+                .unwrap(),
+            Version::parse("0.29.0-beta.1").unwrap()
+        );
+    }
+
     #[tokio::test]
     #[ignore = "requires a reachable explicit proxy and live GitHub releases"]
     async fn live_channels_through_configured_proxy() {
