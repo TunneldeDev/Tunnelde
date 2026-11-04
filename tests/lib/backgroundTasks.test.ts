@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   backgroundTaskHistory,
+  clearFinishedBackgroundTasks,
   backgroundTasksBlockSuspension,
   registerBackgroundTaskSource,
   restoreBackgroundTaskHistory,
@@ -28,6 +29,69 @@ const task = (id: string): BackgroundTask => ({
   status: "running",
   execution: "native",
   updatedAt: 0,
+});
+
+it("bounds bulk clear concurrency, continues after errors and leaves hidden or unsupported work alone", async () => {
+  let changed!: () => void;
+  const finishes: (() => void)[] = [];
+  const calls: string[] = [];
+  let active = 0;
+  let peak = 0;
+  let tasks: BackgroundTask[] = Array.from({ length: 10 }, (_, index) => ({
+    ...task(String(index)),
+    status: "done",
+    actions: [
+      {
+        id: "clear",
+        label: "",
+        run: async () => {
+          calls.push(String(index));
+          peak = Math.max(peak, ++active);
+          await new Promise<void>((resolve) => finishes.push(resolve));
+          active--;
+          if (index === 2) throw Error("Keep failed record");
+          tasks = tasks.filter((item) => item.id !== String(index));
+          changed();
+        },
+      },
+    ],
+  }));
+  tasks.push({
+    ...task("hidden"),
+    status: "done",
+    visible: false,
+    actions: [
+      {
+        id: "clear",
+        label: "",
+        run: () => {
+          throw Error("hidden cleared");
+        },
+      },
+    ],
+  });
+  tasks.push({ ...task("unsupported"), status: "attention" });
+  stops.push(
+    registerBackgroundTaskSource({
+      id: "batch",
+      snapshot: () => tasks,
+      subscribe: (listener) => {
+        changed = listener;
+        return () => {};
+      },
+    }),
+  );
+  const clearing = clearFinishedBackgroundTasks();
+  expect(calls).toHaveLength(4);
+  for (let index = 0; index < 3; index++) {
+    finishes.splice(0).forEach((finish) => finish());
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+  expect(await clearing).toHaveLength(1);
+  expect(peak).toBe(4);
+  expect(tasks.map((item) => item.id)).toEqual(["2", "hidden", "unsupported"]);
 });
 afterEach(() => {
   for (const stop of stops.splice(0)) stop();

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { FileTransfers } from "@/features/sftp/FileTransfers";
@@ -10,7 +10,10 @@ import { viewIsBusy } from "@/lib/session/viewState";
 import { registerBackgroundTaskSources } from "@/app/backgroundTaskSources";
 
 let stopSources: () => void;
-afterEach(() => stopSources?.());
+afterEach(() => {
+  cleanup();
+  stopSources?.();
+});
 
 beforeEach(async () => {
   stopSources = registerBackgroundTaskSources();
@@ -73,6 +76,45 @@ it("offers resume only for retained partial data and keeps cancelled cleanup ret
     screen.getByRole("button", { name: "Remove transfer and clean temporary files" }),
   ).toBeTruthy();
   expect(screen.getByText(/Temporary data could not be fully removed/)).toBeTruthy();
+});
+
+it("bulk clears finished and failed transfers and keeps deferred remote cleanup visible", async () => {
+  const template = useTransfers.getState().items[0]!;
+  const pending = {
+    ...template,
+    id: "failed",
+    status: "cleanupPending" as const,
+    updatedAt: Date.now(),
+    fromHostId: null,
+    toHostId: "offline",
+    error: "sftp.reconnectRequired",
+  };
+  const clear = vi
+    .spyOn(transferApi, "clear")
+    .mockImplementation(async (id) => (id === "failed" ? pending : null));
+  useTransfers.setState({
+    items: [
+      template,
+      { ...template, id: "paused", status: "paused" },
+      { ...template, id: "done", status: "done" },
+      { ...template, id: "cancelled", status: "cancelled" },
+      { ...template, id: "failed", status: "failed" },
+    ],
+  });
+  render(<FileTransfers />);
+  fireEvent.click(screen.getByRole("button", { name: "Clear finished tasks" }));
+  await waitFor(() => expect(clear).toHaveBeenCalledTimes(3));
+  await waitFor(() =>
+    expect(useTransfers.getState().items.map((item) => item.id)).toEqual([
+      "job",
+      "paused",
+      "failed",
+    ]),
+  );
+  expect(useTransfers.getState().items[2]?.status).toBe("cleanupPending");
+  expect(
+    screen.getByRole("button", { name: "Clear finished tasks" }).hasAttribute("disabled"),
+  ).toBe(true);
 });
 
 it("starts collapsed and does not mount every task detail when there are many transfers", () => {

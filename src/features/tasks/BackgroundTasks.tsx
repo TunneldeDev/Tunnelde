@@ -7,6 +7,8 @@ import { cn } from "@/lib/text/format";
 import {
   useBackgroundTasks,
   isFinishedTask,
+  canClearBackgroundTask,
+  clearFinishedBackgroundTasks,
   type BackgroundTaskEntry,
 } from "@/lib/tasks/background";
 import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
@@ -19,28 +21,84 @@ import "./backgroundTasks.css";
 export function BackgroundTaskStatusButton({ floating = false }: { floating?: boolean }) {
   const { t } = useTranslation();
   const open = useBackgroundTaskPanel((s) => s.open);
-  const count = useBackgroundTasks(
-    (s) => s.items.filter((item) => item.visible !== false && item.status === "running").length,
-  );
-  const attention = useBackgroundTasks(
-    (s) => s.items.filter((item) => item.visible !== false && item.status === "attention").length,
-  );
+  const items = useBackgroundTasks((s) => s.items);
+  const visible = items.filter((item) => item.visible !== false);
+  const running = visible.filter((item) => item.status === "running");
+  const paused = visible.filter((item) => item.status === "paused");
+  const attention = visible.filter((item) => item.status === "attention").length;
+  const fractions = running.map((item) => {
+    const progress = item.progress;
+    const total = progress?.unit === "percent" ? 100 : progress?.total;
+    return progress &&
+      Number.isFinite(progress.completed) &&
+      total &&
+      Number.isFinite(total) &&
+      total > 0
+      ? Math.max(0, Math.min(1, progress.completed / total))
+      : null;
+  });
+  const percent =
+    running.length && fractions.every((value) => value !== null)
+      ? Math.floor(
+          (fractions.reduce<number>((sum, value) => sum + (value ?? 0), 0) / running.length) * 100,
+        )
+      : null;
+  const label = running.length
+    ? t("tasks.active", { count: running.length })
+    : paused.length
+      ? t("tasks.pausedCount", { count: paused.length })
+      : t("tasks.title");
+  const progressLabel =
+    percent !== null ? t("tasks.aggregateProgress", { percent }) : t("tasks.progressUnknown");
+  const hint = [
+    label,
+    ...(running.length ? [progressLabel] : []),
+    ...[...running, ...paused].slice(0, 3).map((item) => item.title),
+    ...(attention ? [t("tasks.attentionCount", { count: attention })] : []),
+  ].join("\n");
   return (
     <button
       type="button"
       className={cn(
         "background-status",
         floating && "is-floating",
+        running.length > 0 && "is-running",
+        paused.length > 0 && !running.length && "is-paused",
         attention > 0 && "needs-attention",
       )}
       aria-label={t("tasks.title")}
+      aria-description={hint}
+      title={hint}
       aria-expanded={open}
       aria-controls="background-tasks"
       data-task-trigger
       onClick={() => useBackgroundTaskPanel.getState().toggle()}
     >
       <ListTodo size={13} />
-      <span>{count ? t("tasks.active", { count }) : t("tasks.title")}</span>
+      <span aria-live="polite" aria-atomic="true">
+        {label}
+      </span>
+      {percent !== null ? <span className="background-status__percent">{percent}%</span> : null}
+      {running.length ? (
+        <>
+          <span
+            key={running.map((item) => item.key).join("|")}
+            className="background-status__pulse"
+            aria-hidden="true"
+          />
+          <span
+            className={cn("background-status__progress", percent === null && "is-indeterminate")}
+            role="progressbar"
+            aria-label={t("tasks.aggregateProgressLabel")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent ?? undefined}
+            aria-valuetext={progressLabel}
+          >
+            <span style={{ width: percent === null ? undefined : `${percent}%` }} />
+          </span>
+        </>
+      ) : null}
       {attention > 0 ? <span className="background-status__badge">{attention}</span> : null}
     </button>
   );
@@ -111,6 +169,8 @@ function BackgroundPanelContent() {
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previousFocus] = useState(() => document.activeElement as HTMLElement | null);
   const [now, setNow] = useState(Date.now);
+  const [clearing, setClearing] = useState(false);
+  const clearingRef = useRef(false);
   const running = items.some((item) => item.status === "running");
   const close = () => useBackgroundTaskPanel.getState().close();
   useEffect(() => {
@@ -142,6 +202,23 @@ function BackgroundPanelContent() {
   const active = items.filter((item) => ["running", "paused"].includes(item.status));
   const attention = items.filter((item) => item.status === "attention");
   const finished = items.filter(isFinishedTask);
+  const clearable = items.filter(canClearBackgroundTask).length;
+  const clearFinished = async () => {
+    if (clearingRef.current) return;
+    clearingRef.current = true;
+    setClearing(true);
+    try {
+      const errors = await clearFinishedBackgroundTasks();
+      if (errors.length)
+        toast(
+          t("tasks.clearFailed", { count: errors.length, error: translateError(errors[0]) }),
+          "error",
+        );
+    } finally {
+      clearingRef.current = false;
+      setClearing(false);
+    }
+  };
   return (
     <>
       <aside
@@ -184,6 +261,25 @@ function BackgroundPanelContent() {
             <X size={14} />
           </IconButton>
         </header>
+        <div className="background-panel__toolbar">
+          <Button
+            size="sm"
+            variant="ghost"
+            leading={<CheckCheck size={13} />}
+            disabled={clearing || !clearable}
+            aria-label={t("tasks.clearFinished")}
+            aria-busy={clearing}
+            title={t("tasks.clearHint")}
+            onClick={() => void clearFinished()}
+          >
+            {t(clearing ? "tasks.clearing" : "tasks.clearFinished")}
+            {clearable > 0 ? (
+              <span className="background-panel__clear-count" aria-hidden="true">
+                {clearable}
+              </span>
+            ) : null}
+          </Button>
+        </div>
         <div className="background-panel__body">
           {!items.length ? (
             <p className="background-panel__empty">{t("tasks.empty")}</p>
@@ -200,28 +296,6 @@ function BackgroundPanelContent() {
             </>
           )}
         </div>
-        {finished.length ? (
-          <footer className="background-panel__footer">
-            <Button
-              size="sm"
-              variant="ghost"
-              leading={<CheckCheck size={13} />}
-              onClick={() => {
-                for (const item of finished) {
-                  const clear = item.actions?.find(
-                    (action) => action.id === "clear" && !action.disabled,
-                  );
-                  if (clear)
-                    void Promise.resolve()
-                      .then(clear.run)
-                      .catch((error) => toast(translateError(error), "error"));
-                }
-              }}
-            >
-              {t("tasks.clearFinished")}
-            </Button>
-          </footer>
-        ) : null}
         {(["n", "e", "s", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
           <div
             key={edge}

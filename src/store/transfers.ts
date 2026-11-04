@@ -32,7 +32,7 @@ interface TransfersStore {
   hydrate: () => Promise<void>;
   pause: (id: string) => void;
   resume: (id: string) => void;
-  clear: (id: string) => void;
+  clear: (id: string) => Promise<void>;
   setSpeedLimit: (id: string, kib: number) => Promise<boolean>;
 }
 
@@ -144,7 +144,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       toast(translateError(error), "error");
     });
   },
-  clear: (id) => {
+  clear: async (id) => {
     const item = get().items.find((x) => x.id === id);
     if (!item || item.status === "running" || item.clearing) return;
     if (!item.durable) {
@@ -154,7 +154,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     set((state) => ({
       items: state.items.map((x) => (x.id === id ? { ...x, clearing: true } : x)),
     }));
-    void transferApi
+    await transferApi
       .clear(id)
       .then((pending) =>
         set((state) => ({
