@@ -111,6 +111,7 @@ pub fn run() {
             network::connection_route_save,
             network::proxy_password_save,
             network::proxy_test,
+            network::diagnostics::proxy_test_quality,
             plugins::security::plugin_security_state,
             plugins::security::plugin_set_restricted,
             plugins::security::plugin_set_permissions,

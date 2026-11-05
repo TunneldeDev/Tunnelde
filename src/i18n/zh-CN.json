@@ -1483,7 +1483,20 @@
     "jumpRemember": "记住跳板主机密码",
     "systemHint": "系统模式使用操作系统或环境变量中的代理和绕过规则，不执行 PAC 脚本；需要时请配置代理。",
     "clearPassword": "清除已保存的代理密码",
-    "missingProxy": "代理已不存在"
+    "missingProxy": "代理已不存在",
+    "qualityLessMs": "<1 毫秒",
+    "qualityRunning": "正在测量最多 3 次连接…",
+    "qualityLatency": "连接延迟（中位数）",
+    "qualityFastest": "最快",
+    "qualitySlowest": "最慢",
+    "qualityHint": "沿所选路径测量最多 3 次 TCP 连接，总时限 15 秒。包含 DNS 和代理协商，不代表 ping 往返延迟或带宽；失败不计入耗时统计。中位数 ≤100 毫秒为较低，≤300 毫秒为适中，更高为较高。",
+    "quality": {
+      "fast": "连接成功 · 延迟较低",
+      "normal": "连接成功 · 延迟适中",
+      "slow": "连接成功 · 延迟较高",
+      "unstable": "部分连接尝试失败",
+      "unreachable": "连接失败"
+    }
   },
   "forward": {
     "title": "端口转发",
