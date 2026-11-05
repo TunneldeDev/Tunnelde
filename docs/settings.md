@@ -64,8 +64,8 @@ Content search uses a visible local/SSH directory, literal case-insensitive matc
 and no shell. It skips links, hidden/build directories, binary and oversized files,
 and stops at 100 matches, 4,000 entries, 8 directory levels, 8 MiB read or 15 seconds
 (plus bounded connection setup/close). Remote editor drafts override disk search
-results and remain intact when navigating to a matching line. Local files open a
-read-only preview up to 512 KiB.
+results and remain intact when navigating to a matching line. Local file results
+open in the editor at the matching location.
 
 Appearance starts with compact built-in palette choices and installed plugin themes. One plugin
 can supply multiple named palettes; pure theme packs need no Node. Detailed region controls live
