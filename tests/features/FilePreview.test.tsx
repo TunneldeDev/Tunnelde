@@ -95,7 +95,7 @@ describe("file preview", () => {
     useFilePreview.getState().show("/photo.png");
     render(<FilePreview />);
     fireEvent.click(screen.getByRole("button", { name: "Find preview plugins" }));
-    expect(useMarketplace.getState().tag).toBe("preview");
+    expect(useMarketplace.getState().query).toBe("tag:preview");
     expect(useFilePreview.getState().file).toBeNull();
     expect(api.searchPreviewLocal).not.toHaveBeenCalled();
   });

@@ -17,7 +17,7 @@ import { PluginFileIconThemes } from "./PluginFileIconThemes";
 import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
-import { pluginTags } from "@/lib/plugins/discovery";
+import { pluginTags, togglePluginTag } from "@/lib/plugins/discovery";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -114,7 +114,9 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
                   type="button"
                   key={tag}
                   onClick={() => {
-                    useMarketplace.getState().setTag(tag);
+                    const market = useMarketplace.getState();
+                    market.setTag("");
+                    market.setQuery(togglePluginTag(market.query, tag));
                     useNavigation.getState().showSidebar("plugins");
                   }}
                 >
@@ -235,10 +237,26 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
         <div>
           <dt>{t("market.runtime")}</dt>
           <dd>
-            {themeOnly ? t("plugins.themeNoRuntime") : (info.runtime ?? "node")}
+            {themeOnly
+              ? t("plugins.themeNoRuntime")
+              : info.runtime === "declarative"
+                ? t("market.declarativeRuntime")
+                : (info.runtime ?? "node")}
             {!themeOnly && info.engines?.node ? ` ${info.engines.node}` : ""}
           </dd>
         </div>
+        {info.engines?.tunnelde ? (
+          <div>
+            <dt>{t("market.tunneldeVersion")}</dt>
+            <dd>{info.engines.tunnelde}</dd>
+          </div>
+        ) : null}
+        {info.apiVersion != null ? (
+          <div>
+            <dt>{t("market.apiVersion")}</dt>
+            <dd>{info.apiVersion}</dd>
+          </div>
+        ) : null}
         {own ? (
           <div>
             <dt>{t("market.installedVersion")}</dt>
