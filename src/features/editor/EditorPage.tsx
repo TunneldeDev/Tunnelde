@@ -8,7 +8,12 @@ import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
 import { useEditors, undoEditorEdit } from "@/store/editors";
 import { usePlugins } from "@/store/plugins";
-import { formatEditorDocument, useFormatting } from "@/lib/plugins/formatting";
+import {
+  editorCommandMatches,
+  formatEditorDocument,
+  useFormatting,
+} from "@/lib/plugins/formatting";
+import { openPluginAction } from "@/lib/plugins/actions";
 import { runWorkbenchCommand } from "@/lib/keyboard/actions";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
@@ -96,28 +101,45 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
       )
         return;
       const definitions = shortcutCommands(usePlugins.getState().items);
-      const command = definitions.find(
+      const plugins = usePlugins.getState().items;
+      const overrides = useSettings.getState().settings.keyboardShortcuts;
+      const editorCommands = definitions.filter((item) => {
+        if (item.scope !== "editor" || !matchesCommand(event, item.id, overrides, definitions))
+          return false;
+        if (!item.plugin?.command) return true;
+        const contributed = plugins
+          .find((plugin) => plugin.id === item.plugin?.id)
+          ?.commands.find((command) => command.id === item.plugin?.command);
+        return (
+          !!entry &&
+          !!contributed?.editor &&
+          editorCommandMatches(entry.path, contributed.editor.extensions)
+        );
+      });
+      if (!editorCommands.length) return;
+      // Workbench shortcuts also apply in the editor when explicitly shared with a plugin.
+      const workbenchCommands = definitions.filter(
         (item) =>
-          item.scope === "editor" &&
-          matchesCommand(
-            event,
-            item.id,
-            useSettings.getState().settings.keyboardShortcuts,
-            definitions,
-          ),
+          item.scope === "workbench" &&
+          item.input &&
+          matchesCommand(event, item.id, overrides, definitions),
       );
-      if (!command) return;
       event.preventDefault();
       event.stopPropagation();
-      if (command.id === "editor.save") void save(tabId);
-      else if (command.id === "editor.format") formatEditorDocument(tabId);
-      else if (command.id === "editor.undo" || command.id === "editor.redo")
-        undoEditorEdit(tabId, command.id === "editor.redo");
-      else runWorkbenchCommand(command.id);
+      void (async () => {
+        for (const command of editorCommands) {
+          if (command.id === "editor.save") await save(tabId);
+          else if (command.id === "editor.undo" || command.id === "editor.redo")
+            undoEditorEdit(tabId, command.id === "editor.redo");
+          else if (command.plugin) await openPluginAction(command.plugin);
+          else runWorkbenchCommand(command.id);
+        }
+        for (const command of workbenchCommands) runWorkbenchCommand(command.id);
+      })();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [active, save, tabId]);
+  }, [active, save, tabId, entry]);
 
   useEffect(() => {
     const element = textarea.current;

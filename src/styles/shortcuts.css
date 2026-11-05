@@ -185,3 +185,16 @@
     grid-row: 1 / 3;
   }
 }
+
+.shortcuts__binding.is-conflict {
+  border-color: var(--td-red);
+}
+.shortcuts__binding.is-conflict .shortcuts__key {
+  color: var(--td-red);
+}
+.shortcuts-conflict-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}

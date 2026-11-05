@@ -1370,6 +1370,11 @@
     "record": "Press a shortcut",
     "recordHint": "Press keys, then Save. Escape cancels. AltGr and input method composition are ignored.",
     "conflict": "Already assigned to {{command}} in this context.",
+    "conflictTitle": "Shortcut conflict",
+    "conflictDescription": "{{key}} is assigned to more than one command. Choose which binding to keep, or keep the conflict.",
+    "keepConflict": "Keep conflict",
+    "resolveConflict": "Resolve in settings",
+    "keepBinding": "Keep {{command}}",
     "scope": {
       "workbench": "Workbench",
       "files": "Files",

@@ -5,12 +5,46 @@ import {
   normalizeShortcut,
   recordShortcut,
   shortcutConflict,
+  shortcutCommands,
+  shortcutFilter,
   terminalAllowsCommand,
 } from "@/lib/keyboard/registry";
 
 const key = (options: KeyboardEventInit) => new KeyboardEvent("keydown", options);
 
 describe("application keyboard registry", () => {
+  it("does not register formatting when no plugin contributes it", () => {
+    expect(shortcutCommands().some((item) => item.id === "editor.format")).toBe(false);
+  });
+  it("filters both sides of plugin conflicts without listing unrelated commands", () => {
+    const definitions = shortcutCommands([
+      {
+        id: "formatter",
+        name: "Formatter",
+        runtime: "node",
+        views: [],
+        commands: [
+          {
+            id: "pretty",
+            title: "Format",
+            keybindings: ["Mod+Shift+F"],
+            editor: { extensions: ["json"], format: true },
+          },
+        ],
+      },
+    ] as never);
+    const plugin = definitions.find((item) => item.plugin?.id === "formatter")!;
+    const builtin = definitions.find((item) => item.id === "palette.content")!;
+    expect(
+      shortcutFilter(plugin, "@is:conflict & @plugins:formatter", {}, definitions, plugin.id),
+    ).toBe(true);
+    expect(
+      shortcutFilter(builtin, "@is:conflict & @plugins:formatter", {}, definitions, builtin.id),
+    ).toBe(true);
+    expect(
+      shortcutFilter(builtin, "@is:conflict & @plugins:other", {}, definitions, builtin.id),
+    ).toBe(false);
+  });
   it("matches settings on the physical comma key with a Chinese punctuation value", () => {
     for (const primary of [{ ctrlKey: true }, { metaKey: true }]) {
       expect(matchesCommand(key({ key: "，", code: "Comma", ...primary }), "page.settings")).toBe(
@@ -36,10 +70,10 @@ describe("application keyboard registry", () => {
       value: (name: string) => name === "AltGraph",
     });
     expect(recordShortcut(altGr)).toBeNull();
-    expect(matchesCommand(altGr, "editor.format", { "editor.format": ["Mod+Alt+K"] })).toBe(false);
+    expect(matchesCommand(altGr, "editor.save", { "editor.save": ["Mod+Alt+K"] })).toBe(false);
     const chord = key({ key: "k", ctrlKey: true, altKey: true });
     expect(recordShortcut(chord)).toBe("Mod+Alt+K");
-    expect(matchesCommand(chord, "editor.format", { "editor.format": ["Mod+Alt+K"] })).toBe(true);
+    expect(matchesCommand(chord, "editor.save", { "editor.save": ["Mod+Alt+K"] })).toBe(true);
     expect(
       matchesCommand(key({ key: ",", ctrlKey: true, isComposing: true }), "page.settings"),
     ).toBe(false);

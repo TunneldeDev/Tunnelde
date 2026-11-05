@@ -63,7 +63,6 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
     command(`tab.focus${i + 1}`, "shortcuts.focusTab", "workbench", [`Mod+${i + 1}`]),
   ),
   command("editor.save", "editor.save", "editor", ["Mod+S"]),
-  command("editor.format", "editor.format", "editor", ["Mod+Shift+F"]),
   command("editor.undo", "editor.undo", "editor", ["Mod+Z"]),
   command("editor.redo", "editor.redo", "editor", ["Mod+Shift+Z", "Mod+Y"], {
     macDefaults: ["Meta+Shift+Z"],
@@ -293,25 +292,77 @@ export function displayShortcut(binding: string, mac = isMacKeyboard()): string 
     .join("+");
 }
 
-/** Scoped commands take priority over workbench commands. Distinct scopes can
- * intentionally share keys (for example New File and New Host). */
+/** A plugin binding can overlap the workbench and a more specific context. */
+export function shortcutConflicts(
+  id: string,
+  binding: string,
+  overrides: ShortcutOverrides,
+  definitions: readonly ShortcutCommand[] = SHORTCUT_COMMANDS,
+): ShortcutCommand[] {
+  const own = definitions.find((item) => item.id === id);
+  if (!own) return [];
+  const mac = isMacKeyboard();
+  const key = displayShortcut(normalizeShortcut(binding) ?? binding, mac);
+  return definitions.filter(
+    (item) =>
+      item.id !== id &&
+      (item.scope === own.scope ||
+        ((item.plugin || own.plugin) &&
+          (item.scope === "workbench" || own.scope === "workbench"))) &&
+      bindingsFor(item.id, overrides, mac, definitions).some(
+        (other) => displayShortcut(normalizeShortcut(other) ?? other, mac) === key,
+      ),
+  );
+}
+
 export function shortcutConflict(
   id: string,
   binding: string,
   overrides: ShortcutOverrides,
   definitions: readonly ShortcutCommand[] = SHORTCUT_COMMANDS,
 ): ShortcutCommand | undefined {
-  const own = definitions.find((item) => item.id === id);
-  const variants = (value: string) =>
-    [false, true].map((mac) => displayShortcut(normalizeShortcut(value) ?? value, mac));
-  return definitions.find(
-    (item) =>
-      item.id !== id &&
-      item.scope === own?.scope &&
-      bindingsFor(item.id, overrides, undefined, definitions).some((other) =>
-        variants(binding).some((value, i) => value === variants(other)[i]),
-      ),
+  return shortcutConflicts(id, binding, overrides, definitions)[0];
+}
+
+/** Filter operators may be combined with ordinary text and an optional &. */
+export function shortcutFilter(
+  item: ShortcutCommand,
+  query: string,
+  overrides: ShortcutOverrides,
+  definitions: readonly ShortcutCommand[],
+  text: string,
+): boolean {
+  const conflicts = bindingsFor(item.id, overrides, undefined, definitions).flatMap((key) =>
+    shortcutConflicts(item.id, key, overrides, definitions),
   );
+  const pluginFilter = /@plugins:([^\s&]+)/i.exec(query)?.[1];
+  if (/@is:conflict\b/i.test(query) && !conflicts.length) return false;
+  if (pluginFilter) {
+    const names = pluginFilter
+      .split(",")
+      .map((name) => name.toLocaleLowerCase())
+      .filter(Boolean);
+    const related = [item, ...conflicts];
+    if (
+      !related.some(
+        (command) =>
+          command.plugin &&
+          names.some(
+            (name) =>
+              command.plugin!.id.toLocaleLowerCase() === name ||
+              command.title?.split(":")[0]?.toLocaleLowerCase() === name,
+          ),
+      )
+    )
+      return false;
+  }
+  const needle = query
+    .replace(/@is:conflict\b/gi, "")
+    .replace(/@plugins:[^\s&]+/gi, "")
+    .replace(/&/g, " ")
+    .trim()
+    .toLocaleLowerCase();
+  return !needle || text.toLocaleLowerCase().includes(needle);
 }
 
 export function isTextTarget(target: EventTarget | null): boolean {
