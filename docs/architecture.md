@@ -167,15 +167,15 @@ Historical changelog entries remain intact; actual refs are rechecked before gen
 Beta and stable publication are triggered by immutable version tags. The manual **Prepare Beta**
 workflow versions an isolated dev snapshot and explicitly dispatches the tag publisher because
 `GITHUB_TOKEN` tag writes do not trigger push workflows. Stable promotion tags the reviewed main
-merge and uses the same publisher. Nightly has an independent daily/manual workflow, source-derived
-versions and no-change detection. Its numeric commit distance sorts correctly under SemVer.
+merge and uses the same publisher. Nightly publication is disabled; development testing uses
+local builds without creating public tags or releases.
 
 The reusable Release workflow builds all four desktop targets and validates signatures, every
 installer and `latest.json` before making a draft public. Release titles include full version tags.
 Tagged sources remain valid when dev advances during a build; ancestry is still verified. Historical
-releases and tags remain available. Beta and Nightly cannot become the latest stable release.
+releases and tags remain available. Beta cannot become the latest stable release.
 The app exposes only Stable and Beta channels and chooses by SemVer, never release-list order.
-Developer Nightly packages are distributed separately and are not offered in app updates.
+Historical Nightly metadata remains readable, but new Nightly publication is rejected.
 Legacy Nightly preferences migrate to Stable; the update boundary rejects unsupported channels.
 Helpers remain Actions artifacts and are rejected in desktop release downloads.
 

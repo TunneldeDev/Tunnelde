@@ -2,13 +2,13 @@
 
 GitHub Actions orchestrates these modules. Each directory owns one responsibility:
 
-| Directory     | Responsibility                                                                  |
-| ------------- | ------------------------------------------------------------------------------- |
-| `github/`     | Immutable source reads, refs, ancestry and Git trees                            |
-| `metadata/`   | Version formats, channel identity, manifest transforms and changelog summaries  |
-| `planning/`   | Promotion PR planning, reviewed source validation and PR policy                 |
-| `publishing/` | Beta/Nightly snapshots, stable tag preparation, drafts and verified publication |
-| `tests/`      | Release logic, real Git history and CI recovery regression tests                |
+| Directory     | Responsibility                                                                 |
+| ------------- | ------------------------------------------------------------------------------ |
+| `github/`     | Immutable source reads, refs, ancestry and Git trees                           |
+| `metadata/`   | Version formats, channel identity, manifest transforms and changelog summaries |
+| `planning/`   | Promotion PR planning, reviewed source validation and PR policy                |
+| `publishing/` | Beta snapshots, stable tag preparation, drafts and verified publication        |
+| `tests/`      | Release logic, real Git history and CI recovery regression tests               |
 
 Root CLI entry points prepare local releases, check versions, extract notes, build updater
 manifests and verify assets. `automation.mjs` and `release-notes.mjs` forward existing imports;
@@ -25,15 +25,15 @@ New Beta milestones use **`vX.Y.Z-beta.1` through `vX.Y.Z-beta.9` only**.
 The counter restarts at 1 for each new target stable version. Before a tenth
 milestone would be needed, review and publish the stable release through the
 promotion PR. At the cap, preparation stops before creating a commit, tag or
-draft; it never promotes unfinished software automatically. Use Nightly for
-intermediate testing. Same-source retries of beta.9 remain possible.
+draft; it never promotes unfinished software automatically. Use `pnpm build:local`
+for intermediate testing. Same-source retries of beta.9 remain possible.
 
 Allocation reads immutable tags, including historical formats and tags whose
 release was retired, so numbers cannot silently be recycled. New publication
 and recovery reject beta.10+, multipart Beta suffixes and compact betaNN names.
 Historical metadata remains readable and comparable; the updater accepts stable
-releases above already installed beta.10/11 builds. Nightly retains a permitted
-Beta base plus `.d.<distance>.g<source>` without consuming Beta milestones.
+releases above already installed beta.10/11 builds. Nightly publication and recovery
+are disabled; historical Nightly versions remain readable for compatibility.
 See the version policy in [English](../../docs/versioning.en-us.md) /
 [简体中文](../../docs/versioning.zh-cn.md).
 
