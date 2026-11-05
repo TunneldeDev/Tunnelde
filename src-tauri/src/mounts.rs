@@ -1048,6 +1048,100 @@ pub async fn action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires sshfs, OpenSSH sftp-server and a usable FUSE device"]
+    async fn real_passive_sshfs_mount_resolves_owned_files() {
+        use std::os::{fd::OwnedFd, unix::net::UnixStream};
+
+        struct TempDir(PathBuf);
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let temp = TempDir(
+            std::env::temp_dir().join(format!("tunnelde-sshfs-test-{}", uuid::Uuid::new_v4())),
+        );
+        std::fs::create_dir(&temp.0).unwrap();
+        let source = temp.0.join("source");
+        let root = temp.0.join("mount");
+        let outside = temp.0.join("outside");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(source.join("file.txt"), b"SSHFS test").unwrap();
+        std::fs::write(outside.join("secret.txt"), b"outside").unwrap();
+        std::os::unix::fs::symlink(&outside, source.join("escape")).unwrap();
+
+        let (server_socket, client_socket) = UnixStream::pair().unwrap();
+        let mut server = std::process::Command::new("/usr/lib/openssh/sftp-server")
+            .stdin(Stdio::from(OwnedFd::from(
+                server_socket.try_clone().unwrap(),
+            )))
+            .stdout(Stdio::from(OwnedFd::from(server_socket)))
+            .spawn()
+            .unwrap();
+        let mut client = std::process::Command::new("sshfs")
+            .arg(format!("tunnelde:{}", source.display()))
+            .arg(&root)
+            .args(["-f", "-o", "passive", "-o", "fsname=Tunnelde", "-o", "ro"])
+            .stdin(Stdio::from(OwnedFd::from(
+                client_socket.try_clone().unwrap(),
+            )))
+            .stdout(Stdio::from(OwnedFd::from(client_socket)))
+            .spawn()
+            .unwrap();
+        struct Cleanup<'a> {
+            root: &'a Path,
+            client: &'a mut std::process::Child,
+            server: &'a mut std::process::Child,
+        }
+        impl Drop for Cleanup<'_> {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("fusermount3")
+                    .arg("-uz")
+                    .arg(self.root)
+                    .status();
+                let _ = self.client.kill();
+                let _ = self.client.wait();
+                let _ = self.server.kill();
+                let _ = self.server.wait();
+            }
+        }
+        let processes = Cleanup {
+            root: &root,
+            client: &mut client,
+            server: &mut server,
+        };
+        let mount_point = root.to_str().unwrap();
+        let mut found = false;
+        for _ in 0..100 {
+            let table = std::fs::read_to_string("/proc/self/mountinfo").unwrap();
+            if mount_id_in_table(&table, mount_point).is_some() {
+                found = true;
+                break;
+            }
+            assert!(
+                processes.client.try_wait().unwrap().is_none(),
+                "sshfs exited before mounting"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(found, "sshfs mount did not become ready");
+        assert_eq!(std::fs::read(root.join("file.txt")).unwrap(), b"SSHFS test");
+        assert_eq!(
+            resolve_mounted_target(root.clone(), PathBuf::from("file.txt"))
+                .await
+                .unwrap(),
+            root.join("file.txt")
+        );
+        assert!(
+            resolve_mounted_target(root.clone(), PathBuf::from("escape/secret.txt"))
+                .await
+                .is_err()
+        );
+    }
     #[cfg(windows)]
     #[test]
     fn windows_device_mapping_rejects_bad_inputs_and_reports_current_drive() {

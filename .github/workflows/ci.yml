@@ -99,7 +99,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf sshfs openssh-sftp-server
 
       - name: Build frontend
         run: |
@@ -114,6 +114,14 @@ jobs:
 
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Test real SSHFS mount when FUSE is available
+        run: |
+          if [ -r /dev/fuse ] && [ -w /dev/fuse ]; then
+            cargo test --manifest-path src-tauri/Cargo.toml real_passive_sshfs_mount_resolves_owned_files -- --ignored --nocapture
+          else
+            echo 'FUSE device unavailable on this runner; real SSHFS mount test skipped.'
+          fi
 
   hygiene:
     name: Repository hygiene
