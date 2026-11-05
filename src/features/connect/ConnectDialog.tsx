@@ -30,7 +30,7 @@ const STATUS_KEYS = {
 
 interface ConnectDialogProps {
   host: Host;
-  after?: "terminal" | "sftp";
+  after?: "terminal" | "sftp" | "background";
   intent?: "connect" | "installKey";
   initialError?: string;
   onClose: () => void;
@@ -255,6 +255,7 @@ function HostConnectDialog({
     const session = await connect(
       {
         hostId: host.id,
+        background: after === "background",
         jumpCredentials,
         password: interactive ? password || null : null,
         passphrase: interactive ? null : passphrase || null,
@@ -294,7 +295,7 @@ function HostConnectDialog({
       if (alive.current) onConnected(session);
     } else if (after === "sftp") {
       openSftp(session);
-    } else {
+    } else if (after === "terminal") {
       openTerminal(session);
     }
     pending.current = false;

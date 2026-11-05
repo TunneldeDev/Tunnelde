@@ -152,6 +152,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
         )
         .map((item) => ({
           id: item.id,
+          detail: `Category: ${item.plugin ? "Plugins" : item.scope === "editor" ? "Editor" : item.id.startsWith("host.") ? "Hosts" : item.id.startsWith("sidebar.forwarding") ? "Port Forwarding" : item.id.startsWith("tab.") || item.id.startsWith("pane.") || item.id.startsWith("sidebar.") || item.id.startsWith("panel.") ? "View" : item.id.startsWith("theme.") || item.id.startsWith("font.") || item.id === "page.settings" || item.id === "keyboard.shortcuts" ? "Preferences" : "Application"}`,
           title:
             item.title ??
             (item.id === "panel.toggle"

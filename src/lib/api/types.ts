@@ -310,9 +310,11 @@ export interface SshSession {
   cols: number;
   rows: number;
   connectedAt: number;
+  terminal?: boolean;
 }
 
 export interface SshConnectRequest {
+  background?: boolean;
   jumpCredentials?: Record<string, { password?: string; passphrase?: string }>;
   hostId: string;
   password?: string | null;

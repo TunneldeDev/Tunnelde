@@ -1,3 +1,4 @@
+import { AboutPage } from "@/features/about/AboutPage";
 import { FileCode2, RotateCcw, Search, X } from "lucide-react";
 import {
   Fragment,
@@ -515,7 +516,7 @@ export function SettingsPage() {
             <section className="settings-section" key={item} aria-label={t(SECTION_LABELS[item])}>
               <div className="settings-section__head">
                 <h2 className="settings-section__title">{t(SECTION_LABELS[item])}</h2>
-                {item !== "plugins" && item !== "shortcuts" ? (
+                {item !== "plugins" && item !== "shortcuts" && item !== "about" ? (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -537,6 +538,7 @@ export function SettingsPage() {
                   <p className="settings-section__intro">{t("settings.filePaneDefaultsHint")}</p>
                 ) : null}
                 {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
+                {item === "about" && !filtering ? <AboutPage embedded /> : null}
                 {item === "updates" && !filtering ? <UpdateStatus /> : null}
                 {groupSettings(
                   item,

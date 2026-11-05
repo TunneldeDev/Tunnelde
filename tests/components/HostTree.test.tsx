@@ -122,11 +122,10 @@ describe("HostTree keyboard navigation", () => {
     expect(tree.getAttribute("aria-activedescendant")).toBe("host-b");
 
     fireEvent.keyDown(tree, { key: "Enter" });
-    expect(useDialogs.getState().openConnect).toHaveBeenCalledExactlyOnceWith(
-      expect.objectContaining({ id: "b" }),
-      "terminal",
+    expect(useWorkspace.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: "host", hostId: "b" })]),
     );
-    expect(useWorkspace.getState().tabs).toEqual([]);
+    expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
   });
 
   it("wraps to the last row when nothing is selected yet", () => {
@@ -159,46 +158,50 @@ describe("HostTree keyboard navigation", () => {
     expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
   });
 
-  it("single click and Space only select, without opening a page or a dialog", () => {
+  it("opens host details on a single click and connects on double click", () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, hostDirectConnect: false } });
     render(<HostTree />);
     const row = screen.getAllByRole("treeitem")[0]!;
-    fireEvent.click(row);
+    fireEvent.click(row, { detail: 1 });
     expect(row.getAttribute("aria-selected")).toBe("true");
-    expect(row.classList.contains("is-focused")).toBe(true);
-    fireEvent.keyDown(screen.getByRole("tree"), { key: " " });
-    expect(useWorkspace.getState().tabs).toEqual([]);
-    expect(useDialogs.getState().openHost).not.toHaveBeenCalled();
-    expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
+    expect(useWorkspace.getState().tabs.some((tab) => tab.kind === "host")).toBe(true);
+    fireEvent.click(row, { detail: 2 });
+    fireEvent.doubleClick(row, { detail: 2 });
+    expect(useDialogs.getState().openConnect).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ id: "a" }),
+      "terminal",
+    );
   });
 
-  it.each(["terminal", "details", "edit"] as const)(
-    "uses the %s action once for double click and Enter",
-    (action) => {
-      useSettings.setState({
-        settings: { ...DEFAULT_SETTINGS, hostActivation: action, hostDirectConnect: false },
-      });
-      const openDetails = vi.spyOn(useWorkspace.getState(), "openHost");
-      render(<HostTree />);
-      const row = screen.getAllByRole("treeitem")[0]!;
-      fireEvent.click(row, { detail: 1 });
-      fireEvent.click(row, { detail: 2 });
-      fireEvent.doubleClick(row, { detail: 2 });
-      const operation =
-        action === "terminal"
-          ? useDialogs.getState().openConnect
-          : action === "edit"
-            ? useDialogs.getState().openHost
-            : openDetails;
-      expect(operation).toHaveBeenCalledTimes(1);
-      fireEvent.keyDown(screen.getByRole("tree"), { key: "Enter" });
-      fireEvent.keyDown(screen.getByRole("tree"), { key: "Enter", repeat: true });
-      expect(operation).toHaveBeenCalledTimes(2);
-      if (action !== "details") expect(openDetails).not.toHaveBeenCalled();
-      if (action !== "terminal") expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
-      if (action !== "edit") expect(useDialogs.getState().openHost).not.toHaveBeenCalled();
-      openDetails.mockRestore();
-    },
-  );
+  it.each(["terminal", "edit"] as const)("uses the configured %s single-click action", (action) => {
+    vi.useFakeTimers();
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, hostActivation: action, hostDirectConnect: false },
+    });
+    render(<HostTree />);
+    fireEvent.click(screen.getAllByRole("treeitem")[0]!, { detail: 1 });
+    vi.advanceTimersByTime(300);
+    expect(
+      action === "terminal" ? useDialogs.getState().openConnect : useDialogs.getState().openHost,
+    ).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("cancels a pending configured single-click action when double clicking", () => {
+    vi.useFakeTimers();
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, hostActivation: "edit", hostDirectConnect: false },
+    });
+    render(<HostTree />);
+    const row = screen.getAllByRole("treeitem")[0]!;
+    fireEvent.click(row, { detail: 1 });
+    fireEvent.click(row, { detail: 2 });
+    fireEvent.doubleClick(row, { detail: 2 });
+    vi.advanceTimersByTime(300);
+    expect(useDialogs.getState().openHost).not.toHaveBeenCalled();
+    expect(useDialogs.getState().openConnect).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
 
   it("does not activate a host when double clicking its action button", () => {
     render(<HostTree />);
@@ -216,7 +219,7 @@ describe("HostTree keyboard navigation", () => {
     );
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
     fireEvent.keyDown(screen.getByRole("tree"), { key: "Enter" });
-    expect(connectHostDirectly).toHaveBeenCalledTimes(2);
+    expect(useWorkspace.getState().tabs.some((tab) => tab.kind === "host")).toBe(true);
   });
 
   it("renders the same actions, icons and separators for right click and the ellipsis", () => {

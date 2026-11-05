@@ -141,7 +141,7 @@ impl Default for Settings {
             motion: "system".into(),
             show_status_bar: true,
             restore_workspace: true,
-            host_activation: "terminal".into(),
+            host_activation: "details".into(),
             host_direct_connect: true,
             terminal_scrollback: 10_000,
             terminal_line_height: 1.2,
@@ -331,7 +331,7 @@ impl Settings {
             (
                 &mut self.host_activation,
                 &["terminal", "details", "edit"][..],
-                "terminal",
+                "details",
             ),
             (
                 &mut self.terminal_cursor_style,
@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(settings.motion, "system");
         assert!(settings.show_status_bar);
         assert!(settings.restore_workspace);
-        assert_eq!(settings.host_activation, "terminal");
+        assert_eq!(settings.host_activation, "details");
         assert_eq!(settings.monitor_interval_ms, 3000);
         assert_eq!(settings.terminal_line_height, 1.2);
         assert_eq!(settings.terminal_scrollback, 10_000);

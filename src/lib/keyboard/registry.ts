@@ -37,6 +37,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("page.welcome", "nav.welcome", "workbench", []),
   command("page.about", "nav.about", "workbench", []),
   command("sidebar.knownHosts", "settings.knownHosts", "workbench", []),
+  command("sidebar.forwarding", "forward.title", "workbench", []),
   command("sidebar.plugins", "settings.plugins", "workbench", []),
   command("app.reload", "restart.reload", "workbench", []),
   command("app.restart", "restart.command", "workbench", []),

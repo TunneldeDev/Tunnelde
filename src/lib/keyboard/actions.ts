@@ -42,6 +42,7 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "host.new") useDialogs.getState().openHost();
   else if (id === "sidebar.toggle") useNavigation.getState().toggleSidebar();
   else if (id === "sidebar.knownHosts") useNavigation.getState().showSidebar("knownHosts");
+  else if (id === "sidebar.forwarding") useNavigation.getState().showSidebar("forwarding");
   else if (id === "sidebar.plugins") useNavigation.getState().showSidebar("plugins");
   else if (id === "transfers.show") useTransferPanel.getState().show();
   else if (id === "app.reload" || id === "app.restart")

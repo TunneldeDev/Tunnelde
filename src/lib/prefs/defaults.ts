@@ -39,7 +39,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     motion: "system",
     showStatusBar: true,
     restoreWorkspace: true,
-    hostActivation: "terminal",
+    hostActivation: "details",
     hostDirectConnect: true,
     terminalScrollback: 10_000,
     terminalLineHeight: 1.2,

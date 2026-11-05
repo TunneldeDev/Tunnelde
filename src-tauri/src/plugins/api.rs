@@ -1008,6 +1008,7 @@ mod tests {
             cols: 80,
             rows: 24,
             connected_at: 123,
+            terminal: true,
         };
         assert_eq!(
             serde_json::to_value(PluginSession::from(session)).unwrap(),

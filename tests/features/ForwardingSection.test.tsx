@@ -139,7 +139,7 @@ const connect = () =>
 it("offers connecting even with no saved rules, and keeps the editor separate from the list", async () => {
   render(<ForwardingSection host={host} />);
   fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-  expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(host);
+  expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(host, "background");
   fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
   expect(screen.queryByRole("button", { name: "Save and start" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
