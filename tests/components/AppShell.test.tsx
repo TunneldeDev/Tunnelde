@@ -37,6 +37,9 @@ import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
+import * as keyboardActions from "@/lib/keyboard/actions";
+import { usePlugins } from "@/store/plugins";
+import type { PluginInfo } from "@/lib/api/types";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 function rectangle(left: number, top: number, width: number, height: number): DOMRect {
@@ -94,6 +97,7 @@ function renderWorkspace() {
 
 beforeEach(() => {
   useQuickAccess.setState({ query: null });
+  usePlugins.setState({ items: [] });
   useDialogs.getState().close();
   useSettings.setState({ settings: DEFAULT_SETTINGS, update: vi.fn().mockResolvedValue(true) });
   useNavigation.setState({
@@ -123,6 +127,44 @@ beforeEach(() => {
       second: { kind: "pane", paneId: "pane-2" },
     },
   });
+});
+
+describe("scoped plugin shortcut conflicts", () => {
+  const plugin = (binding: string) =>
+    ({
+      id: "test",
+      name: "Test",
+      runtime: "node",
+      views: [],
+      commands: [{ id: "run", title: "Run", keybindings: [binding] }],
+    }) as unknown as PluginInfo;
+
+  it.each([
+    { scope: "sftp-pane", binding: "Mod+F", key: "f" },
+    { scope: "terminal-host", binding: "Mod+Shift+C", key: "C", shiftKey: true },
+  ])(
+    "runs a plugin once and retains the $scope handler",
+    async ({ scope, binding, key, shiftKey }) => {
+      usePlugins.setState({ items: [plugin(binding)] });
+      const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockReturnValue(true);
+      const { container } = render(<AppShell />);
+      const local = document.createElement("div");
+      local.className = scope;
+      local.tabIndex = 0;
+      container.append(local);
+      const handler = vi.fn((event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      local.addEventListener("keydown", handler);
+      fireEvent.keyDown(local, { key, ctrlKey: true, shiftKey });
+      await act(async () => {});
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledWith("plugin.c.4.test.run");
+      run.mockRestore();
+    },
+  );
 });
 
 describe("AppShell terminal shortcut ownership", () => {

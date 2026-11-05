@@ -73,8 +73,22 @@ export const useShortcutConflicts = create<State>((set, get) => ({
     const remaining = bindingsFor(remove, overrides, undefined, definitions).filter(
       (key) => displayShortcut(key) !== displayShortcut(conflict.binding),
     );
-    if (await settings.update({ keyboardShortcuts: { ...overrides, [remove]: remaining } }))
-      get().dismiss();
+    const next = { ...overrides, [remove]: remaining };
+    if (await settings.update({ keyboardShortcuts: next })) {
+      set((state) => ({
+        queue: state.queue
+          .slice(1)
+          .filter((item) =>
+            bindingsFor(item.incoming, next, undefined, definitions).some(
+              (binding) =>
+                displayShortcut(binding) === displayShortcut(item.binding) &&
+                shortcutConflicts(item.incoming, binding, next, definitions).some(
+                  (other) => other.id === item.existing,
+                ),
+            ),
+          ),
+      }));
+    }
   },
   search: (query) => set({ query }),
   openSearch: (query) => set((state) => ({ query, request: state.request + 1 })),

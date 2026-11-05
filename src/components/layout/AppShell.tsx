@@ -142,14 +142,48 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    const dispatched = new WeakSet<KeyboardEvent>();
+    const blocked = (event: KeyboardEvent) =>
+      event.defaultPrevented ||
+      event.isComposing ||
+      palette ||
+      !!document.querySelector("[role='dialog'], .td-select__popup, [role='menu']");
+
+    // Local file and terminal handlers consume their own key events before they
+    // bubble to the workbench. Dispatch overlapping plugin commands without
+    // suppressing the original event, so the local action still takes place.
+    const onScopedKeyDown = (event: KeyboardEvent) => {
+      if (blocked(event) || !(event.target instanceof Element)) return;
+      const terminal = !!event.target.closest(".terminal-host");
+      const files = !!event.target.closest(".sftp-pane");
+      if (!terminal && !files) return;
+      const overrides = useSettings.getState().settings.keyboardShortcuts ?? {};
+      const definitions = shortcutCommands(usePlugins.getState().items);
+      const scoped = definitions.some(
+        (item) =>
+          item.scope === (terminal ? "terminal" : "files") &&
+          (!files ||
+            !isTextTarget(event.target) ||
+            ["files.filter", "files.path"].includes(item.id)) &&
+          matchesCommand(event, item.id, overrides, definitions),
+      );
+      if (!scoped) return;
+      const commands = definitions.filter(
+        (item) =>
+          item.scope === "workbench" &&
+          (!isTextTarget(event.target) || terminal || item.input) &&
+          (!terminal || item.plugin?.command || terminalAllowsCommand(event, item.id, overrides)) &&
+          matchesCommand(event, item.id, overrides, definitions),
+      );
+      if (!commands.some((item) => item.plugin?.command)) return;
+      dispatched.add(event);
+      queueMicrotask(() => {
+        for (const command of commands) runWorkbenchCommand(command.id);
+      });
+    };
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.defaultPrevented ||
-        event.isComposing ||
-        palette ||
-        document.querySelector("[role='dialog'], .td-select__popup, [role='menu']")
-      )
-        return;
+      if (blocked(event) || dispatched.has(event)) return;
       const overrides = useSettings.getState().settings.keyboardShortcuts ?? {};
       const terminal = event.target instanceof Element && !!event.target.closest(".terminal-host");
       const definitions = shortcutCommands(usePlugins.getState().items);
@@ -169,13 +203,15 @@ export function AppShell() {
       if (!(event.target instanceof Element) || !event.target.closest(".terminal-host")) return;
       // xterm handles keys at its target. Route only actual workspace commands
       // before they reach it, so one shortcut cannot also send SSH input.
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || dispatched.has(event)) return;
       onKeyDown(event);
       if (event.defaultPrevented) event.stopPropagation();
     };
+    window.addEventListener("keydown", onScopedKeyDown, true);
     window.addEventListener("keydown", onTerminalKeyDown, true);
     window.addEventListener("keydown", onKeyDown);
     return () => {
+      window.removeEventListener("keydown", onScopedKeyDown, true);
       window.removeEventListener("keydown", onTerminalKeyDown, true);
       window.removeEventListener("keydown", onKeyDown);
     };
