@@ -246,6 +246,10 @@ export const usePlugins = create<PluginsStore>((set, get) => {
           const { ensurePluginPermission } = await import("@/store/pluginSecurity");
           if (!(await ensurePluginPermission(info))) throw new Error("plugin.permissionDenied");
         }
+        const current = get().items.find((item) => item.id === id);
+        if (!current || current.status !== "running" || current.fingerprint !== info.fingerprint) {
+          throw new Error(i18n.t("pluginSecurity.changed"));
+        }
         // Build editor input only after consent, so callers can reject stale snapshots.
         result = await api.pluginRun(id, command, input());
       });

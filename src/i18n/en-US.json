@@ -1573,7 +1573,9 @@
       "required": "Install a compatible SSHFS and FUSE driver, then check again."
     },
     "remotePath": {
-      "absoluteRequired": "Choose an absolute remote directory path."
+      "absoluteRequired": "Choose an absolute remote directory path.",
+      "invalid": "This remote path cannot be safely mapped to the local mount.",
+      "outsideMount": "The selected item is outside the mounted directory."
     },
     "mountPoint": {
       "absoluteRequired": "Choose an absolute local mount path.",
@@ -1594,10 +1596,13 @@
     "notOwned": "This mount belongs to another plugin.",
     "startFailed": "SSHFS stopped before the directory was mounted. Check the SSHFS installation and remote access.",
     "startTimeout": "The directory did not finish mounting in time. Check the SSH connection and FUSE driver.",
+    "pathTimeout": "The mounted directory did not respond in time. Check the connection and try again.",
+    "pathBusy": "The mounted directory is still responding to earlier requests. Try again shortly.",
     "busy": "The directory is busy. Close files and terminals using it, then retry unmounting.",
     "unmountTimeout": "Unmounting timed out. Close files using this directory and retry.",
     "processExited": "The SSHFS process stopped. Unmount this entry before reconnecting.",
     "transportClosed": "The SSHFS connection closed. Unmount this entry before reconnecting.",
+    "actionUnavailable": "The mount or plugin is no longer available. Reconnect or check plugin permissions, then try again.",
     "stdin": "Could not open the SSHFS input channel.",
     "stdout": "Could not open the SSHFS output channel.",
     "install": {
