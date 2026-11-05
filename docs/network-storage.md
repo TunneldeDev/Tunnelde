@@ -189,13 +189,15 @@ after an application restart or privilege revocation.
 
 ## Local and remote port forwarding
 
-Click **Port forwarding** in the SSH terminal toolbar to manage that host's rules,
-with the current terminal session preselected. You can also open the host's detail
-page and expand **Port forwarding**. Choose **Add forward**, then select **Access a remote
-service** or **Share a local service**. The editor separates the listening and service
-endpoints and names the computer that resolves each address. Names are optional and default
-to the service address and port. Choose **Save and start** with a live SSH connection,
-or **Save** to keep an inactive rule. An offline view always offers **Connect**.
+Open **Port forwarding** in the activity bar to view saved hosts and the number of
+active and saved rules for each one. Expand a host to manage its rules. The SSH
+terminal toolbar and host details also provide access. Choose **Add forward**, then
+select **Access a remote service** or **Share a local service**. The editor separates
+the listening and service endpoints and names the computer that resolves each address.
+Names are optional and default to the service address and port. Choose **Save and
+start** with an SSH connection, or **Save** to keep an inactive rule. An offline view
+offers **Connect**; a background SSH connection can manage forwards without opening
+a terminal. Normal credential and host-key verification still apply.
 
 | Direction                       | Listener      | Destination is reached from |
 | ------------------------------- | ------------- | --------------------------- |
@@ -221,23 +223,20 @@ a plugin also stop when its permissions are revoked or its runtime exits.
 
 ## SSHFS plugins
 
-The desktop provides native mount APIs for **SSHFS** (Node) and **SSHFS Lite**
-(declarative, without Node). The packages are under review in
-[Hub PR #1](https://github.com/TunneldeDev/tunnelde-hub/pull/1) and are not yet in
-the default marketplace catalogue. The following setup applies to those source
-packages. Both require desktop 0.27.0+ and use the same native mount panel.
-Open either from Quick Access or its contributed view, select a connected host,
-browse a remote directory, and choose a local empty directory or unused Windows
-drive such as `Z:\`. Mounts default to read only.
+The desktop provides native mount APIs that compatible plugins can use. Install a
+mount provider from the marketplace, open its contributed view, select a connected
+host, browse a remote directory, and choose a local empty directory or unused Windows
+drive such as `Z:\`. Mounts default to read only. Runtime and permission approval
+depend on the provider.
 
-The panel detects FUSE and an SSHFS build with passive/stdin transport support.
+The mount panel detects FUSE and an SSHFS build with passive/stdin transport support.
 It provides installation guidance when dependencies are missing or incompatible;
-it does not install drivers. The Node version still requires runtime consent.
+it does not install drivers.
 
 The native service pipes an authenticated SFTP subsystem directly to SSHFS.
 Passwords and private keys are not passed in process arguments, and no local TCP
 bridge is exposed. Mount completion is reported after the mount appears in the
-operating system. Mount points are reserved across both plugins.
+operating system. Mount points are reserved across providers.
 
 Use Unmount before disconnecting. Disconnect, plugin stop/revocation and app exit
 close authenticated access and attempt normal cleanup. If a directory is busy,
@@ -252,13 +251,13 @@ choose Preview from its context menu. Text previews are read only; Markdown open
 with a source switch. Local text is bounded to 512 KiB and remote text to the existing
 2 MiB read limit. Unsupported or binary files report a preview error. Remote previews
 use the selected pane's SSH session. Close returns focus to the file list; the footer
-can open a local file with the OS or edit a connected remote text file.
+can open a local file with the OS or edit the selected text file.
 
-Install **Common File Previews** from the default marketplace for images, audio,
-video and PDF, or another compatible preview provider. It needs no Node runtime or
-executable-plugin approval. Multiple matching providers appear in a selector;
-unsupported binary formats offer a marketplace search instead of displaying bytes.
-The **Common File Icons** pack supplies file-type icons independently of previewing.
+Install a compatible preview provider from the marketplace for images, audio,
+video, PDF and other supported formats. Provider runtime and permission requirements
+are shown in its details. Multiple matching providers appear in a selector; unsupported
+binary formats offer a marketplace search. File icon themes are independent of preview
+providers.
 
 Images are limited to 32 MiB and PDFs to 128 MiB. Audio/video playback starts on
 user action and depends on available system codecs. PDF rendering loads on demand

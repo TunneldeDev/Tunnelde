@@ -3,14 +3,16 @@
 Open **Settings → Keyboard Shortcuts**, use `Ctrl/Cmd+Shift+F12`, or search for
 “Keyboard Shortcuts” in the command palette. Search by command name, command id,
 context or key. Click a binding to replace it, or **+** to add an alternative;
-press the keys and choose Save. Conflicting commands in the same context cannot
-be assigned the same shortcut. Escape cancels recording.
+press the keys and choose Save. Conflicts are highlighted and can be retained.
+When installing or updating a plugin introduces a conflict, choose a binding to
+keep, retain both, or open the conflict in settings. Use `@is:conflict` and
+`@plugins:plugin-id,another-id` to filter related commands. Escape cancels recording.
 
 Changes save automatically and follow settings profiles, including profile
 imports and exports. Remove every binding to disable a command, reset an
 individual command with its reset button, or choose **Reset all shortcuts**.
-File, editor and terminal commands apply within their respective views and take
-precedence over workbench commands. Ordinary text inputs retain editing keys;
+File, editor and terminal commands apply within their respective views. Matching
+editor and workbench commands may both execute when a conflict is retained. Ordinary text inputs retain editing keys;
 Settings and Quick Access remain accessible. Installed plugin commands and views
 also appear here, even before their runtime starts, and can have custom bindings.
 Input method composition
@@ -49,10 +51,10 @@ command is Settings, Keyboard Shortcuts, tab switching or font sizing.
 Dialogs and input composition take precedence over workspace shortcuts.
 
 In Quick Access, type `>` followed by a command or plugin name (for example
-`> UUID`) to run it. Type `%` to search contents, or `@` to find a saved host.
+`> command name`) to run it. Type `%` to search contents, or `@` to find a saved host.
 File and content searches use the selected directory, with connected file panes
 and remote editors offered as roots; the folder button selects a local directory.
-Local results open a read-only preview. Remote results open the editor at the match.
+File results open the editor at the matching location.
 
 Terminal clipboard:
 

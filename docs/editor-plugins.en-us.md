@@ -1,11 +1,17 @@
 # Editor commands and formatters
 
-An installed plugin can contribute commands that act directly on the open editor.
-Press **Ctrl+Shift+F** (**Cmd+Shift+F** on macOS), use **Format document** in the
-editor toolbar, or find a command with **F1**. Outside the editor, Ctrl+Shift+F
-continues to search workspace contents. Settings → Keyboard Shortcuts lists host
-and installed plugin commands, including plugin defaults; users can change or
-disable each binding. Profiles preserve those changes.
+An installed plugin can contribute commands and shortcuts for the open editor.
+Use **Format document** in the editor toolbar or find an installed plugin command
+with **F1**. A plugin can assign a default shortcut; check **Settings → Keyboard
+Shortcuts** for the actual binding. No formatting shortcut is registered when no
+plugin contributes one. Settings profiles preserve customized bindings.
+
+When an installed or updated plugin introduces a shortcut conflict, choose which
+binding to keep, keep the conflict, or open the filtered shortcut settings. Retained
+conflicts are highlighted in red. In the editor, each matching command is invoked
+in sequence, including applicable workbench commands; a plugin command only applies
+to its declared file extensions. Check the bindings before retaining a conflict:
+for example, `Ctrl+Shift+F` already opens workspace content search.
 
 When multiple formatters match, choose a provider. Running a formatter follows
 the existing plugin permission and runtime consent steps. A declined prompt never
@@ -23,6 +29,7 @@ version, a closed/reopened editor, or a revoked runtime are discarded.
     {
       "id": "format",
       "title": "Format document",
+      "keybindings": ["Mod+Shift+F"],
       "editor": { "extensions": ["json"], "format": true }
     },
     {
@@ -52,8 +59,7 @@ network permission is needed for a pure text transformation.
 `keybindings` and optional `macKeybindings` accept up to four combinations using
 `Mod`, `Ctrl`, `Meta`, `Alt`, `Shift`, and a letter, number, function key or named key
 such as `Comma`. `Mod` maps to Ctrl on Windows/Linux and Command on macOS. Actual
-AltGraph input and IME composition never trigger commands. Editor commands take
-precedence over matching workbench shortcuts while the editor has focus.
+AltGraph input and IME composition never trigger commands. Matching editor and workbench commands can both run when their binding is retained.
 
 ## Host API
 
