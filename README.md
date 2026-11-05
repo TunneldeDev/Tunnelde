@@ -137,7 +137,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 ## Documentation
 
 - [Settings and profiles](docs/settings.md)
-- [Proxies, jump hosts, resumable transfers and SSHFS](docs/network-storage.md)
+- Proxies, jump hosts, transfers and SSHFS: [English](docs/network-storage.en-us.md) · [简体中文](docs/network-storage.zh-cn.md)
 - Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)
 - [AI local/remote setup](docs/ai-assistants.md)
 - Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
