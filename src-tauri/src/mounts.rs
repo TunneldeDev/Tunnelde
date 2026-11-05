@@ -11,6 +11,7 @@ use std::{
     process::Stdio,
 };
 use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 use tokio::{
     process::{Child, Command},
     sync::Mutex,
@@ -105,6 +106,35 @@ async fn resolve_mounted_target(root: PathBuf, relative: PathBuf) -> AppResult<P
         .await
         .map_err(|_| AppError::validation("mounts.pathTimeout"))?
         .map_err(|error| AppError::Internal(error.to_string()))?
+}
+
+/// A blocking filesystem call cannot be cancelled. Tell its worker when the
+/// awaiting operation is dropped so it can avoid launching a late window.
+async fn cancellable_open(
+    action: impl FnOnce(std::sync::Arc<std::sync::atomic::AtomicBool>) -> AppResult<()> + Send + 'static,
+) -> AppResult<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct CancelOnDrop(std::sync::Arc<AtomicBool>);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    static OPENERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = OPENERS
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
+    let allowed = std::sync::Arc::new(AtomicBool::new(true));
+    let _cancel = CancelOnDrop(allowed.clone());
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        action(allowed)
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
 }
 struct ActiveMount {
     info: MountInfo,
@@ -993,20 +1023,47 @@ pub async fn action(
                         Some("mounts.read"),
                         Some(lease.generation),
                     )?;
-                    if mount_root_selected {
-                        let app = app.clone();
-                        let path = target.to_string_lossy().into_owned();
-                        // Do not return a timeout while a worker may still open a
-                        // window later: spawn_blocking cannot cancel OS calls.
-                        tokio::task::spawn_blocking(move || {
-                            crate::commands::open_local_path(app, path)
-                        })
-                        .await
-                        .map_err(|error| AppError::Internal(error.to_string()))??;
-                    } else {
-                        crate::commands::reveal_local_path(target.to_string_lossy().into_owned())
-                            .await?;
-                    }
+                    let app = app.clone();
+                    let lease = lease.clone();
+                    let mount_id = id.to_owned();
+                    let session_id = session.to_owned();
+                    let runtime = tokio::runtime::Handle::current();
+                    cancellable_open(move |allowed| {
+                        if !target.exists() {
+                            return Err(AppError::NotFound("path.notFound".into()));
+                        }
+                        if !allowed.load(std::sync::atomic::Ordering::Acquire) {
+                            return Err(AppError::validation("pluginSecurity.changed"));
+                        }
+                        let state = app.state::<crate::state::AppState>();
+                        runtime.block_on(state.mounts.live_owned_mount(
+                            &lease.id,
+                            lease.generation,
+                            &mount_id,
+                            &session_id,
+                        ))?;
+                        for permission in ["mounts.read", "mounts.write"] {
+                            state.plugins.security.authorize(
+                                &lease.id,
+                                &lease.fingerprint,
+                                &lease.permissions,
+                                Some(permission),
+                                Some(lease.generation),
+                            )?;
+                        }
+                        if !allowed.load(std::sync::atomic::Ordering::Acquire) {
+                            return Err(AppError::validation("pluginSecurity.changed"));
+                        }
+                        if mount_root_selected {
+                            app.opener()
+                                .open_path(target.to_string_lossy().into_owned(), None::<&str>)
+                                .map_err(|error| AppError::Internal(error.to_string()))
+                        } else {
+                            tauri_plugin_opener::reveal_item_in_dir(target)
+                                .map_err(|error| AppError::Internal(error.to_string()))
+                        }
+                    })
+                    .await?;
                     Ok(serde_json::Value::Null)
                 }
                 _ => Err(AppError::validation("plugin.api.unknownMethod")),
@@ -1048,6 +1105,30 @@ pub async fn action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn cancelled_open_marks_a_blocked_worker_before_it_continues() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let opened = std::sync::Arc::new(AtomicBool::new(false));
+        let worker_opened = opened.clone();
+        let task = tokio::spawn(cancellable_open(move |allowed| {
+            let _ = started_tx.send(());
+            resume_rx.recv().unwrap();
+            if allowed.load(Ordering::Acquire) {
+                worker_opened.store(true, Ordering::Release);
+            }
+            let _ = finished_tx.send(());
+            Ok(())
+        }));
+        started_rx.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        resume_tx.send(()).unwrap();
+        finished_rx.await.unwrap();
+        assert!(!opened.load(Ordering::Acquire));
+    }
     #[cfg(target_os = "linux")]
     #[tokio::test]
     #[ignore = "requires sshfs, OpenSSH sftp-server and a usable FUSE device"]
