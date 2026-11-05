@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 
 use serde_json::{json, Value};
@@ -16,7 +16,21 @@ use super::api::{self, HostContext};
 use super::security::Lease;
 use crate::error::{AppError, AppResult};
 
-type Pending = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
+type Pending = Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
+
+struct PendingRequest {
+    pending: Pending,
+    id: u64,
+}
+
+impl Drop for PendingRequest {
+    fn drop(&mut self) {
+        self.pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&self.id);
+    }
+}
 
 pub struct PluginHost {
     child: Child,
@@ -60,7 +74,7 @@ impl PluginHost {
             .ok_or_else(|| AppError::internal("plugin.stdout"))?;
         let stderr = child.stderr.take();
         let stdin = Arc::new(Mutex::new(stdin));
-        let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
+        let pending: Pending = Arc::new(StdMutex::new(HashMap::new()));
 
         tokio::spawn(read_loop(stdout, stdin.clone(), pending.clone(), context));
         if let Some(stderr) = stderr {
@@ -83,7 +97,14 @@ impl PluginHost {
     ) -> AppResult<Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (sender, receiver) = oneshot::channel();
-        self.pending.lock().await.insert(id, sender);
+        self.pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .insert(id, sender);
+        let _request = PendingRequest {
+            pending: self.pending.clone(),
+            id,
+        };
 
         let payload = json!({
             "jsonrpc": "2.0",
@@ -99,11 +120,9 @@ impl PluginHost {
                 Ok(Err(message)) => Err(AppError::validation(format!("plugin.error: {message}"))),
             }
         };
-        let result = tokio::time::timeout(timeout, exchange)
+        tokio::time::timeout(timeout, exchange)
             .await
-            .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")));
-        self.pending.lock().await.remove(&id);
-        result
+            .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")))
     }
 
     async fn write(&self, payload: &Value) -> AppResult<()> {
@@ -243,7 +262,11 @@ async fn read_loop(
 
         match id {
             Some(id) => {
-                if let Some(sender) = pending.lock().await.remove(&id) {
+                if let Some(sender) = pending
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .remove(&id)
+                {
                     let result = if let Some(error) = value.get("error") {
                         Err(error
                             .get("message")
@@ -285,7 +308,7 @@ async fn read_loop(
             .cancel_plugin(&context.id, context.generation);
     }
 
-    let mut pending = pending.lock().await;
+    let mut pending = pending.lock().unwrap_or_else(|error| error.into_inner());
     for (_, sender) in pending.drain() {
         let _ = sender.send(Err("plugin exited".into()));
     }
@@ -522,7 +545,7 @@ mod tests {
         let mut host = PluginHost {
             child,
             stdin: Arc::new(Mutex::new(stdin)),
-            pending: Arc::new(Mutex::new(HashMap::new())),
+            pending: Arc::new(StdMutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
         };
         let result = host
@@ -533,7 +556,59 @@ mod tests {
             )
             .await;
         assert!(result.unwrap_err().to_string().contains("plugin.timeout"));
-        assert!(host.pending.lock().await.is_empty());
+        assert!(host.pending.lock().unwrap().is_empty());
+        host.kill();
+        let _ = host.child.wait().await;
+    }
+
+    #[tokio::test]
+    async fn cancelled_request_removes_its_pending_response() {
+        #[cfg(windows)]
+        let mut command = {
+            let root = std::env::var_os("SystemRoot").unwrap();
+            let mut command = Command::new(PathBuf::from(root).join("System32/PING.EXE"));
+            command
+                .args(["-n", "5", "127.0.0.1"])
+                .creation_flags(0x08000000);
+            command
+        };
+        #[cfg(not(windows))]
+        let mut command = {
+            let mut command = Command::new("/bin/sleep");
+            command.arg("5");
+            command
+        };
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let stdin = child.stdin.take().unwrap();
+        let mut host = PluginHost {
+            child,
+            stdin: Arc::new(Mutex::new(stdin)),
+            pending: Arc::new(StdMutex::new(HashMap::new())),
+            next_id: AtomicU64::new(1),
+        };
+        let (other_sender, mut other_receiver) = oneshot::channel();
+        host.pending.lock().unwrap().insert(99, other_sender);
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            host.request("unanswered", json!({}), Duration::from_secs(5)),
+        )
+        .await;
+        assert!(result.is_err());
+        let other = host
+            .pending
+            .lock()
+            .unwrap()
+            .remove(&99)
+            .expect("another request stays registered");
+        assert!(host.pending.lock().unwrap().is_empty());
+        other.send(Ok(json!("answer"))).unwrap();
+        assert_eq!(other_receiver.try_recv().unwrap().unwrap(), json!("answer"));
         host.kill();
         let _ = host.child.wait().await;
     }
