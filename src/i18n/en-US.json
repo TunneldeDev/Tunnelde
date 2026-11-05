@@ -585,6 +585,8 @@
     "source": "Source",
     "newFile": "New file",
     "fileName": "File name",
+    "revealNative": "Reveal in file manager",
+    "openFolderNative": "Open folder in file manager",
     "openWith": "Open",
     "copyToServer": "Copy to server",
     "copyToFolder": "Copy to folder",

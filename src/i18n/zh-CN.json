@@ -585,6 +585,8 @@
     "source": "来源",
     "newFile": "新建文件",
     "fileName": "文件名",
+    "revealNative": "在文件管理器中显示",
+    "openFolderNative": "在文件管理器中打开文件夹",
     "openWith": "打开",
     "copyToServer": "复制到服务器",
     "copyToFolder": "复制到文件夹",

@@ -38,6 +38,7 @@ import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { useFilePreview } from "@/store/filePreview";
 import { DRAG_MIME } from "@/lib/files/dnd";
+import { api } from "@/lib/api/ipc";
 import { useContextMenu } from "@/store/contextMenu";
 import * as clipboard from "@/lib/session/clipboard";
 
@@ -1095,6 +1096,31 @@ describe("SftpPage visible file interactions", () => {
     ).toEqual(["C:\\work\\notes.txt"]);
     fireEvent.click(group);
     expect(within(local).getByText("src")).toBeTruthy();
+  });
+
+  it("offers native file manager actions only for local entries", async () => {
+    const reveal = vi.spyOn(api, "revealLocalPath").mockResolvedValue();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const [local, remote] = screen.getAllByRole("listbox");
+    fireEvent.contextMenu(within(local!).getByText("notes.txt").closest(".sftp-row")!);
+    const action = useContextMenu
+      .getState()
+      .menu?.items.find((item) => item.label === "Reveal in file manager");
+    expect(action).toBeTruthy();
+    action?.onSelect();
+    expect(reveal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    fireEvent.contextMenu(within(remote!).getByText("readme.md").closest(".sftp-row")!);
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label === "Reveal in file manager"),
+    ).toBe(false);
+    fireEvent.contextMenu(within(local!).getByText("src").closest(".sftp-row")!);
+    useContextMenu
+      .getState()
+      .menu?.items.find((item) => item.label === "Open folder in file manager")
+      ?.onSelect();
+    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\src");
+    reveal.mockRestore();
   });
 
   it("updates the keyboard cursor when a different entry is selected by its context menu", async () => {
