@@ -60,6 +60,7 @@ export function ActivityBar() {
   const plugins = usePlugins((state) => state.items);
   const views = [
     { view: "hosts", Icon: Server },
+    { view: "forwarding", Icon: Network },
     { view: "knownHosts", Icon: ShieldCheck },
     { view: "plugins", Icon: Blocks },
     ...pluginSidebars(plugins).map((view) => ({

@@ -25,6 +25,10 @@ export interface ForwardRule {
   targetHost: string;
   targetPort: number;
 }
+export function forwardingSavePayload(rule: ForwardRule): ForwardRule {
+  const { id, hostId, name, mode, bindHost, bindPort, targetHost, targetPort } = rule;
+  return { id, hostId, name, mode, bindHost, bindPort, targetHost, targetPort };
+}
 interface ForwardInfo extends ForwardRule {
   active: boolean;
   sessionId: string | null;
@@ -124,7 +128,9 @@ export function ForwardingSection({
     if (mutation.current) return;
     const action = () =>
       run("editor", async () => {
-        const saved = await invoke<ForwardRule>("forwarding_save", { rule });
+        const saved = await invoke<ForwardRule>("forwarding_save", {
+          rule: forwardingSavePayload(rule),
+        });
         if (!live.current) return;
         generation.current++;
         setRules((current) => [
@@ -199,8 +205,23 @@ export function ForwardingSection({
         <Server size={14} aria-hidden="true" />
         <span>{t(session ? "forward.connected" : "forward.connectionRequired")}</span>
         {!session ? (
-          <Button size="sm" disabled={busy} onClick={() => openConnect(host)}>
+          <Button size="sm" disabled={busy} onClick={() => openConnect(host, "background")}>
             {t("terminal.connect")}
+          </Button>
+        ) : session.terminal === false ? (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              confirm({
+                title: t("forward.disconnectTitle"),
+                body: t("forward.disconnectBody"),
+                confirmLabel: t("terminal.disconnect"),
+                onConfirm: () => useSsh.getState().disconnect(session.id),
+              });
+            }}
+          >
+            {t("terminal.disconnect")}
           </Button>
         ) : null}
       </div>

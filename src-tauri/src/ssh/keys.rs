@@ -124,6 +124,7 @@ pub async fn install(
         SshConnectRequest {
             jump_credentials,
             host_id: host_id.to_string(),
+            background: false,
             password,
             passphrase: None,
             cols: 80,

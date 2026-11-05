@@ -56,8 +56,8 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
         <button
           type="button"
           className="statusbar__link"
-          onClick={() => openPage("about")}
-          aria-label={t("nav.about")}
+          onClick={() => openPage("updates")}
+          aria-label={t("settings.updatesSection")}
         >
           {t("status.version", { version: info?.version ?? "0.1.0" })}
         </button>

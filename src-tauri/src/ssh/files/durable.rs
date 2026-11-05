@@ -192,6 +192,7 @@ mod tests {
             cols: 80,
             rows: 24,
             connected_at,
+            terminal: true,
         }
     }
 
