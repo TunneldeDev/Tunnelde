@@ -1212,24 +1212,36 @@ async fn make_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<
 }
 
 async fn measure(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<u64> {
-    if is_dir(endpoint, sftp).await? {
+    // One lstat supplies both the type and the length. A separate metadata
+    // request for every file doubles the network round trips for large trees.
+    let (directory, symlink, length) = match sftp {
+        Some(handle) => {
+            let metadata = handle
+                .symlink_metadata(&endpoint.path)
+                .await
+                .map_err(map_sftp)?;
+            (metadata.is_dir(), metadata.is_symlink(), metadata.len())
+        }
+        None => {
+            let metadata = tokio::fs::symlink_metadata(&endpoint.path).await?;
+            (
+                metadata.is_dir(),
+                local_metadata_is_link(&metadata),
+                metadata.len(),
+            )
+        }
+    };
+    if symlink {
+        return Err(AppError::validation("sftp.symlinkUnsupported"));
+    }
+    if directory {
         let mut total = 0;
         for path in children(endpoint, sftp).await? {
             total += Box::pin(measure(&endpoint.child(path), sftp)).await?;
         }
         return Ok(total);
     }
-    Ok(match sftp {
-        Some(handle) => handle
-            .metadata(&endpoint.path)
-            .await
-            .map(|metadata| metadata.len())
-            .unwrap_or(0),
-        None => tokio::fs::metadata(&endpoint.path)
-            .await
-            .map(|metadata| metadata.len())
-            .unwrap_or(0),
-    })
+    Ok(length)
 }
 
 async fn open_reader(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Reader> {
@@ -3736,6 +3748,35 @@ mod tests {
                 String::from_utf8_lossy(&output.stderr)
             );
         }
+    }
+
+    #[tokio::test]
+    async fn measure_tree_counts_file_bytes_and_rejects_directory_links() {
+        let root = temp_root("measure-tree");
+        let source = root.join("source");
+        let outside = root.join("outside");
+        std::fs::create_dir_all(source.join("nested")).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(source.join("one"), b"abc").unwrap();
+        std::fs::write(source.join("nested/two"), b"12345").unwrap();
+        std::fs::write(source.join("nested/empty"), b"").unwrap();
+        std::fs::write(outside.join("unrelated"), b"do not count").unwrap();
+        let endpoint = Endpoint {
+            session: None,
+            path: display_path(&source),
+        };
+        assert_eq!(measure(&endpoint, None).await.unwrap(), 8);
+        let link = source.join("link");
+        directory_link(&outside, &link);
+        assert_eq!(
+            measure(&endpoint, None).await.unwrap_err().to_string(),
+            "sftp.symlinkUnsupported"
+        );
+        #[cfg(windows)]
+        std::fs::remove_dir(link).unwrap();
+        #[cfg(unix)]
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
