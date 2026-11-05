@@ -20,6 +20,24 @@ beforeEach(() => {
 });
 
 describe("editor requests", () => {
+  it("opens and saves local documents without an SSH session, preserving drafts on conflict", async () => {
+    const localId = "editor-local:C:\\work\\notes.txt";
+    const path = "C:\\work\\notes.txt";
+    vi.spyOn(api, "localReadText").mockResolvedValue({ content: "original", size: 8 });
+    const write = vi.spyOn(api, "localWriteText").mockResolvedValue(undefined);
+    await state().open(localId, null, path);
+    state().change(localId, "draft");
+    state().markDisconnected("s1");
+    expect(await state().save(localId)).toBe(true);
+    expect(write).toHaveBeenCalledWith(path, "draft", "original");
+    state().change(localId, "new draft");
+    write.mockRejectedValueOnce({ code: "validation", message: "editor.localFileChanged" });
+    expect(await state().save(localId)).toBe(false);
+    expect(state().entries[localId]).toMatchObject({ content: "new draft", baseline: "draft" });
+    expect(state().isDirty(localId)).toBe(true);
+    expect(api.sftpWriteText).not.toHaveBeenCalled();
+  });
+
   it("cannot save a file when opening rejected its text encoding", async () => {
     vi.mocked(api.sftpReadText).mockRejectedValueOnce({
       code: "ssh",

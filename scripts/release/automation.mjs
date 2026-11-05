@@ -10,5 +10,5 @@ export {
 export { checkPullRequest, refreshReleasePolicy } from "./planning/policy.mjs";
 export { nextVersion, planDevelopment, maintainReleasePr } from "./planning/promotion.mjs";
 export { ensureRelease, prepareTaggedRelease, publishRelease } from "./publishing/releases.mjs";
-export { prepareBeta, prepareNightly } from "./publishing/snapshots.mjs";
+export { prepareBeta } from "./publishing/snapshots.mjs";
 export { prepareStable } from "./publishing/stable.mjs";

@@ -248,6 +248,288 @@ fn database_and_key_references_survive_migration_without_rewriting_external_keys
     .unwrap();
     drop(db);
     assert!(original_db.is_file());
+    let db = crate::db::Database::open(&next.dir(Category::Database).join("tunnelde.db")).unwrap();
+    db.with(|conn| {
+        conn.execute(
+            "UPDATE hosts SET name='After migration' WHERE id='managed'",
+            [],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    drop(db);
+    let mut config = config::load(&paths.home).unwrap();
+    migration::schedule(
+        &next,
+        &mut config,
+        vec![
+            config::Change {
+                category: Category::Database,
+                target: paths.dir(Category::Database).to_owned(),
+                migrate: true,
+            },
+            config::Change {
+                category: Category::Keys,
+                target: paths.dir(Category::Keys).to_owned(),
+                migrate: true,
+            },
+        ],
+    )
+    .unwrap();
+    let restored = initialize(paths.home.clone(), root.join("logs"), None).unwrap();
+    let db =
+        crate::db::Database::open(&restored.dir(Category::Database).join("tunnelde.db")).unwrap();
+    relocate_key_references(&db, &restored).unwrap();
+    db.with(|conn| {
+        let (name, key_path): (String, String) = conn.query_row(
+            "SELECT name,key_path FROM hosts WHERE id='managed'",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )?;
+        assert_eq!(name, "After migration");
+        assert_eq!(
+            layout::normalize(std::path::Path::new(&key_path)).unwrap(),
+            layout::normalize(&key).unwrap()
+        );
+        Ok(())
+    })
+    .unwrap();
+    drop(db);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn reset_all_categories_preserves_shared_root_and_archives_old_defaults() {
+    let (root, paths) = workspace();
+    for category in CATEGORIES {
+        for entry in inventory::roots(category, paths.dir(category)) {
+            if category == Category::Database {
+                std::fs::write(entry, b"old database").unwrap();
+            } else {
+                std::fs::create_dir_all(&entry).unwrap();
+                std::fs::write(entry.join("fixture"), b"old default").unwrap();
+            }
+        }
+    }
+    std::fs::write(paths.home.join("unrelated.txt"), b"do not move").unwrap();
+    let mut config = config::Config::default();
+    migration::schedule(
+        &paths,
+        &mut config,
+        CATEGORIES.into_iter().map(|c| change(&root, c)).collect(),
+    )
+    .unwrap();
+    migration::apply(&paths, &mut config).unwrap();
+    let moved = Paths::new(
+        paths.home.clone(),
+        root.join("logs"),
+        &config.locations,
+        None,
+    );
+    for category in CATEGORIES {
+        for entry in inventory::roots(category, moved.dir(category)) {
+            if category == Category::Database {
+                std::fs::write(entry, b"current database").unwrap();
+            } else {
+                std::fs::write(entry.join("fixture"), b"current data").unwrap();
+            }
+        }
+    }
+    migration::schedule(
+        &moved,
+        &mut config,
+        CATEGORIES
+            .into_iter()
+            .map(|category| config::Change {
+                category,
+                target: paths.defaults[&category].clone(),
+                migrate: true,
+            })
+            .collect(),
+    )
+    .unwrap();
+    migration::apply(&moved, &mut config).unwrap();
+    assert!(config.locations.is_empty());
+    assert!(config.pending.is_none());
+    assert_eq!(config.archives.len(), 8);
+    assert_eq!(
+        std::fs::read(paths.home.join("unrelated.txt")).unwrap(),
+        b"do not move"
+    );
+    assert!(paths.home.join("storage.json").is_file());
+    for category in CATEGORIES {
+        assert_eq!(config.previous[&category], moved.dir(category));
+        for entry in inventory::roots(category, paths.dir(category)) {
+            let name = entry.file_name().unwrap();
+            let archived = config.archives[&category].join(name);
+            let (current, saved) = if category == Category::Database {
+                (
+                    std::fs::read(&entry).unwrap(),
+                    std::fs::read(archived).unwrap(),
+                )
+            } else if category == Category::Cache {
+                (
+                    std::fs::read(entry.join("fixture")).unwrap(),
+                    std::fs::read(archived.join("fixture")).unwrap(),
+                )
+            } else {
+                (
+                    std::fs::read(entry.join("fixture")).unwrap(),
+                    std::fs::read(config.archives[&category].join("fixture")).unwrap(),
+                )
+            };
+            assert_eq!(
+                current,
+                if category == Category::Database {
+                    b"current database".as_slice()
+                } else {
+                    b"current data".as_slice()
+                }
+            );
+            assert_eq!(
+                saved,
+                if category == Category::Database {
+                    b"old database".as_slice()
+                } else {
+                    b"old default".as_slice()
+                }
+            );
+        }
+        assert!(moved.dir(category).is_dir());
+    }
+    let actual = initialize(paths.home.clone(), root.join("logs"), None).unwrap();
+    for category in CATEGORIES {
+        assert_eq!(
+            layout::normalize(actual.dir(category)).unwrap(),
+            layout::normalize(paths.dir(category)).unwrap()
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn staged_reset(
+    root: &std::path::Path,
+    paths: &Paths,
+) -> (Paths, config::Config, config::Change, PathBuf) {
+    let category = Category::PluginData;
+    std::fs::create_dir_all(paths.dir(category)).unwrap();
+    std::fs::write(paths.dir(category).join("draft.json"), b"old draft").unwrap();
+    let mut config = config::Config::default();
+    migration::schedule(paths, &mut config, vec![change(root, category)]).unwrap();
+    migration::apply(paths, &mut config).unwrap();
+    let moved = Paths::new(
+        paths.home.clone(),
+        root.join("logs"),
+        &config.locations,
+        None,
+    );
+    std::fs::write(moved.dir(category).join("draft.json"), b"current draft").unwrap();
+    let mut reset = config::Change {
+        category,
+        target: paths.dir(category).to_owned(),
+        migrate: true,
+    };
+    migration::schedule(&moved, &mut config, vec![reset.clone()]).unwrap();
+    reset = config.pending.as_ref().unwrap().changes[0].clone();
+    let id = &config.pending.as_ref().unwrap().id;
+    let stage = migration::stage(&reset, id).unwrap();
+    std::fs::create_dir(&stage).unwrap();
+    std::fs::write(stage.join(migration::MARKER), id).unwrap();
+    inventory::copy_verified(
+        &moved.dir(category).join("draft.json"),
+        &stage.join("draft.json"),
+        0,
+    )
+    .unwrap();
+    restore::publish(&moved, &reset, id, &stage).unwrap();
+    (moved, config, reset, stage)
+}
+
+#[test]
+fn reset_recovers_after_publication_before_configuration_commit() {
+    let (root, paths) = workspace();
+    let (moved, mut config, reset, stage) = staged_reset(&root, &paths);
+    assert!(config.pending.is_some());
+    assert_eq!(
+        std::fs::read(reset.target.join("draft.json")).unwrap(),
+        b"current draft"
+    );
+    migration::apply(&moved, &mut config).unwrap();
+    assert!(config.pending.is_none());
+    assert!(!config.locations.contains_key(&Category::PluginData));
+    assert!(!stage.exists());
+    assert_eq!(
+        std::fs::read(config.archives[&Category::PluginData].join("draft.json")).unwrap(),
+        b"old draft"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn reset_resumes_after_archiving_defaults_before_publishing_entries() {
+    let (root, paths) = workspace();
+    let (moved, mut config, reset, stage) = staged_reset(&root, &paths);
+    std::fs::rename(reset.target.join("draft.json"), stage.join("draft.json")).unwrap();
+    migration::apply(&moved, &mut config).unwrap();
+    assert!(config.pending.is_none());
+    assert_eq!(
+        std::fs::read(reset.target.join("draft.json")).unwrap(),
+        b"current draft"
+    );
+    assert_eq!(
+        std::fs::read(config.archives[&Category::PluginData].join("draft.json")).unwrap(),
+        b"old draft"
+    );
+    assert!(!stage.exists());
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn reset_starting_empty_archives_existing_default_data() {
+    let (root, paths) = workspace();
+    let (moved, mut config, reset, _) = staged_reset(&root, &paths);
+    migration::cancel(&moved, &mut config).unwrap();
+    let mut empty = reset;
+    empty.migrate = false;
+    migration::schedule(&moved, &mut config, vec![empty]).unwrap();
+    migration::apply(&moved, &mut config).unwrap();
+    assert!(!paths.dir(Category::PluginData).join("draft.json").exists());
+    assert_eq!(
+        std::fs::read(config.archives[&Category::PluginData].join("draft.json")).unwrap(),
+        b"old draft"
+    );
+    assert_eq!(
+        std::fs::read(moved.dir(Category::PluginData).join("draft.json")).unwrap(),
+        b"current draft"
+    );
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn cancel_reset_restores_defaults_and_never_deletes_changed_published_data() {
+    let (root, paths) = workspace();
+    let (moved, mut config, reset, stage) = staged_reset(&root, &paths);
+    std::fs::write(reset.target.join("draft.json"), b"user changed this").unwrap();
+    assert!(migration::apply(&moved, &mut config).is_err());
+    assert!(stage.is_dir());
+    assert!(migration::cancel(&moved, &mut config).is_err());
+    assert!(config.pending.is_some());
+    assert_eq!(
+        std::fs::read(reset.target.join("draft.json")).unwrap(),
+        b"user changed this"
+    );
+    std::fs::write(reset.target.join("draft.json"), b"current draft").unwrap();
+    migration::cancel(&moved, &mut config).unwrap();
+    assert!(config.pending.is_none());
+    assert!(!stage.exists());
+    assert_eq!(
+        std::fs::read(reset.target.join("draft.json")).unwrap(),
+        b"old draft"
+    );
+    assert_eq!(
+        std::fs::read(moved.dir(Category::PluginData).join("draft.json")).unwrap(),
+        b"current draft"
+    );
     std::fs::remove_dir_all(root).unwrap();
 }
 

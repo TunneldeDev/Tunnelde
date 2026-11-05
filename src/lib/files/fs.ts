@@ -69,13 +69,13 @@ export const fs = {
 
   readText(source: FsSource, path: string): Promise<TextFile | null> {
     return source.kind === "local"
-      ? Promise.resolve(null)
+      ? api.localReadText(path)
       : api.sftpReadText(source.sessionId, path);
   },
 
-  writeText(source: FsSource, path: string, content: string): Promise<void> {
+  writeText(source: FsSource, path: string, content: string, baseline: string): Promise<void> {
     return source.kind === "local"
-      ? Promise.reject(new Error("fs.localReadOnly"))
+      ? api.localWriteText(path, content, baseline)
       : api.sftpWriteText(source.sessionId, path, content);
   },
 
@@ -85,7 +85,7 @@ export const fs = {
   },
 };
 
-/** Remote files can be edited in place; local ones are opened by the OS. */
-export function canEdit(source: FsSource): boolean {
-  return source.kind === "remote";
+/** Both local and remote text files can be edited in place. */
+export function canEdit(_source: FsSource): boolean {
+  return true;
 }

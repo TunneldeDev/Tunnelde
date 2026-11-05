@@ -1,6 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -202,21 +210,18 @@ describe("native helper packaging", () => {
 });
 
 describe("release publishing", () => {
-  it("restricts the build workflow to stable, beta.1–beta.9 and source-derived Nightly", () => {
+  it("restricts publication to stable and beta.1–beta.9, with no Nightly workflow", () => {
+    expect(existsSync(join(process.cwd(), ".github/workflows/nightly.yml"))).toBe(false);
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
     const pattern = /if \[\[ ! "\$\{TAG\}" =~ (.+) \]\]; then/.exec(workflow)?.[1];
     expect(pattern).toBeTruthy();
     const gate = new RegExp(pattern!);
-    for (const tag of [
-      "v0.28.0",
-      "v0.28.0-beta.1",
-      "v0.28.0-beta.9",
-      "v0.28.0-beta.9.d.2.gabcdef012345",
-      "v0.28.0-alpha.1.d.10.gabcdef012345",
-    ]) {
+    for (const tag of ["v0.28.0", "v0.28.0-beta.1", "v0.28.0-beta.9"]) {
       expect(gate.test(tag), tag).toBe(true);
     }
     for (const tag of [
+      "v0.28.0-beta.9.d.2.gabcdef012345",
+      "v0.28.0-alpha.1.d.10.gabcdef012345",
       "v0.28.0-beta.10",
       "v0.28.0-beta.11",
       "v0.28.0-beta.0",
@@ -239,15 +244,13 @@ describe("release publishing", () => {
     expect(config.plugins.updater.requireSignedVersion).toBe(true);
     const f = fixture();
     mkdirSync(join(f.root, "sigs"));
-    for (const name of [
+    const bundles = [
       "x64-setup.exe",
       "aarch64.app.tar.gz",
       "x64.app.tar.gz",
       "amd64.AppImage",
       "amd64.deb",
-    ]) {
-      writeFileSync(join(f.root, `sigs/Tunnelde_${name}.sig`), "test-signature");
-    }
+    ];
     writeFileSync(join(f.root, "notes.md"), "## Fixes\n\n- 终端粘贴。\n");
     for (const tag of [
       "v0.27.0",
@@ -258,6 +261,11 @@ describe("release publishing", () => {
       "v0.27.1-alpha.1.d.10.gabcdef012345",
       "v0.27.1-beta.4.d.2.gabcdef012345",
     ]) {
+      rmSync(join(f.root, "sigs"), { recursive: true });
+      mkdirSync(join(f.root, "sigs"));
+      for (const name of bundles) {
+        writeFileSync(join(f.root, `sigs/Tunnelde_${tag.slice(1)}_${name}.sig`), "test-signature");
+      }
       const result = f.run(
         "updater-json",
         "--tag",
@@ -274,17 +282,92 @@ describe("release publishing", () => {
       expect(manifest.version).toBe(tag.slice(1));
       expect(manifest.notes).toBe("## Fixes\n\n- 终端粘贴。");
       expect(manifest.platforms["windows-x86_64"].url).toContain(`/download/${tag}/`);
+      expect(Object.keys(manifest.platforms)).toHaveLength(9);
+      for (const platform of Object.values(manifest.platforms) as { url: string }[]) {
+        expect(new URL(platform.url).pathname.split("/").at(-1)).toMatch(
+          new RegExp(`^Tunnelde_${tag.slice(1).replaceAll(".", "\\.")}_`),
+        );
+      }
+      expect(manifest.platforms["darwin-aarch64"].url).toContain(
+        `/Tunnelde_${tag.slice(1)}_aarch64.app.tar.gz`,
+      );
+      expect(manifest.platforms["darwin-x86_64"].url).toContain(
+        `/Tunnelde_${tag.slice(1)}_x64.app.tar.gz`,
+      );
       expect(
         Object.values(manifest.platforms).every(
           (entry) => (entry as { signature: string }).signature === "test-signature",
         ),
       ).toBe(true);
+      const assets = [
+        "latest.json",
+        `Tunnelde_${tag.slice(1)}_aarch64.dmg`,
+        `Tunnelde_${tag.slice(1)}_x64.dmg`,
+        ...bundles.flatMap((bundle) => {
+          const name = `Tunnelde_${tag.slice(1)}_${bundle}`;
+          return [name, `${name}.sig`];
+        }),
+      ].map((name) => ({ name, size: 100 }));
+      writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
+      const verification = f.run(
+        "verify-assets",
+        "--tag",
+        tag,
+        "--manifest",
+        "latest.json",
+        "--assets",
+        "assets.json",
+      );
+      expect(verification.status, verification.stderr).toBe(0);
     }
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
     expect(workflow).toContain(
       'node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md',
     );
     expect(workflow).toContain("--notes-file release-notes.md");
+    expect(workflow).toContain(
+      "assetNamePattern: ${{ startsWith(matrix.platform, 'macos') && '[name]_[version]_[arch][ext]' || '' }}",
+    );
+  });
+
+  it.each([
+    ["Tunnelde_aarch64.app.tar.gz.sig", "signature", "does not match release version"],
+    ["Tunnelde_0.18.0_x64-setup.exe.sig", "signature", "does not match release version"],
+    ["Tunnelde_0.19.0_aarch64.app.tar.gz.sig", "  ", "empty signature"],
+  ])("rejects invalid updater signature %s", (name, content, message) => {
+    const f = fixture();
+    mkdirSync(join(f.root, "sigs"));
+    writeFileSync(join(f.root, "sigs", name), content);
+    const result = f.run(
+      "updater-json",
+      "--tag",
+      "v0.19.0",
+      "--sig-dir",
+      "sigs",
+      "--repo",
+      "TunneldeDev/Tunnelde",
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(message);
+  });
+
+  it("rejects ambiguous updater signatures instead of silently choosing one", () => {
+    const f = fixture();
+    mkdirSync(join(f.root, "sigs"));
+    for (const name of ["aarch64", "duplicate_aarch64"]) {
+      writeFileSync(join(f.root, `sigs/Tunnelde_0.19.0_${name}.app.tar.gz.sig`), "signature");
+    }
+    const result = f.run(
+      "updater-json",
+      "--tag",
+      "v0.19.0",
+      "--sig-dir",
+      "sigs",
+      "--repo",
+      "TunneldeDev/Tunnelde",
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("duplicate signature for platform");
   });
 
   function publishingFixture() {
@@ -329,6 +412,19 @@ describe("release publishing", () => {
     assets[3]!.size = 0;
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
     expect(run().status).toBe(1);
+  });
+
+  it.each([
+    "Tunnelde_aarch64.app.tar.gz",
+    "Tunnelde_x64.app.tar.gz.sig",
+    "Tunnelde_0.18.0_x64.dmg",
+  ])("rejects desktop assets with missing or incorrect versions: %s", (name) => {
+    const { f, assets, run } = publishingFixture();
+    assets.push({ name: "Tunnelde_0.19.0_x64-setup.exe.sig", size: 100 }, { name, size: 100 });
+    writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("release asset filename does not match version");
   });
 
   it.each([

@@ -8,7 +8,12 @@ import { api } from "@/lib/api/ipc";
 import { closeTab } from "@/lib/session/tabActions";
 import { sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
 import { useDialogs } from "@/store/dialogs";
-import { useEditors } from "@/store/editors";
+import {
+  useEditors,
+  editorDocument,
+  replaceEditorDocument,
+  EDITOR_DOCUMENT_MAX_BYTES,
+} from "@/store/editors";
 import { useHosts } from "@/store/hosts";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
@@ -53,6 +58,33 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
   const { method, params } = request;
   const workspace = useWorkspace.getState();
   switch (method) {
+    case "editor.active": {
+      const document = workspace.activeId ? editorDocument(workspace.activeId) : null;
+      if (document && new TextEncoder().encode(document.content).length > EDITOR_DOCUMENT_MAX_BYTES)
+        throw new Error("editor.documentTooLarge");
+      return document;
+    }
+    case "editor.replace": {
+      const tabId = text(params, "tabId"),
+        documentId = text(params, "documentId");
+      if (!Number.isSafeInteger(params.version) || (params.version as number) < 0)
+        throw new Error("invalid:version");
+      if (
+        typeof params.text !== "string" ||
+        new TextEncoder().encode(params.text).length > EDITOR_DOCUMENT_MAX_BYTES
+      )
+        throw new Error("invalid:text");
+      const document = replaceEditorDocument(
+        { tabId, documentId, version: params.version as number },
+        params.text,
+      );
+      return {
+        tabId: document.tabId,
+        documentId: document.documentId,
+        version: document.version,
+        dirty: document.dirty,
+      };
+    }
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();
     case "workspace.showQuickAccess": {

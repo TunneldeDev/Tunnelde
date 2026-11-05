@@ -31,7 +31,15 @@ describe("application keyboard registry", () => {
   it("records canonical bindings and rejects composition, AltGr and modifier-only input", () => {
     expect(recordShortcut(key({ key: "，", code: "Comma", ctrlKey: true }))).toBe("Mod+Comma");
     expect(recordShortcut(key({ key: "Control", ctrlKey: true }))).toBeNull();
-    expect(recordShortcut(key({ key: "k", ctrlKey: true, altKey: true }))).toBeNull();
+    const altGr = key({ key: "k", ctrlKey: true, altKey: true });
+    Object.defineProperty(altGr, "getModifierState", {
+      value: (name: string) => name === "AltGraph",
+    });
+    expect(recordShortcut(altGr)).toBeNull();
+    expect(matchesCommand(altGr, "editor.format", { "editor.format": ["Mod+Alt+K"] })).toBe(false);
+    const chord = key({ key: "k", ctrlKey: true, altKey: true });
+    expect(recordShortcut(chord)).toBe("Mod+Alt+K");
+    expect(matchesCommand(chord, "editor.format", { "editor.format": ["Mod+Alt+K"] })).toBe(true);
     expect(
       matchesCommand(key({ key: ",", ctrlKey: true, isComposing: true }), "page.settings"),
     ).toBe(false);

@@ -12,7 +12,9 @@ page. Choose **Stable** or **Public beta (Beta)**, and **GitHub** or a compatibl
 HTTPS source. Development snapshots are not offered by in-app updates. Default:
 Stable for all builds, GitHub source, automatic checks once a day, manual download/installation.
 Legacy Nightly preferences migrate to Stable; saved Stable/Beta choices are preserved.
-Every-startup and weekly checks are also available.
+Every-startup and weekly checks are also available. Expand the release notes to review
+the published changes between the installed and target versions. See the update guide
+in [English](updates.en-us.md) or [简体中文](updates.zh-cn.md) for history coverage and limits.
 
 Custom source addresses use exactly one `{channel}` in the URL path, e.g.
 `https://updates.example.com/{channel}/latest.json`; use **Apply** to save an edited
@@ -171,6 +173,12 @@ automatically reconnect SSH sessions.
 and chats, managed SSH keys, managed Node runtimes, cache/temporary files, logs and remote
 deployment records. Choose an empty or new destination using the native folder picker.
 Select multiple categories and **Choose parent folder** to give each its own subfolder.
+Use **Reset location** for one category or **Reset selected locations** for a batch.
+Resetting schedules a return to the displayed default path and migrates current data by
+default. Previous data already at that default is archived separately for recovery;
+the database/cache shared root and other categories remain in place. Recovery paths
+are listed after the move. See [storage locations](storage.en-us.md)
+([简体中文](storage.zh-cn.md)) for details.
 Copying existing data is enabled by default; switching it off starts that category empty
 and is explicitly shown in the review. Review all source/destination paths before scheduling.
 

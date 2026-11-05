@@ -411,7 +411,19 @@
     "publishedAt": "Published",
     "rateLimited": "GitHub request quota is exhausted and the public release fallback is unavailable. Try again later or check the update proxy.",
     "connectionFailed": "Cannot connect to the update source. Check the network and the proxy configured for updates.",
-    "invalidChannel": "Choose the Stable or Public beta update channel."
+    "invalidChannel": "Choose the Stable or Public beta update channel.",
+    "historyTarget": "Target version",
+    "historyEmpty": "No release notes were published for this version.",
+    "historyLoading": "Loading changes between these versions…",
+    "historyComplete_one": "All published notes in this range are loaded ({{count}} release).",
+    "historyComplete_other": "All published notes in this range are loaded ({{count}} releases).",
+    "historyStable": "Stable releases in this version range.",
+    "historyBeta": "Stable and public beta releases in this version range.",
+    "historyUnavailable": "Release history could not be loaded completely. Available notes are shown below; checking and installing updates still work.",
+    "historyLimit": "Release history reached its loading limit. The notes below may be incomplete.",
+    "historyMissingTarget": "The target release is missing from the public history. Its update-source notes are shown; the history may be incomplete.",
+    "historyCustom": "This custom source provides notes for the target version only. Other release history is not available from this source.",
+    "historyComplete": "All published notes in this range are loaded ({{count}} releases)."
   },
   "about": {
     "version": "Version",
@@ -479,7 +491,27 @@
     "forgetBody": "Remove the saved password for {{name}}? The next connection asks for it again.",
     "installKey": "Set up key login",
     "installKeyDone": "Public key installed. The next connection uses it.",
-    "installKeyHint": "Sign in once with a password to add this application’s public key to the account. Existing authorized keys are preserved."
+    "installKeyHint": "Sign in once with a password to add this application’s public key to the account. Existing authorized keys are preserved.",
+    "testTitle": "Connection quality",
+    "test": "Test connection",
+    "testAgain": "Test again",
+    "testMs": "{{value}} ms",
+    "probeTime": "SSH connection established in {{value}} ms",
+    "testRunning": "Testing up to 3 SSH connections…",
+    "testHint": "Measures SSH setup time, including proxies and jump hosts. This is not a bandwidth or packet-loss test.",
+    "testTrustFirst": "Verify and trust the complete host-key route before testing.",
+    "testMedian": "SSH setup (median)",
+    "testSpread": "Setup variation (max − min)",
+    "testSuccess": "Successful attempts",
+    "testSamples": "Individual attempts",
+    "testFailed": "Failed",
+    "testQuality": {
+      "fast": "Fast connection setup",
+      "normal": "Normal connection setup",
+      "slow": "Slow connection setup",
+      "unstable": "Some attempts failed",
+      "unreachable": "Could not establish a connection"
+    }
   },
   "terminal": {
     "connect": "Connect",
@@ -510,7 +542,8 @@
     "startupOutputLimit": "Terminal startup output exceeded the limit",
     "invalidPayload": "Invalid terminal input",
     "noHostKey": "The server did not present a host key",
-    "agentUnsupported": "Agent authentication is not available yet"
+    "agentUnsupported": "Agent authentication is not available yet",
+    "testCancelled": "Connection test cancelled"
   },
   "sftp": {
     "title": "Files",
@@ -552,7 +585,9 @@
     "source": "Source",
     "newFile": "New file",
     "fileName": "File name",
-    "openWith": "Open",
+    "revealNative": "Reveal in file manager",
+    "openFolderNative": "Open folder in file manager",
+    "openWith": "Open with system application",
     "copyToServer": "Copy to server",
     "copyToFolder": "Copy to folder",
     "deleteManyBody": "Delete {{count}} items and everything inside them?",
@@ -572,6 +607,8 @@
     "symlinkUnsupported": "Copying symbolic links is not supported",
     "unsupportedEncoding": "Only UTF-8 text files can be edited",
     "binaryFile": "Binary files cannot be edited as text",
+    "absolutePathRequired": "An absolute path is required",
+    "notRegularFile": "Only regular files can be edited",
     "fileTooLarge": "Text editing is limited to files up to 2 MB",
     "viewOptions": "View options",
     "detailsView": "Details view",
@@ -724,7 +761,19 @@
     "reconnect": "Restore connection",
     "saving": "Saving…",
     "conflictTitle": "Remote file changed",
-    "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?"
+    "localFileChanged": "The file changed outside Tunnelde. Your edits were not saved; reopen the file to review the changes.",
+    "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?",
+    "format": "Format document",
+    "formatting": "Formatting…",
+    "undo": "Undo",
+    "redo": "Redo",
+    "chooseFormatter": "Choose a formatter",
+    "noDocument": "Open an editable document first.",
+    "noFormatter": "No formatter is installed for this file type. Install a matching formatter from Extensions.",
+    "documentChanged": "The document changed while formatting. Your latest edits were kept. Run formatting again.",
+    "formatTooLarge": "This document exceeds the plugin formatting size limit.",
+    "formatRevoked": "The formatter was stopped, updated, or its permission was revoked. Your document was kept unchanged.",
+    "invalidFormatResult": "The formatter did not return valid text."
   },
   "plugins": {
     "search": "Search plugins",
@@ -1123,7 +1172,9 @@
       "mountsRead": "Inspect SSHFS dependencies and this plugin’s mounts",
       "mountsWrite": "Mount and unmount remote filesystems via authenticated SSH",
       "forwardsRead": "View saved port forwarding rules",
-      "forwardsWrite": "Manage and start local or remote port forwarding"
+      "forwardsWrite": "Manage and start local or remote port forwarding",
+      "editorRead": "Read documents in open editors",
+      "editorWrite": "Modify editor buffers (without saving automatically)"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -1437,7 +1488,20 @@
     "jumpRemember": "Remember jump host passwords",
     "systemHint": "System mode uses OS or environment proxy settings and bypass rules. PAC scripts are not evaluated; configure a proxy profile when needed.",
     "clearPassword": "Forget saved proxy password",
-    "missingProxy": "Proxy no longer exists"
+    "missingProxy": "Proxy no longer exists",
+    "qualityLessMs": "<1 ms",
+    "qualityRunning": "Measuring up to 3 connections…",
+    "qualityLatency": "Connection latency (median)",
+    "qualityFastest": "Fastest",
+    "qualitySlowest": "Slowest",
+    "qualityHint": "Measures up to 3 TCP connections through the selected route, within 15 seconds. Includes DNS and proxy negotiation, not ping RTT or bandwidth. Failures are excluded from timing statistics. Fast ≤100 ms; normal ≤300 ms; higher values are slow.",
+    "quality": {
+      "fast": "Connection established · low latency",
+      "normal": "Connection established · moderate latency",
+      "slow": "Connection established · high latency",
+      "unstable": "Some connection attempts failed",
+      "unreachable": "Connection failed"
+    }
   },
   "forward": {
     "title": "Port forwarding",
@@ -1509,7 +1573,9 @@
       "required": "Install a compatible SSHFS and FUSE driver, then check again."
     },
     "remotePath": {
-      "absoluteRequired": "Choose an absolute remote directory path."
+      "absoluteRequired": "Choose an absolute remote directory path.",
+      "invalid": "This remote path cannot be safely mapped to the local mount.",
+      "outsideMount": "The selected item is outside the mounted directory."
     },
     "mountPoint": {
       "absoluteRequired": "Choose an absolute local mount path.",
@@ -1530,10 +1596,13 @@
     "notOwned": "This mount belongs to another plugin.",
     "startFailed": "SSHFS stopped before the directory was mounted. Check the SSHFS installation and remote access.",
     "startTimeout": "The directory did not finish mounting in time. Check the SSH connection and FUSE driver.",
+    "pathTimeout": "The mounted directory did not respond in time. Check the connection and try again.",
+    "pathBusy": "The mounted directory is still responding to earlier requests. Try again shortly.",
     "busy": "The directory is busy. Close files and terminals using it, then retry unmounting.",
     "unmountTimeout": "Unmounting timed out. Close files using this directory and retry.",
     "processExited": "The SSHFS process stopped. Unmount this entry before reconnecting.",
     "transportClosed": "The SSHFS connection closed. Unmount this entry before reconnecting.",
+    "actionUnavailable": "The mount or plugin is no longer available. Reconnect or check plugin permissions, then try again.",
     "stdin": "Could not open the SSHFS input channel.",
     "stdout": "Could not open the SSHFS output channel.",
     "install": {
@@ -1549,12 +1618,45 @@
     "none": "Plain file icons",
     "missing": "Unavailable theme ({{id}})"
   },
+  "logs": {
+    "title": "Logs",
+    "description": "Inspect recent operations and application diagnostics.",
+    "view": "View logs",
+    "openFolder": "Open log folder",
+    "operations": "Operations",
+    "diagnostic": "Application",
+    "operationsHint": "Records host changes, SSH connections and plugin installation activity from this version onward. Passwords, commands and file contents are not recorded here.",
+    "diagnosticHint": "Recent entries from the latest application log. Diagnostics can contain private information; review before sharing.",
+    "emptyOperations": "No recorded operations yet.",
+    "emptyDiagnostic": "No application log available.",
+    "truncated": "Showing the latest 256 KiB"
+  },
+  "restart": {
+    "command": "Restart Tunnelde",
+    "reload": "Reload window",
+    "now": "Restart now",
+    "later": "Restart later",
+    "requiredTitle": "Restart required",
+    "requiredBody": "The storage changes are scheduled and will take effect when Tunnelde restarts. Save your work before restarting.",
+    "confirmTitle": "Restart Tunnelde?",
+    "reloadTitle": "Reload window?",
+    "restartWarning": "Restarting disconnects sessions, interrupts background tasks and discards unsaved edits. Save your work first.",
+    "reloadWarning": "Reloading the window may interrupt active views and discards unsaved edits. Save your work first.",
+    "unsaved": "Unsaved files: {{names}}",
+    "nativeOnly": "Restart is available in the desktop application."
+  },
   "storage": {
     "title": "Storage locations",
     "description": "Choose where each kind of application data is stored. Select several categories to move them into separate folders under one parent folder.",
     "searchTerms": "storage migration data database plugins chats conversations keys runtime cache logs runners folders paths locations disk",
     "selectAll": "Select all",
     "batchChoose": "Choose parent folder ({{count}})",
+    "batchReset": "Reset selected locations ({{count}})",
+    "reset": "Reset location",
+    "resetCategory": "Reset {{category}} to its default location",
+    "defaultPath": "Default location: {{path}}",
+    "resetHint": "Existing data at the default location will be archived for recovery before the current data is copied back. Other storage categories remain in place.",
+    "archivedDefault": "Archived default data — {{category}}",
     "size_one": "{{size}} · {{count}} file",
     "size_other": "{{size}} · {{count}} files",
     "overridden": "Managed by TUNNELDE_PLUGINS_DIR. Change that environment variable to relocate this folder.",

@@ -8,14 +8,12 @@ export const BUILD_VERSION = new RegExp(
 
 // Historical versions remain readable for comparison and updater compatibility.
 // Publishing has a stricter policy than reading previously published metadata.
-export const PUBLISH_VERSION = new RegExp(
-  `^${CORE}(?:-beta\\.[1-9](?:\\.d\\.${NUMBER}\\.g[a-f0-9]{7,40})?|-alpha\\.1\\.d\\.${NUMBER}\\.g[a-f0-9]{7,40})?$`,
-);
+export const PUBLISH_VERSION = new RegExp(`^${CORE}(?:-beta\\.[1-9])?$`);
 
 export function assertPublishableTag(tag) {
   if (typeof tag !== "string" || !tag.startsWith("v") || !PUBLISH_VERSION.test(tag.slice(1)))
     throw new Error(
-      "Release policy requires vX.Y.Z, beta.1–beta.9, or a source-derived Nightly. Promote the reviewed stable release before preparing another Beta; do not reuse retired numbers.",
+      "Release policy requires vX.Y.Z or beta.1–beta.9. Nightly publication is disabled. Promote the reviewed stable release before preparing another Beta; do not reuse retired numbers.",
     );
 }
 

@@ -38,6 +38,8 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("page.about", "nav.about", "workbench", []),
   command("sidebar.knownHosts", "settings.knownHosts", "workbench", []),
   command("sidebar.plugins", "settings.plugins", "workbench", []),
+  command("app.reload", "restart.reload", "workbench", []),
+  command("app.restart", "restart.command", "workbench", []),
   command("update.check", "updates.check", "workbench", []),
   command("panel.toggle", "shortcuts.togglePanel", "workbench", []),
   command("transfers.show", "tasks.title", "workbench", [], { input: true }),
@@ -60,6 +62,11 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
     command(`tab.focus${i + 1}`, "shortcuts.focusTab", "workbench", [`Mod+${i + 1}`]),
   ),
   command("editor.save", "editor.save", "editor", ["Mod+S"]),
+  command("editor.format", "editor.format", "editor", ["Mod+Shift+F"]),
+  command("editor.undo", "editor.undo", "editor", ["Mod+Z"]),
+  command("editor.redo", "editor.redo", "editor", ["Mod+Shift+Z", "Mod+Y"], {
+    macDefaults: ["Meta+Shift+Z"],
+  }),
   command("terminal.copy", "terminal.copy", "terminal", ["Mod+C", "Mod+Shift+C", "Ctrl+Insert"], {
     macDefaults: ["Meta+C", "Meta+Shift+C"],
   }),
@@ -111,9 +118,10 @@ export function shortcutCommands(plugins: readonly PluginInfo[] = []): ShortcutC
           id: `plugin.c.${plugin.id.length}.${plugin.id}.${item.id}`,
           label: "pluginView.run",
           title: `${plugin.name}: ${item.title}`,
-          scope: "workbench" as const,
+          scope: (item.editor ? "editor" : "workbench") as CommandScope,
           input: true,
-          defaults: [],
+          defaults: item.keybindings ?? [],
+          macDefaults: item.macKeybindings,
           plugin: { id: plugin.id, command: item.id },
         })),
       ]),
@@ -183,7 +191,7 @@ export function normalizeShortcut(value: string): string | null {
 type KeyEvent = Pick<
   KeyboardEvent,
   "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "isComposing"
-> & { keyCode?: number };
+> & { keyCode?: number; getModifierState?: (key: string) => boolean };
 function eventKey(event: KeyEvent): string {
   if (["Comma", "Period", "Backslash", "Equal", "Minus"].includes(event.code)) return event.code;
   return aliases[event.key] ?? event.key.toUpperCase();
@@ -193,7 +201,7 @@ export function shortcutMatches(event: KeyEvent, binding: string): boolean {
   if (
     event.isComposing ||
     event.keyCode === 229 ||
-    (event.ctrlKey && event.altKey) ||
+    event.getModifierState?.("AltGraph") ||
     (event.ctrlKey && event.metaKey)
   )
     return false;
@@ -244,7 +252,7 @@ export function recordShortcut(event: KeyEvent): string | null {
   if (
     event.isComposing ||
     event.keyCode === 229 ||
-    (event.ctrlKey && event.altKey) ||
+    event.getModifierState?.("AltGraph") ||
     (event.ctrlKey && event.metaKey)
   )
     return null;

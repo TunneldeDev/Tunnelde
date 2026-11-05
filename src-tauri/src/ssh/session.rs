@@ -49,6 +49,7 @@ pub struct HostKeyInfo {
     pub algorithm: String,
     pub status: HostKeyStatus,
     pub known_fingerprint: Option<String>,
+    pub connection_time_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -176,6 +177,7 @@ struct SessionHandle {
 #[derive(Default)]
 pub struct SshManager {
     sessions: StdMutex<HashMap<String, SessionHandle>>,
+    pub(super) diagnostics: StdMutex<super::diagnostics::DiagnosticState>,
 }
 
 impl SshManager {
@@ -527,7 +529,22 @@ async fn probe_host(
     host: &Host,
     credentials: &HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let (_, info, _, _) = open_route(app, host, credentials, true).await?;
+    let started = std::time::Instant::now();
+    let (handle, mut info, jumps, _) = open_route(app, host, credentials, true).await?;
+    info.connection_time_ms = Some(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
+    // Probing never opens a terminal or authenticates the target. Explicitly close
+    // its temporary connections rather than waiting for server-side timeouts.
+    let _ = tokio::time::timeout(Duration::from_secs(1), async {
+        let _ = handle
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        for jump in jumps.iter().rev() {
+            let _ = jump
+                .disconnect(russh::Disconnect::ByApplication, "", "en")
+                .await;
+        }
+    })
+    .await;
     Ok(info)
 }
 
@@ -616,6 +633,7 @@ async fn open_route(
             algorithm: observed.algorithm,
             status,
             known_fingerprint: known.map(|key| key.fingerprint),
+            connection_time_ms: None,
         };
         if probing && (status != HostKeyStatus::Known || index + 1 == ids.len()) {
             return Ok((handle, info, jumps, remote_forwards));

@@ -242,6 +242,25 @@ export interface UpdateState {
   skipped: boolean;
 }
 
+export interface ReleaseNotes {
+  version: string;
+  notes: string | null;
+  publishedAt: number | null;
+}
+
+export interface ReleaseHistory {
+  currentVersion: string;
+  version: string;
+  entries: ReleaseNotes[];
+  complete: boolean;
+  reason:
+    | "updates.historyUnavailable"
+    | "updates.historyLimit"
+    | "updates.historyMissingTarget"
+    | "updates.historyCustom"
+    | null;
+}
+
 export interface IpcError {
   code: string;
   message: string;
@@ -265,6 +284,17 @@ export interface HostKeyInfo {
   algorithm: string;
   status: HostKeyStatus;
   knownFingerprint: string | null;
+  connectionTimeMs?: number | null;
+}
+
+export interface ConnectionQuality {
+  attempts: number;
+  successful: number;
+  samplesMs: (number | null)[];
+  medianMs: number | null;
+  spreadMs: number | null;
+  quality: "fast" | "normal" | "slow" | "unstable" | "unreachable";
+  lastError: string | null;
 }
 
 export interface InstalledKey {
@@ -384,6 +414,15 @@ export type PluginStatus = "stopped" | "running" | "failed";
 export interface PluginCommand {
   id: string;
   title: string;
+  keybindings?: string[];
+  macKeybindings?: string[];
+  /** Explicit user invocation receives a document snapshot and returns {text}. */
+  editor?: { extensions: string[]; format?: boolean };
+  fileMenu?: {
+    sources: ("local" | "remote")[];
+    kinds: ("file" | "directory")[];
+    extensions?: string[];
+  };
 }
 
 export interface PluginView {
@@ -468,6 +507,7 @@ export interface PluginInfo {
   themes?: PluginTheme[];
   fileIconThemes?: PluginFileIconTheme[];
   filePreviews?: PluginFilePreview[];
+  mountedFileReveal?: boolean;
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;

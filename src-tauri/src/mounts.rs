@@ -11,6 +11,7 @@ use std::{
     process::Stdio,
 };
 use tauri::{AppHandle, Manager};
+use tauri_plugin_opener::OpenerExt;
 use tokio::{
     process::{Child, Command},
     sync::Mutex,
@@ -40,11 +41,139 @@ pub struct MountRequest {
 fn readonly() -> bool {
     true
 }
+
+/// Convert a remote absolute path to a relative mount path without letting POSIX
+/// components acquire special meaning on Windows. The caller must still check
+/// the canonical target and mount lifetime before opening it.
+fn mounted_relative_path(root: &str, target: &str) -> AppResult<PathBuf> {
+    fn components(path: &str) -> Option<Vec<&str>> {
+        if !path.starts_with('/') || path.contains('\0') || (cfg!(windows) && path.contains('\\')) {
+            return None;
+        }
+        let mut parts = Vec::new();
+        for part in path.split('/').filter(|part| !part.is_empty()) {
+            let base = part.split('.').next().unwrap_or("").to_ascii_uppercase();
+            let reserved = matches!(base.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+                || (base.len() == 4
+                    && (base.starts_with("COM") || base.starts_with("LPT"))
+                    && matches!(base.as_bytes()[3], b'1'..=b'9'));
+            if matches!(part, "." | "..")
+                || (cfg!(windows)
+                    && (part.ends_with(['.', ' '])
+                        || part.chars().any(|c| {
+                            c.is_control() || matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|')
+                        })
+                        || reserved))
+            {
+                return None;
+            }
+            parts.push(part);
+        }
+        Some(parts)
+    }
+    let invalid = || AppError::validation("mounts.remotePath.invalid");
+    let base = components(root).ok_or_else(invalid)?;
+    let path = components(target).ok_or_else(invalid)?;
+    if !path.starts_with(&base) {
+        return Err(AppError::validation("mounts.remotePath.outsideMount"));
+    }
+    Ok(path[base.len()..].iter().collect())
+}
+
+/// Resolve both paths on a blocking worker: a stalled FUSE filesystem must not
+/// freeze the async runtime, and a symlink must never escape the mounted root.
+async fn resolve_mounted_target(root: PathBuf, relative: PathBuf) -> AppResult<PathBuf> {
+    // Timed-out OS filesystem calls cannot be forcibly interrupted. Keep their
+    // permits until they actually return so repeated clicks cannot spawn an
+    // unbounded number of blocked threads.
+    static RESOLVERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = RESOLVERS
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
+    let job = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let canonical_root = root.canonicalize()?;
+        let target = root.join(relative).canonicalize()?;
+        if !target.starts_with(&canonical_root) {
+            return Err(AppError::validation("mounts.remotePath.outsideMount"));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if canonical_root.metadata()?.dev() != target.metadata()?.dev() {
+                return Err(AppError::validation("mounts.remotePath.outsideMount"));
+            }
+        }
+        Ok(target)
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), job)
+        .await
+        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
+        .map_err(|error| AppError::Internal(error.to_string()))?
+}
+
+/// A blocking filesystem call cannot be cancelled. Tell its worker when the
+/// awaiting operation is dropped so it can avoid launching a late window.
+async fn cancellable_open(
+    action: impl FnOnce(std::sync::Arc<std::sync::atomic::AtomicBool>) -> AppResult<()> + Send + 'static,
+) -> AppResult<()> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    struct CancelOnDrop(std::sync::Arc<AtomicBool>);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    static OPENERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = OPENERS
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
+    let allowed = std::sync::Arc::new(AtomicBool::new(true));
+    let _cancel = CancelOnDrop(allowed.clone());
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        action(allowed)
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
+}
+
+#[cfg(target_os = "macos")]
+async fn mac_mount_device(path: PathBuf) -> AppResult<u64> {
+    use std::os::unix::fs::MetadataExt;
+    static PROBES: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = PROBES
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
+    let job = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        Ok::<_, std::io::Error>(path.metadata()?.dev())
+    });
+    Ok(tokio::time::timeout(std::time::Duration::from_secs(5), job)
+        .await
+        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
+        .map_err(|error| AppError::Internal(error.to_string()))??)
+}
 struct ActiveMount {
     info: MountInfo,
     generation: u64,
     child: Child,
     bridge: JoinHandle<()>,
+    #[cfg(windows)]
+    device_mapping: Option<Vec<u16>>,
+    #[cfg(target_os = "linux")]
+    mount_id: Option<String>,
+    #[cfg(target_os = "macos")]
+    mount_device: Option<u64>,
 }
 impl Drop for ActiveMount {
     fn drop(&mut self) {
@@ -199,25 +328,66 @@ fn command(program: impl AsRef<std::ffi::OsStr>) -> Command {
 }
 
 #[cfg(any(target_os = "linux", test))]
-fn mounted_in_table(table: &str, mount_point: &str) -> bool {
-    table.lines().any(|line| {
-        let Some((fields, filesystem)) = line.split_once(" - ") else {
-            return false;
-        };
-        let Some(path) = fields.split_whitespace().nth(4) else {
-            return false;
-        };
-        let path = path
-            .replace("\\040", " ")
-            .replace("\\011", "\t")
-            .replace("\\012", "\n")
-            .replace("\\134", "\\");
-        path == mount_point
-            && filesystem
-                .split_whitespace()
-                .next()
-                .is_some_and(|kind| kind.contains("sshfs"))
+fn decode_mount_path(encoded: &str) -> String {
+    let mut output = String::with_capacity(encoded.len());
+    let mut chars = encoded.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            let suffix: String = chars.clone().take(3).collect();
+            let decoded = match suffix.as_str() {
+                "040" => Some(' '),
+                "011" => Some('\t'),
+                "012" => Some('\n'),
+                "134" => Some('\\'),
+                _ => None,
+            };
+            if let Some(value) = decoded {
+                output.push(value);
+                for _ in 0..3 {
+                    chars.next();
+                }
+                continue;
+            }
+        }
+        output.push(ch);
+    }
+    output
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn mount_entries(table: &str) -> impl Iterator<Item = (String, String, &str)> {
+    table.lines().filter_map(|line| {
+        let (fields, filesystem) = line.split_once(" - ")?;
+        let mut fields = fields.split_whitespace();
+        let id = fields.next()?.to_owned();
+        let path = decode_mount_path(fields.nth(3)?);
+        Some((id, path, filesystem.split_whitespace().next()?))
     })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn mount_id_in_table(table: &str, mount_point: &str) -> Option<String> {
+    let mut matches = mount_entries(table).filter(|(_, path, _)| path == mount_point);
+    let (id, _, kind) = matches.next()?;
+    // Stacked mounts make table ordering insufficient to determine the visible
+    // filesystem. Refuse rather than trust a hidden SSHFS entry.
+    if matches.next().is_some() || !kind.contains("sshfs") {
+        return None;
+    }
+    Some(id)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn nested_mount_on_path(table: &str, root: &Path, target: &Path) -> bool {
+    mount_entries(table).any(|(_, path, _)| {
+        let path = Path::new(&path);
+        path != root && path.starts_with(root) && target.starts_with(path)
+    })
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn mounted_in_table(table: &str, mount_point: &str) -> bool {
+    mount_id_in_table(table, mount_point).is_some()
 }
 
 async fn mount_visible(mount_point: &str) -> AppResult<bool> {
@@ -252,6 +422,40 @@ async fn mount_visible(mount_point: &str) -> AppResult<bool> {
     }
     #[allow(unreachable_code)]
     Err(AppError::validation("mounts.dependencies.required"))
+}
+
+/// Snapshot the current DOS-device target so a drive letter reassigned after
+/// mounting cannot silently send a reveal operation to a different filesystem.
+#[cfg(windows)]
+fn windows_device_mapping(mount_point: &str) -> Option<Vec<u16>> {
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn QueryDosDeviceW(device: *const u16, target: *mut u16, length: u32) -> u32;
+    }
+    let bytes = mount_point.as_bytes();
+    if bytes.len() != 3
+        || !bytes[0].is_ascii_alphabetic()
+        || bytes[1] != b':'
+        || !matches!(bytes[2], b'\\' | b'/')
+    {
+        return None;
+    }
+    let name = [u16::from(bytes[0].to_ascii_uppercase()), u16::from(b':'), 0];
+    let mut result = vec![0u16; 32768];
+    // SAFETY: name is NUL terminated and result has length writable u16s.
+    let written =
+        unsafe { QueryDosDeviceW(name.as_ptr(), result.as_mut_ptr(), result.len() as u32) }
+            as usize;
+    if written == 0 {
+        return None;
+    }
+    // QueryDosDevice can return historical mappings after the current target.
+    let end = result[..written].iter().position(|&value| value == 0)?;
+    if end == 0 {
+        return None;
+    }
+    result.truncate(end);
+    Some(result)
 }
 #[cfg(windows)]
 fn dismount_windows(mount_point: &str) -> AppResult<std::fs::File> {
@@ -326,6 +530,54 @@ fn validate(request: &MountRequest) -> AppResult<()> {
     Ok(())
 }
 impl MountRegistry {
+    async fn live_owned_mount(
+        &self,
+        owner: &str,
+        generation: u64,
+        id: &str,
+        session_id: &str,
+    ) -> AppResult<MountInfo> {
+        let mut mounts = self.mounts.lock().await;
+        let active = mounts
+            .get_mut(id)
+            .ok_or_else(|| AppError::NotFound("mounts.notFound".into()))?;
+        if active.info.owner != owner || active.generation != generation {
+            return Err(AppError::validation("mounts.notOwned"));
+        }
+        if active.info.session_id != session_id
+            || active.info.cleanup_error.is_some()
+            || active.bridge.is_finished()
+            || active.child.try_wait()?.is_some()
+            || !mount_visible(&active.info.mount_point).await?
+        {
+            return Err(AppError::validation("mounts.transportClosed"));
+        }
+        #[cfg(windows)]
+        if active.device_mapping.is_none()
+            || windows_device_mapping(&active.info.mount_point) != active.device_mapping
+        {
+            return Err(AppError::validation("mounts.transportClosed"));
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+            if active.mount_id.is_none()
+                || mount_id_in_table(&table, &active.info.mount_point) != active.mount_id
+            {
+                return Err(AppError::validation("mounts.transportClosed"));
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if active.mount_device.is_none()
+            || mac_mount_device(PathBuf::from(&active.info.mount_point))
+                .await
+                .ok()
+                != active.mount_device
+        {
+            return Err(AppError::validation("mounts.transportClosed"));
+        }
+        Ok(active.info.clone())
+    }
     pub async fn list(&self, owner: Option<&str>) -> Vec<MountInfo> {
         self.mounts
             .lock()
@@ -429,6 +681,12 @@ impl MountRegistry {
                 generation,
                 child,
                 bridge,
+                #[cfg(windows)]
+                device_mapping: None,
+                #[cfg(target_os = "linux")]
+                mount_id: None,
+                #[cfg(target_os = "macos")]
+                mount_device: None,
             },
         );
         // Register before awaiting readiness so cancellation/revocation still owns
@@ -440,6 +698,21 @@ impl MountRegistry {
                     return Err(AppError::validation("mounts.startFailed"));
                 }
                 if mount_visible(&info.mount_point).await? {
+                    #[cfg(windows)]
+                    {
+                        active.device_mapping = windows_device_mapping(&info.mount_point);
+                    }
+                    #[cfg(target_os = "linux")]
+                    {
+                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        active.mount_id = mount_id_in_table(&table, &info.mount_point);
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        active.mount_device = mac_mount_device(PathBuf::from(&info.mount_point))
+                            .await
+                            .ok();
+                    }
                     return Ok(());
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -734,6 +1007,111 @@ pub async fn action(
                     crate::commands::open_local_path(app.clone(), record.mount_point)?;
                     Ok(serde_json::Value::Null)
                 }
+                "reveal" => {
+                    if !plugin.mounted_file_reveal {
+                        return Err(AppError::validation("plugin.command.invalid"));
+                    }
+                    policy.authorize(
+                        &plugin_id,
+                        &lease.fingerprint,
+                        &lease.permissions,
+                        Some("mounts.read"),
+                        Some(lease.generation),
+                    )?;
+                    let id = params
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| AppError::validation("mounts.id.required"))?;
+                    let session = params
+                        .get("sessionId")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| AppError::validation("mounts.session.required"))?;
+                    let path = params.get("path").and_then(|v| v.as_str()).ok_or_else(|| {
+                        AppError::validation("mounts.remotePath.absoluteRequired")
+                    })?;
+                    let record = state
+                        .mounts
+                        .live_owned_mount(&plugin_id, lease.generation, id, session)
+                        .await?;
+                    let relative = mounted_relative_path(&record.remote_path, path)?;
+                    let mount_root_selected = relative.as_os_str().is_empty();
+                    let target =
+                        resolve_mounted_target(PathBuf::from(&record.mount_point), relative)
+                            .await?;
+                    #[cfg(target_os = "linux")]
+                    {
+                        let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
+                        if nested_mount_on_path(&table, Path::new(&record.mount_point), &target) {
+                            return Err(AppError::validation("mounts.remotePath.outsideMount"));
+                        }
+                    }
+                    state
+                        .mounts
+                        .live_owned_mount(&plugin_id, lease.generation, id, session)
+                        .await?;
+                    let current =
+                        crate::plugins::security::fingerprint_async(PathBuf::from(&plugin.path))
+                            .await?;
+                    if current != lease.fingerprint {
+                        return Err(AppError::validation("pluginSecurity.changed"));
+                    }
+                    policy.authorize(
+                        &plugin_id,
+                        &lease.fingerprint,
+                        &lease.permissions,
+                        Some(permission),
+                        Some(lease.generation),
+                    )?;
+                    policy.authorize(
+                        &plugin_id,
+                        &lease.fingerprint,
+                        &lease.permissions,
+                        Some("mounts.read"),
+                        Some(lease.generation),
+                    )?;
+                    let app = app.clone();
+                    let lease = lease.clone();
+                    let mount_id = id.to_owned();
+                    let session_id = session.to_owned();
+                    let runtime = tokio::runtime::Handle::current();
+                    cancellable_open(move |allowed| {
+                        if !target.exists() {
+                            return Err(AppError::NotFound("path.notFound".into()));
+                        }
+                        if !allowed.load(std::sync::atomic::Ordering::Acquire) {
+                            return Err(AppError::validation("pluginSecurity.changed"));
+                        }
+                        let state = app.state::<crate::state::AppState>();
+                        runtime.block_on(state.mounts.live_owned_mount(
+                            &lease.id,
+                            lease.generation,
+                            &mount_id,
+                            &session_id,
+                        ))?;
+                        for permission in ["mounts.read", "mounts.write"] {
+                            state.plugins.security.authorize(
+                                &lease.id,
+                                &lease.fingerprint,
+                                &lease.permissions,
+                                Some(permission),
+                                Some(lease.generation),
+                            )?;
+                        }
+                        if !allowed.load(std::sync::atomic::Ordering::Acquire) {
+                            return Err(AppError::validation("pluginSecurity.changed"));
+                        }
+                        if mount_root_selected {
+                            app.opener()
+                                .open_path(target.to_string_lossy().into_owned(), None::<&str>)
+                                .map_err(|error| AppError::Internal(error.to_string()))
+                        } else {
+                            tauri_plugin_opener::reveal_item_in_dir(target)
+                                .map_err(|error| AppError::Internal(error.to_string()))
+                        }
+                    })
+                    .await?;
+                    Ok(serde_json::Value::Null)
+                }
                 _ => Err(AppError::validation("plugin.api.unknownMethod")),
             }
         })
@@ -773,6 +1151,252 @@ pub async fn action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn mac_mount_device_reports_existing_filesystem_and_rejects_missing_path() {
+        let root = std::env::temp_dir();
+        let first = mac_mount_device(root.clone()).await.unwrap();
+        assert_eq!(mac_mount_device(root.clone()).await.unwrap(), first);
+        assert!(
+            mac_mount_device(root.join(format!("missing-{}", uuid::Uuid::new_v4())))
+                .await
+                .is_err()
+        );
+    }
+    #[tokio::test]
+    async fn cancelled_open_marks_a_blocked_worker_before_it_continues() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let opened = std::sync::Arc::new(AtomicBool::new(false));
+        let worker_opened = opened.clone();
+        let task = tokio::spawn(cancellable_open(move |allowed| {
+            let _ = started_tx.send(());
+            resume_rx.recv().unwrap();
+            if allowed.load(Ordering::Acquire) {
+                worker_opened.store(true, Ordering::Release);
+            }
+            let _ = finished_tx.send(());
+            Ok(())
+        }));
+        started_rx.await.unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        resume_tx.send(()).unwrap();
+        finished_rx.await.unwrap();
+        assert!(!opened.load(Ordering::Acquire));
+    }
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    #[ignore = "requires sshfs, OpenSSH sftp-server and a usable FUSE device"]
+    async fn real_passive_sshfs_mount_resolves_owned_files() {
+        use std::os::{fd::OwnedFd, unix::net::UnixStream};
+
+        struct TempDir(PathBuf);
+        impl Drop for TempDir {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let temp = TempDir(
+            std::env::temp_dir().join(format!("tunnelde-sshfs-test-{}", uuid::Uuid::new_v4())),
+        );
+        std::fs::create_dir(&temp.0).unwrap();
+        let source = temp.0.join("source");
+        let root = temp.0.join("mount");
+        let outside = temp.0.join("outside");
+        std::fs::create_dir(&source).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        std::fs::create_dir(&outside).unwrap();
+        std::fs::write(source.join("file.txt"), b"SSHFS test").unwrap();
+        std::fs::write(outside.join("secret.txt"), b"outside").unwrap();
+        std::os::unix::fs::symlink(&outside, source.join("escape")).unwrap();
+
+        let (server_socket, client_socket) = UnixStream::pair().unwrap();
+        let mut server = std::process::Command::new("/usr/lib/openssh/sftp-server")
+            .stdin(Stdio::from(OwnedFd::from(
+                server_socket.try_clone().unwrap(),
+            )))
+            .stdout(Stdio::from(OwnedFd::from(server_socket)))
+            .spawn()
+            .unwrap();
+        let mut client = std::process::Command::new("sshfs")
+            .arg(format!("tunnelde:{}", source.display()))
+            .arg(&root)
+            .args(["-f", "-o", "passive", "-o", "fsname=Tunnelde", "-o", "ro"])
+            .stdin(Stdio::from(OwnedFd::from(
+                client_socket.try_clone().unwrap(),
+            )))
+            .stdout(Stdio::from(OwnedFd::from(client_socket)))
+            .spawn()
+            .unwrap();
+        struct Cleanup<'a> {
+            root: &'a Path,
+            client: &'a mut std::process::Child,
+            server: &'a mut std::process::Child,
+        }
+        impl Drop for Cleanup<'_> {
+            fn drop(&mut self) {
+                let _ = std::process::Command::new("fusermount3")
+                    .arg("-uz")
+                    .arg(self.root)
+                    .status();
+                let _ = self.client.kill();
+                let _ = self.client.wait();
+                let _ = self.server.kill();
+                let _ = self.server.wait();
+            }
+        }
+        let processes = Cleanup {
+            root: &root,
+            client: &mut client,
+            server: &mut server,
+        };
+        let mount_point = root.to_str().unwrap();
+        let mut found = false;
+        for _ in 0..100 {
+            let table = std::fs::read_to_string("/proc/self/mountinfo").unwrap();
+            if mount_id_in_table(&table, mount_point).is_some() {
+                found = true;
+                break;
+            }
+            assert!(
+                processes.client.try_wait().unwrap().is_none(),
+                "sshfs exited before mounting"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        assert!(found, "sshfs mount did not become ready");
+        assert_eq!(std::fs::read(root.join("file.txt")).unwrap(), b"SSHFS test");
+        assert_eq!(
+            resolve_mounted_target(root.clone(), PathBuf::from("file.txt"))
+                .await
+                .unwrap(),
+            root.join("file.txt")
+        );
+        assert!(
+            resolve_mounted_target(root.clone(), PathBuf::from("escape/secret.txt"))
+                .await
+                .is_err()
+        );
+    }
+    #[cfg(windows)]
+    #[test]
+    fn windows_device_mapping_rejects_bad_inputs_and_reports_current_drive() {
+        assert!(windows_device_mapping("").is_none());
+        assert!(windows_device_mapping("C:").is_none());
+        assert!(windows_device_mapping("../").is_none());
+        let root = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".into());
+        let path = format!("{root}\\");
+        let first = windows_device_mapping(&path).expect("system drive has a DOS-device mapping");
+        assert!(!first.is_empty());
+        assert_eq!(windows_device_mapping(&path), Some(first));
+    }
+    #[tokio::test]
+    async fn mounted_target_must_exist_and_resolve_inside_root() {
+        let temporary =
+            std::env::temp_dir().join(format!("tunnelde-mount-test-{}", uuid::Uuid::new_v4()));
+        let root = temporary.join("mount");
+        let outside = temporary.join("outside");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(root.join("inside.txt"), b"inside").unwrap();
+        std::fs::write(outside.join("secret.txt"), b"outside").unwrap();
+        let result = resolve_mounted_target(root.clone(), PathBuf::from("inside.txt"))
+            .await
+            .unwrap();
+        assert_eq!(result, root.join("inside.txt").canonicalize().unwrap());
+        assert!(
+            resolve_mounted_target(root.clone(), PathBuf::from("missing"))
+                .await
+                .is_err()
+        );
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&outside, root.join("escape")).unwrap();
+            assert!(
+                resolve_mounted_target(root.clone(), PathBuf::from("escape/secret.txt"))
+                    .await
+                    .is_err()
+            );
+        }
+        #[cfg(windows)]
+        {
+            // Directory junctions do not require developer mode or symlink privileges.
+            let junction = root.join("escape");
+            let output = std::process::Command::new("cmd")
+                .args(["/C", "mklink", "/J"])
+                .arg(&junction)
+                .arg(&outside)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                resolve_mounted_target(root.clone(), PathBuf::from("escape/secret.txt"))
+                    .await
+                    .is_err()
+            );
+            std::fs::remove_dir(junction).unwrap();
+        }
+        std::fs::remove_dir_all(temporary).unwrap();
+    }
+    #[test]
+    fn mounted_path_uses_components_and_rejects_cross_platform_escape() {
+        assert_eq!(
+            mounted_relative_path("/srv/data/", "/srv/data/report.txt").unwrap(),
+            PathBuf::from("report.txt")
+        );
+        assert_eq!(
+            mounted_relative_path("/", "/home/user/file").unwrap(),
+            PathBuf::from("home").join("user").join("file")
+        );
+        assert_eq!(
+            mounted_relative_path("/srv/data", "/srv/data").unwrap(),
+            PathBuf::new()
+        );
+        for target in [
+            "/srv/database/file",
+            "/srv/data/../secret",
+            "/srv/data/./file",
+            "/srv/data/bad\0name",
+        ] {
+            assert!(
+                mounted_relative_path("/srv/data", target).is_err(),
+                "{target:?}"
+            );
+        }
+        #[cfg(windows)]
+        for target in [
+            "/srv/data/a\\..\\secret",
+            "/srv/data/C:escape",
+            "/srv/data/NUL.txt",
+            "/srv/data/file.",
+        ] {
+            assert!(
+                mounted_relative_path("/srv/data", target).is_err(),
+                "{target:?}"
+            );
+        }
+        #[cfg(unix)]
+        for target in [
+            "/srv/data/a\\b",
+            "/srv/data/C:escape",
+            "/srv/data/NUL.txt",
+            "/srv/data/file.",
+        ] {
+            assert!(
+                mounted_relative_path("/srv/data", target).is_ok(),
+                "{target:?}"
+            );
+        }
+        assert!(mounted_relative_path("/srv/../data", "/srv/data/file").is_err());
+        assert!(mounted_relative_path("srv/data", "/srv/data/file").is_err());
+    }
     #[test]
     fn rejects_remote_options_and_relative_paths() {
         let make = |remote: &str| MountRequest {
@@ -797,8 +1421,36 @@ mod tests {
     fn detects_only_the_exact_sshfs_mount_with_escaped_paths() {
         let table = "1 0 0:1 / /media/ssh\\040files rw - fuse.sshfs Tunnelde rw\n2 0 0:2 / /media/local rw - ext4 /dev/sda rw";
         assert!(mounted_in_table(table, "/media/ssh files"));
+        assert_eq!(
+            mount_id_in_table(table, "/media/ssh files").as_deref(),
+            Some("1")
+        );
+        let replaced = table.replacen("1 0 0:1", "9 0 0:9", 1);
+        assert_ne!(
+            mount_id_in_table(table, "/media/ssh files"),
+            mount_id_in_table(&replaced, "/media/ssh files")
+        );
         assert!(!mounted_in_table(table, "/media/ssh"));
         assert!(!mounted_in_table(table, "/media/local"));
+        assert_eq!(decode_mount_path("/x\\134040\\040y"), "/x\\040 y");
+        assert_eq!(
+            decode_mount_path("/中文\\011x\\012y\\134z"),
+            "/中文\tx\ny\\z"
+        );
+        let stacked = format!("{table}\n3 1 0:3 / /media/ssh\\040files rw - ext4 /dev/sda rw");
+        assert!(mount_id_in_table(&stacked, "/media/ssh files").is_none());
+        let nested =
+            format!("{table}\n4 1 0:4 / /media/ssh\\040files/nested rw - ext4 /dev/sda rw");
+        assert!(nested_mount_on_path(
+            &nested,
+            Path::new("/media/ssh files"),
+            Path::new("/media/ssh files/nested/a")
+        ));
+        assert!(!nested_mount_on_path(
+            &nested,
+            Path::new("/media/ssh files"),
+            Path::new("/media/ssh files/nested-other/a")
+        ));
     }
     #[test]
     fn transport_requires_advertised_option_not_incidental_text() {

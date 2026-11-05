@@ -6,6 +6,65 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.29.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.28.0...v0.29.0) - 2026-11-05
+
+### 更新概览 | Highlights
+
+- 存储位置支持逐项或批量恢复默认，并在迁移前展示计划、保护已有数据。Storage locations can reset individually or in batches with a reviewed migration plan and existing-data protection.
+- 插件可直接格式化当前编辑器文件，支持可配置快捷键、撤销重做和异步修改冲突保护。Plugins can format the active editor with configurable shortcuts, undo/redo and protection against stale asynchronous edits.
+- 更新说明可展开查看当前版本至目标版本的累计变更；历史不完整或加载失败时会明确提示并允许重试。Update notes include changes from the installed version through the selected target, with clear incomplete-history notices and retry.
+- 测试连接显示沿实际代理与跳板路径的三次 SSH 建立耗时、波动和成功次数，支持取消与重测。Connection tests show three SSH establishment measurements through the configured route, their spread and success count, with cancel and retry.
+
+<details open>
+<summary>详细变更 | Details (26)</summary>
+
+### 新增 | New
+
+- **storage:** add individual and batch location reset ([#52](https://github.com/TunneldeDev/Tunnelde/pull/52)) @quyansiyuanwang
+- **plugins:** expose versioned editor buffers with undoable edits ([#54](https://github.com/TunneldeDev/Tunnelde/pull/54), [f7027f3](https://github.com/TunneldeDev/Tunnelde/commit/f7027f317e20e14dedecadb48cb81cde01fcac4b)) @quyansiyuanwang
+- **editor:** run contributed formatters and configurable shortcuts ([#54](https://github.com/TunneldeDev/Tunnelde/pull/54)) @quyansiyuanwang
+- **updates:** fetch bounded cumulative release history ([#55](https://github.com/TunneldeDev/Tunnelde/pull/55), [8462666](https://github.com/TunneldeDev/Tunnelde/commit/8462666f9fa9b092321270d0facb8013e014bea2)) @quyansiyuanwang
+- **updates:** review changes across versions in settings ([#55](https://github.com/TunneldeDev/Tunnelde/pull/55)) @quyansiyuanwang
+- **ssh:** measure cancellable connection quality through host routes ([#56](https://github.com/TunneldeDev/Tunnelde/pull/56), [ca77d4c](https://github.com/TunneldeDev/Tunnelde/commit/ca77d4ceb77dfe98c58fcdcd5b99261f91942ecd)) @quyansiyuanwang
+- **connect:** show route quality and isolate connection dialog state ([#56](https://github.com/TunneldeDev/Tunnelde/pull/56)) @quyansiyuanwang
+- add restart and reload controls ([#61](https://github.com/TunneldeDev/Tunnelde/pull/61)) @quyansiyuanwang
+- add application and operation log viewer ([#62](https://github.com/TunneldeDev/Tunnelde/pull/62)) @quyansiyuanwang
+- **files:** add native file manager actions ([#63](https://github.com/TunneldeDev/Tunnelde/pull/63)) @quyansiyuanwang
+- **files:** open local and remote documents consistently ([#64](https://github.com/TunneldeDev/Tunnelde/pull/64)) @quyansiyuanwang
+- **plugins:** contribute file actions and mounted file reveal ([#65](https://github.com/TunneldeDev/Tunnelde/pull/65), [45757b4](https://github.com/TunneldeDev/Tunnelde/commit/45757b4e650997ba3c0ff2970cd364c07930db2d)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **plugins:** isolate session API representation ([#68](https://github.com/TunneldeDev/Tunnelde/pull/68)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **storage:** safely migrate categories back to default locations ([#52](https://github.com/TunneldeDev/Tunnelde/pull/52), [d698e3d](https://github.com/TunneldeDev/Tunnelde/commit/d698e3db45e6a339d944645e8571705688774490)) @quyansiyuanwang
+- **release:** keep highlights within the current promotion cycle ([#57](https://github.com/TunneldeDev/Tunnelde/pull/57)) @quyansiyuanwang
+- **network:** show latency and quality after connection tests ([#58](https://github.com/TunneldeDev/Tunnelde/pull/58)) @quyansiyuanwang
+- **release:** stop Nightly publishing and version macOS update archives ([#59](https://github.com/TunneldeDev/Tunnelde/pull/59)) @quyansiyuanwang
+- **plugins:** overlay scrollbars without narrowing extension rows ([#60](https://github.com/TunneldeDev/Tunnelde/pull/60)) @quyansiyuanwang
+- **sshfs:** cancel delayed mounted file opening ([#65](https://github.com/TunneldeDev/Tunnelde/pull/65), [6796f88](https://github.com/TunneldeDev/Tunnelde/commit/6796f88b10de4768cd43aeb1ad58625f550a8892)) @quyansiyuanwang
+- **sshfs:** check mounted filesystem on macos ([#65](https://github.com/TunneldeDev/Tunnelde/pull/65)) @quyansiyuanwang
+- **plugins:** preserve split utf8 after invalid bytes ([#70](https://github.com/TunneldeDev/Tunnelde/pull/70)) @quyansiyuanwang
+- **plugins:** release cancelled pending requests ([#71](https://github.com/TunneldeDev/Tunnelde/pull/71)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **plugins:** clarify ecosystem and compatibility ([#66](https://github.com/TunneldeDev/Tunnelde/pull/66)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **sshfs:** exercise passive mount with local sftp ([#65](https://github.com/TunneldeDev/Tunnelde/pull/65), [2c372f6](https://github.com/TunneldeDev/Tunnelde/commit/2c372f6282fe7bfdb6c0ea8a49e9667226db909d)) @quyansiyuanwang
+- **plugins:** exercise historical plugin transport ([#67](https://github.com/TunneldeDev/Tunnelde/pull/67)) @quyansiyuanwang
+- **plugins:** exercise persisted storage contracts ([#69](https://github.com/TunneldeDev/Tunnelde/pull/69)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.28.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.27.1...v0.28.0) - 2026-11-05
 
 ### 更新概览 | Highlights

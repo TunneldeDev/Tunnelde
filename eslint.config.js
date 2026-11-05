@@ -37,7 +37,7 @@ export default tseslint.config(
     rules: { "no-console": "off" },
   },
   {
-    files: ["examples/**/*.js"],
+    files: ["examples/**/*.js", "tests/fixtures/plugin-compat/**/*.js"],
     languageOptions: {
       sourceType: "module",
       globals: {

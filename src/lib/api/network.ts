@@ -15,6 +15,17 @@ export interface ConnectionRoute {
   proxy: string;
   jumpHosts: string[];
 }
+export interface NetworkConnectionQuality {
+  attempts: number;
+  successful: number;
+  samplesMs: (number | null)[];
+  medianMs: number | null;
+  minMs: number | null;
+  maxMs: number | null;
+  spreadMs: number | null;
+  quality: "fast" | "normal" | "slow" | "unstable" | "unreachable";
+  lastError: { code: string; message: string } | null;
+}
 export const defaultNetwork = (): NetworkSettings => ({
   profiles: [],
   defaultProxy: "",

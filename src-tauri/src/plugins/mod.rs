@@ -65,6 +65,7 @@ pub struct PluginInfo {
     pub tags: Vec<String>,
     pub file_icon_themes: Vec<file_icons::FileIconTheme>,
     pub file_previews: Vec<crate::preview::providers::Provider>,
+    pub mounted_file_reveal: bool,
     pub fingerprint: String,
 }
 
@@ -164,6 +165,7 @@ impl Instance {
             themes: self.manifest.themes.clone(),
             file_icon_themes: self.manifest.file_icon_themes.clone(),
             file_previews: self.manifest.file_previews.clone(),
+            mounted_file_reveal: self.manifest.mounted_file_reveal,
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
         }

@@ -411,7 +411,19 @@
     "publishedAt": "发布时间",
     "rateLimited": "GitHub 的请求额度已用尽，公共发布源也暂时不可用。请稍后重试，或检查更新代理。",
     "connectionFailed": "无法连接更新源，请检查网络与更新功能的代理设置。",
-    "invalidChannel": "请选择正式版或公测版更新渠道。"
+    "invalidChannel": "请选择正式版或公测版更新渠道。",
+    "historyTarget": "目标版本",
+    "historyEmpty": "此版本未发布更新说明。",
+    "historyLoading": "正在加载这些版本之间的更新说明…",
+    "historyComplete": "已加载此范围内的全部公开说明（{{count}} 个版本）。",
+    "historyStable": "此版本范围内的正式版更新。",
+    "historyBeta": "此版本范围内的正式版和公测版更新。",
+    "historyUnavailable": "未能完整加载历史说明，下方保留已获取的内容；不影响检查和安装更新。",
+    "historyLimit": "历史说明已达到加载上限，下方内容可能不完整。",
+    "historyMissingTarget": "公开历史中未找到目标版本，已保留更新源提供的目标说明；历史内容可能不完整。",
+    "historyCustom": "此自定义更新源仅提供目标版本的说明，暂不支持获取其他版本的历史说明。",
+    "historyComplete_one": "已加载此范围内的全部公开说明（{{count}} 个版本）。",
+    "historyComplete_other": "已加载此范围内的全部公开说明（{{count}} 个版本）。"
   },
   "about": {
     "version": "版本",
@@ -479,7 +491,27 @@
     "forgetBody": "移除 {{name}} 的已保存密码？下次连接需要重新输入。",
     "installKey": "配置免密登录",
     "installKeyDone": "公钥已安装，下次连接将使用密钥。",
-    "installKeyHint": "使用密码登录一次，将本应用的公钥添加到目标账号，保留已有的授权密钥。"
+    "installKeyHint": "使用密码登录一次，将本应用的公钥添加到目标账号，保留已有的授权密钥。",
+    "testTitle": "连接质量",
+    "test": "测试连接",
+    "testAgain": "重新测试",
+    "testMs": "{{value}} 毫秒",
+    "probeTime": "SSH 连接建立耗时 {{value}} 毫秒",
+    "testRunning": "正在进行最多 3 次 SSH 连接测试…",
+    "testHint": "测量 SSH 建立耗时，包含代理和跳板；不代表带宽或丢包率。",
+    "testTrustFirst": "请先完成整条连接路径的主机密钥验证与信任。",
+    "testMedian": "SSH 建立耗时（中位数）",
+    "testSpread": "耗时波动（最大值 − 最小值）",
+    "testSuccess": "成功次数",
+    "testSamples": "查看每次结果",
+    "testFailed": "失败",
+    "testQuality": {
+      "fast": "连接建立较快",
+      "normal": "连接建立正常",
+      "slow": "连接建立较慢",
+      "unstable": "部分连接失败",
+      "unreachable": "无法建立连接"
+    }
   },
   "terminal": {
     "connect": "连接",
@@ -510,7 +542,8 @@
     "startupOutputLimit": "终端启动输出超出限制",
     "invalidPayload": "终端输入无效",
     "noHostKey": "服务器未提供主机密钥",
-    "agentUnsupported": "暂不支持 Agent 认证"
+    "agentUnsupported": "暂不支持 Agent 认证",
+    "testCancelled": "已取消连接测试"
   },
   "sftp": {
     "title": "文件",
@@ -552,7 +585,9 @@
     "source": "来源",
     "newFile": "新建文件",
     "fileName": "文件名",
-    "openWith": "打开",
+    "revealNative": "在文件管理器中显示",
+    "openFolderNative": "在文件管理器中打开文件夹",
+    "openWith": "使用系统应用打开",
     "copyToServer": "复制到服务器",
     "copyToFolder": "复制到文件夹",
     "deleteManyBody": "删除 {{count}} 项及其中的全部内容？",
@@ -572,6 +607,8 @@
     "symlinkUnsupported": "暂不支持复制符号链接",
     "unsupportedEncoding": "仅支持编辑 UTF-8 编码的文本文件",
     "binaryFile": "无法将二进制文件作为文本编辑",
+    "absolutePathRequired": "需要绝对路径",
+    "notRegularFile": "只能编辑普通文件",
     "fileTooLarge": "仅支持编辑不超过 2 MB 的文本文件",
     "viewOptions": "视图选项",
     "detailsView": "详细信息视图",
@@ -724,7 +761,19 @@
     "reconnect": "恢复连接",
     "saving": "正在保存…",
     "conflictTitle": "远端文件已更改",
-    "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？"
+    "localFileChanged": "文件已在 Tunnelde 外被修改，当前编辑未保存；请重新打开文件并核对更改。",
+    "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？",
+    "format": "格式化文档",
+    "formatting": "正在格式化…",
+    "undo": "撤销",
+    "redo": "重做",
+    "chooseFormatter": "选择格式化器",
+    "noDocument": "请先打开可编辑的文档。",
+    "noFormatter": "尚未安装支持此文件类型的格式化器。请从扩展中安装对应插件。",
+    "documentChanged": "格式化期间文档已变化，已保留你的最新编辑，请重新格式化。",
+    "formatTooLarge": "文档超出插件格式化的大小限制。",
+    "formatRevoked": "格式化插件已停止、更新或被撤销权限，文档内容未被替换。",
+    "invalidFormatResult": "格式化器未返回有效文本。"
   },
   "plugins": {
     "search": "搜索插件",
@@ -1123,7 +1172,9 @@
       "mountsRead": "检查 SSHFS 依赖并查看此插件的挂载",
       "mountsWrite": "通过已认证 SSH 挂载或卸载远端文件系统",
       "forwardsRead": "查看已保存的端口转发规则",
-      "forwardsWrite": "管理、启动本地或远程端口转发"
+      "forwardsWrite": "管理、启动本地或远程端口转发",
+      "editorRead": "读取已打开编辑器中的文档",
+      "editorWrite": "修改编辑器缓冲区（不会自动保存）"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -1437,7 +1488,20 @@
     "jumpRemember": "记住跳板主机密码",
     "systemHint": "系统模式使用操作系统或环境变量中的代理和绕过规则，不执行 PAC 脚本；需要时请配置代理。",
     "clearPassword": "清除已保存的代理密码",
-    "missingProxy": "代理已不存在"
+    "missingProxy": "代理已不存在",
+    "qualityLessMs": "<1 毫秒",
+    "qualityRunning": "正在测量最多 3 次连接…",
+    "qualityLatency": "连接延迟（中位数）",
+    "qualityFastest": "最快",
+    "qualitySlowest": "最慢",
+    "qualityHint": "沿所选路径测量最多 3 次 TCP 连接，总时限 15 秒。包含 DNS 和代理协商，不代表 ping 往返延迟或带宽；失败不计入耗时统计。中位数 ≤100 毫秒为较低，≤300 毫秒为适中，更高为较高。",
+    "quality": {
+      "fast": "连接成功 · 延迟较低",
+      "normal": "连接成功 · 延迟适中",
+      "slow": "连接成功 · 延迟较高",
+      "unstable": "部分连接尝试失败",
+      "unreachable": "连接失败"
+    }
   },
   "forward": {
     "title": "端口转发",
@@ -1509,7 +1573,9 @@
       "required": "请先安装兼容的 SSHFS 和 FUSE 驱动，再重新检测。"
     },
     "remotePath": {
-      "absoluteRequired": "请选择远端目录的绝对路径。"
+      "absoluteRequired": "请选择远端目录的绝对路径。",
+      "invalid": "此远端路径无法安全映射到本地挂载目录。",
+      "outsideMount": "所选项目不在挂载目录内。"
     },
     "mountPoint": {
       "absoluteRequired": "请选择本地挂载位置的绝对路径。",
@@ -1530,10 +1596,13 @@
     "notOwned": "此挂载属于其他插件。",
     "startFailed": "SSHFS 在挂载完成前退出，请检查 SSHFS 安装和远端目录访问权限。",
     "startTimeout": "挂载目录超时，请检查 SSH 连接和 FUSE 驱动。",
+    "pathTimeout": "挂载目录响应超时，请检查连接后重试。",
+    "pathBusy": "挂载目录仍在处理先前的请求，请稍后重试。",
     "busy": "目录正在使用中，请关闭使用此目录的文件和终端，再重试卸载。",
     "unmountTimeout": "卸载超时，请关闭使用此目录的文件后重试。",
     "processExited": "SSHFS 进程已退出，请先卸载此记录再重新连接。",
     "transportClosed": "SSHFS 连接已断开，请先卸载此记录再重新连接。",
+    "actionUnavailable": "挂载或插件已不可用。请重新连接或检查插件权限后重试。",
     "stdin": "无法打开 SSHFS 输入通道。",
     "stdout": "无法打开 SSHFS 输出通道。",
     "install": {
@@ -1549,12 +1618,45 @@
     "none": "普通文件图标",
     "missing": "主题不可用（{{id}}）"
   },
+  "logs": {
+    "title": "日志",
+    "description": "查看近期操作记录和软件诊断日志。",
+    "view": "查看日志",
+    "openFolder": "打开日志文件夹",
+    "operations": "操作日志",
+    "diagnostic": "软件日志",
+    "operationsHint": "从此版本起记录主机变更、SSH 连接及插件安装操作；此处不记录密码、命令或文件内容。",
+    "diagnosticHint": "显示最新软件日志的近期内容。诊断日志可能包含隐私信息，分享前请检查。",
+    "emptyOperations": "暂无操作记录。",
+    "emptyDiagnostic": "暂无软件日志。",
+    "truncated": "显示最近 256 KiB"
+  },
+  "restart": {
+    "command": "重启 Tunnelde",
+    "reload": "重新加载窗口",
+    "now": "立即重启",
+    "later": "稍后重启",
+    "requiredTitle": "需要重启",
+    "requiredBody": "存储位置变更已安排，将在 Tunnelde 重启后生效。重启前请保存工作。",
+    "confirmTitle": "重启 Tunnelde？",
+    "reloadTitle": "重新加载窗口？",
+    "restartWarning": "重启会断开连接、中断后台任务并丢失未保存的编辑。请先保存工作。",
+    "reloadWarning": "重新加载窗口可能中断当前视图，并丢失未保存的编辑。请先保存工作。",
+    "unsaved": "未保存的文件：{{names}}",
+    "nativeOnly": "只能在桌面应用中重启。"
+  },
   "storage": {
     "title": "存储位置",
     "description": "分别选择各类应用数据的存储目录。选中多个类别后，可将它们批量迁移至同一父目录下的独立文件夹。",
     "searchTerms": "存储 迁移 数据 数据库 插件 聊天 会话 密钥 运行时 缓存 日志 部署 文件夹 路径 位置 磁盘",
     "selectAll": "全选",
     "batchChoose": "选择父文件夹（{{count}} 项）",
+    "batchReset": "重置所选位置（{{count}} 项）",
+    "reset": "重置位置",
+    "resetCategory": "将{{category}}重置为默认位置",
+    "defaultPath": "默认位置：{{path}}",
+    "resetHint": "默认位置已有的数据会先归档保留，再迁回当前数据；其他存储分类的数据保留原位。",
+    "archivedDefault": "默认位置旧数据归档 · {{category}}",
     "size_one": "{{size}} · {{count}} 个文件",
     "size_other": "{{size}} · {{count}} 个文件",
     "overridden": "由 TUNNELDE_PLUGINS_DIR 管理。请修改该环境变量来更改此目录。",

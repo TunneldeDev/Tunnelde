@@ -9,7 +9,6 @@ import {
   nextVersion,
   planDevelopment,
   prepareBeta,
-  prepareNightly,
   prepareTaggedRelease,
   resolveTag,
   prepareStable,
@@ -289,6 +288,31 @@ test("release plans use authoritative heads and last promoted dev SHA across squ
     return { data: { status: "identical", total_commits: 0, commits: [] } };
   };
   assert.equal((await planDevelopment(f)).version, undefined);
+});
+
+test("release highlights ignore an unchanged promoted summary and retain a newly edited one", async () => {
+  const f = fixture();
+  const withSummary = (summary) =>
+    history.replace("## [Unreleased]\n", `## [Unreleased]\n\n${summary}\n`);
+  f.contents.set(`${baseline}:CHANGELOG.md`, withSummary("- Previous release summary."));
+  f.contents.set(
+    `${dev}:CHANGELOG.md`,
+    withSummary("- Previous release summary.").replace(/\n/g, "\r\n"),
+  );
+  const unchanged = await planDevelopment(f);
+  assert.match(unchanged.release.notes, /Highlights\n\n- \*\*terminal:\*\* restore paste/);
+  assert.doesNotMatch(unchanged.release.notes, /Previous release summary/);
+
+  f.contents.set(`${dev}:CHANGELOG.md`, withSummary("- New release summary."));
+  const edited = await planDevelopment(f);
+  assert.match(edited.release.notes, /Highlights\n\n- New release summary\./);
+  assert.doesNotMatch(edited.release.notes, /Previous release summary/);
+
+  f.contents.set(`${dev}:CHANGELOG.md`, history);
+  assert.match(
+    (await planDevelopment(f)).release.notes,
+    /Highlights\n\n- \*\*terminal:\*\* restore paste/,
+  );
 });
 
 test("migration waits for main metadata, and an identical source creates no release", async () => {
@@ -1016,81 +1040,20 @@ test("recovering an older stable release cannot move latest backwards", async ()
   assert.equal(advanced.calls.at(-1).publish.make_latest, "false");
 });
 
-test("Nightly uses a source-derived alpha tag, numeric distance and its own update channel", async () => {
-  const f = fixture();
-  const plan = await planDevelopment(f);
-  const tag = await prepareNightly({ ...f, plan });
-  assert.equal(tag, `v0.26.2-alpha.1.d.1.g${dev.slice(0, 12)}`);
-  const release = f.calls.find((call) => call.createRelease).createRelease;
-  assert.equal(release.name, `${tag} (Nightly)`);
-  assert.equal(release.prerelease, true);
-  assert.equal(release.make_latest, "false");
-  for (const path of VERSION_PATHS)
-    assert.ok(f.contents.get(`${generated}:${path}`).includes(tag.slice(1)));
-  assert.equal(f.references["tags/v0.26.2-beta.1"], undefined);
-  assert.equal(await prepareNightly({ ...f, plan: {} }), "");
-});
-
-test("an unchanged Nightly source resumes the same draft or skips a published build", async () => {
-  const tag = `v0.26.2-alpha.1.d.1.g${dev.slice(0, 12)}`;
-  for (const draft of [true, false]) {
-    const f = fixture({
-      refs: { [`tags/${tag}`]: generated },
-      releases: [{ tag_name: tag, target_commitish: generated, prerelease: true, draft }],
-    });
-    assert.equal(await prepareNightly({ ...f, plan: await planDevelopment(f) }), draft ? tag : "");
-    assert.equal(
-      f.calls.some((call) => call.commit || call.createRelease),
-      false,
-    );
+test("retired Nightly tags cannot create, resume or publish releases", async () => {
+  for (const tag of [
+    `v0.26.2-alpha.1.d.10.g${dev.slice(0, 12)}`,
+    `v0.26.2-beta.3.d.1.g${dev.slice(0, 12)}`,
+  ]) {
+    for (const operation of [ensureRelease, prepareTaggedRelease, publishRelease]) {
+      const f = publicationFixture(tag);
+      await assert.rejects(
+        operation({ ...f, tag, sha: generated, body: "Notes." }),
+        /Nightly publication is disabled/,
+      );
+      assert.equal(f.calls.length, 0);
+    }
   }
-});
-
-test("Nightly after Beta extends that milestone and skips a Beta's exact source", async () => {
-  const beta = "v0.26.2-beta.3";
-  const f = fixture({
-    refs: { [`tags/${beta}`]: oldHead },
-    messages: { [oldHead]: `Release-source: ${baseline}` },
-  });
-  const tag = await prepareNightly({ ...f, plan: await planDevelopment(f) });
-  assert.equal(tag, `v0.26.2-beta.3.d.1.g${dev.slice(0, 12)}`);
-  const unchanged = fixture({ refs: { [`tags/${beta}`]: oldHead } });
-  assert.equal(await prepareNightly({ ...unchanged, plan: await planDevelopment(unchanged) }), "");
-  assert.equal(
-    unchanged.calls.some((call) => call.commit || call.createRelease),
-    false,
-  );
-});
-
-test("Nightly ignores out-of-policy Beta anchors and retains valid milestone history", async () => {
-  const beta = "v0.26.2-beta.9";
-  const f = fixture({
-    refs: {
-      [`tags/${beta}`]: oldHead,
-      "tags/v0.26.2-beta.11": baseline,
-      "tags/v0.26.2-beta12": main,
-    },
-    messages: { [oldHead]: `Release-source: ${baseline}` },
-  });
-  const tag = await prepareNightly({ ...f, plan: await planDevelopment(f) });
-  assert.equal(tag, `v0.26.2-beta.9.d.1.g${dev.slice(0, 12)}`);
-  assert.equal(f.references[`tags/${beta}`], oldHead);
-  assert.equal(f.references["tags/v0.26.2-beta.10"], undefined);
-});
-
-test("Nightly publication is a versioned public prerelease and leaves Beta history intact", async () => {
-  const tag = `v0.26.2-alpha.1.d.10.g${dev.slice(0, 12)}`;
-  const f = publicationFixture(tag, {
-    releases: [{ id: 2, tag_name: "v0.26.2-beta.1", prerelease: true, draft: false }],
-  });
-  await publishRelease({ ...f, tag });
-  assert.equal(f.calls[0].publish.name, `${tag} (Nightly)`);
-  assert.equal(f.calls[0].publish.prerelease, true);
-  assert.equal(f.calls[0].publish.make_latest, "false");
-  assert.equal(
-    f.calls.some((call) => call.deleteRelease),
-    false,
-  );
 });
 
 test("direct tag publication validates all manifests, notes and branch ancestry", async () => {

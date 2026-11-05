@@ -3,7 +3,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { StorageSettings } from "@/features/settings/StorageSettings";
 import { useStorage } from "@/store/storage";
-import type { StorageStatus } from "@/lib/api/storage";
+import { sameStoragePath, type StorageStatus } from "@/lib/api/storage";
 
 const api = vi.hoisted(() => ({
   storageStatus: vi.fn(),
@@ -131,4 +131,92 @@ it("ignores a stale inventory response arriving after scheduling a plan", async 
   resolve(status());
   await loading;
   expect(useStorage.getState().status?.pending?.changes).toEqual(changes);
+});
+
+it("resets a moved category through the existing review and migration flow", async () => {
+  const moved = status();
+  moved.locations[0]!.path = "D:\\Tunnelde\\database";
+  api.storageStatus.mockResolvedValue(moved);
+  render(<StorageSettings />);
+  const reset = await screen.findByRole("button", {
+    name: "Reset Settings & database to its default location",
+  });
+  await waitFor(() => expect(reset.hasAttribute("disabled")).toBe(false));
+  fireEvent.click(reset);
+  expect(api.storagePick).not.toHaveBeenCalled();
+  expect(api.storageSchedule).not.toHaveBeenCalled();
+  expect(useStorage.getState().draft).toEqual([
+    { category: "database", target: "C:\\Data", migrate: true },
+  ]);
+  expect(reset.hasAttribute("disabled")).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Review changes (1)" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("→ C:\\Data")).toBeTruthy();
+  expect(
+    within(dialog).getByText(/Existing data at the default location will be archived/),
+  ).toBeTruthy();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Apply on next start" }));
+  await waitFor(() =>
+    expect(api.storageSchedule).toHaveBeenCalledWith([
+      { category: "database", target: "C:\\Data", migrate: true },
+    ]),
+  );
+});
+
+it("batch reset removes redundant drafts, preserves unselected changes and skips environment overrides", async () => {
+  const moved = status();
+  moved.locations[1]!.path = "D:\\Chats";
+  moved.locations.push({ ...moved.locations[1]!, category: "plugins", overridden: true });
+  api.storageStatus.mockResolvedValue(moved);
+  useStorage.setState({
+    draft: [
+      { category: "database", target: "D:\\Database", migrate: false },
+      { category: "logs", target: "D:\\Logs", migrate: false },
+    ],
+  });
+  render(<StorageSettings />);
+  await screen.findByText("Installed plugins");
+  await waitFor(() => expect(useStorage.getState().loading).toBe(false));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Select all" }));
+  expect(screen.getByRole("checkbox", { name: "Installed plugins" }).hasAttribute("disabled")).toBe(
+    true,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Reset selected locations (2)" }));
+  expect(useStorage.getState().draft).toEqual([
+    { category: "logs", target: "D:\\Logs", migrate: false },
+    { category: "pluginData", target: "C:\\Data\\plugin-data", migrate: true },
+  ]);
+  expect(
+    screen.getByRole("button", { name: "Reset selected locations (2)" }).hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+it("locks reset actions while a migration is pending and recognizes default Windows path spellings", async () => {
+  const pending = status();
+  pending.locations[0]!.path = "D:\\Database";
+  pending.pending = {
+    id: "plan",
+    changes: [{ category: "database", target: "E:\\Database", migrate: true }],
+  };
+  api.storageStatus.mockResolvedValue(pending);
+  render(<StorageSettings />);
+  const reset = await screen.findByRole("button", {
+    name: "Reset Settings & database to its default location",
+  });
+  expect(reset.hasAttribute("disabled")).toBe(true);
+  expect(sameStoragePath("\\\\?\\C:\\Data\\", "c:/data")).toBe(true);
+  expect(sameStoragePath("\\\\?\\UNC\\server\\Share\\", "\\\\SERVER\\share")).toBe(true);
+  expect(sameStoragePath("/home/Data", "/home/data")).toBe(false);
+  expect(sameStoragePath("/", "")).toBe(false);
+});
+
+it("shows archived default data alongside the retained migration source", async () => {
+  const restored = status();
+  restored.previous = { database: "D:\\CurrentDatabase" };
+  restored.archives = { database: "C:\\Data\\storage-recovery\\database\\id\\original" };
+  api.storageStatus.mockResolvedValue(restored);
+  render(<StorageSettings />);
+  await screen.findByText("Archived default data — Settings & database");
+  expect(screen.getByText("D:\\CurrentDatabase")).toBeTruthy();
+  expect(screen.getByText(restored.archives.database!)).toBeTruthy();
 });

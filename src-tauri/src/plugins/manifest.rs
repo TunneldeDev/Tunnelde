@@ -13,6 +13,78 @@ pub const MANIFEST_FILE: &str = "tunnelde-plugin.json";
 pub struct PluginCommand {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub keybindings: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mac_keybindings: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<EditorCommand>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file_menu: Option<FileMenuCommand>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditorCommand {
+    pub extensions: Vec<String>,
+    #[serde(default)]
+    pub format: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct FileMenuCommand {
+    pub sources: Vec<String>,
+    pub kinds: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub extensions: Vec<String>,
+}
+
+fn valid_keybindings(bindings: &[String]) -> bool {
+    bindings.len() <= 4
+        && bindings.iter().all(|binding| {
+            let parts: Vec<_> = binding.split('+').collect();
+            let Some((key, modifiers)) = parts.split_last() else {
+                return false;
+            };
+            let mut unique = std::collections::HashSet::new();
+            let modifier_ok = modifiers.iter().all(|part| {
+                matches!(*part, "Mod" | "Ctrl" | "Meta" | "Shift" | "Alt") && unique.insert(*part)
+            });
+            let exclusive = !((unique.contains("Mod")
+                && (unique.contains("Ctrl") || unique.contains("Meta")))
+                || (unique.contains("Ctrl") && unique.contains("Meta")));
+            let key_ok = (key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric())
+                || key
+                    .strip_prefix('F')
+                    .and_then(|n| n.parse::<u8>().ok())
+                    .is_some_and(|n| (1..=24).contains(&n))
+                || matches!(
+                    *key,
+                    "Comma"
+                        | "Period"
+                        | "Backslash"
+                        | "Equal"
+                        | "Plus"
+                        | "Minus"
+                        | "Space"
+                        | "Escape"
+                        | "Tab"
+                        | "Enter"
+                        | "Backspace"
+                        | "Delete"
+                        | "Insert"
+                        | "Home"
+                        | "End"
+                        | "PageUp"
+                        | "PageDown"
+                        | "ArrowUp"
+                        | "ArrowDown"
+                        | "ArrowLeft"
+                        | "ArrowRight"
+                );
+            modifier_ok && exclusive && key_ok
+        })
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +165,8 @@ pub struct PluginManifest {
     pub file_icon_themes: Vec<super::file_icons::FileIconTheme>,
     #[serde(default)]
     pub file_previews: Vec<crate::preview::providers::Provider>,
+    #[serde(default)]
+    pub mounted_file_reveal: bool,
 }
 
 pub(super) fn valid_tags(tags: &[String]) -> bool {
@@ -126,6 +200,13 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if self.mounted_file_reveal
+            && (!self.permissions.iter().any(|p| p == "mounts.read")
+                || !self.permissions.iter().any(|p| p == "mounts.write")
+                || self.runtime.as_deref() == Some("theme"))
+        {
+            return Err(AppError::validation("plugin.command.invalid"));
+        }
         if !crate::preview::providers::valid(&self.file_previews) {
             return Err(AppError::validation("preview.invalidProvider"));
         }
@@ -175,6 +256,62 @@ impl PluginManifest {
             if !valid_command_id(&command.id)
                 || command.title.trim().is_empty()
                 || !command_ids.insert(&command.id)
+                || !valid_keybindings(&command.keybindings)
+                || command
+                    .mac_keybindings
+                    .as_ref()
+                    .is_some_and(|keys| !valid_keybindings(keys))
+                || command.file_menu.as_ref().is_some_and(|menu| {
+                    menu.sources.is_empty()
+                        || menu.sources.len() > 2
+                        || menu
+                            .sources
+                            .iter()
+                            .any(|source| !matches!(source.as_str(), "local" | "remote"))
+                        || menu
+                            .sources
+                            .iter()
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            != menu.sources.len()
+                        || menu.kinds.is_empty()
+                        || menu.kinds.len() > 2
+                        || menu
+                            .kinds
+                            .iter()
+                            .any(|kind| !matches!(kind.as_str(), "file" | "directory"))
+                        || menu
+                            .kinds
+                            .iter()
+                            .collect::<std::collections::HashSet<_>>()
+                            .len()
+                            != menu.kinds.len()
+                        || menu.extensions.len() > 64
+                        || menu.extensions.iter().any(|ext| {
+                            ext.is_empty()
+                                || ext.len() > 64
+                                || !ext.bytes().all(|c| {
+                                    c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-' | b'_')
+                                })
+                        })
+                        || (menu.sources.iter().any(|source| source == "local")
+                            && !self.permissions.iter().any(|p| p == "fs.read"))
+                        || (menu.sources.iter().any(|source| source == "remote")
+                            && !self.permissions.iter().any(|p| p == "sftp.read"))
+                })
+                || command.editor.as_ref().is_some_and(|editor| {
+                    editor.extensions.is_empty()
+                        || editor.extensions.len() > 64
+                        || editor.extensions.iter().any(|ext| {
+                            ext.is_empty()
+                                || ext.len() > 64
+                                || !ext.bytes().all(|c| {
+                                    c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-' | b'_')
+                                })
+                        })
+                        || !self.permissions.iter().any(|p| p == "editor.read")
+                        || !self.permissions.iter().any(|p| p == "editor.write")
+                })
             {
                 return Err(AppError::validation("plugin.command.invalid"));
             }
@@ -316,6 +453,120 @@ pub fn valid_command_id(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_commands_require_permissions_and_validate_shortcuts() {
+        let dir = temp_dir("editor-commands");
+        std::fs::write(dir.join("index.js"), "").unwrap();
+        let base = serde_json::json!({"id":"formatter","name":"Formatter","version":"1.0.0",
+            "apiVersion":1,"main":"index.js","permissions":["editor.read","editor.write"],
+            "commands":[{"id":"format","title":"Format document","keybindings":["Mod+Alt+J"],
+            "macKeybindings":["Meta+Shift+J"],"editor":{"extensions":["json","config.json"],"format":true}}]});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&base).unwrap()).unwrap();
+        let loaded = load(&dir).unwrap();
+        assert!(loaded.commands[0].editor.as_ref().unwrap().format);
+        assert_eq!(loaded.commands[0].keybindings, ["Mod+Alt+J"]);
+        let mut cases = Vec::new();
+        for permissions in [
+            serde_json::json!([]),
+            serde_json::json!(["editor.read"]),
+            serde_json::json!(["editor.write"]),
+        ] {
+            let mut value = base.clone();
+            value["permissions"] = permissions;
+            cases.push(value);
+        }
+        for keys in [
+            serde_json::json!(["Mod+Ctrl+F"]),
+            serde_json::json!(["Ctrl+Meta+F"]),
+            serde_json::json!(["Ctrl+Ctrl+F"]),
+            serde_json::json!(["Mod+F25"]),
+            serde_json::json!([""]),
+            serde_json::json!(["Mod+A", "Mod+B", "Mod+C", "Mod+D", "Mod+E"]),
+        ] {
+            let mut value = base.clone();
+            value["commands"][0]["keybindings"] = keys;
+            cases.push(value);
+        }
+        for extensions in [
+            serde_json::json!([]),
+            serde_json::json!(["../json"]),
+            serde_json::json!([""]),
+            serde_json::json!(["json/"]),
+            serde_json::json!(["x".repeat(65)]),
+        ] {
+            let mut value = base.clone();
+            value["commands"][0]["editor"]["extensions"] = extensions;
+            cases.push(value);
+        }
+        for value in cases {
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&value).unwrap()).unwrap();
+            assert!(load(&dir).is_err(), "{value}");
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn file_menu_requires_scoped_permissions_and_valid_filters() {
+        let dir = temp_dir("file-menu");
+        std::fs::write(dir.join("index.js"), "").unwrap();
+        let base = serde_json::json!({"id":"file-tool","name":"File tool","version":"1.0.0", "apiVersion":1,
+            "main":"index.js","permissions":["fs.read","sftp.read"],
+            "commands":[{"id":"open","title":"Open","fileMenu":{"sources":["local","remote"],"kinds":["file","directory"],"extensions":["json"]}}]});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&base).unwrap()).unwrap();
+        assert!(load(&dir).unwrap().commands[0].file_menu.is_some());
+        for (field, value) in [
+            ("sources", serde_json::json!([])),
+            ("sources", serde_json::json!(["remote", "remote"])),
+            ("sources", serde_json::json!(["other"])),
+            ("kinds", serde_json::json!(["symlink"])),
+            ("extensions", serde_json::json!(["../json"])),
+        ] {
+            let mut invalid = base.clone();
+            invalid["commands"][0]["fileMenu"][field] = value;
+            std::fs::write(
+                dir.join(MANIFEST_FILE),
+                serde_json::to_vec(&invalid).unwrap(),
+            )
+            .unwrap();
+            assert!(load(&dir).is_err(), "{invalid}");
+        }
+        let mut invalid = base.clone();
+        invalid["permissions"] = serde_json::json!(["fs.read"]);
+        std::fs::write(
+            dir.join(MANIFEST_FILE),
+            serde_json::to_vec(&invalid).unwrap(),
+        )
+        .unwrap();
+        assert!(load(&dir).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn mounted_file_reveal_requires_explicit_mount_permissions() {
+        let dir = temp_dir("mounted-reveal");
+        std::fs::write(dir.join("views.json"), "{}").unwrap();
+        let base = serde_json::json!({"id":"mount-tool","name":"Mount tool","version":"1.0.0","apiVersion":1,
+            "runtime":"declarative","main":"views.json","views":[{"id":"main","title":"Mounts"}],
+            "permissions":["mounts.read","mounts.write"],"mountedFileReveal":true});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&base).unwrap()).unwrap();
+        assert!(load(&dir).unwrap().mounted_file_reveal);
+        for permissions in [
+            serde_json::json!([]),
+            serde_json::json!(["mounts.read"]),
+            serde_json::json!(["mounts.write"]),
+        ] {
+            let mut invalid = base.clone();
+            invalid["permissions"] = permissions;
+            std::fs::write(
+                dir.join(MANIFEST_FILE),
+                serde_json::to_vec(&invalid).unwrap(),
+            )
+            .unwrap();
+            assert!(load(&dir).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn tags_are_optional_bounded_distinct_and_support_unicode() {

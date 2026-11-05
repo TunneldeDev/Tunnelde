@@ -5,14 +5,26 @@ import { NetworkSettingsSection } from "@/features/settings/NetworkSettings";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
+import type { NetworkConnectionQuality } from "@/lib/api/network";
 import type { PluginInfo, Settings } from "@/lib/api/types";
 
-const api = vi.hoisted(() => ({ saveProxyPassword: vi.fn(), testProxy: vi.fn() }));
+const api = vi.hoisted(() => ({ saveProxyPassword: vi.fn(), testProxyQuality: vi.fn() }));
 vi.mock("@/lib/api/ipc", () => ({ api, isTauri: () => true }));
 const update = vi.fn(async (patch: Partial<Settings>) => {
   useSettings.setState({ settings: { ...useSettings.getState().settings, ...patch } });
   return true;
 });
+const quality: NetworkConnectionQuality = {
+  attempts: 3,
+  successful: 3,
+  samplesMs: [24, 36, 30],
+  medianMs: 30,
+  minMs: 24,
+  maxMs: 36,
+  spreadMs: 12,
+  quality: "fast",
+  lastError: null,
+};
 const proxy = {
   id: "office",
   name: "Office",
@@ -25,7 +37,7 @@ const proxy = {
 beforeEach(async () => {
   vi.clearAllMocks();
   api.saveProxyPassword.mockResolvedValue(undefined);
-  api.testProxy.mockResolvedValue(undefined);
+  api.testProxyQuality.mockResolvedValue(quality);
   await i18n.changeLanguage("en-US");
   useSettings.setState({
     settings: {
@@ -73,8 +85,13 @@ it("saves an individual feature route and tests the explicitly selected proxy", 
   fireEvent.click(screen.getByRole("button", { name: "Proxy" }));
   fireEvent.click(screen.getByRole("option", { name: "Office" }));
   await act(async () => fireEvent.click(screen.getByRole("button", { name: "Test connection" })));
-  expect(api.testProxy).toHaveBeenCalledExactlyOnceWith("office", "github.com", 443);
+  expect(api.testProxyQuality).toHaveBeenCalledExactlyOnceWith("office", "github.com", 443);
   expect(screen.getByRole("status").textContent).toContain("Connection established");
+  const result = within(screen.getByRole("region", { name: "Connection quality" }));
+  for (const value of ["30 ms", "24 ms", "36 ms", "12 ms", "3 / 3"])
+    expect(result.getByText(value, { selector: "dd" })).toBeTruthy();
+  expect(result.getByText("Connection latency (median)")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Test again" })).toBeTruthy();
 });
 
 it("forgets a saved password only after explicit selection and save", async () => {
@@ -114,9 +131,9 @@ it("keeps the proxy editor in its section and protects the current draft while s
 });
 
 it("validates the destination, locks the running test and clears stale results on edits", async () => {
-  let finish!: () => void;
-  api.testProxy.mockReturnValueOnce(
-    new Promise<void>((resolve) => {
+  let finish!: (value: NetworkConnectionQuality) => void;
+  api.testProxyQuality.mockReturnValueOnce(
+    new Promise<NetworkConnectionQuality>((resolve) => {
       finish = resolve;
     }),
   );
@@ -128,22 +145,96 @@ it("validates the destination, locks the running test and clears stale results o
   fireEvent.change(port, { target: { value: "65536" } });
   expect(test.getByRole("button", { name: "Test connection" }).matches(":disabled")).toBe(true);
   fireEvent.submit(form);
-  expect(api.testProxy).not.toHaveBeenCalled();
+  expect(api.testProxyQuality).not.toHaveBeenCalled();
   fireEvent.change(port, { target: { value: "443" } });
   fireEvent.change(address, { target: { value: "   " } });
   fireEvent.submit(form);
-  expect(api.testProxy).not.toHaveBeenCalled();
+  expect(api.testProxyQuality).not.toHaveBeenCalled();
   fireEvent.change(address, { target: { value: " example.com " } });
   fireEvent.submit(form);
-  await waitFor(() => expect(api.testProxy).toHaveBeenCalledWith("system", "example.com", 443));
+  await waitFor(() =>
+    expect(api.testProxyQuality).toHaveBeenCalledWith("system", "example.com", 443),
+  );
   expect(address.matches(":disabled")).toBe(true);
   expect(test.getByRole("button", { name: "Proxy" }).matches(":disabled")).toBe(true);
   fireEvent.submit(form);
-  expect(api.testProxy).toHaveBeenCalledOnce();
-  await act(async () => finish());
+  expect(api.testProxyQuality).toHaveBeenCalledOnce();
+  await act(async () => finish(quality));
   expect(test.getByRole("status").textContent).toContain("Connection established");
   fireEvent.change(address, { target: { value: "different.example.com" } });
   expect(test.getByRole("status").textContent).toBe("");
+  expect(test.queryByRole("region", { name: "Connection quality" })).toBeNull();
+});
+
+it("shows partial failures, unavailable timings and sub-millisecond connections accurately", async () => {
+  api.testProxyQuality.mockResolvedValueOnce({
+    ...quality,
+    successful: 2,
+    samplesMs: [0, null, 36],
+    medianMs: 18,
+    minMs: 0,
+    spreadMs: 36,
+    quality: "unstable",
+    lastError: { code: "validation", message: "network.timeout" },
+  });
+  render(<NetworkSettingsSection />);
+  fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+  await screen.findByText("Some connection attempts failed");
+  const result = within(screen.getByRole("region", { name: "Connection quality" }));
+  expect(result.getByText("2 / 3")).toBeTruthy();
+  expect(result.getAllByText("<1 ms")).toHaveLength(2);
+  expect(result.getByText("Failed")).toBeTruthy();
+  expect(screen.getByText(/not ping RTT or bandwidth/)).toBeTruthy();
+
+  api.testProxyQuality.mockResolvedValueOnce({
+    ...quality,
+    successful: 0,
+    samplesMs: [null, null, null],
+    medianMs: null,
+    minMs: null,
+    maxMs: null,
+    spreadMs: null,
+    quality: "unreachable",
+    lastError: null,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Test again" }));
+  await screen.findByText("Connection failed");
+  const failed = within(screen.getByRole("region", { name: "Connection quality" }));
+  expect(failed.getAllByText("—")).toHaveLength(4);
+  expect(failed.getByText("0 / 3")).toBeTruthy();
+  expect(screen.queryByText("18 ms")).toBeNull();
+});
+
+it("clears previous quality on error and does not apply a result to changed routing", async () => {
+  render(<NetworkSettingsSection />);
+  fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+  await screen.findByRole("region", { name: "Connection quality" });
+  api.testProxyQuality.mockRejectedValueOnce({
+    code: "validation",
+    message: "network.proxyRejected",
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Test again" }));
+  await waitFor(() => expect(screen.getByRole("status").textContent).not.toBe(""));
+  expect(screen.queryByRole("region", { name: "Connection quality" })).toBeNull();
+
+  let finish!: (value: NetworkConnectionQuality) => void;
+  api.testProxyQuality.mockReturnValueOnce(
+    new Promise<NetworkConnectionQuality>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+  await act(async () => {
+    useSettings.setState({
+      settings: {
+        ...useSettings.getState().settings,
+        network: { ...useSettings.getState().settings.network, defaultProxy: "direct" },
+      },
+    });
+    finish(quality);
+  });
+  expect(screen.queryByRole("region", { name: "Connection quality" })).toBeNull();
+  expect(screen.getByRole("status").textContent).toBe("");
 });
 
 it("saves plugin routing independently and retains choices across collapse", async () => {

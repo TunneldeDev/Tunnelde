@@ -1,4 +1,4 @@
-import { PanelRightClose, PanelRightOpen } from "lucide-react";
+import { RefreshCw, PanelRightClose, PanelRightOpen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
@@ -8,6 +8,8 @@ import { PluginSecurityBadge } from "@/features/plugins/PluginSecuritySection";
 import { useHosts } from "@/store/hosts";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
+import { requestApplicationAction } from "@/lib/session/restart";
+import { useStorage } from "@/store/storage";
 import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 
 interface StatusBarProps {
@@ -17,6 +19,7 @@ interface StatusBarProps {
 
 export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
   const { t } = useTranslation();
+  const pendingRestart = useStorage((state) => state.restartPending);
   const info = useSettings((state) => state.info);
   const hostCount = useHosts((state) => state.hosts.length);
   const openPage = useWorkspace((state) => state.openPage);
@@ -30,6 +33,15 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
         <span className="statusbar__muted">{t("status.hosts", { count: hostCount })}</span>
       </div>
       <div className="statusbar__group">
+        {pendingRestart ? (
+          <button
+            type="button"
+            className="statusbar__link restart-indicator"
+            onClick={() => requestApplicationAction("restart")}
+          >
+            <RefreshCw size={13} /> {t("restart.now")}
+          </button>
+        ) : null}
         <BackgroundTaskStatusButton />
         <UpdatePill />
         <PluginSecurityBadge />

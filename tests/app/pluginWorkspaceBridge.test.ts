@@ -8,7 +8,7 @@ import {
   type PluginWorkspaceRequest,
 } from "@/app/pluginWorkspaceBridge";
 import { useDialogs } from "@/store/dialogs";
-import { useEditors } from "@/store/editors";
+import { useEditors, editorDocument, undoEditorEdit } from "@/store/editors";
 import { useHosts } from "@/store/hosts";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
@@ -84,6 +84,95 @@ beforeEach(() => {
   useEditors.setState({ entries: {} });
   useDialogs.getState().close();
   usePlugins.setState({ items: [{ id: "example.tool", name: "Installed tool" } as PluginInfo] });
+});
+
+describe("plugin editor API", () => {
+  const prepare = () => {
+    useEditors.getState().discard("edit-api");
+    useEditors.setState({
+      entries: {
+        "edit-api": {
+          tabId: "edit-api",
+          sessionId: "private-session",
+          path: "/data.json",
+          name: "data.json",
+          content: '{"v":1}',
+          baseline: '{"v":1}',
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    useWorkspace.setState({ activeId: "edit-api" });
+  };
+
+  it("returns a narrow snapshot and rejects stale writes; replacement can be undone", async () => {
+    prepare();
+    const document = (await runPluginWorkspaceRequest(request("editor.active"))) as NonNullable<
+      ReturnType<typeof editorDocument>
+    >;
+    expect(document).not.toHaveProperty("sessionId");
+    expect(document).not.toHaveProperty("baseline");
+    expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_authorize", {
+      requestId: "request-one",
+    });
+    const params = {
+      tabId: document.tabId,
+      documentId: document.documentId,
+      version: document.version,
+      text: "",
+    };
+    await expect(runPluginWorkspaceRequest(request("editor.replace", params))).resolves.toEqual({
+      tabId: document.tabId,
+      documentId: document.documentId,
+      version: 1,
+      dirty: true,
+    });
+    await expect(runPluginWorkspaceRequest(request("editor.replace", params))).rejects.toThrow(
+      "editor.documentChanged",
+    );
+    expect(undoEditorEdit("edit-api")).toBe(true);
+    expect(useEditors.getState().entries["edit-api"]?.content).toBe(document.content);
+  });
+
+  it("rejects authorization failures before exposing content or changing the buffer", async () => {
+    prepare();
+    const document = editorDocument("edit-api")!;
+    mocks.invoke.mockRejectedValue(new Error("plugin.permissionDenied"));
+    await expect(runPluginWorkspaceRequest(request("editor.active"))).rejects.toThrow(
+      "plugin.permissionDenied",
+    );
+    await expect(
+      runPluginWorkspaceRequest(request("editor.replace", { ...document, text: "changed" })),
+    ).rejects.toThrow("plugin.permissionDenied");
+    expect(useEditors.getState().entries["edit-api"]?.content).toBe(document.content);
+  });
+
+  it("validates UTF-8 bounds and versions and returns null for unavailable editors", async () => {
+    prepare();
+    const document = editorDocument("edit-api")!;
+    for (const version of [-1, 0.5, "0", Number.MAX_SAFE_INTEGER + 1]) {
+      await expect(
+        runPluginWorkspaceRequest(
+          request("editor.replace", { ...document, version, text: "valid" }),
+        ),
+      ).rejects.toThrow("invalid:version");
+    }
+    await expect(
+      runPluginWorkspaceRequest(
+        request("editor.replace", { ...document, text: "中".repeat(45000) }),
+      ),
+    ).rejects.toThrow("invalid:text");
+    useEditors.getState().change("edit-api", "中".repeat(45000));
+    await expect(runPluginWorkspaceRequest(request("editor.active"))).rejects.toThrow(
+      "editor.documentTooLarge",
+    );
+    useEditors.getState().markDisconnected("private-session");
+    await expect(runPluginWorkspaceRequest(request("editor.active"))).resolves.toBeNull();
+    useWorkspace.setState({ activeId: "missing" });
+    await expect(runPluginWorkspaceRequest(request("editor.active"))).resolves.toBeNull();
+  });
 });
 afterEach(() => {
   cleanup?.();

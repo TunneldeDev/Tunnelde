@@ -70,13 +70,7 @@ test("new publications allow only beta.1 through beta.9 and reset with each targ
   );
   assert.deepEqual([...ordered].reverse().sort(), ordered);
   assert.deepEqual([...ordered].reverse().sort(compareReleaseTags), ordered);
-  for (const tag of [
-    ...ordered,
-    "v0.28.0",
-    "v0.29.0-beta.1",
-    "v0.28.0-beta.9.d.1000.gabcdef012345",
-    "v0.28.0-alpha.1.d.1.gabcdef012345",
-  ])
+  for (const tag of [...ordered, "v0.28.0", "v0.29.0-beta.1"])
     assert.doesNotThrow(() => assertPublishableTag(tag));
   for (const tag of [
     "v0.28.0-beta.0",
@@ -85,6 +79,8 @@ test("new publications allow only beta.1 through beta.9 and reset with each targ
     "v0.28.0-beta.01",
     "v0.28.0-beta01",
     "v0.28.0-beta.2.1",
+    "v0.28.0-beta.9.d.1000.gabcdef012345",
+    "v0.28.0-alpha.1.d.1.gabcdef012345",
     "v0.28.0-beta.10.d.1.gabcdef012345",
     "v0.28.0-beta12.d.1.gabcdef012345",
     "v00.28.0",
