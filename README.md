@@ -116,13 +116,10 @@ SSH stdin and are not written into the deployment files. Pi asks before uploadin
 small permission extension. Neither operation installs Node, installs an agent, or
 changes system services.
 
-The default marketplace currently supplies assistant plugins **1.4.0**. The cleanup
-changes in **1.4.1**, including `~/.TunneldeAI/Chats/` and `~/.TunneldeAI/Runtimes/`,
-are pending in the Hub repository and are not included in marketplace installations yet.
-The same applies to **SSHFS** and **SSHFS Lite**: desktop mount APIs are implemented,
-but these packages are awaiting catalogue publication. See the
+The marketplace offers compatible assistant and mount providers. Check each
+plugin's details for its current version, runtime and permissions. See the
 [assistant guide](docs/ai-assistants.md#remote-runtime-consent-and-files) and
-[SSHFS guide](docs/network-storage.md#sshfs-plugins) before testing source packages.
+[SSHFS guide](docs/network-storage.md#sshfs-plugins) for setup and limitations.
 
 Four modes are available: **Ask for approval**, **Approve for me**, **Full Access** and
 **ReadOnly**. Independent review needs a separate API reviewer; failure or denial falls

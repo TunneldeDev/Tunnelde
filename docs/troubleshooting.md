@@ -71,16 +71,13 @@ downloading `tunnelde-agent`. See [the assistant guide](ai-assistants.md).
 
 ## A file preview asks for a plugin
 
-Install **Common File Previews** in the default marketplace on a supporting desktop
-build (0.28.0-beta.4+). It adds PDF, image, audio and video formats without Node.
-Select a file and press Space or use Preview. Text and Markdown have built-in previews.
-Unsupported media codecs still require an external player; installing a preview pack
-does not install system codecs. File-type icons are a separate **Common File Icons** pack.
+Install a compatible preview provider from the marketplace for additional file
+formats. Select a file and press Space or use Preview. Text and Markdown have
+built-in previews. Unsupported media codecs may still require an external player;
+a preview provider does not install system codecs. Icon themes are separate.
 
-SSHFS packages and assistant deployment cleanup 1.4.1 are still pending in the Hub
-repository; their presence in source does not mean they are installed from the default
-marketplace. See [SSHFS](network-storage.md#sshfs-plugins) and
-[assistant package availability](ai-assistants.md#remote-runtime-consent-and-files).
+See [SSHFS](network-storage.md#sshfs-plugins) and the
+[assistant guide](ai-assistants.md#remote-runtime-consent-and-files) for setup.
 
 ## A transfer stopped after switching networks
 
