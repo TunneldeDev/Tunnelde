@@ -134,6 +134,24 @@ describe("editor formatting shortcuts", () => {
     ]);
   });
 
+  it("runs both matching editor commands contributed by one plugin in sequence", async () => {
+    const textarea = prepare();
+    act(() =>
+      usePlugins.setState((state) => ({
+        items: state.items.map((item) => ({
+          ...item,
+          commands: [...item.commands, { ...item.commands[0]!, id: "second" }],
+        })),
+      })),
+    );
+    fireEvent.keyDown(textarea, { key: "F", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.pluginRun).mock.calls.map((call) => call[1])).toEqual([
+      "pretty",
+      "second",
+    ]);
+  });
+
   it("does not capture an editor plugin shortcut for an unsupported extension", () => {
     const textarea = prepare();
     act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
