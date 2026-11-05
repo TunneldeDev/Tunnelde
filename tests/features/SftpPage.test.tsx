@@ -40,7 +40,10 @@ import { useFilePreview } from "@/store/filePreview";
 import { DRAG_MIME } from "@/lib/files/dnd";
 import { api } from "@/lib/api/ipc";
 import { useContextMenu } from "@/store/contextMenu";
+import { usePlugins } from "@/store/plugins";
+import { plugin } from "../fixtures/plugins";
 import * as clipboard from "@/lib/session/clipboard";
+import * as mountedMenu from "@/lib/plugins/mountFileMenu";
 
 const session: SshSession = {
   id: "session-1",
@@ -108,6 +111,7 @@ beforeEach(() => {
     return path ? { ...listing, path } : listing;
   });
 
+  usePlugins.setState({ items: [] });
   useSsh.setState({ sessions: [session] });
   useHosts.setState({ hosts: [] });
   useDialogs.setState({ confirm: vi.fn(), openConnect: vi.fn() });
@@ -143,6 +147,81 @@ describe("SftpPage", () => {
     expect(item).toBeTruthy();
     item!.onSelect();
     expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+  });
+
+  it("offers a contributed action only on matching remote entries", async () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          id: "file-tool",
+          name: "File Tool",
+          permissions: ["sftp.read"],
+          commands: [
+            {
+              id: "inspect",
+              title: "Inspect",
+              fileMenu: { sources: ["remote"], kinds: ["file"], extensions: ["md"] },
+            },
+          ],
+        },
+      ],
+    });
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.contextMenu(await screen.findByText("notes.txt"));
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label === "File Tool: Inspect"),
+    ).toBe(false);
+    fireEvent.contextMenu(screen.getByText("readme.md"));
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label === "File Tool: Inspect"),
+    ).toBe(true);
+  });
+
+  it("adds a mounted-file action only to the menu that requested it", async () => {
+    let finish!: () => void;
+    const discover = vi.spyOn(mountedMenu, "discoverMountedFileActions").mockImplementationOnce(
+      (_session, _path, onAction) =>
+        new Promise((resolve) => {
+          finish = () => {
+            onAction?.(action);
+            resolve([action]);
+          };
+        }),
+    );
+    const action: mountedMenu.MountedFileAction = {
+      pluginId: "sshfs-lite",
+      pluginName: "SSHFS Lite",
+      fingerprint: "test",
+      mount: { id: "m1", sessionId: "session-1", remotePath: "/srv", mountPoint: "Z:\\" },
+    };
+    render(<SftpPage sessionId="session-1" />);
+    const remoteFile = await screen.findByText("readme.md");
+    fireEvent.contextMenu(remoteFile);
+    expect(discover).toHaveBeenCalledWith("session-1", "/srv/app/readme.md", expect.any(Function));
+    fireEvent.contextMenu(screen.getByText("notes.txt"));
+    await act(async () => finish());
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label.includes("SSHFS Lite")),
+    ).toBe(false);
+    discover.mockImplementationOnce(async (_session, _path, onAction) => {
+      onAction?.(action);
+      return [action];
+    });
+    const reveal = vi.spyOn(mountedMenu, "revealMountedFile").mockResolvedValueOnce();
+    fireEvent.contextMenu(remoteFile);
+    await waitFor(() =>
+      expect(
+        useContextMenu.getState().menu?.items.some((item) => item.label.includes("SSHFS Lite")),
+      ).toBe(true),
+    );
+    useContextMenu
+      .getState()
+      .menu!.items.find((item) => item.label.includes("SSHFS Lite"))!
+      .onSelect();
+    expect(reveal).toHaveBeenCalledWith(action, "session-1", "/srv/app/readme.md");
+    discover.mockRestore();
+    reveal.mockRestore();
   });
 
   it("previews the selected local or remote file from the toolbar or Space, without editing it", async () => {

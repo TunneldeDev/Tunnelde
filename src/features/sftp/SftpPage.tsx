@@ -55,6 +55,8 @@ import { fs, LOCAL_SOURCE, sourceKey } from "@/lib/files/fs";
 import { createPrefetchQueue } from "@/lib/files/prefetch";
 import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
 import { usePlugins } from "@/store/plugins";
+import { fileMenuCommands, runFileMenuCommand } from "@/lib/plugins/fileMenu";
+import { discoverMountedFileActions, revealMountedFile } from "@/lib/plugins/mountFileMenu";
 import {
   createGroupedFileViewSelector,
   fileExtension,
@@ -1388,6 +1390,13 @@ export function SftpPage({
                 .catch((error: unknown) => toast(translateError(error), "error")),
           });
       }
+      for (const contribution of fileMenuCommands(usePlugins.getState().items, source, entry)) {
+        items.push({
+          label: `${contribution.pluginName}: ${contribution.title}`,
+          separatorBefore: contribution.first,
+          onSelect: () => void runFileMenuCommand(contribution, source, entry),
+        });
+      }
       items.push({
         label: t("sftp.cut"),
         separatorBefore: true,
@@ -1439,6 +1448,21 @@ export function SftpPage({
       });
     }
     openMenu(event.clientX, event.clientY, items, bodies.current[id]);
+    if (entry && source.kind === "remote") {
+      let opened = useContextMenu.getState().menu;
+      let added = false;
+      void discoverMountedFileActions(source.sessionId, entry.path, (action) => {
+        if (!opened || useContextMenu.getState().menu !== opened) return;
+        const item = {
+          label: `${t("sftp.revealNative")} · ${action.pluginName}`,
+          separatorBefore: !added,
+          onSelect: () => void revealMountedFile(action, source.sessionId, entry.path),
+        };
+        opened = { ...opened, items: [...opened.items, item] };
+        added = true;
+        useContextMenu.setState({ menu: opened });
+      });
+    }
   };
 
   const onKeyDown = (event: React.KeyboardEvent, id: PaneId) => {

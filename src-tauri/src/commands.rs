@@ -390,10 +390,13 @@ pub fn open_local_path(app: AppHandle, path: String) -> AppResult<()> {
 #[tauri::command]
 pub async fn reveal_local_path(path: String) -> AppResult<()> {
     let target = std::path::PathBuf::from(path);
-    if !target.is_absolute() || !target.exists() {
+    if !target.is_absolute() {
         return Err(AppError::NotFound("path.notFound".into()));
     }
     tauri::async_runtime::spawn_blocking(move || {
+        if !target.exists() {
+            return Err(AppError::NotFound("path.notFound".into()));
+        }
         tauri_plugin_opener::reveal_item_in_dir(target)
             .map_err(|error| AppError::Internal(error.to_string()))
     })

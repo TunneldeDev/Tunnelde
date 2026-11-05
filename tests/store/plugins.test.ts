@@ -60,6 +60,36 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("does not construct command input or invoke a plugin before permission is granted", async () => {
+    native.mockReturnValue(true);
+    usePlugins.setState({ items: [{ ...plugin, status: "running" }] });
+    const approval = deferred<boolean>();
+    ensurePermission.mockReturnValue(approval.promise);
+    const input = vi.fn(() => ({ path: "/private/file" }));
+    const request = usePlugins.getState().execute(plugin.id, "inspect", input);
+    await vi.waitFor(() => expect(ensurePermission).toHaveBeenCalledOnce());
+    expect(input).not.toHaveBeenCalled();
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+    approval.resolve(false);
+    await expect(request).rejects.toThrow("plugin.permissionDenied");
+    expect(input).not.toHaveBeenCalled();
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+  });
+
+  it("does not execute against a plugin replaced while permission is pending", async () => {
+    native.mockReturnValue(true);
+    usePlugins.setState({ items: [{ ...plugin, status: "running", fingerprint: "original" }] });
+    const approval = deferred<boolean>();
+    ensurePermission.mockReturnValue(approval.promise);
+    const input = vi.fn(() => ({ path: "/private/file" }));
+    const request = usePlugins.getState().execute(plugin.id, "inspect", input);
+    await vi.waitFor(() => expect(ensurePermission).toHaveBeenCalledOnce());
+    usePlugins.setState({ items: [{ ...plugin, status: "running", fingerprint: "replacement" }] });
+    approval.resolve(true);
+    await expect(request).rejects.toThrow();
+    expect(input).not.toHaveBeenCalled();
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+  });
   it("does not inspect Node or start execution after permission is denied", async () => {
     native.mockReturnValue(true);
     ensurePermission.mockResolvedValueOnce(false);

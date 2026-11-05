@@ -1573,7 +1573,9 @@
       "required": "请先安装兼容的 SSHFS 和 FUSE 驱动，再重新检测。"
     },
     "remotePath": {
-      "absoluteRequired": "请选择远端目录的绝对路径。"
+      "absoluteRequired": "请选择远端目录的绝对路径。",
+      "invalid": "此远端路径无法安全映射到本地挂载目录。",
+      "outsideMount": "所选项目不在挂载目录内。"
     },
     "mountPoint": {
       "absoluteRequired": "请选择本地挂载位置的绝对路径。",
@@ -1594,10 +1596,13 @@
     "notOwned": "此挂载属于其他插件。",
     "startFailed": "SSHFS 在挂载完成前退出，请检查 SSHFS 安装和远端目录访问权限。",
     "startTimeout": "挂载目录超时，请检查 SSH 连接和 FUSE 驱动。",
+    "pathTimeout": "挂载目录响应超时，请检查连接后重试。",
+    "pathBusy": "挂载目录仍在处理先前的请求，请稍后重试。",
     "busy": "目录正在使用中，请关闭使用此目录的文件和终端，再重试卸载。",
     "unmountTimeout": "卸载超时，请关闭使用此目录的文件后重试。",
     "processExited": "SSHFS 进程已退出，请先卸载此记录再重新连接。",
     "transportClosed": "SSHFS 连接已断开，请先卸载此记录再重新连接。",
+    "actionUnavailable": "挂载或插件已不可用。请重新连接或检查插件权限后重试。",
     "stdin": "无法打开 SSHFS 输入通道。",
     "stdout": "无法打开 SSHFS 输出通道。",
     "install": {

@@ -418,6 +418,11 @@ export interface PluginCommand {
   macKeybindings?: string[];
   /** Explicit user invocation receives a document snapshot and returns {text}. */
   editor?: { extensions: string[]; format?: boolean };
+  fileMenu?: {
+    sources: ("local" | "remote")[];
+    kinds: ("file" | "directory")[];
+    extensions?: string[];
+  };
 }
 
 export interface PluginView {
@@ -502,6 +507,7 @@ export interface PluginInfo {
   themes?: PluginTheme[];
   fileIconThemes?: PluginFileIconTheme[];
   filePreviews?: PluginFilePreview[];
+  mountedFileReveal?: boolean;
   author?: string | null;
   readme?: string | null;
   engines?: Record<string, string>;
