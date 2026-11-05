@@ -5,6 +5,7 @@ import { KeyboardShortcuts } from "@/features/settings/KeyboardShortcuts";
 import { SHORTCUT_COMMANDS } from "@/lib/keyboard/registry";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
+import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { useDialogs } from "@/store/dialogs";
 
 beforeEach(() => {
@@ -17,6 +18,7 @@ beforeEach(() => {
     }),
   });
   useDialogs.getState().close();
+  useShortcutConflicts.setState({ query: "", request: 0, queue: [] });
 });
 const search = (value: string) =>
   fireEvent.change(screen.getByRole("textbox", { name: "Search commands or shortcuts" }), {
@@ -51,7 +53,7 @@ describe("KeyboardShortcuts", () => {
     expect(useSettings.getState().settings.keyboardShortcuts).toEqual({});
     expect(screen.getByText("Ctrl+,")).toBeTruthy();
   });
-  it("prevents conflicting bindings and preserves the previous shortcut on cancel", () => {
+  it("warns about conflicting bindings and preserves the previous shortcut on cancel", () => {
     render(<KeyboardShortcuts />);
     search("page.settings");
     fireEvent.click(screen.getByRole("button", { name: "Edit: Settings Ctrl+," }));
@@ -60,7 +62,7 @@ describe("KeyboardShortcuts", () => {
       ctrlKey: true,
     });
     expect(screen.getByRole("alert").textContent).toContain("Quick Access");
-    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Save" }).hasAttribute("disabled")).toBe(false);
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Press a shortcut" }), { key: "Escape" });
     expect(screen.queryByRole("textbox", { name: "Press a shortcut" })).toBeNull();
     expect(useSettings.getState().settings.keyboardShortcuts).toEqual({});

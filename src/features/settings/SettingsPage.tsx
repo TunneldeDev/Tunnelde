@@ -1,3 +1,4 @@
+import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
 import { FileCode2, RotateCcw, Search, X } from "lucide-react";
 import {
@@ -329,6 +330,13 @@ export function SettingsPage() {
   const selectSection = useNavigation((state) => state.selectSettings);
   const [query, setQuery] = useViewState("settings:query", "");
   const [modifiedOnly, setModifiedOnly] = useViewState("settings:modified", false);
+  const shortcutRequest = useShortcutConflicts((state) => state.request);
+  useLayoutEffect(() => {
+    if (shortcutRequest > 0) {
+      setQuery("");
+      setModifiedOnly(false);
+    }
+  }, [shortcutRequest, setQuery, setModifiedOnly]);
   const [cssDraft, setCssDraft] = useViewState<string | null>("settings:css", null);
   const [resetVersions, setResetVersions] = useState<Record<string, number>>({});
   const body = useRef<HTMLDivElement>(null);

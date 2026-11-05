@@ -1,3 +1,4 @@
+import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
@@ -152,14 +153,16 @@ export function AppShell() {
       const overrides = useSettings.getState().settings.keyboardShortcuts ?? {};
       const terminal = event.target instanceof Element && !!event.target.closest(".terminal-host");
       const definitions = shortcutCommands(usePlugins.getState().items);
-      const command = definitions.find(
+      const commands = definitions.filter(
         (item) =>
           item.scope === "workbench" &&
           (!isTextTarget(event.target) || terminal || item.input) &&
           (!terminal || terminalAllowsCommand(event, item.id, overrides)) &&
           matchesCommand(event, item.id, overrides, definitions),
       );
-      if (command && runWorkbenchCommand(command.id)) event.preventDefault();
+      for (const command of commands) {
+        if (runWorkbenchCommand(command.id)) event.preventDefault();
+      }
     };
 
     const onTerminalKeyDown = (event: KeyboardEvent) => {
@@ -283,6 +286,7 @@ export function AppShell() {
       ) : null}
       <ToastHost />
       <DialogHost />
+      <ShortcutConflictDialog />
       <ContextMenuHost />
       <CommandPalette />
       <RestartPrompt />

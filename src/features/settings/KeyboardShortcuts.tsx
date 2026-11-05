@@ -12,9 +12,11 @@ import {
   displayShortcut,
   recordShortcut,
   shortcutConflict,
+  shortcutFilter,
   type ShortcutCommand,
 } from "@/lib/keyboard/registry";
 import "@/styles/shortcuts.css";
+import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { usePlugins } from "@/store/plugins";
 
 const EMPTY_SHORTCUTS = {};
@@ -26,28 +28,31 @@ export function KeyboardShortcuts() {
   const overrides = useSettings((state) => state.settings.keyboardShortcuts) ?? EMPTY_SHORTCUTS;
   const update = useSettings((state) => state.update);
   const saving = useSettings((state) => state.saving);
-  const [query, setQuery] = useState("");
+  const query = useShortcutConflicts((state) => state.query);
+  const setQuery = (value: string) => useShortcutConflicts.getState().search(value);
   const [modifiedOnly, setModifiedOnly] = useState(false);
   const [editing, setEditing] = useState<{ id: string; index: number } | null>(null);
   const [draft, setDraft] = useState("");
   const label = (item: ShortcutCommand) =>
     item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) });
   const filtered = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
     return definitions.filter(
       (item) =>
-        (!modifiedOnly || Object.hasOwn(overrides, item.id)) &&
-        [
-          item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
-          item.id,
-          t(`shortcuts.scope.${item.scope}` as ParseKeys),
-          ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
-            displayShortcut(key),
-          ),
-        ]
-          .join(" ")
-          .toLocaleLowerCase()
-          .includes(needle),
+        (!modifiedOnly || query.includes("@is:conflict") || Object.hasOwn(overrides, item.id)) &&
+        shortcutFilter(
+          item,
+          query,
+          overrides,
+          definitions,
+          [
+            item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
+            item.id,
+            t(`shortcuts.scope.${item.scope}` as ParseKeys),
+            ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
+              displayShortcut(key),
+            ),
+          ].join(" "),
+        ),
     );
   }, [query, modifiedOnly, overrides, t, definitions]);
   const conflict =
@@ -63,7 +68,7 @@ export function KeyboardShortcuts() {
     setDraft("");
   };
   const save = () => {
-    if (!editing || !draft || conflict) return;
+    if (!editing || !draft) return;
     const next = [...bindingsFor(editing.id, overrides, undefined, definitions)];
     next.splice(editing.index, editing.index < next.length ? 1 : 0, draft);
     void update({ keyboardShortcuts: { ...overrides, [editing.id]: [...new Set(next)] } });
@@ -134,7 +139,15 @@ export function KeyboardShortcuts() {
               </div>
               <div className="shortcuts__bindings">
                 {keys.map((key, index) => (
-                  <div className="shortcuts__binding" key={key}>
+                  <div
+                    className={`shortcuts__binding${shortcutConflict(item.id, key, overrides, definitions) ? " is-conflict" : ""}`}
+                    key={key}
+                    title={
+                      shortcutConflict(item.id, key, overrides, definitions)
+                        ? t("shortcuts.conflictTitle")
+                        : undefined
+                    }
+                  >
                     <button
                       type="button"
                       className="shortcuts__key"
@@ -208,12 +221,7 @@ export function KeyboardShortcuts() {
                       if (value) setDraft(value);
                     }}
                   />
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    disabled={!draft || !!conflict || saving}
-                    onClick={save}
-                  >
+                  <Button size="sm" variant="primary" disabled={!draft || saving} onClick={save}>
                     {t("common.save" as ParseKeys)}
                   </Button>
                   <Button size="sm" onClick={() => setEditing(null)}>

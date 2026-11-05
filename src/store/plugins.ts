@@ -5,6 +5,7 @@ import { api, isTauri } from "@/lib/api/ipc";
 import type { PluginInfo, MarketEntry } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { normalizeResult } from "@/lib/plugins/pluginView";
+import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import i18n from "@/i18n/i18n";
 
 export interface PluginOutput {
@@ -153,7 +154,11 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         .then(async () => {
           try {
             if (pendingReload) await pendingReload;
-            get().apply(await api.pluginInstall(path));
+            const before = get().items;
+            const info = await api.pluginInstall(path);
+            const previous = before.find((item) => item.id === info.id);
+            get().apply(info);
+            useShortcutConflicts.getState().enqueue(previous, info, get().items);
             await readList(api.pluginsList);
             return true;
           } catch (error) {
@@ -195,16 +200,17 @@ export const usePlugins = create<PluginsStore>((set, get) => {
       let success = false;
       await operate(entry.id, async () => {
         try {
-          get().apply(
-            await api.marketplaceDownload(
-              sourceId,
-              entry.id,
-              entry.version,
-              entry.sha256,
-              taskId,
-              update,
-            ),
+          const previous = get().items.find((item) => item.id === entry.id);
+          const info = await api.marketplaceDownload(
+            sourceId,
+            entry.id,
+            entry.version,
+            entry.sha256,
+            taskId,
+            update,
           );
+          get().apply(info);
+          useShortcutConflicts.getState().enqueue(previous, info, get().items);
           success = true;
         } catch (error) {
           onError?.(error);
