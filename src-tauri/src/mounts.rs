@@ -100,6 +100,13 @@ async fn resolve_mounted_target(root: PathBuf, relative: PathBuf) -> AppResult<P
         if !target.starts_with(&canonical_root) {
             return Err(AppError::validation("mounts.remotePath.outsideMount"));
         }
+        #[cfg(target_os = "macos")]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if canonical_root.metadata()?.dev() != target.metadata()?.dev() {
+                return Err(AppError::validation("mounts.remotePath.outsideMount"));
+            }
+        }
         Ok(target)
     });
     tokio::time::timeout(std::time::Duration::from_secs(5), job)
@@ -136,6 +143,26 @@ async fn cancellable_open(
     .await
     .map_err(|error| AppError::Internal(error.to_string()))?
 }
+
+#[cfg(target_os = "macos")]
+async fn mac_mount_device(path: PathBuf) -> AppResult<u64> {
+    use std::os::unix::fs::MetadataExt;
+    static PROBES: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+        std::sync::OnceLock::new();
+    let permit = PROBES
+        .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(4)))
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| AppError::validation("mounts.pathBusy"))?;
+    let job = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        Ok::<_, std::io::Error>(path.metadata()?.dev())
+    });
+    Ok(tokio::time::timeout(std::time::Duration::from_secs(5), job)
+        .await
+        .map_err(|_| AppError::validation("mounts.pathTimeout"))?
+        .map_err(|error| AppError::Internal(error.to_string()))??)
+}
 struct ActiveMount {
     info: MountInfo,
     generation: u64,
@@ -145,6 +172,8 @@ struct ActiveMount {
     device_mapping: Option<Vec<u16>>,
     #[cfg(target_os = "linux")]
     mount_id: Option<String>,
+    #[cfg(target_os = "macos")]
+    mount_device: Option<u64>,
 }
 impl Drop for ActiveMount {
     fn drop(&mut self) {
@@ -538,6 +567,15 @@ impl MountRegistry {
                 return Err(AppError::validation("mounts.transportClosed"));
             }
         }
+        #[cfg(target_os = "macos")]
+        if active.mount_device.is_none()
+            || mac_mount_device(PathBuf::from(&active.info.mount_point))
+                .await
+                .ok()
+                != active.mount_device
+        {
+            return Err(AppError::validation("mounts.transportClosed"));
+        }
         Ok(active.info.clone())
     }
     pub async fn list(&self, owner: Option<&str>) -> Vec<MountInfo> {
@@ -647,6 +685,8 @@ impl MountRegistry {
                 device_mapping: None,
                 #[cfg(target_os = "linux")]
                 mount_id: None,
+                #[cfg(target_os = "macos")]
+                mount_device: None,
             },
         );
         // Register before awaiting readiness so cancellation/revocation still owns
@@ -666,6 +706,12 @@ impl MountRegistry {
                     {
                         let table = tokio::fs::read_to_string("/proc/self/mountinfo").await?;
                         active.mount_id = mount_id_in_table(&table, &info.mount_point);
+                    }
+                    #[cfg(target_os = "macos")]
+                    {
+                        active.mount_device = mac_mount_device(PathBuf::from(&info.mount_point))
+                            .await
+                            .ok();
                     }
                     return Ok(());
                 }
@@ -1105,6 +1151,18 @@ pub async fn action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    #[tokio::test]
+    async fn mac_mount_device_reports_existing_filesystem_and_rejects_missing_path() {
+        let root = std::env::temp_dir();
+        let first = mac_mount_device(root.clone()).await.unwrap();
+        assert_eq!(mac_mount_device(root.clone()).await.unwrap(), first);
+        assert!(
+            mac_mount_device(root.join(format!("missing-{}", uuid::Uuid::new_v4())))
+                .await
+                .is_err()
+        );
+    }
     #[tokio::test]
     async fn cancelled_open_marks_a_blocked_worker_before_it_continues() {
         use std::sync::atomic::{AtomicBool, Ordering};

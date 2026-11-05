@@ -123,6 +123,30 @@ jobs:
             echo 'FUSE device unavailable on this runner; real SSHFS mount test skipped.'
           fi
 
+  macos-app-check:
+    name: macOS application check
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        timeout-minutes: 3
+        continue-on-error: true
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --tests
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
+
   hygiene:
     name: Repository hygiene
     runs-on: ubuntu-latest
