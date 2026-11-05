@@ -90,6 +90,11 @@ fn status(paths: &Paths) -> AppResult<Status> {
 }
 
 #[tauri::command]
+pub fn storage_restart_pending(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(config::load(&state.storage.home)?.pending.is_some())
+}
+
+#[tauri::command]
 pub async fn storage_status(app: AppHandle) -> AppResult<Status> {
     let paths = app.state::<AppState>().storage.clone();
     tauri::async_runtime::spawn_blocking(move || status(&paths))

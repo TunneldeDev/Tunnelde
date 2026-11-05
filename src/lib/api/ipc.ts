@@ -46,6 +46,8 @@ export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export const api = {
+  appRestart: () => invoke<void>("app_restart"),
+  storageRestartPending: () => invoke<boolean>("storage_restart_pending"),
   storageStatus: () => invoke<StorageStatus>("storage_status"),
   storageSchedule: (changes: StorageChange[]) =>
     invoke<StorageStatus>("storage_schedule", { changes }),

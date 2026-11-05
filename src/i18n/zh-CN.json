@@ -1608,6 +1608,20 @@
     "none": "普通文件图标",
     "missing": "主题不可用（{{id}}）"
   },
+  "restart": {
+    "command": "重启 Tunnelde",
+    "reload": "重新加载窗口",
+    "now": "立即重启",
+    "later": "稍后重启",
+    "requiredTitle": "需要重启",
+    "requiredBody": "存储位置变更已安排，将在 Tunnelde 重启后生效。重启前请保存工作。",
+    "confirmTitle": "重启 Tunnelde？",
+    "reloadTitle": "重新加载窗口？",
+    "restartWarning": "重启会断开连接、中断后台任务并丢失未保存的编辑。请先保存工作。",
+    "reloadWarning": "重新加载窗口可能中断当前视图，并丢失未保存的编辑。请先保存工作。",
+    "unsaved": "未保存的文件：{{names}}",
+    "nativeOnly": "只能在桌面应用中重启。"
+  },
   "storage": {
     "title": "存储位置",
     "description": "分别选择各类应用数据的存储目录。选中多个类别后，可将它们批量迁移至同一父目录下的独立文件夹。",

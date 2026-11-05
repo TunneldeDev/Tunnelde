@@ -1608,6 +1608,20 @@
     "none": "Plain file icons",
     "missing": "Unavailable theme ({{id}})"
   },
+  "restart": {
+    "command": "Restart Tunnelde",
+    "reload": "Reload window",
+    "now": "Restart now",
+    "later": "Restart later",
+    "requiredTitle": "Restart required",
+    "requiredBody": "The storage changes are scheduled and will take effect when Tunnelde restarts. Save your work before restarting.",
+    "confirmTitle": "Restart Tunnelde?",
+    "reloadTitle": "Reload window?",
+    "restartWarning": "Restarting disconnects sessions, interrupts background tasks and discards unsaved edits. Save your work first.",
+    "reloadWarning": "Reloading the window may interrupt active views and discards unsaved edits. Save your work first.",
+    "unsaved": "Unsaved files: {{names}}",
+    "nativeOnly": "Restart is available in the desktop application."
+  },
   "storage": {
     "title": "Storage locations",
     "description": "Choose where each kind of application data is stored. Select several categories to move them into separate folders under one parent folder.",

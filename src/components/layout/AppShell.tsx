@@ -35,6 +35,7 @@ import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/wo
 import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { usePlugins } from "@/store/plugins";
 import { useQuickAccess } from "@/store/quickAccess";
+import { RestartPrompt } from "@/components/layout/RestartPrompt";
 import { FilePreview } from "@/features/sftp/FilePreview";
 import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
@@ -284,6 +285,7 @@ export function AppShell() {
       <DialogHost />
       <ContextMenuHost />
       <CommandPalette />
+      <RestartPrompt />
       <FormatterPicker />
       <FilePreview />
       <BackgroundTasks />

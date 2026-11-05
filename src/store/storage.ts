@@ -5,6 +5,8 @@ import type { StorageChange, StorageStatus } from "@/lib/api/storage";
 
 interface StorageStore {
   status: StorageStatus | null;
+  restartPending: boolean;
+  loadRestartPending: () => Promise<void>;
   loading: boolean;
   busy: boolean;
   error: string | null;
@@ -23,17 +25,30 @@ export const useStorage = create<StorageStore>((set, get) => {
     revision++;
     set({ busy: true, error: null });
     try {
-      set({ status: await run() });
+      const status = await run();
+      set({ status, restartPending: !!status.pending });
       return true;
     } catch (failure) {
       set({ error: translateError(failure) });
       return false;
     } finally {
+      revision++;
       set({ busy: false });
     }
   };
   return {
     status: null,
+    restartPending: false,
+    loadRestartPending: async () => {
+      if (!isTauri()) return;
+      const started = revision;
+      try {
+        const restartPending = await api.storageRestartPending();
+        if (started === revision) set({ restartPending });
+      } catch (failure) {
+        console.warn("Could not check pending storage changes", failure);
+      }
+    },
     loading: false,
     busy: false,
     error: null,
@@ -47,7 +62,7 @@ export const useStorage = create<StorageStore>((set, get) => {
       loading = api
         .storageStatus()
         .then((status) => {
-          if (started === revision) set({ status, error: null });
+          if (started === revision) set({ status, restartPending: !!status.pending, error: null });
         })
         .catch((failure: unknown) => {
           if (started === revision) set({ error: translateError(failure) });
