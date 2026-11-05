@@ -13,6 +13,7 @@ import {
   type StorageCategory,
 } from "@/lib/api/storage";
 import { formatBytes } from "@/lib/text/format";
+import { useRestartPrompt } from "@/store/restartPrompt";
 import { useStorage } from "@/store/storage";
 import { toast } from "@/store/toasts";
 import "./storageSettings.css";
@@ -325,6 +326,7 @@ export function StorageSettings() {
                   if (ok) {
                     setDraft([]);
                     setReviewing(false);
+                    useRestartPrompt.getState().show();
                   }
                 })
               }

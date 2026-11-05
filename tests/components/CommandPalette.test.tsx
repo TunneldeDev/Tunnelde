@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import "@/i18n/i18n";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { useDialogs } from "@/store/dialogs";
 import { useQuickAccess } from "@/store/quickAccess";
 import { useHosts } from "@/store/hosts";
 import { useNavigation } from "@/store/navigation";
@@ -40,6 +41,21 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it("offers restart and reload as separate searchable commands", () => {
+    useDialogs.getState().close();
+    render(<CommandPalette />);
+    const input = screen.getByRole("combobox");
+    fireEvent.change(input, { target: { value: ">restart tunnelde" } });
+    expect(screen.getByText("Restart Tunnelde")).toBeTruthy();
+    fireEvent.change(input, { target: { value: ">reload window" } });
+    expect(screen.getByText("Reload window")).toBeTruthy();
+    fireEvent.keyDown(input, { key: "Enter" });
+    const dialog = useDialogs.getState().dialog;
+    expect(dialog.kind).toBe("confirm");
+    if (dialog.kind === "confirm") expect(dialog.title).toBe("Reload window?");
+    useDialogs.getState().close();
+  });
+
   it("keeps an existing local search root selected when choosing the same folder", async () => {
     useQuickAccess.setState({ query: "" });
     useSearchRoots.setState({

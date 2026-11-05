@@ -94,6 +94,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             window::main_window_ready,
+            platform::restart::app_restart,
             platform::background::main_window_snapshot,
             platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
@@ -119,6 +120,7 @@ pub fn run() {
             plugins::api::plugin_workspace_authorize,
             commands::app_info,
             storage::storage_status,
+            storage::storage_restart_pending,
             storage::storage_schedule,
             storage::storage_cancel,
             storage::storage_open,

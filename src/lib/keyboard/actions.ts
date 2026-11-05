@@ -1,3 +1,4 @@
+import { requestApplicationAction } from "@/lib/session/restart";
 import { useDialogs } from "@/store/dialogs";
 import { useNavigation } from "@/store/navigation";
 import { useSettings } from "@/store/settings";
@@ -43,6 +44,8 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "sidebar.knownHosts") useNavigation.getState().showSidebar("knownHosts");
   else if (id === "sidebar.plugins") useNavigation.getState().showSidebar("plugins");
   else if (id === "transfers.show") useTransferPanel.getState().show();
+  else if (id === "app.reload" || id === "app.restart")
+    requestApplicationAction(id === "app.reload" ? "reload" : "restart");
   else if (id === "update.check") {
     workspace.openPage("updates");
     void useUpdates.getState().check(true);
