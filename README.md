@@ -136,7 +136,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 
 - [Settings and profiles](docs/settings.md)
 - [Proxies, jump hosts, resumable transfers and SSHFS](docs/network-storage.md)
-- [Keyboard and mouse shortcuts](docs/shortcuts.md)
+- Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)
 - [AI local/remote setup](docs/ai-assistants.md)
 - Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
 - [Plugin development and security](docs/plugins.md)
