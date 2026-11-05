@@ -63,8 +63,8 @@ entries are preserved. Optional Unreleased notes can supply curated highlights.
 Review and merge that release PR with **Create a merge commit** when ready. The exact merged source is tagged, built for
 all four desktop targets, verified and automatically published as the latest stable release.
 Beta packages publish from `vX.Y.Z-beta.N` tags; **Prepare Beta** in Actions creates the next tag
-from the current dev snapshot. **Nightly** runs separately at 22:00 UTC daily or manually, skips
-unchanged sources and uses source-derived versions. Beta and Nightly never replace the stable updater channel. Do not edit or contribute to the generated
+from the current dev snapshot. Nightly publication is disabled; use `pnpm build:local` for
+development testing. Beta never replaces the stable updater channel. Do not edit or contribute to the generated
 release branch; it is rebuilt from the latest `dev` and `main` refs.
 
 See [Release operations](docs/releases.md) for configuration and failed-build recovery.

@@ -12,8 +12,8 @@ merge that PR with **Create a merge commit** after required checks pass.
 - Review and publish the stable version before a tenth milestone would be
   needed. At the limit, automation stops before creating a snapshot, tag or
   draft. It does not promote incomplete work automatically.
-- Use Nightly snapshots for intermediate testing while stabilizing the release.
-  They do not consume Beta milestones.
+- Use `pnpm build:local` for intermediate development testing.
+  Local builds do not consume Beta milestones.
 - Failed builds reserve their tag. Retry the same immutable source/tag instead
   of allocating another number. A beta.9 retry is allowed.
 - Do not delete tags to reset a counter, pad numeric identifiers with zeroes,
@@ -26,18 +26,23 @@ is newer than installed `0.28.0-beta.9`, `.10` and `.11`; both the Stable and
 Beta update channels can offer it. Switching the channel does not downgrade an
 already installed newer version.
 
-## Nightly and stable publication
+## Local testing and stable publication
 
-Nightly uses a source-derived version, for example
-`v0.28.1-beta.3.d.12.g0123456789ab`, or an `alpha.1.d...` base before the first
-permitted Beta. Its commit distance can exceed 9. The milestone limit applies
-to the number immediately after `beta.`, not to Nightly commit distances.
+Nightly publication is disabled. There is no scheduled or manually dispatched
+Nightly workflow, and publication rejects creating, resuming or publishing Nightly
+releases. Use local development builds instead. Historical Nightly versions remain
+readable and comparable for compatibility with existing installations and metadata.
 
 A build begins as a staging draft. It becomes public only after all four desktop
-targets, signatures and `latest.json` pass verification. Beta and Nightly are
+targets, signatures and `latest.json` pass verification. Beta versions are
 public prereleases; only the current stable publication becomes Latest.
 Update selection compares semantic versions across all fetched pages rather
 than relying on GitHub's display order or string comparison.
+
+Installers, updater packages and signatures include the version in their filenames,
+for example `Tunnelde_0.29.0-beta.4_aarch64.app.tar.gz` and its `.sig` file.
+The updater manifest keeps the fixed name `latest.json`; its URLs point to the
+actual versioned assets. GitHub generates the Source code download entries.
 
 Historical releases normally remain immutable. Exceptional cleanup or reissue
 needs explicit authorization and a local backup of release metadata and tag

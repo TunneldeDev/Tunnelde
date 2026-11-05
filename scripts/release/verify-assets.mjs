@@ -9,6 +9,8 @@ export function verifyAssets(tag, manifest, assets) {
       throw new Error(
         `native helpers belong in Actions artifacts, not desktop releases: ${asset.name}`,
       );
+    if (asset.name.startsWith("Tunnelde_") && !asset.name.startsWith(`Tunnelde_${version}_`))
+      throw new Error(`release asset filename does not match version: ${asset.name}`);
   }
   const names = new Set(assets.filter((asset) => asset.size > 0).map((asset) => asset.name));
   const required = new Set([

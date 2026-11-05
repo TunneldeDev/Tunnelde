@@ -4,7 +4,7 @@ on:
   workflow_call:
     inputs:
       existing_tag:
-        description: Immutable stable, beta or Nightly draft tag to build and publish
+        description: Immutable stable or beta draft tag to build and publish
         required: true
         type: string
       build_helpers:
@@ -55,8 +55,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ ! "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[1-9](\.d\.(0|[1-9][0-9]*)\.g[a-f0-9]{7,40})?|-alpha\.1\.d\.(0|[1-9][0-9]*)\.g[a-f0-9]{7,40})?$ ]]; then
-            echo "existing_tag must be stable, beta.1–beta.9 or a source-derived Nightly tag" >&2
+          if [[ ! "${TAG}" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-beta\.[1-9])?$ ]]; then
+            echo "existing_tag must be stable or beta.1–beta.9; Nightly publication is disabled" >&2
             exit 1
           fi
 
@@ -127,9 +127,7 @@ jobs:
           if [[ "${TAG}" == *-* ]]; then channel=true; fi
           jq -e --arg tag "${TAG}" --argjson channel "${channel}" '.[][] | select(.tag_name == $tag) | .prerelease == $channel' releases.json
           node scripts/release/changelog.mjs notes "${TAG#v}" > release-notes.md
-          title="${TAG}"
-          if [[ "${TAG}" == *.d.* ]]; then title="${TAG} (Nightly)"; fi
-          gh release edit "${TAG}" --notes-file release-notes.md --title "${title}" --repo "${GITHUB_REPOSITORY}"
+          gh release edit "${TAG}" --notes-file release-notes.md --title "${TAG}" --repo "${GITHUB_REPOSITORY}"
           echo "id=${id}" >> "${GITHUB_OUTPUT}"
 
   build:
@@ -232,6 +230,8 @@ jobs:
           releaseDraft: true
           prerelease: ${{ contains(needs.prepare.outputs.tag, '-') }}
           includeUpdaterJson: false
+          # Tauri's default macOS updater archive names omit the version.
+          assetNamePattern: ${{ startsWith(matrix.platform, 'macos') && '[name]_[version]_[arch][ext]' || '' }}
           args: ${{ matrix.args }} -- --locked --timings
 
       - name: Verify macOS executable architecture and signature
