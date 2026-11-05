@@ -1608,6 +1608,19 @@
     "none": "普通文件图标",
     "missing": "主题不可用（{{id}}）"
   },
+  "logs": {
+    "title": "日志",
+    "description": "查看近期操作记录和软件诊断日志。",
+    "view": "查看日志",
+    "openFolder": "打开日志文件夹",
+    "operations": "操作日志",
+    "diagnostic": "软件日志",
+    "operationsHint": "从此版本起记录主机变更、SSH 连接及插件安装操作；此处不记录密码、命令或文件内容。",
+    "diagnosticHint": "显示最新软件日志的近期内容。诊断日志可能包含隐私信息，分享前请检查。",
+    "emptyOperations": "暂无操作记录。",
+    "emptyDiagnostic": "暂无软件日志。",
+    "truncated": "显示最近 256 KiB"
+  },
   "restart": {
     "command": "重启 Tunnelde",
     "reload": "重新加载窗口",

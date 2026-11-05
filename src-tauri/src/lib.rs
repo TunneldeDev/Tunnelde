@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod error;
+mod logs;
 mod models;
 mod mounts;
 mod network;
@@ -154,6 +155,7 @@ pub fn run() {
             commands::update_history,
             commands::open_release_page,
             commands::open_log_dir,
+            logs::logs_read,
             commands::open_local_path,
             commands::open_external,
             commands::user_css_import,

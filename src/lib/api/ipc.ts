@@ -45,7 +45,15 @@ import type {
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+export interface LogSnapshot {
+  diagnostic: string;
+  truncated: boolean;
+  filename: string | null;
+  operations: Array<{ id: number; timestamp: number; action: string; target: string | null }>;
+}
+
 export const api = {
+  logsRead: () => invoke<LogSnapshot>("logs_read"),
   appRestart: () => invoke<void>("app_restart"),
   storageRestartPending: () => invoke<boolean>("storage_restart_pending"),
   storageStatus: () => invoke<StorageStatus>("storage_status"),
