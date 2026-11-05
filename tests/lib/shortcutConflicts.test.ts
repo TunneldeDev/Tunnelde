@@ -35,6 +35,16 @@ describe("plugin shortcut conflicts", () => {
     useShortcutConflicts.getState().enqueue(plugin, plugin, [plugin]);
     expect(useShortcutConflicts.getState().queue).toEqual([]);
   });
+  it("drops stale queued pairs after removing their shared binding", async () => {
+    const second = { ...plugin, id: "other", name: "Other" };
+    usePlugins.setState({ items: [plugin, second] });
+    useShortcutConflicts.getState().enqueue(undefined, plugin, [plugin, second]);
+    expect(useShortcutConflicts.getState().queue.length).toBeGreaterThan(1);
+    await useShortcutConflicts.getState().resolve("palette.content");
+    expect(useShortcutConflicts.getState().queue).toEqual([
+      { incoming: id, existing: "plugin.c.5.other.format", binding: "Mod+Alt+J" },
+    ]);
+  });
   it("removes only the selected conflicting binding and retains the other keys", async () => {
     useShortcutConflicts.getState().enqueue(undefined, plugin, [plugin]);
     await useShortcutConflicts.getState().resolve("palette.content");
