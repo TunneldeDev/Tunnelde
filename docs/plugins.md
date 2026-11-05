@@ -1,5 +1,10 @@
 # Plugins
 
+Overview and compatibility: [English](plugins-overview.en-us.md) · [简体中文](plugins-overview.zh-cn.md).
+
+Editor command and formatter contributions:
+[English](editor-plugins.en-us.md) · [简体中文](editor-plugins.zh-cn.md).
+
 ## Quick access and command results
 
 The plugin browser renders up to 24 matching entries per page, with previous/next
@@ -15,7 +20,7 @@ Publishers may add a `tags` array to both manifests and registry entries. Up to 
 case-insensitively distinct tags are allowed, each at most 64 UTF-8 bytes, with
 letters, digits, `_`, `-` and `.`. Old packages without tags remain compatible.
 
-Press F1 and type `> UUID` (or another plugin name/command) to open a contributed
+Press F1 and type `> ` followed by a plugin name or command to open a contributed
 view or execute an installed plugin command. Listing commands reads manifest metadata
 and does not start Node. Execution retains runtime consent and plugin approval.
 Commands without views open a host-owned result page with scrollable, resizable,
@@ -35,19 +40,17 @@ workspace services, webviews and authentication APIs; unpacking its VSIX does no
 provide those services. The independent coding plugins invoke the actual installed
 agent binaries through their structured protocols.
 
-The independent marketplace and official source packages live in
-[TunneldeDev/tunnelde-hub](https://github.com/TunneldeDev/tunnelde-hub). For installing and
-connecting Codex, Claude Code, Pi or Tunnelde AI, start with [the assistant guide](ai-assistants.md).
-Those are four separately installed integrations; Tunnelde AI does not aggregate coding CLIs.
+The independent marketplace and source packages live in
+[TunneldeDev/tunnelde-hub](https://github.com/TunneldeDev/tunnelde-hub). The marketplace
+contains a range of independently installed extensions; inspect each extension's own
+description, compatibility requirements and permissions before installation.
 
 Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure theme packs contain only a manifest and theme colors; they do not start a process or require Node.
 
 ## SSHFS and data-only plugins (0.27.0+)
 
-**SSHFS** and **SSHFS Lite** source packages are pending in
-[Hub PR #1](https://github.com/TunneldeDev/tunnelde-hub/pull/1); they are not yet in
-the default marketplace. Install from their source folder or ZIP to test them.
-Both use the same native mount panel; Lite needs no Node runtime. Connect a saved SSH host first,
+Mount providers can use the native mount panel, including declarative plugins that do not
+need Node. Connect a saved SSH host first,
 then choose its session, browse the remote directory, and choose an empty local
 directory or unused Windows drive. Read-only access is the default. Mounts are
 manual and reuse the SSH session's credentials, host-key trust, proxy and jump hosts.
@@ -68,7 +71,7 @@ resources or read SSH passwords/keys. Node plugins use `mounts.dependencies`,
 Data-only plugins set `runtime: "declarative"` and point `main` to local JSON:
 
 ```json
-{ "views": { "main": { "title": "SSHFS Lite", "blocks": [{ "type": "mounts" }] } } }
+{ "views": { "main": { "title": "Remote mounts", "blocks": [{ "type": "mounts" }] } } }
 ```
 
 Declare `main` in the manifest's `views`. These packages have no executable commands
@@ -173,7 +176,7 @@ user selects another theme. Executable plugins can contribute palettes without b
 
 ## File icon themes
 
-Install Common File Icons from the hub package ZIP or folder. **Settings → Files → File icon
+Install a file icon theme from the marketplace, a ZIP or a folder. **Settings → Files → File icon
 theme** offers Automatic, Plain file icons and installed themes. Automatic uses the first
 available theme in plugin/theme ID order; choose a specific theme to preserve that selection
 when installing other packages. Details pages also offer Apply theme. Removing a selected
@@ -249,7 +252,7 @@ Executable Node plugins can send JSON-RPC requests back to the host while handli
 command. Replies use the same ID; both directions continue reading concurrently, so
 an awaited host call does not block the command response. The independent hub supplies
 a zero-dependency SDK in `sdk/tunnelde-plugin.mjs`, TypeScript declarations and the full
-89-method catalogue in `sdk/api.md` and `sdk/api.json`.
+generated host method catalogue in `sdk/api.md` and `sdk/api.json`.
 
 ```js
 import { createPlugin } from "./tunnelde-plugin.mjs";
@@ -300,7 +303,8 @@ Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity
 contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
 The UI preserves drafts when a panel is moved. Secrets belong in `secrets.*`, never view data
-or plugin storage. See the hub SDK and Tunnelde AI source for the complete schema.
+or plugin storage. See the hub SDK for the schema and the extension's own documentation
+for its supported controls.
 
 Since 0.25.1, the controlled session picker provides searchable history with row-level
 rename and delete actions. `commands.session` receives `action: "select" | "new" |
@@ -311,17 +315,15 @@ must be rejected, and running conversations must reject deletion. Session entrie
 include `untitled`, `updatedAt` (Unix milliseconds), `running` and `runId`. Use an empty
 title plus `untitled: true` for a localized placeholder, and `untitled: false` for custom
 names. Background terminal events matching the session's `runId` clear its running
-indicator without changing the visible conversation. The four official assistants
-implement this contract starting with 1.3.1.
+indicator without changing the visible conversation.
 
 Since 0.22.2, chat blocks may include a `title` and a `profilePolicy` containing
 `primaryProtocols`, `reviewerProtocols` and `defaultProtocol`. The default must be one of
 the primary protocols. The host uses these to show the plugin's identity and keep its
 agent connections separate from approval-only API connections. Plugins must also enforce
 their own fixed policy when loading, saving and executing configurations; view metadata
-is not an authorization boundary. Codex, Claude Code and Pi are independent marketplace
-packages with separate views, storage, permissions and runtimes. Tunnelde AI provides API
-chat without aggregating these CLI agents.
+is not an authorization boundary. Each installed extension has its own views, storage,
+permissions and runtime.
 
 Remote runners require explicit confirmation, a separately selected native helper, a fresh
 private remote directory and an explicitly chosen remote runtime. No service or Node runtime
@@ -522,10 +524,8 @@ a remote catalogue with the same ID. Source/runtime configuration is independent
 and general preference resets.
 
 Submit official plugins and themes by pull request to `TunneldeDev/tunnelde-hub`, including
-source, manifest, README and regenerated `registry.json`. The three
-initial tools—JSON Formatter, Timestamp Converter and UUID Generator—are independent, zero-npm
-dependency Node plugins. Their archive builds are deterministic and include the repository
-LICENSE. In the hub, `npm run verify` checks catalogue consistency, validator regressions,
+source, manifest, README and regenerated `registry.json`. Archive builds are deterministic
+and include the repository LICENSE. In the hub, `npm run verify` checks catalogue consistency, validator regressions,
 algorithms and real JSON-RPC processes. `npm run package` produces ZIPs, SHA256SUMS and a
 catalogue under `artifacts/plugins/`. Push/PR CI and weekly published-asset audits run separately
 from desktop releases. Publish and verify versioned archives before merging registry changes.
@@ -534,15 +534,9 @@ custom sources and Node consent.
 
 ## Installing
 
-The independent Codex, Claude Code, Pi and Tunnelde AI plugins in version 1.4.0 require
-Tunnelde 0.26.0+. Select **Execution location** in the composer, then Initialize the agent
-before sending. Remote POSIX hosts also offer an approved private **Install and initialize**
-flow. Missing executables and account/setup errors appear beside the composer without
-adding a failed user message; drafts are preserved and initialization can be cancelled.
-Checks use each agent's native structured protocol over SSH, with no model prompt. They
-do not guarantee future provider inference. Local coding CLIs still use their official
-installers. Tunnelde never executes existing user Node without consent. See the hub's
-`docs/assistant-plugins-1.4.md` for supported platforms, installation behavior and limits.
+Each extension declares its own application version and runtime requirements. Review its
+marketplace details and documentation for setup and supported execution locations. Tunnelde
+asks for consent before using an existing system Node runtime.
 
 - **Plugins sidebar → Install plugin** copies a folder into the app data `plugins` directory after the
   manifest validates, and refuses to overwrite an existing id.

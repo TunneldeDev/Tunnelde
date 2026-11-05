@@ -233,8 +233,6 @@
 .plugins-browser__list {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  scrollbar-gutter: stable;
 }
 .plugins-browser__foot {
   border-top: 1px solid var(--td-border);

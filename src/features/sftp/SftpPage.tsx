@@ -34,7 +34,7 @@ import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
 import { domainEvents, type FilesChanged } from "@/lib/events/domain";
 import { translateError } from "@/lib/api/errors";
-import { isTauri } from "@/lib/api/ipc";
+import { api, isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
 import {
   canPaste,
@@ -53,6 +53,10 @@ import {
 } from "@/lib/files/dnd";
 import { fs, LOCAL_SOURCE, sourceKey } from "@/lib/files/fs";
 import { createPrefetchQueue } from "@/lib/files/prefetch";
+import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
+import { usePlugins } from "@/store/plugins";
+import { fileMenuCommands, runFileMenuCommand } from "@/lib/plugins/fileMenu";
+import { discoverMountedFileActions, revealMountedFile } from "@/lib/plugins/mountFileMenu";
 import {
   createGroupedFileViewSelector,
   fileExtension,
@@ -1308,10 +1312,16 @@ export function SftpPage({
 
   const applyEntry = (id: PaneId, entry: FileEntry) => {
     const source = panesRef.current[id].source;
+    const provider = previewProviders(usePlugins.getState().items).find((item) =>
+      matchesPreview(item, entry.path),
+    );
+    const kind = provider?.renderer ?? previewKind(entry.path);
+    if (kind !== "text") {
+      useFilePreview.getState().show(entry.path, 0, 0, source);
+      return;
+    }
     if (source.kind === "local") {
-      void fs
-        .openLocal(entry.path)
-        .catch((error: unknown) => toast(translateError(error), "error"));
+      useWorkspace.getState().openLocalEditor(entry.path);
       return;
     }
     const target = sessions.find((item) => item.id === source.sessionId);
@@ -1353,9 +1363,38 @@ export function SftpPage({
         items.push({ label: t("sftp.open"), onSelect: () => navigate(id, entry.path) });
       } else {
         items.push({ label: t("sftp.preview"), onSelect: () => previewEntry(id, entry) });
+        items.push({ label: t("sftp.open"), onSelect: () => applyEntry(id, entry) });
+        if (source.kind === "local")
+          items.push({
+            label: t("sftp.openWith"),
+            onSelect: () =>
+              void fs
+                .openLocal(entry.path)
+                .catch((error: unknown) => toast(translateError(error), "error")),
+          });
+      }
+      if (source.kind === "local") {
         items.push({
-          label: t(source.kind === "local" ? "sftp.openWith" : "sftp.edit"),
-          onSelect: () => applyEntry(id, entry),
+          label: t("sftp.revealNative"),
+          onSelect: () =>
+            void api
+              .revealLocalPath(entry.path)
+              .catch((error: unknown) => toast(translateError(error), "error")),
+        });
+        if (entry.isDir)
+          items.push({
+            label: t("sftp.openFolderNative"),
+            onSelect: () =>
+              void fs
+                .openLocal(entry.path)
+                .catch((error: unknown) => toast(translateError(error), "error")),
+          });
+      }
+      for (const contribution of fileMenuCommands(usePlugins.getState().items, source, entry)) {
+        items.push({
+          label: `${contribution.pluginName}: ${contribution.title}`,
+          separatorBefore: contribution.first,
+          onSelect: () => void runFileMenuCommand(contribution, source, entry),
         });
       }
       items.push({
@@ -1386,6 +1425,14 @@ export function SftpPage({
         onSelect: () => removeSelection(id),
       });
     } else {
+      if (source.kind === "local" && directory)
+        items.push({
+          label: t("sftp.openFolderNative"),
+          onSelect: () =>
+            void fs
+              .openLocal(directory)
+              .catch((error: unknown) => toast(translateError(error), "error")),
+        });
       items.push({ label: t("sftp.newFile"), onSelect: () => startCreate(id, "file") });
       items.push({ label: t("sftp.newFolder"), onSelect: () => startCreate(id, "folder") });
       items.push({
@@ -1401,6 +1448,21 @@ export function SftpPage({
       });
     }
     openMenu(event.clientX, event.clientY, items, bodies.current[id]);
+    if (entry && source.kind === "remote") {
+      let opened = useContextMenu.getState().menu;
+      let added = false;
+      void discoverMountedFileActions(source.sessionId, entry.path, (action) => {
+        if (!opened || useContextMenu.getState().menu !== opened) return;
+        const item = {
+          label: `${t("sftp.revealNative")} · ${action.pluginName}`,
+          separatorBefore: !added,
+          onSelect: () => void revealMountedFile(action, source.sessionId, entry.path),
+        };
+        opened = { ...opened, items: [...opened.items, item] };
+        added = true;
+        useContextMenu.setState({ menu: opened });
+      });
+    }
   };
 
   const onKeyDown = (event: React.KeyboardEvent, id: PaneId) => {

@@ -1,4 +1,4 @@
-import { FolderOpen, RefreshCw, X } from "lucide-react";
+import { FolderOpen, RefreshCw, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -8,10 +8,12 @@ import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import {
   displayStoragePath,
+  sameStoragePath,
   storageChild,
   type StorageCategory,
 } from "@/lib/api/storage";
 import { formatBytes } from "@/lib/text/format";
+import { useRestartPrompt } from "@/store/restartPrompt";
 import { useStorage } from "@/store/storage";
 import { toast } from "@/store/toasts";
 import "./storageSettings.css";
@@ -31,6 +33,28 @@ export function StorageSettings() {
   const locked = disabled || !!status?.pending;
   const locations = status?.locations ?? [];
   const selectable = locations.filter((location) => !location.overridden);
+  const canReset = (location: (typeof locations)[number]) =>
+    !location.overridden &&
+    !sameStoragePath(
+      draft.find((item) => item.category === location.category)?.target ?? location.path,
+      location.defaultPath,
+    );
+  const reset = (categories: StorageCategory[]) => {
+    if (locked) return;
+    const resetting = selectable.filter((location) => categories.includes(location.category));
+    setDraft((previous) => [
+      ...previous.filter(
+        (item) => !resetting.some((location) => location.category === item.category),
+      ),
+      ...resetting
+        .filter((location) => !sameStoragePath(location.path, location.defaultPath))
+        .map((location) => ({
+          category: location.category,
+          target: location.defaultPath,
+          migrate: true,
+        })),
+    ]);
+  };
   const pick = async (categories: StorageCategory[], batch: boolean) => {
     if (locked || !categories.length) return;
     setPicking(true);
@@ -80,6 +104,19 @@ export function StorageSettings() {
           onClick={() => void pick(selected, true)}
         >
           {t("storage.batchChoose", { count: selected.length })}
+        </Button>
+        <Button
+          size="sm"
+          disabled={
+            locked ||
+            !selectable.some(
+              (location) => selected.includes(location.category) && canReset(location),
+            )
+          }
+          leading={<RotateCcw size={14} />}
+          onClick={() => reset(selected)}
+        >
+          {t("storage.batchReset", { count: selected.length })}
         </Button>
         <IconButton
           label={t("common.refresh")}
@@ -216,6 +253,21 @@ export function StorageSettings() {
                 >
                   {t("storage.change")}
                 </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={t("storage.resetCategory", {
+                    category: t(`storage.categories.${location.category}`),
+                  })}
+                  title={t("storage.defaultPath", {
+                    path: displayStoragePath(location.defaultPath),
+                  })}
+                  disabled={locked || !canReset(location)}
+                  leading={<RotateCcw size={14} />}
+                  onClick={() => reset([location.category])}
+                >
+                  {t("storage.reset")}
+                </Button>
               </div>
             </div>
           );
@@ -238,6 +290,16 @@ export function StorageSettings() {
           {Object.entries(status.previous).map(([category, path]) => (
             <p key={category}>
               <span>{t(`storage.categories.${category as StorageCategory}`)}</span>
+              <code className="storage-settings__path">{displayStoragePath(path)}</code>
+            </p>
+          ))}
+          {Object.entries(status.archives ?? {}).map(([category, path]) => (
+            <p key={`archive-${category}`}>
+              <span>
+                {t("storage.archivedDefault", {
+                  category: t(`storage.categories.${category as StorageCategory}`),
+                })}
+              </span>
               <code className="storage-settings__path">{displayStoragePath(path)}</code>
             </p>
           ))}
@@ -264,6 +326,7 @@ export function StorageSettings() {
                   if (ok) {
                     setDraft([]);
                     setReviewing(false);
+                    useRestartPrompt.getState().show();
                   }
                 })
               }
@@ -287,6 +350,13 @@ export function StorageSettings() {
               <span className={item.migrate ? "settings-row__hint" : "settings-message is-error"}>
                 {t(item.migrate ? "storage.migrate" : "storage.emptyWarning")}
               </span>
+              {sameStoragePath(
+                item.target,
+                locations.find((location) => location.category === item.category)?.defaultPath ??
+                  "",
+              ) ? (
+                <span className="settings-row__hint">{t("storage.resetHint")}</span>
+              ) : null}
             </div>
           ))}
         </div>

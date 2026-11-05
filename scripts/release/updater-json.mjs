@@ -10,27 +10,22 @@ import { join } from "node:path";
 const rules = [
   {
     pattern: /x64-setup\.exe\.sig$/,
-    asset: (tag) => `Tunnelde_${tag.replace(/^v/, "")}_x64-setup.exe`,
     keys: ["windows-x86_64", "windows-x86_64-nsis"],
   },
   {
     pattern: /aarch64\.app\.tar\.gz\.sig$/,
-    asset: () => "Tunnelde_aarch64.app.tar.gz",
     keys: ["darwin-aarch64", "darwin-aarch64-app"],
   },
   {
     pattern: /(?<!aarch64\.)x64\.app\.tar\.gz\.sig$/,
-    asset: () => "Tunnelde_x64.app.tar.gz",
     keys: ["darwin-x86_64", "darwin-x86_64-app"],
   },
   {
     pattern: /amd64\.AppImage\.sig$/,
-    asset: (tag) => `Tunnelde_${tag.replace(/^v/, "")}_amd64.AppImage`,
     keys: ["linux-x86_64", "linux-x86_64-appimage"],
   },
   {
     pattern: /amd64\.deb\.sig$/,
-    asset: (tag) => `Tunnelde_${tag.replace(/^v/, "")}_amd64.deb`,
     keys: ["linux-x86_64-deb"],
   },
 ];
@@ -73,9 +68,13 @@ try {
     if (!rule) {
       continue;
     }
+    const asset = name.slice(0, -4);
+    if (!asset.startsWith(`Tunnelde_${version}_`))
+      throw new Error(`signature filename does not match release version: ${name}`);
     const signature = readFileSync(join(directory, name), "utf8").trim();
-    const asset = rule.asset(tag);
+    if (!signature) throw new Error(`empty signature: ${name}`);
     for (const key of rule.keys) {
+      if (platforms[key]) throw new Error(`duplicate signature for platform: ${key}`);
       platforms[key] = { signature, url: `${base}/${asset}` };
     }
     console.error(`[release] ${name} -> ${rule.keys.join(", ")}`);

@@ -354,11 +354,26 @@ struct Decoder(Vec<u8>);
 impl Decoder {
     fn push(&mut self, data: &[u8], final_chunk: bool) -> String {
         self.0.extend_from_slice(data);
-        let end = match std::str::from_utf8(&self.0) {
-            Ok(_) => self.0.len(),
-            Err(error) if error.error_len().is_none() && !final_chunk => error.valid_up_to(),
-            Err(_) => self.0.len(),
-        };
+        let mut end = 0;
+        while end < self.0.len() {
+            match std::str::from_utf8(&self.0[end..]) {
+                Ok(_) => {
+                    end = self.0.len();
+                    break;
+                }
+                Err(error) => {
+                    end += error.valid_up_to();
+                    match error.error_len() {
+                        Some(length) => end += length,
+                        None if final_chunk => {
+                            end = self.0.len();
+                            break;
+                        }
+                        None => break,
+                    }
+                }
+            }
+        }
         let value = String::from_utf8_lossy(&self.0[..end]).into_owned();
         self.0.drain(..end);
         value
@@ -749,6 +764,27 @@ mod tests {
         let mut decoder = Decoder::default();
         assert_eq!(decoder.push(&[0xe4, 0xbd], false), "");
         assert_eq!(decoder.push(&[0xa0, b'!'], false), "你!");
+        assert_eq!(decoder.push(&[0xff, 0xe4, 0xbd], false), "�");
+        assert_eq!(decoder.push(&[0xa0], false), "你");
+        assert_eq!(decoder.push(&[0xe4, 0xbd], false), "");
+        assert_eq!(decoder.push(&[], true), "�");
+    }
+    #[test]
+    fn utf8_stream_matches_lossy_decode_for_all_two_chunk_splits() {
+        for bytes in [
+            b"ascii".as_slice(),
+            "中文🙂".as_bytes(),
+            &[0xff, 0xe4, 0xbd, 0xa0, 0xc0, 0xf0, 0x9f, 0x99, 0x82],
+            &[b'a', 0xe4, 0xbd],
+        ] {
+            for split in 0..=bytes.len() {
+                let mut decoder = Decoder::default();
+                let mut output = decoder.push(&bytes[..split], false);
+                output.push_str(&decoder.push(&bytes[split..], false));
+                output.push_str(&decoder.push(&[], true));
+                assert_eq!(output, String::from_utf8_lossy(bytes), "split {split}");
+            }
+        }
     }
     #[test]
     fn posix_arguments_cannot_escape_quotes() {

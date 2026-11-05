@@ -55,13 +55,22 @@ export async function planDevelopment({
   await assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker);
   const previousVersion = JSON.parse(pkg).version;
   const version = nextVersion(previousVersion, commits);
+  // dev keeps its source history after promotion, including old Unreleased notes.
+  // Only newly edited summaries belong to this release cycle.
+  const promotedNotes = await readText(github, repo, "CHANGELOG.md", marker.sourceSha);
+  const currentSummary = releaseSection(developmentNotes, "Unreleased").notes;
+  const previousSummary = releaseSection(promotedNotes, "Unreleased").notes;
+  const curated =
+    currentSummary.replace(/\r\n/g, "\n") === previousSummary.replace(/\r\n/g, "\n")
+      ? ""
+      : currentSummary;
   const release = renderRelease({
     version,
     previousVersion,
     date,
     repository: `${repo.owner}/${repo.repo}`,
     commits,
-    curated: releaseSection(developmentNotes, "Unreleased").notes,
+    curated,
   });
   return {
     main,

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ConnectionRoute } from "./network";
+import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
@@ -38,12 +38,24 @@ import type {
   TransferEvent,
   FilePreviewInfo,
   UpdateState,
+  ReleaseHistory,
+  ConnectionQuality,
 } from "./types";
 
 export const isTauri = (): boolean =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+export interface LogSnapshot {
+  diagnostic: string;
+  truncated: boolean;
+  filename: string | null;
+  operations: Array<{ id: number; timestamp: number; action: string; target: string | null }>;
+}
+
 export const api = {
+  logsRead: () => invoke<LogSnapshot>("logs_read"),
+  appRestart: () => invoke<void>("app_restart"),
+  storageRestartPending: () => invoke<boolean>("storage_restart_pending"),
   storageStatus: () => invoke<StorageStatus>("storage_status"),
   storageSchedule: (changes: StorageChange[]) =>
     invoke<StorageStatus>("storage_schedule", { changes }),
@@ -64,6 +76,8 @@ export const api = {
     invoke<void>("proxy_password_save", { id, password }),
   testProxy: (proxy: string, host: string, port: number) =>
     invoke<void>("proxy_test", { proxy, host, port }),
+  testProxyQuality: (proxy: string, host: string, port: number) =>
+    invoke<NetworkConnectionQuality>("proxy_test_quality", { proxy, host, port }),
   appInfo: () => invoke<AppInfo>("app_info"),
   clipboardReadText: () => invoke<string>("clipboard_read_text"),
   clipboardWriteText: (text: string) => invoke<void>("clipboard_write_text", { text }),
@@ -101,15 +115,23 @@ export const api = {
   updateState: () => invoke<UpdateState>("update_state"),
   checkUpdates: (force = true) => invoke<UpdateState>("update_check", { force }),
   installUpdate: () => invoke<UpdateState>("update_install"),
+  updateHistory: (version: string) => invoke<ReleaseHistory>("update_history", { version }),
   openReleasePage: () => invoke<void>("open_release_page"),
 
   openDataDir: () => invoke<void>("app_open_data_dir"),
   openLogDir: () => invoke<void>("open_log_dir"),
+  revealLocalPath: (path: string) => invoke<void>("reveal_local_path", { path }),
   openLocalPath: (path: string) => invoke<void>("open_local_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),
 
   sshProbe: (hostId: string, jumpCredentials?: SshConnectRequest["jumpCredentials"]) =>
     invoke<HostKeyInfo>("ssh_probe", { hostId, ...(jumpCredentials ? { jumpCredentials } : {}) }),
+  sshTestConnection: (
+    id: string,
+    hostId: string,
+    jumpCredentials: SshConnectRequest["jumpCredentials"],
+  ) => invoke<ConnectionQuality>("ssh_test_connection", { id, hostId, jumpCredentials }),
+  sshCancelTest: (id: string) => invoke<void>("ssh_cancel_test", { id }),
   sshTrust: (
     hostId: string,
     fingerprint: string,
@@ -248,6 +270,9 @@ export const api = {
   localCopy: (from: string, to: string, overwrite = false) =>
     invoke<void>("local_copy", { from, to, overwrite }),
 
+  localReadText: (path: string) => invoke<TextFile>("local_read_text", { path }),
+  localWriteText: (path: string, content: string, baseline: string) =>
+    invoke<void>("local_write_text", { path, content, baseline }),
   sftpReadText: (sessionId: string, path: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path }),
   sftpWriteText: (sessionId: string, path: string, content: string) =>

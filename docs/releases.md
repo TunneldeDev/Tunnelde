@@ -28,29 +28,18 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    **Publish version** builds Windows, Linux, Apple Silicon and Intel macOS packages.
 6. Every build first shares one staging draft. Only after all desktop artifacts, signatures and
    `latest.json` pass verification does it become public. Titles are the complete version tag,
-   e.g. `v0.28.0-beta.3` or `v0.27.1`. Beta and Nightly always use `prerelease: true` and
+   e.g. `v0.28.0-beta.3` or `v0.27.1`. Beta releases always use `prerelease: true` and
    `make_latest: false`. Stable uses `/releases/latest/`; an older recovered stable version cannot
    move that pointer backwards. Historical releases and immutable tags are retained.
 7. After preparing a stable tag, refresh development automation for work accumulated since the
    promotion. No new changes means no duplicate release PR.
 
-## Independent Nightly builds
+## Local development builds
 
-**Nightly** runs at `0 22 * * *` (22:00 UTC, 06:00 Beijing time the following day), or from its
-**Run workflow** button. It reads current `dev`; it is not triggered by dev pushes. No work after
-the last stable promotion means no build. Repeating an already published snapshot also skips it;
-an interrupted draft is reused. Tagged releases and daily development snapshots run independently.
-
-Versions contain the target stable base, the commit distance and the source hash:
-
-- Before a Beta milestone: `v0.27.1-alpha.1.d.3.g7ec5d7a8c51c`.
-- After `v0.28.0-beta.3`: `v0.28.0-beta.3.d.2.g0123456789ab`.
-- No commits since that Beta: skip Nightly rather than build identical code again.
-
-The most recent applicable Beta is the anchor; its source must be an ancestor of current dev.
-Distance is a separate numeric SemVer identifier so 1000 sorts after 999. The versioned title adds
-`(Nightly)`. Daily builds do not consume Beta numbers. Nightly stays in this repository and builds
-all four desktop targets using Tunnelde's signed updater packages.
+Nightly publication is disabled. There is no scheduled or manually dispatched Nightly workflow,
+and the shared publisher rejects Nightly tags, including attempts to resume historical drafts.
+Use `pnpm build:local` to test development changes without creating public tags or releases.
+Historical Nightly version metadata remains readable for compatibility.
 
 ## Versions and changelog
 
@@ -62,7 +51,7 @@ The suffix is **`beta.N`, where N is 1 through 9**. Do not publish `beta.10`
 or higher. For example, `0.28.0-beta.1`, `0.28.0-beta.2`, then stable `0.28.0`;
 the first Beta for the next target is `0.28.1-beta.1`. Before a tenth milestone
 would be needed, review and publish the stable promotion PR. If the release is
-not ready, fix it and use Nightly for intermediate testing; automation stops
+not ready, fix it and use local builds for intermediate testing; automation stops
 rather than publishing an unreviewed stable release or recycling a number.
 
 Allocation reads tags rather than workflow run counters or display titles.
@@ -90,7 +79,9 @@ Release Please action is replaced by repository scripts; the manifest remains ve
 
 The changelog has bilingual categories, highlights, expandable detail, PR/commit links and
 contributors. Duplicate titles retain their source references and authors. History on main is
-preserved byte for byte. Optional Unreleased notes from dev become the new release highlights.
+preserved byte for byte. Optional Unreleased notes edited since the last promoted dev source
+become the new release highlights. An unchanged summary is ignored, so an older cycle cannot
+silently describe a newer release; without a new summary, highlights come from current changes.
 Generation is deterministic for fixed inputs and date, requires no AI service, and happens in
 the PR before main is changed. PR bodies stay short and link to that exact changelog SHA.
 
@@ -149,13 +140,13 @@ recovery never replaces public installers. Never move an existing tag or reuse a
 
 Publication checks the tag's immutable commit, channel and branch ancestry. Advancing dev during
 a build does not invalidate the selected snapshot or strand its complete draft. A source removed
-from branch history is rejected. Historical Beta/Nightly publication cannot overwrite stable or
+from branch history is rejected. Historical Beta publication cannot overwrite stable or
 newer-version installers; an old stable recovery explicitly keeps the newer stable as latest.
 
 **Publish version → Run workflow → tag** also validates and creates a missing draft for an existing
 version tag. **Release → existing_tag** resumes an already staged draft. Both retain the original
 source; neither changes tags or rebuilds public packages. Development concurrency serializes only
-release-PR maintenance; Beta, Nightly and version publication have independent workflow groups.
+release-PR maintenance; Beta and version publication have independent workflow groups.
 
 Native helpers and compiler timings remain optional Actions artifacts, never public desktop
 release downloads. The plugin marketplace repository has its own independent release process.
@@ -181,7 +172,7 @@ and displayed in a collapsed Markdown section.
 
 - **Stable** uses the latest public stable manifest and excludes prereleases.
 - **Public beta (Beta)** selects the greatest published stable/Beta version with `latest.json`.
-- Developer Nightly packages are not an in-app update channel. Legacy Nightly preferences migrate
+- Nightly publication is disabled and is not an in-app update channel. Legacy Nightly preferences migrate
   to Stable. Stable/Beta discovery excludes daily snapshots.
 - Discovery follows GitHub release pagination and compares SemVer rather than titles or list order.
   Drafts, incomplete releases and mismatched prerelease flags are excluded. A source outage is an
@@ -196,7 +187,7 @@ and displayed in a collapsed Markdown section.
   version greater than the installed build. All source/channel changes invalidate a previous update
   selection, and cannot occur during an installation.
 
-Fresh installations always default to Stable, including Beta and Nightly builds. Public beta
+Fresh installations always default to Stable, including Beta builds. Public beta
 requires an explicit selection; development snapshots are not offered. Existing Stable/Beta
 preferences are retained, while legacy Nightly preferences migrate to Stable.
 

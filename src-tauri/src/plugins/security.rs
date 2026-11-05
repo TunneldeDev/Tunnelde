@@ -36,6 +36,8 @@ pub const PERMISSIONS: &[&str] = &[
     "history.write",
     "workspace.read",
     "workspace.write",
+    "editor.read",
+    "editor.write",
     "clipboard.read",
     "clipboard.write",
     "app.openExternal",

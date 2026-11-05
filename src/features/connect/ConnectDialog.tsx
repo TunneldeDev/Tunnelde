@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
+import { ConnectionQuality } from "@/features/connect/ConnectionQuality";
 import { Field, Input, Switch } from "@/components/ui/form/Field";
 import { cn } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
@@ -36,7 +37,20 @@ interface ConnectDialogProps {
   onConnected?: (session: SshSession) => void;
 }
 
-export function ConnectDialog({
+export function ConnectDialog(props: ConnectDialogProps) {
+  const host = props.host;
+  const scope = JSON.stringify([
+    host.id,
+    host.host,
+    host.port,
+    host.username,
+    host.authMethod,
+    host.keyPath,
+  ]);
+  return <HostConnectDialog key={scope} {...props} />;
+}
+
+function HostConnectDialog({
   host,
   after = "terminal",
   intent = "connect",
@@ -65,6 +79,7 @@ export function ConnectDialog({
   const [saved, setSaved] = useState(false);
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(initialError ?? null);
   const alive = useRef(true);
   const pending = useRef(false);
@@ -161,7 +176,7 @@ export function ConnectDialog({
   const unsupported = !setup && host.authMethod === "agent";
   const interactive = setup || (host.authMethod !== "key" && !unsupported);
   const hasCredentials = !interactive || password.length > 0 || saved;
-  const canConnect = trusted && !probing && !busy && !unsupported && hasCredentials;
+  const canConnect = trusted && !probing && !busy && !testing && !unsupported && hasCredentials;
 
   const trust = async () => {
     if (pending.current || !probe) {
@@ -228,7 +243,9 @@ export function ConnectDialog({
   };
 
   const submit = async (justApproved = false) => {
-    const ready = justApproved ? !probing && !unsupported && hasCredentials : canConnect;
+    const ready = justApproved
+      ? !probing && !testing && !unsupported && hasCredentials
+      : canConnect;
     if (!ready || pending.current) {
       return;
     }
@@ -306,7 +323,13 @@ export function ConnectDialog({
   };
 
   const installKey = async () => {
-    if (pending.current || !trusted || unsupported || (password.length === 0 && !saved)) {
+    if (
+      pending.current ||
+      testing ||
+      !trusted ||
+      unsupported ||
+      (password.length === 0 && !saved)
+    ) {
       return;
     }
     pending.current = true;
@@ -462,6 +485,11 @@ export function ConnectDialog({
             </span>
           </div>
           {probe ? <code className="key-box__fingerprint">{probe.fingerprint}</code> : null}
+          {probe?.connectionTimeMs != null && !probing ? (
+            <p className="connect__hint">
+              {t("connect.probeTime", { value: probe.connectionTimeMs })}
+            </p>
+          ) : null}
           {probe?.knownFingerprint && probe.knownFingerprint !== probe.fingerprint ? (
             <code className="key-box__fingerprint key-box__fingerprint--old">
               {t("connect.previousKey")}: {probe.knownFingerprint}
@@ -475,7 +503,7 @@ export function ConnectDialog({
               <Button
                 size="sm"
                 variant={status === "changed" ? "danger" : "secondary"}
-                disabled={busy}
+                disabled={busy || testing}
                 onClick={() => void trust()}
               >
                 {status === "changed" ? t("connect.replaceKey") : t("connect.trustHost")}
@@ -483,6 +511,17 @@ export function ConnectDialog({
             </>
           ) : null}
         </div>
+
+        <ConnectionQuality
+          hostId={host.id}
+          credentials={jumpCredentials}
+          enabled={trusted && !probing && !busy}
+          onTesting={setTesting}
+          onKeyError={() => {
+            setTrusted(false);
+            void verifyRoute();
+          }}
+        />
 
         {interactive ? (
           <>
@@ -529,7 +568,7 @@ export function ConnectDialog({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={busy || !trusted || (password.length === 0 && !saved)}
+                  disabled={busy || testing || !trusted || (password.length === 0 && !saved)}
                   onClick={() => void installKey()}
                 >
                   {t("connect.installKey")}

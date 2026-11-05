@@ -14,6 +14,7 @@ import {
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
+import { OverlayScrollArea } from "@/components/ui/display/OverlayScrollArea";
 import { matchesPlugin, pluginTags, PLUGIN_PAGE_SIZE } from "@/lib/plugins/discovery";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
@@ -203,7 +204,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
           </button>
         ))}
       </div>
-      <div
+      <OverlayScrollArea
         className="plugins-browser__list"
         role="tabpanel"
         id={`${id}-list`}
@@ -353,7 +354,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
             </article>
           );
         })}
-      </div>
+      </OverlayScrollArea>
       {rows.length > PLUGIN_PAGE_SIZE ? (
         <nav className="plugins-pagination" aria-label={t("market.pagination")}>
           <IconButton

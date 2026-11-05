@@ -8,6 +8,7 @@ import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
+import { NetworkConnectionTest } from "./NetworkConnectionTest";
 import { defaultNetwork, type ProxyProfile } from "@/lib/api/network";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 
@@ -20,21 +21,11 @@ export function NetworkSettingsSection() {
   const [editing, setEditing] = useViewState<ProxyProfile | null>("network:editing", null);
   const [password, setPassword] = useViewState("network:password", "");
   const [clearPassword, setClearPassword] = useViewState("network:clearPassword", false);
-  const [testProxy, setTestProxy] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const busy = saving || testing;
+  const busy = saving;
   useBackgroundGuard(busy);
-  const [testHost, setTestHost] = useState("github.com");
-  const [testPort, setTestPort] = useState("443");
-  const [result, setResult] = useState("");
   const editingExisting = editing !== null && settings.profiles.some((p) => p.id === editing.id);
-  const validTest =
-    testHost.trim().length > 0 &&
-    /^\d+$/.test(testPort) &&
-    Number(testPort) >= 1 &&
-    Number(testPort) <= 65535;
   const beginEditing = (profile: ProxyProfile) => {
     setEditing(profile);
     setPassword("");
@@ -353,86 +344,7 @@ export function NetworkSettingsSection() {
         </details>
         <p className="settings-row__hint network-settings__note">{t("network.processHint")}</p>
       </section>
-      <section className="network-settings__section" aria-labelledby={`${formId}-test-title`}>
-        <div className="network-settings__head">
-          <h3 id={`${formId}-test-title`}>{t("network.test")}</h3>
-        </div>
-        <form
-          className="network-settings__test"
-          aria-labelledby={`${formId}-test-title`}
-          aria-busy={testing}
-          onSubmit={async (event) => {
-            event.preventDefault();
-            if (busy || !validTest) return;
-            setTesting(true);
-            setResult("");
-            try {
-              await api.testProxy(
-                testProxy || settings.defaultProxy || "system",
-                testHost.trim(),
-                Number(testPort),
-              );
-              setResult(t("network.testSuccess"));
-            } catch (cause) {
-              setResult(translateError(cause));
-            } finally {
-              setTesting(false);
-            }
-          }}
-        >
-          <Field label={t("network.proxy")} htmlFor={`${formId}-test-proxy`}>
-            <Select
-              id={`${formId}-test-proxy`}
-              label={t("network.proxy")}
-              value={testProxy}
-              options={choices}
-              disabled={busy}
-              onChange={(value) => {
-                setTestProxy(value);
-                setResult("");
-              }}
-            />
-          </Field>
-          <div className="network-settings__endpoint">
-            <Field label={t("network.testAddress")} htmlFor={`${formId}-test-host`}>
-              <Input
-                id={`${formId}-test-host`}
-                spellCheck={false}
-                autoComplete="off"
-                disabled={busy}
-                value={testHost}
-                onChange={(e) => {
-                  setTestHost(e.target.value);
-                  setResult("");
-                }}
-              />
-            </Field>
-            <Field label={t("network.port")} htmlFor={`${formId}-test-port`}>
-              <Input
-                id={`${formId}-test-port`}
-                type="number"
-                min={1}
-                max={65535}
-                inputMode="numeric"
-                disabled={busy}
-                value={testPort}
-                onChange={(e) => {
-                  setTestPort(e.target.value);
-                  setResult("");
-                }}
-              />
-            </Field>
-          </div>
-          <div className="network-settings__test-actions">
-            <Button type="submit" disabled={busy || !validTest}>
-              {t(testing ? "common.loading" : "network.test")}
-            </Button>
-            <p role="status" className="network-settings__result">
-              {result}
-            </p>
-          </div>
-        </form>
-      </section>
+      <NetworkConnectionTest settings={settings} />
     </div>
   );
 }

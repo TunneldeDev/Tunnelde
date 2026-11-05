@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
+import { FormatterPicker } from "@/features/editor/FormatterPicker";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { PaneLayout } from "@/components/layout/PaneLayout";
 import { WorkspaceContents } from "@/components/layout/TabContent";
@@ -34,6 +35,7 @@ import { useWorkspace, type PanePosition, type SplitDirection } from "@/store/wo
 import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { usePlugins } from "@/store/plugins";
 import { useQuickAccess } from "@/store/quickAccess";
+import { RestartPrompt } from "@/components/layout/RestartPrompt";
 import { FilePreview } from "@/features/sftp/FilePreview";
 import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
@@ -283,6 +285,8 @@ export function AppShell() {
       <DialogHost />
       <ContextMenuHost />
       <CommandPalette />
+      <RestartPrompt />
+      <FormatterPicker />
       <FilePreview />
       <BackgroundTasks />
       {!settings.showStatusBar ? <BackgroundTaskStatusButton floating /> : null}

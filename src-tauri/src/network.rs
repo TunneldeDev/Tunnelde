@@ -17,6 +17,8 @@ use crate::{
     vault,
 };
 
+pub mod diagnostics;
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
 pub struct NetworkSettings {
@@ -302,16 +304,20 @@ fn system_proxy(host: &str, port: u16) -> AppResult<String> {
 }
 
 pub async fn tcp(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<Stream> {
+    let url = tcp_proxy(app, host, port, proxy)?;
+    dial(host, port, &url).await
+}
+
+fn tcp_proxy(app: &AppHandle, host: &str, port: u16, proxy: &str) -> AppResult<String> {
     if !valid_host(host) || port == 0 {
         return Err(AppError::validation("network.invalid"));
     }
     let network = app.state::<AppState>().settings().network;
     let configured = proxy_url(&network, "ssh", Some(proxy))?;
-    let url = match configured {
-        Some(value) => value,
-        None => system_proxy(host, port)?,
-    };
-    dial(host, port, &url).await
+    match configured {
+        Some(value) => Ok(value),
+        None => system_proxy(host, port),
+    }
 }
 
 async fn dial(host: &str, port: u16, url: &str) -> AppResult<Stream> {

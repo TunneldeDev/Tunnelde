@@ -99,7 +99,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf sshfs openssh-sftp-server
 
       - name: Build frontend
         run: |
@@ -114,6 +114,41 @@ jobs:
 
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Test current and historical plugin transports
+        run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
+
+      - name: Test real SSHFS mount when FUSE is available
+        run: |
+          if [ -r /dev/fuse ] && [ -w /dev/fuse ]; then
+            cargo test --manifest-path src-tauri/Cargo.toml real_passive_sshfs_mount_resolves_owned_files -- --ignored --nocapture
+          else
+            echo 'FUSE device unavailable on this runner; real SSHFS mount test skipped.'
+          fi
+
+  macos-app-check:
+    name: macOS application check
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        timeout-minutes: 3
+        continue-on-error: true
+        with:
+          workspaces: src-tauri
+          save-if: false
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --tests
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
 
   hygiene:
     name: Repository hygiene

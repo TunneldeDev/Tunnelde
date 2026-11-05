@@ -2,13 +2,20 @@ import { create } from "zustand";
 
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
-import type { Settings, UpdateState } from "@/lib/api/types";
+import type { ReleaseHistory, Settings, UpdateState } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
 
 interface UpdatesStore {
   state: UpdateState | null;
   busy: boolean;
+  history: {
+    key: string;
+    loading: boolean;
+    data: ReleaseHistory | null;
+    error: string | null;
+  } | null;
+  loadHistory: (retry?: boolean) => Promise<void>;
   refresh: () => Promise<void>;
   check: (force?: boolean) => Promise<void>;
   install: () => Promise<void>;
@@ -17,6 +24,18 @@ interface UpdatesStore {
 }
 
 let refreshVersion = 0;
+let historyRequest = 0;
+
+export function updateHistoryKey(state: UpdateState): string {
+  return JSON.stringify([
+    state.currentVersion,
+    state.version,
+    state.channel,
+    state.source,
+    state.sourceUrl,
+    state.lastChecked,
+  ]);
+}
 
 export function matchingUpdateState(
   state: UpdateState | null,
@@ -32,6 +51,49 @@ export function matchingUpdateState(
 export const useUpdates = create<UpdatesStore>((set, get) => ({
   state: null,
   busy: false,
+  history: null,
+
+  loadHistory: async (retry = false) => {
+    const snapshot = matchingUpdateState(get().state, useSettings.getState().settings);
+    if (!isTauri() || !snapshot?.available || !snapshot.version) return;
+    const key = updateHistoryKey(snapshot);
+    const previous = get().history;
+    if (previous?.key === key && (previous.loading || !retry)) return;
+    const request = ++historyRequest;
+    set({
+      history: {
+        key,
+        loading: true,
+        data: previous?.key === key ? previous.data : null,
+        error: null,
+      },
+    });
+    try {
+      const data = await api.updateHistory(snapshot.version);
+      const current = matchingUpdateState(get().state, useSettings.getState().settings);
+      if (request !== historyRequest) return;
+      if (!current || updateHistoryKey(current) !== key) {
+        set({ history: null });
+        return;
+      }
+      set({ history: { key, loading: false, data, error: null } });
+    } catch (error) {
+      const current = matchingUpdateState(get().state, useSettings.getState().settings);
+      if (request !== historyRequest) return;
+      if (!current || updateHistoryKey(current) !== key) {
+        set({ history: null });
+        return;
+      }
+      set({
+        history: {
+          key,
+          loading: false,
+          data: previous?.key === key ? previous.data : null,
+          error: translateError(error),
+        },
+      });
+    }
+  },
 
   refresh: async () => {
     if (!isTauri()) {

@@ -38,8 +38,12 @@ import { useWorkspace } from "@/store/workspace";
 import { useFileClipboard } from "@/store/fileClipboard";
 import { useFilePreview } from "@/store/filePreview";
 import { DRAG_MIME } from "@/lib/files/dnd";
+import { api } from "@/lib/api/ipc";
 import { useContextMenu } from "@/store/contextMenu";
+import { usePlugins } from "@/store/plugins";
+import { plugin } from "../fixtures/plugins";
 import * as clipboard from "@/lib/session/clipboard";
+import * as mountedMenu from "@/lib/plugins/mountFileMenu";
 
 const session: SshSession = {
   id: "session-1",
@@ -107,10 +111,11 @@ beforeEach(() => {
     return path ? { ...listing, path } : listing;
   });
 
+  usePlugins.setState({ items: [] });
   useSsh.setState({ sessions: [session] });
   useHosts.setState({ hosts: [] });
   useDialogs.setState({ confirm: vi.fn(), openConnect: vi.fn() });
-  useWorkspace.setState({ openEditor: vi.fn() });
+  useWorkspace.setState({ openEditor: vi.fn(), openLocalEditor: vi.fn() });
   useTransfers.setState({ items: [] });
   useFileClipboard.setState({ clip: null });
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: false } });
@@ -129,6 +134,96 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("opens local text inside Tunnelde and offers the system application separately", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    const file = await screen.findByText("notes.txt");
+    fireEvent.doubleClick(file);
+    expect(useWorkspace.getState().openLocalEditor).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    expect(fsMock.openLocal).not.toHaveBeenCalled();
+    fireEvent.contextMenu(file);
+    const item = useContextMenu
+      .getState()
+      .menu?.items.find((entry) => entry.label === "Open with system application");
+    expect(item).toBeTruthy();
+    item!.onSelect();
+    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+  });
+
+  it("offers a contributed action only on matching remote entries", async () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          id: "file-tool",
+          name: "File Tool",
+          permissions: ["sftp.read"],
+          commands: [
+            {
+              id: "inspect",
+              title: "Inspect",
+              fileMenu: { sources: ["remote"], kinds: ["file"], extensions: ["md"] },
+            },
+          ],
+        },
+      ],
+    });
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.contextMenu(await screen.findByText("notes.txt"));
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label === "File Tool: Inspect"),
+    ).toBe(false);
+    fireEvent.contextMenu(screen.getByText("readme.md"));
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label === "File Tool: Inspect"),
+    ).toBe(true);
+  });
+
+  it("adds a mounted-file action only to the menu that requested it", async () => {
+    let finish!: () => void;
+    const discover = vi.spyOn(mountedMenu, "discoverMountedFileActions").mockImplementationOnce(
+      (_session, _path, onAction) =>
+        new Promise((resolve) => {
+          finish = () => {
+            onAction?.(action);
+            resolve([action]);
+          };
+        }),
+    );
+    const action: mountedMenu.MountedFileAction = {
+      pluginId: "sshfs-lite",
+      pluginName: "SSHFS Lite",
+      fingerprint: "test",
+      mount: { id: "m1", sessionId: "session-1", remotePath: "/srv", mountPoint: "Z:\\" },
+    };
+    render(<SftpPage sessionId="session-1" />);
+    const remoteFile = await screen.findByText("readme.md");
+    fireEvent.contextMenu(remoteFile);
+    expect(discover).toHaveBeenCalledWith("session-1", "/srv/app/readme.md", expect.any(Function));
+    fireEvent.contextMenu(screen.getByText("notes.txt"));
+    await act(async () => finish());
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label.includes("SSHFS Lite")),
+    ).toBe(false);
+    discover.mockImplementationOnce(async (_session, _path, onAction) => {
+      onAction?.(action);
+      return [action];
+    });
+    const reveal = vi.spyOn(mountedMenu, "revealMountedFile").mockResolvedValueOnce();
+    fireEvent.contextMenu(remoteFile);
+    await waitFor(() =>
+      expect(
+        useContextMenu.getState().menu?.items.some((item) => item.label.includes("SSHFS Lite")),
+      ).toBe(true),
+    );
+    useContextMenu
+      .getState()
+      .menu!.items.find((item) => item.label.includes("SSHFS Lite"))!
+      .onSelect();
+    expect(reveal).toHaveBeenCalledWith(action, "session-1", "/srv/app/readme.md");
+    discover.mockRestore();
+    reveal.mockRestore();
+  });
+
   it("previews the selected local or remote file from the toolbar or Space, without editing it", async () => {
     useFilePreview.setState({ file: null });
     render(<SftpPage sessionId="session-1" />);
@@ -465,15 +560,15 @@ describe("SftpPage", () => {
     await waitFor(() => expect(screen.getByText("2 selected")).toBeTruthy());
   });
 
-  it("opens local files with the system handler", async () => {
+  it("opens local files in the editor", async () => {
     render(<SftpPage sessionId="session-1" />);
     const row = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;
     fireEvent.doubleClick(row);
 
     await waitFor(() => {
-      expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+      expect(useWorkspace.getState().openLocalEditor).toHaveBeenCalledWith("C:\\work\\notes.txt");
     });
-    expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
+    expect(fsMock.openLocal).not.toHaveBeenCalled();
   });
 });
 
@@ -1097,6 +1192,31 @@ describe("SftpPage visible file interactions", () => {
     expect(within(local).getByText("src")).toBeTruthy();
   });
 
+  it("offers native file manager actions only for local entries", async () => {
+    const reveal = vi.spyOn(api, "revealLocalPath").mockResolvedValue();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const [local, remote] = screen.getAllByRole("listbox");
+    fireEvent.contextMenu(within(local!).getByText("notes.txt").closest(".sftp-row")!);
+    const action = useContextMenu
+      .getState()
+      .menu?.items.find((item) => item.label === "Reveal in file manager");
+    expect(action).toBeTruthy();
+    action?.onSelect();
+    expect(reveal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    fireEvent.contextMenu(within(remote!).getByText("readme.md").closest(".sftp-row")!);
+    expect(
+      useContextMenu.getState().menu?.items.some((item) => item.label === "Reveal in file manager"),
+    ).toBe(false);
+    fireEvent.contextMenu(within(local!).getByText("src").closest(".sftp-row")!);
+    useContextMenu
+      .getState()
+      .menu?.items.find((item) => item.label === "Open folder in file manager")
+      ?.onSelect();
+    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\src");
+    reveal.mockRestore();
+  });
+
   it("updates the keyboard cursor when a different entry is selected by its context menu", async () => {
     render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");
@@ -1140,7 +1260,7 @@ describe("SftpPage visible file interactions", () => {
     expect(within(local).getByText(".env")).toBeTruthy();
     fireEvent.click(within(local).getByText("notes.txt"));
     fireEvent.keyDown(local, { key: "ArrowDown", metaKey: true });
-    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    expect(useWorkspace.getState().openLocalEditor).toHaveBeenCalledWith("C:\\work\\notes.txt");
     fireEvent.keyDown(local, { key: "ArrowUp", metaKey: true });
     await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
   });

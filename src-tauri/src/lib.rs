@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod error;
+mod logs;
 mod models;
 mod mounts;
 mod network;
@@ -94,6 +95,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             window::main_window_ready,
+            platform::restart::app_restart,
             platform::background::main_window_snapshot,
             platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
@@ -111,6 +113,7 @@ pub fn run() {
             network::connection_route_save,
             network::proxy_password_save,
             network::proxy_test,
+            network::diagnostics::proxy_test_quality,
             plugins::security::plugin_security_state,
             plugins::security::plugin_set_restricted,
             plugins::security::plugin_set_permissions,
@@ -118,6 +121,7 @@ pub fn run() {
             plugins::api::plugin_workspace_authorize,
             commands::app_info,
             storage::storage_status,
+            storage::storage_restart_pending,
             storage::storage_schedule,
             storage::storage_cancel,
             storage::storage_open,
@@ -148,15 +152,20 @@ pub fn run() {
             commands::update_state,
             commands::update_check,
             commands::update_install,
+            commands::update_history,
             commands::open_release_page,
             commands::open_log_dir,
+            logs::logs_read,
             commands::open_local_path,
+            commands::reveal_local_path,
             commands::open_external,
             commands::user_css_import,
             commands::user_css_export,
             commands::key_import,
             commands::key_pick,
             commands::ssh_probe,
+            commands::ssh_test_connection,
+            commands::ssh_cancel_test,
             commands::ssh_trust,
             commands::ssh_connect,
             commands::ssh_attach,
@@ -176,6 +185,8 @@ pub fn run() {
             commands::fs_transfer,
             commands::local_create_file,
             commands::sftp_create_file,
+            commands::local_read_text,
+            commands::local_write_text,
             commands::sftp_read_text,
             commands::sftp_write_text,
             commands::sftp_copy,

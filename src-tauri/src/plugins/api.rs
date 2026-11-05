@@ -47,6 +47,8 @@ macro_rules! method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk."),
+    method!("editor.replace", ["editor.write"], "{tabId:string,documentId:string,version:number,text:string}", "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents."),
     method!("mounts.browse", ["mounts.read"], "{sessionId:string,path?:string}", "Browse directories through an authenticated SFTP session for the mount chooser."),
     method!("mounts.open", ["mounts.write"], "{id:string}", "Open this plugin's mount in the system file manager."),
     method!("mounts.documentation", ["mounts.read"], "{}", "Open platform SSHFS installation instructions in the system browser."),
@@ -156,6 +158,34 @@ pub const METHODS: &[ApiMethod] = &[
 
 pub fn method_info(name: &str) -> Option<&'static ApiMethod> {
     METHODS.iter().find(|entry| entry.name == name)
+}
+
+// The plugin wire representation is deliberately independent from the SSH
+// manager's internal session type. Keep existing fields for API v1 clients.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginSession {
+    id: String,
+    host_id: String,
+    title: String,
+    address: String,
+    cols: u32,
+    rows: u32,
+    connected_at: i64,
+}
+
+impl From<crate::ssh::SessionInfo> for PluginSession {
+    fn from(session: crate::ssh::SessionInfo) -> Self {
+        Self {
+            id: session.id,
+            host_id: session.host_id,
+            title: session.title,
+            address: session.address,
+            cols: session.cols,
+            rows: session.rows,
+            connected_at: session.connected_at,
+        }
+    }
 }
 
 pub(super) fn authorize(context: &HostContext, permissions: &[&str]) -> AppResult<()> {
@@ -349,10 +379,15 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             commands::group_delete(state, field(&params, "id")?)?;
             Ok(Value::Null)
         }
-        "sessions.list" => encode(commands::ssh_sessions(state)),
-        "sessions.connect" => {
-            encode(commands::ssh_connect(app.clone(), field(&params, "request")?).await?)
-        }
+        "sessions.list" => encode(
+            commands::ssh_sessions(state)
+                .into_iter()
+                .map(PluginSession::from)
+                .collect::<Vec<_>>(),
+        ),
+        "sessions.connect" => encode(PluginSession::from(
+            commands::ssh_connect(app.clone(), field(&params, "request")?).await?,
+        )),
         "sessions.disconnect" => {
             commands::ssh_disconnect(app.clone(), field(&params, "sessionId")?)?;
             Ok(Value::Null)
@@ -592,7 +627,10 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
-        name if name.starts_with("workspace.") || name.starts_with("ui.") => {
+        name if name.starts_with("workspace.")
+            || name.starts_with("ui.")
+            || name.starts_with("editor.") =>
+        {
             frontend_request(context, name, params).await
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
@@ -763,21 +801,33 @@ async fn secret(context: &HostContext, method: &str, params: &Value) -> AppResul
 }
 
 async fn storage(context: &HostContext, method: &str, params: &Value) -> AppResult<Value> {
+    let root = context
+        .app
+        .state::<AppState>()
+        .storage
+        .dir(crate::storage::layout::Category::PluginData)
+        .to_path_buf();
+    storage_at(&root, &context.id, method, params, || {
+        authorize(context, &[])
+    })
+    .await
+}
+
+async fn storage_at(
+    root: &Path,
+    id: &str,
+    method: &str,
+    params: &Value,
+    authorize_request: impl Fn() -> AppResult<()>,
+) -> AppResult<Value> {
     static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     let key = storage_key(params)?;
     let _guard = LOCK
         .get_or_init(|| tokio::sync::Mutex::new(()))
         .lock()
         .await;
-    authorize(context, &[])?;
-    let path = storage_path(
-        context
-            .app
-            .state::<AppState>()
-            .storage
-            .dir(crate::storage::layout::Category::PluginData),
-        &context.id,
-    );
+    authorize_request()?;
+    let path = storage_path(root, id);
     let mut values: Map<String, Value> = match tokio::fs::File::open(&path).await {
         Ok(file) => {
             let mut bytes = Vec::new();
@@ -812,7 +862,7 @@ async fn storage(context: &HostContext, method: &str, params: &Value) -> AppResu
     let temporary = root.join(format!(".{}.tmp", uuid::Uuid::new_v4()));
     let result = async {
         tokio::fs::write(&temporary, bytes).await?;
-        authorize(context, &[])?;
+        authorize_request()?;
         tokio::fs::rename(&temporary, &path).await?;
         Ok(Value::Null)
     }
@@ -949,6 +999,23 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    fn plugin_session_wire_shape_is_explicit_and_preserves_existing_fields() {
+        let session = crate::ssh::SessionInfo {
+            id: "session".into(),
+            host_id: "host".into(),
+            title: "Example".into(),
+            address: "example.test:22".into(),
+            cols: 80,
+            rows: 24,
+            connected_at: 123,
+        };
+        assert_eq!(
+            serde_json::to_value(PluginSession::from(session)).unwrap(),
+            json!({"id":"session","hostId":"host","title":"Example", "address":"example.test:22", "cols":80,"rows":24,"connectedAt":123})
+        );
+    }
+
+    #[test]
     fn exposes_only_unique_documented_methods_with_declared_permissions() {
         let mut names = HashSet::new();
         for entry in METHODS {
@@ -1007,6 +1074,152 @@ mod tests {
         assert_ne!(a, storage_path(root, "plugin-b"));
         assert_eq!(a, storage_path(root, "plugin-a"));
         assert_eq!(storage_path(root, "../../secret").parent(), Some(root));
+    }
+
+    #[tokio::test]
+    async fn plugin_storage_persists_isolates_and_removes_values() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-storage-test-{}", uuid::Uuid::new_v4()));
+        let key = json!({"key": "draft"});
+        let value = json!({"key": "draft", "value": {"number": 42, "enabled": true}});
+        assert_eq!(
+            storage_at(&root, "a", "storage.get", &key, || Ok(()))
+                .await
+                .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            storage_at(&root, "a", "storage.set", &value, || Ok(()))
+                .await
+                .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            storage_at(&root, "a", "storage.get", &key, || Ok(()))
+                .await
+                .unwrap(),
+            value["value"]
+        );
+        assert_eq!(
+            storage_at(&root, "b", "storage.get", &key, || Ok(()))
+                .await
+                .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            storage_at(&root, "a", "storage.delete", &key, || Ok(()))
+                .await
+                .unwrap(),
+            Value::Null
+        );
+        assert_eq!(
+            storage_at(&root, "a", "storage.get", &key, || Ok(()))
+                .await
+                .unwrap(),
+            Value::Null
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_storage_rechecks_authorization_before_commit_and_cleans_staging() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-storage-test-{}", uuid::Uuid::new_v4()));
+        let key = json!({"key": "draft"});
+        let original = json!({"key": "draft", "value": "original"});
+        storage_at(&root, "a", "storage.set", &original, || Ok(()))
+            .await
+            .unwrap();
+        let checks = AtomicUsize::new(0);
+        let changed = json!({"key": "draft", "value": "changed"});
+        let result = storage_at(&root, "a", "storage.set", &changed, || {
+            if checks.fetch_add(1, Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err(AppError::validation("test.revoked"))
+            }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(checks.load(Ordering::SeqCst), 2);
+        assert_eq!(
+            storage_at(&root, "a", "storage.get", &key, || Ok(()))
+                .await
+                .unwrap(),
+            "original"
+        );
+        let mut entries = tokio::fs::read_dir(&root).await.unwrap();
+        assert!(entries.next_entry().await.unwrap().is_some());
+        assert!(entries.next_entry().await.unwrap().is_none());
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_storage_rejects_oversized_writes_without_losing_existing_data() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-storage-test-{}", uuid::Uuid::new_v4()));
+        let key = json!({"key": "draft"});
+        storage_at(
+            &root,
+            "a",
+            "storage.set",
+            &json!({"key":"draft","value":"original"}),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert!(storage_at(
+            &root,
+            "a",
+            "storage.set",
+            &json!({"key":"draft","value":"x".repeat(MAX_STORAGE)}),
+            || Ok(())
+        )
+        .await
+        .is_err());
+        assert_eq!(
+            storage_at(&root, "a", "storage.get", &key, || Ok(()))
+                .await
+                .unwrap(),
+            "original"
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn plugin_storage_serializes_concurrent_updates() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-storage-test-{}", uuid::Uuid::new_v4()));
+        let first = json!({"key": "first", "value": 1});
+        let second = json!({"key": "second", "value": 2});
+        let (a, b) = tokio::join!(
+            storage_at(&root, "a", "storage.set", &first, || Ok(())),
+            storage_at(&root, "a", "storage.set", &second, || Ok(())),
+        );
+        a.unwrap();
+        b.unwrap();
+        assert_eq!(
+            storage_at(
+                &root,
+                "a",
+                "storage.get",
+                &json!({"key":"first"}),
+                || Ok(())
+            )
+            .await
+            .unwrap(),
+            1
+        );
+        assert_eq!(
+            storage_at(&root, "a", "storage.get", &json!({"key":"second"}), || Ok(
+                ()
+            ))
+            .await
+            .unwrap(),
+            2
+        );
+        tokio::fs::remove_dir_all(root).await.unwrap();
     }
 
     #[test]

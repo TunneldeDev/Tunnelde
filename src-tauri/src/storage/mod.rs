@@ -2,6 +2,7 @@ mod config;
 mod inventory;
 pub mod layout;
 mod migration;
+mod restore;
 
 use std::sync::Mutex;
 
@@ -58,6 +59,7 @@ pub struct Status {
     locations: Vec<Location>,
     pending: Option<config::Pending>,
     previous: std::collections::BTreeMap<Category, std::path::PathBuf>,
+    archives: std::collections::BTreeMap<Category, std::path::PathBuf>,
     last_error: Option<String>,
 }
 
@@ -82,8 +84,14 @@ fn status(paths: &Paths) -> AppResult<Status> {
         locations,
         pending: config.pending,
         previous: config.previous,
+        archives: config.archives,
         last_error: config.last_error,
     })
+}
+
+#[tauri::command]
+pub fn storage_restart_pending(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(config::load(&state.storage.home)?.pending.is_some())
 }
 
 #[tauri::command]
@@ -117,9 +125,7 @@ pub async fn storage_cancel(app: AppHandle) -> AppResult<Status> {
             .lock()
             .map_err(|_| AppError::internal("storage.lock"))?;
         let mut config = config::load(&paths.home)?;
-        config.pending = None;
-        config.last_error = None;
-        config::save(&paths.home, &config)?;
+        migration::cancel(&paths, &mut config)?;
         status(&paths)
     })
     .await

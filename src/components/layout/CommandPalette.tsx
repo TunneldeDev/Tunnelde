@@ -23,6 +23,7 @@ import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
 import { useFileIconResolver } from "@/lib/files/icons";
+import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
 import "@/styles/shortcuts.css";
 
 interface Command {
@@ -143,7 +144,12 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
   const commands = useMemo<Command[]>(() => {
     if (mode === "commands")
       return definitions
-        .filter((item) => item.scope === "workbench" && item.id !== "palette.open")
+        .filter(
+          (item) =>
+            (item.scope === "workbench" ||
+              (item.scope === "editor" && !!entries[activeTabId ?? ""])) &&
+            item.id !== "palette.open",
+        )
         .map((item) => ({
           id: item.id,
           title:
@@ -184,8 +190,18 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
             }))
         : [];
     const visible = result?.key === searchKey ? result.matches : [];
-    const inRoot = (file: string) =>
-      path && (file === path || file.startsWith(`${path.replace(/\/$/, "")}/`));
+    const inRoot = (file: string) => {
+      if (!path) return false;
+      const normalize = (value: string) => {
+        const normalized = value.replace(/\\/g, "/");
+        return !sessionId && /^[a-z]:\//i.test(normalized)
+          ? normalized.toLocaleLowerCase()
+          : normalized;
+      };
+      const root = normalize(path).replace(/\/+$/, "");
+      const candidate = normalize(file);
+      return candidate === root || candidate.startsWith(`${root}/`);
+    };
     const drafts =
       mode === "content" && needle.length >= 2
         ? Object.values(entries).filter(
@@ -217,8 +233,26 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
         fileName: fileName(match.path),
         detail: `${match.path}${match.line ? `:${match.line}:${match.column}` : ""}`,
         run: () => {
+          const provider = previewProviders(usePlugins.getState().items).find((item) =>
+            matchesPreview(item, match.path),
+          );
+          if ((provider?.renderer ?? previewKind(match.path)) !== "text") {
+            useFilePreview
+              .getState()
+              .show(
+                match.path,
+                match.line,
+                match.column,
+                sessionId ? { kind: "remote", sessionId } : { kind: "local" },
+              );
+            return;
+          }
           if (!sessionId) {
-            useFilePreview.getState().show(match.path, match.line, match.column);
+            useWorkspace.getState().openLocalEditor(match.path);
+            if (match.line)
+              useEditorLocation
+                .getState()
+                .reveal(`editor-local:${match.path}`, match.line, match.column);
             return;
           }
           const session = useSsh.getState().sessions.find((item) => item.id === sessionId);
@@ -246,6 +280,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
     searchKey,
     path,
     entries,
+    activeTabId,
     needle,
     sessionId,
   ]);

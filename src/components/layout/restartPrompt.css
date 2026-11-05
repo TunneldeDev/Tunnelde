@@ -1,0 +1,18 @@
+.restart-indicator,
+.restart-floating {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.restart-floating {
+  position: fixed;
+  right: 12px;
+  bottom: 46px;
+  z-index: 40;
+  padding: 7px 10px;
+  border: 1px solid var(--td-border);
+  border-radius: 6px;
+  background: var(--td-elevated);
+  color: var(--td-text);
+  cursor: pointer;
+}
