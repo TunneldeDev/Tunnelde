@@ -37,6 +37,10 @@ until their input, output, errors and lifecycle are documented and compatibility
 Older SDK samples and the host may differ; consult the catalogue shipped with the SDK and
 the target host's `api.describe` rather than relying on a fixed method count.
 
+CI also runs a frozen v0.28.0 example through the current host's manifest loader and
+JSON-RPC lifecycle. This covers one historical plugin's transport and view response;
+it does not establish compatibility for all API methods, permissions or stored data.
+
 The application and marketplace can release independently. Set the minimum application
 version to the first release that supports every feature your extension uses, and test on
 that version. The detailed guide describes the current contribution and permission model.

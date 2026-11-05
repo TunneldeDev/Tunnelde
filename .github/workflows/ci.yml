@@ -115,6 +115,9 @@ jobs:
       - name: Test
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
+      - name: Test current and historical plugin transports
+        run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
+
       - name: Test real SSHFS mount when FUSE is available
         run: |
           if [ -r /dev/fuse ] && [ -w /dev/fuse ]; then
