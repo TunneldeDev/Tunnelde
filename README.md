@@ -143,7 +143,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 - Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
 - [Plugin development and security](docs/plugins.md)
 - [Architecture and data locations](docs/architecture.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
 - [Optional native helper](native-helpers/README.md)
 - [Changes by release](CHANGELOG.md)
 
