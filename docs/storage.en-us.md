@@ -35,4 +35,4 @@ changed data. Ordinary moves to custom folders still require empty destinations.
 
 Location configuration is machine-specific and excluded from settings profiles and
 exports. System credentials, external key files, workspace files and remote files
-are not moved. See [settings](settings.md#storage-locations) for migration boundaries.
+are not moved. See [settings](settings.en-us.md#storage-locations) for migration boundaries.
