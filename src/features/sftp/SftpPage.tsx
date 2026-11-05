@@ -34,7 +34,7 @@ import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
 import { domainEvents, type FilesChanged } from "@/lib/events/domain";
 import { translateError } from "@/lib/api/errors";
-import { isTauri } from "@/lib/api/ipc";
+import { api, isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
 import {
   canPaste,
@@ -1358,6 +1358,23 @@ export function SftpPage({
           onSelect: () => applyEntry(id, entry),
         });
       }
+      if (source.kind === "local") {
+        items.push({
+          label: t("sftp.revealNative"),
+          onSelect: () =>
+            void api
+              .revealLocalPath(entry.path)
+              .catch((error: unknown) => toast(translateError(error), "error")),
+        });
+        if (entry.isDir)
+          items.push({
+            label: t("sftp.openFolderNative"),
+            onSelect: () =>
+              void fs
+                .openLocal(entry.path)
+                .catch((error: unknown) => toast(translateError(error), "error")),
+          });
+      }
       items.push({
         label: t("sftp.cut"),
         separatorBefore: true,
@@ -1386,6 +1403,14 @@ export function SftpPage({
         onSelect: () => removeSelection(id),
       });
     } else {
+      if (source.kind === "local" && directory)
+        items.push({
+          label: t("sftp.openFolderNative"),
+          onSelect: () =>
+            void fs
+              .openLocal(directory)
+              .catch((error: unknown) => toast(translateError(error), "error")),
+        });
       items.push({ label: t("sftp.newFile"), onSelect: () => startCreate(id, "file") });
       items.push({ label: t("sftp.newFolder"), onSelect: () => startCreate(id, "folder") });
       items.push({

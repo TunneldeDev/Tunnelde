@@ -157,6 +157,7 @@ pub fn run() {
             commands::open_log_dir,
             logs::logs_read,
             commands::open_local_path,
+            commands::reveal_local_path,
             commands::open_external,
             commands::user_css_import,
             commands::user_css_export,

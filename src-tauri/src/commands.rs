@@ -386,6 +386,21 @@ pub fn open_local_path(app: AppHandle, path: String) -> AppResult<()> {
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
+/// Reveal an existing local item in the native file manager without invoking a shell.
+#[tauri::command]
+pub async fn reveal_local_path(path: String) -> AppResult<()> {
+    let target = std::path::PathBuf::from(path);
+    if !target.is_absolute() || !target.exists() {
+        return Err(AppError::NotFound("path.notFound".into()));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        tauri_plugin_opener::reveal_item_in_dir(target)
+            .map_err(|error| AppError::Internal(error.to_string()))
+    })
+    .await
+    .map_err(|error| AppError::Internal(error.to_string()))?
+}
+
 /// README links open only after an explicit user action, using web protocols.
 #[tauri::command]
 pub fn open_external(app: AppHandle, url: String) -> AppResult<()> {
