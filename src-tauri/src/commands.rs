@@ -235,7 +235,9 @@ pub fn hosts_snapshot(state: State<'_, AppState>) -> AppResult<HostsSnapshot> {
 #[tauri::command]
 pub fn host_create(state: State<'_, AppState>, input: HostInput) -> AppResult<Host> {
     let draft = input.validate()?;
-    state.db.with(|conn| db::hosts::create_host(conn, &draft))
+    let host = state.db.with(|conn| db::hosts::create_host(conn, &draft))?;
+    crate::logs::record(&state.db, "host.create", Some(&host.id));
+    Ok(host)
 }
 
 #[tauri::command]
@@ -245,6 +247,7 @@ pub fn host_update(state: State<'_, AppState>, id: String, input: HostInput) -> 
         .db
         .with(|conn| db::hosts::update_host(conn, &id, &draft))?;
     state.ssh.rename_host(&id, &host.name);
+    crate::logs::record(&state.db, "host.update", Some(&id));
     Ok(host)
 }
 
@@ -257,6 +260,7 @@ pub fn host_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
         Ok(())
     })?;
     let _ = crate::vault::forget(&host.id);
+    crate::logs::record(&state.db, "host.delete", Some(&id));
     Ok(())
 }
 
@@ -561,7 +565,13 @@ pub async fn ssh_trust(
 
 #[tauri::command]
 pub async fn ssh_connect(app: AppHandle, request: SshConnectRequest) -> AppResult<SessionInfo> {
-    ssh::connect(app, request).await
+    let session = ssh::connect(app.clone(), request).await?;
+    crate::logs::record(
+        &app.state::<AppState>().db,
+        "ssh.connect",
+        Some(&session.host_id),
+    );
+    Ok(session)
 }
 
 #[tauri::command]
@@ -586,7 +596,9 @@ pub fn ssh_resize(app: AppHandle, session_id: String, cols: u32, rows: u32) -> A
 
 #[tauri::command]
 pub fn ssh_disconnect(app: AppHandle, session_id: String) -> AppResult<()> {
-    ssh::disconnect(&app, &session_id)
+    ssh::disconnect(&app, &session_id)?;
+    crate::logs::record(&app.state::<AppState>().db, "ssh.disconnect", None);
+    Ok(())
 }
 
 /// Installs Tunnelde's public key with the password the user just typed and
@@ -994,6 +1006,13 @@ pub async fn marketplace_install(
 ) -> AppResult<plugins::PluginInfo> {
     let result = plugins::marketplace::install_archive(&app, &id, &sha256, &data).await;
     plugins::security::emit_state(&app).await;
+    if let Ok(plugin) = &result {
+        crate::logs::record(
+            &app.state::<AppState>().db,
+            "plugin.install",
+            Some(&plugin.id),
+        );
+    }
     result
 }
 
@@ -1066,6 +1085,13 @@ pub async fn marketplace_download(
     )
     .await;
     plugins::security::emit_state(&app).await;
+    if let Ok(plugin) = &result {
+        crate::logs::record(
+            &app.state::<AppState>().db,
+            "plugin.install",
+            Some(&plugin.id),
+        );
+    }
     result
 }
 
@@ -1195,6 +1221,9 @@ pub async fn plugin_install(app: AppHandle, path: String) -> AppResult<plugins::
     let state = app.state::<AppState>();
     let result = state.plugins.install(&path).await;
     plugins::security::emit_state(&app).await;
+    if let Ok(plugin) = &result {
+        crate::logs::record(&state.db, "plugin.install", Some(&plugin.id));
+    }
     result
 }
 
@@ -1210,6 +1239,9 @@ pub async fn plugin_uninstall(app: AppHandle, id: String) -> AppResult<()> {
     let result = state.plugins.uninstall(&id).await;
     state.plugins.revoke_background(&app, &id);
     plugins::security::emit_state(&app).await;
+    if result.is_ok() {
+        crate::logs::record(&state.db, "plugin.uninstall", Some(&id));
+    }
     result
 }
 

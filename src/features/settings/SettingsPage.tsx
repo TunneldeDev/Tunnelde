@@ -46,6 +46,7 @@ import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection"
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
 import { NetworkSettingsSection } from "./NetworkSettings";
+import { LogViewer } from "./LogViewer";
 import { StorageSettings } from "./StorageSettings";
 import { useViewState } from "@/lib/session/viewState";
 import { sameSettings as samePreference } from "@/lib/prefs/profiles";
@@ -645,6 +646,7 @@ export function SettingsPage() {
                 ) : null}
                 {!filtering && item === "advanced" ? (
                   <>
+                    <LogViewer />
                     <div className="settings-actions">
                       <Button
                         variant="ghost-danger"

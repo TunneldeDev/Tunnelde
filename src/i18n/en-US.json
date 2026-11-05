@@ -1608,6 +1608,19 @@
     "none": "Plain file icons",
     "missing": "Unavailable theme ({{id}})"
   },
+  "logs": {
+    "title": "Logs",
+    "description": "Inspect recent operations and application diagnostics.",
+    "view": "View logs",
+    "openFolder": "Open log folder",
+    "operations": "Operations",
+    "diagnostic": "Application",
+    "operationsHint": "Records host changes, SSH connections and plugin installation activity from this version onward. Passwords, commands and file contents are not recorded here.",
+    "diagnosticHint": "Recent entries from the latest application log. Diagnostics can contain private information; review before sharing.",
+    "emptyOperations": "No recorded operations yet.",
+    "emptyDiagnostic": "No application log available.",
+    "truncated": "Showing the latest 256 KiB"
+  },
   "restart": {
     "command": "Restart Tunnelde",
     "reload": "Reload window",
