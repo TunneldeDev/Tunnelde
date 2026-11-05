@@ -45,18 +45,20 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   or detach file panels. Sort, filter, group, rename inline, create files or folders,
   connect file management directly to a saved host, and drag transfers. Select a file
   and press Space or click Preview to read local/remote text and rendered Markdown.
-  Install **Common File Icons** for file-type icons and **Common File Previews** for
-  images, audio, video and PDF. Both are available in the default marketplace and
-  need no Node runtime. Media playback depends on the operating system's codecs.
+  Install compatible icon and preview providers from the marketplace for additional
+  file types. Check each provider’s runtime and permission requirements. Media playback
+  depends on the operating system’s codecs.
 - Configure proxies per feature, connect through ordered SSH jump hosts, pause and
   resume file transfers with speed, remaining bytes and time estimates, and manage
-  local or remote TCP forwards from a host page or the SSH terminal toolbar. Removing an unfinished transfer
+  local or remote TCP forwards from the activity bar, host page or SSH terminal toolbar.
+  Removing an unfinished transfer
   cleans its recorded staging files; offline cleanup retries after reconnection.
   A compact status-bar entry opens background transfers from any page, with grouped
   tasks, expandable details and temporary speed limits. Drag its title to move it,
   resize from any edge or corner, and retain its layout across reopen and restart.
   Optimized transfers use bounded SFTP request pipelines, automatic segmentation
-  and shared connection budgets; compression and archive batching are still pending.
+  and shared connection budgets. Adaptive compression is available; small-file archive
+  batching is not yet implemented.
   See [network and storage](docs/network-storage.md) for behavior and limitations.
 - Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
   italic preview tab; select the same item again, double-click its tab, or interact with
