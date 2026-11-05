@@ -7,8 +7,47 @@ import { runEditorPlugin } from "./formatting";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
 
+type PluginAction = { id: string; view?: string; command?: string };
+
+// A plugin has one runtime and its store serializes lifecycle operations. Queue
+// distinct contributed actions so retained shortcut conflicts are not dropped
+// while a previous action starts or invokes the same plugin.
+const actionTails = new Map<string, Promise<void>>();
+
 /** Metadata can be searched without starting code. Runtime consent happens on invocation. */
-export async function openPluginAction(action: { id: string; view?: string; command?: string }) {
+export function openPluginAction(action: PluginAction): Promise<void> {
+  const original = usePlugins.getState().items.find((item) => item.id === action.id);
+  if (!original) return Promise.resolve();
+  const isEditor = original.commands.some((item) => item.id === action.command && item.editor);
+  const activeId = useWorkspace.getState().activeId;
+  const target = isEditor && activeId ? editorDocument(activeId) : null;
+  if (isEditor && !target) {
+    toast(i18n.t("editor.noDocument"), "info");
+    return Promise.resolve();
+  }
+  const previous = actionTails.get(action.id) ?? Promise.resolve();
+  const pending = previous
+    .catch(() => {})
+    .then(async () => {
+      const current = usePlugins.getState().items.find((item) => item.id === action.id);
+      if (
+        !current ||
+        current.fingerprint !== original.fingerprint ||
+        current.version !== original.version
+      )
+        return;
+      await invokePluginAction(action, target);
+    });
+  actionTails.set(action.id, pending);
+  void pending
+    .finally(() => {
+      if (actionTails.get(action.id) === pending) actionTails.delete(action.id);
+    })
+    .catch(() => {});
+  return pending;
+}
+
+async function invokePluginAction(action: PluginAction, target: ReturnType<typeof editorDocument>) {
   const store = usePlugins.getState();
   let plugin = store.items.find((item) => item.id === action.id);
   if (!plugin || plugin.runtime === "theme") return;
@@ -16,10 +55,9 @@ export async function openPluginAction(action: { id: string; view?: string; comm
     ? plugin.commands.find((item) => item.id === action.command && item.editor)
     : null;
   if (editorCommand) {
-    const activeId = useWorkspace.getState().activeId;
-    const document = activeId ? editorDocument(activeId) : null;
-    if (!document) {
-      toast(i18n.t("editor.noDocument"), "info");
+    const document = target ? editorDocument(target.tabId) : null;
+    if (!document || document.documentId !== target?.documentId) {
+      toast(i18n.t("editor.documentChanged"), "error");
       return;
     }
     await runEditorPlugin(
