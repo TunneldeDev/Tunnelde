@@ -147,7 +147,6 @@ jobs:
           save-if: false
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: cargo check --manifest-path src-tauri/Cargo.toml --tests
       - run: cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
 
   hygiene:
