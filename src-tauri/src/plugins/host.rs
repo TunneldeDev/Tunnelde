@@ -430,7 +430,35 @@ async fn read_limited_line(
 mod tests {
     use super::*;
     use serde_json::json;
+    use sha2::{Digest, Sha256};
     use std::path::PathBuf;
+
+    fn legacy_plugin_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/plugin-compat/v0.28.0/hello")
+    }
+
+    #[test]
+    fn historical_plugin_fixture_is_unchanged_and_its_manifest_loads() {
+        let dir = legacy_plugin_dir();
+        for (file, expected) in [
+            (
+                "index.js",
+                "37d1f7bea3c914b1201634ba1984cd63889cf729c920a51cc8e5c51807881a71",
+            ),
+            (
+                "tunnelde-plugin.json",
+                "8c6ed23bce2313cbf7888a9245902c875c21254cde8600e28abbfa9943f0a646",
+            ),
+        ] {
+            let data = std::fs::read(dir.join(file)).expect("historical fixture must exist");
+            assert_eq!(format!("{:x}", Sha256::digest(data)), expected, "{file}");
+        }
+        let manifest = super::super::manifest::load(&dir).expect("load historical manifest");
+        assert_eq!(manifest.api_version, 1);
+        assert_eq!(manifest.id, "hello");
+        assert_eq!(manifest.main, "index.js");
+    }
 
     #[tokio::test]
     async fn bounded_lines_handle_split_utf8_and_reject_excess_without_a_newline() {
@@ -511,17 +539,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires explicit TUNNELDE_TEST_NODE executable"]
     async fn talks_json_rpc_with_the_example_plugin() {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/plugins/hello");
         let entry = dir.join("index.js");
-        if !entry.exists() {
-            return;
-        }
+        assert!(entry.is_file(), "example plugin entry must exist");
 
         // Integration runs must explicitly opt into using a system executable.
-        let Ok(node) = std::env::var("TUNNELDE_TEST_NODE") else {
-            return;
-        };
+        let node = std::env::var("TUNNELDE_TEST_NODE").expect("explicit test Node executable");
 
         let host = PluginHost::spawn(&node, &entry, &dir, None)
             .await
@@ -567,5 +592,58 @@ mod tests {
         let _ = host
             .request("shutdown", json!({}), Duration::from_secs(2))
             .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires explicit TUNNELDE_TEST_NODE executable"]
+    async fn talks_json_rpc_with_the_historical_v028_plugin() {
+        let dir = legacy_plugin_dir();
+        let manifest = super::super::manifest::load(&dir).expect("load historical plugin");
+        let entry = super::super::manifest::entry_path(&dir, &manifest.main)
+            .expect("validate historical entry");
+        let node = std::env::var("TUNNELDE_TEST_NODE").expect("explicit test Node executable");
+        let host = PluginHost::spawn(&node, &entry, &dir, None)
+            .await
+            .expect("spawn historical plugin");
+        let timeout = Duration::from_secs(10);
+        assert_eq!(
+            host.request(
+                "initialize",
+                json!({"apiVersion":1,"pluginId":"hello"}),
+                timeout
+            )
+            .await
+            .unwrap(),
+            json!({"ok":true})
+        );
+        assert_eq!(
+            host.request(
+                "command.run",
+                json!({"command":"greet","input":{}}),
+                timeout
+            )
+            .await
+            .unwrap(),
+            json!({"message":"Hello from the example plugin"})
+        );
+        let view = host
+            .request(
+                "view.render",
+                json!({"view":"hello","locale":"en-US"}),
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert_eq!(view["title"], "Hello plugin");
+        assert_eq!(view["blocks"].as_array().unwrap().len(), 4);
+        let error = host
+            .request("unknown.method", json!({}), timeout)
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("unknown method: unknown.method"));
+        assert_eq!(
+            host.request("shutdown", json!({}), timeout).await.unwrap(),
+            Value::Null
+        );
     }
 }
