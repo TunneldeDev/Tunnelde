@@ -52,14 +52,11 @@ of being interpreted as POSIX paths.
 
 ## Remote runtime consent and files
 
-The default marketplace currently supplies assistant packages **1.4.0**. Their
-deployment-cleanup update, **1.4.1**, is pending in
-[Hub PR #2](https://github.com/TunneldeDev/tunnelde-hub/pull/2). The directory layout
-and cleanup behavior described below apply to that update's source packages;
-updating the desktop alone does not update an installed assistant plugin.
-Marketplace 1.4.0 installations may still create the older `.tunnelde-*`
-deployment directories directly under the remote home. Do not remove a directory
-while its conversation or runtime is active.
+Check the installed assistant plugin version in its details; updating the desktop does
+not update an installed plugin. Current remote deployments keep owned files in the
+plugin's application directories under the remote home. Older installations may have
+created `.tunnelde-*` directories directly under the home directory. Do not remove a
+directory while its conversation or runtime is active.
 
 Codex and Claude Code directly start their selected binary through SSH. Pi first asks
 before uploading a permission extension into a newly created `.TunneldeAI/Chats/pi-permissions-*`
