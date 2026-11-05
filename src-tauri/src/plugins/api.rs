@@ -160,6 +160,34 @@ pub fn method_info(name: &str) -> Option<&'static ApiMethod> {
     METHODS.iter().find(|entry| entry.name == name)
 }
 
+// The plugin wire representation is deliberately independent from the SSH
+// manager's internal session type. Keep existing fields for API v1 clients.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginSession {
+    id: String,
+    host_id: String,
+    title: String,
+    address: String,
+    cols: u32,
+    rows: u32,
+    connected_at: i64,
+}
+
+impl From<crate::ssh::SessionInfo> for PluginSession {
+    fn from(session: crate::ssh::SessionInfo) -> Self {
+        Self {
+            id: session.id,
+            host_id: session.host_id,
+            title: session.title,
+            address: session.address,
+            cols: session.cols,
+            rows: session.rows,
+            connected_at: session.connected_at,
+        }
+    }
+}
+
 pub(super) fn authorize(context: &HostContext, permissions: &[&str]) -> AppResult<()> {
     let state = context.app.state::<AppState>();
     state.plugins.security.authorize(
@@ -351,10 +379,15 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             commands::group_delete(state, field(&params, "id")?)?;
             Ok(Value::Null)
         }
-        "sessions.list" => encode(commands::ssh_sessions(state)),
-        "sessions.connect" => {
-            encode(commands::ssh_connect(app.clone(), field(&params, "request")?).await?)
-        }
+        "sessions.list" => encode(
+            commands::ssh_sessions(state)
+                .into_iter()
+                .map(PluginSession::from)
+                .collect::<Vec<_>>(),
+        ),
+        "sessions.connect" => encode(PluginSession::from(
+            commands::ssh_connect(app.clone(), field(&params, "request")?).await?,
+        )),
         "sessions.disconnect" => {
             commands::ssh_disconnect(app.clone(), field(&params, "sessionId")?)?;
             Ok(Value::Null)
@@ -952,6 +985,23 @@ pub fn plugin_workspace_reply(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[test]
+    fn plugin_session_wire_shape_is_explicit_and_preserves_existing_fields() {
+        let session = crate::ssh::SessionInfo {
+            id: "session".into(),
+            host_id: "host".into(),
+            title: "Example".into(),
+            address: "example.test:22".into(),
+            cols: 80,
+            rows: 24,
+            connected_at: 123,
+        };
+        assert_eq!(
+            serde_json::to_value(PluginSession::from(session)).unwrap(),
+            json!({"id":"session","hostId":"host","title":"Example", "address":"example.test:22", "cols":80,"rows":24,"connectedAt":123})
+        );
+    }
 
     #[test]
     fn exposes_only_unique_documented_methods_with_declared_permissions() {

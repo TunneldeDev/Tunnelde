@@ -41,6 +41,12 @@ CI also runs a frozen v0.28.0 example through the current host's manifest loader
 JSON-RPC lifecycle. This covers one historical plugin's transport and view response;
 it does not establish compatibility for all API methods, permissions or stored data.
 
+The `sessions.list` and `sessions.connect` responses use a dedicated plugin-facing
+session representation. It preserves the existing API v1 fields (`id`, `hostId`,
+`title`, `address`, `cols`, `rows`, and `connectedAt`) independently of the SSH
+manager's internal type. This isolates the representation but does not yet designate
+the methods stable or guarantee connection lifecycle and error compatibility.
+
 The application and marketplace can release independently. Set the minimum application
 version to the first release that supports every feature your extension uses, and test on
 that version. The detailed guide describes the current contribution and permission model.
