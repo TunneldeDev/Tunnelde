@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { ConnectionRoute } from "./network";
+import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
@@ -66,6 +66,8 @@ export const api = {
     invoke<void>("proxy_password_save", { id, password }),
   testProxy: (proxy: string, host: string, port: number) =>
     invoke<void>("proxy_test", { proxy, host, port }),
+  testProxyQuality: (proxy: string, host: string, port: number) =>
+    invoke<NetworkConnectionQuality>("proxy_test_quality", { proxy, host, port }),
   appInfo: () => invoke<AppInfo>("app_info"),
   clipboardReadText: () => invoke<string>("clipboard_read_text"),
   clipboardWriteText: (text: string) => invoke<void>("clipboard_write_text", { text }),

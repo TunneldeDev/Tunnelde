@@ -2,6 +2,25 @@
 
 [简体中文](connection-quality.zh-cn.md)
 
+## Network and proxy tests
+
+In **Settings → Network & proxies → Test connection**, choose a route and destination,
+then select **Test connection**. Results appear directly below the button: median connection
+latency, fastest and slowest setup, spread and successful attempts. Expand individual results
+to inspect each timing or failure. **Test again** repeats the measurement. Editing the
+destination, proxy or default route invalidates previous results.
+
+The test makes up to three TCP connections within a total 15-second budget, using the selected
+direct, system-proxy or saved-proxy route. It never falls back to direct after a proxy failure.
+Timings include DNS, TCP setup and required proxy negotiation; they are not ping RTT, packet
+loss or bandwidth measurements and do not verify TLS or application functionality. Temporary
+connections close after measurement. Failures are excluded from timing statistics;
+sub-millisecond values display as `<1 ms`, and unavailable timings as `—`.
+Median setup at most 100 ms is low latency, at most 300 ms is moderate, and higher is high;
+partial failures are reported separately.
+
+## SSH host tests
+
 Open a host's connection dialog. Its initial host-key check shows the time taken to
 establish SSH through the configured route. After the entire route is trusted, use
 **Connection quality → Test connection** for up to three short SSH connections.

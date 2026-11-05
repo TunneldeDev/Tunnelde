@@ -1483,7 +1483,20 @@
     "jumpRemember": "Remember jump host passwords",
     "systemHint": "System mode uses OS or environment proxy settings and bypass rules. PAC scripts are not evaluated; configure a proxy profile when needed.",
     "clearPassword": "Forget saved proxy password",
-    "missingProxy": "Proxy no longer exists"
+    "missingProxy": "Proxy no longer exists",
+    "qualityLessMs": "<1 ms",
+    "qualityRunning": "Measuring up to 3 connections…",
+    "qualityLatency": "Connection latency (median)",
+    "qualityFastest": "Fastest",
+    "qualitySlowest": "Slowest",
+    "qualityHint": "Measures up to 3 TCP connections through the selected route, within 15 seconds. Includes DNS and proxy negotiation, not ping RTT or bandwidth. Failures are excluded from timing statistics. Fast ≤100 ms; normal ≤300 ms; higher values are slow.",
+    "quality": {
+      "fast": "Connection established · low latency",
+      "normal": "Connection established · moderate latency",
+      "slow": "Connection established · high latency",
+      "unstable": "Some connection attempts failed",
+      "unreachable": "Connection failed"
+    }
   },
   "forward": {
     "title": "Port forwarding",
