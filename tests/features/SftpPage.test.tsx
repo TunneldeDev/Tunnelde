@@ -111,7 +111,7 @@ beforeEach(() => {
   useSsh.setState({ sessions: [session] });
   useHosts.setState({ hosts: [] });
   useDialogs.setState({ confirm: vi.fn(), openConnect: vi.fn() });
-  useWorkspace.setState({ openEditor: vi.fn() });
+  useWorkspace.setState({ openEditor: vi.fn(), openLocalEditor: vi.fn() });
   useTransfers.setState({ items: [] });
   useFileClipboard.setState({ clip: null });
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, preloadDirs: false } });
@@ -130,6 +130,21 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("opens local text inside Tunnelde and offers the system application separately", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    const file = await screen.findByText("notes.txt");
+    fireEvent.doubleClick(file);
+    expect(useWorkspace.getState().openLocalEditor).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    expect(fsMock.openLocal).not.toHaveBeenCalled();
+    fireEvent.contextMenu(file);
+    const item = useContextMenu
+      .getState()
+      .menu?.items.find((entry) => entry.label === "Open with system application");
+    expect(item).toBeTruthy();
+    item!.onSelect();
+    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+  });
+
   it("previews the selected local or remote file from the toolbar or Space, without editing it", async () => {
     useFilePreview.setState({ file: null });
     render(<SftpPage sessionId="session-1" />);
@@ -466,15 +481,15 @@ describe("SftpPage", () => {
     await waitFor(() => expect(screen.getByText("2 selected")).toBeTruthy());
   });
 
-  it("opens local files with the system handler", async () => {
+  it("opens local files in the editor", async () => {
     render(<SftpPage sessionId="session-1" />);
     const row = (await screen.findByText("notes.txt")).closest(".sftp-row") as HTMLElement;
     fireEvent.doubleClick(row);
 
     await waitFor(() => {
-      expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+      expect(useWorkspace.getState().openLocalEditor).toHaveBeenCalledWith("C:\\work\\notes.txt");
     });
-    expect(useWorkspace.getState().openEditor).not.toHaveBeenCalled();
+    expect(fsMock.openLocal).not.toHaveBeenCalled();
   });
 });
 
@@ -1166,7 +1181,7 @@ describe("SftpPage visible file interactions", () => {
     expect(within(local).getByText(".env")).toBeTruthy();
     fireEvent.click(within(local).getByText("notes.txt"));
     fireEvent.keyDown(local, { key: "ArrowDown", metaKey: true });
-    expect(fsMock.openLocal).toHaveBeenCalledWith("C:\\work\\notes.txt");
+    expect(useWorkspace.getState().openLocalEditor).toHaveBeenCalledWith("C:\\work\\notes.txt");
     fireEvent.keyDown(local, { key: "ArrowUp", metaKey: true });
     await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\"));
   });

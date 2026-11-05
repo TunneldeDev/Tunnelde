@@ -2172,6 +2172,73 @@ fn decode_text(bytes: Vec<u8>) -> AppResult<TextFile> {
     Ok(TextFile { content, size })
 }
 
+/// Read a local editor document with the same bounds and encoding checks as SFTP.
+pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
+    let path = Path::new(path);
+    if !path.is_absolute() {
+        return Err(AppError::validation("sftp.absolutePathRequired"));
+    }
+    // Check before opening to avoid blocking on device files or named pipes.
+    if !tokio::fs::metadata(path).await?.is_file() {
+        return Err(AppError::validation("sftp.notRegularFile"));
+    }
+    let mut file = tokio::fs::File::open(path).await?;
+    let metadata = file.metadata().await?;
+    if !metadata.is_file() {
+        return Err(AppError::validation("sftp.notRegularFile"));
+    }
+    if metadata.len() > MAX_TEXT {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(MAX_TEXT + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    decode_text(bytes)
+}
+
+/// Check the last loaded content before overwriting an existing local file.
+pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
+    let path = Path::new(path);
+    if !path.is_absolute() {
+        return Err(AppError::validation("sftp.absolutePathRequired"));
+    }
+    if content.len() as u64 > MAX_TEXT || baseline.len() as u64 > MAX_TEXT {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
+    }
+    if content.contains('\0') {
+        return Err(AppError::Ssh("sftp.binaryFile".into()));
+    }
+    // Check before opening to avoid blocking on device files or named pipes.
+    if !tokio::fs::metadata(path).await?.is_file() {
+        return Err(AppError::validation("sftp.notRegularFile"));
+    }
+    // Opening without create preserves deletion, and avoids truncation before validation.
+    let mut file = tokio::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)
+        .await?;
+    let metadata = file.metadata().await?;
+    if !metadata.is_file() {
+        return Err(AppError::validation("sftp.notRegularFile"));
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take(MAX_TEXT + 1)
+        .read_to_end(&mut bytes)
+        .await?;
+    if decode_text(bytes)?.content != baseline {
+        return Err(AppError::validation("editor.localFileChanged"));
+    }
+    file.seek(std::io::SeekFrom::Start(0)).await?;
+    file.write_all(content.as_bytes()).await?;
+    file.set_len(content.len() as u64).await?;
+    file.flush().await?;
+    Ok(())
+}
+
 pub async fn read_text(app: &AppHandle, session_id: &str, path: &str) -> AppResult<TextFile> {
     let sftp = session(app, session_id).await?;
     let result = read_remote_text(&sftp, path).await;
@@ -2898,6 +2965,41 @@ mod tests {
                 "in-flight transfer survived {action}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn local_editor_checks_content_and_preserves_conflicts_and_deleted_files() {
+        let root = temp_root("local-editor");
+        let path = root.join("note.txt");
+        std::fs::write(&path, "original").unwrap();
+        let name = display_path(&path);
+        assert_eq!(local_read_text(&name).await.unwrap().content, "original");
+        local_write_text(&name, "short", "original").await.unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "short");
+        std::fs::write(&path, "external").unwrap();
+        assert_eq!(
+            local_write_text(&name, "mine", "short")
+                .await
+                .unwrap_err()
+                .to_string(),
+            "editor.localFileChanged"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "external");
+        std::fs::remove_file(&path).unwrap();
+        assert!(local_write_text(&name, "mine", "external").await.is_err());
+        assert!(!path.exists());
+        std::fs::write(&path, b"binary\0text").unwrap();
+        assert_eq!(
+            local_read_text(&name).await.unwrap_err().to_string(),
+            "sftp.binaryFile"
+        );
+        std::fs::write(&path, vec![b'x'; MAX_TEXT as usize + 1]).unwrap();
+        assert_eq!(
+            local_read_text(&name).await.unwrap_err().to_string(),
+            "sftp.fileTooLarge"
+        );
+        assert!(local_read_text("relative.txt").await.is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

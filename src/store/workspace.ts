@@ -101,6 +101,7 @@ interface WorkspaceStore {
   openSftp: (session: SshSession) => void;
   openFilePane: (options: FilePaneOptions, title: string) => string;
   openEditor: (session: SshSession, path: string) => void;
+  openLocalEditor: (path: string) => void;
   openHistory: (session: SshSession) => void;
   openMonitor: (session: SshSession) => void;
   openPluginView: (
@@ -552,6 +553,16 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       );
       if (!useEditors.getState().entries[id]) {
         void useEditors.getState().open(id, session.id, path);
+      }
+    },
+
+    openLocalEditor: (path) => {
+      const id = `editor-local:${path}`;
+      set((state) =>
+        insert(state, { id, kind: "editor", title: fileName(path), hostId: null, pinned: false }),
+      );
+      if (!useEditors.getState().entries[id]) {
+        void useEditors.getState().open(id, null, path);
       }
     },
 

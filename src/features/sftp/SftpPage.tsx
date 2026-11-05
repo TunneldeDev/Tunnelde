@@ -53,6 +53,8 @@ import {
 } from "@/lib/files/dnd";
 import { fs, LOCAL_SOURCE, sourceKey } from "@/lib/files/fs";
 import { createPrefetchQueue } from "@/lib/files/prefetch";
+import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
+import { usePlugins } from "@/store/plugins";
 import {
   createGroupedFileViewSelector,
   fileExtension,
@@ -1308,10 +1310,16 @@ export function SftpPage({
 
   const applyEntry = (id: PaneId, entry: FileEntry) => {
     const source = panesRef.current[id].source;
+    const provider = previewProviders(usePlugins.getState().items).find((item) =>
+      matchesPreview(item, entry.path),
+    );
+    const kind = provider?.renderer ?? previewKind(entry.path);
+    if (kind !== "text") {
+      useFilePreview.getState().show(entry.path, 0, 0, source);
+      return;
+    }
     if (source.kind === "local") {
-      void fs
-        .openLocal(entry.path)
-        .catch((error: unknown) => toast(translateError(error), "error"));
+      useWorkspace.getState().openLocalEditor(entry.path);
       return;
     }
     const target = sessions.find((item) => item.id === source.sessionId);
@@ -1353,10 +1361,15 @@ export function SftpPage({
         items.push({ label: t("sftp.open"), onSelect: () => navigate(id, entry.path) });
       } else {
         items.push({ label: t("sftp.preview"), onSelect: () => previewEntry(id, entry) });
-        items.push({
-          label: t(source.kind === "local" ? "sftp.openWith" : "sftp.edit"),
-          onSelect: () => applyEntry(id, entry),
-        });
+        items.push({ label: t("sftp.open"), onSelect: () => applyEntry(id, entry) });
+        if (source.kind === "local")
+          items.push({
+            label: t("sftp.openWith"),
+            onSelect: () =>
+              void fs
+                .openLocal(entry.path)
+                .catch((error: unknown) => toast(translateError(error), "error")),
+          });
       }
       if (source.kind === "local") {
         items.push({

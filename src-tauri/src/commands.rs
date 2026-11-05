@@ -822,6 +822,16 @@ pub async fn remote_kill(
 }
 
 #[tauri::command]
+pub async fn local_read_text(path: String) -> AppResult<sftp::TextFile> {
+    sftp::local_read_text(&path).await
+}
+
+#[tauri::command]
+pub async fn local_write_text(path: String, content: String, baseline: String) -> AppResult<()> {
+    sftp::local_write_text(&path, &content, &baseline).await
+}
+
+#[tauri::command]
 pub async fn sftp_read_text(
     app: AppHandle,
     session_id: String,

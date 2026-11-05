@@ -185,6 +185,8 @@ pub fn run() {
             commands::fs_transfer,
             commands::local_create_file,
             commands::sftp_create_file,
+            commands::local_read_text,
+            commands::local_write_text,
             commands::sftp_read_text,
             commands::sftp_write_text,
             commands::sftp_copy,
