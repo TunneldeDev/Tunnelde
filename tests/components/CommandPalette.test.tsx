@@ -76,6 +76,65 @@ describe("CommandPalette", () => {
     );
   });
 
+  it("opens local content search results in the editor at the matching line", async () => {
+    useQuickAccess.setState({ query: "% target" });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "local-root", path: "C:/work", sessionId: null }] },
+    });
+    vi.spyOn(api, "filesSearch").mockResolvedValue({
+      matches: [{ path: "C:/work/a.txt", line: 3, column: 4, preview: "target" }],
+      limited: false,
+      skipped: 0,
+    });
+    vi.spyOn(api, "filesSearchCancel").mockResolvedValue();
+    vi.spyOn(api, "localReadText").mockResolvedValue({ content: "one\ntwo\ntarget", size: 14 });
+    render(<CommandPalette />);
+    fireEvent.click(await screen.findByRole("option", { name: /target/ }));
+    expect(useWorkspace.getState().activeId).toBe("editor-local:C:/work/a.txt");
+    expect(useEditorLocation.getState().target).toEqual({
+      tabId: "editor-local:C:/work/a.txt",
+      line: 3,
+      column: 4,
+    });
+    await waitFor(() =>
+      expect(useEditors.getState().entries["editor-local:C:/work/a.txt"]?.content).toBe(
+        "one\ntwo\ntarget",
+      ),
+    );
+  });
+
+  it("searches unsaved local editor content across Windows path separators", async () => {
+    useQuickAccess.setState({ query: "% target" });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "local", path: "C:/WORK", sessionId: null }] },
+    });
+    const tabId = "editor-local:C:\\work\\a.txt";
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: null,
+          path: "C:\\work\\a.txt",
+          name: "a.txt",
+          content: "unsaved target",
+          baseline: "disk",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    vi.spyOn(api, "filesSearch").mockResolvedValue({
+      matches: [{ path: "C:\\work\\a.txt", line: 1, column: 1, preview: "disk target" }],
+      limited: false,
+      skipped: 0,
+    });
+    vi.spyOn(api, "filesSearchCancel").mockResolvedValue();
+    render(<CommandPalette />);
+    expect(await screen.findByText("unsaved target")).toBeTruthy();
+    expect(screen.queryByText("disk target")).toBeNull();
+  });
+
   it("lists plugin metadata without starting a runtime and executes a command into its result page", async () => {
     const plugin = {
       id: "uuid",

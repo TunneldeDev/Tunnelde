@@ -9,7 +9,7 @@ export const EDITOR_DOCUMENT_MAX_BYTES = 128 * 1024;
 
 export interface EditorEntry {
   tabId: string;
-  sessionId: string;
+  sessionId: string | null;
   path: string;
   name: string;
   content: string;
@@ -24,7 +24,7 @@ export interface EditorEntry {
 
 interface EditorsStore {
   entries: Record<string, EditorEntry>;
-  open: (tabId: string, sessionId: string, path: string) => Promise<void>;
+  open: (tabId: string, sessionId: string | null, path: string) => Promise<void>;
   change: (tabId: string, content: string) => void;
   save: (tabId: string) => Promise<boolean>;
   discard: (tabId: string) => void;
@@ -209,7 +209,10 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     }));
 
     try {
-      const file = await api.sftpReadText(sessionId, path);
+      const file =
+        sessionId === null
+          ? await api.localReadText(path)
+          : await api.sftpReadText(sessionId, path);
       if (versions.get(tabId) !== version) return;
       set((state) => {
         const current = state.entries[tabId];
@@ -287,7 +290,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const submitted = current.content;
     const operation = (async () => {
       try {
-        await api.sftpWriteText(current.sessionId, current.path, current.content);
+        if (current.sessionId === null) {
+          await api.localWriteText(current.path, submitted, current.baseline);
+        } else {
+          await api.sftpWriteText(current.sessionId, current.path, submitted);
+        }
         if (versions.get(tabId) !== version || !get().entries[tabId]) return false;
         set((state) => {
           const entry = state.entries[tabId];

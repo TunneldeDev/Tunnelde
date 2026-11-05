@@ -7,6 +7,7 @@ import { api } from "@/lib/api/ipc";
 import { usePlugins } from "@/store/plugins";
 import { plugin } from "../fixtures/plugins";
 import { useMarketplace } from "@/store/marketplace";
+import { useWorkspace } from "@/store/workspace";
 
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (id: string) => `preview://localhost/${id}`,
@@ -47,6 +48,19 @@ describe("file preview", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+
+  it("opens local text from preview in the built-in editor", async () => {
+    const open = vi.fn();
+    useWorkspace.setState({ openLocalEditor: open });
+    vi.mocked(api.searchPreviewLocal).mockResolvedValue("hello");
+    useFilePreview.getState().show("C:\\notes.txt");
+    render(<FilePreview />);
+    await screen.findByRole("textbox");
+    fireEvent.click(screen.getByRole("button", { name: "Edit text" }));
+    expect(open).toHaveBeenCalledWith("C:\\notes.txt");
+    expect(api.openLocalPath).not.toHaveBeenCalled();
+    expect(useFilePreview.getState().file).toBeNull();
   });
 
   it("reads remote Markdown through the selected session and switches to source", async () => {

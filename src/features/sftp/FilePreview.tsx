@@ -11,13 +11,10 @@ import { useMarketplace } from "@/store/marketplace";
 import { useNavigation } from "@/store/navigation";
 import { TextPreview } from "./TextPreview";
 import { ProviderPreview } from "./ProviderPreview";
-import { api } from "@/lib/api/ipc";
-import { translateError } from "@/lib/api/errors";
 import { useFilePreview, type PreviewFile } from "@/store/filePreview";
 import { fileName } from "@/store/editors";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
-import { toast } from "@/store/toasts";
 
 export function FilePreview() {
   const file = useFilePreview((state) => state.file);
@@ -55,22 +52,22 @@ function Preview({ file }: { file: PreviewFile }) {
       className="file-preview"
       footer={
         <>
-          {file.source.kind === "local" || text ? (
+          {text ? (
             <Button
               variant="secondary"
               disabled={file.source.kind === "remote" && !session}
               onClick={() => {
                 if (file.source.kind === "local") {
-                  void api
-                    .openLocalPath(file.path)
-                    .catch((cause) => toast(translateError(cause), "error"));
+                  useWorkspace.getState().openLocalEditor(file.path);
                 } else if (session) {
                   useWorkspace.getState().openEditor(session, file.path);
-                  useFilePreview.getState().close();
+                } else {
+                  return;
                 }
+                useFilePreview.getState().close();
               }}
             >
-              {t(file.source.kind === "local" ? "sftp.openWith" : "sftp.edit")}
+              {t("sftp.edit")}
             </Button>
           ) : null}
         </>

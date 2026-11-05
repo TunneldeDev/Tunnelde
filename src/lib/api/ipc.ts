@@ -270,6 +270,9 @@ export const api = {
   localCopy: (from: string, to: string, overwrite = false) =>
     invoke<void>("local_copy", { from, to, overwrite }),
 
+  localReadText: (path: string) => invoke<TextFile>("local_read_text", { path }),
+  localWriteText: (path: string, content: string, baseline: string) =>
+    invoke<void>("local_write_text", { path, content, baseline }),
   sftpReadText: (sessionId: string, path: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path }),
   sftpWriteText: (sessionId: string, path: string, content: string) =>
