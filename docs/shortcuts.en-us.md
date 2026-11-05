@@ -47,7 +47,9 @@ ordinary Control shortcuts stay available to the shell, including `Ctrl+K`,
 `Cmd+W` on macOS or `Ctrl+Shift+W` to close the terminal tab/group.
 Settings, tab switching and font-size shortcuts remain available in terminals.
 Custom workbench Control shortcuts in terminals require Shift unless the
-command is Settings, Keyboard Shortcuts, tab switching or font sizing.
+command is Settings, Keyboard Shortcuts, tab switching or font sizing. Plugin
+commands can also receive their registered shortcuts without Shift when the
+terminal's own handling does not take precedence.
 Dialogs and input composition take precedence over workspace shortcuts.
 
 In Quick Access, type `>` followed by a command or plugin name (for example
