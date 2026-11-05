@@ -165,6 +165,23 @@ describe("scoped plugin shortcut conflicts", () => {
       run.mockRestore();
     },
   );
+
+  it("routes a plugin shortcut from the terminal even without a terminal command conflict", () => {
+    usePlugins.setState({ items: [plugin("Mod+Shift+J")] });
+    const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockReturnValue(true);
+    const { container } = render(<AppShell />);
+    const host = document.createElement("div");
+    host.className = "terminal-host";
+    const input = document.createElement("textarea");
+    host.append(input);
+    container.append(host);
+    const terminalHandler = vi.fn();
+    input.addEventListener("keydown", terminalHandler);
+    fireEvent.keyDown(input, { key: "J", ctrlKey: true, shiftKey: true });
+    expect(run).toHaveBeenCalledExactlyOnceWith("plugin.c.4.test.run");
+    expect(terminalHandler).not.toHaveBeenCalled();
+    run.mockRestore();
+  });
 });
 
 describe("AppShell terminal shortcut ownership", () => {

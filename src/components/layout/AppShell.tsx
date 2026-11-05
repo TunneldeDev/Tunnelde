@@ -191,7 +191,7 @@ export function AppShell() {
         (item) =>
           item.scope === "workbench" &&
           (!isTextTarget(event.target) || terminal || item.input) &&
-          (!terminal || terminalAllowsCommand(event, item.id, overrides)) &&
+            (!terminal || item.plugin?.command || terminalAllowsCommand(event, item.id, overrides)) &&
           matchesCommand(event, item.id, overrides, definitions),
       );
       for (const command of commands) {
