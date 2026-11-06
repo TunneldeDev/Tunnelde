@@ -2368,11 +2368,38 @@ pub async fn remote_copy(
     let sftp = session(app, session_id).await?;
     let result = async {
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
-        copy_remote_entry(&sftp, &from, &to, overwrite).await
+        let fast = copy_data_session(app, session_id).await;
+        let result = copy_remote_entry_with(&sftp, fast.as_ref(), &from, &to, overwrite).await;
+        if let Some(raw) = fast {
+            let _ = raw.close_session();
+        }
+        result
     }
     .await;
     let _ = sftp.close().await;
     result
+}
+
+async fn copy_data_session(
+    app: &AppHandle,
+    session_id: &str,
+) -> Option<russh_sftp::client::RawSftpSession> {
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let handle = app.state::<AppState>().ssh.handle(session_id).ok()?;
+        let channel = handle.channel_open_session().await.ok()?;
+        channel.request_subsystem(true, "sftp").await.ok()?;
+        let raw = russh_sftp::client::RawSftpSession::new(channel.into_stream());
+        let version = raw.init().await.ok()?;
+        if version.extensions.get("copy-data").map(String::as_str) != Some("1") {
+            let _ = raw.close_session();
+            return None;
+        }
+        raw.set_timeout(3600);
+        Some(raw)
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 pub fn local_copy(from: String, to: String, overwrite: bool) -> AppResult<()> {
@@ -2498,8 +2525,19 @@ fn copy_local_entry(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(test)]
 async fn copy_remote_entry(
     sftp: &SftpSession,
+    from: &str,
+    to: &str,
+    overwrite: bool,
+) -> AppResult<()> {
+    copy_remote_entry_with(sftp, None, from, to, overwrite).await
+}
+
+async fn copy_remote_entry_with(
+    sftp: &SftpSession,
+    fast: Option<&russh_sftp::client::RawSftpSession>,
     from: &str,
     to: &str,
     overwrite: bool,
@@ -2529,11 +2567,21 @@ async fn copy_remote_entry(
         for name in children {
             let child_from = join_remote(from, &name);
             let child_to = join_remote(to, &name);
-            Box::pin(copy_remote_entry(sftp, &child_from, &child_to, overwrite)).await?;
+            Box::pin(copy_remote_entry_with(
+                sftp,
+                fast,
+                &child_from,
+                &child_to,
+                overwrite,
+            ))
+            .await?;
         }
         return Ok(());
     }
 
+    if let Some(raw) = fast {
+        return copy_data_file(raw, from, to, overwrite).await;
+    }
     let mut reader = sftp.open(from).await.map_err(map_sftp)?;
     let result = async {
         let mut writer = sftp
@@ -2559,6 +2607,64 @@ async fn copy_remote_entry(
     result?;
     closed?;
     Ok(())
+}
+
+async fn copy_data_file(
+    raw: &russh_sftp::client::RawSftpSession,
+    from: &str,
+    to: &str,
+    overwrite: bool,
+) -> AppResult<()> {
+    use russh_sftp::protocol::{FileAttributes, Packet};
+    let reader = raw
+        .open(from, OpenFlags::READ, FileAttributes::empty())
+        .await
+        .map_err(map_sftp)?
+        .handle;
+    let writer = match raw
+        .open(
+            to,
+            OpenFlags::WRITE
+                | OpenFlags::CREATE
+                | if overwrite {
+                    OpenFlags::TRUNCATE
+                } else {
+                    OpenFlags::EXCLUDE
+                },
+            FileAttributes::empty(),
+        )
+        .await
+    {
+        Ok(handle) => handle.handle,
+        Err(error) => {
+            let _ = raw.close(&reader).await;
+            return Err(map_sftp(error));
+        }
+    };
+    let mut data = Vec::new();
+    let mut append_handle = |handle: &str| {
+        let size = handle.len() as u32;
+        data.extend_from_slice(&size.to_be_bytes());
+        data.extend_from_slice(handle.as_bytes());
+    };
+    append_handle(&reader);
+    data.extend_from_slice(&0u64.to_be_bytes());
+    data.extend_from_slice(&0u64.to_be_bytes());
+    let size = writer.len() as u32;
+    data.extend_from_slice(&size.to_be_bytes());
+    data.extend_from_slice(writer.as_bytes());
+    data.extend_from_slice(&0u64.to_be_bytes());
+    let result = match raw.extended("copy-data", data).await {
+        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
+        Ok(Packet::Status(status)) => {
+            Err(map_sftp(russh_sftp::client::error::Error::Status(status)))
+        }
+        Ok(_) => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
+        Err(error) => Err(map_sftp(error)),
+    };
+    let written = raw.close(&writer).await.map_err(map_sftp);
+    let read = raw.close(&reader).await.map_err(map_sftp);
+    result.and(written.map(|_| ())).and(read.map(|_| ()))
 }
 
 async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
@@ -3143,6 +3249,93 @@ mod tests {
         use std::io::{Read, Seek, SeekFrom, Write};
         use std::sync::atomic::AtomicUsize;
         use tokio::sync::Notify;
+
+        #[derive(Default)]
+        struct CopyProbe {
+            opens: std::sync::Mutex<Vec<(String, OpenFlags)>>,
+            calls: std::sync::Mutex<Vec<(String, Vec<u8>)>>,
+            closes: std::sync::Mutex<Vec<String>>,
+            fail_copy: AtomicBool,
+        }
+
+        struct CopyServer(Arc<CopyProbe>);
+        impl russh_sftp::server::Handler for CopyServer {
+            type Error = StatusCode;
+            fn unimplemented(&self) -> StatusCode {
+                StatusCode::OpUnsupported
+            }
+            async fn open(
+                &mut self,
+                id: u32,
+                path: String,
+                flags: OpenFlags,
+                _: FileAttributes,
+            ) -> Result<Handle, StatusCode> {
+                self.0.opens.lock().unwrap().push((path, flags));
+                Ok(Handle {
+                    id,
+                    handle: if flags.contains(OpenFlags::READ) {
+                        "read"
+                    } else {
+                        "write"
+                    }
+                    .into(),
+                })
+            }
+            async fn close(&mut self, id: u32, handle: String) -> Result<Status, StatusCode> {
+                self.0.closes.lock().unwrap().push(handle);
+                Ok(status(id))
+            }
+            async fn extended(
+                &mut self,
+                id: u32,
+                request: String,
+                data: Vec<u8>,
+            ) -> Result<russh_sftp::protocol::Packet, StatusCode> {
+                self.0.calls.lock().unwrap().push((request, data));
+                if self.0.fail_copy.load(Ordering::SeqCst) {
+                    Err(StatusCode::PermissionDenied)
+                } else {
+                    Ok(russh_sftp::protocol::Packet::Status(status(id)))
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn copy_data_uses_server_handles_and_closes_them_on_success_or_failure() {
+            for failure in [false, true] {
+                let probe = Arc::new(CopyProbe::default());
+                probe.fail_copy.store(failure, Ordering::SeqCst);
+                let (client, server) = tokio::io::duplex(8192);
+                russh_sftp::server::run(server, CopyServer(probe.clone())).await;
+                let raw = russh_sftp::client::RawSftpSession::new(client);
+                raw.init().await.unwrap();
+                assert_eq!(
+                    copy_data_file(&raw, "/source", "/target", true)
+                        .await
+                        .is_err(),
+                    failure
+                );
+                let opens = probe.opens.lock().unwrap();
+                assert_eq!(opens.len(), 2);
+                assert_eq!(opens[0].0, "/source");
+                assert_eq!(opens[1].0, "/target");
+                assert!(opens[1].1.contains(OpenFlags::TRUNCATE));
+                let calls = probe.calls.lock().unwrap();
+                assert_eq!(calls.len(), 1);
+                assert_eq!(calls[0].0, "copy-data");
+                let mut expected = Vec::new();
+                expected.extend_from_slice(&4u32.to_be_bytes());
+                expected.extend_from_slice(b"read");
+                expected.extend_from_slice(&0u64.to_be_bytes());
+                expected.extend_from_slice(&0u64.to_be_bytes());
+                expected.extend_from_slice(&5u32.to_be_bytes());
+                expected.extend_from_slice(b"write");
+                expected.extend_from_slice(&0u64.to_be_bytes());
+                assert_eq!(calls[0].1, expected);
+                assert_eq!(*probe.closes.lock().unwrap(), vec!["write", "read"]);
+            }
+        }
 
         struct RenameServer {
             advertised: bool,
