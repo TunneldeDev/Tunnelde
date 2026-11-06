@@ -62,9 +62,10 @@ channels. They remain active when transfer optimization is disabled. Remote to
 remote transfers use both budgets; local disk copies use neither. These limits
 cover file-transfer payload bytes rather than SSH framing or terminal traffic.
 
-The gauge button on a running transfer opens a temporary task limit. `0` follows
+The gauge button on a running transfer opens a task limit. `0` follows
 the global limits; a positive value adds a task ceiling and cannot override the
-global ceiling. Pausing and resuming starts with the global limits again. Low
+global ceiling. The task limit is saved with the transfer and survives pause,
+reconnection and application restart. Set it to `0` to follow only global limits. Low
 speed transfers continue reporting progress, and pause/cancel can interrupt the
 limiter wait. Requests already dispatched when a limit changes may finish.
 Waiting for bandwidth credit continues driving existing SFTP requests instead of
@@ -159,7 +160,7 @@ page; F1 → **Background transfers** opens the same list. When the status bar i
 hidden, the entry appears in the bottom corner. Pin the list to keep it open while
 working elsewhere. Running/paused, attention and finished groups can be collapsed;
 finished tasks start collapsed. Large groups load 20 rows at a time. Expand a task
-to inspect source/destination paths, remaining bytes and temporary speed limits.
+to inspect source/destination paths, remaining bytes and task speed limits.
 The file panes keep their full height while transfers run.
 
 File panes refresh when a background transfer settles, including retries started
