@@ -91,6 +91,7 @@ beforeEach(async () => {
     activeSidebar: "hosts",
     sidebarVisible: true,
     visitedSidebars: ["hosts"],
+    forwardingTarget: null,
   });
   useWorkspace.setState({
     tabs: [],

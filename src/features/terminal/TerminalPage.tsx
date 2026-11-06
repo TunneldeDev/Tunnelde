@@ -24,8 +24,7 @@ import {
   waitForCurrentTerminalFont,
 } from "./terminalRuntime";
 import { useSettings } from "@/store/settings";
-import { Dialog } from "@/components/ui/overlay/Dialog";
-import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
+import { useNavigation } from "@/store/navigation";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
@@ -46,7 +45,6 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
   const { t } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const host = useHosts((state) => state.hosts.find((item) => item.id === session?.hostId));
-  const [forwardingOpen, setForwardingOpen] = useState(false);
   const disconnect = useSsh((state) => state.disconnect);
   const openSftp = useWorkspace((state) => state.openSftp);
   const openHistory = useWorkspace((state) => state.openHistory);
@@ -534,7 +532,9 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         <IconButton
           label={t("forward.title")}
           disabled={!session || !host || closed}
-          onClick={() => setForwardingOpen(true)}
+          onClick={() => {
+            if (host) useNavigation.getState().showForwarding(host.id, sessionId);
+          }}
         >
           <ArrowLeftRight size={15} />
         </IconButton>
@@ -548,17 +548,6 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <X size={15} />
         </IconButton>
       </header>
-      {forwardingOpen && host ? (
-        <Dialog
-          open
-          title={t("forward.title")}
-          closeLabel={t("common.close")}
-          onClose={() => setForwardingOpen(false)}
-          width={620}
-        >
-          <ForwardingSection host={host} initialSessionId={sessionId} embedded />
-        </Dialog>
-      ) : null}
       <div
         className="terminal-host"
         onContextMenu={(event) => {
