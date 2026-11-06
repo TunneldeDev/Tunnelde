@@ -216,6 +216,8 @@ mod tests {
         }))
         .unwrap();
         assert!(row.backup_recovery.is_none());
+        assert!(row.move_digest.is_none());
+        assert!(!row.deleting_source);
     }
 
     #[test]

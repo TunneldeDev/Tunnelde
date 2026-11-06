@@ -2055,6 +2055,44 @@ async fn ensure_safe_transfer_move_source(
     Ok(())
 }
 
+#[cfg(windows)]
+async fn verify_guarded_move_destination(
+    source: &crate::platform::guarded_file::GuardedFile,
+    destination: &crate::platform::guarded_file::GuardedFile,
+    cancel: &AtomicBool,
+) -> AppResult<(String, u64)> {
+    use sha2::{Digest, Sha256};
+    let mut source = tokio::fs::File::from_std(source.reader()?);
+    let mut destination = tokio::fs::File::from_std(destination.reader()?);
+    source.seek(std::io::SeekFrom::Start(0)).await?;
+    destination.seek(std::io::SeekFrom::Start(0)).await?;
+    let length = source.metadata().await?.len();
+    if destination.metadata().await?.len() != length {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    let mut digest = Sha256::new();
+    let mut a = vec![0; CHUNK];
+    let mut b = vec![0; CHUNK];
+    let mut remaining = length;
+    while remaining > 0 {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(AppError::Ssh(CANCELLED.into()));
+        }
+        let count = remaining.min(CHUNK as u64) as usize;
+        source.read_exact(&mut a[..count]).await?;
+        destination.read_exact(&mut b[..count]).await?;
+        if a[..count] != b[..count] {
+            return Err(AppError::validation("sftp.resumePrefixMismatch"));
+        }
+        digest.update(&a[..count]);
+        remaining -= count as u64;
+    }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    Ok((format!("{:x}", digest.finalize()), length))
+}
+
 async fn verify_move_destination(
     from: &Endpoint,
     to: &Endpoint,
@@ -2425,6 +2463,16 @@ async fn run(
                 return Err(AppError::validation("sftp.alreadyExists"));
             }
         }
+        // Acquire before copying, so an ordinary writer cannot replace the
+        // source with an identical-looking file before deletion is prepared.
+        #[cfg(windows)]
+        let source_guard = if durable && remove_source && from_sftp.is_none() {
+            Some(crate::platform::guarded_file::GuardedFile::deletable(
+                Path::new(&from.path),
+            )?)
+        } else {
+            None
+        };
         copy_entry(
             from,
             to,
@@ -2441,10 +2489,38 @@ async fn run(
             return Err(AppError::Ssh(CANCELLED.into()));
         }
         if remove_source {
+            // Windows sharing checks prevent ordinary concurrent writers and
+            // path replacement throughout verification and journal persistence.
+            // Keep both guards alive until the exact source handle is deleted.
+            #[cfg(windows)]
+            let destination_guard = if durable && to_sftp.is_none() {
+                Some(crate::platform::guarded_file::GuardedFile::read(
+                    Path::new(&to.path),
+                )?)
+            } else {
+                None
+            };
             if durable {
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
                 phase(app, id, "verifying");
+                #[cfg(windows)]
+                let (digest, verified_size) = match (&source_guard, &destination_guard) {
+                    (Some(source), Some(destination)) => {
+                        verify_guarded_move_destination(source, destination, cancel).await?
+                    }
+                    _ => {
+                        verify_move_destination(
+                            from,
+                            to,
+                            from_sftp.as_ref(),
+                            to_sftp.as_ref(),
+                            cancel,
+                        )
+                        .await?
+                    }
+                };
+                #[cfg(not(windows))]
                 let (digest, verified_size) =
                     verify_move_destination(from, to, from_sftp.as_ref(), to_sftp.as_ref(), cancel)
                         .await?;
@@ -2458,7 +2534,14 @@ async fn run(
             if durable {
                 match from_sftp.as_ref() {
                     Some(sftp) => sftp.remove_file(&from.path).await.map_err(map_sftp)?,
-                    None => tokio::fs::remove_file(&from.path).await?,
+                    None => {
+                        #[cfg(windows)]
+                        source_guard
+                            .ok_or_else(|| AppError::internal("Missing move source handle"))?
+                            .delete()?;
+                        #[cfg(not(windows))]
+                        tokio::fs::remove_file(&from.path).await?;
+                    }
                 }
             } else {
                 remove_endpoint(from, from_sftp.as_ref()).await?;
@@ -2950,6 +3033,89 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn guarded_move_verifies_then_deletes_only_the_locked_source() {
+        use crate::platform::guarded_file::GuardedFile;
+        use sha2::{Digest, Sha256};
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-guarded-move-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        let independent = root.join("independent");
+        let content = vec![17; CHUNK * 3 + 19];
+        std::fs::write(&source, &content).unwrap();
+        std::fs::write(&target, &content).unwrap();
+        std::fs::write(&independent, b"independent contents").unwrap();
+        let source_guard = GuardedFile::deletable(&source).unwrap();
+        let target_guard = GuardedFile::read(&target).unwrap();
+        let cancel = AtomicBool::new(false);
+        let (digest, size) = verify_guarded_move_destination(&source_guard, &target_guard, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(size, content.len() as u64);
+        assert_eq!(digest, format!("{:x}", Sha256::digest(&content)));
+        // Exercise the exact verification-to-commit interval: neither object
+        // can be replaced or modified after the successful comparison.
+        assert!(std::fs::rename(&independent, &source).is_err());
+        assert!(std::fs::rename(&independent, &target).is_err());
+        assert!(std::fs::write(&source, b"changed").is_err());
+        assert!(std::fs::write(&target, b"changed").is_err());
+        assert!(std::fs::remove_file(&source).is_err());
+        source_guard.delete().unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), content);
+        assert_eq!(
+            std::fs::read(&independent).unwrap(),
+            b"independent contents"
+        );
+        drop(target_guard);
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_file(independent).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn guarded_move_preserves_files_on_mismatch_or_cancellation() {
+        use crate::platform::guarded_file::GuardedFile;
+        let root = std::env::temp_dir().join(format!(
+            "tunnelde-guarded-move-stop-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::write(&source, b"original").unwrap();
+        std::fs::write(&target, b"modified").unwrap();
+        let source_guard = GuardedFile::deletable(&source).unwrap();
+        let target_guard = GuardedFile::read(&target).unwrap();
+        let cancel = AtomicBool::new(false);
+        assert_eq!(
+            verify_guarded_move_destination(&source_guard, &target_guard, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.resumePrefixMismatch"
+        );
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(
+            verify_guarded_move_destination(&source_guard, &target_guard, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        drop(source_guard);
+        drop(target_guard);
+        assert_eq!(std::fs::read(&source).unwrap(), b"original");
+        assert_eq!(std::fs::read(&target).unwrap(), b"modified");
+        std::fs::remove_file(source).unwrap();
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[tokio::test]
     async fn move_verification_checks_content_size_and_cancellation() {
         let root =

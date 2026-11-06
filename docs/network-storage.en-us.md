@@ -164,6 +164,22 @@ has its own visible status and can be cancelled while awaiting network reads.
 
 Overwrite uses a recoverable, verified backup of the previous destination. For a
 move, source removal happens after the copy succeeds and is checkpointed separately.
+Before source deletion, the transfer compares both complete files and records the
+verified content digest for recovery. This adds a full read of both files, including
+network reads for remote endpoints. After interruption during deletion, a missing
+source is considered complete only if the destination matches that saved digest;
+legacy records without a digest require inspection. A source path that exists again
+is preserved, even when its contents match, because it may be a newly created file.
+
+On Windows, local move sources are opened before copying with sharing that excludes
+ordinary writes, renames and deletion. A local destination is held the same way
+during final verification and deletion. Local-to-local verification reads these held
+objects, and source deletion uses its held handle. An existing writer causes the
+move to fail without deleting the source; close the writer and retry. This does not
+provide the same protection for remote SFTP endpoints or Unix paths, and does not
+isolate privileged or memory-mapped modifications. Their verification-to-delete
+concurrency limitations and backup cleanup limitations remain.
+
 Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
 temporary data before reporting completion. It keeps already completed destination
 files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails
