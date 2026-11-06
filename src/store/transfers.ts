@@ -81,6 +81,9 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
             return {
               ...item,
               durable: true,
+              // A newer progress event has no recovery metadata; the journal
+              // remains the source for the last known backup location.
+              backupRecovery: item.backupRecovery ?? row.backupRecovery,
               clearing: previous?.clearing,
               speedLimitKib: previous?.speedLimitKib,
               cancelling: item.status === "running" ? previous?.cancelling : undefined,

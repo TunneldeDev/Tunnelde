@@ -167,14 +167,16 @@ export function TransferTask({
           <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
         ) : null}
       </div>
-      {pending ? <p className="transfer-task__notice">{t("sftp.cleanupPendingHint")}</p> : null}
+      {pending && !item.backupRecovery ? (
+        <p className="transfer-task__notice">{t("sftp.cleanupPendingHint")}</p>
+      ) : null}
       {item.error ? (
         <p className="transfer-task__error">
           {translateError({ code: "ssh", message: item.error })}
         </p>
       ) : null}
       {item.backupRecovery ? (
-        <div className="transfer-task__details">
+        <div className="transfer-task__details transfer-task__recovery">
           <p>{t("sftp.backupLastKnownHint")}</p>
           <p>
             <span>{t("sftp.backupPath")}</span>

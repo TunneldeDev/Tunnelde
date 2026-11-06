@@ -757,12 +757,14 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
                 Ok(Ok(())) => {}
                 Ok(Err(error)) => {
                     tracing::warn!(%error, transfer_id=id, "Cancelled transfer cleanup must be retried");
-                    event.error = Some("sftp.cancelCleanupFailed".into());
+                    durable::record_cleanup_failure(&mut row, Some(error));
+                    event.error = row.error.clone();
                     event.status = TransferStatus::CleanupPending;
                 }
                 Err(_) => {
                     tracing::warn!(transfer_id = id, "Cancelled transfer cleanup timed out");
-                    event.error = Some("sftp.cancelCleanupFailed".into());
+                    durable::record_cleanup_failure(&mut row, None);
+                    event.error = row.error.clone();
                     event.status = TransferStatus::CleanupPending;
                 }
             }
@@ -800,6 +802,9 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let event = state.transfers.complete(event);
     emit(app, event);
     if retry_cleanup {
+        // Progress events omit recovery paths. Refresh the durable snapshot only
+        // after the registry is released so cancellation details reach the UI.
+        let _ = app.emit("sftp://changed", ());
         let cleanup_app = app.clone();
         tauri::async_runtime::spawn(async move {
             durable::on_reconnect(&cleanup_app).await;

@@ -42,7 +42,7 @@ pub struct DurableTransfer {
 }
 pub struct Journal;
 
-fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
+pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
     row.error = Some(match error {
         Some(AppError::BackupRecovery {
             backup,
