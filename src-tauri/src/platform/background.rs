@@ -291,6 +291,9 @@ pub async fn main_window_suspend(
         cancel(&app);
         return Err(error.into());
     }
-    tracing::info!(token, "background window checkpoint saved and WebView destruction requested");
+    tracing::info!(
+        token,
+        "background window checkpoint saved and WebView destruction requested"
+    );
     Ok(true)
 }
