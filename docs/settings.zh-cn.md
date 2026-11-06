@@ -28,7 +28,7 @@
 
 展开更新说明可查看已安装版本到目标版本之间的已发布变更，覆盖范围和限制见[更新指南](updates.zh-cn.md)。切换到正式版不会自动降级当前 Beta，而是等待更新的正式版。安装会重启应用。更新源、渠道和检查频率随设置配置方案保存。
 
-自定义来源 URL 的路径必须恰有一个 `{channel}`，例如 `https://updates.example.com/{channel}/latest.json`；编辑后选择“应用”。来源须提供 Tauri 更新清单与签名安装包，不能只是网页。来源与各功能代理分别配置。镜像要求见[发布运维说明](releases.md#in-app-channels-sources-and-ota)。
+自定义来源 URL 的路径必须恰有一个 `{channel}`，例如 `https://updates.example.com/{channel}/latest.json`；编辑后选择“应用”。来源须提供 Tauri 更新清单与签名安装包，不能只是网页。来源与各功能代理分别配置。镜像要求见[发布运维说明](releases.zh-cn.md#应用内渠道来源与-ota)。
 
 ## 文件传输
 

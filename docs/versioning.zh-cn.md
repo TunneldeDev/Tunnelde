@@ -42,7 +42,7 @@ GitHub 自动提供的 Source code 下载项由平台生成。
 已经安装同号或更高版本的用户需要手动安装，更新器不提供同号更新或自动降级。
 删除远端 tag 不会改变用户已安装软件中记录的版本号。
 
-工作流触发与恢复步骤见[发布操作说明](releases.md)。
+工作流触发与恢复步骤见[发布操作说明](releases.zh-cn.md)。
 [English](versioning.en-us.md)
 
 软件更新只提供正式版和公测版，不提供 Nightly 开发快照。
