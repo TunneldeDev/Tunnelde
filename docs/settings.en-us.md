@@ -271,7 +271,7 @@ emoji sequences and modern terminal tables. A streaming UTF-8 decoder preserves
 characters split across SSH packets.
 
 Hidden entries include dotfiles and the Windows hidden attribute for local files.
-They still participate in collision checks. `Ctrl+H` / `Cmd+H` toggles visibility
+They still participate in collision checks. `Ctrl+H` / `Cmd+Shift+.` toggles visibility
 when the file list has focus. A newly created or renamed hidden item temporarily
 reveals itself. Sorting is natural by name, with folders first by default; unknown
 modification dates stay last. Preloading warms the parent and up to the configured

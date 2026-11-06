@@ -4,6 +4,7 @@ import {
   matchesCommand,
   normalizeShortcut,
   recordShortcut,
+  shortcutMatches,
   shortcutConflict,
   shortcutCommands,
   shortcutFilter,
@@ -13,6 +14,19 @@ import {
 const key = (options: KeyboardEventInit) => new KeyboardEvent("keydown", options);
 
 describe("application keyboard registry", () => {
+  it("uses Finder-style file shortcuts on macOS while preserving overrides and other platforms", () => {
+    expect(bindingsFor("files.delete", {}, true)).toEqual(["Meta+Backspace"]);
+    expect(bindingsFor("files.delete", {}, false)).toEqual(["Delete"]);
+    expect(bindingsFor("files.delete", { "files.delete": ["F8"] }, true)).toEqual(["F8"]);
+    expect(shortcutMatches(key({ key: "Backspace", metaKey: true }), "Meta+Backspace")).toBe(true);
+    expect(shortcutMatches(key({ key: "Backspace" }), "Meta+Backspace")).toBe(false);
+    expect(shortcutMatches(key({ key: "Backspace", ctrlKey: true }), "Meta+Backspace")).toBe(false);
+    expect(bindingsFor("files.rename", {}, true)).toContain("Enter");
+    expect(bindingsFor("files.open", {}, true)).not.toContain("Enter");
+    expect(bindingsFor("files.open", {}, true)).toContain("Meta+ArrowDown");
+    expect(bindingsFor("files.hidden", {}, true)).toEqual(["Meta+Shift+Period"]);
+    expect(bindingsFor("files.parent", {}, true)).not.toContain("Backspace");
+  });
   it("does not register formatting when no plugin contributes it", () => {
     expect(shortcutCommands().some((item) => item.id === "editor.format")).toBe(false);
   });

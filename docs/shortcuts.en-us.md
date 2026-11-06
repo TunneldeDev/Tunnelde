@@ -75,24 +75,24 @@ program's paste mode.
 
 File panes:
 
-| Keys                                | Action                                          |
-| ----------------------------------- | ----------------------------------------------- |
-| `↑` / `↓`                           | Move the selection                              |
-| `Shift+↑` / `Shift+↓`               | Extend the selection                            |
-| `Enter`                             | Open a folder, or edit/open the selected file   |
-| `Backspace`, `Alt+↑`                | Go to the parent folder                         |
-| `Alt+←` / `Alt+→`                   | Back / forward through folder history           |
-| `F5`                                | Refresh the current folder                      |
-| `Ctrl+H` / `Cmd+H`                  | Toggle hidden entries in the focused file list  |
-| `F2`                                | Rename the selected entry in place              |
-| `Ctrl+L`                            | Focus and select the current panel's path       |
-| `Enter` / `Esc` in a filename input | Commit / cancel inline creation or rename       |
-| `Delete`                            | Delete the selected entries                     |
-| `Ctrl+A`                            | Select every entry                              |
-| `Home` / `End`                      | Select the first / last entry                   |
-| `Ctrl+N` / `Ctrl+Shift+N`           | Create a file / folder in the focused file pane |
-| `Space`                             | Preview the selected local or remote file       |
-| `Esc`                               | Clear the selection                             |
+| Keys                                                  | Action                                          |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| `↑` / `↓`                                             | Move the selection                              |
+| `Shift+↑` / `Shift+↓`                                 | Extend the selection                            |
+| `Enter` (Windows/Linux), `Cmd+↓` (macOS)              | Open the selected file or folder                |
+| `Backspace` (Windows/Linux), `Alt+↑`, `Cmd+↑` (macOS) | Go to the parent folder                         |
+| `Alt+←` / `Alt+→`                                     | Back / forward through folder history           |
+| `F5`, `Cmd+R` (macOS)                                 | Refresh the current folder                      |
+| `Ctrl+H`, `Cmd+Shift+.` (macOS)                       | Toggle hidden entries in the focused file list  |
+| `F2`, `Enter` (macOS)                                 | Rename the selected entry in place              |
+| `Ctrl+L`                                              | Focus and select the current panel's path       |
+| `Enter` / `Esc` in a filename input                   | Commit / cancel inline creation or rename       |
+| `Delete`, `Cmd+Backspace` (macOS)                     | Delete selected entries after confirmation      |
+| `Ctrl+A`                                              | Select every entry                              |
+| `Home` / `End`                                        | Select the first / last entry                   |
+| `Ctrl+N` / `Ctrl+Shift+N`                             | Create a file / folder in the focused file pane |
+| `Space`                                               | Preview the selected local or remote file       |
+| `Esc`                                                 | Clear the selection                             |
 
 With the mouse, `Ctrl/Cmd+click` adds or removes one row and `Shift+click` selects a range. Delete,
 transfer, cut, copy, paste and drag all act on the whole selection.
