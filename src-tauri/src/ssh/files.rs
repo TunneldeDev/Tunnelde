@@ -2061,7 +2061,7 @@ async fn verify_move_destination(
     from_sftp: Option<&SftpSession>,
     to_sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
-) -> AppResult<String> {
+) -> AppResult<(String, u64)> {
     use sha2::{Digest, Sha256};
     let source_before = source_stamp(from, from_sftp).await?;
     let target_before = source_stamp(to, to_sftp).await?;
@@ -2088,7 +2088,7 @@ async fn verify_move_destination(
     {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
     }
-    Ok(format!("{:x}", digest.finalize()))
+    Ok((format!("{:x}", digest.finalize()), source_before.0))
 }
 
 async fn verify_move_recovery_target(
@@ -2111,6 +2111,12 @@ async fn verify_move_recovery_target(
     Ok(())
 }
 
+fn record_verified_move(row: &mut durable::DurableTransfer, digest: String, size: u64) {
+    row.deleting_source = true;
+    row.move_digest = Some(digest);
+    row.total = size;
+}
+
 async fn recover_interrupted_move(
     from: &Endpoint,
     to: &Endpoint,
@@ -2120,14 +2126,26 @@ async fn recover_interrupted_move(
     expected_size: u64,
     cancel: &AtomicBool,
 ) -> AppResult<()> {
-    let source_exists = match from_sftp {
-        Some(sftp) => remote_exists(sftp, &from.path).await?,
-        None => Path::new(&from.path).try_exists()?,
-    };
-    if source_exists {
+    if move_source_exists(from, from_sftp).await? {
         return Err(AppError::validation("sftp.moveRecoverySourcePresent"));
     }
-    verify_move_recovery_target(to, to_sftp, expected_digest, expected_size, cancel).await
+    verify_move_recovery_target(to, to_sftp, expected_digest, expected_size, cancel).await?;
+    if move_source_exists(from, from_sftp).await? {
+        return Err(AppError::validation("sftp.moveRecoverySourcePresent"));
+    }
+    Ok(())
+}
+
+async fn move_source_exists(from: &Endpoint, from_sftp: Option<&SftpSession>) -> AppResult<bool> {
+    let source_exists = match from_sftp {
+        Some(sftp) => remote_exists(sftp, &from.path).await?,
+        None => match tokio::fs::symlink_metadata(&from.path).await {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(error) => return Err(error.into()),
+        },
+    };
+    Ok(source_exists)
 }
 
 async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
@@ -2427,16 +2445,14 @@ async fn run(
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
                 phase(app, id, "verifying");
-                let digest =
+                let (digest, verified_size) =
                     verify_move_destination(from, to, from_sftp.as_ref(), to_sftp.as_ref(), cancel)
                         .await?;
                 if cancel.load(Ordering::SeqCst) {
                     return Err(AppError::Ssh(CANCELLED.into()));
                 }
                 let mut row = durable::Journal::get(app, id)?;
-                row.deleting_source = true;
-                row.move_digest = Some(digest);
-                row.total = meter.total;
+                record_verified_move(&mut row, digest, verified_size);
                 durable::Journal::upsert(app, row)?;
             }
             if durable {
@@ -2950,9 +2966,10 @@ mod tests {
         let cancel = AtomicBool::new(false);
         std::fs::write(&source.path, b"source contents").unwrap();
         std::fs::write(&target.path, b"source contents").unwrap();
-        verify_move_destination(&source, &target, None, None, &cancel)
+        let (_, verified_size) = verify_move_destination(&source, &target, None, None, &cancel)
             .await
             .unwrap();
+        assert_eq!(verified_size, b"source contents".len() as u64);
 
         std::fs::write(&target.path, b"SOURCE contents").unwrap();
         assert_eq!(
@@ -3001,13 +3018,32 @@ mod tests {
         std::fs::write(&source.path, b"verified").unwrap();
         std::fs::write(&target.path, b"verified").unwrap();
         let cancel = AtomicBool::new(false);
-        let digest = verify_move_destination(&source, &target, None, None, &cancel)
-            .await
-            .unwrap();
+        let (digest, verified_size) =
+            verify_move_destination(&source, &target, None, None, &cancel)
+                .await
+                .unwrap();
+        let mut row: durable::DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": true, "overwrite": false, "transferred": 0,
+            "total": 999, "status": "running", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        record_verified_move(&mut row, digest.clone(), verified_size);
+        assert_eq!(row.total, 8);
+        assert_eq!(row.move_digest.as_deref(), Some(digest.as_str()));
+        assert!(row.deleting_source);
         std::fs::remove_file(&source.path).unwrap();
-        verify_move_recovery_target(&target, None, Some(&digest), 8, &cancel)
-            .await
-            .unwrap();
+        verify_move_recovery_target(
+            &target,
+            None,
+            row.move_digest.as_deref(),
+            row.total,
+            &cancel,
+        )
+        .await
+        .unwrap();
         assert_eq!(
             verify_move_recovery_target(&target, None, None, 8, &cancel)
                 .await
@@ -3050,13 +3086,22 @@ mod tests {
         std::fs::write(&source.path, b"original").unwrap();
         std::fs::write(&target.path, b"original").unwrap();
         let cancel = AtomicBool::new(false);
-        let digest = verify_move_destination(&source, &target, None, None, &cancel)
-            .await
-            .unwrap();
+        let (digest, verified_size) =
+            verify_move_destination(&source, &target, None, None, &cancel)
+                .await
+                .unwrap();
         std::fs::remove_file(&source.path).unwrap();
-        recover_interrupted_move(&source, &target, None, None, Some(&digest), 8, &cancel)
-            .await
-            .unwrap();
+        recover_interrupted_move(
+            &source,
+            &target,
+            None,
+            None,
+            Some(&digest),
+            verified_size,
+            &cancel,
+        )
+        .await
+        .unwrap();
         std::fs::write(&source.path, b"original").unwrap();
         assert_eq!(
             recover_interrupted_move(&source, &target, None, None, Some(&digest), 8, &cancel)
@@ -3066,6 +3111,39 @@ mod tests {
             "sftp.moveRecoverySourcePresent"
         );
         assert_eq!(std::fs::read(&source.path).unwrap(), b"original");
+        std::fs::remove_file(source.path).unwrap();
+        std::fs::remove_file(target.path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn interrupted_move_treats_dangling_source_symlink_as_present() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-move-link-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        std::fs::write(&target.path, b"original").unwrap();
+        std::os::unix::fs::symlink(root.join("missing"), &source.path).unwrap();
+        let cancel = AtomicBool::new(false);
+        assert_eq!(
+            recover_interrupted_move(&source, &target, None, None, None, 8, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.moveRecoverySourcePresent"
+        );
+        assert!(std::fs::symlink_metadata(&source.path)
+            .unwrap()
+            .file_type()
+            .is_symlink());
         std::fs::remove_file(source.path).unwrap();
         std::fs::remove_file(target.path).unwrap();
         std::fs::remove_dir(root).unwrap();
@@ -4612,6 +4690,53 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn move_recovery_detects_source_recreated_during_target_verification() {
+            use sha2::{Digest, Sha256};
+            let root = temp_root("move-recovery-recreated");
+            let source = Endpoint {
+                session: None,
+                path: display_path(&root.join("source")),
+            };
+            let target = Endpoint {
+                session: Some("test".into()),
+                path: "target".into(),
+            };
+            std::fs::write(root.join("target"), b"original").unwrap();
+            let digest = format!("{:x}", Sha256::digest(b"original"));
+            let state = Arc::new(State::default());
+            state.hold_read.store(true, Ordering::SeqCst);
+            let sftp = client(&root, state.clone()).await;
+            let cancel = AtomicBool::new(false);
+            let operation = recover_interrupted_move(
+                &source,
+                &target,
+                None,
+                Some(&sftp),
+                Some(&digest),
+                8,
+                &cancel,
+            );
+            tokio::pin!(operation);
+            tokio::select! {
+                result = &mut operation => panic!("verification should wait: {result:?}"),
+                _ = state.read_started.notified() => {}
+            }
+            std::fs::write(&source.path, b"new file").unwrap();
+            state.hold_read.store(false, Ordering::SeqCst);
+            state.release_read.notify_one();
+            let result = tokio::time::timeout(std::time::Duration::from_secs(5), operation)
+                .await
+                .unwrap();
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "sftp.moveRecoverySourcePresent"
+            );
+            assert_eq!(std::fs::read(&source.path).unwrap(), b"new file");
+            sftp.close().await.unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[tokio::test]
         async fn move_verification_compares_local_and_remote_bytes_in_both_directions() {
             let root = temp_root("move-verify-remote");
             let local = Endpoint {
@@ -4632,12 +4757,19 @@ mod tests {
             verify_move_destination(&remote, &local, Some(&sftp), None, &cancel)
                 .await
                 .unwrap();
-            let digest = verify_move_destination(&local, &remote, None, Some(&sftp), &cancel)
-                .await
-                .unwrap();
-            verify_move_recovery_target(&remote, Some(&sftp), Some(&digest), 17, &cancel)
-                .await
-                .unwrap();
+            let (digest, verified_size) =
+                verify_move_destination(&local, &remote, None, Some(&sftp), &cancel)
+                    .await
+                    .unwrap();
+            verify_move_recovery_target(
+                &remote,
+                Some(&sftp),
+                Some(&digest),
+                verified_size,
+                &cancel,
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 recover_interrupted_move(
                     &remote,
