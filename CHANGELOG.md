@@ -6,6 +6,31 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.0...v0.30.1) - 2026-11-06
+
+### 更新概览 | Highlights
+
+- **files:** preserve unguarded move sources and backups
+- **files:** retain task speed limits across transfer recovery
+- **ci:** avoid duplicate checks for release pull requests
+- **files:** verify Windows staging identity before resume and cleanup
+
+<details open>
+<summary>详细变更 | Details (4)</summary>
+
+### 修复 | Fix
+
+- **files:** preserve unguarded move sources and backups ([#114](https://github.com/TunneldeDev/Tunnelde/pull/114)) @quyansiyuanwang
+- **files:** retain task speed limits across transfer recovery ([#116](https://github.com/TunneldeDev/Tunnelde/pull/116)) @quyansiyuanwang
+- **ci:** avoid duplicate checks for release pull requests ([#117](https://github.com/TunneldeDev/Tunnelde/pull/117)) @quyansiyuanwang
+- **files:** verify Windows staging identity before resume and cleanup ([#118](https://github.com/TunneldeDev/Tunnelde/pull/118)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.29.0...v0.30.0) - 2026-11-06
 
 ### 更新概览 | Highlights

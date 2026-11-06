@@ -6,6 +6,9 @@ import { transferApi } from "@/lib/api/transfers";
 import { useTransfers } from "@/store/transfers";
 import { useTransferPanel } from "@/store/transferPanel";
 import { viewIsBusy } from "@/lib/session/viewState";
+import { useWorkspace } from "@/store/workspace";
+import { useSsh } from "@/store/ssh";
+import { TransferLocation } from "@/features/sftp/TransferLocation";
 
 import { registerBackgroundTaskSources } from "@/app/backgroundTaskSources";
 
@@ -19,6 +22,7 @@ beforeEach(async () => {
   stopSources = registerBackgroundTaskSources();
   await i18n.changeLanguage("en-US");
   useTransferPanel.setState({ open: true, pinned: false, bounds: null });
+  useSsh.setState({ sessions: [] });
   useTransfers.setState({
     items: [
       {
@@ -96,6 +100,7 @@ it("shows a localized explanation when a directory move is rejected", () => {
 it.each([
   ["sftp.moveRecoverySourcePresent", /an entry now exists at the source path/],
   ["sftp.moveRecoveryUnverified", /destination cannot be verified from the saved task/],
+  ["sftp.moveSourceRetained", /source has been kept/],
 ])("explains interrupted source removal without expanding task details: %s", (error, message) => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({
@@ -138,6 +143,153 @@ it("keeps ordinary failed transfers resumable and their details collapsed", () =
   const { container } = render(<FileTransfers />);
   expect(screen.getByRole("button", { name: "Resume transfer" })).toBeTruthy();
   expect(container.querySelector(".transfer-task__details")).toBeNull();
+});
+
+it("shows preserved backup copies as needing review and does not offer transfer retry", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error: "sftp.backupPreserved",
+      backupRecovery: { backup: "/remote/.backup", destination: "/remote/file" },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText("Needs review")).toBeTruthy();
+  expect(screen.getByText(/destination was written/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+  expect(screen.getByText("/remote/.backup")).toBeTruthy();
+  expect(screen.getByText("/remote/file")).toBeTruthy();
+});
+
+it("opens local recovery folders inside the application", () => {
+  const open = vi.spyOn(useWorkspace.getState(), "openFilePane").mockReturnValue("files:review");
+  const item = { ...useTransfers.getState().items[0]!, fromHostId: null, fromSession: null };
+  render(
+    <TransferLocation
+      item={item}
+      side="from"
+      path={"C:\\work\\source.txt"}
+      label="Source"
+      inspect
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open Source folder" }));
+  expect(open).toHaveBeenCalledWith(
+    {
+      source: { kind: "local" },
+      path: "C:\\work",
+      ownerSessionId: "local",
+      remoteIdentity: undefined,
+    },
+    "This computer",
+  );
+});
+
+it.each(["failed", "cleanupPending"] as const)(
+  "preserves an unrecognized staging file and exposes its exact inspection folder: %s",
+  async (status) => {
+    const clear = vi.spyOn(transferApi, "clear").mockResolvedValue(null);
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    const open = vi.spyOn(useWorkspace.getState(), "openFilePane").mockReturnValue("files:review");
+    useTransfers.setState((state) => ({
+      items: state.items.map((item) => ({
+        ...item,
+        status,
+        error: "sftp.transferArtifactUnrecognized",
+        artifactRecovery: "C:\\downloads\\.tunnelde-job.part",
+        toSession: null,
+        toHostId: null,
+      })),
+    }));
+    render(<FileTransfers />);
+    expect(screen.getByText("Needs review")).toBeTruthy();
+    expect(screen.getByText(/cannot be identified as this task's original file/)).toBeTruthy();
+    expect(screen.getByText("C:\\downloads\\.tunnelde-job.part")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open Temporary file to inspect folder" }));
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: { kind: "local" },
+        path: "C:\\downloads",
+        ownerSessionId: "local",
+      }),
+      "This computer",
+    );
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name:
+            status === "cleanupPending"
+              ? "Retry cleanup"
+              : "Remove transfer and clean temporary files",
+        }),
+      ),
+    );
+    expect(clear).toHaveBeenCalledWith("job");
+    expect(resume).not.toHaveBeenCalled();
+  },
+);
+
+it("does not inspect a disconnected, changed or unidentified remote as a local path", () => {
+  const open = vi.spyOn(useWorkspace.getState(), "openFilePane").mockReturnValue("files:review");
+  const item = {
+    ...useTransfers.getState().items[0]!,
+    fromHostId: "host",
+    fromSession: "old",
+    fromAddress: "user@original:22",
+  };
+  render(
+    <TransferLocation item={item} side="from" path="/work/source.txt" label="Source" inspect />,
+  );
+  const button = screen.getByRole("button", { name: "Open Source folder" });
+  expect(button).toHaveProperty("disabled", true);
+  fireEvent.click(button);
+  expect(open).not.toHaveBeenCalled();
+});
+
+it("inspects only a live connection matching the recorded host and address", () => {
+  const open = vi.spyOn(useWorkspace.getState(), "openFilePane").mockReturnValue("files:review");
+  const session = {
+    id: "new",
+    hostId: "host",
+    address: "user@original:22",
+    title: "Original",
+    cols: 80,
+    rows: 24,
+    connectedAt: 1,
+  };
+  useSsh.setState({
+    sessions: [
+      { ...session, id: "changed", address: "user@different:22" },
+      { ...session, id: "forward", purpose: "forwarding" },
+      session,
+    ],
+  });
+  const item = {
+    ...useTransfers.getState().items[0]!,
+    fromHostId: "host",
+    fromSession: "old",
+    fromAddress: "user@original:22",
+  };
+  render(
+    <TransferLocation item={item} side="from" path="/work/source.txt" label="Source" inspect />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open Source folder" }));
+  expect(open).toHaveBeenCalledWith(
+    {
+      source: { kind: "remote", sessionId: "new" },
+      path: "/work",
+      ownerSessionId: "new",
+      remoteIdentity: { hostId: "host", address: "user@original:22" },
+    },
+    "Original",
+  );
+  act(() => useSsh.setState({ sessions: [{ ...session, address: "user@changed:22" }] }));
+  expect(screen.getByRole("button", { name: "Open Source folder" })).toHaveProperty(
+    "disabled",
+    true,
+  );
 });
 
 it("shows a backup recovery error without expanding task details", () => {

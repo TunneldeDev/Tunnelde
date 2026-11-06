@@ -372,7 +372,7 @@ test("Beta reruns reuse their immutable tag rather than creating another commit"
 test("promotion tree retains both main and original dev history without modifying either branch", async () => {
   const f = fixture();
   const plan = await planDevelopment(f);
-  await maintainReleasePr({ ...f, plan });
+  assert.deepEqual(await maintainReleasePr({ ...f, plan }), { number: 15, sha: generated });
   const tree = f.calls.find((call) => call.tree).tree;
   assert.equal(tree.base_tree, dev);
   const notes = tree.tree.find((entry) => entry.path === "CHANGELOG.md").content;
@@ -388,7 +388,11 @@ test("promotion tree retains both main and original dev history without modifyin
   assert.equal(f.references["heads/main"], main);
   assert.equal(f.references["heads/dev"], dev);
   assert.equal(f.calls.find((call) => call.createPr).createPr.base, "main");
-  assert.equal(f.calls.at(-1).dispatch.ref, RELEASE_BRANCH);
+  assert.equal(f.calls.at(-1).status.state, "success");
+  assert.equal(
+    f.calls.some((call) => call.dispatch),
+    false,
+  );
 });
 
 test("moving main/dev during preparation never mutates a branch or dispatches checks", async () => {
@@ -575,7 +579,7 @@ test("invalid subjects are still rejected after a stale snapshot recovers", asyn
   assert.equal(f.calls.at(-1).status.state, "failure");
 });
 
-test("unchanged generated release PRs redispatch CI when recovering an interrupted workflow", async () => {
+test("unchanged generated release PRs recheck policy without duplicating CI", async () => {
   const pr = {
     number: 15,
     title: "chore(main): release 0.26.2",
@@ -588,12 +592,15 @@ test("unchanged generated release PRs redispatch CI when recovering an interrupt
     `${generated}:${SOURCE_PATH}`,
     JSON.stringify({ baseSha: main, sourceSha: dev, version: "0.26.2", history: "merge" }),
   );
-  await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
+  assert.deepEqual(await maintainReleasePr({ ...f, plan: await planDevelopment(f) }), {
+    number: 15,
+    sha: generated,
+  });
   assert.deepEqual(
     f.calls.filter((call) => !call.compare).map((call) => Object.keys(call)[0]),
-    ["status", "dispatch"],
+    ["status"],
   );
-  assert.equal(f.calls.at(-1).dispatch.ref, RELEASE_BRANCH);
+  assert.equal(f.calls.at(-1).status.state, "success");
 });
 
 test("generated release PRs retain individual dev commits and validate their actual parents", async () => {
@@ -693,7 +700,11 @@ test("an old release draft is reopened only after history-preserving regeneratio
   f.contents.set(`${oldHead}:${SOURCE_PATH}`, JSON.stringify({ baseSha: main, sourceSha: dev }));
   await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
   assert.equal(f.calls.at(-1).ready.variables.id, "PR_migration");
-  assert.equal(f.calls.at(-2).dispatch.ref, RELEASE_BRANCH);
+  assert.equal(f.calls.at(-2).status.state, "success");
+  assert.equal(
+    f.calls.some((call) => call.dispatch),
+    false,
+  );
 });
 
 test("rebased batches choose the highest semantic bump from retained commits", () => {

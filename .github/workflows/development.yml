@@ -13,7 +13,6 @@ permissions:
   contents: write
   pull-requests: write
   statuses: write
-  actions: write
 
 jobs:
   prepare:
@@ -29,4 +28,5 @@ jobs:
           script: |
             const {planDevelopment, maintainReleasePr} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/planning/promotion.mjs`);
             const plan = await planDevelopment({github, context});
-            await maintainReleasePr({github, context, plan});
+            const pr = await maintainReleasePr({github, context, plan});
+            if (pr) core.notice(`Review release PR #${pr.number} at ${pr.sha}. If its pull_request CI awaits approval, approve that exact run from the PR Checks tab; a separate manual CI run does not release it.`);

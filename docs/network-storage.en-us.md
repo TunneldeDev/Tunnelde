@@ -62,9 +62,10 @@ channels. They remain active when transfer optimization is disabled. Remote to
 remote transfers use both budgets; local disk copies use neither. These limits
 cover file-transfer payload bytes rather than SSH framing or terminal traffic.
 
-The gauge button on a running transfer opens a temporary task limit. `0` follows
+The gauge button on a running transfer opens a task limit. `0` follows
 the global limits; a positive value adds a task ceiling and cannot override the
-global ceiling. Pausing and resuming starts with the global limits again. Low
+global ceiling. The task limit is saved with the transfer and survives pause,
+reconnection and application restart. Set it to `0` to follow only global limits. Low
 speed transfers continue reporting progress, and pause/cancel can interrupt the
 limiter wait. Requests already dispatched when a limit changes may finish.
 Waiting for bandwidth credit continues driving existing SFTP requests instead of
@@ -139,11 +140,11 @@ checkpoint failure leaves the source intact. This protection applies to regular
 local files; it does not establish the same guarantee for remote or Unix moves.
 
 Other durable copy-based file moves compare the complete committed destination
-against the source before saving the deletion checkpoint. Truncation, content
-mismatch, detected metadata changes, read/close errors and cancellation preserve
-the source. This extra read applies to moves, not ordinary copies or atomic
-same-host renames. It does not lock SFTP or Unix files against changes between
-verification and deletion; interrupted deletion still requires manual review.
+against the source, then keep the source and show **Needs review**. SFTP and Unix
+path-based removal cannot ensure that the checked file has not been replaced or
+modified before deletion. Review both locations before explicitly deleting the
+source yourself; clearing the task preserves both files. This extra read applies
+to moves, not ordinary copies or atomic same-host renames.
 
 Dragging local entries between different Windows drive letters copies them as
 background transfers; the originals remain in place. Cut and paste uses a background
@@ -159,7 +160,7 @@ page; F1 → **Background transfers** opens the same list. When the status bar i
 hidden, the entry appears in the bottom corner. Pin the list to keep it open while
 working elsewhere. Running/paused, attention and finished groups can be collapsed;
 finished tasks start collapsed. Large groups load 20 rows at a time. Expand a task
-to inspect source/destination paths, remaining bytes and temporary speed limits.
+to inspect source/destination paths, remaining bytes and task speed limits.
 The file panes keep their full height while transfers run.
 
 File panes refresh when a background transfer settles, including retries started
@@ -216,8 +217,7 @@ files are preserved. Automatic no-replace backup restoration is not yet availabl
 Local transfer commits and backup creation use a system rename that refuses to
 replace an existing entry. If another program creates the destination before
 commit, the task fails and preserves that destination, staging data and any
-existing backup. This does not yet solve concurrent changes during move-source
-deletion or successful-transfer backup removal on SFTP and Unix paths.
+existing backup.
 
 On Windows, successful transfers hold a local backup against ordinary writes,
 renames and deletion while checking its size, modification time and complete
@@ -225,10 +225,27 @@ content digest. Cleanup deletes that same file object through its held handle.
 An existing writer, changed backup or cancellation preserves the backup and the
 journal for retry. This does not isolate privileged or memory-mapped changes.
 
+Windows local downloads record the volume, full 128-bit file identifier and creation
+time from the newly created staging file's handle. Resuming pins the identified file
+against ordinary rename/delete while permitting transfer writes and checkpoint trimming.
+Cleanup opens and locks the file, compares its recorded identity, then deletes through
+that same handle. A different file is preserved even if its contents are identical.
+Unknown staging files, including legacy Windows tasks without an identity record,
+require manual inspection before resuming or clearing. The task exposes the exact
+temporary path and an action to open its parent folder. Remove the file yourself only
+after checking that it is unneeded, then retry cleanup. Filesystems that cannot supply
+a usable identifier fail safely and retain the staging file. This does not protect
+against privileged interference, parent-directory redirection or every commit race.
+
 Transfer artifact cleanup uses file-only removal. If a staging or backup path
 has become a directory, it is preserved rather than recursively deleted. This
-does not make staging-file removal conditional on file identity; SFTP and Unix
-backup cleanup also retain a verification-to-removal race.
+does not make SFTP or Unix staging-file removal conditional on file identity. SFTP and Unix
+backup cleanup keeps the previous destination even after the new destination was
+written, with a **Needs review** explanation and both paths. Inspect both files,
+remove the backup yourself if no longer needed, then clear the task. Retrying the
+transfer cannot safely remove it. Recovery paths have buttons to open their parent
+folders in the application; remote folders require a live connection matching the
+recorded host and address, and never fall back to local paths.
 
 An offline removal persists its cleanup intent before accessing the connection;
 the journal is retained until owned artifacts are cleaned, including across app

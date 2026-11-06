@@ -99,9 +99,18 @@ permissions → Allow GitHub Actions to create and approve pull requests**. No P
 organization-wide access or Ruleset bypass is needed. Each workflow declares its permissions.
 Automation creates PRs but does not approve them or merge them.
 
-Automation explicitly dispatches CI on the generated branch and writes the PR policy status
-to the actual head. The privileged policy workflow executes only the trusted target branch's
-policy code; it never checks out contribution code. Required checks remain bound to Actions.
+Automation writes the PR policy status to the actual head. GitHub may hold a bot-created
+PR's `pull_request` CI run for approval (`action_required`). After reviewing the generated
+diff and exact head SHA, a maintainer approves that run from the PR's **Checks** tab or its
+Actions page. Wait for that PR run's required checks before merging. Approving a workflow
+run authorizes its code to execute; it is separate from approving or merging the PR.
+
+Development reports the PR number and prepared SHA in its workflow notice. It does not
+approve its own PR run or dispatch another full CI matrix. A separate manual CI run does
+not unblock an approval-held PR run. If a dev update replaces the release head, review and
+approve the new head's run; an old successful run is insufficient. The privileged policy
+workflow executes only the trusted target branch's policy code; it never checks out
+contribution code. Required checks remain bound to Actions.
 
 `.github/main-ruleset.json` and `.github/dev-ruleset.json` are the tracked protection definitions.
 Both block deletion and force pushes, require PRs and all seven checks, and have no bypass actors.
@@ -117,7 +126,8 @@ that bypass semantic versioning. It checks the complete commit list against the 
 and rejects incomplete history (including PRs beyond GitHub's 250-commit listing limit).
 The policy retries inconsistent API snapshots with bounded backoff after ref updates, while
 still rejecting incomplete history once retries are exhausted. Generated PR checks must
-match the exact prepared head; recovery redispatches CI even if the PR already exists.
+match the exact prepared head; recovery rechecks policy without duplicating CI, even if
+the PR already exists.
 Immutable source-file reads also retry transient GitHub server errors (500/502/503/504), with
 at most four attempts and 1/2/4-second backoff. Permanent permission or validation errors fail immediately.
 The generated release PR retains all development commits and one preparation commit. Policy checks

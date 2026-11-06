@@ -32,18 +32,45 @@ pub struct DurableTransfer {
     pub overwrite: bool,
     pub transferred: u64,
     pub total: u64,
+    #[serde(default)]
+    pub speed_limit_kib: u32,
     pub status: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_recovery: Option<BackupRecovery>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_recovery: Option<String>,
     pub updated_at: i64,
 }
 pub struct Journal;
 
+// Progress/completion writers may hold a snapshot from before a live limit
+// change. Preserve the current setting atomically instead of restoring that
+// stale snapshot's limit.
+const UPSERT_TRANSFER: &str = "INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=json_set(excluded.value,'$.speedLimitKib',coalesce(json_extract(settings.value,'$.speedLimitKib'),0)),updated_at=excluded.updated_at";
+const SET_SPEED_LIMIT: &str = "UPDATE settings SET value=json_set(value,'$.speedLimitKib',?1,'$.updatedAt',?2),updated_at=?2 WHERE key=?3";
+
+pub(super) fn needs_review(error: Option<&str>) -> bool {
+    matches!(
+        error,
+        Some(
+            "sftp.moveRecoverySourcePresent"
+                | "sftp.moveRecoveryUnverified"
+                | "sftp.moveSourceRetained"
+                | "sftp.backupPreserved"
+                | "sftp.transferArtifactUnrecognized"
+        )
+    )
+}
+
 pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
     row.error = Some(match error {
+        Some(AppError::TransferArtifactUnrecognized { path }) => {
+            row.artifact_recovery = Some(path);
+            "sftp.transferArtifactUnrecognized".into()
+        }
         Some(AppError::BackupRecovery {
             backup,
             destination,
@@ -64,6 +91,16 @@ pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<Ap
             });
             "sftp.backupUnrecognized".into()
         }
+        Some(AppError::BackupPreserved {
+            backup,
+            destination,
+        }) => {
+            row.backup_recovery = Some(BackupRecovery {
+                backup,
+                destination,
+            });
+            "sftp.backupPreserved".into()
+        }
         Some(error) => error.to_string(),
         None => "sftp.transferTimedOut".into(),
     });
@@ -79,7 +116,27 @@ fn recovered_status(status: &str, active: bool) -> &str {
 }
 impl Journal {
     pub fn upsert(app: &AppHandle, row: DurableTransfer) -> AppResult<()> {
-        app.state::<AppState>().db.with(|conn| {conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![format!("transfer:{}",row.id),serde_json::to_string(&row)?,row.updated_at])?; Ok(())})
+        app.state::<AppState>().db.with(|conn| {
+            conn.execute(
+                UPSERT_TRANSFER,
+                rusqlite::params![
+                    format!("transfer:{}", row.id),
+                    serde_json::to_string(&row)?,
+                    row.updated_at
+                ],
+            )?;
+            Ok(())
+        })
+    }
+
+    pub(super) fn set_speed_limit(app: &AppHandle, id: &str, kib: u32) -> AppResult<()> {
+        app.state::<AppState>().db.with(|conn| {
+            conn.execute(
+                SET_SPEED_LIMIT,
+                rusqlite::params![kib, crate::models::now_ms(), format!("transfer:{id}")],
+            )?;
+            Ok(())
+        })
     }
     pub fn list(app: &AppHandle) -> AppResult<Vec<DurableTransfer>> {
         app.state::<AppState>().db.with(|conn| {
@@ -204,6 +261,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn review_outcomes_cannot_be_retried_as_transfers() {
+        for error in [
+            "sftp.moveSourceRetained",
+            "sftp.backupPreserved",
+            "sftp.moveRecoverySourcePresent",
+            "sftp.moveRecoveryUnverified",
+            "sftp.transferArtifactUnrecognized",
+        ] {
+            assert!(needs_review(Some(error)));
+        }
+        assert!(!needs_review(None));
+        assert!(!needs_review(Some("sftp.transferTimedOut")));
+        assert!(!needs_review(Some("sftp.resumePrefixMismatch")));
+    }
+
+    #[test]
     fn older_transfer_records_do_not_require_backup_recovery_details() {
         let row: DurableTransfer = serde_json::from_value(serde_json::json!({
             "id": "job", "direction": "transfer", "name": "file",
@@ -214,6 +287,82 @@ mod tests {
         }))
         .unwrap();
         assert!(row.backup_recovery.is_none());
+        assert!(row.artifact_recovery.is_none());
+        assert_eq!(row.speed_limit_kib, 0);
+    }
+
+    #[test]
+    fn cleanup_retries_preserve_unrecognized_artifact_paths_across_serialization() {
+        let mut row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": false, "overwrite": false, "transferred": 0,
+            "total": 0, "status": "cleanupPending", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::TransferArtifactUnrecognized {
+                path: "C:\\downloads\\owned.part".into(),
+            }),
+        );
+        assert!(needs_review(row.error.as_deref()));
+        for error in [Some(AppError::validation("sftp.reconnectRequired")), None] {
+            record_cleanup_failure(&mut row, error);
+            row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+            assert_eq!(
+                row.artifact_recovery.as_deref(),
+                Some("C:\\downloads\\owned.part")
+            );
+        }
+    }
+
+    #[test]
+    fn durable_speed_limit_survives_stale_progress_and_completion_snapshots() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)").unwrap();
+        let original = serde_json::json!({"transferred":0,"status":"running","updatedAt":1});
+        conn.execute(
+            UPSERT_TRANSFER,
+            rusqlite::params!["transfer:job", original.to_string(), 1],
+        )
+        .unwrap();
+        conn.execute(SET_SPEED_LIMIT, rusqlite::params![128, 2, "transfer:job"])
+            .unwrap();
+        let read = || -> serde_json::Value {
+            let raw: String = conn
+                .query_row(
+                    "SELECT value FROM settings WHERE key='transfer:job'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            serde_json::from_str(&raw).unwrap()
+        };
+        for status in ["running", "paused", "failed", "done"] {
+            let stale = serde_json::json!({"transferred":1024,"speedLimitKib":0,"status":status,"updatedAt":3});
+            conn.execute(
+                UPSERT_TRANSFER,
+                rusqlite::params!["transfer:job", stale.to_string(), 3],
+            )
+            .unwrap();
+            assert_eq!(read()["speedLimitKib"], 128);
+            assert_eq!(read()["status"], status);
+            assert_eq!(read()["transferred"], 1024);
+        }
+        conn.execute(SET_SPEED_LIMIT, rusqlite::params![0, 4, "transfer:job"])
+            .unwrap();
+        conn.execute(
+            UPSERT_TRANSFER,
+            rusqlite::params![
+                "transfer:job",
+                serde_json::json!({"speedLimitKib":128}).to_string(),
+                5
+            ],
+        )
+        .unwrap();
+        assert_eq!(read()["speedLimitKib"], 0);
     }
 
     #[test]
@@ -264,6 +413,19 @@ mod tests {
         assert_eq!(
             row.backup_recovery.as_ref().unwrap().backup,
             "/unrecognized"
+        );
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupPreserved {
+                backup: "/preserved".into(),
+                destination: "/complete".into(),
+            }),
+        );
+        assert_eq!(row.error.as_deref(), Some("sftp.backupPreserved"));
+        assert_eq!(row.backup_recovery.as_ref().unwrap().backup, "/preserved");
+        assert_eq!(
+            row.backup_recovery.as_ref().unwrap().destination,
+            "/complete"
         );
     }
 
@@ -379,6 +541,9 @@ pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
 #[tauri::command]
 pub fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
     let row = Journal::get(&app, &id)?;
+    if needs_review(row.error.as_deref()) {
+        return Err(AppError::validation(row.error.unwrap_or_default()));
+    }
     let from = super::Endpoint {
         session: resolve_session(
             &app,
