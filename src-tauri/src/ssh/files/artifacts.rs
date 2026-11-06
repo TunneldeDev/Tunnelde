@@ -227,15 +227,10 @@ pub(super) async fn cleanup_owned(
         if fingerprint_file(&backup, sftp, &cancel).await? != *expected {
             return Err(AppError::validation("sftp.resumePrefixMismatch"));
         }
-        if file_length(to, sftp).await?.is_none() {
-            // Recover the user's previous destination after a failed commit.
-            rename_endpoint(&backup, to, sftp).await?;
-        } else {
-            // A destination may have been independently recreated while the
-            // transfer was interrupted; its presence does not prove that our
-            // staged file was committed. Preserve both copies for inspection.
-            return Err(AppError::validation("sftp.backupRecoveryRequired"));
-        }
+        // Checking for a missing destination before renaming is not atomic.
+        // Preserve the backup until it can be restored without overwriting a
+        // destination created concurrently by another process or SFTP client.
+        return Err(AppError::validation("sftp.backupRecoveryRequired"));
     }
     if file_length(&temp, sftp).await?.is_some() {
         remove_endpoint(&temp, sftp).await?;
@@ -394,7 +389,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cleanup_removes_partial_files_preserves_targets_and_restores_verified_backups() {
+    async fn cleanup_removes_partial_files_and_preserves_backups_for_recovery() {
         let root = std::env::temp_dir().join(format!("tunnelde-cleanup-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
         let target = Endpoint {
@@ -419,13 +414,17 @@ mod tests {
             .unwrap();
         tokio::fs::rename(&target.path, &backup.path).await.unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        cleanup_owned("job", &target, None, Some(&expected))
-            .await
-            .unwrap();
-        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"user data");
-        assert!(!Path::new(&backup.path).exists());
+        assert_eq!(
+            cleanup_owned("job", &target, None, Some(&expected))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.backupRecoveryRequired"
+        );
+        assert!(!Path::new(&target.path).exists());
+        assert_eq!(tokio::fs::read(&backup.path).await.unwrap(), b"user data");
+        assert_eq!(tokio::fs::read(&part.path).await.unwrap(), b"partial");
 
-        tokio::fs::rename(&target.path, &backup.path).await.unwrap();
         tokio::fs::write(&target.path, b"new independent data")
             .await
             .unwrap();

@@ -1880,11 +1880,10 @@ async fn durable_copy_file(
         own_backup = true;
     }
     if let Err(e) = rename_endpoint(&temp, to, to_sftp).await {
-        if own_backup
-            && file_length(to, to_sftp).await?.is_none()
-            && backup_is_owned(meter.app, &backup_key, &backup, to_sftp, cancel).await?
-        {
-            let _ = rename_endpoint(&backup, to, to_sftp).await;
+        if own_backup {
+            // An existence check followed by rename could overwrite a file
+            // created concurrently. Leave the journal and backup for recovery.
+            return Err(AppError::validation("sftp.backupRecoveryRequired"));
         }
         return Err(e);
     }
@@ -3974,6 +3973,20 @@ mod tests {
             let expected = fingerprint_file(&backup, Some(&sftp), &AtomicBool::new(false))
                 .await
                 .unwrap();
+            std::fs::remove_file(root.join(&target.path)).unwrap();
+            assert_eq!(
+                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "sftp.backupRecoveryRequired"
+            );
+            assert!(!root.join(&target.path).exists());
+            assert_eq!(
+                std::fs::read(root.join(&backup.path)).unwrap(),
+                b"old destination"
+            );
+            std::fs::write(root.join(&target.path), b"new independent destination").unwrap();
             assert_eq!(
                 artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
                     .await
