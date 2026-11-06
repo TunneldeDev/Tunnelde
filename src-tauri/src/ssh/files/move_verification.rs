@@ -3,6 +3,18 @@ use crate::error::{AppError, AppResult};
 use russh_sftp::client::SftpSession;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+/// Only a guard covering both file objects through deletion permits completing
+/// a copy-based move. Neither a matching digest nor metadata proves identity.
+pub(super) fn require_guarded_deletion(guarded: bool, cancel: &AtomicBool) -> AppResult<()> {
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    if !guarded {
+        return Err(AppError::validation("sftp.moveSourceRetained"));
+    }
+    Ok(())
+}
+
 /// Check the entire committed destination before a copy-based move can remove
 /// its source. Metadata alone cannot detect same-size, same-timestamp changes.
 /// Unlike the Windows local guard this cannot lock remote/Unix files against a
@@ -63,6 +75,47 @@ mod tests {
         let root = std::env::temp_dir().join(format!("tunnelde-{name}-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir(&root).unwrap();
         root
+    }
+
+    #[tokio::test]
+    async fn move_verification_never_authorizes_path_deletion_of_replacements_or_open_writers() {
+        let root = temp_root("move-review");
+        let source = local(&root.join("source"));
+        let target = local(&root.join("target"));
+        let content = b"complete verified copy";
+        std::fs::write(&source.path, content).unwrap();
+        std::fs::write(&target.path, content).unwrap();
+        let cancel = AtomicBool::new(false);
+        verify(&source, &target, None, None, &cancel).await.unwrap();
+        // Replace either endpoint after verification, keeping metadata/content
+        // indistinguishable where possible. A pathname unlink cannot be safe.
+        std::fs::remove_file(&source.path).unwrap();
+        std::fs::write(&source.path, content).unwrap();
+        std::fs::write(&target.path, b"changed destination").unwrap();
+        let writer = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&source.path)
+            .unwrap();
+        assert_eq!(
+            require_guarded_deletion(false, &cancel)
+                .unwrap_err()
+                .to_string(),
+            "sftp.moveSourceRetained"
+        );
+        assert_eq!(std::fs::read(&source.path).unwrap(), content);
+        assert_eq!(std::fs::read(&target.path).unwrap(), b"changed destination");
+        drop(writer);
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(
+            require_guarded_deletion(false, &cancel)
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        assert!(require_guarded_deletion(true, &cancel).is_err());
+        cancel.store(false, Ordering::SeqCst);
+        assert!(require_guarded_deletion(true, &cancel).is_ok());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[tokio::test]

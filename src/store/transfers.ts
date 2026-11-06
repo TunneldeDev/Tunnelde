@@ -7,6 +7,7 @@ import { translateError } from "@/lib/api/errors";
 import { toast } from "@/store/toasts";
 import type { TransferEvent } from "@/lib/api/types";
 import { sampleTransfer, type TransferRate } from "@/lib/files/transferProgress";
+import { transferNeedsReview } from "@/lib/files/transferRecovery";
 
 export interface TransferItem extends Omit<TransferEvent, "status"> {
   status: TransferEvent["status"] | "paused";
@@ -17,6 +18,8 @@ export interface TransferItem extends Omit<TransferEvent, "status"> {
   clearing?: boolean;
   rate?: TransferRate;
   speedLimitKib?: number;
+  fromSession?: string | null;
+  toSession?: string | null;
   fromHostId?: string | null;
   toHostId?: string | null;
   fromAddress?: string | null;
@@ -81,6 +84,14 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
             return {
               ...item,
               durable: true,
+              fromSession: item.fromSession ?? row.fromSession,
+              toSession: item.toSession ?? row.toSession,
+              fromHostId: item.fromHostId ?? row.fromHostId,
+              toHostId: item.toHostId ?? row.toHostId,
+              fromAddress: item.fromAddress ?? row.fromAddress,
+              toAddress: item.toAddress ?? row.toAddress,
+              fromPath: item.fromPath ?? row.fromPath,
+              toPath: item.toPath ?? row.toPath,
               // A newer progress event has no recovery metadata; the journal
               // remains the source for the last known backup location.
               backupRecovery: item.backupRecovery ?? row.backupRecovery,
@@ -123,6 +134,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       previous.status === "cancelled" ||
       previous.status === "cleanupPending" ||
       previous.clearing ||
+      transferNeedsReview(previous.error) ||
       previous.status === "done"
     )
       return;
@@ -187,6 +199,8 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       next.durable = previous?.durable;
       next.clearing = previous?.clearing;
       next.speedLimitKib = previous?.speedLimitKib;
+      next.fromSession = previous?.fromSession;
+      next.toSession = previous?.toSession;
       next.fromHostId = previous?.fromHostId;
       next.toHostId = previous?.toHostId;
       next.fromAddress = previous?.fromAddress;

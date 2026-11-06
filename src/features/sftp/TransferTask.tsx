@@ -3,10 +3,12 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
 import { durationParts, transferProgress } from "@/lib/files/transferProgress";
+import { transferNeedsReview } from "@/lib/files/transferRecovery";
 import { cn, formatBytes } from "@/lib/text/format";
 import { translateError } from "@/lib/api/errors";
 import { useTransfers, type TransferItem } from "@/store/transfers";
 import { TransferSpeedLimit } from "./TransferSpeedLimit";
+import { TransferLocation } from "./TransferLocation";
 import "./transferTasks.css";
 
 export function TransferTask({
@@ -26,39 +28,40 @@ export function TransferTask({
   const busy = item.clearing || item.cancelling || item.pausing;
   const pending = item.status === "cleanupPending";
   const running = item.status === "running";
-  const reviewRequired =
-    item.status === "failed" &&
-    ["sftp.moveRecoverySourcePresent", "sftp.moveRecoveryUnverified"].includes(item.error ?? "");
+  const reviewRequired = item.status === "failed" && transferNeedsReview(item.error);
   const waiting = item.phase === "queued" || item.phase === "preparing";
+  const showRecoveryPaths = reviewRequired && !item.backupRecovery;
   const state = item.clearing
     ? t("sftp.cleaningTransfer")
-    : pending
-      ? t("sftp.cleanupPending")
-      : running
-        ? item.pausing
-          ? t("sftp.pausingTransfer")
-          : item.cancelling
-            ? t("sftp.cancelling")
-            : item.phase === "queued"
-              ? t("sftp.queuedTransfer")
-              : item.phase === "preparing"
-                ? t("sftp.preparingTransfer")
-                : item.phase === "cleaning"
-                  ? t("sftp.cleaningTransfer")
-                  : item.phase === "verifying"
-                    ? t("sftp.verifyingTransfer")
-                    : progress.percent === null
-                      ? t("sftp.preparingTransfer")
-                      : `${Math.floor(progress.percent)}%`
-        : t(
-            item.status === "done"
-              ? "sftp.done"
-              : item.status === "paused"
-                ? "sftp.paused"
-                : item.status === "cancelled"
-                  ? "sftp.cancelled"
-                  : "sftp.failed",
-          );
+    : reviewRequired
+      ? t("sftp.reviewTransfer")
+      : pending
+        ? t("sftp.cleanupPending")
+        : running
+          ? item.pausing
+            ? t("sftp.pausingTransfer")
+            : item.cancelling
+              ? t("sftp.cancelling")
+              : item.phase === "queued"
+                ? t("sftp.queuedTransfer")
+                : item.phase === "preparing"
+                  ? t("sftp.preparingTransfer")
+                  : item.phase === "cleaning"
+                    ? t("sftp.cleaningTransfer")
+                    : item.phase === "verifying"
+                      ? t("sftp.verifyingTransfer")
+                      : progress.percent === null
+                        ? t("sftp.preparingTransfer")
+                        : `${Math.floor(progress.percent)}%`
+          : t(
+              item.status === "done"
+                ? "sftp.done"
+                : item.status === "paused"
+                  ? "sftp.paused"
+                  : item.status === "cancelled"
+                    ? "sftp.cancelled"
+                    : "sftp.failed",
+            );
   const elapsed = (seconds: number) => {
     const parts = durationParts(seconds);
     return t(
@@ -71,7 +74,10 @@ export function TransferTask({
     );
   };
   return (
-    <article className={cn("transfer-task", `is-${item.status}`)} aria-label={item.name}>
+    <article
+      className={cn("transfer-task", `is-${item.status}`, reviewRequired && "needs-review")}
+      aria-label={item.name}
+    >
       <div className="transfer-task__row">
         <button
           type="button"
@@ -181,30 +187,30 @@ export function TransferTask({
       {item.backupRecovery ? (
         <div className="transfer-task__details transfer-task__recovery">
           <p>{t("sftp.backupLastKnownHint")}</p>
-          <p>
-            <span>{t("sftp.backupPath")}</span>
-            <code>
-              {item.toAddress ? `${item.toAddress}:` : ""}
-              {item.backupRecovery.backup}
-            </code>
-          </p>
-          <p>
-            <span>{t("sftp.backupDestination")}</span>
-            <code>
-              {item.toAddress ? `${item.toAddress}:` : ""}
-              {item.backupRecovery.destination}
-            </code>
-          </p>
+          <TransferLocation
+            item={item}
+            side="to"
+            path={item.backupRecovery.backup}
+            label={t("sftp.backupPath")}
+            inspect
+          />
+          <TransferLocation
+            item={item}
+            side="to"
+            path={item.backupRecovery.destination}
+            label={t("sftp.backupDestination")}
+            inspect
+          />
         </div>
       ) : null}
-      {reviewRequired ? (
+      {showRecoveryPaths ? (
         <div className="transfer-task__details transfer-task__recovery">
-          <TransferPaths item={item} />
+          <TransferPaths item={item} inspect />
         </div>
       ) : null}
       {expanded ? (
         <div className="transfer-task__details">
-          {!reviewRequired ? <TransferPaths item={item} /> : null}
+          {!showRecoveryPaths ? <TransferPaths item={item} /> : null}
           {progress.remaining !== null ? (
             <p>{t("sftp.remainingBytes", { value: formatBytes(progress.remaining) })}</p>
           ) : null}
@@ -224,27 +230,27 @@ export function TransferTask({
   );
 }
 
-function TransferPaths({ item }: { item: TransferItem }) {
+function TransferPaths({ item, inspect = false }: { item: TransferItem; inspect?: boolean }) {
   const { t } = useTranslation();
   return (
     <>
       {item.fromPath ? (
-        <p>
-          <span>{t("sftp.transferFrom")}</span>
-          <code>
-            {item.fromAddress ? `${item.fromAddress}:` : ""}
-            {item.fromPath}
-          </code>
-        </p>
+        <TransferLocation
+          item={item}
+          side="from"
+          path={item.fromPath}
+          label={t("sftp.transferFrom")}
+          inspect={inspect}
+        />
       ) : null}
       {item.toPath ? (
-        <p>
-          <span>{t("sftp.transferTo")}</span>
-          <code>
-            {item.toAddress ? `${item.toAddress}:` : ""}
-            {item.toPath}
-          </code>
-        </p>
+        <TransferLocation
+          item={item}
+          side="to"
+          path={item.toPath}
+          label={t("sftp.transferTo")}
+          inspect={inspect}
+        />
       ) : null}
     </>
   );

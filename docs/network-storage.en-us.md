@@ -139,11 +139,11 @@ checkpoint failure leaves the source intact. This protection applies to regular
 local files; it does not establish the same guarantee for remote or Unix moves.
 
 Other durable copy-based file moves compare the complete committed destination
-against the source before saving the deletion checkpoint. Truncation, content
-mismatch, detected metadata changes, read/close errors and cancellation preserve
-the source. This extra read applies to moves, not ordinary copies or atomic
-same-host renames. It does not lock SFTP or Unix files against changes between
-verification and deletion; interrupted deletion still requires manual review.
+against the source, then keep the source and show **Needs review**. SFTP and Unix
+path-based removal cannot ensure that the checked file has not been replaced or
+modified before deletion. Review both locations before explicitly deleting the
+source yourself; clearing the task preserves both files. This extra read applies
+to moves, not ordinary copies or atomic same-host renames.
 
 Dragging local entries between different Windows drive letters copies them as
 background transfers; the originals remain in place. Cut and paste uses a background
@@ -216,8 +216,7 @@ files are preserved. Automatic no-replace backup restoration is not yet availabl
 Local transfer commits and backup creation use a system rename that refuses to
 replace an existing entry. If another program creates the destination before
 commit, the task fails and preserves that destination, staging data and any
-existing backup. This does not yet solve concurrent changes during move-source
-deletion or successful-transfer backup removal on SFTP and Unix paths.
+existing backup.
 
 On Windows, successful transfers hold a local backup against ordinary writes,
 renames and deletion while checking its size, modification time and complete
@@ -227,8 +226,13 @@ journal for retry. This does not isolate privileged or memory-mapped changes.
 
 Transfer artifact cleanup uses file-only removal. If a staging or backup path
 has become a directory, it is preserved rather than recursively deleted. This
-does not make staging-file removal conditional on file identity; SFTP and Unix
-backup cleanup also retain a verification-to-removal race.
+does not make staging-file removal conditional on file identity. SFTP and Unix
+backup cleanup keeps the previous destination even after the new destination was
+written, with a **Needs review** explanation and both paths. Inspect both files,
+remove the backup yourself if no longer needed, then clear the task. Retrying the
+transfer cannot safely remove it. Recovery paths have buttons to open their parent
+folders in the application; remote folders require a live connection matching the
+recorded host and address, and never fall back to local paths.
 
 An offline removal persists its cleanup intent before accessing the connection;
 the journal is retained until owned artifacts are cleaned, including across app

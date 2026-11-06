@@ -55,6 +55,13 @@
 .transfer-task.is-cleanupPending .transfer__meter > span {
   background: var(--td-orange);
 }
+.transfer-task.needs-review .transfer__meter > span {
+  background: var(--td-orange);
+}
+.transfer-task.needs-review .transfer-task__state,
+.transfer-task.needs-review .transfer-task__error {
+  color: var(--td-orange);
+}
 .transfer-task__summary {
   display: flex;
   flex-wrap: wrap;
@@ -101,6 +108,11 @@
 .transfer-task__recovery p:has(code) {
   display: grid;
   gap: 3px;
+}
+.transfer-task__location-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 @media (max-width: 520px) {
   .transfer-task {

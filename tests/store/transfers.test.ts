@@ -20,6 +20,20 @@ const running: TransferEvent = {
 beforeEach(() => useTransfers.setState({ items: [] }));
 
 describe("transfer cancellation", () => {
+  it.each([
+    "sftp.moveSourceRetained",
+    "sftp.backupPreserved",
+    "sftp.moveRecoverySourcePresent",
+    "sftp.moveRecoveryUnverified",
+  ])("does not restart a task requiring file review: %s", (error) => {
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "failed", error, durable: true, updatedAt: 1 }],
+    });
+    useTransfers.getState().resume(running.id);
+    expect(resume).not.toHaveBeenCalled();
+    expect(useTransfers.getState().items[0]?.error).toBe(error);
+  });
   it("waits for the backend result and retains cancellation during progress updates", () => {
     vi.spyOn(api, "transferCancel").mockResolvedValue(undefined);
     const store = useTransfers.getState();
@@ -140,6 +154,43 @@ describe("durable transfer controls", () => {
     });
     await useTransfers.getState().hydrate();
     expect(useTransfers.getState().items.map((item) => item.id)).toEqual(["plugin"]);
+  });
+
+  it("fills endpoint identity from the journal without discarding newer progress", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      {
+        ...running,
+        updatedAt: 1,
+        fromSession: null,
+        toSession: "old",
+        fromHostId: null,
+        toHostId: "host",
+        toAddress: "user@original:22",
+        fromPath: "C:\\source",
+        toPath: "/destination",
+      },
+    ]);
+    useTransfers.getState().apply({ ...running, transferred: 75 });
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      transferred: 75,
+      fromSession: null,
+      toSession: "old",
+      toHostId: "host",
+      toAddress: "user@original:22",
+      fromPath: "C:\\source",
+      toPath: "/destination",
+    });
+    useTransfers
+      .getState()
+      .apply({ ...running, status: "failed", error: "sftp.moveSourceRetained" });
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      fromSession: null,
+      toSession: "old",
+      toHostId: "host",
+      toAddress: "user@original:22",
+    });
   });
 
   it("loads recovery paths even when the cancellation event is newer than the journal", async () => {
