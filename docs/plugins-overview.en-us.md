@@ -30,12 +30,14 @@ before running a plugin. `api.describe` provides method discovery for the runnin
 approval and permissions still apply to each call.
 
 `apiVersion: 1` identifies the current protocol and is not a blanket promise that every
-method, payload or UI state field is stable. In particular, settings, workspace layout,
-chat, remote runners and advanced panel APIs may evolve. Avoid relying on undocumented
-fields, check capabilities and handle errors. No individual methods are designated stable
-until their input, output, errors and lifecycle are documented and compatibility-tested.
-Older SDK samples and the host may differ; consult the catalogue shipped with the SDK and
-the target host's `api.describe` rather than relying on a fixed method count.
+method, payload or UI state field is stable. `api.describe` reports a `stability` value for
+each method: `stable` is a compatibility commitment, `experimental` may evolve between
+minor releases, and `deprecated` includes migration guidance. Stable methods also report
+the first host version in `since`. In particular, settings, workspace layout, chat, remote
+runners and advanced panel APIs may evolve. Avoid relying on undocumented fields, check
+capabilities and handle errors. Older SDK samples and the host may differ; consult the
+catalogue shipped with the SDK and the target host's `api.describe` rather than relying on
+a fixed method count.
 
 CI also runs a frozen v0.28.0 example through the current host's manifest loader and
 JSON-RPC lifecycle. This covers one historical plugin's transport and view response;
