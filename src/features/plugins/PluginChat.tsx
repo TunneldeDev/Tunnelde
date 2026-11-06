@@ -180,6 +180,7 @@ export function PluginChat({
           next &&
           next.activeSessionId === previous.activeSessionId &&
           next.modelId === previous.modelId &&
+          next.mode === previous.mode &&
           next.execution?.kind === previous.execution?.kind &&
           next.execution?.sessionId === previous.execution?.sessionId &&
           next.execution?.hostId === previous.execution?.hostId &&
@@ -240,6 +241,7 @@ export function PluginChat({
     !block.commands.prepare ||
     (block.readiness?.status === "ready" &&
       block.readiness.profileId === block.modelId &&
+      block.readiness.mode === block.mode &&
       block.readiness.targetKey === chatExecutionKey(block.execution));
   const executionProfiles =
     block.config?.profiles.filter(
@@ -299,7 +301,13 @@ export function PluginChat({
         await api.pluginRun(pluginId, name, {
           sessionId: current.current.activeSessionId,
           runId: current.current.run?.id ?? null,
-          ...(name === current.current.commands.target ? { mode: current.current.mode } : {}),
+          ...([
+            current.current.commands.target,
+            current.current.commands.prepare,
+            current.current.commands.install,
+          ].includes(name)
+            ? { mode: current.current.mode }
+            : {}),
           ...input,
           _locale: i18n.resolvedLanguage ?? i18n.language,
         }),
