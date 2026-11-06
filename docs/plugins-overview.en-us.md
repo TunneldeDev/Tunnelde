@@ -1,6 +1,6 @@
 # Plugin overview and compatibility
 
-[简体中文](plugins-overview.zh-cn.md) · [Detailed plugin development guide](plugins.md)
+[简体中文](plugins-overview.zh-cn.md) · [Detailed plugin development guide](plugins.en-us.md)
 
 Tunnelde supports independently distributed extensions for commands, views, themes, file
 icons and previews. Browse the marketplace to discover extensions, or install a local

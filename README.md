@@ -103,7 +103,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 - Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)
 - AI local/remote setup: [English](docs/ai-assistants.en-us.md) · [简体中文](docs/ai-assistants.zh-cn.md)
 - Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
-- [Plugin development and security](docs/plugins.md)
+- Plugin development and security: [English](docs/plugins.en-us.md) · [简体中文](docs/plugins.zh-cn.md)
 - Architecture and data locations: [English](docs/architecture.en-us.md) · [简体中文](docs/architecture.zh-cn.md)
 - Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
 - [Optional native helper](native-helpers/README.md)

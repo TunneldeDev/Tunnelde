@@ -1,6 +1,6 @@
 # 插件概览与兼容性
 
-[English](plugins-overview.en-us.md) · [插件开发详细指南（英文）](plugins.md)
+[English](plugins-overview.en-us.md) · [插件开发详细指南](plugins.zh-cn.md)
 
 Tunnelde 支持独立分发的扩展，扩展可以提供命令、视图、主题、文件图标和预览等能力。
 可以在插件市场浏览扩展，也可以在插件侧栏从本地文件夹或 ZIP 安装。每个扩展会说明

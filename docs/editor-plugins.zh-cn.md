@@ -65,4 +65,4 @@
 两个接口沿用已授权的前端桥接与运行代次校验，只操作打开的缓冲区，不读取任意文件。
 协议仍为 API version 1，旧接口调用保持兼容。完整生成目录及 TypeScript 类型见独立市场 SDK。
 
-[English](editor-plugins.en-us.md) · [插件开发](plugins.md)
+[English](editor-plugins.en-us.md) · [插件开发](plugins.zh-cn.md)
