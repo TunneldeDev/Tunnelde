@@ -306,6 +306,20 @@ export function SftpPage({
     },
   }));
   const [active, setActive] = useViewState<PaneId>(`${checkpointKey}:active`, "a");
+  const sourceA = panes.a.source;
+  const sourceB = panes.b.source;
+  useEffect(() => {
+    if (!tabId) return;
+    const candidates = single
+      ? [sourceA]
+      : active === "a"
+        ? [sourceA, sourceB]
+        : [sourceB, sourceA];
+    const remote = candidates.find((source) => source.kind === "remote");
+    useWorkspace
+      .getState()
+      .setFileSession(tabId, remote?.kind === "remote" ? remote.sessionId : null);
+  }, [tabId, single, active, sourceA, sourceB]);
   useBackgroundGuard(panes.a.state.busy || panes.b.state.busy);
   const [remotePane, setRemotePane] = useState<PaneId | null>(null);
   const [dropTarget, setDropTarget] = useState<{ pane: PaneId; path: string } | null>(null);
