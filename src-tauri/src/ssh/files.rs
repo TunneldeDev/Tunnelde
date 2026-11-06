@@ -18,6 +18,7 @@ mod compressed;
 pub mod durable;
 #[cfg(windows)]
 mod local_move;
+mod move_verification;
 mod range_io;
 mod scheduler;
 pub mod search;
@@ -2386,12 +2387,33 @@ async fn run(
                 None
             };
             if durable {
+                #[cfg(windows)]
+                let guarded = verified_local_move.is_some();
+                #[cfg(not(windows))]
+                let guarded = false;
+                if !guarded {
+                    phase(app, id, "verifying");
+                    move_verification::verify(
+                        from,
+                        to,
+                        from_sftp.as_ref(),
+                        to_sftp.as_ref(),
+                        cancel,
+                    )
+                    .await?;
+                }
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
+                if cancel.load(Ordering::SeqCst) {
+                    return Err(AppError::Ssh(CANCELLED.into()));
+                }
                 let mut row = durable::Journal::get(app, id)?;
                 row.deleting_source = true;
                 row.total = meter.total;
                 durable::Journal::upsert(app, row)?;
+            }
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::Ssh(CANCELLED.into()));
             }
             if durable {
                 match from_sftp.as_ref() {
@@ -4619,6 +4641,168 @@ mod tests {
             let remaining = std::fs::read(root.join(&backup.path));
             std::fs::remove_dir_all(root).unwrap();
             assert_eq!(remaining.unwrap(), b"independent replacement");
+        }
+
+        #[tokio::test]
+        async fn move_verification_checks_complete_sftp_contents_in_both_directions() {
+            let root = temp_root("sftp-move-content");
+            let state = Arc::new(State::default());
+            // Exercise short reads as well as multiple comparison buffers.
+            state.max_read.store(1021, Ordering::SeqCst);
+            let sftp = client(&root, state.clone()).await;
+            let content = vec![17; CHUNK * 3 + 19];
+            let cancel = AtomicBool::new(false);
+            for (from_remote, to_remote) in [(true, false), (false, true), (true, true)] {
+                let source = Endpoint {
+                    session: from_remote.then(|| "test".into()),
+                    path: if from_remote {
+                        "source".into()
+                    } else {
+                        display_path(&root.join("source"))
+                    },
+                };
+                let target = Endpoint {
+                    session: to_remote.then(|| "test".into()),
+                    path: if to_remote {
+                        "target".into()
+                    } else {
+                        display_path(&root.join("target"))
+                    },
+                };
+                std::fs::write(root.join("source"), &content).unwrap();
+                let from_sftp = from_remote.then_some(sftp.as_ref());
+                let to_sftp = to_remote.then_some(sftp.as_ref());
+                for changed in [
+                    b"short".to_vec(),
+                    {
+                        let mut changed = content.clone();
+                        changed[CHUNK * 2 + 7] ^= 1;
+                        changed
+                    },
+                    content.clone(),
+                ] {
+                    std::fs::write(root.join("target"), &content).unwrap();
+                    let original_modified = std::fs::metadata(root.join("target"))
+                        .unwrap()
+                        .modified()
+                        .unwrap();
+                    std::fs::write(root.join("target"), &changed).unwrap();
+                    std::fs::File::options()
+                        .write(true)
+                        .open(root.join("target"))
+                        .unwrap()
+                        .set_times(std::fs::FileTimes::new().set_modified(original_modified))
+                        .unwrap();
+                    let result =
+                        move_verification::verify(&source, &target, from_sftp, to_sftp, &cancel)
+                            .await;
+                    if changed == content {
+                        result.unwrap();
+                    } else {
+                        assert_eq!(
+                            result.unwrap_err().to_string(),
+                            "sftp.moveVerificationFailed"
+                        );
+                    }
+                    assert_eq!(std::fs::read(root.join("source")).unwrap(), content);
+                    assert_eq!(std::fs::read(root.join("target")).unwrap(), changed);
+                }
+                std::fs::write(root.join("source"), b"").unwrap();
+                std::fs::write(root.join("target"), b"").unwrap();
+                move_verification::verify(&source, &target, from_sftp, to_sftp, &cancel)
+                    .await
+                    .unwrap();
+            }
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            sftp.close().await.unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn move_verification_cancels_stalled_sftp_reads_and_preserves_close_errors() {
+            let root = temp_root("sftp-move-cancel");
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let source = Endpoint {
+                session: Some("test".into()),
+                path: "source".into(),
+            };
+            let target = Endpoint {
+                session: None,
+                path: display_path(&root.join("target")),
+            };
+            std::fs::write(root.join("source"), b"keep both files").unwrap();
+            std::fs::write(&target.path, b"keep both files").unwrap();
+            let cancel = AtomicBool::new(false);
+            state.hold_read.store(true, Ordering::SeqCst);
+            let (result, ()) = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                tokio::join!(
+                    move_verification::verify(&source, &target, Some(&sftp), None, &cancel),
+                    async {
+                        state.read_started.notified().await;
+                        cancel.store(true, Ordering::SeqCst);
+                    }
+                )
+            })
+            .await
+            .unwrap();
+            assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+            state.hold_read.store(false, Ordering::SeqCst);
+            state.release_read.notify_one();
+            cancel.store(false, Ordering::SeqCst);
+            state.fail_close.store(true, Ordering::SeqCst);
+            assert!(
+                move_verification::verify(&source, &target, Some(&sftp), None, &cancel)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(
+                std::fs::read(root.join("source")).unwrap(),
+                b"keep both files"
+            );
+            assert_eq!(std::fs::read(&target.path).unwrap(), b"keep both files");
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            sftp.close().await.unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn move_verification_rejects_destination_changed_during_remote_read() {
+            let root = temp_root("sftp-move-concurrent-change");
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let source = Endpoint {
+                session: Some("test".into()),
+                path: "source".into(),
+            };
+            let target = Endpoint {
+                session: None,
+                path: display_path(&root.join("target")),
+            };
+            let content = vec![17; CHUNK * 3 + 19];
+            std::fs::write(root.join("source"), &content).unwrap();
+            std::fs::write(&target.path, &content).unwrap();
+            let cancel = AtomicBool::new(false);
+            state.hold_read.store(true, Ordering::SeqCst);
+            let (result, ()) = tokio::join!(
+                move_verification::verify(&source, &target, Some(&sftp), None, &cancel),
+                async {
+                    state.read_started.notified().await;
+                    let mut changed = content.clone();
+                    changed[CHUNK * 2 + 7] ^= 1;
+                    std::fs::write(&target.path, changed).unwrap();
+                    state.hold_read.store(false, Ordering::SeqCst);
+                    state.release_read.notify_one();
+                }
+            );
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "sftp.moveVerificationFailed"
+            );
+            assert_eq!(std::fs::read(root.join("source")).unwrap(), content);
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            sftp.close().await.unwrap();
+            std::fs::remove_dir_all(root).unwrap();
         }
 
         #[tokio::test]
