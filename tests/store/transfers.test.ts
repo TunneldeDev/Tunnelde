@@ -299,6 +299,33 @@ describe("durable transfer controls", () => {
     expect(useTransfers.getState().items).toHaveLength(0);
   });
 
+  it("retains staging inspection paths across newer events, hydration and cleanup retries", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    const artifactRecovery = "C:\\downloads\\.tunnelde-job.part";
+    const row = {
+      ...running,
+      status: "cleanupPending" as const,
+      updatedAt: 1,
+      fromHostId: "remote",
+      toHostId: null,
+      artifactRecovery,
+      error: "sftp.transferArtifactUnrecognized",
+    };
+    vi.spyOn(transferApi, "list").mockResolvedValue([row]);
+    vi.spyOn(transferApi, "clear").mockResolvedValue(row);
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({ items: [{ ...running, durable: true, updatedAt: 1 }] });
+    useTransfers.getState().apply({ ...running, status: "cleanupPending", error: row.error });
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]?.artifactRecovery).toBe(artifactRecovery);
+    useTransfers.getState().apply({ ...running, status: "cleanupPending", error: row.error });
+    expect(useTransfers.getState().items[0]?.artifactRecovery).toBe(artifactRecovery);
+    useTransfers.getState().resume(running.id);
+    expect(resume).not.toHaveBeenCalled();
+    await useTransfers.getState().clear(running.id);
+    expect(useTransfers.getState().items[0]).toMatchObject({ artifactRecovery, clearing: false });
+  });
+
   it("resumes before progress arrives and never overwrites a fast completion", async () => {
     let finish!: () => void;
     vi.spyOn(transferApi, "resume").mockImplementation(

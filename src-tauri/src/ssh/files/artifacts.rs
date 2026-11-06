@@ -1,7 +1,128 @@
 use super::*;
+use crate::platform::file_identity::FileIdentity;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum ArtifactRecord {
+    Current {
+        path: String,
+        identity: Option<FileIdentity>,
+    },
+    Legacy(String),
+}
+
+impl ArtifactRecord {
+    fn into_path(self) -> String {
+        match self {
+            Self::Current { path, .. } | Self::Legacy(path) => path,
+        }
+    }
+
+    fn identity(&self) -> Option<&FileIdentity> {
+        match self {
+            Self::Current { identity, .. } => identity.as_ref(),
+            Self::Legacy(_) => None,
+        }
+    }
+}
+
+fn artifact_key(id: &str, to: &Endpoint) -> String {
+    format!(
+        "transfer-artifact:{id}:{:x}",
+        Sha256::digest(to.path.as_bytes())
+    )
+}
+
+fn artifact_record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<Option<ArtifactRecord>> {
+    get(app, &artifact_key(id, to))?
+        .map(|raw| serde_json::from_str(&raw).map_err(AppError::from))
+        .transpose()
+}
+
+#[cfg(windows)]
+pub(super) fn pin_local_staging(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+) -> AppResult<Option<crate::platform::guarded_file::GuardedFile>> {
+    if to.session.is_some() {
+        return Ok(None);
+    }
+    let record = artifact_record(app, id, to)?;
+    let temp = staging_endpoint(to, id, "part");
+    pin_partial(&temp, record.as_ref().and_then(ArtifactRecord::identity))
+}
+
+#[cfg(windows)]
+fn pin_partial(
+    temp: &Endpoint,
+    expected: Option<&FileIdentity>,
+) -> AppResult<Option<crate::platform::guarded_file::GuardedFile>> {
+    use crate::platform::guarded_file::GuardedFile;
+    let unrecognized = || AppError::TransferArtifactUnrecognized {
+        path: temp.path.clone(),
+    };
+    let guard = match GuardedFile::pin(Path::new(&temp.path)) {
+        Ok(guard) => guard,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => {
+            return Err(unrecognized())
+        }
+        Err(error) => return Err(error.into()),
+    };
+    let expected = expected.ok_or_else(unrecognized)?;
+    if guard.identity()? != *expected {
+        return Err(unrecognized());
+    }
+    Ok(Some(guard))
+}
+
+#[cfg(windows)]
+pub(super) fn record_local_writer(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    writer: &Writer,
+    created: bool,
+    pinned: &mut Option<crate::platform::guarded_file::GuardedFile>,
+) -> AppResult<()> {
+    use crate::platform::guarded_file::{identity, GuardedFile};
+    let Writer::Local(file) = writer else {
+        return Ok(());
+    };
+    let current = identity(file)?;
+    let temp = staging_endpoint(to, id, "part");
+    if created {
+        // The handle identifies the object CREATE_NEW actually created, not
+        // whatever another process may have put at its path in the meantime.
+        put(
+            app,
+            &artifact_key(id, to),
+            serde_json::to_string(&ArtifactRecord::Current {
+                path: to.path.clone(),
+                identity: Some(current.clone()),
+            })?,
+        )?;
+        let guard = GuardedFile::pin(Path::new(&temp.path))?;
+        if guard.identity()? != current {
+            return Err(AppError::TransferArtifactUnrecognized { path: temp.path });
+        }
+        *pinned = Some(guard);
+    } else {
+        let guard = pinned
+            .as_ref()
+            .ok_or_else(|| AppError::TransferArtifactUnrecognized {
+                path: temp.path.clone(),
+            })?;
+        if guard.identity()? != current {
+            return Err(AppError::TransferArtifactUnrecognized { path: temp.path });
+        }
+    }
+    Ok(())
+}
 
 #[derive(Serialize, Deserialize)]
 struct ResumeCheckpoint {
@@ -95,13 +216,18 @@ fn put(app: &AppHandle, key: &str, value: String) -> AppResult<()> {
 }
 
 pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> {
+    let key = artifact_key(id, to);
+    // A resumed writer must never replace its original ownership record.
+    if get(app, &key)?.is_some() {
+        return Ok(());
+    }
     put(
         app,
-        &format!(
-            "transfer-artifact:{id}:{:x}",
-            Sha256::digest(to.path.as_bytes())
-        ),
-        serde_json::to_string(&to.path)?,
+        &key,
+        serde_json::to_string(&ArtifactRecord::Current {
+            path: to.path.clone(),
+            identity: None,
+        })?,
     )
 }
 
@@ -182,7 +308,7 @@ fn recorded_paths(app: &AppHandle, id: &str) -> AppResult<Vec<String>> {
         })?;
         let mut paths = Vec::new();
         for raw in values {
-            paths.push(serde_json::from_str(&raw?)?);
+            paths.push(serde_json::from_str::<ArtifactRecord>(&raw?)?.into_path());
         }
         Ok(paths)
     })
@@ -209,7 +335,15 @@ async fn cleanup_file(
         "transfer-backup:{id}:{:x}",
         Sha256::digest(to.path.as_bytes())
     );
-    cleanup_owned(id, to, sftp, backup_checkpoint(app, &key)?.as_ref()).await
+    let artifact = artifact_record(app, id, to)?;
+    cleanup_owned(
+        id,
+        to,
+        sftp,
+        backup_checkpoint(app, &key)?.as_ref(),
+        artifact.as_ref().and_then(ArtifactRecord::identity),
+    )
+    .await
 }
 
 pub(super) async fn cleanup_owned(
@@ -217,6 +351,7 @@ pub(super) async fn cleanup_owned(
     to: &Endpoint,
     sftp: Option<&SftpSession>,
     expected: Option<&BackupFingerprint>,
+    identity: Option<&FileIdentity>,
 ) -> AppResult<()> {
     let temp = staging_endpoint(to, id, "part");
     let backup = staging_endpoint(to, id, "backup");
@@ -240,9 +375,37 @@ pub(super) async fn cleanup_owned(
         return Err(recovery());
     }
     if file_length(&temp, sftp).await?.is_some() {
-        remove_transfer_file(&temp, sftp).await?;
+        cleanup_partial(&temp, sftp, identity).await?;
     }
     Ok(())
+}
+
+async fn cleanup_partial(
+    temp: &Endpoint,
+    sftp: Option<&SftpSession>,
+    _identity: Option<&FileIdentity>,
+) -> AppResult<()> {
+    #[cfg(windows)]
+    if sftp.is_none() {
+        let unrecognized = || AppError::TransferArtifactUnrecognized {
+            path: temp.path.clone(),
+        };
+        let expected = _identity.ok_or_else(unrecognized)?;
+        let guard =
+            match crate::platform::guarded_file::GuardedFile::deletable(Path::new(&temp.path)) {
+                Ok(guard) => guard,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(error.into()),
+            };
+        if guard.identity()? != *expected {
+            return Err(unrecognized());
+        }
+        // The verified object stays locked through deletion; a second path
+        // lookup after checking its identity would reintroduce the race.
+        guard.delete()?;
+        return Ok(());
+    }
+    remove_transfer_file(temp, sftp).await
 }
 
 /// No source or completed destination is removed. Keep the journal on error so
@@ -332,7 +495,9 @@ async fn cleanup_legacy_tree(
                         .iter()
                         .any(|prefix| name == format!("{prefix}.part"))
                     {
-                        remove_transfer_file(&entry, sftp).await?;
+                        // Older Windows journals do not identify the original
+                        // object. Preserve it and expose its exact location.
+                        cleanup_partial(&entry, sftp, None).await?;
                     } else if prefixes
                         .iter()
                         .any(|prefix| name == format!("{prefix}.backup"))
@@ -353,6 +518,135 @@ async fn cleanup_legacy_tree(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn local_identity(path: &str) -> Option<FileIdentity> {
+        #[cfg(windows)]
+        {
+            Some(
+                crate::platform::guarded_file::identity(&std::fs::File::open(path).unwrap())
+                    .unwrap(),
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = path;
+            None
+        }
+    }
+
+    #[test]
+    fn artifact_records_preserve_legacy_paths_and_round_trip_full_file_ids() {
+        let legacy: ArtifactRecord = serde_json::from_str(r#""/older/destination""#).unwrap();
+        assert!(legacy.identity().is_none());
+        assert_eq!(legacy.into_path(), "/older/destination");
+        let id = FileIdentity::Windows {
+            volume: u64::MAX,
+            index: [255; 16],
+            created: u64::MAX,
+        };
+        let record = ArtifactRecord::Current {
+            path: "/destination".into(),
+            identity: Some(id.clone()),
+        };
+        let restored: ArtifactRecord =
+            serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
+        assert_eq!(restored.identity(), Some(&id));
+        assert_eq!(restored.into_path(), "/destination");
+        assert!(
+            serde_json::from_str::<ArtifactRecord>(r#"{"path":"/destination"}"#)
+                .unwrap()
+                .identity()
+                .is_none()
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn replacement_with_identical_bytes_is_never_resumed_or_deleted() {
+        let root = std::env::temp_dir().join(format!(
+            "tunnelde-cleanup-identity-{}",
+            uuid::Uuid::new_v4()
+        ));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        let part = staging_endpoint(&target, "job", "part");
+        tokio::fs::write(&part.path, b"same contents")
+            .await
+            .unwrap();
+        let expected = local_identity(&part.path).unwrap();
+        let original = root.join("original");
+        tokio::fs::rename(&part.path, &original).await.unwrap();
+        tokio::fs::write(&part.path, b"same contents")
+            .await
+            .unwrap();
+        assert_ne!(local_identity(&part.path).as_ref(), Some(&expected));
+        for error in [
+            pin_partial(&part, Some(&expected)).err().unwrap(),
+            cleanup_owned("job", &target, None, None, Some(&expected))
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(
+                matches!(error, AppError::TransferArtifactUnrecognized { ref path } if path == &part.path)
+            );
+        }
+        assert_eq!(tokio::fs::read(&part.path).await.unwrap(), b"same contents");
+        assert_eq!(tokio::fs::read(&original).await.unwrap(), b"same contents");
+        // A legacy record is also insufficient, even with matching bytes.
+        assert!(pin_partial(&part, None).is_err());
+        assert!(
+            matches!(cleanup_owned("job", &target, None, None, None).await.unwrap_err(),
+            AppError::TransferArtifactUnrecognized { ref path } if path == &part.path)
+        );
+        tokio::fs::remove_file(&part.path).await.unwrap();
+        // Manual inspection/removal leaves the task's cleanup safely retryable.
+        assert!(pin_partial(&part, Some(&expected)).unwrap().is_none());
+        cleanup_owned("job", &target, None, None, None)
+            .await
+            .unwrap();
+        tokio::fs::remove_file(original).await.unwrap();
+        tokio::fs::remove_dir(root).await.unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn active_writers_prevent_cleanup_and_pins_allow_checkpoint_trimming() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-cleanup-writer-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        let part = staging_endpoint(&target, "job", "part");
+        let writer = open_writer(&part, None, false).await.unwrap();
+        let Writer::Local(file) = &writer else {
+            unreachable!()
+        };
+        let expected = crate::platform::guarded_file::identity(file).unwrap();
+        file.set_len(16).await.unwrap();
+        assert!(cleanup_owned("job", &target, None, None, Some(&expected))
+            .await
+            .is_err());
+        let pin = pin_partial(&part, Some(&expected)).unwrap().unwrap();
+        segments::resize(&part, None, 4).await.unwrap();
+        assert_eq!(file_length(&part, None).await.unwrap(), Some(4));
+        assert_eq!(pin.identity().unwrap(), expected);
+        assert!(tokio::fs::remove_file(&part.path).await.is_err());
+        writer.finish().await.unwrap();
+        assert!(cleanup_owned("job", &target, None, None, Some(&expected))
+            .await
+            .is_err());
+        drop(pin);
+        cleanup_owned("job", &target, None, None, Some(&expected))
+            .await
+            .unwrap();
+        assert!(!Path::new(&part.path).exists());
+        tokio::fs::remove_dir(root).await.unwrap();
+    }
 
     #[tokio::test]
     async fn interrupted_parallel_windows_trim_only_uncommitted_bytes_and_reject_changed_sources() {
@@ -408,7 +702,9 @@ mod tests {
         tokio::fs::create_dir(&part.path).await.unwrap();
         let independent = Path::new(&part.path).join("independent.txt");
         tokio::fs::write(&independent, b"preserve").await.unwrap();
-        assert!(cleanup_owned("job", &target, None, None).await.is_err());
+        assert!(cleanup_owned("job", &target, None, None, None)
+            .await
+            .is_err());
         assert_eq!(tokio::fs::read(&independent).await.unwrap(), b"preserve");
         tokio::fs::remove_file(independent).await.unwrap();
         tokio::fs::remove_dir(&part.path).await.unwrap();
@@ -431,7 +727,10 @@ mod tests {
         tokio::fs::write(&unrelated.path, b"other job")
             .await
             .unwrap();
-        cleanup_owned("job", &target, None, None).await.unwrap();
+        let identity = local_identity(&part.path);
+        cleanup_owned("job", &target, None, None, identity.as_ref())
+            .await
+            .unwrap();
         assert!(!Path::new(&part.path).exists());
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"user data");
         assert!(Path::new(&unrelated.path).exists());
@@ -441,7 +740,7 @@ mod tests {
             .unwrap();
         tokio::fs::rename(&target.path, &backup.path).await.unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        let error = cleanup_owned("job", &target, None, Some(&expected))
+        let error = cleanup_owned("job", &target, None, Some(&expected), None)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -459,7 +758,7 @@ mod tests {
             .unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
         assert_eq!(
-            cleanup_owned("job", &target, None, Some(&expected))
+            cleanup_owned("job", &target, None, Some(&expected), None)
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -478,7 +777,7 @@ mod tests {
             .await
             .unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        let error = cleanup_owned("job", &target, None, Some(&expected))
+        let error = cleanup_owned("job", &target, None, Some(&expected), None)
             .await
             .unwrap_err();
         assert!(matches!(
@@ -487,7 +786,9 @@ mod tests {
                 if backup == &staging_endpoint(&target, "job", "backup").path
                     && destination == &target.path
         ));
-        let error = cleanup_owned("job", &target, None, None).await.unwrap_err();
+        let error = cleanup_owned("job", &target, None, None, None)
+            .await
+            .unwrap_err();
         assert!(matches!(error, AppError::BackupUnrecognized { .. }));
         assert!(Path::new(&backup.path).exists());
         assert!(Path::new(&part.path).exists());

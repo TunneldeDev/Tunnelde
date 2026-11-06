@@ -765,7 +765,11 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         }),
         _ => None,
     };
-    let has_recovery = recovery.is_some();
+    let artifact_recovery = match &outcome {
+        Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path }) => Some(path.clone()),
+        _ => None,
+    };
+    let has_recovery = recovery.is_some() || artifact_recovery.is_some();
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
@@ -805,6 +809,9 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     if let Ok(mut row) = durable::Journal::get(app, id) {
         if let Some(recovery) = recovery {
             row.backup_recovery = Some(recovery);
+        }
+        if let Some(path) = artifact_recovery {
+            row.artifact_recovery = Some(path);
         }
         if event.status == TransferStatus::Cancelled {
             row.status = "cancelling".into();
@@ -953,6 +960,7 @@ fn spawn_transfer_inner(
                 phase: None,
                 error: None,
                 backup_recovery: None,
+                artifact_recovery: None,
                 updated_at: crate::models::now_ms(),
             },
         )?;
@@ -1911,14 +1919,28 @@ async fn durable_copy_file(
     };
     save(false)?;
     let temp = staging_endpoint(to, id, "part");
+    #[cfg(windows)]
+    let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     if resuming {
-        artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp).await?;
+        // A missing Windows staging file can reappear between the pin attempt
+        // and recovery. Never truncate such an unrecognized object by path.
+        #[cfg(windows)]
+        let can_recover_window = to_sftp.is_some() || local_staging.is_some();
+        #[cfg(not(windows))]
+        let can_recover_window = true;
+        if can_recover_window {
+            artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp).await?;
+        }
     }
     let partial = if resuming {
         file_length(&temp, to_sftp).await?
     } else {
         None
     };
+    #[cfg(windows)]
+    if to_sftp.is_none() && partial.is_some() && local_staging.is_none() {
+        return Err(AppError::TransferArtifactUnrecognized { path: temp.path });
+    }
     if resuming && partial.is_none() && file_length(to, to_sftp).await? == Some(stamp.0) {
         phase(meter.app, id, "verifying");
         let mut completed = open_reader(from, from_sftp).await?;
@@ -1979,6 +2001,15 @@ async fn durable_copy_file(
     } else {
         open_writer(&temp, to_sftp, false).await?
     };
+    #[cfg(windows)]
+    artifacts::record_local_writer(
+        meter.app,
+        id,
+        to,
+        &writer,
+        partial.is_none(),
+        &mut local_staging,
+    )?;
     if existing > 0 {
         match &mut writer {
             Writer::Local(f) => {
@@ -2064,6 +2095,8 @@ async fn durable_copy_file(
         rename_endpoint(to, &backup, to_sftp).await?;
         own_backup = true;
     }
+    #[cfg(windows)]
+    drop(local_staging);
     if let Err(e) = rename_endpoint(&temp, to, to_sftp).await {
         if own_backup {
             // An existence check followed by rename could overwrite a file
@@ -4659,7 +4692,7 @@ mod tests {
                 .unwrap();
             std::fs::remove_file(root.join(&target.path)).unwrap();
             assert_eq!(
-                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
+                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected), None)
                     .await
                     .unwrap_err()
                     .to_string(),
@@ -4672,7 +4705,7 @@ mod tests {
             );
             std::fs::write(root.join(&target.path), b"new independent destination").unwrap();
             assert_eq!(
-                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
+                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected), None)
                     .await
                     .unwrap_err()
                     .to_string(),
