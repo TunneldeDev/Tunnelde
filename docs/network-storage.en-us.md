@@ -130,6 +130,14 @@ limits. Small-file archive batching is not yet implemented.
 
 ## Pause and resume transfers
 
+For local Windows file moves that require copying, the source is held against
+ordinary writes and replacement before copying begins. Before removing it, the
+application locks the completed destination and compares both files byte for byte.
+Both handles remain held while saving the removal checkpoint and deleting the
+source through its handle. An open writer, verification failure, cancellation or
+checkpoint failure leaves the source intact. This protection applies to regular
+local files; it does not establish the same guarantee for remote or Unix moves.
+
 The status-bar **Transfers** entry opens a compact background task list from any
 page; F1 → **Background transfers** opens the same list. When the status bar is
 hidden, the entry appears in the bottom corner. Pin the list to keep it open while

@@ -672,6 +672,7 @@
     "reconnectRequired": "请先连接原主机再继续",
     "resumePrefixMismatch": "未完成文件与源文件不一致，请使用新目标重新传输。",
     "resumeSourceChanged": "源文件已变化，请使用新目标重新传输。",
+    "moveVerificationFailed": "复制后的文件与源文件不一致，已保留两侧文件。请检查目标后再重试移动。",
     "moveRecoveryUnverified": "移动任务在删除源文件时中断。源文件已不存在，已保存的任务信息无法确认目标文件完整，请检查目标后再清除任务。",
     "moveRecoverySourcePresent": "移动任务在删除源文件时中断，而源路径现在存在文件或文件夹。请检查两侧文件，软件不会自动删除该源路径。",
     "directoryMoveUnavailable": "为保护源数据，暂不支持跨来源移动文件夹。请改用复制，源文件夹会保留。",

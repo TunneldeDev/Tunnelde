@@ -18,7 +18,6 @@ impl GuardedFile {
         self.0.try_clone()
     }
 
-    #[cfg(test)]
     pub fn read(path: &Path) -> io::Result<Self> {
         Self::open(path, FILE_GENERIC_READ)
     }
