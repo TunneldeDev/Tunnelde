@@ -259,6 +259,10 @@ fn encode(value: impl Serialize) -> AppResult<Value> {
     Ok(serde_json::to_value(value)?)
 }
 
+fn describe_api() -> Value {
+    json!({"version":1,"methods":METHODS})
+}
+
 pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
     let entry =
         method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
@@ -354,7 +358,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         "tools.cancel" | "tools.revokeClient" => {
             super::tools::cancel(context, method, &params).await
         }
-        "api.describe" => encode(json!({"version":1,"methods":METHODS})),
+        "api.describe" => Ok(describe_api()),
         "log" => {
             let message: String = field(&params, "message")?;
             let level: String = optional(&params, "level")?.unwrap_or_else(|| "info".into());
@@ -1057,6 +1061,17 @@ mod tests {
             serde_json::to_value(method_info("workspace.snapshot").unwrap()).unwrap();
         assert_eq!(experimental["stability"], "experimental");
         assert_eq!(experimental["since"], Value::Null);
+    }
+
+    // CI validates the actual serialized host response against the frozen v1 schema.
+    #[test]
+    fn emit_discovery_contract_response() {
+        let response = describe_api();
+        assert_eq!(response["version"], 1);
+        assert!(response["methods"].as_array().unwrap().len() > 1);
+        if let Some(path) = std::env::var_os("TUNNELDE_API_CONTRACT_OUTPUT") {
+            std::fs::write(path, serde_json::to_vec(&response).unwrap()).unwrap();
+        }
     }
 
     #[test]

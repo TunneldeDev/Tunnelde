@@ -289,6 +289,13 @@ For stable methods, compatible versions preserve the documented request, respons
 authorization behavior; additive fields and methods may be introduced. A breaking change
 requires an explicitly versioned migration. Experimental methods make no such promise.
 
+The frozen [request](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json) and
+[response](../tests/fixtures/plugin-compat/api-describe-v1.schema.json) schemas define the v1
+compatibility floor. Requests are also subject to the JSON transport size limit; clients should
+send an empty object. Discovery emits no events. CI validates a response serialized by the host against its schema,
+and checks the discovery method's permissions and metadata. The schema permits additive fields
+and unknown stability values; it is not a schema for the other methods' request or result data.
+
 | Permission                          | Available operations                                                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |
