@@ -168,7 +168,7 @@ export function TransferTask({
         ) : null}
       </div>
       {pending ? <p className="transfer-task__notice">{t("sftp.cleanupPendingHint")}</p> : null}
-      {item.error && !pending ? (
+      {item.error ? (
         <p className="transfer-task__error">
           {translateError({ code: "ssh", message: item.error })}
         </p>
@@ -198,11 +198,6 @@ export function TransferTask({
           ) : null}
           {item.speedLimitKib ? (
             <p>{t("sftp.taskSpeedLimitValue", { value: item.speedLimitKib })}</p>
-          ) : null}
-          {pending && item.error ? (
-            <p className="transfer-task__error">
-              {translateError({ code: "ssh", message: item.error })}
-            </p>
           ) : null}
           {running && limitOpen ? (
             <TransferSpeedLimit

@@ -212,7 +212,7 @@ async fn cleanup_file(
     cleanup_owned(id, to, sftp, backup_checkpoint(app, &key)?.as_ref()).await
 }
 
-async fn cleanup_owned(
+pub(super) async fn cleanup_owned(
     id: &str,
     to: &Endpoint,
     sftp: Option<&SftpSession>,
@@ -231,7 +231,10 @@ async fn cleanup_owned(
             // Recover the user's previous destination after a failed commit.
             rename_endpoint(&backup, to, sftp).await?;
         } else {
-            remove_verified_backup(&backup, sftp, expected, &cancel).await?;
+            // A destination may have been independently recreated while the
+            // transfer was interrupted; its presence does not prove that our
+            // staged file was committed. Preserve both copies for inspection.
+            return Err(AppError::validation("sftp.backupRecoveryRequired"));
         }
     }
     if file_length(&temp, sftp).await?.is_some() {
@@ -421,6 +424,27 @@ mod tests {
             .unwrap();
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"user data");
         assert!(!Path::new(&backup.path).exists());
+
+        tokio::fs::rename(&target.path, &backup.path).await.unwrap();
+        tokio::fs::write(&target.path, b"new independent data")
+            .await
+            .unwrap();
+        tokio::fs::write(&part.path, b"partial").await.unwrap();
+        assert_eq!(
+            cleanup_owned("job", &target, None, Some(&expected))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.backupRecoveryRequired"
+        );
+        assert_eq!(tokio::fs::read(&backup.path).await.unwrap(), b"user data");
+        assert_eq!(
+            tokio::fs::read(&target.path).await.unwrap(),
+            b"new independent data"
+        );
+        assert_eq!(tokio::fs::read(&part.path).await.unwrap(), b"partial");
+        tokio::fs::remove_file(&target.path).await.unwrap();
+        tokio::fs::rename(&backup.path, &target.path).await.unwrap();
 
         tokio::fs::write(&backup.path, b"unrecognized data")
             .await

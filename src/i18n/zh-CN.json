@@ -681,7 +681,7 @@
     "transferTimedOut": "服务器未及时响应，请重新连接后重试。",
     "compressionProtocol": "压缩传输通道中断或数据无效，请重新连接后继续。如反复出现，可在「设置 → 文件」中关闭传输压缩。",
     "compressionWorker": "远端无法读写此传输数据块，请检查文件权限后重新连接并继续。也可在「设置 → 文件」中关闭传输压缩。",
-    "backupRecoveryRequired": "原目标文件的备份需要恢复，已保留备份和传输记录。",
+    "backupRecoveryRequired": "需要恢复先前的目标备份。备份是目标目录中隐藏的 .tunnelde 文件，备份和传输记录均已保留。",
     "resizePanels": "调整文件面板大小",
     "detachPanel": "作为独立面板打开",
     "verifyingTransfer": "正在校验已传数据…",

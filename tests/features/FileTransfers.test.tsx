@@ -87,8 +87,23 @@ it("shows a localized explanation when a directory move is rejected", () => {
     })),
   }));
   render(<FileTransfers />);
-  expect(screen.getByText(/Moving folders between sources is temporarily unavailable/)).toBeTruthy();
+  expect(
+    screen.getByText(/Moving folders between sources is temporarily unavailable/),
+  ).toBeTruthy();
   expect(screen.queryByText("sftp.directoryMoveUnavailable")).toBeNull();
+});
+
+it("shows a backup recovery error without expanding task details", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.backupRecoveryRequired",
+    })),
+  }));
+  const { container } = render(<FileTransfers />);
+  expect(screen.getByText(/backup is a hidden .tunnelde file/)).toBeTruthy();
+  expect(container.querySelector(".transfer-task__details")).toBeNull();
 });
 
 it("bulk clears finished and failed transfers and keeps deferred remote cleanup visible", async () => {
