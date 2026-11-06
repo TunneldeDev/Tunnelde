@@ -672,6 +672,7 @@
     "reconnectRequired": "Connect the original host before resuming",
     "resumePrefixMismatch": "Partial file differs from source. Restart to a new target.",
     "resumeSourceChanged": "Source changed; restart to a new target.",
+    "directoryMoveUnavailable": "Moving folders between sources is temporarily unavailable to protect source data. Copy the folder instead; the source will be retained.",
     "transferAlreadyComplete": "Transfer already complete",
     "transferNotFound": "Transfer not found",
     "cleaningTransfer": "Cleaning temporary files…",

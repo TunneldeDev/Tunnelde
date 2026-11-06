@@ -1934,6 +1934,16 @@ async fn validate_move_source(
     Ok(())
 }
 
+async fn ensure_safe_transfer_move_source(
+    from: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<()> {
+    if is_dir(from, sftp).await? {
+        return Err(AppError::validation("sftp.directoryMoveUnavailable"));
+    }
+    Ok(())
+}
+
 async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
     match sftp {
         Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
@@ -2160,6 +2170,9 @@ async fn run(
         let _ = durable::Journal::upsert(app, row);
     }
     let result = async {
+        if durable && remove_source {
+            ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
+        }
         if !resuming && from.session == to.session {
             match from_sftp.as_ref() {
                 Some(sftp) => {
@@ -2195,13 +2208,21 @@ async fn run(
         }
         if remove_source {
             if durable {
+                ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
                 let mut row = durable::Journal::get(app, id)?;
                 row.deleting_source = true;
                 row.total = meter.total;
                 durable::Journal::upsert(app, row)?;
             }
-            remove_endpoint(from, from_sftp.as_ref()).await?;
+            if durable {
+                match from_sftp.as_ref() {
+                    Some(sftp) => sftp.remove_file(&from.path).await.map_err(map_sftp)?,
+                    None => tokio::fs::remove_file(&from.path).await?,
+                }
+            } else {
+                remove_endpoint(from, from_sftp.as_ref()).await?;
+            }
         }
         Ok::<(), AppError>(())
     }
@@ -2689,6 +2710,36 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn transfer_move_rejects_directories_without_removing_source() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-move-guard-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("file.txt");
+        std::fs::write(&file, b"preserved").unwrap();
+        let directory = Endpoint {
+            session: None,
+            path: display_path(&root),
+        };
+        let single_file = Endpoint {
+            session: None,
+            path: display_path(&file),
+        };
+        assert_eq!(
+            ensure_safe_transfer_move_source(&directory, None)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.directoryMoveUnavailable"
+        );
+        assert!(ensure_safe_transfer_move_source(&single_file, None)
+            .await
+            .is_ok());
+        assert_eq!(std::fs::read(&file).unwrap(), b"preserved");
+        std::fs::remove_file(file).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[tokio::test]
     async fn resume_prefix_verifies_every_byte_and_keeps_reader_at_resume_offset() {
         let root =
