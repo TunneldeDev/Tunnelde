@@ -134,6 +134,35 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("moves a panel out and retains the other panel in the original tab", async () => {
+    const original = {
+      id: "sftp:session-1",
+      kind: "sftp" as const,
+      title: "web-01",
+      hostId: "host-1",
+      pinned: false,
+    };
+    useWorkspace.setState({
+      tabs: [original],
+      panes: [{ id: "test-pane", tabIds: [original.id], activeId: original.id }],
+      activePaneId: "test-pane",
+      activeId: original.id,
+      split: null,
+      layout: { kind: "pane", paneId: "test-pane" },
+    });
+    render(<SftpPage sessionId="session-1" tabId={original.id} />);
+    await screen.findByText("readme.md");
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "Open as an independent panel" })[0]!);
+    const tabs = useWorkspace.getState().tabs;
+    const retained = tabs.find((tab) => tab.id === original.id);
+    const detached = tabs.find((tab) => tab.id !== original.id);
+    expect(retained?.filePane?.source).toEqual({ kind: "remote", sessionId: "session-1" });
+    expect(retained?.filePane?.path).toBe("/srv/app");
+    expect(detached?.filePane?.source).toEqual({ kind: "local" });
+    expect(detached?.filePane?.path).toBe("C:\\work");
+    expect(useWorkspace.getState().panes).toHaveLength(2);
+  });
   it("independently configures visible columns and reorders headers", async () => {
     const { container } = render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");

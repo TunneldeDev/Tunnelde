@@ -660,6 +660,21 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().tabs).toHaveLength(0);
   });
 
+  it("keeps a detached local file panel when its original SSH session closes", () => {
+    useWorkspace.getState().openSftp(session("s1", "Alpha"));
+    useWorkspace.getState().retainFilePane(
+      "sftp:s1",
+      {
+        source: { kind: "local" },
+        path: "C:\\work",
+        ownerSessionId: "s1",
+      },
+      "This computer",
+    );
+    useWorkspace.getState().closeSession("s1");
+    expect(useWorkspace.getState().tabs[0]?.filePane?.source).toEqual({ kind: "local" });
+  });
+
   it("closes the tab when its session goes away", () => {
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
     useWorkspace.getState().openPage("welcome", { preview: false });

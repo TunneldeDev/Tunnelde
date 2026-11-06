@@ -100,6 +100,7 @@ interface WorkspaceStore {
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
   openFilePane: (options: FilePaneOptions, title: string) => string;
+  retainFilePane: (tabId: string, options: FilePaneOptions, title: string) => void;
   openEditor: (session: SshSession, path: string) => void;
   openLocalEditor: (path: string) => void;
   openHistory: (session: SshSession) => void;
@@ -543,6 +544,13 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       return id;
     },
 
+    retainFilePane: (tabId, filePane, title) =>
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          tab.id === tabId && tab.kind === "sftp" ? { ...tab, filePane, title } : tab,
+        ),
+      })),
+
     openEditor: (session, path) => {
       const id = `editor:${session.id}:${path}`;
       set((state) =>
@@ -636,7 +644,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
 
       set((state) => {
         const removed = state.tabs.filter(
-          (tab) => matches(tab.id) && !(tab.kind === "editor" && editors.isDirty(tab.id)),
+          (tab) =>
+            matches(tab.id) && !tab.filePane && !(tab.kind === "editor" && editors.isDirty(tab.id)),
         );
         if (removed.length === 0) {
           return state;

@@ -523,10 +523,12 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
       if (!tabId) return;
       if (!zone) {
         moveTab(tabId, pane.id);
+        draggedFile?.onMoved?.();
         return;
       }
       const direction: SplitDirection = zone === "left" || zone === "right" ? "row" : "column";
       splitTab(tabId, direction, zone === "left" || zone === "top" ? "before" : "after", pane.id);
+      draggedFile?.onMoved?.();
     };
     // Page contents live in stable portals; native listeners follow their actual
     // group rather than the React tree that owns their component instance.

@@ -52,6 +52,7 @@ function TabBody({
     case "sftp":
       return (
         <SftpPage
+          key={tab.filePane ? `${tab.id}:single` : `${tab.id}:dual`}
           sessionId={
             tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "").split(":copy:")[0]!
           }
