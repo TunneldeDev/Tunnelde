@@ -65,7 +65,7 @@ it("opens the existing panel for the originating host and SSH session", async ()
   expect(screen.getByRole("button", { name: /Server two/ }).getAttribute("aria-expanded")).toBe(
     "true",
   );
-  expect(screen.getByRole("button", { name: "SSH session" }).textContent).toContain("current");
+  expect(screen.queryByRole("button", { name: "SSH session" })).toBeNull();
   expect(useNavigation.getState().activeSidebar).toBe("forwarding");
   act(() =>
     useWorkspace
@@ -82,17 +82,20 @@ it("opens the existing panel for the originating host and SSH session", async ()
   expect(
     useWorkspace.getState().tabs.find((tab) => tab.id === "sidebar:forwarding")?.hidden,
   ).not.toBe(true);
-  expect(screen.getByRole("button", { name: "SSH session" }).textContent).toContain("other");
+  expect(screen.queryByRole("button", { name: "SSH session" })).toBeNull();
 });
 it("shows forwarding status across hosts and opens one host manager without creating a terminal", async () => {
   render(<ForwardingPanel />);
-  const first = await screen.findByRole("button", { name: /Server one 1\/2/ });
-  expect(screen.getByRole("button", { name: /Server two 1\/1/ })).toBeTruthy();
+  const first = await screen.findByRole("button", { name: /Server one/ });
+  expect(screen.getByRole("button", { name: /Server two/ })).toBeTruthy();
+  expect(first.textContent).not.toContain("Running");
   expect(invokeMock.mock.calls.filter(([command]) => command === "forwarding_list")).toHaveLength(
     1,
   );
   expect(first.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(first);
   expect(first.getAttribute("aria-expanded")).toBe("true");
-  expect(await within(first.parentElement!).findByRole("button", { name: "Connect" })).toBeTruthy();
+  expect(
+    await within(first.parentElement!).findByRole("button", { name: "Add forward" }),
+  ).toBeTruthy();
 });

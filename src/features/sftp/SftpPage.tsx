@@ -734,6 +734,7 @@ export function SftpPage({
   const canonicalSessions = useMemo(() => {
     const seen = new Set<string>();
     return sessions.filter((item) => {
+      if (item.purpose === "forwarding") return false;
       const identity = JSON.stringify([item.hostId, item.address]);
       if (seen.has(identity)) {
         return false;

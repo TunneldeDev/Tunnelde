@@ -193,6 +193,7 @@ mod tests {
             rows: 24,
             connected_at,
             terminal: true,
+            purpose: None,
         }
     }
 
@@ -321,7 +322,11 @@ fn select_session(
     match host {
         Some(host) => sessions
             .iter()
-            .filter(|s| s.host_id == host && address.is_none_or(|address| s.address == address))
+            .filter(|s| {
+                s.purpose.as_deref() != Some("forwarding")
+                    && s.host_id == host
+                    && address.is_none_or(|address| s.address == address)
+            })
             .max_by_key(|s| (s.connected_at, s.id.as_str()))
             .map(|s| Some(s.id.clone()))
             .ok_or_else(|| AppError::validation("sftp.reconnectRequired")),

@@ -14,7 +14,10 @@ import { useSsh } from "@/store/ssh";
 
 function currentSession(host: Host, sessions: SshSession[]): SshSession | undefined {
   const address = `${host.username}@${host.host}:${host.port}`;
-  return sessions.find((session) => session.hostId === host.id && session.address === address);
+  return sessions.find(
+    (session) =>
+      session.hostId === host.id && session.address === address && session.purpose !== "forwarding",
+  );
 }
 
 export function FileRemoteDialog({

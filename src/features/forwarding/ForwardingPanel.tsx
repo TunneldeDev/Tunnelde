@@ -18,6 +18,7 @@ import "./forwarding-panel.css";
 
 interface ForwardStatus extends ForwardRule {
   active: boolean;
+  sessionId: string | null;
 }
 export function ForwardingPanel() {
   const { t } = useTranslation();
@@ -31,13 +32,10 @@ export function ForwardingPanel() {
   );
   const [selection, setSelection] = useState<{
     hostId: string | null;
-    sessionId: string;
     targetRevision: number;
-  }>({ hostId: null, sessionId: "", targetRevision: 0 });
+  }>({ hostId: null, targetRevision: 0 });
   const selected =
     target && target.revision !== selection.targetRevision ? target.hostId : selection.hostId;
-  const selectedSessionId =
-    target && target.revision !== selection.targetRevision ? target.sessionId : selection.sessionId;
   const [rules, setRules] = useState<ForwardStatus[]>([]);
   const [error, setError] = useState("");
   const generation = useRef(0);
@@ -81,7 +79,9 @@ export function ForwardingPanel() {
         )}
         {hosts.map((host) => {
           const own = rules.filter((rule) => rule.hostId === host.id);
-          const active = own.filter((rule) => rule.active).length;
+          const active = own.filter(
+            (rule) => rule.active && sessions.some((s) => s.id === rule.sessionId),
+          ).length;
           return (
             <div key={host.id} className="forwarding-panel__host">
               <button
@@ -91,7 +91,6 @@ export function ForwardingPanel() {
                 onClick={() => {
                   setSelection({
                     hostId: selected === host.id ? null : host.id,
-                    sessionId: "",
                     targetRevision: target?.revision ?? 0,
                   });
                 }}
@@ -99,18 +98,13 @@ export function ForwardingPanel() {
                 <ChevronRight className="forwarding-panel__chevron" size={14} aria-hidden="true" />
                 <Server size={14} aria-hidden="true" />
                 <span>{host.name}</span>
-                <small>
-                  {active}/{own.length} {t("forward.running")}
-                </small>
+                {active > 0 && (
+                  <small className="is-running">
+                    {active} {t("forward.running")}
+                  </small>
+                )}
               </button>
-              {selected === host.id && (
-                <ForwardingSection
-                  key={`${host.id}:${selectedSessionId}`}
-                  host={host}
-                  initialSessionId={selectedSessionId}
-                  embedded
-                />
-              )}
+              {selected === host.id && <ForwardingSection key={host.id} host={host} embedded />}
             </div>
           );
         })}

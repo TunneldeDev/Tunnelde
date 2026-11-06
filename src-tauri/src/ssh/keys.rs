@@ -125,6 +125,7 @@ pub async fn install(
             jump_credentials,
             host_id: host_id.to_string(),
             background: false,
+            purpose: None,
             password,
             passphrase: None,
             cols: 80,

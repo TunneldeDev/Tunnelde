@@ -37,7 +37,9 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const tabSize = useSettings((state) => state.settings.editorTabSize);
   const spellCheck = useSettings((state) => state.settings.editorSpellCheck);
   const hostId = useWorkspace((state) => state.tabs.find((tab) => tab.id === tabId)?.hostId);
-  const candidate = useSsh((state) => state.sessions.find((session) => session.hostId === hostId));
+  const candidate = useSsh((state) =>
+    state.sessions.find((session) => session.hostId === hostId && session.purpose !== "forwarding"),
+  );
   const [reconnecting, setReconnecting] = useState(false);
   const formatting = useFormatting((state) => state.busy.includes(tabId));
   const textarea = useRef<HTMLTextAreaElement>(null);

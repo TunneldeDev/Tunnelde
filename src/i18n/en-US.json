@@ -1534,9 +1534,10 @@
   "forward": {
     "noHostsHint": "Add a host to configure and manage port forwarding.",
     "disconnectTitle": "Disconnect SSH?",
-    "disconnectBody": "Disconnecting stops forwards and any other work using this connection.",
+    "disconnectBody": "Disconnecting stops all forwards using this connection.",
     "title": "Port forwarding",
     "add": "Add forward",
+    "startAll": "Start all",
     "hint": "Rules are saved per host. Start a rule after connecting; disconnecting stops its listeners and active connections.",
     "session": "SSH session",
     "local": "Local listener → remote service (access remote)",

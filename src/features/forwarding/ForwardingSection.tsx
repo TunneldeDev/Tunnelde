@@ -3,9 +3,8 @@ import { ArrowRight, Laptop, Play, Plus, RefreshCw, Server, Square } from "lucid
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { Field } from "@/components/ui/form/Field";
-import { Select } from "@/components/ui/form/Select";
 import { Menu } from "@/components/ui/overlay/Menu";
+import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { copyText } from "@/lib/session/clipboard";
@@ -44,22 +43,15 @@ const initial = (hostId: string): ForwardRule => ({
   targetPort: 80,
 });
 
-export function ForwardingSection({
-  host,
-  initialSessionId = "",
-  embedded = false,
-}: {
-  host: Host;
-  initialSessionId?: string;
-  embedded?: boolean;
-}) {
+export function ForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
   const origin = useId();
   const sessions = useSsh((state) => state.sessions);
-  const available = sessions.filter((session) => session.hostId === host.id);
-  const [sessionId, setSessionId] = useState(initialSessionId);
-  const session = available.find((item) => item.id === sessionId) ?? available[0];
+  const session = sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
+  const [connectingRules, setConnectingRules] = useState<string[] | null>(null);
   const [rules, setRules] = useState<ForwardInfo[]>([]);
+  const isActive = (rule: ForwardInfo) =>
+    rule.active && sessions.some((item) => item.id === rule.sessionId);
   const [form, setForm] = useState<ForwardRule | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,7 +60,6 @@ export function ForwardingSection({
   const generation = useRef(0);
   const live = useRef(true);
   const confirm = useDialogs((state) => state.confirm);
-  const openConnect = useDialogs((state) => state.openConnect);
   const load = useCallback(() => {
     const request = ++generation.current;
     const result = isTauri()
@@ -124,6 +115,32 @@ export function ForwardingSection({
       if (live.current) setPending(null);
     }
   };
+  const startOnConnection = (ids: string[], sessionId: string) => {
+    void run(ids.length === 1 ? (ids[0] ?? "group") : "group", async () => {
+      const failures: string[] = [];
+      for (const id of ids) {
+        try {
+          await invoke("forwarding_start", { id, sessionId });
+        } catch (cause) {
+          if (ids.length === 1) throw cause;
+          failures.push(
+            `${rules.find((rule) => rule.id === id)?.name ?? id}: ${translateError(cause)}`,
+          );
+        }
+      }
+      if (failures.length) throw new Error(failures.join("; "));
+    });
+  };
+  const start = (ids: string[]) => {
+    const connected = useSsh
+      .getState()
+      .sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
+    if (!connected) {
+      setConnectingRules(ids);
+      return;
+    }
+    startOnConnection(ids, connected.id);
+  };
   const save = (rule: ForwardRule, start: boolean) => {
     if (mutation.current) return;
     const action = () =>
@@ -141,15 +158,13 @@ export function ForwardingSection({
         setForm(null);
         if (start) {
           setPending(saved.id);
-          const connected = useSsh
-            .getState()
-            .sessions.find((item) => item.id === session?.id && item.hostId === host.id);
-          try {
-            if (!connected) throw new Error(t("forward.connectionRequired"));
-            await invoke("forwarding_start", { id: saved.id, sessionId: connected.id });
-          } catch (cause) {
-            // Saving succeeded: show a retryable error on the saved rule, never create it twice.
-            if (live.current) setFailure({ target: saved.id, message: translateError(cause) });
+          if (!session) setConnectingRules([saved.id]);
+          else {
+            try {
+              await invoke("forwarding_start", { id: saved.id, sessionId: session.id });
+            } catch (cause) {
+              if (live.current) setFailure({ target: saved.id, message: translateError(cause) });
+            }
           }
         }
       });
@@ -201,50 +216,46 @@ export function ForwardingSection({
           </div>
         ) : null}
       </header>
-      <div className={`forward-connection ${session ? "is-connected" : ""}`}>
-        <Server size={14} aria-hidden="true" />
-        <span>{t(session ? "forward.connected" : "forward.connectionRequired")}</span>
-        {!session ? (
-          <Button size="sm" disabled={busy} onClick={() => openConnect(host, "background")}>
-            {t("terminal.connect")}
-          </Button>
-        ) : session.terminal === false ? (
+      {rules.length > 0 && !form && (
+        <div className="forwarding__group-actions">
           <Button
             size="sm"
-            disabled={busy}
-            onClick={() => {
-              confirm({
-                title: t("forward.disconnectTitle"),
-                body: t("forward.disconnectBody"),
-                confirmLabel: t("terminal.disconnect"),
-                onConfirm: () => useSsh.getState().disconnect(session.id),
-              });
-            }}
+            variant="secondary"
+            disabled={busy || rules.every(isActive)}
+            onClick={() => start(rules.filter((rule) => !isActive(rule)).map((rule) => rule.id))}
           >
-            {t("terminal.disconnect")}
+            {t("forward.startAll")}
           </Button>
-        ) : null}
-      </div>
-      {available.length > 1 ? (
-        <Field label={t("forward.session")}>
-          <Select
-            label={t("forward.session")}
-            disabled={busy}
-            value={session?.id ?? ""}
-            options={available.map((item, index) => ({
-              value: item.id,
-              label: t("forward.sessionLabel", { name: item.title, index: index + 1 }),
-            }))}
-            onChange={setSessionId}
-          />
-        </Field>
-      ) : null}
+          {session && (
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={busy}
+              onClick={() =>
+                confirm({
+                  title: t("forward.disconnectTitle"),
+                  body: t("forward.disconnectBody"),
+                  confirmLabel: t("terminal.disconnect"),
+                  onConfirm: () => useSsh.getState().disconnect(session.id),
+                })
+              }
+            >
+              {t("terminal.disconnect")}
+            </Button>
+          )}
+        </div>
+      )}
+      {failure?.target === "group" && (
+        <p role="alert" className="td-field__error">
+          {failure.message}
+        </p>
+      )}
       {form ? (
         <>
           <ForwardRuleEditor
             rule={form}
             hostName={host.name}
-            connected={!!session}
+            connected
             busy={busy}
             error={failure?.target === "editor" ? failure.message : undefined}
             onSave={save}
@@ -262,16 +273,14 @@ export function ForwardingSection({
             </p>
           ) : !rules.length && failure?.target !== "list" ? (
             <div className="forwarding__empty">
-              <ArrowRight size={24} aria-hidden="true" />
               <strong>{t("forward.noRules")}</strong>
-              <p>{t("forward.empty")}</p>
             </div>
           ) : (
             <ul className="forward-rules" aria-label={t("forward.title")}>
               {rules.map((rule) => {
                 const ruleError = failure?.target === rule.id ? failure.message : null;
                 const local = rule.mode === "local";
-                const owner = available.find((item) => item.id === rule.sessionId);
+                const active = isActive(rule);
                 return (
                   <li key={rule.id} className="forward-rule">
                     <div className="forward-rule__head">
@@ -280,43 +289,39 @@ export function ForwardingSection({
                         <small>{t(local ? "forward.localPurpose" : "forward.remotePurpose")}</small>
                       </div>
                       <span
-                        className={`forward-rule__status ${rule.active ? "is-running" : ""}`}
+                        className={`forward-rule__status ${active ? "is-running" : ""}`}
                         role="status"
                       >
-                        {t(rule.active ? "forward.running" : "forward.stopped")}
+                        {t(active ? "forward.running" : "forward.stopped")}
                       </span>
-                      <Button
+                      <IconButton
                         size="sm"
-                        variant={rule.active ? "secondary" : "primary"}
-                        leading={rule.active ? <Square size={12} /> : <Play size={12} />}
-                        disabled={busy || (!rule.active && !session)}
-                        onClick={() =>
-                          void run(rule.id, () =>
-                            invoke(rule.active ? "forwarding_stop" : "forwarding_start", {
-                              id: rule.id,
-                              ...(!rule.active ? { sessionId: session?.id } : {}),
-                            }),
-                          )
-                        }
-                      >
-                        {t(
+                        label={t(
                           pending === rule.id
-                            ? rule.active
+                            ? active
                               ? "forward.stopping"
                               : "forward.starting"
-                            : rule.active
+                            : active
                               ? "forward.stop"
                               : "forward.start",
                         )}
-                      </Button>
+                        disabled={busy}
+                        onClick={() =>
+                          active
+                            ? void run(rule.id, () => invoke("forwarding_stop", { id: rule.id }))
+                            : start([rule.id])
+                        }
+                      >
+                        {active ? <Square size={14} /> : <Play size={14} />}
+                      </IconButton>
                       <Menu
                         label={t("forward.ruleActions", { name: rule.name })}
                         disabled={busy}
                         items={[
                           {
                             label: t("common.edit"),
-                            disabled: rule.active,
-                            description: rule.active ? t("forward.stopBeforeEdit") : undefined,
+                            disabled: active,
+                            description: active ? t("forward.stopBeforeEdit") : undefined,
                             onSelect: () => {
                               setFailure(null);
                               setForm({ ...rule });
@@ -361,23 +366,6 @@ export function ForwardingSection({
                         <code>{endpointAddress(rule.targetHost, rule.targetPort)}</code>
                       </div>
                     </div>
-                    {local && rule.active ? (
-                      <p className="forward-rule__hint">
-                        {t("forward.connectTo", {
-                          address: localConnectionAddress(rule.bindHost, rule.bindPort),
-                        })}
-                      </p>
-                    ) : null}
-                    {rule.active && available.length > 1 && owner ? (
-                      <p className="forward-rule__hint">
-                        {t("forward.runningSession", {
-                          name: t("forward.sessionLabel", {
-                            name: owner.title,
-                            index: available.indexOf(owner) + 1,
-                          }),
-                        })}
-                      </p>
-                    ) : null}
                     {ruleError ? (
                       <p role="alert" className="td-field__error">
                         {ruleError}
@@ -388,7 +376,6 @@ export function ForwardingSection({
               })}
             </ul>
           )}
-          <p className="forward-help">{t("forward.hint")}</p>
         </>
       )}
       {failure?.target === "list" ? (
@@ -396,6 +383,17 @@ export function ForwardingSection({
           {failure.message}
         </p>
       ) : null}
+      {connectingRules && (
+        <ConnectDialog
+          host={host}
+          after="background"
+          purpose="forwarding"
+          onClose={() => setConnectingRules(null)}
+          onConnected={(connected) => {
+            startOnConnection(connectingRules, connected.id);
+          }}
+        />
+      )}
     </section>
   );
 }
