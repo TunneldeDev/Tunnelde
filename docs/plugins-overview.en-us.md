@@ -52,3 +52,4 @@ the methods stable or guarantee connection lifecycle and error compatibility.
 The application and marketplace can release independently. Set the minimum application
 version to the first release that supports every feature your extension uses, and test on
 that version. The detailed guide describes the current contribution and permission model.
+See also [API compatibility and security](plugin-api.en-us.md).

@@ -2,6 +2,8 @@
 
 Overview and compatibility: [English](plugins-overview.en-us.md) · [简体中文](plugins-overview.zh-cn.md).
 
+API compatibility and security: [English](plugin-api.en-us.md) · [简体中文](plugin-api.zh-cn.md).
+
 Editor command and formatter contributions:
 [English](editor-plugins.en-us.md) · [简体中文](editor-plugins.zh-cn.md).
 
@@ -165,8 +167,8 @@ Any plugin can provide one or more themes through a `themes` array. Pure theme p
 Each pack may supply up to 32 themes with unique IDs and nonempty names. `appearance` is
 `light` or `dark`; `accent`, when supplied, is `#RRGGBB`. `colors` must contain at least one
 recognized region from the settings color map, with `#RRGGBB` values. Unknown keys, CSS,
-scripts and invalid colors are rejected. See `TunneldeDev/tunnelde-hub/plugins/studio-themes` for a pack containing
-both dark and light themes without executable code.
+scripts and invalid colors are rejected. A single non-executable pack can contain both
+dark and light themes.
 
 Installed palettes appear in Settings → Appearance and in the plugin detail page. Applying
 one changes the base appearance, accent and full color map in one settings save; omitted

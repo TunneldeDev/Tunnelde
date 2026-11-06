@@ -15,8 +15,8 @@ Download a desktop installer from [GitHub Releases](https://github.com/TunneldeD
 
 Press **F1** for Quick Access: `>` lists application and installed plugin commands,
 `%` searches file contents in the selected local/SSH directory, and `@` finds hosts.
-**Ctrl/Cmd+P** opens files and existing tabs. Plugin commands, including UUID
-Generator, can be run directly here and assigned keys in Settings → Keyboard Shortcuts.
+**Ctrl/Cmd+P** opens files and existing tabs. Installed plugin commands can be run
+directly here and assigned keys in Settings → Keyboard Shortcuts.
 Local search results open a read-only preview; remote results open the editor at the
 matching line, preserving unsaved text. Search is literal, bounded, and cancellable.
 
