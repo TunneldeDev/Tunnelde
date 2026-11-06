@@ -641,8 +641,7 @@ pub async fn remote_create_file(app: &AppHandle, session_id: &str, path: String)
 pub fn local_rename(from: String, to: String, overwrite: bool) -> AppResult<()> {
     check_local_destination(Path::new(&from), Path::new(&to), overwrite)?;
     if Path::new(&to).is_dir() {
-        copy_local_entry(Path::new(&from), Path::new(&to), overwrite)?;
-        return remove_local_entry(Path::new(&from));
+        return Err(AppError::validation("sftp.directoryMergeMoveUnavailable"));
     }
     std::fs::rename(from, to)?;
     Ok(())
@@ -2710,6 +2709,31 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_move_rejects_directory_merge_without_modifying_either_tree() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-merge-guard-{}", uuid::Uuid::new_v4()));
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(source.join("one.txt"), b"source").unwrap();
+        std::fs::write(target.join("two.txt"), b"target").unwrap();
+        assert_eq!(
+            local_rename(display_path(&source), display_path(&target), true)
+                .unwrap_err()
+                .to_string(),
+            "sftp.directoryMergeMoveUnavailable"
+        );
+        assert_eq!(std::fs::read(source.join("one.txt")).unwrap(), b"source");
+        assert_eq!(std::fs::read(target.join("two.txt")).unwrap(), b"target");
+        std::fs::remove_file(source.join("one.txt")).unwrap();
+        std::fs::remove_file(target.join("two.txt")).unwrap();
+        std::fs::remove_dir(source).unwrap();
+        std::fs::remove_dir(target).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[tokio::test]
     async fn transfer_move_rejects_directories_without_removing_source() {
         let root =

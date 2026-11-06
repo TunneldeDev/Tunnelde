@@ -673,6 +673,7 @@
     "resumePrefixMismatch": "未完成文件与源文件不一致，请使用新目标重新传输。",
     "resumeSourceChanged": "源文件已变化，请使用新目标重新传输。",
     "directoryMoveUnavailable": "为保护源数据，暂不支持跨来源移动文件夹。请改用复制，源文件夹会保留。",
+    "directoryMergeMoveUnavailable": "为保护源数据，暂不支持将文件夹移动合并到已有文件夹。请改用复制或选择其他名称。",
     "transferAlreadyComplete": "传输已完成",
     "transferNotFound": "传输任务不存在",
     "cleaningTransfer": "正在清理临时文件…",
