@@ -106,6 +106,25 @@ it("shows a backup recovery error without expanding task details", () => {
   expect(container.querySelector(".transfer-task__details")).toBeNull();
 });
 
+it("shows the specific backup and original destination for manual recovery", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.backupRecoveryRequired",
+      backupRecovery: {
+        backup: "/remote/nested/.tunnelde-job.backup",
+        destination: "/remote/nested/a.txt",
+      },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText("Backup")).toBeTruthy();
+  expect(screen.getByText("/remote/nested/.tunnelde-job.backup")).toBeTruthy();
+  expect(screen.getByText("Original destination")).toBeTruthy();
+  expect(screen.getByText("/remote/nested/a.txt")).toBeTruthy();
+});
+
 it("bulk clears finished and failed transfers and keeps deferred remote cleanup visible", async () => {
   const template = useTransfers.getState().items[0]!;
   const pending = {

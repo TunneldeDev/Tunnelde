@@ -879,6 +879,7 @@ fn spawn_transfer_inner(
                 status: "running".into(),
                 phase: None,
                 error: None,
+                backup_recovery: None,
                 updated_at: crate::models::now_ms(),
             },
         )?;
