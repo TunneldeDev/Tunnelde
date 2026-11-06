@@ -240,7 +240,7 @@ pub(super) async fn cleanup_owned(
         return Err(recovery());
     }
     if file_length(&temp, sftp).await?.is_some() {
-        remove_endpoint(&temp, sftp).await?;
+        remove_transfer_file(&temp, sftp).await?;
     }
     Ok(())
 }
@@ -332,7 +332,7 @@ async fn cleanup_legacy_tree(
                         .iter()
                         .any(|prefix| name == format!("{prefix}.part"))
                     {
-                        remove_endpoint(&entry, sftp).await?;
+                        remove_transfer_file(&entry, sftp).await?;
                     } else if prefixes
                         .iter()
                         .any(|prefix| name == format!("{prefix}.backup"))
@@ -393,6 +393,26 @@ mod tests {
         .is_err());
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
         tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn transfer_artifact_cleanup_preserves_a_partial_path_replaced_with_a_directory() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-cleanup-dir-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        let part = staging_endpoint(&target, "job", "part");
+        tokio::fs::create_dir(&part.path).await.unwrap();
+        let independent = Path::new(&part.path).join("independent.txt");
+        tokio::fs::write(&independent, b"preserve").await.unwrap();
+        assert!(cleanup_owned("job", &target, None, None).await.is_err());
+        assert_eq!(tokio::fs::read(&independent).await.unwrap(), b"preserve");
+        tokio::fs::remove_file(independent).await.unwrap();
+        tokio::fs::remove_dir(&part.path).await.unwrap();
+        tokio::fs::remove_dir(root).await.unwrap();
     }
 
     #[tokio::test]

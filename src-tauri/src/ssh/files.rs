@@ -1698,7 +1698,7 @@ async fn remove_verified_backup(
     if fingerprint_file(backup, sftp, cancel).await? != *expected {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
-    remove_endpoint(backup, sftp).await
+    remove_transfer_file(backup, sftp).await
 }
 async fn cleanup_backup(
     app: &AppHandle,
@@ -1994,6 +1994,17 @@ async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> App
     match sftp {
         Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
         None => remove_local_entry(&PathBuf::from(&endpoint.path)),
+    }
+}
+
+/// Staging files and backups are always files. Do not inspect and recursively
+/// delete a path that another client may have replaced with a directory.
+async fn remove_transfer_file(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+    match sftp {
+        Some(handle) => handle.remove_file(&endpoint.path).await.map_err(map_sftp),
+        None => tokio::fs::remove_file(&endpoint.path)
+            .await
+            .map_err(Into::into),
     }
 }
 
@@ -2892,6 +2903,30 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
     #[tokio::test]
+    async fn transfer_artifact_removal_preserves_replacement_directories() {
+        let root = std::env::temp_dir().join(format!("tunnelde-artifact-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let artifact = Endpoint {
+            session: None,
+            path: display_path(&root.join("artifact")),
+        };
+        std::fs::create_dir(&artifact.path).unwrap();
+        let independent = Path::new(&artifact.path).join("independent.txt");
+        std::fs::write(&independent, b"preserve directory content").unwrap();
+        assert!(remove_transfer_file(&artifact, None).await.is_err());
+        assert_eq!(
+            std::fs::read(&independent).unwrap(),
+            b"preserve directory content"
+        );
+        std::fs::remove_file(&independent).unwrap();
+        std::fs::remove_dir(&artifact.path).unwrap();
+        std::fs::write(&artifact.path, b"partial file").unwrap();
+        remove_transfer_file(&artifact, None).await.unwrap();
+        assert!(!Path::new(&artifact.path).exists());
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn owned_backup_recovery_cleans_only_fingerprint_matched_files_after_commit() {
         let root =
             std::env::temp_dir().join(format!("tunnelde-backup-test-{}", uuid::Uuid::new_v4()));
@@ -3640,6 +3675,8 @@ mod tests {
             read_started: Notify,
             release_read: Notify,
             replace_before_remove: AtomicBool,
+            metadata_reads: AtomicUsize,
+            removals: AtomicUsize,
         }
 
         struct DiskServer {
@@ -3766,6 +3803,7 @@ mod tests {
             }
 
             async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
+                self.state.metadata_reads.fetch_add(1, Ordering::SeqCst);
                 let metadata =
                     std::fs::symlink_metadata(self.root.join(path)).map_err(io_status)?;
                 let mut attrs = FileAttributes::from(&metadata);
@@ -3776,6 +3814,7 @@ mod tests {
             }
 
             async fn remove(&mut self, id: u32, filename: String) -> Result<Status, StatusCode> {
+                self.state.removals.fetch_add(1, Ordering::SeqCst);
                 let path = self.root.join(filename);
                 if self.state.replace_before_remove.load(Ordering::SeqCst) {
                     std::fs::remove_file(&path).map_err(io_status)?;
@@ -4115,6 +4154,36 @@ mod tests {
             sftp.close().await.unwrap();
             std::fs::remove_file(root.join(backup.path)).unwrap();
             std::fs::remove_file(root.join(target.path)).unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn transfer_artifact_removal_uses_only_sftp_file_unlink() {
+            let root = temp_root("artifact-directory");
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let artifact = Endpoint {
+                session: Some("test".into()),
+                path: "artifact".into(),
+            };
+            std::fs::create_dir(root.join(&artifact.path)).unwrap();
+            let independent = root.join("artifact/independent.txt");
+            std::fs::write(&independent, b"preserve directory content").unwrap();
+            assert!(remove_transfer_file(&artifact, Some(&sftp)).await.is_err());
+            assert_eq!(state.removals.load(Ordering::SeqCst), 1);
+            assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                std::fs::read(&independent).unwrap(),
+                b"preserve directory content"
+            );
+            std::fs::remove_file(&independent).unwrap();
+            std::fs::remove_dir(root.join(&artifact.path)).unwrap();
+            std::fs::write(root.join(&artifact.path), b"partial file").unwrap();
+            remove_transfer_file(&artifact, Some(&sftp)).await.unwrap();
+            assert_eq!(state.removals.load(Ordering::SeqCst), 2);
+            assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
+            assert!(!root.join(&artifact.path).exists());
+            sftp.close().await.unwrap();
             std::fs::remove_dir(root).unwrap();
         }
 

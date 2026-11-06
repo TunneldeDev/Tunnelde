@@ -183,6 +183,11 @@ commit, the task fails and preserves that destination, staging data and any
 existing backup. This does not yet solve concurrent changes during move-source
 deletion or successful-transfer backup removal.
 
+Transfer artifact cleanup uses file-only removal. If a staging or backup path
+has become a directory, it is preserved rather than recursively deleted. This
+does not make removal conditional on file identity or prevent file replacement
+between checksum verification and removal.
+
 An offline removal persists its cleanup intent before accessing the connection;
 the journal is retained until owned artifacts are cleaned, including across app
 restarts. Each cleanup attempt has a bounded wait and cannot run alongside Resume.
