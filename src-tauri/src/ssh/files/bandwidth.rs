@@ -170,13 +170,69 @@ impl Throttle {
 
 #[tauri::command]
 pub fn transfer_set_speed_limit(app: AppHandle, id: String, kib: u32) -> AppResult<()> {
+    if kib > MAX_KIB {
+        return Err(AppError::validation("sftp.invalidSpeedLimit"));
+    }
     let state = app.state::<AppState>();
+    // Serialize with registration/completion. Persist before changing the live
+    // controller so a storage failure never reports an unapplied saved limit.
+    let registry = state
+        .transfers
+        .inner
+        .lock()
+        .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+    if !registry.active.contains_key(&id) {
+        return Err(AppError::validation("sftp.transferNotFound"));
+    }
+    durable::Journal::set_speed_limit(&app, &id, kib)?;
     state.transfers.bandwidth.set_task(&id, kib)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn durable_speed_limit_is_applied_before_a_resumed_task_can_run() {
+        let registry = TransferRegistry::default();
+        registry
+            .register_with_limit("resume", Arc::new(AtomicBool::new(false)), None, 128)
+            .unwrap();
+        assert_eq!(
+            registry
+                .bandwidth
+                .claim("resume", Direction::Upload, 1024)
+                .0,
+            0
+        );
+        assert_eq!(
+            registry
+                .bandwidth
+                .claim("resume", Direction::Download, 1024)
+                .0,
+            0
+        );
+        registry.release("resume");
+        registry
+            .register_with_limit("resume", Arc::new(AtomicBool::new(false)), None, 128)
+            .unwrap();
+        assert_eq!(
+            registry
+                .bandwidth
+                .claim("resume", Direction::Upload, 1024)
+                .0,
+            0
+        );
+        assert!(registry
+            .register_with_limit(
+                "invalid",
+                Arc::new(AtomicBool::new(false)),
+                None,
+                MAX_KIB + 1
+            )
+            .is_err());
+        assert!(!registry.is_active("invalid"));
+    }
 
     #[tokio::test]
     async fn concurrent_tasks_share_upload_budget_and_download_is_independent() {

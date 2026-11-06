@@ -64,6 +64,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     if (!isTauri()) return;
     const request = ++snapshotRequest;
     const before = get().items;
+    const limitsBefore = new Map(before.map((item) => [item.id, item.speedLimitKib]));
     try {
       const rows = await transferApi.list();
       if (request !== snapshotRequest) return;
@@ -96,7 +97,10 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               // remains the source for the last known backup location.
               backupRecovery: item.backupRecovery ?? row.backupRecovery,
               clearing: previous?.clearing,
-              speedLimitKib: previous?.speedLimitKib,
+              speedLimitKib:
+                previous?.speedLimitKib !== limitsBefore.get(row.id)
+                  ? previous?.speedLimitKib
+                  : (row.speedLimitKib ?? previous?.speedLimitKib),
               cancelling: item.status === "running" ? previous?.cancelling : undefined,
               pausing: item.status === "running" ? previous?.pausing : undefined,
               rate:
@@ -148,7 +152,6 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               pausing: false,
               error: null,
               rate: sampleTransfer(undefined, x.transferred, Date.now()),
-              speedLimitKib: undefined,
             }
           : x,
       ),

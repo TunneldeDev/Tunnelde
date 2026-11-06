@@ -62,6 +62,65 @@ describe("transfer cancellation", () => {
 });
 
 describe("durable transfer controls", () => {
+  it("retains a task limit while resuming instead of silently removing it", () => {
+    vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "paused", durable: true, updatedAt: 1, speedLimitKib: 128 }],
+    });
+    useTransfers.getState().resume(running.id);
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      status: "running",
+      speedLimitKib: 128,
+    });
+  });
+
+  it("hydrates the saved task ceiling after a frontend restart", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      {
+        ...running,
+        status: "paused",
+        updatedAt: 2,
+        fromHostId: null,
+        toHostId: "host",
+        speedLimitKib: 128,
+      },
+    ]);
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(128);
+  });
+
+  it("does not let an older snapshot overwrite a newly changed task ceiling", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    let finish!: (rows: Awaited<ReturnType<typeof transferApi.list>>) => void;
+    vi.spyOn(transferApi, "list").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.spyOn(transferApi, "setSpeedLimit").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, durable: true, updatedAt: 1, speedLimitKib: 128 }],
+    });
+    const hydration = useTransfers.getState().hydrate();
+    await useTransfers.getState().setSpeedLimit(running.id, 256);
+    finish([{ ...running, updatedAt: 2, fromHostId: null, toHostId: "host", speedLimitKib: 128 }]);
+    await hydration;
+    expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(256);
+  });
+
+  it("accepts an explicitly cleared ceiling from a fresh native snapshot", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    useTransfers.setState({
+      items: [{ ...running, durable: true, updatedAt: 1, speedLimitKib: 128 }],
+    });
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      { ...running, updatedAt: 2, fromHostId: null, toHostId: "host", speedLimitKib: 0 },
+    ]);
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(0);
+  });
   it("does not resume cancelled transfers after their temporary data was discarded", () => {
     const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
     useTransfers.setState({

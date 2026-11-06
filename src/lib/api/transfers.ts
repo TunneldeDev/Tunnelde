@@ -3,6 +3,7 @@ import type { TransferEvent } from "./types";
 export interface DurableTransfer extends Omit<TransferEvent, "status"> {
   status: TransferEvent["status"] | "paused";
   updatedAt: number;
+  speedLimitKib?: number;
   fromSession?: string | null;
   toSession?: string | null;
   fromHostId: string | null;

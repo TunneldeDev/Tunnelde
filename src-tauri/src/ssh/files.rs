@@ -152,6 +152,19 @@ impl TransferRegistry {
         flag: Arc<AtomicBool>,
         owner: Option<TransferOwner>,
     ) -> AppResult<()> {
+        self.register_with_limit(id, flag, owner, 0)
+    }
+
+    fn register_with_limit(
+        &self,
+        id: &str,
+        flag: Arc<AtomicBool>,
+        owner: Option<TransferOwner>,
+        speed_limit_kib: u32,
+    ) -> AppResult<()> {
+        if speed_limit_kib > bandwidth::MAX_KIB {
+            return Err(AppError::validation("sftp.invalidSpeedLimit"));
+        }
         let mut state = self
             .inner
             .lock()
@@ -192,6 +205,7 @@ impl TransferRegistry {
             },
         );
         self.bandwidth.register(id);
+        self.bandwidth.set_task(id, speed_limit_kib)?;
         Ok(())
     }
 
@@ -934,6 +948,7 @@ fn spawn_transfer_inner(
                 overwrite,
                 transferred: 0,
                 total: 0,
+                speed_limit_kib: 0,
                 status: "running".into(),
                 phase: None,
                 error: None,
@@ -1007,9 +1022,12 @@ pub(crate) fn resume_transfer(
     let id = row.id.clone();
     let name = row.name.clone();
     let app2 = app.clone();
-    app.state::<AppState>()
-        .transfers
-        .register(&id, cancel.clone(), None)?;
+    app.state::<AppState>().transfers.register_with_limit(
+        &id,
+        cancel.clone(),
+        None,
+        row.speed_limit_kib,
+    )?;
     let mut row = row;
     row.from_session = from.session.clone();
     row.to_session = to.session.clone();
