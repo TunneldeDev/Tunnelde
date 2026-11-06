@@ -106,6 +106,24 @@ it("shows a backup recovery error without expanding task details", () => {
   expect(container.querySelector(".transfer-task__details")).toBeNull();
 });
 
+it("explains a local cleanup conflict without promising recovery by reconnecting", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.typeConflict",
+      toHostId: null,
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(
+    screen.getByText(/Cleanup is incomplete. Review the error and retry cleanup/),
+  ).toBeTruthy();
+  expect(screen.getByText(/A file and folder cannot replace one another/)).toBeTruthy();
+  expect(screen.queryByText(/will be cleaned when the destination reconnects/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Retry cleanup" })).toBeTruthy();
+});
+
 it("shows the specific backup and original destination for manual recovery", () => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({
