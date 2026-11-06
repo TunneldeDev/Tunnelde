@@ -684,6 +684,7 @@
     "backupRecoveryRequired": "A previous destination backup needs recovery. The backup is a hidden .tunnelde file beside the destination; it and the transfer record have been kept.",
     "backupPath": "Backup",
     "backupDestination": "Original destination",
+    "backupLastKnownHint": "Last detected recovery location; check that the files are still there.",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",
     "verifyingTransfer": "Verifying existing data…",

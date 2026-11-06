@@ -125,6 +125,22 @@ it("shows the specific backup and original destination for manual recovery", () 
   expect(screen.getByText("/remote/nested/a.txt")).toBeTruthy();
 });
 
+it("keeps the last known recovery paths visible after a reconnect failure", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.reconnectRequired",
+      toAddress: "user@example:22",
+      backupRecovery: { backup: "/dir/.backup", destination: "/dir/file" },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText(/Last detected recovery location/)).toBeTruthy();
+  expect(screen.getByText("user@example:22:/dir/.backup")).toBeTruthy();
+  expect(screen.getByText("user@example:22:/dir/file")).toBeTruthy();
+});
+
 it("bulk clears finished and failed transfers and keeps deferred remote cleanup visible", async () => {
   const template = useTransfers.getState().items[0]!;
   const pending = {
