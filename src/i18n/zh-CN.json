@@ -599,7 +599,7 @@
     "loading": "正在加载…",
     "invalidName": "请输入有效的文件或文件夹名称",
     "alreadyExists": "已存在同名文件或文件夹",
-    "overwriteUnsupported": "服务器不支持在移动时安全替换此项目，请使用其他名称移动。",
+    "overwriteUnsupported": "服务器不支持安全覆盖此项目，请选择其他目标名称。",
     "overwriteTitle": "替换已有项目？",
     "overwriteBody": "{{path}} 中已存在以下项目：{{names}}。是否替换同名文件并合并文件夹？",
     "overwrite": "替换",

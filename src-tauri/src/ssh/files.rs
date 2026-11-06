@@ -20,6 +20,7 @@ pub mod durable;
 mod local_move;
 mod move_verification;
 mod range_io;
+mod remote_commit;
 mod scheduler;
 pub mod search;
 mod segments;
@@ -559,57 +560,10 @@ pub async fn remote_rename(
 // OpenSSH's extension maps to the server's atomic rename operation. In
 // particular, never delete the destination as a workaround for SFTP v3.
 async fn remote_replace(app: &AppHandle, session_id: &str, from: &str, to: &str) -> AppResult<()> {
-    use russh_sftp::client::RawSftpSession;
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let handle = app.state::<AppState>().ssh.handle(session_id)?;
-        let channel = handle
-            .channel_open_session()
-            .await
-            .map_err(|error| AppError::Ssh(format!("sftp.channel: {error}")))?;
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
-        let raw = RawSftpSession::new(channel.into_stream());
-        let result = posix_replace(&raw, from, to).await;
-        let _ = raw.close_session();
-        result
-    })
-    .await
-    .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
-}
-
-async fn posix_replace(
-    raw: &russh_sftp::client::RawSftpSession,
-    from: &str,
-    to: &str,
-) -> AppResult<()> {
-    use russh_sftp::protocol::Packet;
-    let version = raw.init().await.map_err(map_sftp)?;
-    if version
-        .extensions
-        .get("posix-rename@openssh.com")
-        .map(String::as_str)
-        != Some("1")
-    {
-        return Err(AppError::validation("sftp.overwriteUnsupported"));
-    }
-    let mut payload = Vec::new();
-    for path in [from, to] {
-        let length = u32::try_from(path.len())
-            .map_err(|_| AppError::validation("plugin.tools.invalidPath"))?;
-        payload.extend_from_slice(&length.to_be_bytes());
-        payload.extend_from_slice(path.as_bytes());
-    }
-    match raw
-        .extended("posix-rename@openssh.com", payload)
+    remote_commit::Replacement::connect(app, session_id)
+        .await?
+        .commit(from, to)
         .await
-        .map_err(map_sftp)?
-    {
-        Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
-        Packet::Status(status) => Err(map_sftp(russh_sftp::client::error::Error::Status(status))),
-        _ => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
-    }
 }
 
 pub async fn remote_delete(
@@ -1980,6 +1934,24 @@ async fn durable_copy_file(
     if destination_exists && !overwrite {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
+    let remote_replacement = if overwrite && backup_checkpoint(meter.app, &backup_key)?.is_none() {
+        if let Some(session_id) = &to.session {
+            if file_length(&backup, to_sftp).await?.is_some() {
+                return Err(AppError::validation("sftp.alreadyExists"));
+            }
+            Some(
+                interruptible(
+                    Some(cancel),
+                    remote_commit::Replacement::connect(meter.app, session_id),
+                )
+                .await?,
+            )
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     if partial.is_none() && file_length(&temp, to_sftp).await?.is_some() {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
@@ -2082,6 +2054,14 @@ async fn durable_copy_file(
     }
     if cancel.load(Ordering::SeqCst) {
         return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    if let Some(replacement) = remote_replacement {
+        // Only tasks without an earlier backup transaction enter this path.
+        // A lost acknowledgement leaves the journal available for full target
+        // verification on resume, rather than retrying a destructive fallback.
+        replacement.commit(&temp.path, &to.path).await?;
+        save(true)?;
+        return Ok(());
     }
     // Persist the old target fingerprint before moving it, so both rename
     // crash windows can recover without treating an unrelated file as ours.
@@ -4139,7 +4119,7 @@ mod tests {
         type RecordedRequests = Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 
         struct RenameServer {
-            advertised: bool,
+            advertised: Option<&'static str>,
             received: RecordedRequests,
             result: StatusCode,
         }
@@ -4155,10 +4135,10 @@ mod tests {
                 _extensions: HashMap<String, String>,
             ) -> Result<russh_sftp::protocol::Version, StatusCode> {
                 let mut version = russh_sftp::protocol::Version::new();
-                if self.advertised {
+                if let Some(advertised) = self.advertised {
                     version
                         .extensions
-                        .insert("posix-rename@openssh.com".into(), "1".into());
+                        .insert("posix-rename@openssh.com".into(), advertised.into());
                 }
                 Ok(version)
             }
@@ -4184,14 +4164,19 @@ mod tests {
             russh_sftp::server::run(
                 server,
                 RenameServer {
-                    advertised: true,
+                    advertised: Some("1"),
                     received: received.clone(),
                     result: StatusCode::Ok,
                 },
             )
             .await;
             let raw = russh_sftp::client::RawSftpSession::new(client);
-            posix_replace(&raw, "/源 ' a", "/new\nname").await.unwrap();
+            let replacement = remote_commit::Replacement::negotiate(raw).await.unwrap();
+            assert!(
+                received.lock().unwrap().is_empty(),
+                "negotiation must not mutate files"
+            );
+            replacement.commit("/源 ' a", "/new\nname").await.unwrap();
             let calls = received.lock().unwrap();
             assert_eq!(calls.len(), 1);
             assert_eq!(calls[0].0, "posix-rename@openssh.com");
@@ -4206,8 +4191,11 @@ mod tests {
         #[tokio::test]
         async fn posix_replace_requires_the_extension_and_propagates_failures() {
             for (advertised, status_code, expected_requests) in [
-                (false, StatusCode::Ok, 0),
-                (true, StatusCode::PermissionDenied, 1),
+                (None, StatusCode::Ok, 0),
+                (Some("0"), StatusCode::Ok, 0),
+                (Some("2"), StatusCode::Ok, 0),
+                (Some("1"), StatusCode::PermissionDenied, 1),
+                (Some("1"), StatusCode::Failure, 1),
             ] {
                 let received = Arc::new(std::sync::Mutex::new(Vec::new()));
                 let (client, server) = tokio::io::duplex(8192);
@@ -4221,8 +4209,15 @@ mod tests {
                 )
                 .await;
                 let raw = russh_sftp::client::RawSftpSession::new(client);
-                let error = posix_replace(&raw, "/a", "/b").await.unwrap_err();
-                if !advertised {
+                let error = async {
+                    remote_commit::Replacement::negotiate(raw)
+                        .await?
+                        .commit("/a", "/b")
+                        .await
+                }
+                .await
+                .unwrap_err();
+                if advertised != Some("1") {
                     assert_eq!(error.to_string(), "sftp.overwriteUnsupported");
                 }
                 assert_eq!(received.lock().unwrap().len(), expected_requests);

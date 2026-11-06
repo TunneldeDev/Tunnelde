@@ -192,8 +192,18 @@ offset. Interrupted writes, legacy tasks and changed staging metadata use full p
 verification. A changed source or mismatched partial file is rejected. Verification
 has its own visible status and can be cancelled while awaiting network reads.
 
-Overwrite uses a recoverable, verified backup of the previous destination. For a
-move, source removal happens after the copy succeeds and is checkpointed separately.
+New remote overwrite tasks negotiate `posix-rename@openssh.com` version 1 before
+uploading. The previous destination remains readable while the new file is staged;
+after the staging writer closes, one server-side atomic rename replaces it. These
+tasks create no backup. Unsupported servers reject overwrite before new upload data
+is written; the application never deletes the old file as a fallback. If the commit
+acknowledgement is lost, Resume verifies the completed destination against the source
+before reporting success. This provides atomic publication, not protection against
+privileged interference or concurrent changes to the staging path.
+
+Local overwrite and older remote tasks with a saved backup transaction retain
+the recoverable, verified backup flow. For a move, source removal happens after
+the copy succeeds and is checkpointed separately.
 If the app is interrupted during source removal, Resume preserves both locations
 and reports that manual review is required. An existing source path may have been
 recreated; a missing source and an existing destination alone do not prove that the
@@ -240,7 +250,7 @@ against privileged interference, parent-directory redirection or every commit ra
 Transfer artifact cleanup uses file-only removal. If a staging or backup path
 has become a directory, it is preserved rather than recursively deleted. This
 does not make SFTP or Unix staging-file removal conditional on file identity. SFTP and Unix
-backup cleanup keeps the previous destination even after the new destination was
+backup cleanup for existing backup transactions keeps the previous destination even after the new destination was
 written, with a **Needs review** explanation and both paths. Inspect both files,
 remove the backup yourself if no longer needed, then clear the task. Retrying the
 transfer cannot safely remove it. Recovery paths have buttons to open their parent
