@@ -529,14 +529,70 @@ pub async fn remote_rename(
     let sftp = session(app, session_id).await?;
     let result = async {
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
-        // Let the server perform the rename. Some SFTP servers do not support
-        // replacing an existing destination; in that case return their error
-        // without removing either entry or copying data through the client.
+        if overwrite && remote_exists(&sftp, &to).await? {
+            return remote_replace(app, session_id, &from, &to).await;
+        }
         sftp.rename(from, to).await.map_err(map_sftp)
     }
     .await;
     let _ = sftp.close().await;
     result
+}
+
+// OpenSSH's extension maps to the server's atomic rename operation. In
+// particular, never delete the destination as a workaround for SFTP v3.
+async fn remote_replace(app: &AppHandle, session_id: &str, from: &str, to: &str) -> AppResult<()> {
+    use russh_sftp::client::RawSftpSession;
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        let handle = app.state::<AppState>().ssh.handle(session_id)?;
+        let channel = handle
+            .channel_open_session()
+            .await
+            .map_err(|error| AppError::Ssh(format!("sftp.channel: {error}")))?;
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|error| AppError::Ssh(format!("sftp.subsystem: {error}")))?;
+        let raw = RawSftpSession::new(channel.into_stream());
+        let result = posix_replace(&raw, from, to).await;
+        let _ = raw.close_session();
+        result
+    })
+    .await
+    .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
+}
+
+async fn posix_replace(
+    raw: &russh_sftp::client::RawSftpSession,
+    from: &str,
+    to: &str,
+) -> AppResult<()> {
+    use russh_sftp::protocol::Packet;
+    let version = raw.init().await.map_err(map_sftp)?;
+    if version
+        .extensions
+        .get("posix-rename@openssh.com")
+        .map(String::as_str)
+        != Some("1")
+    {
+        return Err(AppError::validation("sftp.overwriteUnsupported"));
+    }
+    let mut payload = Vec::new();
+    for path in [from, to] {
+        let length = u32::try_from(path.len())
+            .map_err(|_| AppError::validation("plugin.tools.invalidPath"))?;
+        payload.extend_from_slice(&length.to_be_bytes());
+        payload.extend_from_slice(path.as_bytes());
+    }
+    match raw
+        .extended("posix-rename@openssh.com", payload)
+        .await
+        .map_err(map_sftp)?
+    {
+        Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
+        Packet::Status(status) => Err(map_sftp(russh_sftp::client::error::Error::Status(status))),
+        _ => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
+    }
 }
 
 pub async fn remote_delete(
@@ -3087,6 +3143,97 @@ mod tests {
         use std::io::{Read, Seek, SeekFrom, Write};
         use std::sync::atomic::AtomicUsize;
         use tokio::sync::Notify;
+
+        struct RenameServer {
+            advertised: bool,
+            received: Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>,
+            result: StatusCode,
+        }
+
+        impl russh_sftp::server::Handler for RenameServer {
+            type Error = StatusCode;
+            fn unimplemented(&self) -> StatusCode {
+                StatusCode::OpUnsupported
+            }
+            async fn init(
+                &mut self,
+                _version: u32,
+                _extensions: HashMap<String, String>,
+            ) -> Result<russh_sftp::protocol::Version, StatusCode> {
+                let mut version = russh_sftp::protocol::Version::new();
+                if self.advertised {
+                    version
+                        .extensions
+                        .insert("posix-rename@openssh.com".into(), "1".into());
+                }
+                Ok(version)
+            }
+            async fn extended(
+                &mut self,
+                id: u32,
+                request: String,
+                data: Vec<u8>,
+            ) -> Result<russh_sftp::protocol::Packet, StatusCode> {
+                self.received.lock().unwrap().push((request, data));
+                if self.result == StatusCode::Ok {
+                    Ok(russh_sftp::protocol::Packet::Status(status(id)))
+                } else {
+                    Err(self.result)
+                }
+            }
+        }
+
+        #[tokio::test]
+        async fn posix_replace_negotiates_and_encodes_paths_without_copying_data() {
+            let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let (client, server) = tokio::io::duplex(8192);
+            russh_sftp::server::run(
+                server,
+                RenameServer {
+                    advertised: true,
+                    received: received.clone(),
+                    result: StatusCode::Ok,
+                },
+            )
+            .await;
+            let raw = russh_sftp::client::RawSftpSession::new(client);
+            posix_replace(&raw, "/源 ' a", "/new\nname").await.unwrap();
+            let calls = received.lock().unwrap();
+            assert_eq!(calls.len(), 1);
+            assert_eq!(calls[0].0, "posix-rename@openssh.com");
+            let mut expected = Vec::new();
+            for path in ["/源 ' a", "/new\nname"] {
+                expected.extend_from_slice(&(path.len() as u32).to_be_bytes());
+                expected.extend_from_slice(path.as_bytes());
+            }
+            assert_eq!(calls[0].1, expected);
+        }
+
+        #[tokio::test]
+        async fn posix_replace_requires_the_extension_and_propagates_failures() {
+            for (advertised, status_code, expected_requests) in [
+                (false, StatusCode::Ok, 0),
+                (true, StatusCode::PermissionDenied, 1),
+            ] {
+                let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+                let (client, server) = tokio::io::duplex(8192);
+                russh_sftp::server::run(
+                    server,
+                    RenameServer {
+                        advertised,
+                        received: received.clone(),
+                        result: status_code,
+                    },
+                )
+                .await;
+                let raw = russh_sftp::client::RawSftpSession::new(client);
+                let error = posix_replace(&raw, "/a", "/b").await.unwrap_err();
+                if !advertised {
+                    assert_eq!(error.to_string(), "sftp.overwriteUnsupported");
+                }
+                assert_eq!(received.lock().unwrap().len(), expected_requests);
+            }
+        }
 
         #[derive(Default)]
         struct State {
