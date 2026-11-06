@@ -2710,6 +2710,21 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     #[test]
+    fn local_move_to_new_directory_still_uses_rename() {
+        let root = std::env::temp_dir().join(format!("tunnelde-rename-{}", uuid::Uuid::new_v4()));
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::write(source.join("file.txt"), b"content").unwrap();
+        local_rename(display_path(&source), display_path(&target), false).unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(target.join("file.txt")).unwrap(), b"content");
+        std::fs::remove_file(target.join("file.txt")).unwrap();
+        std::fs::remove_dir(target).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
     fn local_move_rejects_directory_merge_without_modifying_either_tree() {
         let root =
             std::env::temp_dir().join(format!("tunnelde-merge-guard-{}", uuid::Uuid::new_v4()));
