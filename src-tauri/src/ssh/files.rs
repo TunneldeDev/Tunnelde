@@ -1695,10 +1695,57 @@ async fn remove_verified_backup(
     expected: &BackupFingerprint,
     cancel: &AtomicBool,
 ) -> AppResult<()> {
+    #[cfg(windows)]
+    if sftp.is_none() {
+        let guard = crate::platform::guarded_file::GuardedFile::deletable(Path::new(&backup.path))?;
+        return remove_guarded_backup(guard, expected, cancel).await;
+    }
     if fingerprint_file(backup, sftp, cancel).await? != *expected {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
     remove_transfer_file(backup, sftp).await
+}
+
+#[cfg(windows)]
+async fn remove_guarded_backup(
+    guard: crate::platform::guarded_file::GuardedFile,
+    expected: &BackupFingerprint,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    use sha2::{Digest, Sha256};
+    let mut reader = tokio::fs::File::from_std(guard.reader()?);
+    reader.seek(std::io::SeekFrom::Start(0)).await?;
+    let metadata = reader.metadata().await?;
+    let stamp = (metadata.len(), metadata.modified().ok().and_then(millis));
+    if stamp != (expected.0, expected.1) {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0; CHUNK];
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(AppError::Ssh(CANCELLED.into()));
+        }
+        let count = interruptible(Some(cancel), async {
+            reader.read(&mut buffer).await.map_err(AppError::from)
+        })
+        .await?;
+        if count == 0 {
+            break;
+        }
+        digest.update(&buffer[..count]);
+    }
+    if format!("{:x}", digest.finalize()) != expected.2 {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    // Close the cloned reader before disposition. All validation and deletion
+    // refer to the same locked object, even if its parent path is redirected.
+    drop(reader);
+    guard.delete()?;
+    Ok(())
 }
 async fn cleanup_backup(
     app: &AppHandle,
@@ -2923,6 +2970,114 @@ mod tests {
         std::fs::write(&artifact.path, b"partial file").unwrap();
         remove_transfer_file(&artifact, None).await.unwrap();
         assert!(!Path::new(&artifact.path).exists());
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn guarded_backup_cleanup_uses_only_the_verified_file_handle() {
+        use crate::platform::guarded_file::GuardedFile;
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-backup-guard-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let backup = Endpoint {
+            session: None,
+            path: display_path(&root.join("backup")),
+        };
+        let replacement = root.join("independent");
+        std::fs::write(&backup.path, vec![7; CHUNK * 2 + 19]).unwrap();
+        std::fs::write(&replacement, b"independent replacement").unwrap();
+        let cancel = AtomicBool::new(false);
+        let expected = fingerprint_file(&backup, None, &cancel).await.unwrap();
+        let guard = GuardedFile::deletable(Path::new(&backup.path)).unwrap();
+        assert!(std::fs::rename(&replacement, &backup.path).is_err());
+        assert!(std::fs::remove_file(&backup.path).is_err());
+        assert!(std::fs::write(&backup.path, b"changed").is_err());
+        remove_guarded_backup(guard, &expected, &cancel)
+            .await
+            .unwrap();
+        assert!(!Path::new(&backup.path).exists());
+        assert_eq!(
+            std::fs::read(&replacement).unwrap(),
+            b"independent replacement"
+        );
+        std::fs::remove_file(replacement).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn guarded_backup_cleanup_preserves_changes_and_cancellation() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-backup-cancel-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let backup = Endpoint {
+            session: None,
+            path: display_path(&root.join("backup")),
+        };
+        let cancel = AtomicBool::new(false);
+        std::fs::write(&backup.path, b"original").unwrap();
+        let mut expected = fingerprint_file(&backup, None, &cancel).await.unwrap();
+        std::fs::write(&backup.path, b"modified").unwrap();
+        // Equal lengths and timestamps must not bypass content validation.
+        expected.1 = std::fs::metadata(&backup.path)
+            .unwrap()
+            .modified()
+            .ok()
+            .and_then(millis);
+        assert_eq!(
+            remove_verified_backup(&backup, None, &expected, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.resumePrefixMismatch"
+        );
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"modified");
+        expected = fingerprint_file(&backup, None, &cancel).await.unwrap();
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(
+            remove_verified_backup(&backup, None, &expected, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"modified");
+        // Cancellation releases the guard; a subsequent retry can proceed.
+        cancel.store(false, Ordering::SeqCst);
+        remove_verified_backup(&backup, None, &expected, &cancel)
+            .await
+            .unwrap();
+        assert!(!Path::new(&backup.path).exists());
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn guarded_backup_cleanup_retries_after_an_existing_writer_closes() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-backup-writer-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let backup = Endpoint {
+            session: None,
+            path: display_path(&root.join("backup")),
+        };
+        let cancel = AtomicBool::new(false);
+        std::fs::write(&backup.path, b"preserved backup").unwrap();
+        let expected = fingerprint_file(&backup, None, &cancel).await.unwrap();
+        let writer = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&backup.path)
+            .unwrap();
+        assert!(remove_verified_backup(&backup, None, &expected, &cancel)
+            .await
+            .is_err());
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"preserved backup");
+        drop(writer);
+        remove_verified_backup(&backup, None, &expected, &cancel)
+            .await
+            .unwrap();
+        assert!(!Path::new(&backup.path).exists());
         std::fs::remove_dir(root).unwrap();
     }
 

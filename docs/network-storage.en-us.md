@@ -181,12 +181,18 @@ Local transfer commits and backup creation use a system rename that refuses to
 replace an existing entry. If another program creates the destination before
 commit, the task fails and preserves that destination, staging data and any
 existing backup. This does not yet solve concurrent changes during move-source
-deletion or successful-transfer backup removal.
+deletion or successful-transfer backup removal on SFTP and Unix paths.
+
+On Windows, successful transfers hold a local backup against ordinary writes,
+renames and deletion while checking its size, modification time and complete
+content digest. Cleanup deletes that same file object through its held handle.
+An existing writer, changed backup or cancellation preserves the backup and the
+journal for retry. This does not isolate privileged or memory-mapped changes.
 
 Transfer artifact cleanup uses file-only removal. If a staging or backup path
 has become a directory, it is preserved rather than recursively deleted. This
-does not make removal conditional on file identity or prevent file replacement
-between checksum verification and removal.
+does not make staging-file removal conditional on file identity; SFTP and Unix
+backup cleanup also retain a verification-to-removal race.
 
 An offline removal persists its cleanup intent before accessing the connection;
 the journal is retained until owned artifacts are cleaned, including across app
