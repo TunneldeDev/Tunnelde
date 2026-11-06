@@ -119,7 +119,7 @@ async fn parallel(
         Ok::<(), AppError>(())
     }
     .await;
-    let closed = files.close().await;
+    let closed = files.finish(result.is_err()).await;
     if result.is_ok() && limit > 0 {
         let minimum_seconds = length as f64 / (f64::from(limit) * 1024.0);
         assert!(
