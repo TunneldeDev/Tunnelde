@@ -93,6 +93,19 @@ it("shows a localized explanation when a directory move is rejected", () => {
   expect(screen.queryByText("sftp.directoryMoveUnavailable")).toBeNull();
 });
 
+it.each([
+  ["sftp.moveRecoverySourcePresent", /an entry now exists at the source path/],
+  ["sftp.moveRecoveryUnverified", /destination cannot be verified from the saved task/],
+])("explains interrupted source removal without expanding task details: %s", (error, message) => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({ ...item, status: "failed", error })),
+  }));
+  const { container } = render(<FileTransfers />);
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.queryByText(error)).toBeNull();
+  expect(container.querySelector(".transfer-task__details")).toBeNull();
+});
+
 it("shows a backup recovery error without expanding task details", () => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({

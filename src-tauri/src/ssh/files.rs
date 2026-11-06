@@ -2054,6 +2054,26 @@ async fn ensure_safe_transfer_move_source(
     Ok(())
 }
 
+/// A path that exists after source removal began may be a different file, even
+/// when its size, timestamp and contents match the original. Legacy journals
+/// also contain no destination digest proving a missing source was copied.
+/// Recovery must therefore preserve both paths and require review.
+async fn interrupted_move_error(from: &Endpoint, sftp: Option<&SftpSession>) -> AppError {
+    let source_exists = match sftp {
+        Some(sftp) => remote_exists(sftp, &from.path).await,
+        None => match tokio::fs::symlink_metadata(&from.path).await {
+            Ok(_) => Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(error) => Err(error.into()),
+        },
+    };
+    match source_exists {
+        Ok(true) => AppError::validation("sftp.moveRecoverySourcePresent"),
+        Ok(false) => AppError::validation("sftp.moveRecoveryUnverified"),
+        Err(error) => error,
+    }
+}
+
 async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
     match sftp {
         Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
@@ -2246,33 +2266,22 @@ async fn run(
     };
 
     if durable && resuming && remove_source {
-        if let Ok(row) = durable::Journal::get(app, id) {
-            if row.deleting_source {
-                let source_exists = match from_sftp.as_ref() {
-                    Some(s) => remote_exists(s, &from.path).await,
-                    None => Path::new(&from.path).try_exists().map_err(AppError::from),
-                };
-                if matches!(source_exists, Ok(false)) {
-                    let target_exists = match to_sftp.as_ref() {
-                        Some(s) => remote_exists(s, &to.path).await,
-                        None => Path::new(&to.path).try_exists().map_err(AppError::from),
-                    };
-                    if let Some(s) = from_sftp {
-                        let _ = s.close().await;
-                    }
-                    if let Some(s) = to_sftp {
-                        let _ = s.close().await;
-                    }
-                    return if matches!(target_exists, Ok(true)) {
-                        Outcome::Done(row.total)
-                    } else {
-                        Outcome::Failed(
-                            row.transferred,
-                            AppError::validation("sftp.resumePrefixMismatch"),
-                        )
-                    };
-                }
+        let recovery = match durable::Journal::get(app, id) {
+            Ok(row) if row.deleting_source => Some((
+                row.transferred,
+                interrupted_move_error(from, from_sftp.as_ref()).await,
+            )),
+            Ok(_) => None,
+            Err(error) => Some((0, error)),
+        };
+        if let Some((transferred, error)) = recovery {
+            if let Some(s) = from_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), s.close()).await;
             }
+            if let Some(s) = to_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), s.close()).await;
+            }
+            return Outcome::from_result(Err(error), transferred, cancel);
         }
     }
     if durable && remove_source {
@@ -2842,6 +2851,85 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn interrupted_move_never_resumes_deletion_or_assumes_success() {
+        let root = temp_root("interrupted-move");
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        let target = root.join("target");
+        for target_contents in [b"original".as_slice(), b"modified", b""] {
+            std::fs::write(&target, target_contents).unwrap();
+            assert_eq!(
+                interrupted_move_error(&source, None).await.to_string(),
+                "sftp.moveRecoveryUnverified"
+            );
+            assert_eq!(std::fs::read(&target).unwrap(), target_contents);
+            // Even an identical replacement must never be treated as the old
+            // source and deleted by a retry.
+            std::fs::write(&source.path, b"original").unwrap();
+            assert_eq!(
+                interrupted_move_error(&source, None).await.to_string(),
+                "sftp.moveRecoverySourcePresent"
+            );
+            assert_eq!(std::fs::read(&source.path).unwrap(), b"original");
+            assert_eq!(std::fs::read(&target).unwrap(), target_contents);
+            std::fs::remove_file(&source.path).unwrap();
+        }
+        std::fs::remove_file(target).unwrap();
+        // An absent destination is not evidence of completion either.
+        assert_eq!(
+            interrupted_move_error(&source, None).await.to_string(),
+            "sftp.moveRecoveryUnverified"
+        );
+        std::fs::create_dir(&source.path).unwrap();
+        assert_eq!(
+            interrupted_move_error(&source, None).await.to_string(),
+            "sftp.moveRecoverySourcePresent"
+        );
+        std::fs::remove_dir(&source.path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn interrupted_move_does_not_hide_source_inspection_errors() {
+        let root = temp_root("interrupted-move-error");
+        let file = root.join("file");
+        std::fs::write(&file, b"preserved").unwrap();
+        let source = Endpoint {
+            session: None,
+            path: format!("{}\0", display_path(&file)),
+        };
+        assert!(matches!(
+            interrupted_move_error(&source, None).await,
+            AppError::Io(_)
+        ));
+        assert_eq!(std::fs::read(&file).unwrap(), b"preserved");
+        std::fs::remove_file(file).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn interrupted_move_preserves_dangling_source_symlinks() {
+        let root = temp_root("interrupted-move-link");
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        std::os::unix::fs::symlink(root.join("missing"), &source.path).unwrap();
+        assert_eq!(
+            interrupted_move_error(&source, None).await.to_string(),
+            "sftp.moveRecoverySourcePresent"
+        );
+        assert!(std::fs::symlink_metadata(&source.path)
+            .unwrap()
+            .is_symlink());
+        std::fs::remove_file(source.path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn local_move_commit_preserves_target_created_after_validation() {
         let root =
@@ -4448,6 +4536,56 @@ mod tests {
             let remaining = std::fs::read(root.join(&backup.path));
             std::fs::remove_dir_all(root).unwrap();
             assert_eq!(remaining.unwrap(), b"independent replacement");
+        }
+
+        #[tokio::test]
+        async fn interrupted_move_preserves_remote_source_entries_and_destinations() {
+            let root = temp_root("sftp-interrupted-move");
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let source = Endpoint {
+                session: Some("test".into()),
+                path: "source".into(),
+            };
+            for target_contents in [b"original".as_slice(), b"modified", b""] {
+                std::fs::write(root.join("target"), target_contents).unwrap();
+                assert_eq!(
+                    interrupted_move_error(&source, Some(&sftp))
+                        .await
+                        .to_string(),
+                    "sftp.moveRecoveryUnverified"
+                );
+                std::fs::write(root.join("source"), b"original").unwrap();
+                assert_eq!(
+                    interrupted_move_error(&source, Some(&sftp))
+                        .await
+                        .to_string(),
+                    "sftp.moveRecoverySourcePresent"
+                );
+                assert_eq!(std::fs::read(root.join("source")).unwrap(), b"original");
+                assert_eq!(std::fs::read(root.join("target")).unwrap(), target_contents);
+                std::fs::remove_file(root.join("source")).unwrap();
+            }
+            std::fs::create_dir(root.join("source")).unwrap();
+            assert_eq!(
+                interrupted_move_error(&source, Some(&sftp))
+                    .await
+                    .to_string(),
+                "sftp.moveRecoverySourcePresent"
+            );
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            assert_eq!(state.read_bytes.load(Ordering::SeqCst), 0);
+            sftp.close().await.unwrap();
+            // An unavailable server must not be mistaken for a missing source.
+            assert_ne!(
+                interrupted_move_error(&source, Some(&sftp))
+                    .await
+                    .to_string(),
+                "sftp.moveRecoveryUnverified"
+            );
+            std::fs::remove_file(root.join("target")).unwrap();
+            std::fs::remove_dir(root.join("source")).unwrap();
+            std::fs::remove_dir(root).unwrap();
         }
 
         #[tokio::test]
