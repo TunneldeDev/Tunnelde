@@ -609,18 +609,37 @@ export function SftpPage({
   }, [load, isSingle]);
 
   useEffect(() => {
-    if (!single || !tabId || panes.a.source.kind !== "local" || !panes.a.state.listing) return;
+    if (!single || !tabId || !panes.a.state.listing) return;
     const saved = useWorkspace.getState().tabs.find((tab) => tab.id === tabId)?.filePane;
     const path = panes.a.state.listing.path;
-    if (!saved || (saved.source.kind === "local" && saved.path === path)) return;
-    useWorkspace
-      .getState()
-      .retainFilePane(
-        tabId,
-        { ...saved, source: LOCAL_SOURCE, path, ownerSessionId: sessionId },
-        t("sftp.thisComputer"),
-      );
-  }, [single, tabId, panes.a.source, panes.a.state.listing, sessionId, t]);
+    const source = panes.a.source;
+    const remote =
+      source.kind === "remote" ? sessions.find((item) => item.id === source.sessionId) : null;
+    // A disappearing session must not erase the identity needed to reconnect.
+    if (source.kind === "remote" && !remote) return;
+    if (
+      !saved ||
+      (saved.source.kind === source.kind &&
+        (source.kind === "local" ||
+          (saved.source.kind === "remote" && saved.source.sessionId === source.sessionId)) &&
+        saved.path === path &&
+        (source.kind === "local" ||
+          (saved.remoteIdentity?.hostId === remote?.hostId &&
+            saved.remoteIdentity?.address === remote?.address)))
+    )
+      return;
+    useWorkspace.getState().retainFilePane(
+      tabId,
+      {
+        ...saved,
+        source,
+        path,
+        ownerSessionId: sessionId,
+        remoteIdentity: remote ? { hostId: remote.hostId, address: remote.address } : undefined,
+      },
+      remote?.title ?? t("sftp.thisComputer"),
+    );
+  }, [single, tabId, panes.a.source, panes.a.state.listing, sessionId, sessions, t]);
 
   useEffect(() => {
     const onChanged = ({ source, origin }: FilesChanged) => {
@@ -637,7 +656,7 @@ export function SftpPage({
     return () => lifetime.abort();
   }, [cache, instanceId, load, preloader, visiblePaneIds]);
 
-  // A panel that points at a session which has ended falls back to this computer.
+  // Keep a detached remote panel available for reconnecting after its session ends.
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const alive = new Set(sessions.map((item) => item.id));
@@ -647,6 +666,15 @@ export function SftpPage({
       });
       if (stale.length === 0) {
         return;
+      }
+      if (single && tabId && stale.includes("a")) {
+        const saved = useWorkspace.getState().tabs.find((tab) => tab.id === tabId);
+        if (saved?.filePane?.remoteIdentity) {
+          useWorkspace
+            .getState()
+            .retainFilePane(tabId, { ...saved.filePane, offline: true }, saved.title);
+          return;
+        }
       }
       const next = { ...panesRef.current };
       for (const id of stale)
@@ -1635,9 +1663,20 @@ export function SftpPage({
           : (useSsh.getState().sessions.find((item) => item.id === source.sessionId)?.title ??
             t("sftp.remote"));
       if (single) {
-        useWorkspace
-          .getState()
-          .retainFilePane(tabId, { source, path: null, ownerSessionId: sessionId }, title);
+        const remote =
+          source.kind === "remote"
+            ? useSsh.getState().sessions.find((item) => item.id === source.sessionId)
+            : undefined;
+        useWorkspace.getState().retainFilePane(
+          tabId,
+          {
+            source,
+            path: null,
+            ownerSessionId: sessionId,
+            remoteIdentity: remote ? { hostId: remote.hostId, address: remote.address } : undefined,
+          },
+          title,
+        );
       } else {
         useWorkspace.getState().renameTab(tabId, title);
       }
@@ -1658,6 +1697,16 @@ export function SftpPage({
         path: model.state.listing?.path ?? requested.current[id].path,
         ownerSessionId: sessionId,
         view: model.view,
+        ...(source.kind === "remote"
+          ? (() => {
+              const remote = useSsh
+                .getState()
+                .sessions.find((item) => item.id === source.sessionId);
+              return remote
+                ? { remoteIdentity: { hostId: remote.hostId, address: remote.address } }
+                : {};
+            })()
+          : {}),
       },
       title:
         source.kind === "local"

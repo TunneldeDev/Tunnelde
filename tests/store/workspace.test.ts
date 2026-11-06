@@ -659,6 +659,40 @@ describe("workspace tabs", () => {
     expect(state().tabs).toEqual([]);
   });
 
+  it("restores remote file panels as disconnected targets without persisting session IDs", () => {
+    const id = state().openFilePane(
+      {
+        source: { kind: "remote", sessionId: "old-secret-session" },
+        path: "/srv/project",
+        ownerSessionId: "old-secret-session",
+        remoteIdentity: { hostId: "a", address: "root@example.com:22" },
+      },
+      "Alpha",
+    );
+    state().openPage("settings");
+    state().splitTab(id, "row");
+    const records = workspaceRecords();
+    expect(records[0]?.state).not.toContain("old-secret-session");
+    state().hydrate(records);
+    expect(state().tabs.find((tab) => tab.id === id)?.filePane).toEqual({
+      source: { kind: "remote", sessionId: "" },
+      path: "/srv/project",
+      ownerSessionId: "",
+      offline: true,
+      remoteIdentity: { hostId: "a", address: "root@example.com:22" },
+    });
+    expect(state().panes).toHaveLength(2);
+  });
+
+  it("rejects malformed remote restoration metadata", () => {
+    const metadata = JSON.stringify({
+      version: 1,
+      remoteFilePanes: { "files:bad": { hostId: "a", address: "host", path: "relative" } },
+    });
+    state().hydrate([{ ...record("files:bad", "sftp"), state: metadata }]);
+    expect(state().tabs).toEqual([]);
+  });
+
   it("opens one tab per SSH session", () => {
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
