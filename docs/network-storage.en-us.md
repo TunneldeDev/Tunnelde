@@ -138,6 +138,13 @@ source through its handle. An open writer, verification failure, cancellation or
 checkpoint failure leaves the source intact. This protection applies to regular
 local files; it does not establish the same guarantee for remote or Unix moves.
 
+Other durable copy-based file moves compare the complete committed destination
+against the source before saving the deletion checkpoint. Truncation, content
+mismatch, detected metadata changes, read/close errors and cancellation preserve
+the source. This extra read applies to moves, not ordinary copies or atomic
+same-host renames. It does not lock SFTP or Unix files against changes between
+verification and deletion; interrupted deletion still requires manual review.
+
 Dragging local entries between different Windows drive letters copies them as
 background transfers; the originals remain in place. Cut and paste uses a background
 move for files. The cut selection clears only after its move succeeds, including

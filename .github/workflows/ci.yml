@@ -184,6 +184,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
+          cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_transfer_commit_preserves
           cargo test --manifest-path src-tauri/Cargo.toml --lib transfer_artifact_
           cargo test --manifest-path src-tauri/Cargo.toml --lib interrupted_move
@@ -220,6 +221,7 @@ jobs:
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
+          cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::guarded_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib guarded_backup
           cargo test --manifest-path src-tauri/Cargo.toml --lib owned_backup_recovery
