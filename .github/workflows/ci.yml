@@ -201,12 +201,14 @@ jobs:
         run: node scripts/ci/reset-rust-cache.mjs src-tauri
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - name: Test Windows file operations and guarded backup cleanup
+      - name: Test Windows file operations, backup cleanup and move guards
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::guarded_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib guarded_backup
           cargo test --manifest-path src-tauri/Cargo.toml --lib owned_backup_recovery
+          cargo test --manifest-path src-tauri/Cargo.toml --lib guarded_move
+          cargo test --manifest-path src-tauri/Cargo.toml --lib move_recovery
 
   hygiene:
     name: Repository hygiene
