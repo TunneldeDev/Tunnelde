@@ -42,6 +42,18 @@ pub struct DurableTransfer {
 }
 pub struct Journal;
 
+pub(super) fn needs_review(error: Option<&str>) -> bool {
+    matches!(
+        error,
+        Some(
+            "sftp.moveRecoverySourcePresent"
+                | "sftp.moveRecoveryUnverified"
+                | "sftp.moveSourceRetained"
+                | "sftp.backupPreserved"
+        )
+    )
+}
+
 pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
     row.error = Some(match error {
         Some(AppError::BackupRecovery {
@@ -63,6 +75,16 @@ pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<Ap
                 destination,
             });
             "sftp.backupUnrecognized".into()
+        }
+        Some(AppError::BackupPreserved {
+            backup,
+            destination,
+        }) => {
+            row.backup_recovery = Some(BackupRecovery {
+                backup,
+                destination,
+            });
+            "sftp.backupPreserved".into()
         }
         Some(error) => error.to_string(),
         None => "sftp.transferTimedOut".into(),
@@ -204,6 +226,21 @@ mod tests {
     use super::*;
 
     #[test]
+    fn review_outcomes_cannot_be_retried_as_transfers() {
+        for error in [
+            "sftp.moveSourceRetained",
+            "sftp.backupPreserved",
+            "sftp.moveRecoverySourcePresent",
+            "sftp.moveRecoveryUnverified",
+        ] {
+            assert!(needs_review(Some(error)));
+        }
+        assert!(!needs_review(None));
+        assert!(!needs_review(Some("sftp.transferTimedOut")));
+        assert!(!needs_review(Some("sftp.resumePrefixMismatch")));
+    }
+
+    #[test]
     fn older_transfer_records_do_not_require_backup_recovery_details() {
         let row: DurableTransfer = serde_json::from_value(serde_json::json!({
             "id": "job", "direction": "transfer", "name": "file",
@@ -264,6 +301,19 @@ mod tests {
         assert_eq!(
             row.backup_recovery.as_ref().unwrap().backup,
             "/unrecognized"
+        );
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupPreserved {
+                backup: "/preserved".into(),
+                destination: "/complete".into(),
+            }),
+        );
+        assert_eq!(row.error.as_deref(), Some("sftp.backupPreserved"));
+        assert_eq!(row.backup_recovery.as_ref().unwrap().backup, "/preserved");
+        assert_eq!(
+            row.backup_recovery.as_ref().unwrap().destination,
+            "/complete"
         );
     }
 
@@ -379,6 +429,9 @@ pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
 #[tauri::command]
 pub fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
     let row = Journal::get(&app, &id)?;
+    if needs_review(row.error.as_deref()) {
+        return Err(AppError::validation(row.error.unwrap_or_default()));
+    }
     let from = super::Endpoint {
         session: resolve_session(
             &app,

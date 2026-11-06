@@ -11,6 +11,8 @@ pub enum AppError {
     BackupRecovery { backup: String, destination: String },
     #[error("sftp.backupUnrecognized")]
     BackupUnrecognized { backup: String, destination: String },
+    #[error("sftp.backupPreserved")]
+    BackupPreserved { backup: String, destination: String },
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -36,9 +38,10 @@ impl AppError {
 
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Validation(_) | Self::BackupRecovery { .. } | Self::BackupUnrecognized { .. } => {
-                "validation"
-            }
+            Self::Validation(_)
+            | Self::BackupRecovery { .. }
+            | Self::BackupUnrecognized { .. }
+            | Self::BackupPreserved { .. } => "validation",
             Self::NotFound(_) => "notFound",
             Self::Db(_) => "database",
             Self::Io(_) => "io",
