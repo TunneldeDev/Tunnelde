@@ -9,6 +9,18 @@
   min-height: 0;
   padding: 0;
 }
+.forwarding-panel__error,
+.forwarding-panel__loading {
+  margin: 0;
+  padding: 12px 16px;
+  color: var(--td-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.forwarding-panel__error {
+  color: var(--td-red);
+}
 .forwarding-panel__host {
   border-bottom: 1px solid var(--td-border);
 }
