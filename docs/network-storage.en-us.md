@@ -171,8 +171,11 @@ files and never deletes source data. Cancelled tasks cannot resume. If cleanup f
 resumed, and automatically retries when the destination reconnects. Its retry
 button can open the connection dialog. The trash action
 **Remove transfer and clean temporary files** deletes task-owned staging files before
-removing the journal. It restores a verified original destination backup if a commit
-was interrupted. Completed destination files and source files are preserved.
+removing the journal. If an interrupted overwrite left an original destination
+backup, cleanup preserves it and the journal rather than risking a concurrent file
+replacement. The task shows the last known backup and destination paths for recovery;
+an unrecognized backup is reported separately. Completed destination files and source
+files are preserved. Automatic no-replace backup restoration is not yet available.
 
 An offline removal persists its cleanup intent before accessing the connection;
 the journal is retained until owned artifacts are cleaned, including across app

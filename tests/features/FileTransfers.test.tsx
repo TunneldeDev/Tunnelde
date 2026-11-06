@@ -123,6 +123,9 @@ it("shows the specific backup and original destination for manual recovery", () 
   expect(screen.getByText("/remote/nested/.tunnelde-job.backup")).toBeTruthy();
   expect(screen.getByText("Original destination")).toBeTruthy();
   expect(screen.getByText("/remote/nested/a.txt")).toBeTruthy();
+  expect(
+    screen.queryByText(/Temporary data will be cleaned when the destination reconnects/),
+  ).toBeNull();
 });
 
 it("warns when the file at a recorded backup path cannot be identified", () => {

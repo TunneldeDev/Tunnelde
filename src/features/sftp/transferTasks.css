@@ -98,6 +98,10 @@
 .transfer-task__details .transfer__limit {
   grid-column: auto;
 }
+.transfer-task__recovery p:has(code) {
+  display: grid;
+  gap: 3px;
+}
 @media (max-width: 520px) {
   .transfer-task {
     padding-inline: 9px;
