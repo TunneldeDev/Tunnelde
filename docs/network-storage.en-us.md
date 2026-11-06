@@ -155,6 +155,11 @@ finished tasks start collapsed. Large groups load 20 rows at a time. Expand a ta
 to inspect source/destination paths, remaining bytes and temporary speed limits.
 The file panes keep their full height while transfers run.
 
+File panes refresh when a background transfer settles, including retries started
+after its original view has closed. A copy refreshes its destination; a move also
+refreshes its source. Nearby completion events are combined into one directory
+read per affected pane, without refreshing unrelated hosts.
+
 Drag the transfer window's title to move it, or drag any edge or corner to resize
 it. Position and size survive closing, restarting and tray window recreation;
 shrinking the application keeps the window inside the visible workbench. Double-click

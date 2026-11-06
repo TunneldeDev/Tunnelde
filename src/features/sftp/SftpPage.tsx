@@ -85,7 +85,6 @@ import { useSettings } from "@/store/settings";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
-import { useTransfers } from "@/store/transfers";
 import { useWorkspace, type FilePaneOptions } from "@/store/workspace";
 import { useSearchRoots } from "@/store/searchRoots";
 import { useFilePreview } from "@/store/filePreview";
@@ -213,21 +212,6 @@ export function SftpPage({
   const openConnect = useDialogs((state) => state.openConnect);
   const openEditor = useWorkspace((state) => state.openEditor);
   const hosts = useHosts((state) => state.hosts);
-  const transferChanges = useTransfers((state) =>
-    state.items.map((item) => `${item.id}:${item.status}:${item.durable}`).join(","),
-  );
-  useEffect(() => {
-    void useTransfers.getState().hydrate();
-  }, []);
-  const pendingTransferIds = useTransfers((state) =>
-    state.items
-      .filter((x) => !x.durable && x.status === "running")
-      .map((x) => x.id)
-      .join(","),
-  );
-  useEffect(() => {
-    if (pendingTransferIds) void useTransfers.getState().hydrate();
-  }, [pendingTransferIds]);
   const clip = useFileClipboard((state) => state.clip);
   const setClip = useFileClipboard((state) => state.set);
   const openMenu = useContextMenu((state) => state.open);
@@ -324,7 +308,6 @@ export function SftpPage({
   useBackgroundGuard(panes.a.state.busy || panes.b.state.busy);
   const [remotePane, setRemotePane] = useState<PaneId | null>(null);
   const [dropTarget, setDropTarget] = useState<{ pane: PaneId; path: string } | null>(null);
-  const [transferEpoch, setTransferEpoch] = useState(0);
   const instanceId = useId();
   useEffect(() => {
     useSearchRoots.getState().publish(
@@ -350,7 +333,6 @@ export function SftpPage({
   const panesRef = useRef(panes);
   const bodies = useRef<Record<PaneId, HTMLDivElement | null>>({ a: null, b: null });
   const columnScroll = useRef(new Map<string, number>());
-  const pending = useRef(new Set<string>());
   const requests = useRef({ a: 0, b: 0 });
   // A refresh must follow an in-flight navigation, whose listing can still show the old path.
   const requested = useRef<Record<PaneId, { path: string | null; historyIndex?: number }>>({
@@ -657,18 +639,29 @@ export function SftpPage({
   }, [single, tabId, panes.a.source, panes.a.state.listing, sessionId, sessions, t]);
 
   useEffect(() => {
+    const affected = new Set<PaneId>();
+    let timer: number | undefined;
     const onChanged = ({ source, origin }: FilesChanged) => {
       if (origin === instanceId) return;
-      preloader.current?.invalidate();
-      cache.current.clear();
       for (const id of visiblePaneIds) {
-        if (sameFilesystem(source, panesRef.current[id].source))
-          void load(id, requested.current[id].path);
+        if (sameFilesystem(source, panesRef.current[id].source)) affected.add(id);
       }
+      if (!affected.size || timer !== undefined) return;
+      // Coalesce a batch's completion events into one read per visible pane.
+      timer = window.setTimeout(() => {
+        timer = undefined;
+        preloader.current?.invalidate();
+        cache.current.clear();
+        for (const id of affected) void load(id, requested.current[id].path);
+        affected.clear();
+      }, 50);
     };
     const lifetime = new AbortController();
     void domainEvents.onFiles(onChanged, lifetime.signal);
-    return () => lifetime.abort();
+    return () => {
+      lifetime.abort();
+      window.clearTimeout(timer);
+    };
   }, [cache, instanceId, load, preloader, visiblePaneIds]);
 
   // Keep a detached remote panel available for reconnecting after its session ends.
@@ -705,29 +698,6 @@ export function SftpPage({
     }, 0);
     return () => window.clearTimeout(timer);
   }, [sessions, load, preferencesFor, visiblePaneIds, setPanes, single, tabId, t]);
-
-  // Both panels refresh once a transfer they started has settled.
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      let settled = false;
-      for (const item of useTransfers.getState().items) {
-        if (item.status !== "running" && pending.current.has(item.id)) {
-          pending.current.delete(item.id);
-          settled = true;
-        }
-      }
-      if (!settled) {
-        return;
-      }
-      for (const id of visiblePaneIds) {
-        preloader.current?.invalidate();
-        cache.current.clear();
-        void load(id, requested.current[id].path);
-        domainEvents.filesChanged({ source: panesRef.current[id].source, origin: instanceId });
-      }
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [cache, transferChanges, transferEpoch, load, instanceId, preloader, visiblePaneIds]);
 
   // Keep sessions with different connection identities separate if a saved host was edited.
   const canonicalSessions = useMemo(() => {
@@ -994,8 +964,6 @@ export function SftpPage({
     try {
       const transferId = await fs.transfer(from, fromPath, to, toPath, move, overwrite);
       if (onDone && isRelevant) watchCutCompletion(transferId, onDone, isRelevant);
-      pending.current.add(transferId);
-      if (mounted.current) setTransferEpoch((value) => value + 1);
     } catch (error) {
       toast(translateError(error), "error");
     }

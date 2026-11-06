@@ -44,6 +44,7 @@ import { usePlugins } from "@/store/plugins";
 import { plugin } from "../fixtures/plugins";
 import * as clipboard from "@/lib/session/clipboard";
 import * as mountedMenu from "@/lib/plugins/mountFileMenu";
+import { domainEvents } from "@/lib/events/domain";
 
 const session: SshSession = {
   id: "session-1",
@@ -769,7 +770,7 @@ describe("SftpPage asynchronous interactions", () => {
         }),
       ),
     );
-    expect(pending).toHaveLength(2);
+    await waitFor(() => expect(pending).toHaveLength(2));
     await act(async () => pending[1]!({ ...localListing, path: "C:\\next", entries: [] }));
     await act(async () =>
       pending[0]!({ ...localListing, path: "C:\\obsolete", entries: localListing.entries }),
@@ -812,7 +813,7 @@ describe("SftpPage asynchronous interactions", () => {
     expect(currentPath()).toBe("C:\\elsewhere");
   });
 
-  it("refreshes both panels when completion arrives before the transfer id response", async () => {
+  it("refreshes the copied destination when completion arrives before the transfer id response", async () => {
     fsMock.transfer.mockImplementation(async () => {
       useTransfers.getState().apply({
         id: "already-done",
@@ -823,18 +824,62 @@ describe("SftpPage asynchronous interactions", () => {
         status: "done",
         error: null,
       });
+      domainEvents.filesChanged({
+        source: { kind: "remote", sessionId: "session-1" },
+        origin: "native-transfer",
+      });
       return "already-done";
     });
     render(<SftpPage sessionId="session-1" />);
     fireEvent.click((await screen.findByText("notes.txt")).closest(".sftp-row")!);
     fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
-    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work"));
     await waitFor(() =>
       expect(fsMock.list).toHaveBeenCalledWith(
         { kind: "remote", sessionId: "session-1" },
         "/srv/app",
       ),
     );
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+  });
+
+  it("coalesces background file changes without rereading unrelated sources", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    await screen.findByText("readme.md");
+    fsMock.list.mockClear();
+    act(() => {
+      for (let index = 0; index < 100; index++) {
+        domainEvents.filesChanged({ source: { kind: "local" }, origin: "background-task" });
+        domainEvents.filesChanged({
+          source: { kind: "remote", sessionId: "unrelated-session" },
+          origin: "background-task",
+        });
+      }
+    });
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledTimes(1));
+    expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+  });
+
+  it("refreshes both endpoints of a background move and cancels queued reads on unmount", async () => {
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    await screen.findByText("readme.md");
+    fsMock.list.mockClear();
+    act(() => {
+      domainEvents.filesChanged({ source: { kind: "local" }, origin: "background-task" });
+      domainEvents.filesChanged({
+        source: { kind: "remote", sessionId: session.id },
+        origin: "background-task",
+      });
+    });
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledTimes(2));
+    expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+    expect(fsMock.list).toHaveBeenCalledWith({ kind: "remote", sessionId: session.id }, "/srv/app");
+    fsMock.list.mockClear();
+    act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "background-task" }));
+    view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(fsMock.list).not.toHaveBeenCalled();
   });
 
   it("removes only successfully moved items from a cut batch and refreshes after partial failure", async () => {
@@ -1252,6 +1297,7 @@ describe("SftpPage asynchronous interactions", () => {
         error: null,
       }),
     );
+    act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "native-transfer" }));
     await waitFor(() =>
       expect(
         fsMock.list.mock.calls.filter(([, path]) => path === "C:\\work").length,

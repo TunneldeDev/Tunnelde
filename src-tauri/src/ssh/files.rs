@@ -967,7 +967,6 @@ fn spawn_transfer_inner(
                 resuming: false,
             },
         );
-        let plugin_transfer = owner.is_some();
         let outcome = if let Some(owner) = owner {
             let state = app_handle.state::<AppState>();
             guard_plugin_transfer(&state.plugins.security, &owner, &mut cancelled, operation).await
@@ -975,12 +974,7 @@ fn spawn_transfer_inner(
             operation.await
         };
         finish(&app_handle, &transfer_id, &name, outcome).await;
-        if plugin_transfer {
-            let _ = app_handle.emit(
-                "plugin://domain-changed",
-                serde_json::json!({"domain":"files","sessionId":to.session}),
-            );
-        }
+        notify_transfer_files(&app_handle, &from, &to, remove_source);
     });
 
     Ok(id)
@@ -1032,8 +1026,33 @@ pub(crate) fn resume_transfer(
         )
         .await;
         finish(&app2, &id, &name, out).await;
+        notify_transfer_files(&app2, &from, &to, row.remove_source);
     });
     Ok(())
+}
+
+fn transfer_changed_sessions<'a>(
+    from: &'a Endpoint,
+    to: &'a Endpoint,
+    remove_source: bool,
+) -> Vec<Option<&'a str>> {
+    let mut sessions = vec![to.session.as_deref()];
+    if remove_source && from.session != to.session {
+        sessions.push(from.session.as_deref());
+    }
+    sessions
+}
+
+fn notify_transfer_files(app: &AppHandle, from: &Endpoint, to: &Endpoint, remove_source: bool) {
+    // Completion may follow a retry from the global task list, after its original
+    // file view closed. Notify every affected source without depending on that view.
+    // Failed and paused transfers can also have committed some directory entries.
+    for session in transfer_changed_sessions(from, to, remove_source) {
+        let _ = app.emit(
+            "plugin://domain-changed",
+            serde_json::json!({"domain":"files","sessionId":session}),
+        );
+    }
 }
 
 async fn guard_plugin_transfer(
@@ -2878,6 +2897,43 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn transfer_changes_cover_modified_endpoints_without_duplicate_notifications() {
+        let local = Endpoint {
+            session: None,
+            path: "local-file".into(),
+        };
+        let remote = Endpoint {
+            session: Some("remote".into()),
+            path: "/remote-file".into(),
+        };
+        let other = Endpoint {
+            session: Some("other".into()),
+            path: "/other-file".into(),
+        };
+        assert_eq!(
+            transfer_changed_sessions(&local, &remote, false),
+            vec![Some("remote")]
+        );
+        assert_eq!(
+            transfer_changed_sessions(&remote, &local, false),
+            vec![None]
+        );
+        assert_eq!(
+            transfer_changed_sessions(&remote, &local, true),
+            vec![None, Some("remote")]
+        );
+        assert_eq!(
+            transfer_changed_sessions(&remote, &other, true),
+            vec![Some("other"), Some("remote")]
+        );
+        assert_eq!(
+            transfer_changed_sessions(&remote, &remote, true),
+            vec![Some("remote")]
+        );
+        assert_eq!(transfer_changed_sessions(&local, &local, true), vec![None]);
+    }
+
     #[tokio::test]
     async fn interrupted_move_never_resumes_deletion_or_assumes_success() {
         let root = temp_root("interrupted-move");
