@@ -16,7 +16,6 @@ export function localConnectionAddress(host: string, port: number | string): str
 export function ForwardRuleEditor({
   rule,
   hostName,
-  connected,
   busy,
   error,
   onSave,
@@ -24,7 +23,6 @@ export function ForwardRuleEditor({
 }: {
   rule: ForwardRule;
   hostName: string;
-  connected: boolean;
   busy: boolean;
   error?: string;
   onSave: (rule: ForwardRule, start: boolean) => void;
@@ -172,14 +170,12 @@ export function ForwardRuleEditor({
           <Button variant="ghost" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" value="save" variant={connected ? "secondary" : "primary"}>
+          <Button type="submit" value="save" variant="secondary">
             {t("common.save")}
           </Button>
-          {connected ? (
-            <Button type="submit" value="start" variant="primary">
-              {t("forward.saveStart")}
-            </Button>
-          ) : null}
+          <Button type="submit" value="start" variant="primary">
+            {t("forward.saveStart")}
+          </Button>
         </div>
       </fieldset>
     </form>
