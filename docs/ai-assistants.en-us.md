@@ -28,10 +28,12 @@ login and model/provider configuration remain on the execution machine.
    machine. Supported remote targets can also offer an explicitly approved private
    installation during initialization. Local agents use their official installer.
    Override the executable only when it is not on that machine's PATH.
-4. Connect an SSH host through the normal host connection UI. Trust and credentials stay
-   in that UI; never paste them into AI messages.
-5. Open **Execution location** in the chat composer. Choose **Local** or a connected host.
-   The host list follows live SSH connections and is independent of model/provider profiles.
+4. Open **Execution location** in the chat composer. Choose **Local**, a connected host,
+   or **Connect · host name** for a saved host. **New host** opens the standard host editor.
+5. Connecting a saved host uses the normal credential and host-key verification dialog.
+   Success selects the host for this conversation without opening a terminal or sending a
+   message. Credentials stay in that dialog; never paste them into AI messages. Model/provider
+   profiles remain independent of the execution location.
 6. The native SFTP resolver reads home/directory metadata without listing the home folder
    or executing a shell. No internal session ID needs to be copied. Optional working
    directories accept `~` and relative paths. Local folders have a native picker.
