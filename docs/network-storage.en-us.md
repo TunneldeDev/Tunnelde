@@ -177,6 +177,12 @@ replacement. The task shows the last known backup and destination paths for reco
 an unrecognized backup is reported separately. Completed destination files and source
 files are preserved. Automatic no-replace backup restoration is not yet available.
 
+Local transfer commits and backup creation use a system rename that refuses to
+replace an existing entry. If another program creates the destination before
+commit, the task fails and preserves that destination, staging data and any
+existing backup. This does not yet solve concurrent changes during move-source
+deletion or successful-transfer backup removal.
+
 An offline removal persists its cleanup intent before accessing the connection;
 the journal is retained until owned artifacts are cleaned, including across app
 restarts. Each cleanup attempt has a bounded wait and cannot run alongside Resume.

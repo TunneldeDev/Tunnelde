@@ -6277,6 +6277,7 @@ dependencies = [
  "rusqlite",
  "russh",
  "russh-sftp",
+ "rustix",
  "semver",
  "serde",
  "serde_json",
@@ -6300,6 +6301,7 @@ dependencies = [
  "wasmi",
  "webview2-com",
  "windows-core",
+ "windows-sys 0.61.2",
  "zip 5.1.1",
 ]
 

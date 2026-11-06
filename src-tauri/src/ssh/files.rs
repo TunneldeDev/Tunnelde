@@ -689,7 +689,7 @@ fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64)
 enum Outcome {
     Done(u64),
     Cancelled(u64),
-    Failed(u64, String),
+    Failed(u64, AppError),
 }
 
 impl Outcome {
@@ -697,13 +697,34 @@ impl Outcome {
         match result {
             Ok(()) => Self::Done(transferred),
             Err(_) if cancel.load(Ordering::SeqCst) => Self::Cancelled(transferred),
-            Err(error) => Self::Failed(transferred, error.to_string()),
+            Err(error) => Self::Failed(transferred, error),
         }
     }
 }
 
 async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let state = app.state::<AppState>();
+    let recovery = match &outcome {
+        Outcome::Failed(
+            _,
+            AppError::BackupRecovery {
+                backup,
+                destination,
+            },
+        )
+        | Outcome::Failed(
+            _,
+            AppError::BackupUnrecognized {
+                backup,
+                destination,
+            },
+        ) => Some(durable::BackupRecovery {
+            backup: backup.clone(),
+            destination: destination.clone(),
+        }),
+        _ => None,
+    };
+    let has_recovery = recovery.is_some();
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
@@ -733,7 +754,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
             total: 0,
             status: TransferStatus::Failed,
             phase: None,
-            error: Some(error),
+            error: Some(error.to_string()),
         },
     };
     let mut event = event;
@@ -741,6 +762,9 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         event.status = TransferStatus::Paused;
     }
     if let Ok(mut row) = durable::Journal::get(app, id) {
+        if let Some(recovery) = recovery {
+            row.backup_recovery = Some(recovery);
+        }
         if event.status == TransferStatus::Cancelled {
             row.status = "cancelling".into();
             row.error = Some("sftp.cancelCleanupFailed".into());
@@ -801,10 +825,12 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let retry_cleanup = event.status == TransferStatus::CleanupPending;
     let event = state.transfers.complete(event);
     emit(app, event);
-    if retry_cleanup {
+    if retry_cleanup || has_recovery {
         // Progress events omit recovery paths. Refresh the durable snapshot only
-        // after the registry is released so cancellation details reach the UI.
+        // after the registry is released so recovery details reach the UI.
         let _ = app.emit("sftp://changed", ());
+    }
+    if retry_cleanup {
         let cleanup_app = app.clone();
         tauri::async_runtime::spawn(async move {
             durable::on_reconnect(&cleanup_app).await;
@@ -1483,7 +1509,20 @@ async fn rename_endpoint(
     match sftp {
         Some(s) => s.rename(&from.path, &to.path).await.map_err(map_sftp),
         None => {
-            tokio::fs::rename(&from.path, &to.path).await?;
+            let source = PathBuf::from(&from.path);
+            let destination = PathBuf::from(&to.path);
+            tokio::task::spawn_blocking(move || {
+                crate::platform::file_ops::rename_noreplace(&source, &destination)
+            })
+            .await
+            .map_err(|e| AppError::internal(e.to_string()))?
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    AppError::validation("sftp.alreadyExists")
+                } else {
+                    AppError::from(error)
+                }
+            })?;
             Ok(())
         }
     }
@@ -1889,7 +1928,10 @@ async fn durable_copy_file(
         if own_backup {
             // An existence check followed by rename could overwrite a file
             // created concurrently. Leave the journal and backup for recovery.
-            return Err(AppError::validation("sftp.backupRecoveryRequired"));
+            return Err(AppError::BackupRecovery {
+                backup: backup.path.clone(),
+                destination: to.path.clone(),
+            });
         }
         return Err(e);
     }
@@ -2077,7 +2119,7 @@ async fn run(
             if from_session == to_session {
                 let sftp = match session(app, from_session).await {
                     Ok(value) => value,
-                    Err(error) => return Outcome::Failed(0, error.to_string()),
+                    Err(error) => return Outcome::Failed(0, error),
                 };
                 let total = measure(from, Some(&sftp)).await.unwrap_or(0);
                 progress(app, id, name, 0, total);
@@ -2149,7 +2191,10 @@ async fn run(
                     return if matches!(target_exists, Ok(true)) {
                         Outcome::Done(row.total)
                     } else {
-                        Outcome::Failed(row.transferred, "sftp.resumePrefixMismatch".into())
+                        Outcome::Failed(
+                            row.transferred,
+                            AppError::validation("sftp.resumePrefixMismatch"),
+                        )
                     };
                 }
             }
@@ -3244,6 +3289,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn local_transfer_commit_preserves_a_destination_created_after_backup() {
+        let root = temp_root("transfer-commit-conflict");
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        let temp = staging_endpoint(&target, "job", "part");
+        let backup = staging_endpoint(&target, "job", "backup");
+        std::fs::write(&target.path, b"old destination").unwrap();
+        std::fs::write(&temp.path, b"incoming").unwrap();
+        rename_endpoint(&target, &backup, None).await.unwrap();
+        std::fs::write(&target.path, b"independent destination").unwrap();
+        assert_eq!(
+            rename_endpoint(&temp, &target, None)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.alreadyExists"
+        );
+        assert_eq!(
+            std::fs::read(&target.path).unwrap(),
+            b"independent destination"
+        );
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"old destination");
+        assert_eq!(std::fs::read(&temp.path).unwrap(), b"incoming");
+        // A concurrently created backup must not be replaced either.
+        assert!(rename_endpoint(&target, &backup, None).await.is_err());
+        assert_eq!(
+            std::fs::read(&target.path).unwrap(),
+            b"independent destination"
+        );
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"old destination");
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn local_editor_checks_content_and_preserves_conflicts_and_deleted_files() {
         let root = temp_root("local-editor");
         let path = root.join("note.txt");
@@ -3340,9 +3421,21 @@ mod tests {
         ));
         cancel.store(false, Ordering::SeqCst);
         match Outcome::from_result(Err(AppError::Ssh("permission denied".into())), 512, &cancel) {
-            Outcome::Failed(512, error) => assert_eq!(error, "permission denied"),
+            Outcome::Failed(512, error) => assert_eq!(error.to_string(), "permission denied"),
             _ => panic!("non-cancellation failure must preserve its error and progress"),
         }
+        let outcome = Outcome::from_result(
+            Err(AppError::BackupRecovery {
+                backup: "/backup".into(),
+                destination: "/target".into(),
+            }),
+            512,
+            &cancel,
+        );
+        assert!(matches!(outcome,
+            Outcome::Failed(512, AppError::BackupRecovery { backup, destination })
+                if backup == "/backup" && destination == "/target"
+        ));
     }
 
     mod protocol_io {
