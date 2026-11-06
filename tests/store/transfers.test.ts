@@ -20,6 +20,20 @@ const running: TransferEvent = {
 beforeEach(() => useTransfers.setState({ items: [] }));
 
 describe("transfer cancellation", () => {
+  it.each([
+    "sftp.moveSourceRetained",
+    "sftp.backupPreserved",
+    "sftp.moveRecoverySourcePresent",
+    "sftp.moveRecoveryUnverified",
+  ])("does not restart a task requiring file review: %s", (error) => {
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "failed", error, durable: true, updatedAt: 1 }],
+    });
+    useTransfers.getState().resume(running.id);
+    expect(resume).not.toHaveBeenCalled();
+    expect(useTransfers.getState().items[0]?.error).toBe(error);
+  });
   it("waits for the backend result and retains cancellation during progress updates", () => {
     vi.spyOn(api, "transferCancel").mockResolvedValue(undefined);
     const store = useTransfers.getState();
@@ -48,6 +62,65 @@ describe("transfer cancellation", () => {
 });
 
 describe("durable transfer controls", () => {
+  it("retains a task limit while resuming instead of silently removing it", () => {
+    vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, status: "paused", durable: true, updatedAt: 1, speedLimitKib: 128 }],
+    });
+    useTransfers.getState().resume(running.id);
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      status: "running",
+      speedLimitKib: 128,
+    });
+  });
+
+  it("hydrates the saved task ceiling after a frontend restart", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      {
+        ...running,
+        status: "paused",
+        updatedAt: 2,
+        fromHostId: null,
+        toHostId: "host",
+        speedLimitKib: 128,
+      },
+    ]);
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(128);
+  });
+
+  it("does not let an older snapshot overwrite a newly changed task ceiling", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    let finish!: (rows: Awaited<ReturnType<typeof transferApi.list>>) => void;
+    vi.spyOn(transferApi, "list").mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    vi.spyOn(transferApi, "setSpeedLimit").mockResolvedValue(undefined);
+    useTransfers.setState({
+      items: [{ ...running, durable: true, updatedAt: 1, speedLimitKib: 128 }],
+    });
+    const hydration = useTransfers.getState().hydrate();
+    await useTransfers.getState().setSpeedLimit(running.id, 256);
+    finish([{ ...running, updatedAt: 2, fromHostId: null, toHostId: "host", speedLimitKib: 128 }]);
+    await hydration;
+    expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(256);
+  });
+
+  it("accepts an explicitly cleared ceiling from a fresh native snapshot", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    useTransfers.setState({
+      items: [{ ...running, durable: true, updatedAt: 1, speedLimitKib: 128 }],
+    });
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      { ...running, updatedAt: 2, fromHostId: null, toHostId: "host", speedLimitKib: 0 },
+    ]);
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(0);
+  });
   it("does not resume cancelled transfers after their temporary data was discarded", () => {
     const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
     useTransfers.setState({
@@ -142,6 +215,43 @@ describe("durable transfer controls", () => {
     expect(useTransfers.getState().items.map((item) => item.id)).toEqual(["plugin"]);
   });
 
+  it("fills endpoint identity from the journal without discarding newer progress", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      {
+        ...running,
+        updatedAt: 1,
+        fromSession: null,
+        toSession: "old",
+        fromHostId: null,
+        toHostId: "host",
+        toAddress: "user@original:22",
+        fromPath: "C:\\source",
+        toPath: "/destination",
+      },
+    ]);
+    useTransfers.getState().apply({ ...running, transferred: 75 });
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      transferred: 75,
+      fromSession: null,
+      toSession: "old",
+      toHostId: "host",
+      toAddress: "user@original:22",
+      fromPath: "C:\\source",
+      toPath: "/destination",
+    });
+    useTransfers
+      .getState()
+      .apply({ ...running, status: "failed", error: "sftp.moveSourceRetained" });
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      fromSession: null,
+      toSession: "old",
+      toHostId: "host",
+      toAddress: "user@original:22",
+    });
+  });
+
   it("loads recovery paths even when the cancellation event is newer than the journal", async () => {
     vi.spyOn(ipc, "isTauri").mockReturnValue(true);
     const backupRecovery = { backup: "/remote/.backup", destination: "/remote/file" };
@@ -187,6 +297,33 @@ describe("durable transfer controls", () => {
     finish([{ ...running, updatedAt: 1, fromHostId: null, toHostId: "host" }]);
     await older;
     expect(useTransfers.getState().items).toHaveLength(0);
+  });
+
+  it("retains staging inspection paths across newer events, hydration and cleanup retries", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    const artifactRecovery = "C:\\downloads\\.tunnelde-job.part";
+    const row = {
+      ...running,
+      status: "cleanupPending" as const,
+      updatedAt: 1,
+      fromHostId: "remote",
+      toHostId: null,
+      artifactRecovery,
+      error: "sftp.transferArtifactUnrecognized",
+    };
+    vi.spyOn(transferApi, "list").mockResolvedValue([row]);
+    vi.spyOn(transferApi, "clear").mockResolvedValue(row);
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.setState({ items: [{ ...running, durable: true, updatedAt: 1 }] });
+    useTransfers.getState().apply({ ...running, status: "cleanupPending", error: row.error });
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]?.artifactRecovery).toBe(artifactRecovery);
+    useTransfers.getState().apply({ ...running, status: "cleanupPending", error: row.error });
+    expect(useTransfers.getState().items[0]?.artifactRecovery).toBe(artifactRecovery);
+    useTransfers.getState().resume(running.id);
+    expect(resume).not.toHaveBeenCalled();
+    await useTransfers.getState().clear(running.id);
+    expect(useTransfers.getState().items[0]).toMatchObject({ artifactRecovery, clearing: false });
   });
 
   it("resumes before progress arrives and never overwrites a fast completion", async () => {

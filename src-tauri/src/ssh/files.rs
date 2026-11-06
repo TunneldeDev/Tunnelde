@@ -152,6 +152,19 @@ impl TransferRegistry {
         flag: Arc<AtomicBool>,
         owner: Option<TransferOwner>,
     ) -> AppResult<()> {
+        self.register_with_limit(id, flag, owner, 0)
+    }
+
+    fn register_with_limit(
+        &self,
+        id: &str,
+        flag: Arc<AtomicBool>,
+        owner: Option<TransferOwner>,
+        speed_limit_kib: u32,
+    ) -> AppResult<()> {
+        if speed_limit_kib > bandwidth::MAX_KIB {
+            return Err(AppError::validation("sftp.invalidSpeedLimit"));
+        }
         let mut state = self
             .inner
             .lock()
@@ -192,6 +205,7 @@ impl TransferRegistry {
             },
         );
         self.bandwidth.register(id);
+        self.bandwidth.set_task(id, speed_limit_kib)?;
         Ok(())
     }
 
@@ -738,13 +752,24 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
                 backup,
                 destination,
             },
+        )
+        | Outcome::Failed(
+            _,
+            AppError::BackupPreserved {
+                backup,
+                destination,
+            },
         ) => Some(durable::BackupRecovery {
             backup: backup.clone(),
             destination: destination.clone(),
         }),
         _ => None,
     };
-    let has_recovery = recovery.is_some();
+    let artifact_recovery = match &outcome {
+        Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path }) => Some(path.clone()),
+        _ => None,
+    };
+    let has_recovery = recovery.is_some() || artifact_recovery.is_some();
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
@@ -784,6 +809,9 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     if let Ok(mut row) = durable::Journal::get(app, id) {
         if let Some(recovery) = recovery {
             row.backup_recovery = Some(recovery);
+        }
+        if let Some(path) = artifact_recovery {
+            row.artifact_recovery = Some(path);
         }
         if event.status == TransferStatus::Cancelled {
             row.status = "cancelling".into();
@@ -927,10 +955,12 @@ fn spawn_transfer_inner(
                 overwrite,
                 transferred: 0,
                 total: 0,
+                speed_limit_kib: 0,
                 status: "running".into(),
                 phase: None,
                 error: None,
                 backup_recovery: None,
+                artifact_recovery: None,
                 updated_at: crate::models::now_ms(),
             },
         )?;
@@ -987,6 +1017,9 @@ pub(crate) fn resume_transfer(
     to: Endpoint,
     row: durable::DurableTransfer,
 ) -> AppResult<()> {
+    if durable::needs_review(row.error.as_deref()) {
+        return Err(AppError::validation(row.error.unwrap_or_default()));
+    }
     if matches!(
         row.status.as_str(),
         "done" | "cancelled" | "cancelling" | "cleanupPending"
@@ -997,9 +1030,12 @@ pub(crate) fn resume_transfer(
     let id = row.id.clone();
     let name = row.name.clone();
     let app2 = app.clone();
-    app.state::<AppState>()
-        .transfers
-        .register(&id, cancel.clone(), None)?;
+    app.state::<AppState>().transfers.register_with_limit(
+        &id,
+        cancel.clone(),
+        None,
+        row.speed_limit_kib,
+    )?;
     let mut row = row;
     row.from_session = from.session.clone();
     row.to_session = to.session.clone();
@@ -1728,21 +1764,31 @@ async fn backup_is_owned(
     }
     Ok(true)
 }
+/// Returns true only when the verified object was deleted through a held guard.
+/// False keeps the object and its checkpoint for explicit review.
 async fn remove_verified_backup(
     backup: &Endpoint,
     sftp: Option<&SftpSession>,
     expected: &BackupFingerprint,
     cancel: &AtomicBool,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     #[cfg(windows)]
     if sftp.is_none() {
         let guard = crate::platform::guarded_file::GuardedFile::deletable(Path::new(&backup.path))?;
-        return remove_guarded_backup(guard, expected, cancel).await;
+        return remove_guarded_backup(guard, expected, cancel)
+            .await
+            .map(|()| true);
     }
     if fingerprint_file(backup, sftp, cancel).await? != *expected {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
-    remove_transfer_file(backup, sftp).await
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    // SFTP v3 and Unix unlink operate on a path, not the verified object.
+    // Another stat or digest would only move the race. Keep the backup and
+    // checkpoint so the caller can expose its location for explicit review.
+    Ok(false)
 }
 
 #[cfg(windows)]
@@ -1790,6 +1836,7 @@ async fn cleanup_backup(
     app: &AppHandle,
     key: &str,
     backup: &Endpoint,
+    destination: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
 ) -> AppResult<()> {
@@ -1797,7 +1844,22 @@ async fn cleanup_backup(
         return Ok(());
     };
     if file_length(backup, sftp).await?.is_some() {
-        remove_verified_backup(backup, sftp, &expected, cancel).await?;
+        match remove_verified_backup(backup, sftp, &expected, cancel).await {
+            Ok(true) => {}
+            Ok(false) => {
+                return Err(AppError::BackupPreserved {
+                    backup: backup.path.clone(),
+                    destination: destination.path.clone(),
+                })
+            }
+            Err(AppError::Validation(message)) if message == "sftp.resumePrefixMismatch" => {
+                return Err(AppError::BackupUnrecognized {
+                    backup: backup.path.clone(),
+                    destination: destination.path.clone(),
+                })
+            }
+            Err(error) => return Err(error),
+        }
     }
     app.state::<AppState>().db.with(|conn| {
         conn.execute("DELETE FROM settings WHERE key=?1", [key])?;
@@ -1846,7 +1908,7 @@ async fn durable_copy_file(
             }
             verify_prefix(&mut source, to, to_sftp, stamp.0, Some(cancel)).await?;
             source.finish().await?;
-            cleanup_backup(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+            cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -1857,21 +1919,35 @@ async fn durable_copy_file(
     };
     save(false)?;
     let temp = staging_endpoint(to, id, "part");
+    #[cfg(windows)]
+    let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     if resuming {
-        artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp).await?;
+        // A missing Windows staging file can reappear between the pin attempt
+        // and recovery. Never truncate such an unrecognized object by path.
+        #[cfg(windows)]
+        let can_recover_window = to_sftp.is_some() || local_staging.is_some();
+        #[cfg(not(windows))]
+        let can_recover_window = true;
+        if can_recover_window {
+            artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp).await?;
+        }
     }
     let partial = if resuming {
         file_length(&temp, to_sftp).await?
     } else {
         None
     };
+    #[cfg(windows)]
+    if to_sftp.is_none() && partial.is_some() && local_staging.is_none() {
+        return Err(AppError::TransferArtifactUnrecognized { path: temp.path });
+    }
     if resuming && partial.is_none() && file_length(to, to_sftp).await? == Some(stamp.0) {
         phase(meter.app, id, "verifying");
         let mut completed = open_reader(from, from_sftp).await?;
         let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
         completed.finish().await?;
         if checked.is_ok() {
-            cleanup_backup(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+            cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             save(true)?;
             meter.add(stamp.0);
             return Ok(());
@@ -1925,6 +2001,15 @@ async fn durable_copy_file(
     } else {
         open_writer(&temp, to_sftp, false).await?
     };
+    #[cfg(windows)]
+    artifacts::record_local_writer(
+        meter.app,
+        id,
+        to,
+        &writer,
+        partial.is_none(),
+        &mut local_staging,
+    )?;
     if existing > 0 {
         match &mut writer {
             Writer::Local(f) => {
@@ -2010,6 +2095,8 @@ async fn durable_copy_file(
         rename_endpoint(to, &backup, to_sftp).await?;
         own_backup = true;
     }
+    #[cfg(windows)]
+    drop(local_staging);
     if let Err(e) = rename_endpoint(&temp, to, to_sftp).await {
         if own_backup {
             // An existence check followed by rename could overwrite a file
@@ -2021,7 +2108,7 @@ async fn durable_copy_file(
         }
         return Err(e);
     }
-    cleanup_backup(meter.app, &backup_key, &backup, to_sftp, cancel).await?;
+    cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
     save(true)?;
     Ok(())
 }
@@ -2404,6 +2491,10 @@ async fn run(
                 }
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
+                // Comparing complete contents does not make a later pathname
+                // unlink conditional. Preserve both endpoints unless the file
+                // objects remain guarded through source deletion.
+                move_verification::require_guarded_deletion(guarded, cancel)?;
                 if cancel.load(Ordering::SeqCst) {
                     return Err(AppError::Ssh(CANCELLED.into()));
                 }
@@ -2416,19 +2507,14 @@ async fn run(
                 return Err(AppError::Ssh(CANCELLED.into()));
             }
             if durable {
-                match from_sftp.as_ref() {
-                    Some(sftp) => sftp.remove_file(&from.path).await.map_err(map_sftp)?,
-                    None => {
-                        #[cfg(windows)]
-                        if let Some(verified) = verified_local_move {
-                            verified.delete(cancel)?;
-                        } else {
-                            tokio::fs::remove_file(&from.path).await?;
-                        }
-                        #[cfg(not(windows))]
-                        tokio::fs::remove_file(&from.path).await?;
-                    }
+                #[cfg(windows)]
+                if let Some(verified) = verified_local_move {
+                    verified.delete(cancel)?;
+                } else {
+                    return Err(AppError::validation("sftp.moveSourceRetained"));
                 }
+                #[cfg(not(windows))]
+                return Err(AppError::validation("sftp.moveSourceRetained"));
             } else {
                 remove_endpoint(from, from_sftp.as_ref()).await?;
             }
@@ -3359,6 +3445,55 @@ mod tests {
         std::fs::remove_dir(root).unwrap();
     }
 
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn backup_cleanup_preserves_unix_objects_and_open_writers() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-backup-retained-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let backup = Endpoint {
+            session: None,
+            path: display_path(&root.join("backup")),
+        };
+        std::fs::write(&backup.path, b"old destination").unwrap();
+        let cancel = AtomicBool::new(false);
+        let expected = fingerprint_file(&backup, None, &cancel).await.unwrap();
+        let writer = std::fs::OpenOptions::new()
+            .write(true)
+            .open(&backup.path)
+            .unwrap();
+        assert!(!remove_verified_backup(&backup, None, &expected, &cancel)
+            .await
+            .unwrap());
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"old destination");
+        // Keep the original inode open while putting an identical file at its
+        // former path. A matching digest is still not permission to unlink it.
+        let modified = writer.metadata().unwrap().modified().unwrap();
+        std::fs::rename(&backup.path, root.join("original")).unwrap();
+        std::fs::write(&backup.path, b"old destination").unwrap();
+        std::fs::File::options()
+            .write(true)
+            .open(&backup.path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert!(!remove_verified_backup(&backup, None, &expected, &cancel)
+            .await
+            .unwrap());
+        assert_eq!(std::fs::read(&backup.path).unwrap(), b"old destination");
+        assert_eq!(
+            std::fs::read(root.join("original")).unwrap(),
+            b"old destination"
+        );
+        cancel.store(true, Ordering::SeqCst);
+        assert!(remove_verified_backup(&backup, None, &expected, &cancel)
+            .await
+            .is_err());
+        drop(writer);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
     #[tokio::test]
     async fn owned_backup_recovery_cleans_only_fingerprint_matched_files_after_commit() {
         let root =
@@ -4557,7 +4692,7 @@ mod tests {
                 .unwrap();
             std::fs::remove_file(root.join(&target.path)).unwrap();
             assert_eq!(
-                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
+                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected), None)
                     .await
                     .unwrap_err()
                     .to_string(),
@@ -4570,7 +4705,7 @@ mod tests {
             );
             std::fs::write(root.join(&target.path), b"new independent destination").unwrap();
             assert_eq!(
-                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
+                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected), None)
                     .await
                     .unwrap_err()
                     .to_string(),
@@ -4621,8 +4756,7 @@ mod tests {
         }
 
         #[tokio::test]
-        #[ignore = "known race: SFTP remove is not conditional on the verified file identity"]
-        async fn backup_cleanup_must_not_delete_a_concurrent_replacement() {
+        async fn backup_cleanup_preserves_original_and_replacements_without_path_unlink() {
             let root = temp_root("backup-remove-race");
             let backup = Endpoint {
                 session: Some("test".into()),
@@ -4636,11 +4770,109 @@ mod tests {
                 .await
                 .unwrap();
             state.replace_before_remove.store(true, Ordering::SeqCst);
-            let _ = remove_verified_backup(&backup, Some(&sftp), &expected, &cancel).await;
+            assert!(
+                !remove_verified_backup(&backup, Some(&sftp), &expected, &cancel)
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            assert_eq!(
+                std::fs::read(root.join(&backup.path)).unwrap(),
+                b"original backup"
+            );
+            // A replacement can have exactly the recorded bytes and timestamp.
+            // Even a successful fingerprint check must not authorize unlink.
+            let modified = std::fs::metadata(root.join(&backup.path))
+                .unwrap()
+                .modified()
+                .unwrap();
+            std::fs::remove_file(root.join(&backup.path)).unwrap();
+            std::fs::write(root.join(&backup.path), b"original backup").unwrap();
+            std::fs::File::options()
+                .write(true)
+                .open(root.join(&backup.path))
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+            assert!(
+                !remove_verified_backup(&backup, Some(&sftp), &expected, &cancel)
+                    .await
+                    .unwrap()
+            );
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            std::fs::write(root.join(&backup.path), b"independent replacement").unwrap();
+            assert!(
+                remove_verified_backup(&backup, Some(&sftp), &expected, &cancel)
+                    .await
+                    .is_err()
+            );
             sftp.close().await.unwrap();
             let remaining = std::fs::read(root.join(&backup.path));
             std::fs::remove_dir_all(root).unwrap();
             assert_eq!(remaining.unwrap(), b"independent replacement");
+        }
+
+        #[tokio::test]
+        async fn move_verification_preserves_sftp_sources_after_copy_and_concurrent_changes() {
+            let root = temp_root("sftp-move-retained");
+            let state = Arc::new(State::default());
+            state.replace_before_remove.store(true, Ordering::SeqCst);
+            let sftp = client(&root, state.clone()).await;
+            let cancel = AtomicBool::new(false);
+            for (remote_from, remote_to) in [(true, false), (false, true), (true, true)] {
+                let source = Endpoint {
+                    session: remote_from.then(|| "test".into()),
+                    path: if remote_from {
+                        "source".into()
+                    } else {
+                        display_path(&root.join("source"))
+                    },
+                };
+                let target = Endpoint {
+                    session: remote_to.then(|| "test".into()),
+                    path: if remote_to {
+                        "target".into()
+                    } else {
+                        display_path(&root.join("target"))
+                    },
+                };
+                std::fs::write(root.join("source"), b"complete copy").unwrap();
+                std::fs::write(root.join("target"), b"complete copy").unwrap();
+                move_verification::verify(
+                    &source,
+                    &target,
+                    remote_from.then_some(sftp.as_ref()),
+                    remote_to.then_some(sftp.as_ref()),
+                    &cancel,
+                )
+                .await
+                .unwrap();
+                std::fs::rename(root.join("source"), root.join("old-source")).unwrap();
+                std::fs::write(root.join("source"), b"replacement source").unwrap();
+                std::fs::write(root.join("target"), b"changed target").unwrap();
+                assert_eq!(
+                    move_verification::require_guarded_deletion(false, &cancel)
+                        .unwrap_err()
+                        .to_string(),
+                    "sftp.moveSourceRetained"
+                );
+                assert_eq!(
+                    std::fs::read(root.join("source")).unwrap(),
+                    b"replacement source"
+                );
+                assert_eq!(
+                    std::fs::read(root.join("old-source")).unwrap(),
+                    b"complete copy"
+                );
+                assert_eq!(
+                    std::fs::read(root.join("target")).unwrap(),
+                    b"changed target"
+                );
+                assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+                std::fs::remove_file(root.join("old-source")).unwrap();
+            }
+            sftp.close().await.unwrap();
+            std::fs::remove_dir_all(root).unwrap();
         }
 
         #[tokio::test]

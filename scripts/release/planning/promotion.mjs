@@ -109,8 +109,7 @@ export async function maintainReleasePr({ github, context, plan }) {
       marker.sourceSha === plan.dev &&
       marker.baseSha === plan.main
     ) {
-      await checkReleasePullRequest({ github, context, number: prs[0].number, sha: previous });
-      return;
+      return checkReleasePullRequest({ github, context, number: prs[0].number, sha: previous });
     }
   }
   const contents = {
@@ -147,20 +146,19 @@ export async function maintainReleasePr({ github, context, plan }) {
     });
     number = pr.number;
   }
-  await checkReleasePullRequest({ github, context, number, sha });
+  const checked = await checkReleasePullRequest({ github, context, number, sha });
   if (legacyDraft)
     await github.graphql(
       "mutation($id: ID!) { markPullRequestReadyForReview(input: {pullRequestId: $id}) { pullRequest { id } } }",
       { id: legacyDraft },
     );
+  return checked;
 }
 
 export async function checkReleasePullRequest({ github, context, number, sha }) {
   await checkPullRequest({ github, context, number, expectedHead: sha });
-  // GITHUB_TOKEN writes do not trigger pull_request; dispatch checks explicitly.
-  await github.rest.actions.createWorkflowDispatch({
-    ...context.repo,
-    workflow_id: "ci.yml",
-    ref: RELEASE_BRANCH,
-  });
+  // Bot-created PR runs may require a maintainer's approval. A workflow_dispatch
+  // run is a separate suite and does not release that pending PR run. Do not
+  // spend another full CI matrix on each dev update or bypass review here.
+  return { number, sha };
 }

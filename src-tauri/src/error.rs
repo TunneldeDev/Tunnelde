@@ -11,6 +11,12 @@ pub enum AppError {
     BackupRecovery { backup: String, destination: String },
     #[error("sftp.backupUnrecognized")]
     BackupUnrecognized { backup: String, destination: String },
+    #[error("sftp.backupPreserved")]
+    BackupPreserved { backup: String, destination: String },
+    #[error("sftp.transferArtifactUnrecognized")]
+    // Recovery records are shared, but production identity checks are Windows-only.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    TransferArtifactUnrecognized { path: String },
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -36,9 +42,11 @@ impl AppError {
 
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Validation(_) | Self::BackupRecovery { .. } | Self::BackupUnrecognized { .. } => {
-                "validation"
-            }
+            Self::Validation(_)
+            | Self::BackupRecovery { .. }
+            | Self::BackupUnrecognized { .. }
+            | Self::BackupPreserved { .. }
+            | Self::TransferArtifactUnrecognized { .. } => "validation",
             Self::NotFound(_) => "notFound",
             Self::Db(_) => "database",
             Self::Io(_) => "io",
