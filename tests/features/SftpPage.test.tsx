@@ -134,6 +134,33 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("independently configures visible columns and reorders headers", async () => {
+    const { container } = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const panes = container.querySelectorAll<HTMLElement>(".sftp-pane");
+    const local = panes[0]!;
+    const remote = panes[1]!;
+    fireEvent.click(within(local).getByRole("button", { name: "View options" }));
+    const menuItem = screen.getByRole("menuitemcheckbox", { name: /Show column.*Type/i });
+    fireEvent.click(menuItem);
+    expect(local.querySelector(".sftp-columns__type")).toBeNull();
+    expect(remote.querySelector(".sftp-columns__type")).toBeTruthy();
+    const data = new Map<string, string>();
+    const transfer = {
+      types: ["application/x-tunnelde-file-column"],
+      setData: (k: string, v: string) => data.set(k, v),
+      getData: (k: string) => data.get(k) ?? "",
+      effectAllowed: "move",
+    };
+    fireEvent.dragStart(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
+    fireEvent.drop(local.querySelector(".sftp-columns__name")!, { dataTransfer: transfer });
+    expect([...local.querySelectorAll(".sftp-columns th")].map((el) => el.className)).toEqual([
+      "sftp-columns__size",
+      "sftp-columns__name",
+      "sftp-columns__modified",
+    ]);
+  });
+
   it("uses macOS file shortcuts without deleting while typing", async () => {
     const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
     try {
@@ -823,6 +850,51 @@ describe("SftpPage asynchronous interactions", () => {
 });
 
 describe("SftpPage source picker", () => {
+  it("renames the file tab when the selected host changes", async () => {
+    useSsh.setState({
+      sessions: [session, { ...session, id: "session-2", hostId: "host-2", title: "other server" }],
+    });
+    useWorkspace.setState({
+      tabs: [
+        { id: "sftp:session-1", kind: "sftp", title: "web-01", hostId: "host-1", pinned: false },
+      ],
+    });
+    render(<SftpPage sessionId="session-1" tabId="sftp:session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "Source" })[1]!);
+    fireEvent.click(
+      within(screen.getByRole("listbox", { name: "Source" })).getByRole("option", {
+        name: "other server",
+      }),
+    );
+    expect(useWorkspace.getState().tabs[0]?.title).toBe("other server");
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "remote", sessionId: "session-2" }, null),
+    );
+  });
+  it("moves a cut file between sessions of the same host with a remote rename", async () => {
+    useSsh.setState({ sessions: [session, { ...session, id: "session-2" }] });
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "remote", sessionId: "session-2" },
+        action: "cut",
+        items: [{ path: "/tmp/source.txt", name: "source.txt", isDir: false }],
+      },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[1]!, { key: "v", ctrlKey: true });
+    await waitFor(() =>
+      expect(fsMock.rename).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/tmp/source.txt",
+        "/srv/app/source.txt",
+        false,
+      ),
+    );
+    expect(fsMock.transfer).not.toHaveBeenCalled();
+  });
+
   it("lists one row per host even when the host has several sessions", () => {
     useSsh.setState({ sessions: [session, { ...session, id: "session-2" }] });
     render(<SftpPage sessionId="session-1" />);
@@ -835,6 +907,31 @@ describe("SftpPage source picker", () => {
       .getAllByRole("option")
       .map((option) => option.textContent);
     expect(labels).toEqual(["This computer", "web-01"]);
+  });
+
+  it("keeps old and new addresses separate when a saved host is edited", async () => {
+    useSsh.setState({
+      sessions: [session, { ...session, id: "session-2", address: "root@10.0.0.6:22" }],
+    });
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "remote", sessionId: "session-2" },
+        action: "cut",
+        items: [{ path: "/tmp/source.txt", name: "source.txt", isDir: false }],
+      },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    fireEvent.click(screen.getAllByRole("button", { name: "Source" })[0]!);
+    const popup = screen.getByRole("listbox", { name: "Source" });
+    expect(within(popup).getByRole("option", { name: "web-01 (root@10.0.0.5:22)" })).toBeTruthy();
+    expect(within(popup).getByRole("option", { name: "web-01 (root@10.0.0.6:22)" })).toBeTruthy();
+    fireEvent.keyDown(screen.getAllByRole("listbox", { name: "Files" })[1]!, {
+      key: "v",
+      ctrlKey: true,
+    });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    expect(fsMock.rename).not.toHaveBeenCalled();
   });
 });
 

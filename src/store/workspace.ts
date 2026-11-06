@@ -138,6 +138,7 @@ interface WorkspaceStore {
   hydrate: (records: TabRecord[]) => void;
   removeHost: (hostId: string) => void;
   renameHost: (hostId: string, title: string) => void;
+  renameTab: (tabId: string, title: string) => void;
   ensureWelcome: () => void;
 }
 
@@ -516,7 +517,9 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     openSftp: (session) => {
       set((state) =>
         insert(state, {
-          id: `sftp:${session.id}`,
+          id: state.tabs.some((tab) => tab.id === `sftp:${session.id}`)
+            ? `sftp:${session.id}:copy:${crypto.randomUUID()}`
+            : `sftp:${session.id}`,
           kind: "sftp",
           title: session.title,
           hostId: session.hostId,
@@ -625,6 +628,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             : id.startsWith(`editor:${sessionId}:`)
           : id === `terminal:${sessionId}` ||
             id === `sftp:${sessionId}` ||
+            id.startsWith(`sftp:${sessionId}:copy:`) ||
             id === `history:${sessionId}` ||
             id === `monitor:${sessionId}`;
 
@@ -1087,6 +1091,13 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout, tabs) };
       });
     },
+
+    renameTab: (tabId, title) =>
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          tab.id === tabId && tab.title !== title ? { ...tab, title } : tab,
+        ),
+      })),
 
     renameHost: (hostId, title) =>
       set((state) => ({

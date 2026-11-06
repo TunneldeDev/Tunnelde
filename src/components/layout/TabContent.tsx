@@ -52,9 +52,12 @@ function TabBody({
     case "sftp":
       return (
         <SftpPage
-          sessionId={tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "")}
+          sessionId={
+            tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "").split(":copy:")[0]!
+          }
           single={tab.filePane}
-          scopeId={tab.filePane ? tab.id : undefined}
+          scopeId={tab.filePane || tab.id.includes(":copy:") ? tab.id : undefined}
+          tabId={tab.id}
         />
       );
     case "editor":

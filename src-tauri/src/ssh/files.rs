@@ -529,10 +529,9 @@ pub async fn remote_rename(
     let sftp = session(app, session_id).await?;
     let result = async {
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
-        if remote_exists(&sftp, &to).await? {
-            copy_remote_entry(&sftp, &from, &to, overwrite).await?;
-            return remove_remote_entry(&sftp, &from).await;
-        }
+        // Let the server perform the rename. Some SFTP servers do not support
+        // replacing an existing destination; in that case return their error
+        // without removing either entry or copying data through the client.
         sftp.rename(from, to).await.map_err(map_sftp)
     }
     .await;

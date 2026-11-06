@@ -32,6 +32,31 @@ describe("file panel preferences", () => {
       ).toBe(false);
     }
   });
+  it("round trips column order and widths separately and bounds untrusted stored values", () => {
+    const key = fileViewPreferenceKey("main", "host:a", "a", "local");
+    writeFileViewPreferences(key, {
+      ...defaults,
+      filesColumns: ["size", "name"],
+      filesColumnWidths: { size: 123, name: 345 },
+    });
+    expect(readFileViewPreferences(key, defaults)).toMatchObject({
+      filesColumns: ["size", "name"],
+      filesColumnWidths: { size: 123, name: 345 },
+    });
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        view: {
+          filesColumns: ["size", "bad", "size"],
+          filesColumnWidths: { size: 1, name: 5000, type: "invalid" },
+        },
+      }),
+    );
+    expect(readFileViewPreferences(key, defaults)).toMatchObject({
+      filesColumns: ["name", "size"],
+      filesColumnWidths: { size: 56, name: 1000 },
+    });
+  });
   it("rejects invalid stored fields and bounds accumulated host preferences", () => {
     const key = fileViewPreferenceKey("main", "host:a", "a", "local");
     localStorage.setItem(

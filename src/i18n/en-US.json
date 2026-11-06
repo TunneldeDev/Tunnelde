@@ -611,6 +611,7 @@
     "notRegularFile": "Only regular files can be edited",
     "fileTooLarge": "Text editing is limited to files up to 2 MB",
     "viewOptions": "View options",
+    "showColumn": "Show column",
     "detailsView": "Details view",
     "columnsView": "Column view",
     "editPath": "Edit path",
