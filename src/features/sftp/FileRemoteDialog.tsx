@@ -12,6 +12,11 @@ import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 
+function currentSession(host: Host, sessions: SshSession[]): SshSession | undefined {
+  const address = `${host.username}@${host.host}:${host.port}`;
+  return sessions.find((session) => session.hostId === host.id && session.address === address);
+}
+
 export function FileRemoteDialog({
   onClose,
   onConnected,
@@ -75,7 +80,7 @@ export function FileRemoteDialog({
             className="sftp-remotes__host"
             key={host.id}
             onClick={() => {
-              const existing = sessions.find((session) => session.hostId === host.id);
+              const existing = currentSession(host, sessions);
               if (existing) {
                 onConnected(existing);
                 onClose();
@@ -87,9 +92,7 @@ export function FileRemoteDialog({
               <strong>{host.name}</strong>
               <small>{hostSubtitle(host.username, host.host, host.port)}</small>
             </span>
-            {sessions.some((session) => session.hostId === host.id) ? (
-              <small>{t("sftp.connected")}</small>
-            ) : null}
+            {currentSession(host, sessions) ? <small>{t("sftp.connected")}</small> : null}
           </button>
         ))}
         {!matches.length ? (
