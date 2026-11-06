@@ -16,6 +16,8 @@ mod artifacts;
 pub mod bandwidth;
 mod compressed;
 pub mod durable;
+#[cfg(windows)]
+mod local_move;
 mod range_io;
 mod scheduler;
 pub mod search;
@@ -2332,6 +2334,15 @@ async fn run(
                 return Err(AppError::validation("sftp.alreadyExists"));
             }
         }
+        // Lock both file objects across verification and deletion for a local
+        // Windows move. Acquire the source before copying, so it cannot be
+        // replaced with an identical-looking file while the transfer runs.
+        #[cfg(windows)]
+        let local_move = if durable && remove_source && from_sftp.is_none() && to_sftp.is_none() {
+            Some(local_move::Source::open(Path::new(&from.path))?)
+        } else {
+            None
+        };
         copy_entry(
             from,
             to,
@@ -2348,6 +2359,13 @@ async fn run(
             return Err(AppError::Ssh(CANCELLED.into()));
         }
         if remove_source {
+            #[cfg(windows)]
+            let verified_local_move = if let Some(source) = local_move {
+                phase(app, id, "verifying");
+                Some(source.verify(Path::new(&to.path), cancel).await?)
+            } else {
+                None
+            };
             if durable {
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
@@ -2359,7 +2377,16 @@ async fn run(
             if durable {
                 match from_sftp.as_ref() {
                     Some(sftp) => sftp.remove_file(&from.path).await.map_err(map_sftp)?,
-                    None => tokio::fs::remove_file(&from.path).await?,
+                    None => {
+                        #[cfg(windows)]
+                        if let Some(verified) = verified_local_move {
+                            verified.delete(cancel)?;
+                        } else {
+                            tokio::fs::remove_file(&from.path).await?;
+                        }
+                        #[cfg(not(windows))]
+                        tokio::fs::remove_file(&from.path).await?;
+                    }
                 }
             } else {
                 remove_endpoint(from, from_sftp.as_ref()).await?;

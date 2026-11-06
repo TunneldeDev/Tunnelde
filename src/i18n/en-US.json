@@ -672,6 +672,7 @@
     "reconnectRequired": "Connect the original host before resuming",
     "resumePrefixMismatch": "Partial file differs from source. Restart to a new target.",
     "resumeSourceChanged": "Source changed; restart to a new target.",
+    "moveVerificationFailed": "The copied file differs from the source. Both files were kept. Check the destination before retrying the move.",
     "moveRecoveryUnverified": "The move was interrupted while removing its source. The source is missing, and the destination cannot be verified from the saved task. Check the destination before clearing this task.",
     "moveRecoverySourcePresent": "The move was interrupted while removing its source, and an entry now exists at the source path. Check both locations; the source will not be removed automatically.",
     "directoryMoveUnavailable": "Moving folders between sources is temporarily unavailable to protect source data. Copy the folder instead; the source will be retained.",
