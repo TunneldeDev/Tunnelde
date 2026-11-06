@@ -1522,7 +1522,7 @@ async fn copy_entry(
             Ok::<(), AppError>(())
         }
         .await;
-        let closed = files.close().await;
+        let closed = files.finish(copied.is_err()).await;
         return copied.and(closed);
     }
     let mut reader = open_reader(from, from_sftp).await?;
@@ -2254,7 +2254,7 @@ async fn parallel_copy_file(
         Ok::<(), AppError>(())
     }
     .await;
-    let closed = files.close().await;
+    let closed = files.finish(result.is_err()).await;
     if result.is_err() && closed.is_ok() {
         let recovered = tokio::time::timeout(
             std::time::Duration::from_secs(5),
@@ -4480,7 +4480,7 @@ mod tests {
                     .unwrap();
                     offset = end;
                 }
-                files.close().await.unwrap();
+                files.finish(false).await.unwrap();
                 assert_eq!(std::fs::read(root.join("target.part")).unwrap(), content);
                 assert_eq!(copied, (content.len() - prefix) as u64);
                 assert_eq!(
@@ -4552,7 +4552,7 @@ mod tests {
                 .await
                 .unwrap();
                 assert!(start.elapsed() >= std::time::Duration::from_millis(220));
-                files.close().await.unwrap();
+                files.finish(false).await.unwrap();
                 assert_eq!(progress, content.len() as u64);
                 assert_eq!(std::fs::read(root.join("target.part")).unwrap(), content);
                 drop(sessions);
@@ -4597,7 +4597,7 @@ mod tests {
             )
             .await
             .is_err());
-            assert!(files.close().await.is_err());
+            assert!(files.finish(false).await.is_err());
             assert_eq!(state.closes.load(Ordering::SeqCst), 1);
             assert_eq!(
                 std::fs::metadata(root.join("target.part")).unwrap().len(),
@@ -4652,7 +4652,7 @@ mod tests {
             }
             state.hold_read.store(false, Ordering::SeqCst);
             state.release_read.notify_one();
-            files.close().await.unwrap();
+            files.finish(false).await.unwrap();
             drop(sessions);
             std::fs::remove_dir_all(root).unwrap();
         }

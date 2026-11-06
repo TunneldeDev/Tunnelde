@@ -231,3 +231,29 @@ async fn worker_errors_do_not_desynchronize_following_requests() {
     drop(session);
     fixture.await.unwrap();
 }
+
+#[tokio::test]
+async fn aborting_read_only_transport_closes_peer_and_releases_unacknowledged_requests() {
+    let (client, mut server) = duplex(4096);
+    server.write_all(MAGIC).await.unwrap();
+    let session = Arc::new(Session::new(client).await.unwrap());
+    let mut peer = BufReader::new(server);
+    let reading = session.clone();
+    let request = tokio::spawn(async move { reading.read("1", 0, 4096).await });
+    let mut line = String::new();
+    peer.read_line(&mut line).await.unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&line).unwrap()["op"], "read");
+    assert_eq!(session.slots.available_permits(), 63);
+    session.abort();
+    tokio::time::timeout(Duration::from_millis(500), async {
+        assert!(request.await.unwrap().is_err());
+        assert_eq!(peer.read(&mut [0]).await.unwrap(), 0);
+        assert_eq!(session.slots.available_permits(), 64);
+        assert!(session
+            .open("/cannot-reuse-aborted-channel", false)
+            .await
+            .is_err());
+    })
+    .await
+    .expect("interrupted read-only transport retained its peer or requests");
+}
