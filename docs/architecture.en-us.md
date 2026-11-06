@@ -92,7 +92,11 @@ under `transfer-file:<id>:…`, and overwrite recovery intent under
 `transfer-backup:<id>:…`. Stable host IDs and endpoint addresses rebind tasks after
 reconnecting. Clean unchanged checkpoints use bounded head/tail verification;
 crashed, changed or legacy checkpoints retain full prefix verification. Source stamps and owned-backup checks support resume and
-overwrite recovery, but do not make file operations atomic against concurrent changes. Plugin transfers retain runtime ownership instead of acquiring
+overwrite recovery, but do not make file operations atomic against concurrent changes.
+New remote overwrite tasks without a backup transaction negotiate an independent
+SFTP commit channel before upload and publish the closed staging file with the
+OpenSSH atomic rename extension; they never create or unlink a backup. Existing
+backup transactions retain their recovery records. Plugin transfers retain runtime ownership instead of acquiring
 restart-persistent permissions.
 
 The transfer scheduler atomically reserves source and destination channel budgets
