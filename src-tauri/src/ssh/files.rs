@@ -2150,6 +2150,17 @@ async fn run(
             }
         }
     }
+    if durable && remove_source {
+        if let Err(error) = ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await {
+            if let Some(sftp) = from_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+            }
+            if let Some(sftp) = to_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+            }
+            return Outcome::from_result(Err(error), 0, cancel);
+        }
+    }
     let measured = interruptible(Some(cancel), measure(from, from_sftp.as_ref())).await;
     if cancel.load(Ordering::SeqCst) {
         if let Some(sftp) = from_sftp {
@@ -2169,9 +2180,6 @@ async fn run(
         let _ = durable::Journal::upsert(app, row);
     }
     let result = async {
-        if durable && remove_source {
-            ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
-        }
         if !resuming && from.session == to.session {
             match from_sftp.as_ref() {
                 Some(sftp) => {
