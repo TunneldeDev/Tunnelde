@@ -49,7 +49,7 @@ describe("Dialog keyboard and focus", () => {
       </>,
     );
     await waitFor(() =>
-      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close" })),
+      expect(document.activeElement).toBe(screen.getByRole("button", { name: "Action" })),
     );
     act(() => opener.focus());
     fireEvent.keyDown(opener, { key: "Tab", shiftKey: true });
