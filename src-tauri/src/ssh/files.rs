@@ -904,6 +904,7 @@ fn spawn_transfer_inner(
                 to_path: to.path.clone(),
                 remove_source,
                 deleting_source: false,
+                move_digest: None,
                 overwrite,
                 transferred: 0,
                 total: 0,
@@ -1545,6 +1546,20 @@ async fn verify_range(
     length: u64,
     cancel: Option<&AtomicBool>,
 ) -> AppResult<()> {
+    verify_range_with_digest(reader, partial, sftp, offset, length, cancel, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn verify_range_with_digest(
+    reader: &mut Reader,
+    partial: &Endpoint,
+    sftp: Option<&SftpSession>,
+    offset: u64,
+    length: u64,
+    cancel: Option<&AtomicBool>,
+    mut digest: Option<&mut sha2::Sha256>,
+) -> AppResult<()> {
+    use sha2::Digest;
     let mut other = open_reader(partial, sftp).await?;
     let mut left = length;
     let mut a = vec![0; CHUNK];
@@ -1575,6 +1590,9 @@ async fn verify_range(
             }
             if a[..n] != b[..n] {
                 return Err(AppError::validation("sftp.resumePrefixMismatch"));
+            }
+            if let Some(digest) = digest.as_deref_mut() {
+                digest.update(&a[..n]);
             }
             left -= n as u64;
         }
@@ -2043,14 +2061,25 @@ async fn verify_move_destination(
     from_sftp: Option<&SftpSession>,
     to_sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
-) -> AppResult<()> {
+) -> AppResult<String> {
+    use sha2::{Digest, Sha256};
     let source_before = source_stamp(from, from_sftp).await?;
     let target_before = source_stamp(to, to_sftp).await?;
     if source_before.0 != target_before.0 {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
     let mut source = open_reader(from, from_sftp).await?;
-    let checked = verify_prefix(&mut source, to, to_sftp, source_before.0, Some(cancel)).await;
+    let mut digest = Sha256::new();
+    let checked = verify_range_with_digest(
+        &mut source,
+        to,
+        to_sftp,
+        0,
+        source_before.0,
+        Some(cancel),
+        Some(&mut digest),
+    )
+    .await;
     let closed = source.finish().await;
     checked?;
     closed?;
@@ -2058,6 +2087,26 @@ async fn verify_move_destination(
         || source_stamp(to, to_sftp).await? != target_before
     {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+async fn verify_move_recovery_target(
+    target: &Endpoint,
+    sftp: Option<&SftpSession>,
+    expected_digest: Option<&str>,
+    expected_size: u64,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    let expected =
+        expected_digest.ok_or_else(|| AppError::validation("sftp.moveRecoveryUnverified"))?;
+    let (size, _, digest) = match fingerprint_file(target, sftp, cancel).await {
+        Ok(fingerprint) => fingerprint,
+        Err(error) if cancel.load(Ordering::SeqCst) => return Err(error),
+        Err(_) => return Err(AppError::validation("sftp.moveRecoveryUnverified")),
+    };
+    if size != expected_size || digest != expected {
+        return Err(AppError::validation("sftp.moveRecoveryUnverified"));
     }
     Ok(())
 }
@@ -2261,23 +2310,23 @@ async fn run(
                     None => Path::new(&from.path).try_exists().map_err(AppError::from),
                 };
                 if matches!(source_exists, Ok(false)) {
-                    let target_exists = match to_sftp.as_ref() {
-                        Some(s) => remote_exists(s, &to.path).await,
-                        None => Path::new(&to.path).try_exists().map_err(AppError::from),
-                    };
+                    let verified = verify_move_recovery_target(
+                        to,
+                        to_sftp.as_ref(),
+                        row.move_digest.as_deref(),
+                        row.total,
+                        cancel,
+                    )
+                    .await;
                     if let Some(s) = from_sftp {
                         let _ = s.close().await;
                     }
                     if let Some(s) = to_sftp {
                         let _ = s.close().await;
                     }
-                    return if matches!(target_exists, Ok(true)) {
-                        Outcome::Done(row.total)
-                    } else {
-                        Outcome::Failed(
-                            row.transferred,
-                            AppError::validation("sftp.resumePrefixMismatch"),
-                        )
+                    return match verified {
+                        Ok(()) => Outcome::Done(row.total),
+                        Err(error) => Outcome::from_result(Err(error), row.transferred, cancel),
                     };
                 }
             }
@@ -2351,13 +2400,15 @@ async fn run(
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
                 phase(app, id, "verifying");
-                verify_move_destination(from, to, from_sftp.as_ref(), to_sftp.as_ref(), cancel)
-                    .await?;
+                let digest =
+                    verify_move_destination(from, to, from_sftp.as_ref(), to_sftp.as_ref(), cancel)
+                        .await?;
                 if cancel.load(Ordering::SeqCst) {
                     return Err(AppError::Ssh(CANCELLED.into()));
                 }
                 let mut row = durable::Journal::get(app, id)?;
                 row.deleting_source = true;
+                row.move_digest = Some(digest);
                 row.total = meter.total;
                 durable::Journal::upsert(app, row)?;
             }
@@ -2904,6 +2955,55 @@ mod tests {
         assert_eq!(std::fs::read(&source.path).unwrap(), b"source contents");
         std::fs::remove_file(source.path).unwrap();
         std::fs::remove_file(target.path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn move_recovery_requires_a_matching_persisted_content_digest() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-move-recovery-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        std::fs::write(&source.path, b"verified").unwrap();
+        std::fs::write(&target.path, b"verified").unwrap();
+        let cancel = AtomicBool::new(false);
+        let digest = verify_move_destination(&source, &target, None, None, &cancel)
+            .await
+            .unwrap();
+        std::fs::remove_file(&source.path).unwrap();
+        verify_move_recovery_target(&target, None, Some(&digest), 8, &cancel)
+            .await
+            .unwrap();
+        assert_eq!(
+            verify_move_recovery_target(&target, None, None, 8, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.moveRecoveryUnverified"
+        );
+        std::fs::write(&target.path, b"replaced").unwrap();
+        assert_eq!(
+            verify_move_recovery_target(&target, None, Some(&digest), 8, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.moveRecoveryUnverified"
+        );
+        std::fs::remove_file(&target.path).unwrap();
+        assert_eq!(
+            verify_move_recovery_target(&target, None, Some(&digest), 8, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.moveRecoveryUnverified"
+        );
         std::fs::remove_dir(root).unwrap();
     }
 
@@ -4468,7 +4568,20 @@ mod tests {
             verify_move_destination(&remote, &local, Some(&sftp), None, &cancel)
                 .await
                 .unwrap();
+            let digest = verify_move_destination(&local, &remote, None, Some(&sftp), &cancel)
+                .await
+                .unwrap();
+            verify_move_recovery_target(&remote, Some(&sftp), Some(&digest), 17, &cancel)
+                .await
+                .unwrap();
             std::fs::write(root.join("remote"), b"changed! contents").unwrap();
+            assert_eq!(
+                verify_move_recovery_target(&remote, Some(&sftp), Some(&digest), 17, &cancel)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "sftp.moveRecoveryUnverified"
+            );
             assert_eq!(
                 verify_move_destination(&local, &remote, None, Some(&sftp), &cancel)
                     .await

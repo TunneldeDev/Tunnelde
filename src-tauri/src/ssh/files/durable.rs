@@ -29,6 +29,8 @@ pub struct DurableTransfer {
     pub remove_source: bool,
     #[serde(default)]
     pub deleting_source: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_digest: Option<String>,
     pub overwrite: bool,
     pub transferred: u64,
     pub total: u64,
