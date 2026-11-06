@@ -21,7 +21,13 @@ export function MenuItems({
       ) : null}
       <button
         type="button"
-        role={item.checked === undefined ? "menuitem" : "menuitemradio"}
+        role={
+          item.checked === undefined
+            ? "menuitem"
+            : item.checkable === "checkbox"
+              ? "menuitemcheckbox"
+              : "menuitemradio"
+        }
         aria-label={item.label}
         aria-describedby={item.description ? `${id}-description-${index}` : undefined}
         aria-checked={item.checked}

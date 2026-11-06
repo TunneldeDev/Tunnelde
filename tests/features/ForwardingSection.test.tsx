@@ -3,6 +3,35 @@ import { beforeEach, expect, it, vi } from "vitest";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 vi.mock("@/lib/api/ipc", () => ({ isTauri: () => true, api: {} }));
+vi.mock("@/features/connect/ConnectDialog", () => ({
+  ConnectDialog: ({
+    onConnected,
+    onClose,
+  }: {
+    onConnected: (session: unknown) => void;
+    onClose: () => void;
+  }) => (
+    <button
+      onClick={() => {
+        const session = {
+          id: "forward",
+          hostId: "host",
+          title: "server",
+          address: "user@server:22",
+          cols: 80,
+          rows: 24,
+          connectedAt: 1,
+          purpose: "forwarding",
+        };
+        useSsh.setState((state) => ({ sessions: [...state.sessions, session] }));
+        onConnected(session);
+        onClose();
+      }}
+    >
+      Connect forwarding
+    </button>
+  ),
+}));
 import "@/i18n/i18n";
 import { ForwardingSection, type ForwardRule } from "@/features/forwarding/ForwardingSection";
 import type { Host } from "@/lib/api/types";
@@ -22,7 +51,9 @@ beforeEach(() => {
       return rows[0];
     }
     if (command === "forwarding_start") {
-      rows = rows.map((r) => ({ ...r, active: true, sessionId: args.sessionId }));
+      rows = rows.map((r) =>
+        r.id === args.id ? { ...r, active: true, sessionId: args.sessionId } : r,
+      );
     }
     if (command === "forwarding_stop") {
       rows = rows.map((r) => ({ ...r, active: false, sessionId: null }));
@@ -31,7 +62,61 @@ beforeEach(() => {
   useSsh.setState({ sessions: [] });
   useDialogs.setState({ confirm: vi.fn(), openConnect: vi.fn() });
 });
-it("saves reusable rules, requires a connection, then starts and stops without manual session configuration", async () => {
+it("starts multiple ports on the same forwarding connection and clears stale status after disconnect", async () => {
+  rows = ["one", "two"].map((id, index) => ({
+    id,
+    hostId: "host",
+    name: id,
+    mode: "local",
+    bindHost: "127.0.0.1",
+    bindPort: 8000 + index,
+    targetHost: "127.0.0.1",
+    targetPort: 80,
+    active: false,
+    sessionId: null,
+  }));
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Start all" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect forwarding" }));
+  await waitFor(() => expect(screen.getAllByText("Running")).toHaveLength(2));
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "one", sessionId: "forward" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "two", sessionId: "forward" });
+  act(() => useSsh.setState({ sessions: [] }));
+  await waitFor(() => expect(screen.queryAllByText("Running")).toHaveLength(0));
+  expect(screen.getAllByText("Stopped")).toHaveLength(2);
+});
+it("continues starting other ports when one fails", async () => {
+  rows = ["one", "two"].map((id, index) => ({
+    id,
+    hostId: "host",
+    name: id,
+    mode: "local",
+    bindHost: "127.0.0.1",
+    bindPort: 8000 + index,
+    targetHost: "127.0.0.1",
+    targetPort: 80,
+    active: false,
+    sessionId: null,
+  }));
+  connect();
+  const implementation = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation(async (command, args) => {
+    if (command === "forwarding_start" && args.id === "one") throw new Error("Port occupied");
+    return implementation(command, args);
+  });
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Start all" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("one: Port occupied");
+  expect(screen.getByText("Running")).toBeTruthy();
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "two", sessionId: "current" });
+});
+it("keeps disconnect available when a background connection has no remaining rules", async () => {
+  connect();
+  render(<ForwardingSection host={host} />);
+  expect(await screen.findByRole("button", { name: "Disconnect" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Start all" })).toBeNull();
+});
+it("starts a saved rule using a dedicated connection, then stops it", async () => {
   await act(async () => {
     render(<ForwardingSection host={host} />);
   });
@@ -39,7 +124,8 @@ it("saves reusable rules, requires a connection, then starts and stops without m
   fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Database" } });
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Database");
-  expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect forwarding" }));
   expect(invokeMock).toHaveBeenCalledWith("forwarding_save", {
     rule: expect.objectContaining({
       hostId: "host",
@@ -47,31 +133,10 @@ it("saves reusable rules, requires a connection, then starts and stops without m
       targetHost: "127.0.0.1",
     }),
   });
-  await act(async () => {
-    useSsh.setState({
-      sessions: [
-        {
-          id: "connected",
-          hostId: "host",
-          title: "server",
-          address: "user@server:22",
-          cols: 80,
-          rows: 24,
-          connectedAt: 1,
-        },
-      ],
-    });
-  });
-  await waitFor(() =>
-    expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(
-      false,
-    ),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Start" }));
   await screen.findByText("Running");
   expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
     id: "rule",
-    sessionId: "connected",
+    sessionId: "forward",
   });
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await screen.findByText("Stopped");
@@ -91,7 +156,7 @@ it("requires confirmation before saving a listener exposed to other devices", as
   expect(invokeMock).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
 });
 
-it("explains endpoint ownership when changing direction and starts in the originating terminal session", async () => {
+it("explains endpoint ownership and never reuses a terminal session", async () => {
   useSsh.setState({
     sessions: ["other", "current"].map((id) => ({
       id,
@@ -104,9 +169,9 @@ it("explains endpoint ownership when changing direction and starts in the origin
     })),
   });
   await act(async () => {
-    render(<ForwardingSection host={host} initialSessionId="current" />);
+    render(<ForwardingSection host={host} />);
   });
-  expect(screen.getByRole("button", { name: "SSH session" }).textContent).toContain("current");
+  expect(screen.queryByRole("button", { name: "SSH session" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
   expect(screen.getByLabelText("Local listen address")).toBeTruthy();
   expect(screen.getByLabelText("Remote service address")).toBeTruthy();
@@ -117,8 +182,9 @@ it("explains endpoint ownership when changing direction and starts in the origin
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("Share local app");
   fireEvent.click(screen.getByRole("button", { name: "Start" }));
+  fireEvent.click(screen.getByRole("button", { name: "Connect forwarding" }));
   await screen.findByText("Running");
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "rule", sessionId: "current" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "rule", sessionId: "forward" });
 });
 
 const connect = () =>
@@ -132,16 +198,15 @@ const connect = () =>
         cols: 80,
         rows: 24,
         connectedAt: 0,
+        purpose: "forwarding",
       },
     ],
   });
 
-it("offers connecting even with no saved rules, and keeps the editor separate from the list", async () => {
+it("keeps the editor separate from the list", async () => {
   render(<ForwardingSection host={host} />);
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
-  expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(host);
   fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
-  expect(screen.queryByRole("button", { name: "Save and start" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Save and start" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Save" }));
   await screen.findByText("127.0.0.1:80", { selector: "strong" });
   expect(invokeMock).toHaveBeenCalledWith("forwarding_save", {
@@ -163,7 +228,6 @@ it("saves and starts once, then offers editing and deletion in the rule menu", a
   await screen.findByText("Running");
   expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "rule", sessionId: "current" });
   expect(invokeMock.mock.calls.filter(([cmd]) => cmd === "forwarding_save")).toHaveLength(1);
-  expect(screen.getByText("Connect your application to 127.0.0.1:15432")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Actions for 127.0.0.1:5432" }));
   expect((screen.getByRole("menuitem", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
   expect(screen.getByRole("menuitem", { name: "Delete" })).toBeTruthy();

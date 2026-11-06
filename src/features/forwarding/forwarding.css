@@ -1,12 +1,13 @@
 .forwarding {
   container-type: inline-size;
   display: grid;
-  gap: 16px;
+  gap: 10px;
   min-width: 0;
 }
 
 .forwarding__head,
 .forwarding__tools,
+.forwarding__group-actions,
 .forward-connection,
 .forward-rule__head,
 .forward-editor__actions {
@@ -65,7 +66,7 @@
   display: grid;
   justify-items: center;
   gap: 10px;
-  padding: 24px 12px;
+  padding: 12px 0;
   text-align: center;
   color: var(--td-muted);
   font-size: 12px;
@@ -86,8 +87,8 @@
 
 .forward-rule {
   display: grid;
-  gap: 12px;
-  padding: 16px 0;
+  gap: 7px;
+  padding: 10px 0;
   min-width: 0;
   border-bottom: 1px solid var(--td-border);
 }
@@ -127,15 +128,23 @@
 .forward-rule__status.is-running {
   color: var(--td-green);
 }
+.forward-rule__status::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: middle;
+}
 
 .forward-rule__route {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--td-panel);
-  border-radius: var(--td-radius-sm);
+  gap: 8px;
+  padding: 0;
 }
 
 .forward-rule__route > div {
@@ -283,22 +292,12 @@
 
 @container (max-width: 420px) {
   .forward-direction,
-  .forward-endpoints,
-  .forward-rule__route {
+  .forward-endpoints {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .forward-endpoints__arrow,
-  .forward-rule__route > svg {
+  .forward-endpoints__arrow {
     justify-self: center;
     transform: rotate(90deg);
-  }
-
-  .forward-rule__head {
-    flex-wrap: wrap;
-  }
-
-  .forward-rule__identity {
-    flex-basis: calc(100% - 80px);
   }
 }

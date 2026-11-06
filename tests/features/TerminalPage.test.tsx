@@ -143,8 +143,6 @@ import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
-import { useHosts } from "@/store/hosts";
-import type { Host } from "@/lib/api/types";
 import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useContextMenu } from "@/store/contextMenu";
 import { previewColors } from "@/lib/prefs/colors";
@@ -1000,16 +998,7 @@ describe("live command history", () => {
   });
 });
 
-it("opens forwarding directly from the SSH toolbar and restores toolbar focus on close", async () => {
-  useHosts.setState({ hosts: [{ id: "h1", name: "My server" } as Host] });
+it("keeps forwarding out of the terminal toolbar", () => {
   render(<TerminalPage sessionId="s1" active />);
-  const button = screen.getByRole("button", { name: "Port forwarding" });
-  button.focus();
-  fireEvent.click(button);
-  const dialog = await screen.findByRole("dialog", { name: "Port forwarding" });
-  expect(dialog.textContent).toContain("My server");
-  expect(screen.getByRole("button", { name: "Add forward" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
-  expect(screen.queryByRole("dialog", { name: "Port forwarding" })).toBeNull();
-  expect(document.activeElement).toBe(button);
+  expect(screen.queryByRole("button", { name: "Port forwarding" })).toBeNull();
 });

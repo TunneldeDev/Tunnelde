@@ -28,4 +28,4 @@
 
 存储位置属于本机配置，不包含在设置导出和 profile 中。系统凭据、外部密钥文件、
 工作区文件以及远端文件不参与迁移。更多边界说明见
-[设置文档](settings.md#storage-locations)。
+[设置文档](settings.zh-cn.md#存储位置)。

@@ -119,12 +119,12 @@ describe("settings discovery and scoped resets", () => {
         return;
       }
       const toggle = row("showDockIconInBackground").getByRole("switch");
-      expect(toggle.getAttribute("aria-checked")).toBe("true");
-      await act(async () => fireEvent.click(toggle));
-      expect(update).toHaveBeenLastCalledWith({ showDockIconInBackground: false });
       expect(toggle.getAttribute("aria-checked")).toBe("false");
-      await act(async () => fireEvent.click(row("showDockIconInBackground").getByRole("button")));
+      await act(async () => fireEvent.click(toggle));
       expect(update).toHaveBeenLastCalledWith({ showDockIconInBackground: true });
+      expect(toggle.getAttribute("aria-checked")).toBe("true");
+      await act(async () => fireEvent.click(row("showDockIconInBackground").getByRole("button")));
+      expect(update).toHaveBeenLastCalledWith({ showDockIconInBackground: false });
     },
   );
 

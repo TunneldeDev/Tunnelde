@@ -62,13 +62,14 @@ export const useSsh = create<SshStore>((set, get) => ({
   },
 
   connect: (request, onError) => {
-    const existing = connections.get(request.hostId);
+    const connectionKey = `${request.hostId}:${request.purpose ?? (request.background ? "background" : "terminal")}`;
+    const existing = connections.get(connectionKey);
     if (existing) {
       return existing;
     }
     set((state) => ({
       connectingHostId: request.hostId,
-      connectingHostIds: [...state.connectingHostIds, request.hostId],
+      connectingHostIds: [...new Set([...state.connectingHostIds, request.hostId])],
     }));
     const operation = (async () => {
       try {
@@ -84,14 +85,18 @@ export const useSsh = create<SshStore>((set, get) => ({
         else toast(translateError(error), "error");
         return null;
       } finally {
-        connections.delete(request.hostId);
+        connections.delete(connectionKey);
         set((state) => {
-          const connectingHostIds = state.connectingHostIds.filter((id) => id !== request.hostId);
+          const connectingHostIds = [...connections.keys()].some((key) =>
+            key.startsWith(`${request.hostId}:`),
+          )
+            ? state.connectingHostIds
+            : state.connectingHostIds.filter((id) => id !== request.hostId);
           return { connectingHostIds, connectingHostId: connectingHostIds.at(-1) ?? null };
         });
       }
     })();
-    connections.set(request.hostId, operation);
+    connections.set(connectionKey, operation);
     return operation;
   },
 

@@ -158,6 +158,29 @@ describe("editor document contracts and contributed formatters", () => {
     expect(useEditors.getState().isDirty(tabId)).toBe(true);
   });
 
+  it("keeps a queued editor action bound to the document active when it was requested", async () => {
+    const pending = deferred<unknown>();
+    usePlugins.setState({
+      items: [{ ...plugin, commands: [{ id: "other", title: "Other" }, ...plugin.commands] }],
+    });
+    vi.spyOn(useWorkspace.getState(), "openPluginView").mockImplementation(() => {});
+    vi.mocked(api.pluginRun).mockReturnValueOnce(pending.promise).mockResolvedValueOnce({
+      text: "formatted original",
+    });
+    const first = openPluginAction({ id: plugin.id, command: "other" });
+    const second = openPluginAction({ id: plugin.id, command: "format" });
+    await vi.waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(1));
+    useWorkspace.setState({ activeId: "another-tab" });
+    pending.resolve({ text: "done" });
+    await Promise.all([first, second]);
+    expect(api.pluginRun).toHaveBeenLastCalledWith(
+      plugin.id,
+      "format",
+      expect.objectContaining({ document: expect.objectContaining({ tabId }) }),
+    );
+    expect(useEditors.getState().entries[tabId]?.content).toBe("formatted original");
+  });
+
   it("bounds command requests and prevents two format operations from racing", async () => {
     const pending = deferred<unknown>();
     vi.mocked(api.pluginRun).mockReturnValue(pending.promise);

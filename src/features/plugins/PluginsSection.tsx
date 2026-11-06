@@ -13,9 +13,13 @@ import {
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
-import { Select } from "@/components/ui/form/Select";
 import { OverlayScrollArea } from "@/components/ui/display/OverlayScrollArea";
-import { matchesPlugin, pluginTags, PLUGIN_PAGE_SIZE } from "@/lib/plugins/discovery";
+import {
+  matchesPlugin,
+  pluginTags,
+  togglePluginTag,
+  PLUGIN_PAGE_SIZE,
+} from "@/lib/plugins/discovery";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { useMarketplace, boundTo, newerVersion } from "@/store/marketplace";
@@ -41,7 +45,6 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
     query,
     tag,
     page,
-    setTag,
     setPage,
     scope,
     tasks,
@@ -70,10 +73,6 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
   );
   const search = query.trim();
   const matches = (p: Parameters<typeof matchesPlugin>[0]) => matchesPlugin(p, query, tag);
-  const tags = [
-    ...new Set([...items, ...entries.map(({ entry }) => entry)].flatMap(pluginTags)),
-  ].sort((a, b) => a.localeCompare(b));
-  if (tag && !tags.includes(tag)) tags.unshift(tag);
   const rows =
     scope === "installed"
       ? items.filter(matches).map((p) => ({
@@ -146,24 +145,11 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
           <Search size={13} aria-hidden="true" />
           <Input
             aria-label={t("plugins.search")}
-            placeholder={t("plugins.search")}
+            placeholder={t("market.queryHint")}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        {tags.length > 0 ? (
-          <div className="plugins-tag-filter">
-            <Select
-              label={t("market.tags")}
-              value={tag}
-              options={[
-                { value: "", label: t("market.allTags") },
-                ...tags.map((value) => ({ value, label: value })),
-              ]}
-              onChange={setTag}
-            />
-          </div>
-        ) : null}
       </div>
       <div
         className="plugins-sidebar__tabs"
@@ -321,8 +307,17 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                       type="button"
                       key={value}
                       aria-label={t("market.filterTag", { tag: value })}
-                      aria-pressed={tag === value}
-                      onClick={() => setTag(tag === value ? "" : value)}
+                      aria-pressed={query
+                        .toLocaleLowerCase()
+                        .split(/\s+/)
+                        .some(
+                          (term) =>
+                            term.startsWith("tag:") && term.slice(4).split(",").includes(value),
+                        )}
+                      onClick={() => {
+                        useMarketplace.getState().setTag("");
+                        setQuery(togglePluginTag(query, value));
+                      }}
                     >
                       {value}
                     </button>

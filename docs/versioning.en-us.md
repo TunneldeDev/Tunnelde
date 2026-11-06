@@ -54,7 +54,7 @@ or a higher version need manual installation: update checks do not offer an
 equal version or an automatic downgrade. Deleting a remote tag does not change
 the version embedded in installed software.
 
-See [release operations](releases.md) for workflow triggers and recovery.
+See [release operations](releases.en-us.md) for workflow triggers and recovery.
 [简体中文](versioning.zh-cn.md)
 
 In-app updates offer only Stable and Public beta. Developer Nightly snapshots

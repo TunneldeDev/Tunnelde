@@ -632,6 +632,67 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:welcome", "host:a"]);
   });
 
+  it("restores a detached local file panel and its placement without restoring SSH sessions", () => {
+    state().openSftp(session("s1", "Alpha"));
+    state().retainFilePane(
+      "sftp:s1",
+      { source: { kind: "local" }, path: "C:\\work\\项目", ownerSessionId: "s1" },
+      "This computer",
+    );
+    state().openPage("settings");
+    state().splitTab("sftp:s1", "row", "after");
+    const records = workspaceRecords();
+    state().hydrate(records);
+    const tab = state().tabs.find((item) => item.id === "sftp:s1");
+    expect(tab?.filePane).toEqual({
+      source: { kind: "local" },
+      path: "C:\\work\\项目",
+      ownerSessionId: "restored",
+    });
+    expect(state().panes).toHaveLength(2);
+    expect(state().panes.find((pane) => pane.tabIds.includes("sftp:s1"))).toBeTruthy();
+  });
+
+  it("rejects malformed or relative local file pane paths in a snapshot", () => {
+    const metadata = JSON.stringify({ version: 1, localFilePanes: { "files:bad": "../relative" } });
+    state().hydrate([{ ...record("files:bad", "sftp"), state: metadata }]);
+    expect(state().tabs).toEqual([]);
+  });
+
+  it("restores remote file panels as disconnected targets without persisting session IDs", () => {
+    const id = state().openFilePane(
+      {
+        source: { kind: "remote", sessionId: "old-secret-session" },
+        path: "/srv/project",
+        ownerSessionId: "old-secret-session",
+        remoteIdentity: { hostId: "a", address: "root@example.com:22" },
+      },
+      "Alpha",
+    );
+    state().openPage("settings");
+    state().splitTab(id, "row");
+    const records = workspaceRecords();
+    expect(records[0]?.state).not.toContain("old-secret-session");
+    state().hydrate(records);
+    expect(state().tabs.find((tab) => tab.id === id)?.filePane).toEqual({
+      source: { kind: "remote", sessionId: "" },
+      path: "/srv/project",
+      ownerSessionId: "",
+      offline: true,
+      remoteIdentity: { hostId: "a", address: "root@example.com:22" },
+    });
+    expect(state().panes).toHaveLength(2);
+  });
+
+  it("rejects malformed remote restoration metadata", () => {
+    const metadata = JSON.stringify({
+      version: 1,
+      remoteFilePanes: { "files:bad": { hostId: "a", address: "host", path: "relative" } },
+    });
+    state().hydrate([{ ...record("files:bad", "sftp"), state: metadata }]);
+    expect(state().tabs).toEqual([]);
+  });
+
   it("opens one tab per SSH session", () => {
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
     useWorkspace.getState().openTerminal(session("s1", "Alpha"));
@@ -651,13 +712,28 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
   });
 
-  it("opens one files tab per session and drops it on close", () => {
+  it("opens independent files tabs for one session and drops both on close", () => {
     useWorkspace.getState().openSftp(session("s1", "Alpha"));
     useWorkspace.getState().openSftp(session("s1", "Alpha"));
-    expect(useWorkspace.getState().tabs).toHaveLength(1);
-    expect(useWorkspace.getState().activeId).toBe("sftp:s1");
+    expect(useWorkspace.getState().tabs).toHaveLength(2);
+    expect(useWorkspace.getState().activeId).toMatch(/^sftp:s1:copy:/);
     useWorkspace.getState().closeSession("s1");
     expect(useWorkspace.getState().tabs).toHaveLength(0);
+  });
+
+  it("keeps a detached local file panel when its original SSH session closes", () => {
+    useWorkspace.getState().openSftp(session("s1", "Alpha"));
+    useWorkspace.getState().retainFilePane(
+      "sftp:s1",
+      {
+        source: { kind: "local" },
+        path: "C:\\work",
+        ownerSessionId: "s1",
+      },
+      "This computer",
+    );
+    useWorkspace.getState().closeSession("s1");
+    expect(useWorkspace.getState().tabs[0]?.filePane?.source).toEqual({ kind: "local" });
   });
 
   it("closes the tab when its session goes away", () => {

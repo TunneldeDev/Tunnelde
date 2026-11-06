@@ -1,21 +1,16 @@
-import { setTimeout as delay } from "node:timers/promises";
 import { releaseChannel } from "../metadata/channels.mjs";
+import { retryGithubRead } from "./reads.mjs";
 
 export const SHA = /^[a-f0-9]{40}$/;
 
-export async function readText(github, repo, path, ref, wait = delay) {
+export async function readText(github, repo, path, ref, wait) {
   if (!SHA.test(ref)) throw new Error("Expected an immutable source SHA");
-  for (let attempt = 0; ; attempt++) {
-    try {
-      const { data } = await github.rest.repos.getContent({ ...repo, path, ref });
-      if (data.type !== "file" || data.encoding !== "base64")
-        throw new Error(`Cannot read ${path}`);
-      return Buffer.from(data.content, "base64").toString("utf8");
-    } catch (error) {
-      if (attempt === 3 || ![500, 502, 503, 504].includes(error.status)) throw error;
-      await wait(1000 * 2 ** attempt);
-    }
-  }
+  const { data } = await retryGithubRead(
+    () => github.rest.repos.getContent({ ...repo, path, ref }),
+    wait,
+  );
+  if (data.type !== "file" || data.encoding !== "base64") throw new Error(`Cannot read ${path}`);
+  return Buffer.from(data.content, "base64").toString("utf8");
 }
 
 export async function branchSha(github, repo, branch) {

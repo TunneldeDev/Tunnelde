@@ -138,6 +138,8 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       await authorize(request.requestId);
       const session = sessions.find((item) => item.id === sessionId);
       if (!session) throw new Error("ssh.sessionMissing");
+      if (method === "workspace.openTerminal" && session.terminal === false)
+        throw new Error("ssh.terminalUnavailable");
       useSsh.setState({ sessions });
       if (method === "workspace.openTerminal") useWorkspace.getState().openTerminal(session);
       else useWorkspace.getState().openSftp(session);

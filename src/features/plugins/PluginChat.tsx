@@ -38,7 +38,10 @@ import { authorizePluginAction, reportPluginExecutionFailure } from "@/store/plu
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { useHosts } from "@/store/hosts";
-import { chatTargets } from "@/lib/plugins/chatTargets";
+import { chatConnectableHosts, chatTargets } from "@/lib/plugins/chatTargets";
+import type { Host } from "@/lib/api/types";
+import { hostSubtitle } from "@/lib/text/format";
+import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { PluginChatMessages } from "./PluginChatMessages";
 import { PluginChatConfigDialog } from "./PluginChatConfig";
 import { PluginExecutionDialog } from "./PluginExecutionDialog";
@@ -70,7 +73,14 @@ export function PluginChat({
   const [configOpen, setConfigOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [executionOpen, setExecutionOpen] = useState<string | null>(null);
-  useBackgroundGuard(busy !== null || configOpen || executionOpen !== null || historyOpen);
+  const [connecting, setConnecting] = useState<{
+    host: Host;
+    modelId: string;
+    sessionId: string;
+  } | null>(null);
+  useBackgroundGuard(
+    busy !== null || configOpen || executionOpen !== null || historyOpen || connecting !== null,
+  );
   const sshSessions = useSsh((state) => state.sessions);
   const hosts = useHosts((state) => state.hosts);
   const [atBottom, setAtBottom] = useState(true);
@@ -170,6 +180,7 @@ export function PluginChat({
           next &&
           next.activeSessionId === previous.activeSessionId &&
           next.modelId === previous.modelId &&
+          next.mode === previous.mode &&
           next.execution?.kind === previous.execution?.kind &&
           next.execution?.sessionId === previous.execution?.sessionId &&
           next.execution?.hostId === previous.execution?.hostId &&
@@ -230,6 +241,7 @@ export function PluginChat({
     !block.commands.prepare ||
     (block.readiness?.status === "ready" &&
       block.readiness.profileId === block.modelId &&
+      block.readiness.mode === block.mode &&
       block.readiness.targetKey === chatExecutionKey(block.execution));
   const executionProfiles =
     block.config?.profiles.filter(
@@ -248,6 +260,7 @@ export function PluginChat({
         ? undefined
         : profile?.remote?.sessionId || profile?.sessionId;
   const targets = chatTargets(sshSessions, hosts, remoteSession);
+  const connectableHosts = chatConnectableHosts(sshSessions, hosts);
   const liveTarget = targets.find((item) => item.id === remoteSession);
   const location = remoteSession
     ? liveTarget?.title || block.execution?.title || t("pluginChat.remoteExecution")
@@ -288,7 +301,13 @@ export function PluginChat({
         await api.pluginRun(pluginId, name, {
           sessionId: current.current.activeSessionId,
           runId: current.current.run?.id ?? null,
-          ...(name === current.current.commands.target ? { mode: current.current.mode } : {}),
+          ...([
+            current.current.commands.target,
+            current.current.commands.prepare,
+            current.current.commands.install,
+          ].includes(name)
+            ? { mode: current.current.mode }
+            : {}),
           ...input,
           _locale: i18n.resolvedLanguage ?? i18n.language,
         }),
@@ -482,9 +501,27 @@ export function PluginChat({
                   });
                 },
               })),
-              ...(!sshSessions.length
-                ? [{ label: t("pluginChat.connectTargetHint"), disabled: true, onSelect: () => {} }]
-                : []),
+              ...connectableHosts.map((host, index) => ({
+                label: t("pluginChat.connectHost", { name: host.name }),
+                description: hostSubtitle(host.username, host.host, host.port),
+                icon: <Server size={13} />,
+                separatorBefore: index === 0,
+                disabled: !block.modelId,
+                onSelect: () => {
+                  setError(null);
+                  setConnecting({
+                    host,
+                    modelId: block.modelId,
+                    sessionId: block.activeSessionId,
+                  });
+                },
+              })),
+              {
+                label: t("sidebar.newHost"),
+                icon: <Plus size={13} />,
+                separatorBefore: true,
+                onSelect: () => useDialogs.getState().openHost(),
+              },
               {
                 label: t("pluginChat.executionSettings"),
                 separatorBefore: true,
@@ -520,6 +557,27 @@ export function PluginChat({
   );
   return (
     <section className={`plugin-chat plugin-chat--${presentation}`} aria-label={title}>
+      {connecting ? (
+        <ConnectDialog
+          host={connecting.host}
+          after="background"
+          onClose={() => setConnecting(null)}
+          onConnected={(session) => {
+            setConnecting(null);
+            // A delayed handshake must never retarget another conversation/model.
+            if (
+              current.current.activeSessionId !== connecting.sessionId ||
+              current.current.modelId !== connecting.modelId
+            )
+              return;
+            void command(block.commands.target, {
+              targetId: session.id,
+              sessionId: connecting.sessionId,
+              modelId: connecting.modelId,
+            });
+          }}
+        />
+      ) : null}
       {executionOpen ? (
         <PluginExecutionDialog
           targetId={executionOpen}

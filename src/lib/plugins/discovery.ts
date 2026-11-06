@@ -24,6 +24,22 @@ export function matchesPlugin(plugin: SearchablePlugin, query: string, tag: stri
     .split(/\s+/)
     .filter(Boolean)
     .every((term) => {
-      return term.startsWith("tag:") ? tags.includes(term.slice(4)) : text.includes(term);
+      if (!term.startsWith("tag:")) return text.includes(term);
+      const requested = term.slice(4).split(",").filter(Boolean);
+      return requested.length > 0 && requested.some((value) => tags.includes(value));
     });
+}
+
+/** Keep tag filters visible and editable in the search box. */
+export function togglePluginTag(query: string, tag: string): string {
+  const tokens = query.trim().split(/\s+/).filter(Boolean);
+  const filters = tokens.filter((token) => token.toLocaleLowerCase().startsWith("tag:"));
+  const tags = [...new Set(filters.flatMap((token) => token.slice(4).split(",")).filter(Boolean))];
+  const index = tags.findIndex((value) => value.toLocaleLowerCase() === tag.toLocaleLowerCase());
+  if (index < 0) tags.push(tag);
+  else tags.splice(index, 1);
+  return [
+    ...(tags.length ? [`tag:${tags.join(",")}`] : []),
+    ...tokens.filter((token) => !token.toLocaleLowerCase().startsWith("tag:")),
+  ].join(" ");
 }

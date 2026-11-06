@@ -48,6 +48,23 @@ beforeEach(async () => {
   });
 });
 describe("plugin workspace details", () => {
+  it("shows declared application and API requirements without relying on README text", () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          runtime: "declarative",
+          apiVersion: 1,
+          engines: { tunnelde: ">=0.29.0-beta.6" },
+          readme: null,
+        },
+      ],
+    });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    expect(screen.getByText(">=0.29.0-beta.6")).toBeTruthy();
+    expect(screen.getByText("Declarative (no Node.js required)")).toBeTruthy();
+    expect(screen.getByText("Plugin API version")).toBeTruthy();
+  });
   it("renders installed README contents as Markdown rather than displaying the source markers", () => {
     usePlugins.setState({ items: [{ ...plugin, readme: formatterReadme }] });
     render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);

@@ -9,6 +9,7 @@ export interface DurableTransfer extends Omit<TransferEvent, "status"> {
   toAddress?: string | null;
   fromPath?: string;
   toPath?: string;
+  backupRecovery?: { backup: string; destination: string } | null;
 }
 export const transferApi = {
   list: () => invoke<DurableTransfer[]>("durable_transfer_list"),

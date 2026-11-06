@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chat } from "../fixtures/pluginChat";
-import { chatExecutionKey, type PluginChatBlock } from "@/lib/plugins/pluginChat";
+import {
+  chatExecutionKey,
+  normalizeChatBlock,
+  type PluginChatBlock,
+} from "@/lib/plugins/pluginChat";
 const mock = vi.hoisted(() => ({
   run: vi.fn(),
   render: vi.fn(),
@@ -42,6 +46,7 @@ function block(status: "required" | "checking" | "ready" | "error" = "required")
     },
     readiness: {
       status,
+      mode: "ask",
       profileId: chat.modelId,
       targetKey: chatExecutionKey(target),
       detail: status === "error" ? "node: not found" : "",
@@ -59,6 +64,69 @@ beforeEach(async () => {
 });
 
 describe("agent preparation", () => {
+  it("requires initialization for the selected permission mode and sends that mode to the plugin", async () => {
+    const ready = block("ready");
+    mock.run.mockResolvedValue({
+      block: { ...ready, mode: "approve", readiness: { ...ready.readiness!, mode: "approve" } },
+    });
+    render(<PluginChat pluginId="assistant" viewId="chat" block={ready} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Keep this draft" } });
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Approval mode" }));
+    fireEvent.click(screen.getByRole("menuitemradio", { name: /Approve for me/ }));
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    fireEvent.keyDown(screen.getByLabelText("Message"), { key: "Enter" });
+    expect(mock.run).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Initialize" }));
+    await waitFor(() =>
+      expect(mock.run).toHaveBeenCalledWith(
+        "assistant",
+        "ai.prepare",
+        expect.objectContaining({ mode: "approve" }),
+      ),
+    );
+    await screen.findByRole("button", { name: "Send" });
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("Keep this draft");
+  });
+
+  it("passes the selected permission mode to installation", async () => {
+    render(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{ ...block("error"), mode: "approve" }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Install and initialize" }));
+    await waitFor(() =>
+      expect(mock.run).toHaveBeenCalledWith(
+        "assistant",
+        "ai.install",
+        expect.objectContaining({ mode: "approve" }),
+      ),
+    );
+  });
+
+  it("binds legacy readiness to its snapshot mode and rejects invalid explicit modes", () => {
+    const legacy = block("ready");
+    const readiness = { ...legacy.readiness! };
+    delete readiness.mode;
+    const normalized = normalizeChatBlock({ ...legacy, readiness })!;
+    expect(normalized.readiness?.mode).toBe("ask");
+    expect(
+      normalizeChatBlock({ ...legacy, readiness: { ...readiness, mode: "invalid" } })?.readiness
+        ?.mode,
+    ).toBeUndefined();
+    const { rerender } = render(
+      <PluginChat pluginId="assistant" viewId="chat" block={normalized} />,
+    );
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    rerender(
+      <PluginChat pluginId="assistant" viewId="chat" block={{ ...normalized, mode: "approve" }} />,
+    );
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+  });
+
   it("recovers completed readiness when the final event snapshot is lost", async () => {
     const completed = block("ready");
     completed.execution = {

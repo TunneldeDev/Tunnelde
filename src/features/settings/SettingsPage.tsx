@@ -1,3 +1,5 @@
+import { useShortcutConflicts } from "@/store/shortcutConflicts";
+import { AboutPage } from "@/features/about/AboutPage";
 import { FileCode2, RotateCcw, Search, X } from "lucide-react";
 import {
   Fragment,
@@ -328,6 +330,13 @@ export function SettingsPage() {
   const selectSection = useNavigation((state) => state.selectSettings);
   const [query, setQuery] = useViewState("settings:query", "");
   const [modifiedOnly, setModifiedOnly] = useViewState("settings:modified", false);
+  const shortcutRequest = useShortcutConflicts((state) => state.request);
+  useLayoutEffect(() => {
+    if (shortcutRequest > 0) {
+      setQuery("");
+      setModifiedOnly(false);
+    }
+  }, [shortcutRequest, setQuery, setModifiedOnly]);
   const [cssDraft, setCssDraft] = useViewState<string | null>("settings:css", null);
   const [resetVersions, setResetVersions] = useState<Record<string, number>>({});
   const body = useRef<HTMLDivElement>(null);
@@ -515,7 +524,7 @@ export function SettingsPage() {
             <section className="settings-section" key={item} aria-label={t(SECTION_LABELS[item])}>
               <div className="settings-section__head">
                 <h2 className="settings-section__title">{t(SECTION_LABELS[item])}</h2>
-                {item !== "plugins" && item !== "shortcuts" ? (
+                {item !== "plugins" && item !== "shortcuts" && item !== "about" ? (
                   <Button
                     variant="ghost"
                     size="sm"
@@ -537,6 +546,7 @@ export function SettingsPage() {
                   <p className="settings-section__intro">{t("settings.filePaneDefaultsHint")}</p>
                 ) : null}
                 {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
+                {item === "about" && !filtering ? <AboutPage embedded /> : null}
                 {item === "updates" && !filtering ? <UpdateStatus /> : null}
                 {groupSettings(
                   item,

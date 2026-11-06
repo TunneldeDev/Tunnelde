@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { PluginInfo, PluginSecurityState } from "@/lib/api/types";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
+import { pluginFailure } from "@/lib/plugins/errors";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 
@@ -223,7 +224,7 @@ export function reportPluginExecutionFailure(error: unknown): void {
       message,
     )
   ) {
-    usePluginSecurity.getState().reportFailure(translateError(error), message);
+    usePluginSecurity.getState().reportFailure(pluginFailure(error), message);
   }
 }
 

@@ -55,7 +55,12 @@ describe("editor formatting shortcuts", () => {
           views: [],
           permissions: ["editor.read", "editor.write"],
           commands: [
-            { id: "pretty", title: "Format", editor: { extensions: ["json"], format: true } },
+            {
+              id: "pretty",
+              title: "Format",
+              keybindings: ["Mod+Shift+F"],
+              editor: { extensions: ["json"], format: true },
+            },
           ],
         },
       ] as unknown as PluginInfo[],
@@ -94,7 +99,10 @@ describe("editor formatting shortcuts", () => {
     const textarea = prepare();
     act(() =>
       useSettings.setState({
-        settings: { ...DEFAULT_SETTINGS, keyboardShortcuts: { "editor.format": ["Mod+Alt+J"] } },
+        settings: {
+          ...DEFAULT_SETTINGS,
+          keyboardShortcuts: { "plugin.c.9.formatter.pretty": ["Mod+Alt+J"] },
+        },
       }),
     );
     const original = new KeyboardEvent("keydown", {
@@ -109,6 +117,54 @@ describe("editor formatting shortcuts", () => {
     expect(api.pluginRun).not.toHaveBeenCalled();
     fireEvent.keyDown(textarea, { key: "j", ctrlKey: true, altKey: true });
     await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(1));
+  });
+
+  it("runs both applicable plugin commands when their shortcuts conflict", async () => {
+    const textarea = prepare();
+    act(() =>
+      usePlugins.setState((state) => ({
+        items: [...state.items, { ...state.items[0]!, id: "second", name: "Second" }],
+      })),
+    );
+    fireEvent.keyDown(textarea, { key: "F", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.pluginRun).mock.calls.map((call) => call[0])).toEqual([
+      "formatter",
+      "second",
+    ]);
+  });
+
+  it("runs both matching editor commands contributed by one plugin in sequence", async () => {
+    const textarea = prepare();
+    act(() =>
+      usePlugins.setState((state) => ({
+        items: state.items.map((item) => ({
+          ...item,
+          commands: [...item.commands, { ...item.commands[0]!, id: "second" }],
+        })),
+      })),
+    );
+    fireEvent.keyDown(textarea, { key: "F", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(api.pluginRun).mock.calls.map((call) => call[1])).toEqual([
+      "pretty",
+      "second",
+    ]);
+  });
+
+  it("does not capture an editor plugin shortcut for an unsupported extension", () => {
+    const textarea = prepare();
+    act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
+    const event = new KeyboardEvent("keydown", {
+      key: "F",
+      ctrlKey: true,
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(textarea, event);
+    expect(event.defaultPrevented).toBe(false);
+    expect(api.pluginRun).not.toHaveBeenCalled();
   });
 
   it("does not capture keys from a different visible editor", async () => {

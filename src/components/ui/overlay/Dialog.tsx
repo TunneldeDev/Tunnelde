@@ -68,11 +68,17 @@ function DialogContent({
     }
     const timer = window.setTimeout(() => {
       const current = panel.current;
+      const dialogs = document.querySelectorAll(".td-dialog");
+      if (dialogs[dialogs.length - 1] !== current) return;
       if (current && !current.contains(document.activeElement)) {
         const nodes = focusableElements(current);
         (
           nodes.find((node) => node.hasAttribute("autofocus")) ??
           nodes.find((node) => node.matches("input, textarea")) ??
+          nodes.find((node) =>
+            node.matches(".td-dialog__foot .td-btn--primary, .td-dialog__foot .td-btn--danger"),
+          ) ??
+          nodes.find((node) => !node.closest(".td-dialog__head")) ??
           nodes[0] ??
           current
         ).focus();

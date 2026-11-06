@@ -102,7 +102,8 @@ function Preview({ file }: { file: PreviewFile }) {
             variant="primary"
             onClick={() => {
               useMarketplace.getState().setScope("market");
-              useMarketplace.getState().setTag("preview");
+              useMarketplace.getState().setTag("");
+              useMarketplace.getState().setQuery("tag:preview");
               useNavigation.getState().showSidebar("plugins");
               useFilePreview.getState().close();
             }}

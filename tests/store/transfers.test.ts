@@ -142,6 +142,35 @@ describe("durable transfer controls", () => {
     expect(useTransfers.getState().items.map((item) => item.id)).toEqual(["plugin"]);
   });
 
+  it("loads recovery paths even when the cancellation event is newer than the journal", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    const backupRecovery = { backup: "/remote/.backup", destination: "/remote/file" };
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      {
+        ...running,
+        status: "cleanupPending",
+        updatedAt: 1,
+        fromHostId: null,
+        toHostId: "host",
+        backupRecovery,
+      },
+    ]);
+    useTransfers.setState({
+      items: [{ ...running, durable: true, updatedAt: 1 }],
+    });
+    useTransfers.getState().apply({
+      ...running,
+      status: "cleanupPending",
+      error: "sftp.backupRecoveryRequired",
+    });
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      status: "cleanupPending",
+      error: "sftp.backupRecoveryRequired",
+      backupRecovery,
+    });
+  });
+
   it("ignores old snapshots that finish after a newer deletion snapshot", async () => {
     vi.spyOn(ipc, "isTauri").mockReturnValue(true);
     let finish!: (rows: Awaited<ReturnType<typeof transferApi.list>>) => void;

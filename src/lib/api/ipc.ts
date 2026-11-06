@@ -120,6 +120,7 @@ export const api = {
 
   openDataDir: () => invoke<void>("app_open_data_dir"),
   openLogDir: () => invoke<void>("open_log_dir"),
+  openLatestLog: () => invoke<void>("open_latest_log"),
   revealLocalPath: (path: string) => invoke<void>("reveal_local_path", { path }),
   openLocalPath: (path: string) => invoke<void>("open_local_path", { path }),
   openExternal: (url: string) => invoke<void>("open_external", { url }),

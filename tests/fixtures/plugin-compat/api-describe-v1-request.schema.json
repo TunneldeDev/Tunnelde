@@ -1,0 +1,8 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://tunnelde.dev/contracts/api-describe-v1-request.schema.json",
+  "title": "Plugin API discovery v1 parameters",
+  "description": "The host accepts an object; clients should send an empty object. Encoded requests are also subject to the transport size limit.",
+  "type": "object",
+  "additionalProperties": true
+}

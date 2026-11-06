@@ -374,6 +374,16 @@ pub fn open_log_dir(app: AppHandle, state: State<'_, AppState>) -> AppResult<()>
         .map_err(|error| AppError::Internal(error.to_string()))
 }
 
+#[tauri::command]
+pub fn open_latest_log(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    let name = crate::logs::latest_name(&state.log_dir)?
+        .ok_or_else(|| AppError::validation("logs.noFile"))?;
+    let path = state.log_dir.join(name);
+    app.opener()
+        .open_path(path.to_string_lossy().into_owned(), None::<&str>)
+        .map_err(|error| AppError::Internal(error.to_string()))
+}
+
 /// Opens one existing local file or folder with the system default handler.
 #[tauri::command]
 pub fn open_local_path(app: AppHandle, path: String) -> AppResult<()> {
@@ -862,7 +872,19 @@ pub async fn plugins_list(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>>
 #[tauri::command]
 pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::PluginInfo> {
     let state = app.state::<AppState>();
-    state.plugins.start(&app, &id).await
+    let result = state.plugins.start(&app, &id).await;
+    if let Err(error) = &result {
+        // Do not persist untrusted plugin output or user paths in diagnostic logs.
+        let detail = error.to_string();
+        let reason = detail.split(':').next().unwrap_or("");
+        let reason = if reason.starts_with("plugin.") || reason.starts_with("node.") {
+            reason
+        } else {
+            error.code()
+        };
+        tracing::warn!(plugin_id = %id, reason, "plugin start failed");
+    }
+    result
 }
 
 #[tauri::command]

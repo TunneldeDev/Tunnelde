@@ -3,14 +3,30 @@ import { create } from "zustand";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { PluginInfo, MarketEntry } from "@/lib/api/types";
+import { pluginFailure } from "@/lib/plugins/errors";
 import { toast } from "@/store/toasts";
 import { normalizeResult } from "@/lib/plugins/pluginView";
+import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import i18n from "@/i18n/i18n";
 
 export interface PluginOutput {
   text: string;
   error: boolean;
   title?: string;
+}
+
+function notifyPluginFailure(id: string, error: unknown) {
+  const name = usePlugins.getState().items.find((item) => item.id === id)?.name ?? id;
+  toast(i18n.t("pluginErrors.startFailed", { name, error: pluginFailure(error) }), "error", {
+    label: i18n.t("pluginErrors.openLog"),
+    onClick: async () => {
+      try {
+        await api.openLatestLog();
+      } catch (cause) {
+        toast(translateError(cause), "error");
+      }
+    },
+  });
 }
 
 interface PluginsStore {
@@ -100,18 +116,23 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     return request;
   };
 
-  const changeStatus = (id: string, request: () => Promise<PluginInfo | null>) =>
+  const changeStatus = (id: string, request: () => Promise<PluginInfo | null>, starting = false) =>
     operate(id, async (startedAt) => {
       try {
         const info = await request();
         // A pushed failure/status event may already be newer than this response.
         if (info && revisions.get(id) === startedAt) get().apply(info);
+        const current = get().items.find((item) => item.id === id);
+        if (starting && info && current?.status === "failed") {
+          notifyPluginFailure(id, new Error(current.error || i18n.t("pluginErrors.unknown")));
+        }
       } catch (error) {
         if (isTauri()) {
           const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
           reportPluginExecutionFailure(error);
         }
-        toast(translateError(error), "error");
+        if (starting) notifyPluginFailure(id, error);
+        else toast(translateError(error), "error");
       }
     });
 
@@ -153,7 +174,11 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         .then(async () => {
           try {
             if (pendingReload) await pendingReload;
-            get().apply(await api.pluginInstall(path));
+            const before = get().items;
+            const info = await api.pluginInstall(path);
+            const previous = before.find((item) => item.id === info.id);
+            get().apply(info);
+            useShortcutConflicts.getState().enqueue(previous, info, get().items);
             await readList(api.pluginsList);
             return true;
           } catch (error) {
@@ -176,35 +201,40 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     },
 
     start: (id) =>
-      changeStatus(id, async () => {
-        const info = get().items.find((item) => item.id === id);
-        if (info?.runtime === "theme") return null;
-        if (isTauri() && info) {
-          const { ensurePluginPermission } = await import("@/store/pluginSecurity");
-          if (!(await ensurePluginPermission(info))) return null;
-        }
-        if (isTauri() && !["wasm", "declarative"].includes(info?.runtime ?? "node")) {
-          const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
-          if (!(await ensureNodeRuntime())) return null;
-        }
-        return api.pluginStart(id);
-      }),
+      changeStatus(
+        id,
+        async () => {
+          const info = get().items.find((item) => item.id === id);
+          if (info?.runtime === "theme") return null;
+          if (isTauri() && info) {
+            const { ensurePluginPermission } = await import("@/store/pluginSecurity");
+            if (!(await ensurePluginPermission(info))) return null;
+          }
+          if (isTauri() && !["wasm", "declarative"].includes(info?.runtime ?? "node")) {
+            const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
+            if (!(await ensureNodeRuntime())) return null;
+          }
+          return api.pluginStart(id);
+        },
+        true,
+      ),
     stop: (id) => changeStatus(id, () => api.pluginStop(id)),
 
     installMarket: async (entry, sourceId, taskId, update, onError) => {
       let success = false;
       await operate(entry.id, async () => {
         try {
-          get().apply(
-            await api.marketplaceDownload(
-              sourceId,
-              entry.id,
-              entry.version,
-              entry.sha256,
-              taskId,
-              update,
-            ),
+          const previous = get().items.find((item) => item.id === entry.id);
+          const info = await api.marketplaceDownload(
+            sourceId,
+            entry.id,
+            entry.version,
+            entry.sha256,
+            taskId,
+            update,
           );
+          get().apply(info);
+          useShortcutConflicts.getState().enqueue(previous, info, get().items);
           success = true;
         } catch (error) {
           onError?.(error);

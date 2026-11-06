@@ -32,18 +32,22 @@ import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDo
 
 const HOST_MIME = "application/x-tunnelde-host";
 
-/** Mouse activation and Enter always follow the same configured action. */
+function connectTerminal(host: Host): void {
+  if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
+  else useDialogs.getState().openConnect(host, "terminal");
+}
+
+/** Single click and Enter follow the configured action. */
 function activateHost(host: Host): void {
   switch (useSettings.getState().settings.hostActivation) {
     case "details":
-      useWorkspace.getState().openHost(host, { preview: false });
+      useWorkspace.getState().openHost(host, { preview: true });
       return;
     case "edit":
       useDialogs.getState().openHost(host);
       return;
     default:
-      if (useSettings.getState().settings.hostDirectConnect) void connectHostDirectly(host);
-      else useDialogs.getState().openConnect(host, "terminal");
+      connectTerminal(host);
   }
 }
 
@@ -115,6 +119,13 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
   const connecting = useSsh((state) => state.connectingHostIds.includes(host.id));
   const [over, setOver] = useState<"before" | "after" | null>(null);
   const row = useRef<HTMLDivElement>(null);
+  const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (clickTimer.current) clearTimeout(clickTimer.current);
+    },
+    [],
+  );
 
   const removeHost = () =>
     confirm({
@@ -238,14 +249,27 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
           event.clientY < bounds.top + bounds.height / 2 ? "before" : "after",
         );
       }}
-      onClick={() => {
+      onClick={(event) => {
+        if (event.target instanceof Element && event.target.closest("button, [role='menu']"))
+          return;
         onFocusRow();
+        if (event.detail > 1) return;
+        if (useSettings.getState().settings.hostActivation === "details") activateHost(host);
+        else {
+          if (clickTimer.current) clearTimeout(clickTimer.current);
+          clickTimer.current = setTimeout(() => {
+            clickTimer.current = null;
+            activateHost(host);
+          }, 300);
+        }
       }}
       onDoubleClick={(event) => {
         if (event.target instanceof Element && event.target.closest("button, [role='menu']"))
           return;
+        if (clickTimer.current) clearTimeout(clickTimer.current);
+        clickTimer.current = null;
         onFocusRow();
-        activateHost(host);
+        connectTerminal(host);
       }}
       onContextMenu={(event) => {
         event.preventDefault();
