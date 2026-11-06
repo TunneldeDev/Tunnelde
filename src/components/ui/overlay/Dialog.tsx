@@ -68,6 +68,8 @@ function DialogContent({
     }
     const timer = window.setTimeout(() => {
       const current = panel.current;
+      const dialogs = document.querySelectorAll(".td-dialog");
+      if (dialogs[dialogs.length - 1] !== current) return;
       if (current && !current.contains(document.activeElement)) {
         const nodes = focusableElements(current);
         (

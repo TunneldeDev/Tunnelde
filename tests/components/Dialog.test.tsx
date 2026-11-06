@@ -109,6 +109,24 @@ describe("Dialog keyboard and focus", () => {
     expect(lower).not.toHaveBeenCalled();
   });
 
+  it("does not let a lower dialog steal focus from an upper dialog", async () => {
+    render(
+      <>
+        <Dialog open title="Lower" closeLabel="Close lower" onClose={vi.fn()}>
+          <input aria-label="Lower input" />
+        </Dialog>
+        <Dialog open title="Upper" closeLabel="Close upper" onClose={vi.fn()}>
+          <input autoFocus aria-label="Upper input" />
+        </Dialog>
+      </>,
+    );
+    const lower = screen.getByRole("textbox", { name: "Lower input" });
+    const focusLower = vi.spyOn(lower, "focus");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(focusLower).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("textbox", { name: "Upper input" }));
+  });
+
   it("uses Escape to dismiss a child Select before closing the dialog", () => {
     const close = vi.fn();
     render(
