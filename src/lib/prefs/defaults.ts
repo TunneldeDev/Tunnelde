@@ -31,7 +31,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     closeToTray: false,
     releaseWebviewInTray: true,
     lightweightMode: false,
-    showDockIconInBackground: true,
+    showDockIconInBackground: false,
     titleBarStyle: platform === "windows" ? "compact" : "system",
     recordTerminalHistory: false,
     preloadDirs: true,

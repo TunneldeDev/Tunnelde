@@ -103,7 +103,7 @@ pub fn apply_background_dock_preference(app: &AppHandle) {
             let show_in_background = handle
                 .try_state::<AppState>()
                 .map(|state| state.settings().show_dock_icon_in_background)
-                .unwrap_or(true);
+                .unwrap_or(false);
             // Accessory mode keeps the menu-bar tray available. Use activation
             // policy rather than Dock transforms, which can drop rapid hides.
             let policy = if visible || show_in_background {
