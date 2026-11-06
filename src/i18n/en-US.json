@@ -571,6 +571,8 @@
     "empty": "Empty folder",
     "itemCount": "{{count}} items",
     "noSession": "Connect to browse files",
+    "restoreRemoteTitle": "Reconnect to browse this folder",
+    "restoreRemoteBody": "Choose a connection for {{address}}. The saved folder opens when the connection matches.",
     "cancelTransfer": "Cancel transfer",
     "done": "Done",
     "failed": "Failed",

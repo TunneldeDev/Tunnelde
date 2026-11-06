@@ -162,6 +162,45 @@ describe("SftpPage", () => {
     );
   });
 
+  it("preserves a detached remote panel and its path when its session disconnects", async () => {
+    const filePane = {
+      source: { kind: "remote" as const, sessionId: session.id },
+      path: "/srv/app",
+      ownerSessionId: session.id,
+      remoteIdentity: { hostId: session.hostId, address: session.address },
+    };
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: "files:offline",
+          kind: "sftp",
+          title: session.title,
+          hostId: null,
+          pinned: false,
+          filePane,
+        },
+      ],
+    });
+    render(
+      <SftpPage
+        sessionId={session.id}
+        single={filePane}
+        tabId="files:offline"
+        scopeId="files:offline"
+      />,
+    );
+    await screen.findByText("readme.md");
+    act(() => useSsh.setState({ sessions: [] }));
+    await waitFor(() =>
+      expect(useWorkspace.getState().tabs[0]?.filePane).toMatchObject({
+        offline: true,
+        path: "/srv/app",
+        remoteIdentity: filePane.remoteIdentity,
+      }),
+    );
+    expect(useWorkspace.getState().tabs[0]?.title).toBe(session.title);
+  });
+
   it("does not persist an old local panel after switching it to a remote source", async () => {
     const filePane = {
       source: { kind: "local" as const },

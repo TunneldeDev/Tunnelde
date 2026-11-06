@@ -571,6 +571,8 @@
     "empty": "空文件夹",
     "itemCount": "{{count}} 项",
     "noSession": "连接后可浏览文件",
+    "restoreRemoteTitle": "重新连接以浏览此文件夹",
+    "restoreRemoteBody": "为 {{address}} 选择连接。连接匹配时将打开保存的文件夹。",
     "cancelTransfer": "取消传输",
     "done": "完成",
     "failed": "失败",

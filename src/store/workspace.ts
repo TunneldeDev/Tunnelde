@@ -35,6 +35,8 @@ export interface FilePaneOptions {
   path: string | null;
   ownerSessionId: string;
   view?: FileViewPreferences;
+  remoteIdentity?: { hostId: string; address: string };
+  offline?: boolean;
 }
 
 export interface WorkspacePane {
@@ -972,6 +974,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           : record,
       );
       let localFilePanes: Record<string, unknown> = {};
+      let remoteFilePanes: Record<string, unknown> = {};
       try {
         const metadata = records.find((record) => record.state)?.state;
         const parsed: unknown = metadata ? JSON.parse(metadata) : null;
@@ -985,6 +988,15 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         ) {
           localFilePanes = parsed.localFilePanes as Record<string, unknown>;
         }
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          "remoteFilePanes" in parsed &&
+          parsed.remoteFilePanes &&
+          typeof parsed.remoteFilePanes === "object" &&
+          !Array.isArray(parsed.remoteFilePanes)
+        )
+          remoteFilePanes = parsed.remoteFilePanes as Record<string, unknown>;
       } catch {
         /* Older or malformed snapshots do not restore file panels. */
       }
@@ -992,6 +1004,22 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       for (const record of records) {
         if (record.id === WORKSPACE_LAYOUT_RECORD_ID && record.kind === "welcome") continue;
         const filePath = localFilePanes[record.id];
+        const remote = remoteFilePanes[record.id];
+        const candidate =
+          remote && typeof remote === "object" ? (remote as Record<string, unknown>) : {};
+        const remoteFilePane =
+          record.kind === "sftp" &&
+          (record.id.startsWith("files:") || record.id.startsWith("sftp:")) &&
+          typeof candidate.hostId === "string" &&
+          candidate.hostId.length > 0 &&
+          candidate.hostId.length <= 512 &&
+          typeof candidate.address === "string" &&
+          candidate.address.length > 0 &&
+          candidate.address.length <= 4096 &&
+          typeof candidate.path === "string" &&
+          candidate.path.startsWith("/") &&
+          candidate.path.length <= 32768 &&
+          !candidate.path.includes("\0");
         const localFilePane =
           record.kind === "sftp" &&
           (record.id.startsWith("files:") || record.id.startsWith("sftp:")) &&
@@ -1002,7 +1030,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           (/^[a-zA-Z]:[\\/]/.test(filePath) ||
             filePath.startsWith("/") ||
             filePath.startsWith("\\\\"));
-        if (!SUPPORTED_KINDS.includes(record.kind) && !localFilePane) {
+        if (!SUPPORTED_KINDS.includes(record.kind) && !localFilePane && !remoteFilePane) {
           continue;
         }
         if (record.kind === "host" && !record.hostId) {
@@ -1022,6 +1050,20 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
                   source: { kind: "local" as const },
                   path: filePath,
                   ownerSessionId: "restored",
+                },
+              }
+            : {}),
+          ...(remoteFilePane && !localFilePane
+            ? {
+                filePane: {
+                  source: { kind: "remote" as const, sessionId: "" },
+                  path: candidate.path as string,
+                  ownerSessionId: "",
+                  offline: true,
+                  remoteIdentity: {
+                    hostId: candidate.hostId as string,
+                    address: candidate.address as string,
+                  },
                 },
               }
             : {}),
@@ -1188,6 +1230,13 @@ export function workspaceRecords(): TabRecord[] {
       tabs.flatMap((tab) =>
         tab.filePane?.source.kind === "local" && tab.filePane.path
           ? [[tab.id, tab.filePane.path]]
+          : [],
+      ),
+    ),
+    remoteFilePanes: Object.fromEntries(
+      tabs.flatMap((tab) =>
+        tab.filePane?.source.kind === "remote" && tab.filePane.path && tab.filePane.remoteIdentity
+          ? [[tab.id, { ...tab.filePane.remoteIdentity, path: tab.filePane.path }]]
           : [],
       ),
     ),
