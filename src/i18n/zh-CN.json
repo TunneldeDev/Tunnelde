@@ -1513,6 +1513,7 @@
     }
   },
   "forward": {
+    "noHostsHint": "添加主机后即可配置和管理端口转发。",
     "disconnectTitle": "断开 SSH 连接？",
     "disconnectBody": "断开连接将停止转发及使用此连接的其他任务。",
     "title": "端口转发",

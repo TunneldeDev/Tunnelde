@@ -1513,6 +1513,7 @@
     }
   },
   "forward": {
+    "noHostsHint": "Add a host to configure and manage port forwarding.",
     "disconnectTitle": "Disconnect SSH?",
     "disconnectBody": "Disconnecting stops forwards and any other work using this connection.",
     "title": "Port forwarding",

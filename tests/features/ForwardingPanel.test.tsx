@@ -8,10 +8,12 @@ import { ForwardingPanel } from "@/features/forwarding/ForwardingPanel";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
+import { useDialogs } from "@/store/dialogs";
 import { useWorkspace } from "@/store/workspace";
 import type { Host } from "@/lib/api/types";
 
 beforeEach(() => {
+  useDialogs.getState().close();
   useNavigation.setState({ forwardingTarget: null });
   useHosts.setState({
     hosts: [
@@ -34,6 +36,15 @@ beforeEach(() => {
     { ...base, id: "b", hostId: "one", active: false },
     { ...base, id: "c", hostId: "two", active: true },
   ]);
+});
+it("offers host creation from the empty forwarding panel", async () => {
+  useHosts.setState({ hosts: [], loaded: true, loading: false });
+  render(<ForwardingPanel />);
+  await act(async () => {});
+  expect(screen.getByText("No hosts").closest(".td-empty")).toBeTruthy();
+  expect(screen.getByText("Add a host to configure and manage port forwarding.")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "New host" }));
+  expect(useDialogs.getState().dialog).toMatchObject({ kind: "host", host: null });
 });
 it("opens the existing panel for the originating host and SSH session", async () => {
   useSsh.setState({
