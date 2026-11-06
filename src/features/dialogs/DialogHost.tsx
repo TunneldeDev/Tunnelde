@@ -607,6 +607,7 @@ function ConfirmDialog({
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
+            autoFocus
             disabled={busy}
             onClick={() => void run()}
           >

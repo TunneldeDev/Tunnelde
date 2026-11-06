@@ -73,6 +73,10 @@ function DialogContent({
         (
           nodes.find((node) => node.hasAttribute("autofocus")) ??
           nodes.find((node) => node.matches("input, textarea")) ??
+          nodes.find((node) =>
+            node.matches(".td-dialog__foot .td-btn--primary, .td-dialog__foot .td-btn--danger"),
+          ) ??
+          nodes.find((node) => !node.closest(".td-dialog__head")) ??
           nodes[0] ??
           current
         ).focus();

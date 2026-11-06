@@ -10,18 +10,32 @@ beforeEach(async () => {
 });
 
 describe("plugin tool confirmation", () => {
+  it("focuses the confirmation action for destructive prompts", async () => {
+    const confirm = vi.fn();
+    useDialogs.getState().confirm({
+      title: "Delete item",
+      body: "Delete this item?",
+      confirmLabel: "Delete",
+      danger: true,
+      onConfirm: confirm,
+    });
+    render(<DialogHost />);
+    const action = screen.getByRole("button", { name: "Delete" });
+    expect(document.activeElement).toBe(action);
+    fireEvent.click(action);
+    await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+  });
+
   it("renders complete long parameters in a keyboard-scrollable monospace preview", async () => {
     const body = `write configuration\n${"    preserve whitespace and code\n".repeat(5000)}`;
     const confirm = vi.fn();
-    useDialogs
-      .getState()
-      .confirm({
-        title: "Plugin action",
-        body,
-        confirmLabel: "Allow once",
-        preformatted: true,
-        onConfirm: confirm,
-      });
+    useDialogs.getState().confirm({
+      title: "Plugin action",
+      body,
+      confirmLabel: "Allow once",
+      preformatted: true,
+      onConfirm: confirm,
+    });
     render(<DialogHost />);
     const preview = screen.getByRole("dialog").querySelector("pre")!;
     expect(preview.textContent).toBe(body);
@@ -31,6 +45,7 @@ describe("plugin tool confirmation", () => {
     expect(preview.style.overflow).toBe("auto");
     expect(preview.style.maxHeight).toBe("55vh");
     expect(confirm).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Allow once" }));
     fireEvent.click(screen.getByRole("button", { name: "Allow once" }));
     await waitFor(() => expect(useDialogs.getState().dialog.kind).toBe("none"));
     expect(confirm).toHaveBeenCalledOnce();
