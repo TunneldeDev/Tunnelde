@@ -55,6 +55,7 @@ import {
   type PasteClip,
 } from "@/lib/files/dnd";
 import { fs, LOCAL_SOURCE, sourceKey } from "@/lib/files/fs";
+import { watchCutCompletion } from "@/lib/files/cutCompletion";
 import { createPrefetchQueue } from "@/lib/files/prefetch";
 import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
 import { usePlugins } from "@/store/plugins";
@@ -349,7 +350,7 @@ export function SftpPage({
   const panesRef = useRef(panes);
   const bodies = useRef<Record<PaneId, HTMLDivElement | null>>({ a: null, b: null });
   const columnScroll = useRef(new Map<string, number>());
-  const pending = useRef(new Map<string, (() => void) | undefined>());
+  const pending = useRef(new Set<string>());
   const requests = useRef({ a: 0, b: 0 });
   // A refresh must follow an in-flight navigation, whose listing can still show the old path.
   const requested = useRef<Record<PaneId, { path: string | null; historyIndex?: number }>>({
@@ -711,9 +712,7 @@ export function SftpPage({
       let settled = false;
       for (const item of useTransfers.getState().items) {
         if (item.status !== "running" && pending.current.has(item.id)) {
-          const onDone = pending.current.get(item.id);
           pending.current.delete(item.id);
-          if (item.status === "done") onDone?.();
           settled = true;
         }
       }
@@ -990,10 +989,12 @@ export function SftpPage({
     move: boolean,
     onDone?: () => void,
     overwrite = false,
+    isRelevant?: () => boolean,
   ) => {
     try {
       const transferId = await fs.transfer(from, fromPath, to, toPath, move, overwrite);
-      pending.current.set(transferId, onDone);
+      if (onDone && isRelevant) watchCutCompletion(transferId, onDone, isRelevant);
+      pending.current.add(transferId);
       if (mounted.current) setTransferEpoch((value) => value + 1);
     } catch (error) {
       toast(translateError(error), "error");
@@ -1009,15 +1010,6 @@ export function SftpPage({
         .filter((id) => sameFilesystem(panesRef.current[id].source, source))
         .map((id) => load(id, requested.current[id].path)),
     );
-  };
-
-  const removeCutItem = (snapshot: PasteClip | null, path: string): PasteClip | null => {
-    const current = useFileClipboard.getState().clip;
-    if (!current || current !== snapshot) return null;
-    const items = current.items.filter((item) => item.path !== path);
-    const next = items.length ? { ...current, items } : null;
-    useFileClipboard.getState().set(next);
-    return next;
   };
 
   const approveTargets = async (
@@ -1123,7 +1115,11 @@ export function SftpPage({
       const done =
         snapshot.action === "cut"
           ? (path: string) => {
-              remaining = removeCutItem(remaining, path);
+              const current = useFileClipboard.getState().clip;
+              if (!current || current !== remaining) return;
+              const items = current.items.filter((item) => item.path !== path);
+              remaining = items.length ? { ...current, items } : null;
+              useFileClipboard.getState().set(remaining);
             }
           : undefined;
       if (action.kind === "move" || action.kind === "copy") {
@@ -1144,8 +1140,11 @@ export function SftpPage({
             action.to,
             op.to,
             action.move,
-            () => done?.(op.from),
+            done ? () => done(op.from) : undefined,
             overwrite,
+            done
+              ? () => remaining !== null && useFileClipboard.getState().clip === remaining
+              : undefined,
           );
     });
   };

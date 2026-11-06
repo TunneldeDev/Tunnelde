@@ -963,6 +963,303 @@ describe("SftpPage asynchronous interactions", () => {
     expect(useFileClipboard.getState().clip).toBe(clip);
   });
 
+  it("keeps a cross-drive cut until the background move completes", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() =>
+      expect(fsMock.transfer).toHaveBeenCalledWith(
+        { kind: "local" },
+        "D:\\elsewhere\\move.txt",
+        { kind: "local" },
+        "C:\\work\\move.txt",
+        true,
+        false,
+      ),
+    );
+    expect(useFileClipboard.getState().clip).toBe(clip);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    await waitFor(() => expect(useFileClipboard.getState().clip).toBeNull());
+    expect(fsMock.rename).not.toHaveBeenCalled();
+  });
+
+  it("keeps the cut completion callback when a transfer is paused and resumed", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    act(() =>
+      useTransfers.setState({
+        items: [
+          {
+            id: "transfer-1",
+            direction: "transfer",
+            name: "move.txt",
+            transferred: 4,
+            total: 12,
+            status: "paused",
+            error: null,
+            updatedAt: Date.now(),
+          },
+        ],
+      }),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(useFileClipboard.getState().clip).toBe(clip);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    await waitFor(() => expect(useFileClipboard.getState().clip).toBeNull());
+  });
+
+  it("keeps the cut completion callback when a failed transfer is retried", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 4,
+        total: 12,
+        status: "failed",
+        error: "network error",
+      }),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(useFileClipboard.getState().clip).toBe(clip);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    await waitFor(() => expect(useFileClipboard.getState().clip).toBeNull());
+  });
+
+  it("clears the original cut after the file page closes and the move completes", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    view.unmount();
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip).toBeNull();
+  });
+
+  it("does not clear a newer clipboard selection when a previous move completes", async () => {
+    const oldClip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    const newClip = {
+      source: { kind: "local" } as FsSource,
+      action: "copy" as const,
+      items: [{ path: "C:\\work\\notes.txt", name: "notes.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip: oldClip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    view.unmount();
+    useFileClipboard.setState({ clip: newClip });
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip).toBe(newClip);
+  });
+
+  it("releases a move watcher when the original clipboard is replaced before any event", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const subscribe = useTransfers.subscribe;
+    const disposals: Array<ReturnType<typeof vi.fn>> = [];
+    const spy = vi.spyOn(useTransfers, "subscribe").mockImplementation((listener) => {
+      const unsubscribe = subscribe(listener);
+      const dispose = vi.fn(unsubscribe);
+      disposals.push(dispose);
+      return dispose;
+    });
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(disposals).toHaveLength(1));
+    view.unmount();
+    act(() => useFileClipboard.getState().set(null));
+    expect(disposals[0]).toHaveBeenCalledOnce();
+    spy.mockRestore();
+  });
+
+  it("does not watch clipboard completion for a cross-drive copy", async () => {
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "local" },
+        action: "copy",
+        items: [{ path: "D:\\elsewhere\\copy.txt", name: "copy.txt", isDir: false }],
+      },
+    });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const spy = vi.spyOn(useTransfers, "subscribe");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    view.unmount();
+  });
+
+  it("removes only completed items from a multi-file cut in completion order", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [
+        { path: "D:\\elsewhere\\one.txt", name: "one.txt", isDir: false },
+        { path: "D:\\elsewhere\\two.txt", name: "two.txt", isDir: false },
+      ],
+    };
+    fsMock.transfer.mockResolvedValueOnce("first").mockResolvedValueOnce("second");
+    useFileClipboard.setState({ clip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalledTimes(2));
+    view.unmount();
+    act(() =>
+      useTransfers.getState().apply({
+        id: "second",
+        direction: "transfer",
+        name: "two.txt",
+        transferred: 1,
+        total: 1,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip?.items.map((item) => item.name)).toEqual(["one.txt"]);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "first",
+        direction: "transfer",
+        name: "one.txt",
+        transferred: 1,
+        total: 1,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip).toBeNull();
+  });
+
+  it("retains a cross-drive cut when the background move is cancelled", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 0,
+        total: 12,
+        status: "cancelled",
+        error: null,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        fsMock.list.mock.calls.filter(([, path]) => path === "C:\\work").length,
+      ).toBeGreaterThan(1),
+    );
+    expect(useFileClipboard.getState().clip).toBe(clip);
+  });
+
   it("asks before replacing a target and preserves the cut source while awaiting confirmation", async () => {
     const clip = {
       source: { kind: "local" } as FsSource,

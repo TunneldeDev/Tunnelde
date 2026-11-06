@@ -138,6 +138,15 @@ source through its handle. An open writer, verification failure, cancellation or
 checkpoint failure leaves the source intact. This protection applies to regular
 local files; it does not establish the same guarantee for remote or Unix moves.
 
+Dragging local entries between different Windows drive letters copies them as
+background transfers; the originals remain in place. Cut and paste uses a background
+move for files. The cut selection clears only after its move succeeds, including
+when the file view has been closed or the task was paused and resumed. A failed or
+cancelled move keeps the cut selection; later completion cannot clear a newer
+selection. Same-source, same-drive moves continue using rename. Folder moves that
+require copying remain unavailable; copy the folder instead. Drive-letter routing
+does not detect mounted volumes under one drive, UNC shares or remote mount boundaries.
+
 The status-bar **Transfers** entry opens a compact background task list from any
 page; F1 → **Background transfers** opens the same list. When the status bar is
 hidden, the entry appears in the bottom corner. Pin the list to keep it open while
