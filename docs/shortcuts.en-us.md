@@ -116,9 +116,10 @@ Window gestures:
 - Settings → General switches between system and compact title bars. In compact
   mode, drag the grip or empty tab-strip space to move the window; double-click
   to maximize or restore. macOS retains its native window buttons.
-- Drag a file or folder between the two file panes to copy it; dropping it in
-  the same pane renames or moves it. Either pane can show this computer or any
-  open session.
+- Drag files or folders to a destination directory. A drop between local panes or panes
+  connected to the same saved host requests a move; a drop between different sources
+  copies the selection. Moves across local volumes or remote mounts may fail if the
+  underlying rename cannot cross them. Use copy and paste when you want to keep the source.
 - Drag editor group dividers to resize, or focus a divider and use the arrow
   keys. Double-click or press Home to restore an equal split.
 
