@@ -54,6 +54,16 @@ fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
             });
             "sftp.backupRecoveryRequired".into()
         }
+        Some(AppError::BackupUnrecognized {
+            backup,
+            destination,
+        }) => {
+            row.backup_recovery = Some(BackupRecovery {
+                backup,
+                destination,
+            });
+            "sftp.backupUnrecognized".into()
+        }
         Some(error) => error.to_string(),
         None => "sftp.transferTimedOut".into(),
     });
@@ -242,6 +252,18 @@ mod tests {
         assert_eq!(
             row.backup_recovery.as_ref().unwrap().destination,
             "/new-target"
+        );
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupUnrecognized {
+                backup: "/unrecognized".into(),
+                destination: "/target".into(),
+            }),
+        );
+        assert_eq!(row.error.as_deref(), Some("sftp.backupUnrecognized"));
+        assert_eq!(
+            row.backup_recovery.as_ref().unwrap().backup,
+            "/unrecognized"
         );
     }
 
