@@ -1087,6 +1087,10 @@
     "consentRequired": "使用本机 Node 前需要你的授权。"
   },
   "plugin": {
+    "api": {
+      "invalidStorage": "无法读取插件保存的数据。请先导出或修复数据再重试；原有数据已保留。",
+      "storageTooLarge": "插件保存的数据超过支持的大小。请先导出或精简数据再重试；原有数据已保留。"
+    },
     "input": {
       "invalid": "插件输入无效。"
     },
@@ -1518,6 +1522,15 @@
       "unreachable": "连接失败"
     }
   },
+  "pluginErrors": {
+    "startFailed": "无法启动 {{name}}：{{error}}",
+    "openLog": "打开日志",
+    "spawn": "无法启动插件进程",
+    "write": "无法与插件进程通信",
+    "exited": "插件进程在启动时退出，请打开日志查看详情。",
+    "timeout": "插件初始化超时，请打开日志查看详情。",
+    "unknown": "插件未报告失败原因，请打开日志查看详情。"
+  },
   "forward": {
     "noHostsHint": "添加主机后即可配置和管理端口转发。",
     "disconnectTitle": "断开 SSH 连接？",
@@ -1637,6 +1650,7 @@
     "missing": "主题不可用（{{id}}）"
   },
   "logs": {
+    "noFile": "暂时没有可打开的诊断日志。",
     "title": "日志",
     "description": "查看近期操作记录和软件诊断日志。",
     "view": "查看日志",

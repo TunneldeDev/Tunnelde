@@ -41,7 +41,7 @@ pub fn record(db: &Database, action: &'static str, target: Option<&str>) {
     }
 }
 
-fn recent_file(dir: &Path) -> AppResult<(Option<String>, String, bool)> {
+pub(crate) fn latest_name(dir: &Path) -> AppResult<Option<String>> {
     let mut names = Vec::new();
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
@@ -60,7 +60,11 @@ fn recent_file(dir: &Path) -> AppResult<(Option<String>, String, bool)> {
         }
     }
     names.sort_unstable();
-    let Some(name) = names.pop() else {
+    Ok(names.pop())
+}
+
+fn recent_file(dir: &Path) -> AppResult<(Option<String>, String, bool)> {
+    let Some(name) = latest_name(dir)? else {
         return Ok((None, String::new(), false));
     };
     let mut file = std::fs::File::open(dir.join(&name))?;
@@ -110,6 +114,29 @@ pub async fn logs_read(app: AppHandle) -> AppResult<LogSnapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn latest_log_selects_daily_files_and_ignores_directories_and_links() {
+        let dir = std::env::temp_dir().join(format!("tunnelde-logs-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(latest_name(&dir).unwrap(), None);
+        for name in ["tunnelde.log.2026-11-05", "tunnelde.log.2026-11-06"] {
+            std::fs::write(dir.join(name), "log").unwrap();
+        }
+        std::fs::create_dir(dir.join("tunnelde.log.2026-11-07")).unwrap();
+        std::fs::write(dir.join("tunnelde.log.2026-11-08.bak"), "ignored").unwrap();
+        std::fs::write(dir.join("tunnelde.log.current"), "ignored").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(
+            dir.join("tunnelde.log.2026-11-05"),
+            dir.join("tunnelde.log.2026-11-09"),
+        )
+        .unwrap();
+        assert_eq!(
+            latest_name(&dir).unwrap().as_deref(),
+            Some("tunnelde.log.2026-11-06")
+        );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn operation_history_is_bounded_and_newest_first() {
         let db = Database::in_memory().unwrap();
