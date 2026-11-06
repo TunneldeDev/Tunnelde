@@ -11,6 +11,8 @@ import { useNavigation, type SidebarView } from "@/store/navigation";
 import { usePlugins } from "@/store/plugins";
 import { plugin } from "../fixtures/plugins";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
+import { useHosts } from "@/store/hosts";
+import type { Host } from "@/lib/api/types";
 import { SIDEBAR_MIME, TAB_MIME } from "@/lib/session/sidebarDock";
 vi.mock("@/features/terminal/TerminalPage", () => ({ TerminalPage: () => null }));
 
@@ -102,6 +104,61 @@ beforeEach(async () => {
 });
 
 describe("sidebar panel docking", () => {
+  it.each([
+    ["left", 10, 200, "row", "first"],
+    ["right", 490, 200, "row", "second"],
+    ["top", 250, 10, "column", "first"],
+    ["bottom", 250, 390, "column", "second"],
+  ] as const)(
+    "moves forwarding to the %s edge and restores its state",
+    async (_edge, x, y, direction, side) => {
+      useHosts.setState({ hosts: [{ id: "one", name: "Server one" }] as Host[] });
+      const rendered = render(<Shell />);
+      const icon = screen.getByRole("button", { name: "Port forwarding" });
+      fireEvent.click(icon);
+      const host = screen.getByRole("button", { name: /Server one/ });
+      fireEvent.click(host);
+      await act(async () => {});
+      const panel = host.closest("[data-sidebar-panel]");
+      const title = panel!.querySelector(".sidebar-drag-title")!;
+      const data = transfer("sidebar:forwarding");
+      fireEvent.dragStart(title, { dataTransfer: data });
+      expect(data.getData(TAB_MIME)).toBe("sidebar:forwarding");
+      const body = rendered.container.querySelector(".pane__body")!;
+      vi.spyOn(body, "getBoundingClientRect").mockReturnValue({
+        left: 0,
+        top: 0,
+        width: 500,
+        height: 400,
+        right: 500,
+        bottom: 400,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      });
+      drop(body, x, y, "sidebar:forwarding");
+      const state = useWorkspace.getState();
+      expect(state.layout.kind).toBe("split");
+      if (state.layout.kind !== "split") throw Error("Expected split");
+      expect(state.layout.direction).toBe(direction);
+      const owner = state.panes.find((pane) => pane.tabIds.includes("sidebar:forwarding"))!;
+      expect(state.layout[side]).toEqual({ kind: "pane", paneId: owner.id });
+      expect(host.closest('[data-docked="true"]')).toBeTruthy();
+      expect(host.getAttribute("aria-expanded")).toBe("true");
+      const layout = state.layout;
+      fireEvent.click(icon);
+      expect(icon.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(icon);
+      expect(screen.getByRole("button", { name: /Server one/ })).toBe(host);
+      expect(host.getAttribute("aria-expanded")).toBe("true");
+      expect(useWorkspace.getState().layout).toEqual(layout);
+      expect(workspaceRecords().some((record) => record.id === "sidebar:forwarding")).toBe(true);
+      drop(screen.getByRole("navigation", { name: "Workspace" }), 20, 60, "sidebar:forwarding");
+      expect(host.closest(".sidebar-view")).toBeTruthy();
+      expect(host.getAttribute("aria-expanded")).toBe("true");
+    },
+  );
+
   it("collapses and restores a docked AI panel through its activity icon while preserving its DOM, draft and split", () => {
     usePlugins.setState({
       items: [

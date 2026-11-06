@@ -6,6 +6,9 @@ import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
+import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { sidebarTabId } from "@/lib/session/sidebarDock";
+import { useWorkspace } from "@/store/workspace";
 import "./forwarding-panel.css";
 
 interface ForwardStatus extends ForwardRule {
@@ -15,6 +18,9 @@ export function ForwardingPanel() {
   const { t } = useTranslation();
   const hosts = useHosts((state) => state.hosts);
   const sessions = useSsh((state) => state.sessions);
+  const docked = useWorkspace((state) =>
+    state.tabs.some((tab) => tab.id === sidebarTabId("forwarding")),
+  );
   const [selected, setSelected] = useState<string | null>(null);
   const [rules, setRules] = useState<ForwardStatus[]>([]);
   const [error, setError] = useState("");
@@ -45,7 +51,12 @@ export function ForwardingPanel() {
   }, [load, sessions]);
   return (
     <div className="forwarding-panel">
-      <header className="forwarding-panel__header">{t("forward.title")}</header>
+      {!docked && (
+        <header className="sidebar__head">
+          <SidebarTitle view="forwarding">{t("forward.title")}</SidebarTitle>
+          <SidebarDockControls view="forwarding" />
+        </header>
+      )}
       <div className="forwarding-panel__content">
         {error && <p role="alert">{error}</p>}
         {hosts.map((host) => {
