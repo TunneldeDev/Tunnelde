@@ -3337,9 +3337,11 @@ mod tests {
             }
         }
 
+        type RecordedRequests = Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
+
         struct RenameServer {
             advertised: bool,
-            received: Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>,
+            received: RecordedRequests,
             result: StatusCode,
         }
 
