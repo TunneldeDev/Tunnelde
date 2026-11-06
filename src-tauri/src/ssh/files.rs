@@ -3914,6 +3914,40 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn transfer_move_rejects_remote_directories_without_removing_source() {
+            let root = temp_root("sftp-move-guard");
+            std::fs::create_dir(root.join("folder")).unwrap();
+            std::fs::write(root.join("folder/file.txt"), b"preserved").unwrap();
+            let sftp = client(&root, Arc::new(State::default())).await;
+            let directory = Endpoint {
+                session: Some("test".into()),
+                path: "folder".into(),
+            };
+            let file = Endpoint {
+                session: Some("test".into()),
+                path: "folder/file.txt".into(),
+            };
+            assert_eq!(
+                ensure_safe_transfer_move_source(&directory, Some(&sftp))
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "sftp.directoryMoveUnavailable"
+            );
+            assert!(ensure_safe_transfer_move_source(&file, Some(&sftp))
+                .await
+                .is_ok());
+            assert_eq!(
+                std::fs::read(root.join("folder/file.txt")).unwrap(),
+                b"preserved"
+            );
+            sftp.close().await.unwrap();
+            std::fs::remove_file(root.join("folder/file.txt")).unwrap();
+            std::fs::remove_dir(root.join("folder")).unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
         async fn sftp_copy_and_transfer_reject_destination_links() {
             let root = temp_root("sftp-destination-link");
             let outside = root.join("outside");
