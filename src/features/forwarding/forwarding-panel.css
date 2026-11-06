@@ -51,6 +51,9 @@
   white-space: nowrap;
   color: var(--td-muted);
 }
+.forwarding-panel__host-button small.is-running {
+  color: var(--td-green);
+}
 .forwarding-panel__host > .forwarding {
   padding: 12px;
 }

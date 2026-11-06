@@ -1534,9 +1534,10 @@
   "forward": {
     "noHostsHint": "添加主机后即可配置和管理端口转发。",
     "disconnectTitle": "断开 SSH 连接？",
-    "disconnectBody": "断开连接将停止转发及使用此连接的其他任务。",
+    "disconnectBody": "断开连接将停止此连接上的所有端口转发。",
     "title": "端口转发",
     "add": "添加转发",
+    "startAll": "全部启动",
     "hint": "转发规则按主机保存，连接后可手动启动；断开 SSH 时会停止监听和已有转发连接。",
     "session": "SSH 会话",
     "local": "本地监听 → 远端服务（访问远端）",

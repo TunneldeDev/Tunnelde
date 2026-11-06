@@ -62,7 +62,7 @@ export const useSsh = create<SshStore>((set, get) => ({
   },
 
   connect: (request, onError) => {
-    const connectionKey = `${request.hostId}:${request.background ? "background" : "terminal"}`;
+    const connectionKey = `${request.hostId}:${request.purpose ?? (request.background ? "background" : "terminal")}`;
     const existing = connections.get(connectionKey);
     if (existing) {
       return existing;

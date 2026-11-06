@@ -264,6 +264,54 @@ async fn local_and_remote_roundtrip_and_stop_are_isolated() {
     server2.abort();
     echo.abort();
 }
+#[tokio::test]
+async fn multiple_forwards_share_one_ssh_connection_and_stop_independently() {
+    let (handle, routes, server) = fixture().await;
+    let (target, echo_task) = echo().await;
+    let first_port = free_port().await;
+    let mut second_port = free_port().await;
+    while second_port == first_port {
+        second_port = free_port().await;
+    }
+    let make = |id: &str, port| ForwardRule {
+        id: id.into(),
+        host_id: "h".into(),
+        name: id.into(),
+        mode: "local".into(),
+        bind_host: "127.0.0.1".into(),
+        bind_port: port,
+        target_host: "127.0.0.1".into(),
+        target_port: target,
+    };
+    let first = open_forward(
+        handle.clone(),
+        routes.clone(),
+        &make("first", first_port),
+        "shared",
+        None,
+    )
+    .await
+    .unwrap();
+    let second = open_forward(handle, routes, &make("second", second_port), "shared", None)
+        .await
+        .unwrap();
+    let registry = ForwardRegistry::default();
+    {
+        let mut active = registry.active.lock().unwrap();
+        active.insert("first".into(), first);
+        active.insert("second".into(), second);
+    }
+    let first_socket = roundtrip(first_port).await;
+    let second_socket = roundtrip(second_port).await;
+    registry.stop("first");
+    assert_closed(first_socket, first_port).await;
+    drop(roundtrip(second_port).await);
+    registry.stop_session("shared");
+    assert_closed(second_socket, second_port).await;
+    assert!(registry.active.lock().unwrap().is_empty());
+    server.abort();
+    echo_task.abort();
+}
 #[test]
 fn in_flight_start_tickets_are_invalidated_by_stop_and_disconnect() {
     let registry = ForwardRegistry::default();

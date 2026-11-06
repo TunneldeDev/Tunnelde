@@ -35,6 +35,7 @@ interface ConnectDialogProps {
   initialError?: string;
   onClose: () => void;
   onConnected?: (session: SshSession) => void;
+  purpose?: "forwarding";
 }
 
 export function ConnectDialog(props: ConnectDialogProps) {
@@ -57,6 +58,7 @@ function HostConnectDialog({
   initialError,
   onClose,
   onConnected,
+  purpose,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
@@ -256,6 +258,7 @@ function HostConnectDialog({
       {
         hostId: host.id,
         background: after === "background",
+        purpose,
         jumpCredentials,
         password: interactive ? password || null : null,
         passphrase: interactive ? null : passphrase || null,

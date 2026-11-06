@@ -59,6 +59,8 @@ pub struct SshConnectRequest {
     #[serde(default)]
     pub background: bool,
     #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
     pub password: Option<String>,
     #[serde(default)]
     pub passphrase: Option<String>,
@@ -88,6 +90,7 @@ pub struct SessionInfo {
     pub rows: u32,
     pub connected_at: i64,
     pub terminal: bool,
+    pub purpose: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -215,9 +218,7 @@ impl SshManager {
 
     fn remove(&self, session_id: &str) {
         if let Ok(mut sessions) = self.sessions.lock() {
-            if let Some(handle) = sessions.remove(session_id) {
-                handle.task.abort();
-            }
+            sessions.remove(session_id);
         }
     }
 
@@ -667,6 +668,7 @@ async fn open_route(
         let request = SshConnectRequest {
             host_id: node.id.clone(),
             background: false,
+            purpose: None,
             password: credential.password,
             passphrase: credential.passphrase,
             jump_credentials: HashMap::new(),
@@ -761,6 +763,11 @@ async fn connect_for_auth(
         rows: request.rows,
         connected_at: now_ms(),
         terminal: !request.background,
+        purpose: if request.background && request.purpose.as_deref() == Some("forwarding") {
+            request.purpose.clone()
+        } else {
+            None
+        },
     };
 
     let shared_handle = Arc::new(handle);
@@ -790,6 +797,11 @@ async fn connect_for_auth(
             }
         }
 
+        if let Some(state) = task_app.try_state::<AppState>() {
+            state.forwards.stop_session(&task_session);
+            state.ssh.remove(&task_session);
+            state.monitor.forget(&task_session);
+        }
         let _ = task_app.emit(
             CLOSED_EVENT,
             ClosedPayload {
@@ -798,10 +810,7 @@ async fn connect_for_auth(
             },
         );
         if let Some(state) = task_app.try_state::<AppState>() {
-            state.forwards.stop_session(&task_session);
             state.mounts.stop_session(&task_session).await;
-            state.ssh.remove(&task_session);
-            state.monitor.forget(&task_session);
         }
     });
 
