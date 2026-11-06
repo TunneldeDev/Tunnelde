@@ -45,6 +45,9 @@ jobs:
       - name: Test release automation
         run: node --test scripts/release/tests/*.test.mjs
 
+      - name: Test plugin catalogue parity check
+        run: node --test scripts/ci/check-sdk-parser.test.mjs
+
       - name: Check translation catalogues
         run: pnpm i18n:check
 
@@ -119,6 +122,17 @@ jobs:
         run: |
           TUNNELDE_API_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-api-describe.json" cargo test --manifest-path src-tauri/Cargo.toml emit_discovery_contract_response
           node scripts/ci/check-plugin-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json"
+
+      - name: Checkout SDK catalogue parser
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 81fa823920e67eedd1454f96e3a476fbddc9d168
+          path: .sdk-parser
+          persist-credentials: false
+
+      - name: Compare SDK parser with host discovery
+        run: node scripts/ci/check-sdk-parser.mjs . .sdk-parser "$RUNNER_TEMP/plugin-api-describe.json"
 
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
