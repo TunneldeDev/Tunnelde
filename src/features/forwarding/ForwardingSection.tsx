@@ -168,7 +168,7 @@ export function ForwardingSection({
     <section className={`forwarding ${embedded ? "" : "card"}`} aria-busy={busy}>
       <header className="forwarding__head">
         <div>
-          <h2 className="card__title">{embedded ? host.name : t("forward.title")}</h2>
+          {!embedded && <h2 className="card__title">{t("forward.title")}</h2>}
           <p className="forwarding__subtitle">
             {host.username && `${host.username}@`}
             {host.host || host.name}

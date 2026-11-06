@@ -1,7 +1,6 @@
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useNavigation } from "@/store/navigation";
 
 const {
   apiMock,
@@ -144,8 +143,6 @@ import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
-import { useHosts } from "@/store/hosts";
-import type { Host } from "@/lib/api/types";
 import { terminalTheme } from "@/features/terminal/terminalTheme";
 import { useContextMenu } from "@/store/contextMenu";
 import { previewColors } from "@/lib/prefs/colors";
@@ -1001,15 +998,7 @@ describe("live command history", () => {
   });
 });
 
-it("opens the dockable forwarding panel for the toolbar's SSH session", () => {
-  useHosts.setState({ hosts: [{ id: "h1", name: "My server" } as Host] });
+it("keeps forwarding out of the terminal toolbar", () => {
   render(<TerminalPage sessionId="s1" active />);
-  const button = screen.getByRole("button", { name: "Port forwarding" });
-  fireEvent.click(button);
-  expect(screen.queryByRole("dialog", { name: "Port forwarding" })).toBeNull();
-  expect(useNavigation.getState().activeSidebar).toBe("forwarding");
-  expect(useNavigation.getState().forwardingTarget).toMatchObject({
-    hostId: "h1",
-    sessionId: "s1",
-  });
+  expect(screen.queryByRole("button", { name: "Port forwarding" })).toBeNull();
 });

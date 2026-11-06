@@ -190,8 +190,7 @@ after an application restart or privilege revocation.
 ## Local and remote port forwarding
 
 Open **Port forwarding** in the activity bar to view saved hosts and the number of
-active and saved rules for each one. Expand a host to manage its rules. The SSH
-terminal toolbar and host details also provide access. Choose **Add forward**, then
+active and saved rules for each one. Expand a host to manage its rules. Host details also provide access. Choose **Add forward**, then
 select **Access a remote service** or **Share a local service**. The editor separates
 the listening and service endpoints and names the computer that resolves each address.
 Names are optional and default to the service address and port. Choose **Save and
