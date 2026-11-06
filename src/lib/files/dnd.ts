@@ -56,6 +56,20 @@ export function sameSource(left: FsSource, right: FsSource): boolean {
   return sourceKey(left) === sourceKey(right);
 }
 
+// Windows drive letters are sufficient to identify different volumes, but
+// matching letters do not prove two paths are on the same mounted filesystem.
+function differentWindowsDrives(source: FsSource, items: DragItem[], target: string): boolean {
+  if (source.kind !== "local") return false;
+  const destination = /^([a-z]):[\\/]/i.exec(target)?.[1]?.toLowerCase();
+  return (
+    !!destination &&
+    items.some((item) => {
+      const drive = /^([a-z]):[\\/]/i.exec(item.path)?.[1]?.toLowerCase();
+      return !!drive && drive !== destination;
+    })
+  );
+}
+
 export function separatorFor(source: FsSource, path = ""): string {
   return source.kind === "remote" || path.startsWith("/") ? "/" : "\\";
 }
@@ -207,6 +221,12 @@ export function resolveDrop(
   if (ops.length === 0) {
     return { kind: "noop" };
   }
+  if (
+    target.kind === "local" &&
+    differentWindowsDrives(payload.source, payload.items, targetDirectory)
+  ) {
+    return { kind: "transfer", from: payload.source, to: target, ops, move: false };
+  }
   if (sameFilesystem(payload.source, target)) {
     return {
       kind: "move",
@@ -226,6 +246,9 @@ export function planPaste(
 ): DropAction {
   if (clip.items.length === 0) {
     return { kind: "noop" };
+  }
+  if (target.kind === "local" && differentWindowsDrives(clip.source, clip.items, targetDirectory)) {
+    return pasteAcross(clip, target, targetDirectory);
   }
   return sameFilesystem(clip.source, target)
     ? pasteWithin(clip, target, targetDirectory)

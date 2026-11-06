@@ -89,12 +89,54 @@ describe("drag payloads", () => {
 });
 
 describe("resolveDrop", () => {
+  it("copies between Windows drive letters, preserving same-drive renames", () => {
+    const item = { path: "C:\\work\\a.txt", name: "a.txt", isDir: false };
+    expect(resolveDrop({ source: LOCAL, items: [item] }, LOCAL, "D:\\target")).toEqual({
+      kind: "transfer",
+      from: LOCAL,
+      to: LOCAL,
+      move: false,
+      ops: [{ from: item.path, to: "D:\\target\\a.txt" }],
+    });
+    expect(resolveDrop({ source: LOCAL, items: [item] }, LOCAL, "c:\\target").kind).toBe("move");
+    expect(
+      planPaste({ source: LOCAL, action: "cut", items: [item] }, LOCAL, "D:\\target"),
+    ).toMatchObject({ kind: "transfer", move: true });
+    expect(
+      planPaste({ source: LOCAL, action: "copy", items: [item] }, LOCAL, "D:\\target"),
+    ).toMatchObject({ kind: "transfer", move: false });
+  });
   it("renames inside one panel", () => {
     expect(resolveDrop({ source: SERVER_A, items: [file] }, SERVER_A, "/srv/backup")).toEqual({
       kind: "move",
       source: SERVER_A,
       ops: [{ from: "/home/user/a.txt", to: "/srv/backup/a.txt" }],
     });
+  });
+
+  it("uses transfers when only part of a local selection is on another drive", () => {
+    const items = [
+      { path: "C:\\work\\one.txt", name: "one.txt", isDir: false },
+      { path: "D:\\work\\two.txt", name: "two.txt", isDir: false },
+    ];
+    expect(resolveDrop({ source: LOCAL, items }, LOCAL, "c:\\target")).toMatchObject({
+      kind: "transfer",
+      move: false,
+      ops: [
+        { from: items[0]!.path, to: "c:\\target\\one.txt" },
+        { from: items[1]!.path, to: "c:\\target\\two.txt" },
+      ],
+    });
+    expect(planPaste({ source: LOCAL, action: "cut", items }, LOCAL, "C:\\target")).toMatchObject({
+      kind: "transfer",
+      move: true,
+    });
+    // Remote POSIX paths must retain rename behavior even when their names look
+    // like drive paths. Matching local letters also retain same-source moves.
+    expect(resolveDrop({ source: SERVER_A, items }, SERVER_A, "D:/target").kind).toBe("move");
+    expect(resolveDrop({ source: LOCAL, items: [items[0]!] }, LOCAL, "c:\\target").kind).toBe(
+      "move",
+    );
   });
 
   it("ignores a drop into the folder it already lives in", () => {
