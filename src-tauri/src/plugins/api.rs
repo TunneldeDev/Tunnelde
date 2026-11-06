@@ -38,11 +38,38 @@ pub struct ApiMethod {
     pub permissions: &'static [&'static str],
     pub params: &'static str,
     pub description: &'static str,
+    /// Compatibility state for this method. New methods start experimental;
+    /// promotion to stable is an explicit contract decision.
+    pub stability: &'static str,
+    pub since: Option<&'static str>,
+    pub deprecated: Option<&'static str>,
 }
 
 macro_rules! method {
     ($name:literal, [$($permission:literal),*], $params:literal, $description:literal) => {
-        ApiMethod { name: $name, permissions: &[$($permission),*], params: $params, description: $description }
+        ApiMethod {
+            name: $name,
+            permissions: &[$($permission),*],
+            params: $params,
+            description: $description,
+            stability: "experimental",
+            since: None,
+            deprecated: None,
+        }
+    };
+}
+
+macro_rules! stable_method {
+    ($name:literal, [$($permission:literal),*], $params:literal, $description:literal, $since:literal) => {
+        ApiMethod {
+            name: $name,
+            permissions: &[$($permission),*],
+            params: $params,
+            description: $description,
+            stability: "stable",
+            since: Some($since),
+            deprecated: None,
+        }
     };
 }
 
@@ -82,7 +109,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("tools.invoke", [], "{method:string,params:object,mode:ask|approve|full|readOnly,scope:{sessionIds?:string[],hostIds?:string[],localRoots?:string[],remoteRoots?:{sessionId:string,path:string}[]},review?:{approved:boolean,reason:string},clientId?:string,requestId?:string}", "Execute an allowlisted AI/MCP tool after permission, target scope and approval checks. ReadOnly rejects every command and mutation. Review may only be supplied by a trusted plugin's independent reviewer."),
     method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation; already completed operations cannot be rolled back."),
     method!("tools.revokeClient", [], "{clientId:string}", "Cancel pending tool invocations owned by this plugin runtime's client."),
-    method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization."),
+    stable_method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization.", "0.21.0"),
     method!("log", ["log"], "{message:string,level?:string}", "Write a bounded plugin-tagged log message."),
     method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
     method!("app.openExternal", ["app.openExternal"], "{url:string}", "Open an http/https URL with the system browser."),
@@ -1017,6 +1044,22 @@ mod tests {
     }
 
     #[test]
+    fn discovery_preserves_legacy_fields_and_publishes_stability_metadata() {
+        let entry = serde_json::to_value(method_info("api.describe").unwrap()).unwrap();
+        assert_eq!(entry["name"], "api.describe");
+        assert_eq!(entry["permissions"], json!([]));
+        assert_eq!(entry["params"], "{}");
+        assert!(entry["description"].as_str().is_some_and(|s| !s.is_empty()));
+        assert_eq!(entry["stability"], "stable");
+        assert_eq!(entry["since"], "0.21.0");
+        assert_eq!(entry["deprecated"], Value::Null);
+        let experimental =
+            serde_json::to_value(method_info("workspace.snapshot").unwrap()).unwrap();
+        assert_eq!(experimental["stability"], "experimental");
+        assert_eq!(experimental["since"], Value::Null);
+    }
+
+    #[test]
     fn exposes_only_unique_documented_methods_with_declared_permissions() {
         let mut names = HashSet::new();
         for entry in METHODS {
@@ -1026,6 +1069,29 @@ mod tests {
                 entry.name
             );
             assert!(!entry.params.is_empty() && !entry.description.is_empty());
+            assert!(matches!(
+                entry.stability,
+                "stable" | "experimental" | "deprecated"
+            ));
+            if entry.stability == "stable" {
+                assert!(
+                    entry.since.is_some(),
+                    "stable method {} needs since",
+                    entry.name
+                );
+                assert!(
+                    entry.deprecated.is_none(),
+                    "stable method {} cannot be deprecated",
+                    entry.name
+                );
+            }
+            if entry.stability == "deprecated" {
+                assert!(
+                    entry.deprecated.is_some(),
+                    "deprecated method {} needs guidance",
+                    entry.name
+                );
+            }
             for permission in entry.permissions {
                 assert!(
                     super::super::security::PERMISSIONS.contains(permission),
@@ -1052,6 +1118,9 @@ mod tests {
             method_info("files.local.copy").unwrap().permissions,
             ["fs.read", "fs.write"]
         );
+        let describe = method_info("api.describe").unwrap();
+        assert_eq!(describe.stability, "stable");
+        assert_eq!(describe.since, Some("0.21.0"));
     }
 
     #[test]

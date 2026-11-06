@@ -269,10 +269,25 @@ createPlugin({
 ```
 
 Declare `hosts.read` and `workspace.read` for this example. `host.describe()` returns
-`{version: 1, methods: [{name, permissions, params, description}]}` for the running
-application. No domain permission is needed for API discovery, plugin-scoped storage
+`{version: 1, methods: [{name, permissions, params, description, stability, since, deprecated}]}`
+for the running application. `stability` is one of `stable`, `experimental` or
+`deprecated`. Stable methods include the first host version in `since`; deprecated methods
+include migration guidance in `deprecated`. Only methods explicitly marked `stable` are
+compatibility commitments. No domain permission is needed for API discovery, plugin-scoped storage
 or plugin-identified notifications, but approval to execute the installed code is
 still mandatory. Unknown methods and permissions are rejected.
+
+The stable `api.describe` request takes an empty object and returns protocol `version: 1`
+and an array of method descriptions. Existing `name`, `permissions`, `params` and
+`description` fields remain available; clients must ignore additional fields and unknown
+stability values. `params` is explanatory text, not a machine-validated schema. The call
+requires an authorized running plugin and can fail if authorization is revoked, the runtime
+is stopped, or normal JSON-RPC transport limits are exceeded. Its result is a snapshot:
+each later call is independently authorized, and a listed method is not a grant. Hosts
+released before stability metadata was added omit these fields; treat that state as unknown.
+For stable methods, compatible versions preserve the documented request, response and
+authorization behavior; additive fields and methods may be introduced. A breaking change
+requires an explicitly versioned migration. Experimental methods make no such promise.
 
 | Permission                          | Available operations                                                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
