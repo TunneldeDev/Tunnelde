@@ -128,7 +128,7 @@ impl Default for Settings {
             close_to_tray: false,
             release_webview_in_tray: true,
             lightweight_mode: false,
-            show_dock_icon_in_background: true,
+            show_dock_icon_in_background: false,
             title_bar_style: if cfg!(target_os = "windows") {
                 "compact"
             } else {

@@ -223,7 +223,7 @@ The panel menu also provides Return to sidebar. Each pane can be locked as the d
 for new pages, independently of keyboard focus.
 
 macOS keeps the application and sessions running when its close button is used. **General →
-Show in Dock while running in the background** defaults to on. With it off, closing
+Show in Dock while running in the background** defaults to off. With it off, closing
 the window removes its running Dock presence; use the menu-bar tray or launch the app
 again to restore it. Restoring returns normal Dock behavior. Minimizing retains the
 Dock icon, and Quit exits rather than hiding the window.
