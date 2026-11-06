@@ -637,12 +637,15 @@ export function SftpPage({
         next[id] = { source: LOCAL_SOURCE, state: EMPTY, view: preferencesFor(id, LOCAL_SOURCE) };
       panesRef.current = next;
       setPanes(next);
+      if (single && tabId && stale.includes("a")) {
+        useWorkspace.getState().renameTab(tabId, t("sftp.thisComputer"));
+      }
       for (const id of stale) {
         void load(id, null, null, LOCAL_SOURCE);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [sessions, load, preferencesFor, visiblePaneIds, setPanes]);
+  }, [sessions, load, preferencesFor, visiblePaneIds, setPanes, single, tabId, t]);
 
   // Both panels refresh once a transfer they started has settled.
   useEffect(() => {
@@ -1624,6 +1627,30 @@ export function SftpPage({
     void load(id, requested.current[id].path, keep);
   };
 
+  const filePaneOptions = (id: PaneId): { pane: FilePaneOptions; title: string } => {
+    const model = panesRef.current[id];
+    const source = model.source;
+    return {
+      pane: {
+        source,
+        path: model.state.listing?.path ?? requested.current[id].path,
+        ownerSessionId: sessionId,
+        view: model.view,
+      },
+      title:
+        source.kind === "local"
+          ? t("sftp.thisComputer")
+          : (useSsh.getState().sessions.find((item) => item.id === source.sessionId)?.title ??
+            t("sftp.remote")),
+    };
+  };
+
+  const retainOtherPane = (id: PaneId) => {
+    if (!tabId) return;
+    const remaining = filePaneOptions(other(id));
+    useWorkspace.getState().retainFilePane(tabId, remaining.pane, remaining.title);
+  };
+
   if (!session && !single) {
     return (
       <div className="page">
@@ -1973,14 +2000,9 @@ export function SftpPage({
                   event.preventDefault();
                   return;
                 }
-                const title =
-                  source.kind === "local"
-                    ? t("sftp.thisComputer")
-                    : (sessions.find((item) => item.id === source.sessionId)?.title ??
-                      t("sftp.remote"));
-                const token = beginFilePaneDrag(
-                  { source, path: state.listing.path, ownerSessionId: sessionId, view },
-                  title,
+                const detached = filePaneOptions(id);
+                const token = beginFilePaneDrag(detached.pane, detached.title, () =>
+                  retainOtherPane(id),
                 );
                 event.dataTransfer.setData(FILE_PANE_MIME, token);
                 event.dataTransfer.effectAllowed = "move";
@@ -2078,21 +2100,12 @@ export function SftpPage({
                 size="sm"
                 disabled={!state.listing}
                 onClick={() => {
-                  const title =
-                    source.kind === "local"
-                      ? t("sftp.thisComputer")
-                      : (sessions.find((item) => item.id === source.sessionId)?.title ??
-                        t("sftp.remote"));
-                  const tabId = useWorkspace.getState().openFilePane(
-                    {
-                      source,
-                      path: state.listing?.path ?? null,
-                      ownerSessionId: sessionId,
-                      view,
-                    },
-                    title,
-                  );
-                  useWorkspace.getState().splitTab(tabId, "row");
+                  const detached = filePaneOptions(id);
+                  const newTabId = useWorkspace
+                    .getState()
+                    .openFilePane(detached.pane, detached.title);
+                  useWorkspace.getState().splitTab(newTabId, "row");
+                  retainOtherPane(id);
                 }}
               >
                 <PanelRightOpen size={13} />

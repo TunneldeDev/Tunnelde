@@ -50,9 +50,11 @@ describe("workspace drop targets", () => {
       width: 400,
       height: 400,
     } as DOMRect);
+    const onMoved = vi.fn();
     const token = beginFilePaneDrag(
       { source: { kind: "local" }, path: "C:\\work", ownerSessionId: "session" },
       "This computer",
+      onMoved,
     );
     const dataTransfer = {
       types: [FILE_PANE_MIME],
@@ -62,6 +64,7 @@ describe("workspace drop targets", () => {
     fireEvent.drop(body, { clientX: 100, clientY: 200, dataTransfer });
     const tab = useWorkspace.getState().tabs.find((item) => item.filePane);
     expect(tab?.filePane?.path).toBe("C:\\work");
+    expect(onMoved).toHaveBeenCalledOnce();
     expect(
       useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(tab!.id))?.id,
     ).not.toBe("first");
