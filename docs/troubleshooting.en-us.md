@@ -35,9 +35,11 @@ terminates the application.
 
 ## An AI plugin only offers Local, or reports a missing working directory
 
-Update the desktop to 0.25.0+ and the assistant plugin to 1.3.0+. Connect a host in the Hosts
-sidebar first, then choose its name from the chat's Execution location menu. Model selection
-does not select a machine. You do not need to copy a session ID or hand-configure home paths.
+Update the desktop and assistant plugin. Open the chat's Execution location menu and choose
+a connected host or **Connect · host name** for a saved host. The connection dialog verifies
+the host key and credentials before selecting it. Older desktop versions require connecting
+through the Hosts sidebar first. Model selection does not select a machine; no session ID
+or manually configured home path is needed.
 
 Use Workspace and execution settings for a custom cwd or executable. Coding CLIs must be
 installed and authenticated on the selected machine; their local login does not authenticate

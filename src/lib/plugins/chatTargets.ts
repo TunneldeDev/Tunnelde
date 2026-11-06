@@ -17,3 +17,15 @@ export function chatTargets(sessions: SshSession[], hosts: Host[], selectedId?: 
   }
   return [...targets.values()];
 }
+
+/** A connection to an old address does not make the edited saved host connected. */
+export function chatConnectableHosts(sessions: SshSession[], hosts: Host[]) {
+  return hosts.filter(
+    (host) =>
+      !sessions.some(
+        (session) =>
+          session.hostId === host.id &&
+          session.address === `${host.username}@${host.host}:${host.port}`,
+      ),
+  );
+}
