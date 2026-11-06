@@ -57,6 +57,10 @@ pub struct HostKeyInfo {
 pub struct SshConnectRequest {
     pub host_id: String,
     #[serde(default)]
+    pub background: bool,
+    #[serde(default)]
+    pub purpose: Option<String>,
+    #[serde(default)]
     pub password: Option<String>,
     #[serde(default)]
     pub passphrase: Option<String>,
@@ -85,6 +89,8 @@ pub struct SessionInfo {
     pub cols: u32,
     pub rows: u32,
     pub connected_at: i64,
+    pub terminal: bool,
+    pub purpose: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -212,9 +218,7 @@ impl SshManager {
 
     fn remove(&self, session_id: &str) {
         if let Ok(mut sessions) = self.sessions.lock() {
-            if let Some(handle) = sessions.remove(session_id) {
-                handle.task.abort();
-            }
+            sessions.remove(session_id);
         }
     }
 
@@ -263,6 +267,9 @@ impl SshManager {
         let handle = sessions
             .get(session_id)
             .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
+        if !handle.info.terminal {
+            return Err(AppError::Ssh("ssh.terminalUnavailable".into()));
+        }
         handle
             .writer
             .try_send(WriterMsg::Attach)
@@ -480,6 +487,19 @@ async fn open_terminal_channel(
     Ok((channel, startup))
 }
 
+async fn prepare_terminal(
+    handle: &Handle<ClientHandler>,
+    cols: u32,
+    rows: u32,
+    background: bool,
+) -> AppResult<Option<(Channel<client::Msg>, Vec<u8>)>> {
+    if background {
+        Ok(None)
+    } else {
+        open_terminal_channel(handle, cols, rows).await.map(Some)
+    }
+}
+
 async fn pump_terminal(
     channel: Channel<client::Msg>,
     mut outgoing: mpsc::Receiver<WriterMsg>,
@@ -647,6 +667,8 @@ async fn open_route(
         let credential = credentials.get(&node.id).cloned().unwrap_or_default();
         let request = SshConnectRequest {
             host_id: node.id.clone(),
+            background: false,
+            purpose: None,
             password: credential.password,
             passphrase: credential.passphrase,
             jump_credentials: HashMap::new(),
@@ -728,7 +750,8 @@ async fn connect_for_auth(
         .await
         .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
 
-    let (channel, startup) = open_terminal_channel(&handle, request.cols, request.rows).await?;
+    let terminal =
+        prepare_terminal(&handle, request.cols, request.rows, request.background).await?;
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let info = SessionInfo {
@@ -739,21 +762,46 @@ async fn connect_for_auth(
         cols: request.cols,
         rows: request.rows,
         connected_at: now_ms(),
+        terminal: !request.background,
+        purpose: if request.background && request.purpose.as_deref() == Some("forwarding") {
+            request.purpose.clone()
+        } else {
+            None
+        },
     };
 
     let shared_handle = Arc::new(handle);
-    let (tx, rx) = mpsc::channel::<WriterMsg>(64);
+    let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
     let task_app = app.clone();
     let task_session = session_id.clone();
 
     let task_handle = Arc::clone(&shared_handle);
     let task = tokio::spawn(async move {
-        let _session = task_handle;
-        pump_terminal(channel, rx, startup, |sequence, data| {
-            emit_data(&task_app, &task_session, sequence, data)
-        })
-        .await;
+        if let Some((channel, startup)) = terminal {
+            pump_terminal(channel, rx, startup, |sequence, data| {
+                emit_data(&task_app, &task_session, sequence, data)
+            })
+            .await;
+        } else {
+            loop {
+                tokio::select! {
+                    _ = tokio::time::sleep(Duration::from_secs(1)) => {
+                        if task_handle.is_closed() { break; }
+                    }
+                    message = rx.recv() => match message {
+                        Some(WriterMsg::Detach(reply)) => { let _ = reply.send(0); }
+                        Some(WriterMsg::Close) | None => break,
+                        _ => {}
+                    }
+                }
+            }
+        }
 
+        if let Some(state) = task_app.try_state::<AppState>() {
+            state.forwards.stop_session(&task_session);
+            state.ssh.remove(&task_session);
+            state.monitor.forget(&task_session);
+        }
         let _ = task_app.emit(
             CLOSED_EVENT,
             ClosedPayload {
@@ -762,10 +810,7 @@ async fn connect_for_auth(
             },
         );
         if let Some(state) = task_app.try_state::<AppState>() {
-            state.forwards.stop_session(&task_session);
             state.mounts.stop_session(&task_session).await;
-            state.ssh.remove(&task_session);
-            state.monitor.forget(&task_session);
         }
     });
 
@@ -946,6 +991,17 @@ mod tests {
         let (mut client, _, _) = handshake(Box::pin(stream), None).await.unwrap();
         assert!(client.authenticate_none("qa").await.unwrap().success());
         (client, requests, task)
+    }
+
+    #[tokio::test]
+    async fn background_session_does_not_request_a_pty_or_shell() {
+        let (client, requests, server) = server(true, true).await;
+        assert!(prepare_terminal(&client, 80, 24, true)
+            .await
+            .unwrap()
+            .is_none());
+        assert!(requests.lock().unwrap().is_empty());
+        server.abort();
     }
 
     #[tokio::test]

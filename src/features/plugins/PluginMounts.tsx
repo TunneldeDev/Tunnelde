@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
@@ -28,7 +28,11 @@ interface Dependencies {
 export function PluginMounts({ pluginId }: { pluginId: string }) {
   const { i18n, t } = useTranslation();
   const zh = i18n.language.startsWith("zh");
-  const sessions = useSsh((s) => s.sessions);
+  const allSessions = useSsh((s) => s.sessions);
+  const sessions = useMemo(
+    () => allSessions.filter((s) => s.purpose !== "forwarding"),
+    [allSessions],
+  );
   const [sessionId, setSession] = useState(sessions[0]?.id ?? "");
   const selectedSession = sessionId ? sessions.find((s) => s.id === sessionId) : sessions[0];
   const [remotePath, setRemote] = useState("/");

@@ -1,4 +1,5 @@
 import { BUILD_VERSION } from "./channels.mjs";
+import { retryGithubRead } from "../github/reads.mjs";
 
 const CATEGORIES = [
   ["breaking", "不兼容变更 | Breaking changes"],
@@ -170,7 +171,7 @@ export function releasePrBody(version, count, repository, sha) {
   return `---\n## ${version}\n\n归总 ${count} 项变更并更新版本，详见 [CHANGELOG.md](https://github.com/${repository}/blob/${sha}/CHANGELOG.md)。\n---`;
 }
 
-export async function collectChanges({ github, repo, previousVersion, base, head }) {
+export async function collectChanges({ github, repo, previousVersion, base, head, wait }) {
   if (
     (!base && !VERSION.test(previousVersion)) ||
     (base && !/^[a-f0-9]{40}$/.test(base)) ||
@@ -180,12 +181,16 @@ export async function collectChanges({ github, repo, previousVersion, base, head
   const commits = [];
   let total;
   for (let page = 1; ; page++) {
-    const { data } = await github.rest.repos.compareCommitsWithBasehead({
-      ...repo,
-      basehead: `${base || `v${previousVersion}`}...${head}`,
-      per_page: 100,
-      page,
-    });
+    const { data } = await retryGithubRead(
+      () =>
+        github.rest.repos.compareCommitsWithBasehead({
+          ...repo,
+          basehead: `${base || `v${previousVersion}`}...${head}`,
+          per_page: 100,
+          page,
+        }),
+      wait,
+    );
     if (!["ahead", "identical"].includes(data.status))
       throw new Error("Release source must descend from the previous version tag");
     total ??= data.total_commits;
@@ -200,11 +205,15 @@ export async function collectChanges({ github, repo, previousVersion, base, head
   for (let offset = 0; offset < commits.length; offset += 4) {
     await Promise.all(
       commits.slice(offset, offset + 4).map(async (commit) => {
-        const prs = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
-          ...repo,
-          commit_sha: commit.sha,
-          per_page: 100,
-        });
+        const prs = await retryGithubRead(
+          () =>
+            github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+              ...repo,
+              commit_sha: commit.sha,
+              per_page: 100,
+            }),
+          wait,
+        );
         const candidates = prs.filter(
           (pr) =>
             pr.merged_at &&

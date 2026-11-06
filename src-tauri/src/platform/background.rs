@@ -49,6 +49,7 @@ pub fn request(app: &AppHandle) {
         token
     };
     if window.emit("ui://suspend", token).is_err() {
+        tracing::warn!(token, "could not request background window checkpoint");
         cancel(app);
         return;
     }
@@ -63,6 +64,7 @@ pub fn request(app: &AppHandle) {
             .request
             == Some(token);
         if pending {
+            tracing::warn!(token, "background window checkpoint timed out; retrying");
             cancel(&handle);
             retry(&handle);
         }
@@ -245,6 +247,7 @@ pub async fn main_window_suspend(
         return Err(AppError::validation("invalid window"));
     }
     let Some(snapshot) = snapshot else {
+        tracing::debug!(token, "background window checkpoint deferred");
         let current = app
             .state::<BackgroundWindow>()
             .0
@@ -288,5 +291,9 @@ pub async fn main_window_suspend(
         cancel(&app);
         return Err(error.into());
     }
+    tracing::info!(
+        token,
+        "background window checkpoint saved and WebView destruction requested"
+    );
     Ok(true)
 }

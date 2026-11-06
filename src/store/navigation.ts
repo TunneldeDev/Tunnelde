@@ -15,8 +15,9 @@ export type SettingsSection =
   | "monitor"
   | "plugins"
   | "updates"
+  | "about"
   | "advanced";
-export type BuiltinSidebarView = "hosts" | "knownHosts" | "plugins";
+export type BuiltinSidebarView = "hosts" | "knownHosts" | "plugins" | "forwarding";
 export type SidebarView = BuiltinSidebarView | PluginSidebarView;
 
 export const useNavigation = create<{
@@ -24,9 +25,11 @@ export const useNavigation = create<{
   activeSidebar: SidebarView;
   visitedSidebars: SidebarView[];
   settingsSection: SettingsSection;
+  forwardingTarget: { hostId: string; sessionId: string; revision: number } | null;
   toggleSidebar: () => void;
   selectSidebar: (view: SidebarView) => void;
   showSidebar: (view: SidebarView) => void;
+  showForwarding: (hostId: string, sessionId: string) => void;
   rememberSidebar: (view: SidebarView) => void;
   selectSettings: (section: SettingsSection) => void;
 }>((set) => ({
@@ -34,6 +37,7 @@ export const useNavigation = create<{
   activeSidebar: "hosts",
   visitedSidebars: ["hosts"],
   settingsSection: "general",
+  forwardingTarget: null,
   toggleSidebar: () =>
     set((state) => {
       const tabs = useWorkspace.getState().tabs;
@@ -87,6 +91,16 @@ export const useNavigation = create<{
         ? state.visitedSidebars
         : [...state.visitedSidebars, activeSidebar],
     }));
+  },
+  showForwarding: (hostId, sessionId) => {
+    set((state) => ({
+      forwardingTarget: {
+        hostId,
+        sessionId,
+        revision: (state.forwardingTarget?.revision ?? 0) + 1,
+      },
+    }));
+    useNavigation.getState().showSidebar("forwarding");
   },
   selectSettings: (settingsSection) => set({ settingsSection }),
 }));

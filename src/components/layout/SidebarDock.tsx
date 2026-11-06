@@ -1,3 +1,4 @@
+import { ForwardingPanel } from "@/features/forwarding/ForwardingPanel";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { HostTree } from "@/components/layout/HostTree";
@@ -128,6 +129,8 @@ export function SidebarContents() {
     return createPortal(
       view === "hosts" ? (
         <HostTree />
+      ) : view === "forwarding" ? (
+        <ForwardingPanel />
       ) : view === "plugins" ? (
         <PluginsSidebar />
       ) : parsePluginSidebar(view) ? (

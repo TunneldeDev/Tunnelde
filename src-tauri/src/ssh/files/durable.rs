@@ -5,6 +5,13 @@ use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BackupRecovery {
+    pub backup: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DurableTransfer {
     pub id: String,
     pub direction: String,
@@ -29,9 +36,38 @@ pub struct DurableTransfer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_recovery: Option<BackupRecovery>,
     pub updated_at: i64,
 }
 pub struct Journal;
+
+pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
+    row.error = Some(match error {
+        Some(AppError::BackupRecovery {
+            backup,
+            destination,
+        }) => {
+            row.backup_recovery = Some(BackupRecovery {
+                backup,
+                destination,
+            });
+            "sftp.backupRecoveryRequired".into()
+        }
+        Some(AppError::BackupUnrecognized {
+            backup,
+            destination,
+        }) => {
+            row.backup_recovery = Some(BackupRecovery {
+                backup,
+                destination,
+            });
+            "sftp.backupUnrecognized".into()
+        }
+        Some(error) => error.to_string(),
+        None => "sftp.transferTimedOut".into(),
+    });
+}
 
 fn recovered_status(status: &str, active: bool) -> &str {
     match (status, active) {
@@ -168,6 +204,70 @@ mod tests {
     use super::*;
 
     #[test]
+    fn older_transfer_records_do_not_require_backup_recovery_details() {
+        let row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": false, "overwrite": false, "transferred": 0,
+            "total": 0, "status": "cleanupPending", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        assert!(row.backup_recovery.is_none());
+    }
+
+    #[test]
+    fn cleanup_retry_retains_last_known_backup_until_a_new_location_is_found() {
+        let mut row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": false, "overwrite": false, "transferred": 0,
+            "total": 0, "status": "cleanupPending", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupRecovery {
+                backup: "/old-backup".into(),
+                destination: "/old-target".into(),
+            }),
+        );
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::validation("sftp.reconnectRequired")),
+        );
+        assert_eq!(row.error.as_deref(), Some("sftp.reconnectRequired"));
+        assert_eq!(row.backup_recovery.as_ref().unwrap().backup, "/old-backup");
+        record_cleanup_failure(&mut row, None);
+        assert_eq!(row.error.as_deref(), Some("sftp.transferTimedOut"));
+        assert_eq!(row.backup_recovery.as_ref().unwrap().backup, "/old-backup");
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupRecovery {
+                backup: "/new-backup".into(),
+                destination: "/new-target".into(),
+            }),
+        );
+        assert_eq!(
+            row.backup_recovery.as_ref().unwrap().destination,
+            "/new-target"
+        );
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupUnrecognized {
+                backup: "/unrecognized".into(),
+                destination: "/target".into(),
+            }),
+        );
+        assert_eq!(row.error.as_deref(), Some("sftp.backupUnrecognized"));
+        assert_eq!(
+            row.backup_recovery.as_ref().unwrap().backup,
+            "/unrecognized"
+        );
+    }
+
+    #[test]
     fn interrupted_cancellation_never_becomes_resumable_after_restart() {
         assert_eq!(recovered_status("running", false), "paused");
         assert_eq!(recovered_status("cancelling", false), "cancelled");
@@ -192,6 +292,8 @@ mod tests {
             cols: 80,
             rows: 24,
             connected_at,
+            terminal: true,
+            purpose: None,
         }
     }
 
@@ -256,10 +358,7 @@ pub async fn durable_transfer_clear(
                 Ok(None)
             }
             failed => {
-                row.error = Some(match failed {
-                    Ok(Err(error)) => error.to_string(),
-                    _ => "sftp.transferTimedOut".into(),
-                });
+                record_cleanup_failure(&mut row, failed.ok().and_then(Result::err));
                 row.updated_at = crate::models::now_ms();
                 Journal::upsert(&app, row.clone())?;
                 let _ = app.emit("sftp://changed", ());
@@ -320,7 +419,11 @@ fn select_session(
     match host {
         Some(host) => sessions
             .iter()
-            .filter(|s| s.host_id == host && address.is_none_or(|address| s.address == address))
+            .filter(|s| {
+                s.purpose.as_deref() != Some("forwarding")
+                    && s.host_id == host
+                    && address.is_none_or(|address| s.address == address)
+            })
             .max_by_key(|s| (s.connected_at, s.id.as_str()))
             .map(|s| Some(s.id.clone()))
             .ok_or_else(|| AppError::validation("sftp.reconnectRequired")),

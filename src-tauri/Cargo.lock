@@ -6261,7 +6261,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelde"
-version = "0.29.0"
+version = "0.30.0"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -6277,6 +6277,7 @@ dependencies = [
  "rusqlite",
  "russh",
  "russh-sftp",
+ "rustix",
  "semver",
  "serde",
  "serde_json",
@@ -6300,6 +6301,7 @@ dependencies = [
  "wasmi",
  "webview2-com",
  "windows-core",
+ "windows-sys 0.61.2",
  "zip 5.1.1",
 ]
 

@@ -58,7 +58,7 @@ describe("installed plugins sidebar", () => {
     expect(screen.getByText("Plugin 24", { selector: "strong" })).toBeTruthy();
     expect(screen.queryByText("Plugin 0", { selector: "strong" })).toBeNull();
     fireEvent.click(screen.getAllByRole("button", { name: "Filter tag: preview" })[0]!);
-    expect(useMarketplace.getState()).toMatchObject({ tag: "preview", page: 0 });
+    expect(useMarketplace.getState()).toMatchObject({ query: "tag:preview", tag: "", page: 0 });
     expect(screen.getByText("Plugin 0", { selector: "strong" })).toBeTruthy();
     expect(screen.queryByText("Plugin 1", { selector: "strong" })).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "Search plugins" }), {

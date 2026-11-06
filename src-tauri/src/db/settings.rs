@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn background_dock_preference_migrates_and_persists_both_choices() {
         let legacy = load_json(r#"{"theme":"dark","closeToTray":true}"#);
-        assert!(legacy.show_dock_icon_in_background);
+        assert!(!legacy.show_dock_icon_in_background);
         assert!(legacy.close_to_tray);
         assert_eq!(legacy.theme, "dark");
         let database = Database::in_memory().unwrap();

@@ -1,6 +1,16 @@
 import type { FsSource } from "@/lib/api/types";
 
 export const DRAG_MIME = "application/x-tunnelde-file";
+let activeDragSource: FsSource | null = null;
+
+/** The browser hides drag data during dragover; keep only the source in memory. */
+export function currentDragSource(): FsSource | null {
+  return activeDragSource;
+}
+
+export function clearDragSource(): void {
+  activeDragSource = null;
+}
 
 export interface DragItem {
   path: string;
@@ -44,6 +54,20 @@ export function sourceKey(source: FsSource): string {
 
 export function sameSource(left: FsSource, right: FsSource): boolean {
   return sourceKey(left) === sourceKey(right);
+}
+
+// Windows drive letters are sufficient to identify different volumes, but
+// matching letters do not prove two paths are on the same mounted filesystem.
+function differentWindowsDrives(source: FsSource, items: DragItem[], target: string): boolean {
+  if (source.kind !== "local") return false;
+  const destination = /^([a-z]):[\\/]/i.exec(target)?.[1]?.toLowerCase();
+  return (
+    !!destination &&
+    items.some((item) => {
+      const drive = /^([a-z]):[\\/]/i.exec(item.path)?.[1]?.toLowerCase();
+      return !!drive && drive !== destination;
+    })
+  );
 }
 
 export function separatorFor(source: FsSource, path = ""): string {
@@ -143,6 +167,7 @@ function parsedItems(value: unknown): DragItem[] | null {
 }
 
 export function setDragPayload(data: DataTransfer, payload: DragPayload): void {
+  activeDragSource = payload.source;
   data.setData(DRAG_MIME, JSON.stringify(payload));
   data.effectAllowed = "copyMove";
 }
@@ -170,21 +195,22 @@ export function readDragPayload(data: DataTransfer): DragPayload | null {
 
 /**
  * Turns a dragged selection into the operations a drop performs: a rename inside
- * one panel, a copy between panels, or nothing when every item would land where
+ * one filesystem, a transfer between filesystems, or nothing when every item would land where
  * it already is.
  */
 export function resolveDrop(
   payload: DragPayload,
   target: FsSource,
   targetDirectory: string,
-  targetPaneId?: string,
+  _targetPaneId?: string,
+  sameFilesystem = sameSource,
 ): DropAction {
   const separator = separatorFor(target, targetDirectory);
   const ops: DropOp[] = [];
 
   for (const item of payload.items) {
     const destination = joinPath(targetDirectory, item.name, separator);
-    if (sameSource(payload.source, target)) {
+    if (sameFilesystem(payload.source, target)) {
       if (destination === item.path || isInside(item.path, targetDirectory)) {
         continue;
       }
@@ -195,9 +221,15 @@ export function resolveDrop(
   if (ops.length === 0) {
     return { kind: "noop" };
   }
-  if (sameSource(payload.source, target)) {
+  if (
+    target.kind === "local" &&
+    differentWindowsDrives(payload.source, payload.items, targetDirectory)
+  ) {
+    return { kind: "transfer", from: payload.source, to: target, ops, move: false };
+  }
+  if (sameFilesystem(payload.source, target)) {
     return {
-      kind: payload.paneId && targetPaneId && payload.paneId !== targetPaneId ? "copy" : "move",
+      kind: "move",
       source: target,
       ops,
     };
@@ -206,11 +238,19 @@ export function resolveDrop(
 }
 
 /** Turns a cut or copied selection into the operations a paste performs. */
-export function planPaste(clip: PasteClip, target: FsSource, targetDirectory: string): DropAction {
+export function planPaste(
+  clip: PasteClip,
+  target: FsSource,
+  targetDirectory: string,
+  sameFilesystem = sameSource,
+): DropAction {
   if (clip.items.length === 0) {
     return { kind: "noop" };
   }
-  return sameSource(clip.source, target)
+  if (target.kind === "local" && differentWindowsDrives(clip.source, clip.items, targetDirectory)) {
+    return pasteAcross(clip, target, targetDirectory);
+  }
+  return sameFilesystem(clip.source, target)
     ? pasteWithin(clip, target, targetDirectory)
     : pasteAcross(clip, target, targetDirectory);
 }
@@ -252,6 +292,7 @@ export function canPaste(
   clip: PasteClip | null,
   target: FsSource,
   targetDirectory: string,
+  sameFilesystem = sameSource,
 ): boolean {
-  return clip !== null && planPaste(clip, target, targetDirectory).kind !== "noop";
+  return clip !== null && planPaste(clip, target, targetDirectory, sameFilesystem).kind !== "noop";
 }

@@ -44,6 +44,7 @@ import { usePlugins } from "@/store/plugins";
 import { plugin } from "../fixtures/plugins";
 import * as clipboard from "@/lib/session/clipboard";
 import * as mountedMenu from "@/lib/plugins/mountFileMenu";
+import { domainEvents } from "@/lib/events/domain";
 
 const session: SshSession = {
   id: "session-1",
@@ -134,6 +135,182 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("records the current local path of a standalone panel for workspace restoration", async () => {
+    const filePane = {
+      source: { kind: "local" as const },
+      path: "C:\\work",
+      ownerSessionId: "session-1",
+    };
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: "files:test",
+          kind: "sftp",
+          title: "This computer",
+          hostId: null,
+          pinned: false,
+          filePane,
+        },
+      ],
+    });
+    render(
+      <SftpPage sessionId="session-1" single={filePane} tabId="files:test" scopeId="files:test" />,
+    );
+    await screen.findByText("src");
+    fireEvent.doubleClick(screen.getByText("src"));
+    await waitFor(() =>
+      expect(useWorkspace.getState().tabs[0]?.filePane?.path).toBe("C:\\work\\src"),
+    );
+  });
+
+  it("preserves a detached remote panel and its path when its session disconnects", async () => {
+    const filePane = {
+      source: { kind: "remote" as const, sessionId: session.id },
+      path: "/srv/app",
+      ownerSessionId: session.id,
+      remoteIdentity: { hostId: session.hostId, address: session.address },
+    };
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: "files:offline",
+          kind: "sftp",
+          title: session.title,
+          hostId: null,
+          pinned: false,
+          filePane,
+        },
+      ],
+    });
+    render(
+      <SftpPage
+        sessionId={session.id}
+        single={filePane}
+        tabId="files:offline"
+        scopeId="files:offline"
+      />,
+    );
+    await screen.findByText("readme.md");
+    act(() => useSsh.setState({ sessions: [] }));
+    await waitFor(() =>
+      expect(useWorkspace.getState().tabs[0]?.filePane).toMatchObject({
+        offline: true,
+        path: "/srv/app",
+        remoteIdentity: filePane.remoteIdentity,
+      }),
+    );
+    expect(useWorkspace.getState().tabs[0]?.title).toBe(session.title);
+  });
+
+  it("does not persist an old local panel after switching it to a remote source", async () => {
+    const filePane = {
+      source: { kind: "local" as const },
+      path: "C:\\work",
+      ownerSessionId: "session-1",
+    };
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: "files:test",
+          kind: "sftp",
+          title: "This computer",
+          hostId: null,
+          pinned: false,
+          filePane,
+        },
+      ],
+    });
+    render(
+      <SftpPage sessionId="session-1" single={filePane} tabId="files:test" scopeId="files:test" />,
+    );
+    await screen.findByText("src");
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    fireEvent.click(
+      within(screen.getByRole("listbox", { name: "Source" })).getByRole("option", {
+        name: "web-01",
+      }),
+    );
+    expect(useWorkspace.getState().tabs[0]?.filePane?.source).toEqual({
+      kind: "remote",
+      sessionId: "session-1",
+    });
+    await screen.findByText("readme.md");
+  });
+  it("moves a panel out and retains the other panel in the original tab", async () => {
+    const original = {
+      id: "sftp:session-1",
+      kind: "sftp" as const,
+      title: "web-01",
+      hostId: "host-1",
+      pinned: false,
+    };
+    useWorkspace.setState({
+      tabs: [original],
+      panes: [{ id: "test-pane", tabIds: [original.id], activeId: original.id }],
+      activePaneId: "test-pane",
+      activeId: original.id,
+      split: null,
+      layout: { kind: "pane", paneId: "test-pane" },
+    });
+    render(<SftpPage sessionId="session-1" tabId={original.id} />);
+    await screen.findByText("readme.md");
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "Open as an independent panel" })[0]!);
+    const tabs = useWorkspace.getState().tabs;
+    const retained = tabs.find((tab) => tab.id === original.id);
+    const detached = tabs.find((tab) => tab.id !== original.id);
+    expect(retained?.filePane?.source).toEqual({ kind: "remote", sessionId: "session-1" });
+    expect(retained?.filePane?.path).toBe("/srv/app");
+    expect(detached?.filePane?.source).toEqual({ kind: "local" });
+    expect(detached?.filePane?.path).toBe("C:\\work");
+    expect(useWorkspace.getState().panes).toHaveLength(2);
+  });
+  it("independently configures visible columns and reorders headers", async () => {
+    const { container } = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const panes = container.querySelectorAll<HTMLElement>(".sftp-pane");
+    const local = panes[0]!;
+    const remote = panes[1]!;
+    fireEvent.click(within(local).getByRole("button", { name: "View options" }));
+    const menuItem = screen.getByRole("menuitemcheckbox", { name: /Show column.*Type/i });
+    fireEvent.click(menuItem);
+    expect(local.querySelector(".sftp-columns__type")).toBeNull();
+    expect(remote.querySelector(".sftp-columns__type")).toBeTruthy();
+    const data = new Map<string, string>();
+    const transfer = {
+      types: ["application/x-tunnelde-file-column"],
+      setData: (k: string, v: string) => data.set(k, v),
+      getData: (k: string) => data.get(k) ?? "",
+      effectAllowed: "move",
+    };
+    fireEvent.dragStart(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
+    fireEvent.drop(local.querySelector(".sftp-columns__name")!, { dataTransfer: transfer });
+    expect([...local.querySelectorAll(".sftp-columns th")].map((el) => el.className)).toEqual([
+      "sftp-columns__size",
+      "sftp-columns__name",
+      "sftp-columns__modified",
+    ]);
+  });
+
+  it("uses macOS file shortcuts without deleting while typing", async () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    try {
+      render(<SftpPage sessionId="session-1" />);
+      fireEvent.click(await screen.findByText("notes.txt"));
+      const local = screen.getAllByRole("listbox")[0]!;
+      fireEvent.keyDown(local, { key: "Backspace" });
+      expect(useDialogs.getState().confirm).not.toHaveBeenCalled();
+      fireEvent.keyDown(local, { key: "Backspace", metaKey: true });
+      expect(useDialogs.getState().confirm).toHaveBeenCalledOnce();
+      expect(fsMock.remove).not.toHaveBeenCalled();
+      fireEvent.keyDown(local, { key: "Enter" });
+      const input = await screen.findByDisplayValue("notes.txt");
+      fireEvent.keyDown(input, { key: "Backspace", metaKey: true });
+      expect(useDialogs.getState().confirm).toHaveBeenCalledOnce();
+    } finally {
+      platform.mockRestore();
+    }
+  });
   it("opens local text inside Tunnelde and offers the system application separately", async () => {
     render(<SftpPage sessionId="session-1" />);
     const file = await screen.findByText("notes.txt");
@@ -593,7 +770,7 @@ describe("SftpPage asynchronous interactions", () => {
         }),
       ),
     );
-    expect(pending).toHaveLength(2);
+    await waitFor(() => expect(pending).toHaveLength(2));
     await act(async () => pending[1]!({ ...localListing, path: "C:\\next", entries: [] }));
     await act(async () =>
       pending[0]!({ ...localListing, path: "C:\\obsolete", entries: localListing.entries }),
@@ -636,7 +813,7 @@ describe("SftpPage asynchronous interactions", () => {
     expect(currentPath()).toBe("C:\\elsewhere");
   });
 
-  it("refreshes both panels when completion arrives before the transfer id response", async () => {
+  it("refreshes the copied destination when completion arrives before the transfer id response", async () => {
     fsMock.transfer.mockImplementation(async () => {
       useTransfers.getState().apply({
         id: "already-done",
@@ -647,18 +824,62 @@ describe("SftpPage asynchronous interactions", () => {
         status: "done",
         error: null,
       });
+      domainEvents.filesChanged({
+        source: { kind: "remote", sessionId: "session-1" },
+        origin: "native-transfer",
+      });
       return "already-done";
     });
     render(<SftpPage sessionId="session-1" />);
     fireEvent.click((await screen.findByText("notes.txt")).closest(".sftp-row")!);
     fireEvent.click(screen.getAllByRole("button", { name: "Upload" })[0]!);
-    await waitFor(() => expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work"));
     await waitFor(() =>
       expect(fsMock.list).toHaveBeenCalledWith(
         { kind: "remote", sessionId: "session-1" },
         "/srv/app",
       ),
     );
+    expect(fsMock.list).not.toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+  });
+
+  it("coalesces background file changes without rereading unrelated sources", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    await screen.findByText("readme.md");
+    fsMock.list.mockClear();
+    act(() => {
+      for (let index = 0; index < 100; index++) {
+        domainEvents.filesChanged({ source: { kind: "local" }, origin: "background-task" });
+        domainEvents.filesChanged({
+          source: { kind: "remote", sessionId: "unrelated-session" },
+          origin: "background-task",
+        });
+      }
+    });
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledTimes(1));
+    expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+  });
+
+  it("refreshes both endpoints of a background move and cancels queued reads on unmount", async () => {
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    await screen.findByText("readme.md");
+    fsMock.list.mockClear();
+    act(() => {
+      domainEvents.filesChanged({ source: { kind: "local" }, origin: "background-task" });
+      domainEvents.filesChanged({
+        source: { kind: "remote", sessionId: session.id },
+        origin: "background-task",
+      });
+    });
+    await waitFor(() => expect(fsMock.list).toHaveBeenCalledTimes(2));
+    expect(fsMock.list).toHaveBeenCalledWith({ kind: "local" }, "C:\\work");
+    expect(fsMock.list).toHaveBeenCalledWith({ kind: "remote", sessionId: session.id }, "/srv/app");
+    fsMock.list.mockClear();
+    act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "background-task" }));
+    view.unmount();
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(fsMock.list).not.toHaveBeenCalled();
   });
 
   it("removes only successfully moved items from a cut batch and refreshes after partial failure", async () => {
@@ -787,6 +1008,304 @@ describe("SftpPage asynchronous interactions", () => {
     expect(useFileClipboard.getState().clip).toBe(clip);
   });
 
+  it("keeps a cross-drive cut until the background move completes", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() =>
+      expect(fsMock.transfer).toHaveBeenCalledWith(
+        { kind: "local" },
+        "D:\\elsewhere\\move.txt",
+        { kind: "local" },
+        "C:\\work\\move.txt",
+        true,
+        false,
+      ),
+    );
+    expect(useFileClipboard.getState().clip).toBe(clip);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    await waitFor(() => expect(useFileClipboard.getState().clip).toBeNull());
+    expect(fsMock.rename).not.toHaveBeenCalled();
+  });
+
+  it("keeps the cut completion callback when a transfer is paused and resumed", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    act(() =>
+      useTransfers.setState({
+        items: [
+          {
+            id: "transfer-1",
+            direction: "transfer",
+            name: "move.txt",
+            transferred: 4,
+            total: 12,
+            status: "paused",
+            error: null,
+            updatedAt: Date.now(),
+          },
+        ],
+      }),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(useFileClipboard.getState().clip).toBe(clip);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    await waitFor(() => expect(useFileClipboard.getState().clip).toBeNull());
+  });
+
+  it("keeps the cut completion callback when a failed transfer is retried", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 4,
+        total: 12,
+        status: "failed",
+        error: "network error",
+      }),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 30));
+    });
+    expect(useFileClipboard.getState().clip).toBe(clip);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    await waitFor(() => expect(useFileClipboard.getState().clip).toBeNull());
+  });
+
+  it("clears the original cut after the file page closes and the move completes", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    view.unmount();
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip).toBeNull();
+  });
+
+  it("does not clear a newer clipboard selection when a previous move completes", async () => {
+    const oldClip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    const newClip = {
+      source: { kind: "local" } as FsSource,
+      action: "copy" as const,
+      items: [{ path: "C:\\work\\notes.txt", name: "notes.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip: oldClip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    view.unmount();
+    useFileClipboard.setState({ clip: newClip });
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 12,
+        total: 12,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip).toBe(newClip);
+  });
+
+  it("releases a move watcher when the original clipboard is replaced before any event", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const subscribe = useTransfers.subscribe;
+    const disposals: Array<ReturnType<typeof vi.fn>> = [];
+    const spy = vi.spyOn(useTransfers, "subscribe").mockImplementation((listener) => {
+      const unsubscribe = subscribe(listener);
+      const dispose = vi.fn(unsubscribe);
+      disposals.push(dispose);
+      return dispose;
+    });
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(disposals).toHaveLength(1));
+    view.unmount();
+    act(() => useFileClipboard.getState().set(null));
+    expect(disposals[0]).toHaveBeenCalledOnce();
+    spy.mockRestore();
+  });
+
+  it("does not watch clipboard completion for a cross-drive copy", async () => {
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "local" },
+        action: "copy",
+        items: [{ path: "D:\\elsewhere\\copy.txt", name: "copy.txt", isDir: false }],
+      },
+    });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const spy = vi.spyOn(useTransfers, "subscribe");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+    view.unmount();
+  });
+
+  it("removes only completed items from a multi-file cut in completion order", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [
+        { path: "D:\\elsewhere\\one.txt", name: "one.txt", isDir: false },
+        { path: "D:\\elsewhere\\two.txt", name: "two.txt", isDir: false },
+      ],
+    };
+    fsMock.transfer.mockResolvedValueOnce("first").mockResolvedValueOnce("second");
+    useFileClipboard.setState({ clip });
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalledTimes(2));
+    view.unmount();
+    act(() =>
+      useTransfers.getState().apply({
+        id: "second",
+        direction: "transfer",
+        name: "two.txt",
+        transferred: 1,
+        total: 1,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip?.items.map((item) => item.name)).toEqual(["one.txt"]);
+    act(() =>
+      useTransfers.getState().apply({
+        id: "first",
+        direction: "transfer",
+        name: "one.txt",
+        transferred: 1,
+        total: 1,
+        status: "done",
+        error: null,
+      }),
+    );
+    expect(useFileClipboard.getState().clip).toBeNull();
+  });
+
+  it("retains a cross-drive cut when the background move is cancelled", async () => {
+    const clip = {
+      source: { kind: "local" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "D:\\elsewhere\\move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[0]!, { key: "v", ctrlKey: true });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    act(() =>
+      useTransfers.getState().apply({
+        id: "transfer-1",
+        direction: "transfer",
+        name: "move.txt",
+        transferred: 0,
+        total: 12,
+        status: "cancelled",
+        error: null,
+      }),
+    );
+    act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "native-transfer" }));
+    await waitFor(() =>
+      expect(
+        fsMock.list.mock.calls.filter(([, path]) => path === "C:\\work").length,
+      ).toBeGreaterThan(1),
+    );
+    expect(useFileClipboard.getState().clip).toBe(clip);
+  });
+
   it("asks before replacing a target and preserves the cut source while awaiting confirmation", async () => {
     const clip = {
       source: { kind: "local" } as FsSource,
@@ -804,6 +1323,52 @@ describe("SftpPage asynchronous interactions", () => {
 });
 
 describe("SftpPage source picker", () => {
+  it("renames the file tab when the selected host changes", async () => {
+    useSsh.setState({
+      sessions: [session, { ...session, id: "session-2", hostId: "host-2", title: "other server" }],
+    });
+    useWorkspace.setState({
+      tabs: [
+        { id: "sftp:session-1", kind: "sftp", title: "web-01", hostId: "host-1", pinned: false },
+      ],
+    });
+    render(<SftpPage sessionId="session-1" tabId="sftp:session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "Source" })[1]!);
+    fireEvent.click(
+      within(screen.getByRole("listbox", { name: "Source" })).getByRole("option", {
+        name: "other server",
+      }),
+    );
+    expect(useWorkspace.getState().tabs[0]?.title).toBe("other server");
+    await waitFor(() => expect(useWorkspace.getState().tabs[0]?.fileSessionId).toBe("session-2"));
+    await waitFor(() =>
+      expect(fsMock.list).toHaveBeenCalledWith({ kind: "remote", sessionId: "session-2" }, null),
+    );
+  });
+  it("moves a cut file between sessions of the same host with a remote rename", async () => {
+    useSsh.setState({ sessions: [session, { ...session, id: "session-2" }] });
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "remote", sessionId: "session-2" },
+        action: "cut",
+        items: [{ path: "/tmp/source.txt", name: "source.txt", isDir: false }],
+      },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    fireEvent.keyDown(screen.getAllByRole("listbox")[1]!, { key: "v", ctrlKey: true });
+    await waitFor(() =>
+      expect(fsMock.rename).toHaveBeenCalledWith(
+        { kind: "remote", sessionId: "session-1" },
+        "/tmp/source.txt",
+        "/srv/app/source.txt",
+        false,
+      ),
+    );
+    expect(fsMock.transfer).not.toHaveBeenCalled();
+  });
+
   it("lists one row per host even when the host has several sessions", () => {
     useSsh.setState({ sessions: [session, { ...session, id: "session-2" }] });
     render(<SftpPage sessionId="session-1" />);
@@ -816,6 +1381,31 @@ describe("SftpPage source picker", () => {
       .getAllByRole("option")
       .map((option) => option.textContent);
     expect(labels).toEqual(["This computer", "web-01"]);
+  });
+
+  it("keeps old and new addresses separate when a saved host is edited", async () => {
+    useSsh.setState({
+      sessions: [session, { ...session, id: "session-2", address: "root@10.0.0.6:22" }],
+    });
+    useFileClipboard.setState({
+      clip: {
+        source: { kind: "remote", sessionId: "session-2" },
+        action: "cut",
+        items: [{ path: "/tmp/source.txt", name: "source.txt", isDir: false }],
+      },
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("readme.md");
+    fireEvent.click(screen.getAllByRole("button", { name: "Source" })[0]!);
+    const popup = screen.getByRole("listbox", { name: "Source" });
+    expect(within(popup).getByRole("option", { name: "web-01 (root@10.0.0.5:22)" })).toBeTruthy();
+    expect(within(popup).getByRole("option", { name: "web-01 (root@10.0.0.6:22)" })).toBeTruthy();
+    fireEvent.keyDown(screen.getAllByRole("listbox", { name: "Files" })[1]!, {
+      key: "v",
+      ctrlKey: true,
+    });
+    await waitFor(() => expect(fsMock.transfer).toHaveBeenCalled());
+    expect(fsMock.rename).not.toHaveBeenCalled();
   });
 });
 

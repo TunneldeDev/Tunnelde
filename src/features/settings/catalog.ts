@@ -53,6 +53,7 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   "updates",
   "plugins",
   "advanced",
+  "about",
 ];
 export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   network: "network.title",
@@ -67,6 +68,7 @@ export const SECTION_LABELS: Record<SettingsSection, MessageKey> = {
   updates: "settings.updatesSection",
   plugins: "settings.plugins",
   advanced: "settings.advanced",
+  about: "nav.about",
 };
 
 export interface SettingsGroup {

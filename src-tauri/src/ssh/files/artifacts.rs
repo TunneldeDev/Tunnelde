@@ -212,7 +212,7 @@ async fn cleanup_file(
     cleanup_owned(id, to, sftp, backup_checkpoint(app, &key)?.as_ref()).await
 }
 
-async fn cleanup_owned(
+pub(super) async fn cleanup_owned(
     id: &str,
     to: &Endpoint,
     sftp: Option<&SftpSession>,
@@ -222,20 +222,25 @@ async fn cleanup_owned(
     let backup = staging_endpoint(to, id, "backup");
     let cancel = AtomicBool::new(false);
     if file_length(&backup, sftp).await?.is_some() {
-        let expected =
-            expected.ok_or_else(|| AppError::validation("sftp.backupRecoveryRequired"))?;
+        let recovery = || AppError::BackupRecovery {
+            backup: backup.path.clone(),
+            destination: to.path.clone(),
+        };
+        let unrecognized = || AppError::BackupUnrecognized {
+            backup: backup.path.clone(),
+            destination: to.path.clone(),
+        };
+        let expected = expected.ok_or_else(unrecognized)?;
         if fingerprint_file(&backup, sftp, &cancel).await? != *expected {
-            return Err(AppError::validation("sftp.resumePrefixMismatch"));
+            return Err(unrecognized());
         }
-        if file_length(to, sftp).await?.is_none() {
-            // Recover the user's previous destination after a failed commit.
-            rename_endpoint(&backup, to, sftp).await?;
-        } else {
-            remove_verified_backup(&backup, sftp, expected, &cancel).await?;
-        }
+        // Checking for a missing destination before renaming is not atomic.
+        // Preserve the backup until it can be restored without overwriting a
+        // destination created concurrently by another process or SFTP client.
+        return Err(recovery());
     }
     if file_length(&temp, sftp).await?.is_some() {
-        remove_endpoint(&temp, sftp).await?;
+        remove_transfer_file(&temp, sftp).await?;
     }
     Ok(())
 }
@@ -327,7 +332,7 @@ async fn cleanup_legacy_tree(
                         .iter()
                         .any(|prefix| name == format!("{prefix}.part"))
                     {
-                        remove_endpoint(&entry, sftp).await?;
+                        remove_transfer_file(&entry, sftp).await?;
                     } else if prefixes
                         .iter()
                         .any(|prefix| name == format!("{prefix}.backup"))
@@ -391,7 +396,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cleanup_removes_partial_files_preserves_targets_and_restores_verified_backups() {
+    async fn transfer_artifact_cleanup_preserves_a_partial_path_replaced_with_a_directory() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-cleanup-dir-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        let part = staging_endpoint(&target, "job", "part");
+        tokio::fs::create_dir(&part.path).await.unwrap();
+        let independent = Path::new(&part.path).join("independent.txt");
+        tokio::fs::write(&independent, b"preserve").await.unwrap();
+        assert!(cleanup_owned("job", &target, None, None).await.is_err());
+        assert_eq!(tokio::fs::read(&independent).await.unwrap(), b"preserve");
+        tokio::fs::remove_file(independent).await.unwrap();
+        tokio::fs::remove_dir(&part.path).await.unwrap();
+        tokio::fs::remove_dir(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn cleanup_removes_partial_files_and_preserves_backups_for_recovery() {
         let root = std::env::temp_dir().join(format!("tunnelde-cleanup-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
         let target = Endpoint {
@@ -416,19 +441,54 @@ mod tests {
             .unwrap();
         tokio::fs::rename(&target.path, &backup.path).await.unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        cleanup_owned("job", &target, None, Some(&expected))
+        let error = cleanup_owned("job", &target, None, Some(&expected))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AppError::BackupRecovery { ref backup, ref destination }
+                if backup == &staging_endpoint(&target, "job", "backup").path
+                    && destination == &target.path
+        ));
+        assert!(!Path::new(&target.path).exists());
+        assert_eq!(tokio::fs::read(&backup.path).await.unwrap(), b"user data");
+        assert_eq!(tokio::fs::read(&part.path).await.unwrap(), b"partial");
+
+        tokio::fs::write(&target.path, b"new independent data")
             .await
             .unwrap();
-        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"user data");
-        assert!(!Path::new(&backup.path).exists());
+        tokio::fs::write(&part.path, b"partial").await.unwrap();
+        assert_eq!(
+            cleanup_owned("job", &target, None, Some(&expected))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.backupRecoveryRequired"
+        );
+        assert_eq!(tokio::fs::read(&backup.path).await.unwrap(), b"user data");
+        assert_eq!(
+            tokio::fs::read(&target.path).await.unwrap(),
+            b"new independent data"
+        );
+        assert_eq!(tokio::fs::read(&part.path).await.unwrap(), b"partial");
+        tokio::fs::remove_file(&target.path).await.unwrap();
+        tokio::fs::rename(&backup.path, &target.path).await.unwrap();
 
         tokio::fs::write(&backup.path, b"unrecognized data")
             .await
             .unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        assert!(cleanup_owned("job", &target, None, Some(&expected))
+        let error = cleanup_owned("job", &target, None, Some(&expected))
             .await
-            .is_err());
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AppError::BackupUnrecognized { ref backup, ref destination }
+                if backup == &staging_endpoint(&target, "job", "backup").path
+                    && destination == &target.path
+        ));
+        let error = cleanup_owned("job", &target, None, None).await.unwrap_err();
+        assert!(matches!(error, AppError::BackupUnrecognized { .. }));
         assert!(Path::new(&backup.path).exists());
         assert!(Path::new(&part.path).exists());
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"user data");

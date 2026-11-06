@@ -212,6 +212,102 @@ test("diverged, truncated or duplicate comparison results stop generation", asyn
   }
 });
 
+test("transient comparison and PR pagination failures retain complete ordered history", async () => {
+  const commits = [commit(41, "fix: first"), commit(42, "fix: second")];
+  const pages = [];
+  const comparisons = new Map();
+  const associations = new Map();
+  const waits = [];
+  const github = {
+    paginate: async (method, args) => method(args),
+    rest: {
+      repos: {
+        compareCommitsWithBasehead: async ({ page }) => {
+          pages.push(page);
+          const attempts = (comparisons.get(page) ?? 0) + 1;
+          comparisons.set(page, attempts);
+          if (attempts === 1) throw Object.assign(new Error("Gateway timeout"), { status: 504 });
+          return { data: { status: "ahead", total_commits: 2, commits: [commits[page - 1]] } };
+        },
+        listPullRequestsAssociatedWithCommit: async ({ commit_sha }) => {
+          const attempts = (associations.get(commit_sha) ?? 0) + 1;
+          associations.set(commit_sha, attempts);
+          // GitHub can return a 500 response whose JSON body is incomplete.
+          if (attempts === 1)
+            throw Object.assign(new Error("Unexpected end of JSON input"), { status: 500 });
+          return [
+            {
+              number: 17,
+              merged_at: "date",
+              merge_commit_sha: commits[1].sha,
+              base: { ref: "dev", repo: { full_name: repository } },
+            },
+          ];
+        },
+      },
+    },
+  };
+  const changes = await collectChanges({
+    github,
+    repo: { owner: "TunneldeDev", repo: "Tunnelde" },
+    previousVersion: "0.26.0",
+    head,
+    wait: async (ms) => waits.push(ms),
+  });
+  assert.deepEqual(pages, [1, 1, 2, 2]);
+  assert.deepEqual(
+    changes.map((entry) => entry.sha),
+    commits.map((entry) => entry.sha),
+  );
+  assert.ok(changes.every((entry) => entry.pullRequest.number === 17));
+  assert.deepEqual([...associations.values()], [2, 2]);
+  assert.deepEqual(waits, [1000, 1000, 1000, 1000]);
+});
+
+test("history reads stop on exhausted transient errors and never hide rejected requests", async () => {
+  for (const failingEndpoint of ["comparison", "association"]) {
+    for (const status of [400, 401, 403, 404, 422, 500, 502, 503, 504]) {
+      const failure = Object.assign(new Error("GitHub read failed"), { status });
+      const waits = [];
+      let attempts = 0;
+      const fail = async () => {
+        attempts++;
+        throw failure;
+      };
+      const github = {
+        paginate: async (method, args) => method(args),
+        rest: {
+          repos: {
+            compareCommitsWithBasehead:
+              failingEndpoint === "comparison"
+                ? fail
+                : async () => ({
+                    data: {
+                      status: "ahead",
+                      total_commits: 1,
+                      commits: [commit(43, "fix: third")],
+                    },
+                  }),
+            listPullRequestsAssociatedWithCommit: fail,
+          },
+        },
+      };
+      await assert.rejects(
+        collectChanges({
+          github,
+          repo: {},
+          previousVersion: "0.26.0",
+          head,
+          wait: async (ms) => waits.push(ms),
+        }),
+        (error) => error === failure,
+      );
+      assert.equal(attempts, status >= 500 ? 4 : 1);
+      assert.deepEqual(waits, status >= 500 ? [1000, 2000, 4000] : []);
+    }
+  }
+});
+
 test("rebased commits retain individual changes, original authors, coauthors and PR associations", async () => {
   const commits = [
     commit(21, "feat(terminal): add split views", { author: { login: "alice" } }),

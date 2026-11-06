@@ -233,7 +233,7 @@ describe("CommandPalette", () => {
         target: { value: ">welcome" },
       },
     );
-    expect(screen.getByRole("option", { name: "Welcome" })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Welcome Category: Application" })).toBeTruthy();
     expect(screen.queryByRole("option", { name: "Settings" })).toBeNull();
   });
 

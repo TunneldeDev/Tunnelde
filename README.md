@@ -15,8 +15,8 @@ Download a desktop installer from [GitHub Releases](https://github.com/TunneldeD
 
 Press **F1** for Quick Access: `>` lists application and installed plugin commands,
 `%` searches file contents in the selected local/SSH directory, and `@` finds hosts.
-**Ctrl/Cmd+P** opens files and existing tabs. Plugin commands, including UUID
-Generator, can be run directly here and assigned keys in Settings → Keyboard Shortcuts.
+**Ctrl/Cmd+P** opens files and existing tabs. Installed plugin commands can be run
+directly here and assigned keys in Settings → Keyboard Shortcuts.
 Local search results open a read-only preview; remote results open the editor at the
 matching line, preserving unsaved text. Search is literal, bounded, and cancellable.
 
@@ -29,7 +29,7 @@ Update controls live in **Settings → Updates**: choose **Stable** or **Public 
 The update channel defaults to Stable, including on Beta installations.
 Automatic checks default to once daily; downloading and installing remain manual.
 Windows and AppImage use signed full-package updates. Switching to Stable never
-automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.md#in-app-channels-sources-and-ota).
+automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.en-us.md#in-app-channels-sources-and-ota).
 
 ## Workbench
 
@@ -45,18 +45,20 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   or detach file panels. Sort, filter, group, rename inline, create files or folders,
   connect file management directly to a saved host, and drag transfers. Select a file
   and press Space or click Preview to read local/remote text and rendered Markdown.
-  Install **Common File Icons** for file-type icons and **Common File Previews** for
-  images, audio, video and PDF. Both are available in the default marketplace and
-  need no Node runtime. Media playback depends on the operating system's codecs.
+  Install compatible icon and preview providers from the marketplace for additional
+  file types. Check each provider’s runtime and permission requirements. Media playback
+  depends on the operating system’s codecs.
 - Configure proxies per feature, connect through ordered SSH jump hosts, pause and
   resume file transfers with speed, remaining bytes and time estimates, and manage
-  local or remote TCP forwards from a host page or the SSH terminal toolbar. Removing an unfinished transfer
+  local or remote TCP forwards from the activity bar, host page or SSH terminal toolbar.
+  Removing an unfinished transfer
   cleans its recorded staging files; offline cleanup retries after reconnection.
   A compact status-bar entry opens background transfers from any page, with grouped
   tasks, expandable details and temporary speed limits. Drag its title to move it,
   resize from any edge or corner, and retain its layout across reopen and restart.
   Optimized transfers use bounded SFTP request pipelines, automatic segmentation
-  and shared connection budgets; compression and archive batching are still pending.
+  and shared connection budgets. Adaptive compression is available; small-file archive
+  batching is not yet implemented.
   See [network and storage](docs/network-storage.md) for behavior and limitations.
 - Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
   italic preview tab; select the same item again, double-click its tab, or interact with
@@ -77,59 +79,18 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   frequent monitor sampling. On macOS, background Dock visibility is configurable.
   Use Quit to exit.
 
-## Independent AI plugins
+## Plugin ecosystem
 
-The separate [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) supplies the
-marketplace, source folders and checksum-pinned ZIP packages. Install only the plugins
-that you want; each has its own sidebar, settings, conversations, secrets and lifecycle.
+The independent [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) hosts the
+marketplace and plugin packages. Plugins can extend the workspace with commands, panels,
+themes, file tools, AI assistants and other integrations. Browse the marketplace for available
+plugins and check each listing for its capabilities, runtime requirements and permissions.
 
-| Plugin           | Integration                                                               |
-| ---------------- | ------------------------------------------------------------------------- |
-| **Codex**        | The installed `codex` binary, using Codex app-server                      |
-| **Claude Code**  | The installed `claude` binary, using stream-json and its control protocol |
-| **Pi**           | The installed `pi` binary, using RPC and a permission extension           |
-| **Tunnelde AI**  | OpenAI-compatible Chat Completions, Responses, Anthropic or Gemini APIs   |
-| **Tunnelde MCP** | Authenticated loopback MCP tools for external AI clients                  |
-
-The coding integrations are community plugins maintained by TunneldeDev, not vendor
-extensions. They execute the corresponding agent; selecting a model does not substitute
-an API chatbot for a coding CLI. Authenticate the CLI on the machine where it will run.
-
-With desktop **0.25.1+** and assistant plugins **1.3.1+**:
-
-1. Connect a remote host in the Hosts sidebar.
-2. Open the plugin's **Execution location / 运行位置** menu and choose **Local** or the
-   connected machine by name. Model selection is a separate control.
-3. The working directory defaults to that machine's resolved home. Use **Workspace and
-   execution settings** to choose another folder or override the agent executable.
-4. Send a message. Coding agents run on the selected machine over SSH stdin/stdout;
-   no session ID or native helper is needed for ordinary remote execution.
-
-Tunnelde AI also supports running its API assistant process on the selected remote.
-
-Click the conversation title to search history and rename or delete an item directly
-from its row. Untitled conversations follow the interface language. Host renames update
-the target selector, and multiple terminals on the same host share one machine entry.
-Select and authorize the remote Node runtime, then approve uploading the plugin into a
-fresh user directory. API calls originate there; configuration and API keys travel over
-SSH stdin and are not written into the deployment files. Pi asks before uploading its
-small permission extension. Neither operation installs Node, installs an agent, or
-changes system services.
-
-The default marketplace currently supplies assistant plugins **1.4.0**. The cleanup
-changes in **1.4.1**, including `~/.TunneldeAI/Chats/` and `~/.TunneldeAI/Runtimes/`,
-are pending in the Hub repository and are not included in marketplace installations yet.
-The same applies to **SSHFS** and **SSHFS Lite**: desktop mount APIs are implemented,
-but these packages are awaiting catalogue publication. See the
-[assistant guide](docs/ai-assistants.md#remote-runtime-consent-and-files) and
-[SSHFS guide](docs/network-storage.md#sshfs-plugins) before testing source packages.
-
-Four modes are available: **Ask for approval**, **Approve for me**, **Full Access** and
-**ReadOnly**. Independent review needs a separate API reviewer; failure or denial falls
-back to human approval. Claude Code and Pi do not provide the verified OS read sandbox
-required for CLI ReadOnly, so that combination is disabled. API file tools and the Codex
-read sandbox support read-only work. Plugin permissions are not an OS sandbox for
-trusted executable code or arbitrary shell commands.
+Supported assistant integrations can run locally or on a connected SSH host. Setup,
+authentication, approval modes and available safeguards vary by plugin and execution target;
+see the [assistant guide](docs/ai-assistants.md) for details. Executable plugin permissions
+are not an operating-system sandbox for arbitrary code or shell commands. Using a system
+Node runtime requires explicit consent.
 
 The optional `tunnelde-agent` helper is for MCP stdio and advanced persistent remote
 supervisors. It is an Actions artifact or source build, **not a desktop Release download**.
@@ -137,14 +98,14 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 
 ## Documentation
 
-- [Settings and profiles](docs/settings.md)
-- [Proxies, jump hosts, resumable transfers and SSHFS](docs/network-storage.md)
-- [Keyboard and mouse shortcuts](docs/shortcuts.md)
-- [AI local/remote setup](docs/ai-assistants.md)
+- Settings and profiles: [English](docs/settings.en-us.md) · [简体中文](docs/settings.zh-cn.md)
+- Proxies, jump hosts, transfers and SSHFS: [English](docs/network-storage.en-us.md) · [简体中文](docs/network-storage.zh-cn.md)
+- Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)
+- AI local/remote setup: [English](docs/ai-assistants.en-us.md) · [简体中文](docs/ai-assistants.zh-cn.md)
 - Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
-- [Plugin development and security](docs/plugins.md)
-- [Architecture and data locations](docs/architecture.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- Plugin development and security: [English](docs/plugins.en-us.md) · [简体中文](docs/plugins.zh-cn.md)
+- Architecture and data locations: [English](docs/architecture.en-us.md) · [简体中文](docs/architecture.zh-cn.md)
+- Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
 - [Optional native helper](native-helpers/README.md)
 - [Changes by release](CHANGELOG.md)
 
@@ -195,8 +156,9 @@ source and dispatches publication for Windows, Linux, Apple Silicon and Intel ma
 stages a draft until all installers, signatures and update metadata pass verification. Beta
 versions publish as prereleases, preserve historical releases and never replace the latest stable.
 
-See [Contributing](CONTRIBUTING.md) for PR conventions and [Release operations](docs/releases.md)
-for branch protection, automation credentials and build recovery.
+See [Contributing](CONTRIBUTING.md) for PR conventions and Release operations in
+[English](docs/releases.en-us.md) or [简体中文](docs/releases.zh-cn.md) for branch protection,
+automation credentials and build recovery.
 `pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 
 ## License

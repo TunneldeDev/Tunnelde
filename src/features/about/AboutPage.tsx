@@ -13,13 +13,13 @@ function openUrl(url: string): void {
   void api.openExternal(url).catch((error) => toast(translateError(error), "error"));
 }
 
-export function AboutPage() {
+export function AboutPage({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
   const info = useSettings((state) => state.info);
   const version = info?.version ?? "0.1.0";
 
   return (
-    <div className="page about">
+    <div className={embedded ? "about" : "page about"}>
       <section className="card about__head">
         <img src="/brand/mark-256.png" width={64} height={64} alt="" draggable={false} />
         <div className="about__identity">

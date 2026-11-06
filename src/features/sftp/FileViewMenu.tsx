@@ -2,7 +2,7 @@ import { Check } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import { Menu } from "@/components/ui/overlay/Menu";
-import type { FileViewPreferences } from "@/lib/files/view";
+import { FILE_COLUMNS, type FileViewPreferences } from "@/lib/files/view";
 
 interface FileViewMenuProps {
   view: FileViewPreferences;
@@ -36,6 +36,20 @@ export function FileViewMenu({ view, onChange, onReset }: FileViewMenuProps) {
           icon: check(view.filesFoldersFirst),
           onSelect: () => onChange({ filesFoldersFirst: !view.filesFoldersFirst }),
         },
+        ...FILE_COLUMNS.filter((column) => column !== "name").map((column, index) => ({
+          separatorBefore: index === 0,
+          label: `${t("sftp.showColumn")}: ${t(column === "type" ? "sftp.sortType" : column === "size" ? "sftp.sortSize" : "sftp.sortModified")}`,
+          checked: (view.filesColumns ?? FILE_COLUMNS).includes(column),
+          checkable: "checkbox" as const,
+          onSelect: () => {
+            const columns = view.filesColumns ?? [...FILE_COLUMNS];
+            onChange({
+              filesColumns: columns.includes(column)
+                ? columns.filter((item) => item !== column)
+                : [...columns, column],
+            });
+          },
+        })),
         ...(["name", "type", "size", "modified"] as const).map((sort) => ({
           separatorBefore: sort === "name",
           label: t(

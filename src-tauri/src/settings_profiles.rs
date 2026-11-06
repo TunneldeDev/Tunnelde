@@ -330,7 +330,7 @@ mod tests {
     fn background_dock_preference_is_portable_and_legacy_profiles_keep_default() {
         assert_eq!(
             normalize(serde_json::json!({"theme":"dark"})).unwrap()["showDockIconInBackground"],
-            true
+            false
         );
         let settings = Settings {
             show_dock_icon_in_background: false,

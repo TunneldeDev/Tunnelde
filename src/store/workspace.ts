@@ -28,6 +28,8 @@ export interface WorkspaceTab {
   /** Collapsed docked sidebars remain in their original group and layout. */
   hidden?: boolean;
   filePane?: FilePaneOptions;
+  /** Live remote target of a file view; recomputed when its sources change. */
+  fileSessionId?: string | null;
 }
 
 export interface FilePaneOptions {
@@ -35,6 +37,8 @@ export interface FilePaneOptions {
   path: string | null;
   ownerSessionId: string;
   view?: FileViewPreferences;
+  remoteIdentity?: { hostId: string; address: string };
+  offline?: boolean;
 }
 
 export interface WorkspacePane {
@@ -100,6 +104,8 @@ interface WorkspaceStore {
   openTerminal: (session: SshSession) => void;
   openSftp: (session: SshSession) => void;
   openFilePane: (options: FilePaneOptions, title: string) => string;
+  retainFilePane: (tabId: string, options: FilePaneOptions, title: string) => void;
+  setFileSession: (tabId: string, sessionId: string | null) => void;
   openEditor: (session: SshSession, path: string) => void;
   openLocalEditor: (path: string) => void;
   openHistory: (session: SshSession) => void;
@@ -138,6 +144,7 @@ interface WorkspaceStore {
   hydrate: (records: TabRecord[]) => void;
   removeHost: (hostId: string) => void;
   renameHost: (hostId: string, title: string) => void;
+  renameTab: (tabId: string, title: string) => void;
   ensureWelcome: () => void;
 }
 
@@ -516,7 +523,9 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     openSftp: (session) => {
       set((state) =>
         insert(state, {
-          id: `sftp:${session.id}`,
+          id: state.tabs.some((tab) => tab.id === `sftp:${session.id}`)
+            ? `sftp:${session.id}:copy:${crypto.randomUUID()}`
+            : `sftp:${session.id}`,
           kind: "sftp",
           title: session.title,
           hostId: session.hostId,
@@ -539,6 +548,24 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       );
       return id;
     },
+
+    retainFilePane: (tabId, filePane, title) =>
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          tab.id === tabId && tab.kind === "sftp" ? { ...tab, filePane, title } : tab,
+        ),
+      })),
+
+    setFileSession: (tabId, sessionId) =>
+      set((state) => {
+        const tab = state.tabs.find((item) => item.id === tabId && item.kind === "sftp");
+        if (!tab || tab.fileSessionId === sessionId) return state;
+        return {
+          tabs: state.tabs.map((item) =>
+            item.id === tabId ? { ...item, fileSessionId: sessionId } : item,
+          ),
+        };
+      }),
 
     openEditor: (session, path) => {
       const id = `editor:${session.id}:${path}`;
@@ -625,6 +652,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             : id.startsWith(`editor:${sessionId}:`)
           : id === `terminal:${sessionId}` ||
             id === `sftp:${sessionId}` ||
+            id.startsWith(`sftp:${sessionId}:copy:`) ||
             id === `history:${sessionId}` ||
             id === `monitor:${sessionId}`;
 
@@ -632,7 +660,8 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
 
       set((state) => {
         const removed = state.tabs.filter(
-          (tab) => matches(tab.id) && !(tab.kind === "editor" && editors.isDirty(tab.id)),
+          (tab) =>
+            matches(tab.id) && !tab.filePane && !(tab.kind === "editor" && editors.isDirty(tab.id)),
         );
         if (removed.length === 0) {
           return state;
@@ -958,10 +987,64 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             }
           : record,
       );
+      let localFilePanes: Record<string, unknown> = {};
+      let remoteFilePanes: Record<string, unknown> = {};
+      try {
+        const metadata = records.find((record) => record.state)?.state;
+        const parsed: unknown = metadata ? JSON.parse(metadata) : null;
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          "localFilePanes" in parsed &&
+          parsed.localFilePanes &&
+          typeof parsed.localFilePanes === "object" &&
+          !Array.isArray(parsed.localFilePanes)
+        ) {
+          localFilePanes = parsed.localFilePanes as Record<string, unknown>;
+        }
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          "remoteFilePanes" in parsed &&
+          parsed.remoteFilePanes &&
+          typeof parsed.remoteFilePanes === "object" &&
+          !Array.isArray(parsed.remoteFilePanes)
+        )
+          remoteFilePanes = parsed.remoteFilePanes as Record<string, unknown>;
+      } catch {
+        /* Older or malformed snapshots do not restore file panels. */
+      }
       const tabs: WorkspaceTab[] = [];
       for (const record of records) {
         if (record.id === WORKSPACE_LAYOUT_RECORD_ID && record.kind === "welcome") continue;
-        if (!SUPPORTED_KINDS.includes(record.kind)) {
+        const filePath = localFilePanes[record.id];
+        const remote = remoteFilePanes[record.id];
+        const candidate =
+          remote && typeof remote === "object" ? (remote as Record<string, unknown>) : {};
+        const remoteFilePane =
+          record.kind === "sftp" &&
+          (record.id.startsWith("files:") || record.id.startsWith("sftp:")) &&
+          typeof candidate.hostId === "string" &&
+          candidate.hostId.length > 0 &&
+          candidate.hostId.length <= 512 &&
+          typeof candidate.address === "string" &&
+          candidate.address.length > 0 &&
+          candidate.address.length <= 4096 &&
+          typeof candidate.path === "string" &&
+          candidate.path.startsWith("/") &&
+          candidate.path.length <= 32768 &&
+          !candidate.path.includes("\0");
+        const localFilePane =
+          record.kind === "sftp" &&
+          (record.id.startsWith("files:") || record.id.startsWith("sftp:")) &&
+          typeof filePath === "string" &&
+          filePath.length > 0 &&
+          filePath.length <= 32768 &&
+          !filePath.includes("\0") &&
+          (/^[a-zA-Z]:[\\/]/.test(filePath) ||
+            filePath.startsWith("/") ||
+            filePath.startsWith("\\\\"));
+        if (!SUPPORTED_KINDS.includes(record.kind) && !localFilePane && !remoteFilePane) {
           continue;
         }
         if (record.kind === "host" && !record.hostId) {
@@ -975,6 +1058,29 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           title: record.title,
           hostId: record.hostId,
           pinned: record.pinned,
+          ...(localFilePane
+            ? {
+                filePane: {
+                  source: { kind: "local" as const },
+                  path: filePath,
+                  ownerSessionId: "restored",
+                },
+              }
+            : {}),
+          ...(remoteFilePane && !localFilePane
+            ? {
+                filePane: {
+                  source: { kind: "remote" as const, sessionId: "" },
+                  path: candidate.path as string,
+                  ownerSessionId: "",
+                  offline: true,
+                  remoteIdentity: {
+                    hostId: candidate.hostId as string,
+                    address: candidate.address as string,
+                  },
+                },
+              }
+            : {}),
         });
       }
       let restored: PanesState | undefined;
@@ -1088,6 +1194,13 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
       });
     },
 
+    renameTab: (tabId, title) =>
+      set((state) => ({
+        tabs: state.tabs.map((tab) =>
+          tab.id === tabId && tab.title !== title ? { ...tab, title } : tab,
+        ),
+      })),
+
     renameHost: (hostId, title) =>
       set((state) => ({
         tabs: state.tabs.map((tab) => (tab.id === `host:${hostId}` ? { ...tab, title } : tab)),
@@ -1127,6 +1240,20 @@ export function workspaceRecords(): TabRecord[] {
     activePaneId,
     hiddenTabIds: tabs.filter((tab) => tab.kind === "sidebar" && tab.hidden).map((tab) => tab.id),
     previewTabIds: tabs.filter((tab) => tab.preview).map((tab) => tab.id),
+    localFilePanes: Object.fromEntries(
+      tabs.flatMap((tab) =>
+        tab.filePane?.source.kind === "local" && tab.filePane.path
+          ? [[tab.id, tab.filePane.path]]
+          : [],
+      ),
+    ),
+    remoteFilePanes: Object.fromEntries(
+      tabs.flatMap((tab) =>
+        tab.filePane?.source.kind === "remote" && tab.filePane.path && tab.filePane.remoteIdentity
+          ? [[tab.id, { ...tab.filePane.remoteIdentity, path: tab.filePane.path }]]
+          : [],
+      ),
+    ),
   });
   if (ordered.length === 0 && panes.some((pane) => pane.locked))
     return [

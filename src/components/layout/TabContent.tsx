@@ -12,6 +12,7 @@ import { PluginCommandPage } from "@/features/plugins/PluginCommandPage";
 import { PluginDetailPage } from "@/features/plugins/PluginDetailPage";
 import { HostPage } from "@/features/hosts/HostPage";
 import { SftpPage } from "@/features/sftp/SftpPage";
+import { RestoredFilePane } from "@/features/sftp/RestoredFilePane";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { KnownHostsPage } from "@/features/settings/KnownHostsPage";
 import { TerminalPage } from "@/features/terminal/TerminalPage";
@@ -50,11 +51,21 @@ function TabBody({
     case "terminal":
       return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
+      if (
+        tab.filePane?.source.kind === "remote" &&
+        tab.filePane.offline &&
+        tab.filePane.remoteIdentity
+      )
+        return <RestoredFilePane tab={tab} />;
       return (
         <SftpPage
-          sessionId={tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "")}
+          key={tab.filePane ? `${tab.id}:single` : `${tab.id}:dual`}
+          sessionId={
+            tab.filePane?.ownerSessionId ?? tab.id.replace("sftp:", "").split(":copy:")[0]!
+          }
           single={tab.filePane}
-          scopeId={tab.filePane ? tab.id : undefined}
+          scopeId={tab.filePane || tab.id.includes(":copy:") ? tab.id : undefined}
+          tabId={tab.id}
         />
       );
     case "editor":

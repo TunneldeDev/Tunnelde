@@ -35,6 +35,7 @@ import { useSettings } from "@/store/settings";
 import { useNavigation } from "@/store/navigation";
 import { isTauri } from "@/lib/api/ipc";
 import { useEditors } from "@/store/editors";
+import { FILE_PANE_MIME, filePaneDrag } from "@/lib/session/filePaneDrag";
 import {
   sidebarLabel,
   SIDEBAR_MIME,
@@ -464,26 +465,24 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
 
 type DropHint = "left" | "right" | "top" | "bottom";
 
-function zoneOf(
+export function zoneOf(
   element: HTMLDivElement,
   event: { clientX: number; clientY: number },
 ): DropHint | null {
   const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
   const x = (event.clientX - rect.left) / rect.width;
   const y = (event.clientY - rect.top) / rect.height;
-  if (x < 0.25) {
-    return "left";
-  }
-  if (x > 0.75) {
-    return "right";
-  }
-  if (y < 0.2) {
-    return "top";
-  }
-  if (y > 0.8) {
-    return "bottom";
-  }
-  return null;
+  // Keep the middle quarter for merging; divide the remainder by the nearest
+  // edge so corners do not make the top and bottom targets unreachable.
+  if (x >= 0.375 && x <= 0.625 && y >= 0.375 && y <= 0.625) return null;
+  const distances: [DropHint, number][] = [
+    ["left", x],
+    ["right", 1 - x],
+    ["top", y],
+    ["bottom", 1 - y],
+  ];
+  return distances.reduce((best, candidate) => (candidate[1] < best[1] ? candidate : best))[0];
 }
 
 export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolean }) {
@@ -500,7 +499,8 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
     const element = body.current;
     if (!element) return;
     const over = (event: globalThis.DragEvent) => {
-      if (!event.dataTransfer?.types.includes(TAB_MIME)) return;
+      if (!event.dataTransfer?.types.some((type) => type === TAB_MIME || type === FILE_PANE_MIME))
+        return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       setHint(zoneOf(element, event));
@@ -510,18 +510,25 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
         setHint(null);
     };
     const drop = (event: globalThis.DragEvent) => {
-      const tabId = event.dataTransfer?.getData(TAB_MIME);
-      if (!tabId) return;
+      const token = event.dataTransfer?.getData(FILE_PANE_MIME);
+      const draggedFile = token ? filePaneDrag(token) : null;
+      let tabId = event.dataTransfer?.getData(TAB_MIME);
+      if (!tabId && !draggedFile) return;
       event.preventDefault();
       event.stopPropagation();
       setHint(null);
       const zone = zoneOf(element, event);
+      if (draggedFile)
+        tabId = useWorkspace.getState().openFilePane(draggedFile.pane, draggedFile.title);
+      if (!tabId) return;
       if (!zone) {
         moveTab(tabId, pane.id);
+        draggedFile?.onMoved?.();
         return;
       }
       const direction: SplitDirection = zone === "left" || zone === "right" ? "row" : "column";
       splitTab(tabId, direction, zone === "left" || zone === "top" ? "before" : "after", pane.id);
+      draggedFile?.onMoved?.();
     };
     // Page contents live in stable portals; native listeners follow their actual
     // group rather than the React tree that owns their component instance.

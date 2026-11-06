@@ -155,6 +155,7 @@ pub fn run() {
             commands::update_history,
             commands::open_release_page,
             commands::open_log_dir,
+            commands::open_latest_log,
             logs::logs_read,
             commands::open_local_path,
             commands::reveal_local_path,

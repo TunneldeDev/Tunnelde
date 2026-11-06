@@ -78,6 +78,152 @@ it("offers resume only for retained partial data and keeps cancelled cleanup ret
   expect(screen.getByText(/Temporary data could not be fully removed/)).toBeTruthy();
 });
 
+it("shows a localized explanation when a directory move is rejected", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error: "sftp.directoryMoveUnavailable",
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(
+    screen.getByText(/Moving folders between sources is temporarily unavailable/),
+  ).toBeTruthy();
+  expect(screen.queryByText("sftp.directoryMoveUnavailable")).toBeNull();
+});
+
+it.each([
+  ["sftp.moveRecoverySourcePresent", /an entry now exists at the source path/],
+  ["sftp.moveRecoveryUnverified", /destination cannot be verified from the saved task/],
+])("explains interrupted source removal without expanding task details: %s", (error, message) => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error,
+      fromPath: "/original/source.json",
+      toPath: "/copied/target.json",
+      fromAddress: "user@source:22",
+      toAddress: "user@target:22",
+    })),
+  }));
+  const { container } = render(<FileTransfers />);
+  expect(screen.getByText(message)).toBeTruthy();
+  expect(screen.queryByText(error)).toBeNull();
+  expect(container.querySelector(".transfer-task__details")).toBeTruthy();
+  expect(screen.getByText("user@source:22:/original/source.json")).toBeTruthy();
+  expect(screen.getByText("user@target:22:/copied/target.json")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Remove transfer and clean temporary files" }),
+  ).toBeTruthy();
+  expect(container.querySelectorAll(".transfer-task__details")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "file" }));
+  expect(container.querySelectorAll(".transfer-task__details")).toHaveLength(2);
+  expect(screen.getAllByText("user@source:22:/original/source.json")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "file" }));
+  expect(container.querySelectorAll(".transfer-task__details")).toHaveLength(1);
+  expect(screen.getByText("user@source:22:/original/source.json")).toBeTruthy();
+});
+
+it("keeps ordinary failed transfers resumable and their details collapsed", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error: "sftp.transferTimedOut",
+    })),
+  }));
+  const { container } = render(<FileTransfers />);
+  expect(screen.getByRole("button", { name: "Resume transfer" })).toBeTruthy();
+  expect(container.querySelector(".transfer-task__details")).toBeNull();
+});
+
+it("shows a backup recovery error without expanding task details", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.backupRecoveryRequired",
+    })),
+  }));
+  const { container } = render(<FileTransfers />);
+  expect(screen.getByText(/backup is a hidden .tunnelde file/)).toBeTruthy();
+  expect(container.querySelector(".transfer-task__details")).toBeNull();
+});
+
+it("explains a local cleanup conflict without promising recovery by reconnecting", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.typeConflict",
+      toHostId: null,
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(
+    screen.getByText(/Cleanup is incomplete. Review the error and retry cleanup/),
+  ).toBeTruthy();
+  expect(screen.getByText(/A file and folder cannot replace one another/)).toBeTruthy();
+  expect(screen.queryByText(/will be cleaned when the destination reconnects/)).toBeNull();
+  expect(screen.getByRole("button", { name: "Retry cleanup" })).toBeTruthy();
+});
+
+it("shows the specific backup and original destination for manual recovery", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.backupRecoveryRequired",
+      backupRecovery: {
+        backup: "/remote/nested/.tunnelde-job.backup",
+        destination: "/remote/nested/a.txt",
+      },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText("Backup")).toBeTruthy();
+  expect(screen.getByText("/remote/nested/.tunnelde-job.backup")).toBeTruthy();
+  expect(screen.getByText("Original destination")).toBeTruthy();
+  expect(screen.getByText("/remote/nested/a.txt")).toBeTruthy();
+  expect(
+    screen.queryByText(/Temporary data will be cleaned when the destination reconnects/),
+  ).toBeNull();
+});
+
+it("warns when the file at a recorded backup path cannot be identified", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.backupUnrecognized",
+      backupRecovery: { backup: "/remote/.backup", destination: "/remote/file" },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText(/cannot be verified as the previous destination/)).toBeTruthy();
+  expect(screen.getByText("/remote/.backup")).toBeTruthy();
+  expect(screen.getByText("/remote/file")).toBeTruthy();
+});
+
+it("keeps the last known recovery paths visible after a reconnect failure", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.reconnectRequired",
+      toAddress: "user@example:22",
+      backupRecovery: { backup: "/dir/.backup", destination: "/dir/file" },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText(/Last detected recovery location/)).toBeTruthy();
+  expect(screen.getByText("user@example:22:/dir/.backup")).toBeTruthy();
+  expect(screen.getByText("user@example:22:/dir/file")).toBeTruthy();
+});
+
 it("bulk clears finished and failed transfers and keeps deferred remote cleanup visible", async () => {
   const template = useTransfers.getState().items[0]!;
   const pending = {

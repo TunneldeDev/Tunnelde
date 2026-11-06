@@ -25,6 +25,7 @@ import type { Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
+import { useWorkspace } from "@/store/workspace";
 
 const connect = vi.fn();
 
@@ -80,6 +81,30 @@ beforeEach(() => {
 });
 
 describe("ConnectDialog", () => {
+  it("connects forwarding in the background without opening a terminal or file tab", async () => {
+    apiMock.credentialStatus.mockResolvedValue(true);
+    connect.mockResolvedValue({ id: "background", hostId: host.id, terminal: false });
+    const openTerminal = vi.spyOn(useWorkspace.getState(), "openTerminal");
+    const openSftp = vi.spyOn(useWorkspace.getState(), "openSftp");
+    const close = vi.fn();
+    render(<ConnectDialog host={host} after="background" onClose={close} />);
+    await screen.findByText("Trusted");
+    await waitFor(() =>
+      expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+        false,
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({ hostId: host.id, background: true }),
+      expect.any(Function),
+    );
+    expect(openTerminal).not.toHaveBeenCalled();
+    expect(openSftp).not.toHaveBeenCalled();
+    openTerminal.mockRestore();
+    openSftp.mockRestore();
+  });
   it("disables connecting during a quality test and cancels it when closed", async () => {
     apiMock.credentialStatus.mockResolvedValue(true);
     apiMock.sshTestConnection.mockReturnValue(new Promise(() => undefined));

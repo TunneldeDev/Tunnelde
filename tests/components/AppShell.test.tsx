@@ -17,11 +17,17 @@ vi.mock("@/components/layout/CommandPalette", () => ({
     useQuickAccess((state) => state.query !== null) ? <div data-testid="command-palette" /> : null,
 }));
 vi.mock("@/components/layout/ActivityBar", () => ({ ActivityBar: () => null }));
-vi.mock("@/components/layout/RemotePanel", () => ({ RemotePanel: () => null }));
+vi.mock("@/components/layout/RemotePanel", () => ({
+  RemotePanel: ({ sessionId }: { sessionId: string }) => (
+    <div data-testid="remote-panel">{sessionId}</div>
+  ),
+}));
 vi.mock("@/components/layout/StatusBar", () => ({
   StatusBar: () => <footer data-testid="statusbar" />,
 }));
-vi.mock("@/components/layout/SystemPanel", () => ({ SystemPanel: () => null }));
+vi.mock("@/components/layout/SystemPanel", () => ({
+  SystemPanel: () => <div data-testid="system-panel" />,
+}));
 vi.mock("@/components/ui/overlay/Toast", () => ({ ToastHost: () => null }));
 vi.mock("@/components/ui/overlay/ContextMenu", () => ({ ContextMenuHost: () => null }));
 vi.mock("@/features/dialogs/DialogHost", () => ({ DialogHost: () => null }));
@@ -34,9 +40,13 @@ import { useQuickAccess } from "@/store/quickAccess";
 import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { useWorkspace } from "@/store/workspace";
+import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
+import * as keyboardActions from "@/lib/keyboard/actions";
+import { usePlugins } from "@/store/plugins";
+import type { PluginInfo } from "@/lib/api/types";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 function rectangle(left: number, top: number, width: number, height: number): DOMRect {
@@ -94,6 +104,7 @@ function renderWorkspace() {
 
 beforeEach(() => {
   useQuickAccess.setState({ query: null });
+  usePlugins.setState({ items: [] });
   useDialogs.getState().close();
   useSettings.setState({ settings: DEFAULT_SETTINGS, update: vi.fn().mockResolvedValue(true) });
   useNavigation.setState({
@@ -122,6 +133,92 @@ beforeEach(() => {
       first: { kind: "pane", paneId: "pane-1" },
       second: { kind: "pane", paneId: "pane-2" },
     },
+  });
+});
+
+describe("file tab remote monitor", () => {
+  it("tracks the selected remote source, duplicate tabs and local panels", () => {
+    useSsh.setState({
+      sessions: ["a", "b"].map((id) => ({
+        id,
+        hostId: id,
+        title: id,
+        address: `${id}:22`,
+        cols: 80,
+        rows: 24,
+        connectedAt: 0,
+      })),
+    });
+    const id = "sftp:a:copy:duplicate";
+    useWorkspace.setState({
+      tabs: [{ id, kind: "sftp", title: "a", hostId: "a", pinned: false }],
+      activeId: id,
+      panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
+      activePaneId: "pane-1",
+      layout: { kind: "pane", paneId: "pane-1" },
+    });
+    render(<AppShell />);
+    expect(screen.getByTestId("remote-panel").textContent).toBe("a");
+    act(() => useWorkspace.getState().setFileSession(id, "b"));
+    expect(screen.getByTestId("remote-panel").textContent).toBe("b");
+    act(() => useWorkspace.getState().setFileSession(id, null));
+    expect(screen.getByTestId("system-panel")).toBeTruthy();
+    act(() => useSsh.setState({ sessions: [] }));
+  });
+});
+
+describe("scoped plugin shortcut conflicts", () => {
+  const plugin = (binding: string) =>
+    ({
+      id: "test",
+      name: "Test",
+      runtime: "node",
+      views: [],
+      commands: [{ id: "run", title: "Run", keybindings: [binding] }],
+    }) as unknown as PluginInfo;
+
+  it.each([
+    { scope: "sftp-pane", binding: "Mod+F", key: "f" },
+    { scope: "terminal-host", binding: "Mod+Shift+C", key: "C", shiftKey: true },
+  ])(
+    "runs a plugin once and retains the $scope handler",
+    async ({ scope, binding, key, shiftKey }) => {
+      usePlugins.setState({ items: [plugin(binding)] });
+      const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockReturnValue(true);
+      const { container } = render(<AppShell />);
+      const local = document.createElement("div");
+      local.className = scope;
+      local.tabIndex = 0;
+      container.append(local);
+      const handler = vi.fn((event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      local.addEventListener("keydown", handler);
+      fireEvent.keyDown(local, { key, ctrlKey: true, shiftKey });
+      await act(async () => {});
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledTimes(1);
+      expect(run).toHaveBeenCalledWith("plugin.c.4.test.run");
+      run.mockRestore();
+    },
+  );
+
+  it("routes a plugin shortcut from the terminal even without a terminal command conflict", () => {
+    usePlugins.setState({ items: [plugin("Mod+Shift+J")] });
+    const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockReturnValue(true);
+    const { container } = render(<AppShell />);
+    const host = document.createElement("div");
+    host.className = "terminal-host";
+    const input = document.createElement("textarea");
+    host.append(input);
+    container.append(host);
+    const terminalHandler = vi.fn();
+    input.addEventListener("keydown", terminalHandler);
+    fireEvent.keyDown(input, { key: "J", ctrlKey: true, shiftKey: true });
+    expect(run).toHaveBeenCalledExactlyOnceWith("plugin.c.4.test.run");
+    expect(terminalHandler).not.toHaveBeenCalled();
+    run.mockRestore();
   });
 });
 

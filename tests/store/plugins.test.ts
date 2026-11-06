@@ -15,6 +15,7 @@ const { apiMock, native, ensureNode, ensurePermission } = vi.hoisted(() => ({
     pluginRun: vi.fn(),
     pluginUninstall: vi.fn(),
     marketplaceDownload: vi.fn(),
+    openLatestLog: vi.fn(),
   },
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock, isTauri: native }));
@@ -23,6 +24,7 @@ vi.mock("@/store/pluginSecurity", () => ({ ensurePluginPermission: ensurePermiss
 vi.mock("@/store/toasts", () => ({ toast: vi.fn() }));
 
 import { usePlugins } from "@/store/plugins";
+import { toast } from "@/store/toasts";
 
 const plugin: PluginInfo = {
   id: "hello",
@@ -60,6 +62,35 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("reports an unknown plugin startup validation error and offers the log", async () => {
+    apiMock.pluginStart.mockRejectedValueOnce({
+      code: "validation",
+      message: "plugin.spawn: executable missing",
+    });
+    await usePlugins.getState().start(plugin.id);
+    expect(toast).toHaveBeenCalledWith(
+      expect.stringContaining("executable missing"),
+      "error",
+      expect.objectContaining({ label: expect.any(String), onClick: expect.any(Function) }),
+    );
+    const action = vi.mocked(toast).mock.calls.at(-1)?.[2];
+    await action?.onClick();
+    expect(apiMock.openLatestLog).toHaveBeenCalledOnce();
+  });
+  it("reports initialization failure returned as plugin state", async () => {
+    apiMock.pluginStart.mockResolvedValueOnce({
+      ...plugin,
+      status: "failed",
+      error: "plugin.error: Invalid saved configuration",
+    });
+    await usePlugins.getState().start(plugin.id);
+    expect(toast).toHaveBeenCalledWith(
+      expect.stringContaining("Invalid saved configuration"),
+      "error",
+      expect.any(Object),
+    );
+    expect(usePlugins.getState().items[0]?.status).toBe("failed");
+  });
   it("does not construct command input or invoke a plugin before permission is granted", async () => {
     native.mockReturnValue(true);
     usePlugins.setState({ items: [{ ...plugin, status: "running" }] });
@@ -195,6 +226,11 @@ describe("plugin request ownership", () => {
     response.resolve({ ...plugin, status: "running" });
     await request;
     expect(usePlugins.getState().items).toEqual([failed]);
+    expect(toast).toHaveBeenCalledWith(
+      expect.stringContaining("crashed"),
+      "error",
+      expect.any(Object),
+    );
   });
 
   it("deduplicates reloads and waits for a running command before replacing the runtime", async () => {

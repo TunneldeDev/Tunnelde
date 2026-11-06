@@ -1,4 +1,7 @@
 pub mod background;
+pub mod file_ops;
+#[cfg(windows)]
+pub mod guarded_file;
 pub mod locale;
 pub mod logging;
 pub mod menu;
