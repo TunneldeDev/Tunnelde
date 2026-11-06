@@ -3540,6 +3540,7 @@ mod tests {
             hold_read: AtomicBool,
             read_started: Notify,
             release_read: Notify,
+            replace_before_remove: AtomicBool,
         }
 
         struct DiskServer {
@@ -3673,6 +3674,16 @@ mod tests {
                     attrs.set_type(russh_sftp::protocol::FileMode::LNK);
                 }
                 Ok(Attrs { id, attrs })
+            }
+
+            async fn remove(&mut self, id: u32, filename: String) -> Result<Status, StatusCode> {
+                let path = self.root.join(filename);
+                if self.state.replace_before_remove.load(Ordering::SeqCst) {
+                    std::fs::remove_file(&path).map_err(io_status)?;
+                    std::fs::write(&path, b"independent replacement").map_err(io_status)?;
+                }
+                std::fs::remove_file(path).map_err(io_status)?;
+                Ok(status(id))
             }
 
             async fn setstat(
@@ -4006,6 +4017,29 @@ mod tests {
             std::fs::remove_file(root.join(backup.path)).unwrap();
             std::fs::remove_file(root.join(target.path)).unwrap();
             std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
+        #[ignore = "known race: SFTP remove is not conditional on the verified file identity"]
+        async fn backup_cleanup_must_not_delete_a_concurrent_replacement() {
+            let root = temp_root("backup-remove-race");
+            let backup = Endpoint {
+                session: Some("test".into()),
+                path: "backup".into(),
+            };
+            std::fs::write(root.join(&backup.path), b"original backup").unwrap();
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let cancel = AtomicBool::new(false);
+            let expected = fingerprint_file(&backup, Some(&sftp), &cancel)
+                .await
+                .unwrap();
+            state.replace_before_remove.store(true, Ordering::SeqCst);
+            let _ = remove_verified_backup(&backup, Some(&sftp), &expected, &cancel).await;
+            sftp.close().await.unwrap();
+            let remaining = std::fs::read(root.join(&backup.path));
+            std::fs::remove_dir_all(root).unwrap();
+            assert_eq!(remaining.unwrap(), b"independent replacement");
         }
 
         #[tokio::test]
