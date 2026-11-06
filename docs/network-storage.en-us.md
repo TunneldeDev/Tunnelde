@@ -164,6 +164,11 @@ has its own visible status and can be cancelled while awaiting network reads.
 
 Overwrite uses a recoverable, verified backup of the previous destination. For a
 move, source removal happens after the copy succeeds and is checkpointed separately.
+If the app is interrupted during source removal, Resume preserves both locations
+and reports that manual review is required. An existing source path may have been
+recreated; a missing source and an existing destination alone do not prove that the
+move completed. Check both locations before clearing the task. Saved tasks do not
+yet contain a verified destination digest for automatic recovery of this phase.
 Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
 temporary data before reporting completion. It keeps already completed destination
 files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails
