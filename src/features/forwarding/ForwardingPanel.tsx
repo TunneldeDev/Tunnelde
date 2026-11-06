@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { ChevronRight, Server } from "lucide-react";
 import { ForwardingSection, type ForwardRule } from "./ForwardingSection";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
@@ -86,6 +87,8 @@ export function ForwardingPanel() {
                   });
                 }}
               >
+                <ChevronRight className="forwarding-panel__chevron" size={14} aria-hidden="true" />
+                <Server size={14} aria-hidden="true" />
                 <span>{host.name}</span>
                 <small>
                   {active}/{own.length} {t("forward.running")}
