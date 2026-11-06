@@ -226,9 +226,13 @@ pub(super) async fn cleanup_owned(
             backup: backup.path.clone(),
             destination: to.path.clone(),
         };
-        let expected = expected.ok_or_else(recovery)?;
+        let unrecognized = || AppError::BackupUnrecognized {
+            backup: backup.path.clone(),
+            destination: to.path.clone(),
+        };
+        let expected = expected.ok_or_else(unrecognized)?;
         if fingerprint_file(&backup, sftp, &cancel).await? != *expected {
-            return Err(AppError::validation("sftp.resumePrefixMismatch"));
+            return Err(unrecognized());
         }
         // Checking for a missing destination before renaming is not atomic.
         // Preserve the backup until it can be restored without overwriting a
@@ -454,9 +458,17 @@ mod tests {
             .await
             .unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        assert!(cleanup_owned("job", &target, None, Some(&expected))
+        let error = cleanup_owned("job", &target, None, Some(&expected))
             .await
-            .is_err());
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AppError::BackupUnrecognized { ref backup, ref destination }
+                if backup == &staging_endpoint(&target, "job", "backup").path
+                    && destination == &target.path
+        ));
+        let error = cleanup_owned("job", &target, None, None).await.unwrap_err();
+        assert!(matches!(error, AppError::BackupUnrecognized { .. }));
         assert!(Path::new(&backup.path).exists());
         assert!(Path::new(&part.path).exists());
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"user data");

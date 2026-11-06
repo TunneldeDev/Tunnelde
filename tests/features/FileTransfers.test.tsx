@@ -125,6 +125,21 @@ it("shows the specific backup and original destination for manual recovery", () 
   expect(screen.getByText("/remote/nested/a.txt")).toBeTruthy();
 });
 
+it("warns when the file at a recorded backup path cannot be identified", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.backupUnrecognized",
+      backupRecovery: { backup: "/remote/.backup", destination: "/remote/file" },
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText(/cannot be verified as the previous destination/)).toBeTruthy();
+  expect(screen.getByText("/remote/.backup")).toBeTruthy();
+  expect(screen.getByText("/remote/file")).toBeTruthy();
+});
+
 it("keeps the last known recovery paths visible after a reconnect failure", () => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({
