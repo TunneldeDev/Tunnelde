@@ -134,6 +134,68 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("records the current local path of a standalone panel for workspace restoration", async () => {
+    const filePane = {
+      source: { kind: "local" as const },
+      path: "C:\\work",
+      ownerSessionId: "session-1",
+    };
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: "files:test",
+          kind: "sftp",
+          title: "This computer",
+          hostId: null,
+          pinned: false,
+          filePane,
+        },
+      ],
+    });
+    render(
+      <SftpPage sessionId="session-1" single={filePane} tabId="files:test" scopeId="files:test" />,
+    );
+    await screen.findByText("src");
+    fireEvent.doubleClick(screen.getByText("src"));
+    await waitFor(() =>
+      expect(useWorkspace.getState().tabs[0]?.filePane?.path).toBe("C:\\work\\src"),
+    );
+  });
+
+  it("does not persist an old local panel after switching it to a remote source", async () => {
+    const filePane = {
+      source: { kind: "local" as const },
+      path: "C:\\work",
+      ownerSessionId: "session-1",
+    };
+    useWorkspace.setState({
+      tabs: [
+        {
+          id: "files:test",
+          kind: "sftp",
+          title: "This computer",
+          hostId: null,
+          pinned: false,
+          filePane,
+        },
+      ],
+    });
+    render(
+      <SftpPage sessionId="session-1" single={filePane} tabId="files:test" scopeId="files:test" />,
+    );
+    await screen.findByText("src");
+    fireEvent.click(screen.getByRole("button", { name: "Source" }));
+    fireEvent.click(
+      within(screen.getByRole("listbox", { name: "Source" })).getByRole("option", {
+        name: "web-01",
+      }),
+    );
+    expect(useWorkspace.getState().tabs[0]?.filePane?.source).toEqual({
+      kind: "remote",
+      sessionId: "session-1",
+    });
+    await screen.findByText("readme.md");
+  });
   it("moves a panel out and retains the other panel in the original tab", async () => {
     const original = {
       id: "sftp:session-1",

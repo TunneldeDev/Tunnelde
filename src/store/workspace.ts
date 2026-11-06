@@ -971,10 +971,38 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
             }
           : record,
       );
+      let localFilePanes: Record<string, unknown> = {};
+      try {
+        const metadata = records.find((record) => record.state)?.state;
+        const parsed: unknown = metadata ? JSON.parse(metadata) : null;
+        if (
+          parsed &&
+          typeof parsed === "object" &&
+          "localFilePanes" in parsed &&
+          parsed.localFilePanes &&
+          typeof parsed.localFilePanes === "object" &&
+          !Array.isArray(parsed.localFilePanes)
+        ) {
+          localFilePanes = parsed.localFilePanes as Record<string, unknown>;
+        }
+      } catch {
+        /* Older or malformed snapshots do not restore file panels. */
+      }
       const tabs: WorkspaceTab[] = [];
       for (const record of records) {
         if (record.id === WORKSPACE_LAYOUT_RECORD_ID && record.kind === "welcome") continue;
-        if (!SUPPORTED_KINDS.includes(record.kind)) {
+        const filePath = localFilePanes[record.id];
+        const localFilePane =
+          record.kind === "sftp" &&
+          (record.id.startsWith("files:") || record.id.startsWith("sftp:")) &&
+          typeof filePath === "string" &&
+          filePath.length > 0 &&
+          filePath.length <= 32768 &&
+          !filePath.includes("\0") &&
+          (/^[a-zA-Z]:[\\/]/.test(filePath) ||
+            filePath.startsWith("/") ||
+            filePath.startsWith("\\\\"));
+        if (!SUPPORTED_KINDS.includes(record.kind) && !localFilePane) {
           continue;
         }
         if (record.kind === "host" && !record.hostId) {
@@ -988,6 +1016,15 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           title: record.title,
           hostId: record.hostId,
           pinned: record.pinned,
+          ...(localFilePane
+            ? {
+                filePane: {
+                  source: { kind: "local" as const },
+                  path: filePath,
+                  ownerSessionId: "restored",
+                },
+              }
+            : {}),
         });
       }
       let restored: PanesState | undefined;
@@ -1147,6 +1184,13 @@ export function workspaceRecords(): TabRecord[] {
     activePaneId,
     hiddenTabIds: tabs.filter((tab) => tab.kind === "sidebar" && tab.hidden).map((tab) => tab.id),
     previewTabIds: tabs.filter((tab) => tab.preview).map((tab) => tab.id),
+    localFilePanes: Object.fromEntries(
+      tabs.flatMap((tab) =>
+        tab.filePane?.source.kind === "local" && tab.filePane.path
+          ? [[tab.id, tab.filePane.path]]
+          : [],
+      ),
+    ),
   });
   if (ordered.length === 0 && panes.some((pane) => pane.locked))
     return [
