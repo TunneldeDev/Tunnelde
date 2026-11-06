@@ -79,56 +79,18 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   frequent monitor sampling. On macOS, background Dock visibility is configurable.
   Use Quit to exit.
 
-## Independent AI plugins
+## Plugin ecosystem
 
-The separate [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) supplies the
-marketplace, source folders and checksum-pinned ZIP packages. Install only the plugins
-that you want; each has its own sidebar, settings, conversations, secrets and lifecycle.
+The independent [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) hosts the
+marketplace and plugin packages. Plugins can extend the workspace with commands, panels,
+themes, file tools, AI assistants and other integrations. Browse the marketplace for available
+plugins and check each listing for its capabilities, runtime requirements and permissions.
 
-| Plugin           | Integration                                                               |
-| ---------------- | ------------------------------------------------------------------------- |
-| **Codex**        | The installed `codex` binary, using Codex app-server                      |
-| **Claude Code**  | The installed `claude` binary, using stream-json and its control protocol |
-| **Pi**           | The installed `pi` binary, using RPC and a permission extension           |
-| **Tunnelde AI**  | OpenAI-compatible Chat Completions, Responses, Anthropic or Gemini APIs   |
-| **Tunnelde MCP** | Authenticated loopback MCP tools for external AI clients                  |
-
-The coding integrations are community plugins maintained by TunneldeDev, not vendor
-extensions. They execute the corresponding agent; selecting a model does not substitute
-an API chatbot for a coding CLI. Authenticate the CLI on the machine where it will run.
-
-With desktop **0.25.1+** and assistant plugins **1.3.1+**:
-
-1. Connect a remote host in the Hosts sidebar.
-2. Open the plugin's **Execution location / 运行位置** menu and choose **Local** or the
-   connected machine by name. Model selection is a separate control.
-3. The working directory defaults to that machine's resolved home. Use **Workspace and
-   execution settings** to choose another folder or override the agent executable.
-4. Send a message. Coding agents run on the selected machine over SSH stdin/stdout;
-   no session ID or native helper is needed for ordinary remote execution.
-
-Tunnelde AI also supports running its API assistant process on the selected remote.
-
-Click the conversation title to search history and rename or delete an item directly
-from its row. Untitled conversations follow the interface language. Host renames update
-the target selector, and multiple terminals on the same host share one machine entry.
-Select and authorize the remote Node runtime, then approve uploading the plugin into a
-fresh user directory. API calls originate there; configuration and API keys travel over
-SSH stdin and are not written into the deployment files. Pi asks before uploading its
-small permission extension. Neither operation installs Node, installs an agent, or
-changes system services.
-
-The marketplace offers compatible assistant and mount providers. Check each
-plugin's details for its current version, runtime and permissions. See the
-[assistant guide](docs/ai-assistants.md#remote-runtime-consent-and-files) and
-[SSHFS guide](docs/network-storage.md#sshfs-plugins) for setup and limitations.
-
-Four modes are available: **Ask for approval**, **Approve for me**, **Full Access** and
-**ReadOnly**. Independent review needs a separate API reviewer; failure or denial falls
-back to human approval. Claude Code and Pi do not provide the verified OS read sandbox
-required for CLI ReadOnly, so that combination is disabled. API file tools and the Codex
-read sandbox support read-only work. Plugin permissions are not an OS sandbox for
-trusted executable code or arbitrary shell commands.
+Supported assistant integrations can run locally or on a connected SSH host. Setup,
+authentication, approval modes and available safeguards vary by plugin and execution target;
+see the [assistant guide](docs/ai-assistants.md) for details. Executable plugin permissions
+are not an operating-system sandbox for arbitrary code or shell commands. Using a system
+Node runtime requires explicit consent.
 
 The optional `tunnelde-agent` helper is for MCP stdio and advanced persistent remote
 supervisors. It is an Actions artifact or source build, **not a desktop Release download**.
