@@ -45,4 +45,4 @@ source. The package selected by Check is retained for Install. Notes cannot chan
 download URL or verification key. Installation restarts the application; platforms
 without automatic installation provide a manual download action.
 
-See [release operations](releases.md) for publishing and mirror requirements.
+See [release operations](releases.en-us.md) for publishing and mirror requirements.

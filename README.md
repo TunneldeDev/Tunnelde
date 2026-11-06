@@ -29,7 +29,7 @@ Update controls live in **Settings → Updates**: choose **Stable** or **Public 
 The update channel defaults to Stable, including on Beta installations.
 Automatic checks default to once daily; downloading and installing remain manual.
 Windows and AppImage use signed full-package updates. Switching to Stable never
-automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.md#in-app-channels-sources-and-ota).
+automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.en-us.md#in-app-channels-sources-and-ota).
 
 ## Workbench
 
@@ -104,7 +104,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 - AI local/remote setup: [English](docs/ai-assistants.en-us.md) · [简体中文](docs/ai-assistants.zh-cn.md)
 - Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
 - [Plugin development and security](docs/plugins.md)
-- [Architecture and data locations](docs/architecture.md)
+- Architecture and data locations: [English](docs/architecture.en-us.md) · [简体中文](docs/architecture.zh-cn.md)
 - Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
 - [Optional native helper](native-helpers/README.md)
 - [Changes by release](CHANGELOG.md)
@@ -156,8 +156,9 @@ source and dispatches publication for Windows, Linux, Apple Silicon and Intel ma
 stages a draft until all installers, signatures and update metadata pass verification. Beta
 versions publish as prereleases, preserve historical releases and never replace the latest stable.
 
-See [Contributing](CONTRIBUTING.md) for PR conventions and [Release operations](docs/releases.md)
-for branch protection, automation credentials and build recovery.
+See [Contributing](CONTRIBUTING.md) for PR conventions and Release operations in
+[English](docs/releases.en-us.md) or [简体中文](docs/releases.zh-cn.md) for branch protection,
+automation credentials and build recovery.
 `pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 
 ## License

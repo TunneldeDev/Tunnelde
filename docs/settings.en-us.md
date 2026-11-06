@@ -22,7 +22,7 @@ Custom source addresses use exactly one `{channel}` in the URL path, e.g.
 `https://updates.example.com/{channel}/latest.json`; use **Apply** to save an edited
 address. A source must serve Tauri manifests and signed packages, rather than just a web
 page. Source selection and per-feature proxies are separate preferences. See
-[release operations](releases.md#in-app-channels-sources-and-ota) for mirror requirements.
+[release operations](releases.en-us.md#in-app-channels-sources-and-ota) for mirror requirements.
 
 Switching to Stable does not downgrade an installed beta; the app waits for a newer stable version.
 Update checks do not automatically download packages, and installation restarts the app. Sources,
