@@ -134,6 +134,25 @@ function currentPath(index = 0): string | null {
 }
 
 describe("SftpPage", () => {
+  it("uses macOS file shortcuts without deleting while typing", async () => {
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    try {
+      render(<SftpPage sessionId="session-1" />);
+      fireEvent.click(await screen.findByText("notes.txt"));
+      const local = screen.getAllByRole("listbox")[0]!;
+      fireEvent.keyDown(local, { key: "Backspace" });
+      expect(useDialogs.getState().confirm).not.toHaveBeenCalled();
+      fireEvent.keyDown(local, { key: "Backspace", metaKey: true });
+      expect(useDialogs.getState().confirm).toHaveBeenCalledOnce();
+      expect(fsMock.remove).not.toHaveBeenCalled();
+      fireEvent.keyDown(local, { key: "Enter" });
+      const input = await screen.findByDisplayValue("notes.txt");
+      fireEvent.keyDown(input, { key: "Backspace", metaKey: true });
+      expect(useDialogs.getState().confirm).toHaveBeenCalledOnce();
+    } finally {
+      platform.mockRestore();
+    }
+  });
   it("opens local text inside Tunnelde and offers the system application separately", async () => {
     render(<SftpPage sessionId="session-1" />);
     const file = await screen.findByText("notes.txt");

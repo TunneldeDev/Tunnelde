@@ -79,21 +79,33 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   ),
   command("files.filter", "sftp.filterFiles", "files", ["Mod+F"]),
   command("files.path", "shortcuts.focusPath", "files", ["Mod+L"]),
-  command("files.hidden", "sftp.showHidden", "files", ["Mod+H", "Meta+Shift+Period"]),
+  command("files.hidden", "sftp.showHidden", "files", ["Mod+H", "Meta+Shift+Period"], {
+    macDefaults: ["Meta+Shift+Period"],
+  }),
   command("files.back", "shortcuts.goBack", "files", ["Alt+ArrowLeft"]),
   command("files.forward", "shortcuts.goForward", "files", ["Alt+ArrowRight"]),
-  command("files.parent", "sftp.up", "files", ["Alt+ArrowUp", "Meta+ArrowUp", "Backspace"]),
-  command("files.refresh", "sftp.refresh", "files", ["F5"]),
+  command("files.parent", "sftp.up", "files", ["Alt+ArrowUp", "Meta+ArrowUp", "Backspace"], {
+    macDefaults: ["Meta+ArrowUp", "Alt+ArrowUp"],
+  }),
+  command("files.refresh", "sftp.refresh", "files", ["F5"], {
+    macDefaults: ["Meta+R", "F5"],
+  }),
   command("files.selectAll", "shortcuts.selectAll", "files", ["Mod+A"]),
   command("files.copy", "common.copy", "files", ["Mod+C"]),
   command("files.cut", "sftp.cut", "files", ["Mod+X"]),
   command("files.paste", "common.paste", "files", ["Mod+V"]),
   command("files.newFile", "sftp.newFile", "files", ["Mod+N"]),
   command("files.newFolder", "sftp.newFolder", "files", ["Mod+Shift+N"]),
-  command("files.open", "common.open", "files", ["Enter", "Meta+ArrowDown"]),
+  command("files.open", "common.open", "files", ["Enter", "Meta+ArrowDown"], {
+    macDefaults: ["Meta+ArrowDown"],
+  }),
   command("files.preview", "sftp.preview", "files", ["Space"]),
-  command("files.rename", "sftp.rename", "files", ["F2"]),
-  command("files.delete", "common.delete", "files", ["Delete"]),
+  command("files.rename", "sftp.rename", "files", ["F2"], {
+    macDefaults: ["Enter", "F2"],
+  }),
+  command("files.delete", "common.delete", "files", ["Delete"], {
+    macDefaults: ["Meta+Backspace"],
+  }),
 ];
 
 export const isMacKeyboard = () => /Mac|iPhone|iPad/.test(navigator.platform);
