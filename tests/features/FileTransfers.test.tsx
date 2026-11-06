@@ -78,6 +78,19 @@ it("offers resume only for retained partial data and keeps cancelled cleanup ret
   expect(screen.getByText(/Temporary data could not be fully removed/)).toBeTruthy();
 });
 
+it("shows a localized explanation when a directory move is rejected", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error: "sftp.directoryMoveUnavailable",
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText(/Moving folders between sources is temporarily unavailable/)).toBeTruthy();
+  expect(screen.queryByText("sftp.directoryMoveUnavailable")).toBeNull();
+});
+
 it("bulk clears finished and failed transfers and keeps deferred remote cleanup visible", async () => {
   const template = useTransfers.getState().items[0]!;
   const pending = {
