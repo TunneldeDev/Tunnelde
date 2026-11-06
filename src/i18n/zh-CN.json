@@ -684,6 +684,7 @@
     "backupRecoveryRequired": "需要恢复先前的目标备份。备份是目标目录中隐藏的 .tunnelde 文件，备份和传输记录均已保留。",
     "backupPath": "备份位置",
     "backupDestination": "原目标位置",
+    "backupLastKnownHint": "上次发现的恢复位置，请确认文件仍在此处。",
     "resizePanels": "调整文件面板大小",
     "detachPanel": "作为独立面板打开",
     "verifyingTransfer": "正在校验已传数据…",

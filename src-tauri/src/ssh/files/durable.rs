@@ -42,6 +42,23 @@ pub struct DurableTransfer {
 }
 pub struct Journal;
 
+fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
+    row.error = Some(match error {
+        Some(AppError::BackupRecovery {
+            backup,
+            destination,
+        }) => {
+            row.backup_recovery = Some(BackupRecovery {
+                backup,
+                destination,
+            });
+            "sftp.backupRecoveryRequired".into()
+        }
+        Some(error) => error.to_string(),
+        None => "sftp.transferTimedOut".into(),
+    });
+}
+
 fn recovered_status(status: &str, active: bool) -> &str {
     match (status, active) {
         ("cancelling", true) => "running",
@@ -190,6 +207,45 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_retry_retains_last_known_backup_until_a_new_location_is_found() {
+        let mut row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": false, "overwrite": false, "transferred": 0,
+            "total": 0, "status": "cleanupPending", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupRecovery {
+                backup: "/old-backup".into(),
+                destination: "/old-target".into(),
+            }),
+        );
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::validation("sftp.reconnectRequired")),
+        );
+        assert_eq!(row.error.as_deref(), Some("sftp.reconnectRequired"));
+        assert_eq!(row.backup_recovery.as_ref().unwrap().backup, "/old-backup");
+        record_cleanup_failure(&mut row, None);
+        assert_eq!(row.error.as_deref(), Some("sftp.transferTimedOut"));
+        assert_eq!(row.backup_recovery.as_ref().unwrap().backup, "/old-backup");
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::BackupRecovery {
+                backup: "/new-backup".into(),
+                destination: "/new-target".into(),
+            }),
+        );
+        assert_eq!(
+            row.backup_recovery.as_ref().unwrap().destination,
+            "/new-target"
+        );
+    }
+
+    #[test]
     fn interrupted_cancellation_never_becomes_resumable_after_restart() {
         assert_eq!(recovered_status("running", false), "paused");
         assert_eq!(recovered_status("cancelling", false), "cancelled");
@@ -267,7 +323,6 @@ pub async fn durable_transfer_clear(
         // Persist intent before touching the socket: restart/reconnect must not
         // turn a discarded job into a resumable one or lose its owned artifacts.
         row.status = "cleanupPending".into();
-        row.backup_recovery = None;
         row.updated_at = crate::models::now_ms();
         Journal::upsert(&app, row.clone())?;
         let result = tokio::time::timeout(
@@ -281,20 +336,7 @@ pub async fn durable_transfer_clear(
                 Ok(None)
             }
             failed => {
-                row.error = Some(match failed {
-                    Ok(Err(AppError::BackupRecovery {
-                        backup,
-                        destination,
-                    })) => {
-                        row.backup_recovery = Some(BackupRecovery {
-                            backup,
-                            destination,
-                        });
-                        "sftp.backupRecoveryRequired".into()
-                    }
-                    Ok(Err(error)) => error.to_string(),
-                    _ => "sftp.transferTimedOut".into(),
-                });
+                record_cleanup_failure(&mut row, failed.ok().and_then(Result::err));
                 row.updated_at = crate::models::now_ms();
                 Journal::upsert(&app, row.clone())?;
                 let _ = app.emit("sftp://changed", ());

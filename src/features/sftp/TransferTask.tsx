@@ -173,8 +173,9 @@ export function TransferTask({
           {translateError({ code: "ssh", message: item.error })}
         </p>
       ) : null}
-      {item.error === "sftp.backupRecoveryRequired" && item.backupRecovery ? (
+      {item.backupRecovery ? (
         <div className="transfer-task__details">
+          <p>{t("sftp.backupLastKnownHint")}</p>
           <p>
             <span>{t("sftp.backupPath")}</span>
             <code>
