@@ -169,6 +169,8 @@ and reports that manual review is required. An existing source path may have bee
 recreated; a missing source and an existing destination alone do not prove that the
 move completed. Check both locations before clearing the task. Saved tasks do not
 yet contain a verified destination digest for automatic recovery of this phase.
+These errors keep both paths visible in the task and hide Resume; ordinary
+interrupted transfers still offer Resume.
 Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
 temporary data before reporting completion. It keeps already completed destination
 files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails
