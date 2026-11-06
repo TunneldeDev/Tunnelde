@@ -41,3 +41,4 @@ API v1 字段：`id`、`hostId`、`title`、`address`、`cols`、`rows` 和 `con
 
 应用和市场可以独立发布。请将最低应用版本设置为支持插件所有功能的首个版本，并在该
 版本上测试。详细指南介绍当前的扩展声明与权限模型。
+另请参阅 [API 兼容性与安全](plugin-api.zh-cn.md)。
