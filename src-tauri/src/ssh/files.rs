@@ -643,7 +643,24 @@ pub fn local_rename(from: String, to: String, overwrite: bool) -> AppResult<()> 
     if Path::new(&to).is_dir() {
         return Err(AppError::validation("sftp.directoryMergeMoveUnavailable"));
     }
-    std::fs::rename(from, to)?;
+    commit_local_rename(Path::new(&from), Path::new(&to), overwrite)?;
+    Ok(())
+}
+
+fn commit_local_rename(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
+    if overwrite {
+        std::fs::rename(from, to)?;
+    } else {
+        // The destination can appear after check_local_destination. The commit
+        // must enforce no replacement, including for dangling symbolic links.
+        crate::platform::file_ops::rename_noreplace(from, to).map_err(|error| {
+            if error.kind() == std::io::ErrorKind::AlreadyExists {
+                AppError::validation("sftp.alreadyExists")
+            } else {
+                AppError::from(error)
+            }
+        })?;
+    }
     Ok(())
 }
 
@@ -2825,6 +2842,74 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn local_move_commit_preserves_target_created_after_validation() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-rename-race-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::write(&source, b"incoming").unwrap();
+        check_local_destination(&source, &target, false).unwrap();
+        std::fs::write(&target, b"independent").unwrap();
+        assert_eq!(
+            commit_local_rename(&source, &target, false)
+                .unwrap_err()
+                .to_string(),
+            "sftp.alreadyExists"
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), b"incoming");
+        assert_eq!(std::fs::read(&target).unwrap(), b"independent");
+        std::fs::remove_file(source).unwrap();
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_move_preserves_dangling_target_link() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-rename-link-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::write(&source, b"incoming").unwrap();
+        std::os::unix::fs::symlink("missing", &target).unwrap();
+        assert_eq!(
+            local_rename(display_path(&source), display_path(&target), false)
+                .unwrap_err()
+                .to_string(),
+            "sftp.alreadyExists"
+        );
+        assert_eq!(std::fs::read(&source).unwrap(), b"incoming");
+        assert_eq!(std::fs::read_link(&target).unwrap(), Path::new("missing"));
+        assert!(!root.join("missing").exists());
+        std::fs::remove_file(source).unwrap();
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[test]
+    fn local_move_file_replacement_requires_explicit_overwrite() {
+        let root = std::env::temp_dir().join(format!(
+            "tunnelde-rename-overwrite-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let source = root.join("source");
+        let target = root.join("target");
+        std::fs::write(&source, b"incoming").unwrap();
+        std::fs::write(&target, b"original").unwrap();
+        assert!(local_rename(display_path(&source), display_path(&target), false).is_err());
+        assert_eq!(std::fs::read(&target).unwrap(), b"original");
+        // Windows std::fs::rename supports replacing an existing file too.
+        local_rename(display_path(&source), display_path(&target), true).unwrap();
+        assert!(!source.exists());
+        assert_eq!(std::fs::read(&target).unwrap(), b"incoming");
+        std::fs::remove_file(target).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn local_move_to_new_directory_still_uses_rename() {
         let root = std::env::temp_dir().join(format!("tunnelde-rename-{}", uuid::Uuid::new_v4()));
