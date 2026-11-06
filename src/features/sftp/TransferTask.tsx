@@ -26,6 +26,9 @@ export function TransferTask({
   const busy = item.clearing || item.cancelling || item.pausing;
   const pending = item.status === "cleanupPending";
   const running = item.status === "running";
+  const reviewRequired =
+    item.status === "failed" &&
+    ["sftp.moveRecoverySourcePresent", "sftp.moveRecoveryUnverified"].includes(item.error ?? "");
   const waiting = item.phase === "queued" || item.phase === "preparing";
   const state = item.clearing
     ? t("sftp.cleaningTransfer")
@@ -118,7 +121,7 @@ export function TransferTask({
             </>
           ) : (
             <>
-              {item.durable && ["paused", "failed"].includes(item.status) ? (
+              {item.durable && !reviewRequired && ["paused", "failed"].includes(item.status) ? (
                 <IconButton
                   label={t("sftp.resumeTransfer")}
                   size="sm"
@@ -194,26 +197,14 @@ export function TransferTask({
           </p>
         </div>
       ) : null}
+      {reviewRequired ? (
+        <div className="transfer-task__details transfer-task__recovery">
+          <TransferPaths item={item} />
+        </div>
+      ) : null}
       {expanded ? (
         <div className="transfer-task__details">
-          {item.fromPath ? (
-            <p>
-              <span>{t("sftp.transferFrom")}</span>
-              <code>
-                {item.fromAddress ? `${item.fromAddress}:` : ""}
-                {item.fromPath}
-              </code>
-            </p>
-          ) : null}
-          {item.toPath ? (
-            <p>
-              <span>{t("sftp.transferTo")}</span>
-              <code>
-                {item.toAddress ? `${item.toAddress}:` : ""}
-                {item.toPath}
-              </code>
-            </p>
-          ) : null}
+          {!reviewRequired ? <TransferPaths item={item} /> : null}
           {progress.remaining !== null ? (
             <p>{t("sftp.remainingBytes", { value: formatBytes(progress.remaining) })}</p>
           ) : null}
@@ -230,5 +221,31 @@ export function TransferTask({
         </div>
       ) : null}
     </article>
+  );
+}
+
+function TransferPaths({ item }: { item: TransferItem }) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {item.fromPath ? (
+        <p>
+          <span>{t("sftp.transferFrom")}</span>
+          <code>
+            {item.fromAddress ? `${item.fromAddress}:` : ""}
+            {item.fromPath}
+          </code>
+        </p>
+      ) : null}
+      {item.toPath ? (
+        <p>
+          <span>{t("sftp.transferTo")}</span>
+          <code>
+            {item.toAddress ? `${item.toAddress}:` : ""}
+            {item.toPath}
+          </code>
+        </p>
+      ) : null}
+    </>
   );
 }

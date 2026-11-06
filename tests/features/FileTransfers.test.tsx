@@ -98,11 +98,45 @@ it.each([
   ["sftp.moveRecoveryUnverified", /destination cannot be verified from the saved task/],
 ])("explains interrupted source removal without expanding task details: %s", (error, message) => {
   useTransfers.setState((state) => ({
-    items: state.items.map((item) => ({ ...item, status: "failed", error })),
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error,
+      fromPath: "/original/source.json",
+      toPath: "/copied/target.json",
+      fromAddress: "user@source:22",
+      toAddress: "user@target:22",
+    })),
   }));
   const { container } = render(<FileTransfers />);
   expect(screen.getByText(message)).toBeTruthy();
   expect(screen.queryByText(error)).toBeNull();
+  expect(container.querySelector(".transfer-task__details")).toBeTruthy();
+  expect(screen.getByText("user@source:22:/original/source.json")).toBeTruthy();
+  expect(screen.getByText("user@target:22:/copied/target.json")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Remove transfer and clean temporary files" }),
+  ).toBeTruthy();
+  expect(container.querySelectorAll(".transfer-task__details")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "file" }));
+  expect(container.querySelectorAll(".transfer-task__details")).toHaveLength(2);
+  expect(screen.getAllByText("user@source:22:/original/source.json")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "file" }));
+  expect(container.querySelectorAll(".transfer-task__details")).toHaveLength(1);
+  expect(screen.getByText("user@source:22:/original/source.json")).toBeTruthy();
+});
+
+it("keeps ordinary failed transfers resumable and their details collapsed", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "failed",
+      error: "sftp.transferTimedOut",
+    })),
+  }));
+  const { container } = render(<FileTransfers />);
+  expect(screen.getByRole("button", { name: "Resume transfer" })).toBeTruthy();
   expect(container.querySelector(".transfer-task__details")).toBeNull();
 });
 
