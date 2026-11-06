@@ -65,17 +65,16 @@ separate OS-keyring identities. Portable settings profiles exclude this data.
 
 ## Assistant execution
 
-The independent hub contains four self-contained assistant packages. A controlled chat block
+The independent hub distributes assistant integrations alongside other plugins. A controlled chat block
 keeps model configuration separate from its selected local/SSH execution target. Active SSH
 metadata supplies the location menu; SFTP resolves home/cwd without directory listings. Saved
 target identities rebind only to the same host after reconnecting.
 
-Codex app-server, Claude Code stream-json and Pi RPC use the bounded native task transport
-locally or over an SSH exec channel. Pi's permission extension is explicitly deployed to a
-fresh user directory. Tunnelde AI can start its API runtime remotely over the same transport;
-the desktop bridge routes tools to the fixed selected scope, limits callbacks and task ownership,
-and passes configuration and selected credentials through SSH stdin. Normal runs use the active
-connection. Optional native supervisors provide the separate detached/persistent mode.
+Supported CLI and API integrations use the bounded native task transport locally or over an SSH
+exec channel. Where a remote runtime or extension requires deployment, the user is asked for
+consent. The desktop bridge routes tools to the fixed selected scope, limits callbacks and task
+ownership, and passes configuration and selected credentials through SSH stdin. Normal runs use
+the active connection. Optional native supervisors provide the separate detached/persistent mode.
 
 ## Network and resource lifecycle
 
