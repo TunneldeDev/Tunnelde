@@ -161,6 +161,7 @@ export interface PluginChatBlock {
   readiness?: {
     status: "required" | "checking" | "ready" | "error";
     profileId: string;
+    mode?: ChatMode;
     targetKey: string;
     detail: string;
   };
@@ -468,6 +469,13 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
               PluginChatBlock["readiness"]
             >["status"],
             profileId: id(chatRecord(raw.readiness).profileId),
+            // Older plugins bind readiness to the mode in their render snapshot.
+            // An invalid explicit value must never authorize a different mode.
+            ...(chatRecord(raw.readiness).mode === undefined
+              ? { mode: CHAT_MODES.includes(mode) ? mode : ("ask" as ChatMode) }
+              : CHAT_MODES.includes(chatRecord(raw.readiness).mode as ChatMode)
+                ? { mode: chatRecord(raw.readiness).mode as ChatMode }
+                : {}),
             targetKey: text(chatRecord(raw.readiness).targetKey, 16000),
             detail: text(chatRecord(raw.readiness).detail),
           },
