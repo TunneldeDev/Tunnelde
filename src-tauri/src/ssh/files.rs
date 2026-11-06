@@ -2037,6 +2037,31 @@ async fn ensure_safe_transfer_move_source(
     Ok(())
 }
 
+async fn verify_move_destination(
+    from: &Endpoint,
+    to: &Endpoint,
+    from_sftp: Option<&SftpSession>,
+    to_sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    let source_before = source_stamp(from, from_sftp).await?;
+    let target_before = source_stamp(to, to_sftp).await?;
+    if source_before.0 != target_before.0 {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    let mut source = open_reader(from, from_sftp).await?;
+    let checked = verify_prefix(&mut source, to, to_sftp, source_before.0, Some(cancel)).await;
+    let closed = source.finish().await;
+    checked?;
+    closed?;
+    if source_stamp(from, from_sftp).await? != source_before
+        || source_stamp(to, to_sftp).await? != target_before
+    {
+        return Err(AppError::validation("sftp.resumeSourceChanged"));
+    }
+    Ok(())
+}
+
 async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
     match sftp {
         Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
@@ -2325,6 +2350,12 @@ async fn run(
             if durable {
                 ensure_safe_transfer_move_source(from, from_sftp.as_ref()).await?;
                 validate_move_source(app, id, from, to, from_sftp.as_ref()).await?;
+                phase(app, id, "verifying");
+                verify_move_destination(from, to, from_sftp.as_ref(), to_sftp.as_ref(), cancel)
+                    .await?;
+                if cancel.load(Ordering::SeqCst) {
+                    return Err(AppError::Ssh(CANCELLED.into()));
+                }
                 let mut row = durable::Journal::get(app, id)?;
                 row.deleting_source = true;
                 row.total = meter.total;
@@ -2825,6 +2856,57 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[tokio::test]
+    async fn move_verification_checks_content_size_and_cancellation() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-move-verify-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("target")),
+        };
+        let cancel = AtomicBool::new(false);
+        std::fs::write(&source.path, b"source contents").unwrap();
+        std::fs::write(&target.path, b"source contents").unwrap();
+        verify_move_destination(&source, &target, None, None, &cancel)
+            .await
+            .unwrap();
+
+        std::fs::write(&target.path, b"SOURCE contents").unwrap();
+        assert_eq!(
+            verify_move_destination(&source, &target, None, None, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.resumePrefixMismatch"
+        );
+        std::fs::write(&target.path, b"short").unwrap();
+        assert_eq!(
+            verify_move_destination(&source, &target, None, None, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            "sftp.resumePrefixMismatch"
+        );
+        std::fs::write(&target.path, b"source contents").unwrap();
+        cancel.store(true, Ordering::SeqCst);
+        assert_eq!(
+            verify_move_destination(&source, &target, None, None, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        assert_eq!(std::fs::read(&source.path).unwrap(), b"source contents");
+        std::fs::remove_file(source.path).unwrap();
+        std::fs::remove_file(target.path).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn local_move_to_new_directory_still_uses_rename() {
         let root = std::env::temp_dir().join(format!("tunnelde-rename-{}", uuid::Uuid::new_v4()));
@@ -4363,6 +4445,41 @@ mod tests {
             let remaining = std::fs::read(root.join(&backup.path));
             std::fs::remove_dir_all(root).unwrap();
             assert_eq!(remaining.unwrap(), b"independent replacement");
+        }
+
+        #[tokio::test]
+        async fn move_verification_compares_local_and_remote_bytes_in_both_directions() {
+            let root = temp_root("move-verify-remote");
+            let local = Endpoint {
+                session: None,
+                path: display_path(&root.join("local")),
+            };
+            let remote = Endpoint {
+                session: Some("test".into()),
+                path: "remote".into(),
+            };
+            std::fs::write(&local.path, b"matching contents").unwrap();
+            std::fs::write(root.join("remote"), b"matching contents").unwrap();
+            let sftp = client(&root, Arc::new(State::default())).await;
+            let cancel = AtomicBool::new(false);
+            verify_move_destination(&local, &remote, None, Some(&sftp), &cancel)
+                .await
+                .unwrap();
+            verify_move_destination(&remote, &local, Some(&sftp), None, &cancel)
+                .await
+                .unwrap();
+            std::fs::write(root.join("remote"), b"changed! contents").unwrap();
+            assert_eq!(
+                verify_move_destination(&local, &remote, None, Some(&sftp), &cancel)
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "sftp.resumePrefixMismatch"
+            );
+            sftp.close().await.unwrap();
+            std::fs::remove_file(local.path).unwrap();
+            std::fs::remove_file(root.join("remote")).unwrap();
+            std::fs::remove_dir(root).unwrap();
         }
 
         #[tokio::test]
