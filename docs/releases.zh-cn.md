@@ -40,11 +40,13 @@ CHANGELOG 包含双语分类、亮点、可展开详情、PR/提交链接和贡�
 
 使用短期仓库 `GITHUB_TOKEN`，并在 **Settings → Actions → General → Workflow permissions** 中启用 **Allow GitHub Actions to create and approve pull requests**。不需要 PAT、App 密钥、组织级访问或规则集绕过；各工作流分别声明所需权限。自动化可以创建 PR，但不会批准或合并 PR。
 
-自动化为生成分支显式调度 CI，并将 PR 策略状态写到实际 head。高权限策略工作流只执行受信任目标分支的策略代码，不检出贡献代码；必需检查仍绑定到 Actions。
+自动化将 PR 策略状态写到实际 head。GitHub 可能将机器人创建的 PR 的 `pull_request` CI 标为等待运行审批（`action_required`）。维护者审查生成的差异和准确 head SHA 后，从 PR 的 **Checks** 或对应 Actions 页面批准该次运行，等待该 PR 运行的必需检查通过再合并。批准工作流运行表示允许其代码执行，与批准或合并 PR 是不同的操作。
+
+Development 会在工作流提示中给出 PR 编号和准备好的 SHA。它不会批准自己的 PR 运行，也不会额外调度整组 CI。单独手动运行 CI 不能解除 PR 运行的审批等待。如果 dev 更新后发布 head 已替换，应重新审查并批准新 head 对应的运行，旧提交的成功结果不够。高权限策略工作流只执行受信任目标分支的策略代码，不检出贡献代码；必需检查仍绑定到 Actions。
 
 `.github/main-ruleset.json` 和 `.github/dev-ruleset.json` 是纳入版本管理的保护定义。两者均禁止删除和强制推送，要求 PR 和全部七项检查，且没有绕过主体。`.github/repository-settings.json` 记录合并方式设置：仓库层面启用 squash、rebase 和 merge commit；`dev` 规则集允许 squash/rebase 并要求线性历史，`main` 只允许 merge commit，以保留准确的 `dev` 提交。merge 和 squash 的默认提交消息均使用 PR 标题和正文。必须通过仓库设置或 API 应用设置和规则集变更，单独编辑 JSON 不会使其生效。
 
-PR 策略按 Conventional Commits 验证标题和每个提交标题。两种贡献合并方式均受此约束，切换到 rebase 也不能引入绕过语义版本规则的消息。策略按当前 PR head 检查完整提交列表，并拒绝不完整历史，包括超过 GitHub 250 个提交列表限制的 PR。引用更新后，策略对不一致的 API 快照采用有限退避重试；重试耗尽仍不完整时拒绝。生成 PR 的检查必须对应准确准备好的 head，即使 PR 已存在，恢复流程也会重新调度 CI。不可变源文件读取遇到 GitHub 临时服务器错误（500、502、503、504）时最多尝试四次，间隔 1、2、4 秒；永久权限或校验错误立即失败。
+PR 策略按 Conventional Commits 验证标题和每个提交标题。两种贡献合并方式均受此约束，切换到 rebase 也不能引入绕过语义版本规则的消息。策略按当前 PR head 检查完整提交列表，并拒绝不完整历史，包括超过 GitHub 250 个提交列表限制的 PR。引用更新后，策略对不一致的 API 快照采用有限退避重试；重试耗尽仍不完整时拒绝。生成 PR 的检查必须对应准确准备好的 head，即使 PR 已存在，恢复流程也会重新检查策略，但不会重复调度 CI。不可变源文件读取遇到 GitHub 临时服务器错误（500、502、503、504）时最多尝试四次，间隔 1、2、4 秒；永久权限或校验错误立即失败。
 
 生成的发布 PR 保留所有开发提交和一个准备提交。策略根据记录的 `main`/`dev` 引用检查准备提交的两个父提交，拒绝发布元数据以外的改动。即使源码标记未变化，旧的单父准备提交也会重新生成。稳定发布会拒绝对保留历史的准备提交执行 squash/rebase，也会拒绝与已审查文件树不一致的合并结果。高权限策略只读取提交元数据和可信基础分支代码，不执行贡献代码。
 
