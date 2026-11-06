@@ -3961,6 +3961,41 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn cleanup_keeps_remote_backup_when_destination_is_recreated() {
+            let root = temp_root("cleanup-recreated-target");
+            let target = Endpoint {
+                session: Some("test".into()),
+                path: "target".into(),
+            };
+            let backup = staging_endpoint(&target, "job", "backup");
+            std::fs::write(root.join(&backup.path), b"old destination").unwrap();
+            std::fs::write(root.join(&target.path), b"new independent destination").unwrap();
+            let sftp = client(&root, Arc::new(State::default())).await;
+            let expected = fingerprint_file(&backup, Some(&sftp), &AtomicBool::new(false))
+                .await
+                .unwrap();
+            assert_eq!(
+                artifacts::cleanup_owned("job", &target, Some(&sftp), Some(&expected))
+                    .await
+                    .unwrap_err()
+                    .to_string(),
+                "sftp.backupRecoveryRequired"
+            );
+            assert_eq!(
+                std::fs::read(root.join(&backup.path)).unwrap(),
+                b"old destination"
+            );
+            assert_eq!(
+                std::fs::read(root.join(&target.path)).unwrap(),
+                b"new independent destination"
+            );
+            sftp.close().await.unwrap();
+            std::fs::remove_file(root.join(backup.path)).unwrap();
+            std::fs::remove_file(root.join(target.path)).unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
         async fn transfer_move_rejects_remote_directories_without_removing_source() {
             let root = temp_root("sftp-move-guard");
             std::fs::create_dir(root.join("folder")).unwrap();
