@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useNavigation } from "@/store/navigation";
 
 const {
   apiMock,
@@ -1000,16 +1001,15 @@ describe("live command history", () => {
   });
 });
 
-it("opens forwarding directly from the SSH toolbar and restores toolbar focus on close", async () => {
+it("opens the dockable forwarding panel for the toolbar's SSH session", () => {
   useHosts.setState({ hosts: [{ id: "h1", name: "My server" } as Host] });
   render(<TerminalPage sessionId="s1" active />);
   const button = screen.getByRole("button", { name: "Port forwarding" });
-  button.focus();
   fireEvent.click(button);
-  const dialog = await screen.findByRole("dialog", { name: "Port forwarding" });
-  expect(dialog.textContent).toContain("My server");
-  expect(screen.getByRole("button", { name: "Add forward" })).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Close" }));
   expect(screen.queryByRole("dialog", { name: "Port forwarding" })).toBeNull();
-  expect(document.activeElement).toBe(button);
+  expect(useNavigation.getState().activeSidebar).toBe("forwarding");
+  expect(useNavigation.getState().forwardingTarget).toMatchObject({
+    hostId: "h1",
+    sessionId: "s1",
+  });
 });
