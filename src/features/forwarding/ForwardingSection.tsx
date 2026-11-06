@@ -216,16 +216,18 @@ export function ForwardingSection({ host, embedded = false }: { host: Host; embe
           </div>
         ) : null}
       </header>
-      {rules.length > 0 && !form && (
+      {(rules.length > 0 || session) && !form && (
         <div className="forwarding__group-actions">
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={busy || rules.every(isActive)}
-            onClick={() => start(rules.filter((rule) => !isActive(rule)).map((rule) => rule.id))}
-          >
-            {t("forward.startAll")}
-          </Button>
+          {rules.length > 0 && (
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={busy || rules.every(isActive)}
+              onClick={() => start(rules.filter((rule) => !isActive(rule)).map((rule) => rule.id))}
+            >
+              {t("forward.startAll")}
+            </Button>
+          )}
           {session && (
             <Button
               size="sm"
@@ -255,7 +257,6 @@ export function ForwardingSection({ host, embedded = false }: { host: Host; embe
           <ForwardRuleEditor
             rule={form}
             hostName={host.name}
-            connected
             busy={busy}
             error={failure?.target === "editor" ? failure.message : undefined}
             onSave={save}
@@ -281,6 +282,8 @@ export function ForwardingSection({ host, embedded = false }: { host: Host; embe
                 const ruleError = failure?.target === rule.id ? failure.message : null;
                 const local = rule.mode === "local";
                 const active = isActive(rule);
+                const starting = !active && (pending === rule.id || pending === "group");
+                const stopping = active && pending === rule.id;
                 return (
                   <li key={rule.id} className="forward-rule">
                     <div className="forward-rule__head">
@@ -292,7 +295,15 @@ export function ForwardingSection({ host, embedded = false }: { host: Host; embe
                         className={`forward-rule__status ${active ? "is-running" : ""}`}
                         role="status"
                       >
-                        {t(active ? "forward.running" : "forward.stopped")}
+                        {t(
+                          starting
+                            ? "forward.starting"
+                            : stopping
+                              ? "forward.stopping"
+                              : active
+                                ? "forward.running"
+                                : "forward.stopped",
+                        )}
                       </span>
                       <IconButton
                         size="sm"

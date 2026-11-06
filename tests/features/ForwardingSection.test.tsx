@@ -110,6 +110,12 @@ it("continues starting other ports when one fails", async () => {
   expect(screen.getByText("Running")).toBeTruthy();
   expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "two", sessionId: "current" });
 });
+it("keeps disconnect available when a background connection has no remaining rules", async () => {
+  connect();
+  render(<ForwardingSection host={host} />);
+  expect(await screen.findByRole("button", { name: "Disconnect" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Start all" })).toBeNull();
+});
 it("starts a saved rule using a dedicated connection, then stops it", async () => {
   await act(async () => {
     render(<ForwardingSection host={host} />);

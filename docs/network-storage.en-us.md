@@ -189,14 +189,17 @@ after an application restart or privilege revocation.
 
 ## Local and remote port forwarding
 
-Open **Port forwarding** in the activity bar to view saved hosts and the number of
-active and saved rules for each one. Expand a host to manage its rules. Host details also provide access. Choose **Add forward**, then
+Open **Port forwarding** in the activity bar to view saved hosts and their running
+port count. Expand a host to manage its ports. Host details also provide access. Choose **Add forward**, then
 select **Access a remote service** or **Share a local service**. The editor separates
 the listening and service endpoints and names the computer that resolves each address.
 Names are optional and default to the service address and port. Choose **Save and
-start** with an SSH connection, or **Save** to keep an inactive rule. An offline view
-offers **Connect**; a background SSH connection can manage forwards without opening
-a terminal. Normal credential and host-key verification still apply.
+start**, or **Save** to keep an inactive rule. Starting creates a dedicated background
+SSH connection when needed, using normal credential and host-key verification. All
+ports under that host share this connection; **Start all** starts its inactive ports
+and **Disconnect** stops its connection and ports. Existing terminal connections
+remain independent, and no SSH session selector is required. The forwarding panel
+can be dragged into any workspace group, collapsed and restored with its layout intact.
 
 | Direction                       | Listener      | Destination is reached from |
 | ------------------------------- | ------------- | --------------------------- |
