@@ -204,6 +204,7 @@ export function SftpPage({
   tabId?: string;
 }) {
   const { t, i18n } = useTranslation();
+  const isSingle = !!single;
   const visiblePaneIds = single ? SINGLE_PANE_IDS : PANE_IDS;
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const sessions = useSsh((state) => state.sessions);
@@ -291,6 +292,7 @@ export function SftpPage({
   );
 
   const checkpointKey = `files:${scopeId ?? sessionId}`;
+  const initialSinglePath = useRef(single?.path);
   const [panes, setPanes] = useViewState<Record<PaneId, PaneModel>>(checkpointKey, () => ({
     a: {
       source: single?.source ?? LOCAL_SOURCE,
@@ -597,14 +599,28 @@ export function SftpPage({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const first = panesRef.current.a.state;
-      void load("a", first.listing?.path ?? single?.path, first.cursor);
-      if (!single) {
+      void load("a", first.listing?.path ?? initialSinglePath.current, first.cursor);
+      if (!isSingle) {
         const second = panesRef.current.b.state;
         void load("b", second.listing?.path, second.cursor);
       }
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [load, single]);
+  }, [load, isSingle]);
+
+  useEffect(() => {
+    if (!single || !tabId || panes.a.source.kind !== "local" || !panes.a.state.listing) return;
+    const saved = useWorkspace.getState().tabs.find((tab) => tab.id === tabId)?.filePane;
+    const path = panes.a.state.listing.path;
+    if (!saved || (saved.source.kind === "local" && saved.path === path)) return;
+    useWorkspace
+      .getState()
+      .retainFilePane(
+        tabId,
+        { ...saved, source: LOCAL_SOURCE, path, ownerSessionId: sessionId },
+        t("sftp.thisComputer"),
+      );
+  }, [single, tabId, panes.a.source, panes.a.state.listing, sessionId, t]);
 
   useEffect(() => {
     const onChanged = ({ source, origin }: FilesChanged) => {
@@ -1618,7 +1634,13 @@ export function SftpPage({
           ? t("sftp.thisComputer")
           : (useSsh.getState().sessions.find((item) => item.id === source.sessionId)?.title ??
             t("sftp.remote"));
-      useWorkspace.getState().renameTab(tabId, title);
+      if (single) {
+        useWorkspace
+          .getState()
+          .retainFilePane(tabId, { source, path: null, ownerSessionId: sessionId }, title);
+      } else {
+        useWorkspace.getState().renameTab(tabId, title);
+      }
     }
     setActive(id);
   };
