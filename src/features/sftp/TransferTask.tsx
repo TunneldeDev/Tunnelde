@@ -173,6 +173,24 @@ export function TransferTask({
           {translateError({ code: "ssh", message: item.error })}
         </p>
       ) : null}
+      {item.error === "sftp.backupRecoveryRequired" && item.backupRecovery ? (
+        <div className="transfer-task__details">
+          <p>
+            <span>{t("sftp.backupPath")}</span>
+            <code>
+              {item.toAddress ? `${item.toAddress}:` : ""}
+              {item.backupRecovery.backup}
+            </code>
+          </p>
+          <p>
+            <span>{t("sftp.backupDestination")}</span>
+            <code>
+              {item.toAddress ? `${item.toAddress}:` : ""}
+              {item.backupRecovery.destination}
+            </code>
+          </p>
+        </div>
+      ) : null}
       {expanded ? (
         <div className="transfer-task__details">
           {item.fromPath ? (

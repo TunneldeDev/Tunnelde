@@ -23,6 +23,7 @@ export interface TransferItem extends Omit<TransferEvent, "status"> {
   toAddress?: string | null;
   fromPath?: string;
   toPath?: string;
+  backupRecovery?: { backup: string; destination: string } | null;
 }
 
 interface TransfersStore {
@@ -189,6 +190,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       next.toAddress = previous?.toAddress;
       next.fromPath = previous?.fromPath;
       next.toPath = previous?.toPath;
+      next.backupRecovery = previous?.backupRecovery;
       next.total = Math.max(event.total, previous?.total ?? 0);
       if (event.status === "running") {
         next.cancelling = previous?.cancelling;

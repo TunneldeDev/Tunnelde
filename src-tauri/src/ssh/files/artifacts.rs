@@ -222,15 +222,18 @@ pub(super) async fn cleanup_owned(
     let backup = staging_endpoint(to, id, "backup");
     let cancel = AtomicBool::new(false);
     if file_length(&backup, sftp).await?.is_some() {
-        let expected =
-            expected.ok_or_else(|| AppError::validation("sftp.backupRecoveryRequired"))?;
+        let recovery = || AppError::BackupRecovery {
+            backup: backup.path.clone(),
+            destination: to.path.clone(),
+        };
+        let expected = expected.ok_or_else(recovery)?;
         if fingerprint_file(&backup, sftp, &cancel).await? != *expected {
             return Err(AppError::validation("sftp.resumePrefixMismatch"));
         }
         // Checking for a missing destination before renaming is not atomic.
         // Preserve the backup until it can be restored without overwriting a
         // destination created concurrently by another process or SFTP client.
-        return Err(AppError::validation("sftp.backupRecoveryRequired"));
+        return Err(recovery());
     }
     if file_length(&temp, sftp).await?.is_some() {
         remove_endpoint(&temp, sftp).await?;
@@ -414,13 +417,15 @@ mod tests {
             .unwrap();
         tokio::fs::rename(&target.path, &backup.path).await.unwrap();
         tokio::fs::write(&part.path, b"partial").await.unwrap();
-        assert_eq!(
-            cleanup_owned("job", &target, None, Some(&expected))
-                .await
-                .unwrap_err()
-                .to_string(),
-            "sftp.backupRecoveryRequired"
-        );
+        let error = cleanup_owned("job", &target, None, Some(&expected))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            AppError::BackupRecovery { ref backup, ref destination }
+                if backup == &staging_endpoint(&target, "job", "backup").path
+                    && destination == &target.path
+        ));
         assert!(!Path::new(&target.path).exists());
         assert_eq!(tokio::fs::read(&backup.path).await.unwrap(), b"user data");
         assert_eq!(tokio::fs::read(&part.path).await.unwrap(), b"partial");

@@ -7,6 +7,8 @@ use serde::{Serialize, Serializer};
 pub enum AppError {
     #[error("{0}")]
     Validation(String),
+    #[error("sftp.backupRecoveryRequired")]
+    BackupRecovery { backup: String, destination: String },
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -32,7 +34,7 @@ impl AppError {
 
     pub fn code(&self) -> &'static str {
         match self {
-            Self::Validation(_) => "validation",
+            Self::Validation(_) | Self::BackupRecovery { .. } => "validation",
             Self::NotFound(_) => "notFound",
             Self::Db(_) => "database",
             Self::Io(_) => "io",

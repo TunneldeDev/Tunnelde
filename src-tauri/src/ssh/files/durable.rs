@@ -5,6 +5,13 @@ use tauri::{AppHandle, Emitter, Manager};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct BackupRecovery {
+    pub backup: String,
+    pub destination: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DurableTransfer {
     pub id: String,
     pub direction: String,
@@ -29,6 +36,8 @@ pub struct DurableTransfer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub phase: Option<String>,
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub backup_recovery: Option<BackupRecovery>,
     pub updated_at: i64,
 }
 pub struct Journal;
@@ -168,6 +177,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn older_transfer_records_do_not_require_backup_recovery_details() {
+        let row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": false, "overwrite": false, "transferred": 0,
+            "total": 0, "status": "cleanupPending", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        assert!(row.backup_recovery.is_none());
+    }
+
+    #[test]
     fn interrupted_cancellation_never_becomes_resumable_after_restart() {
         assert_eq!(recovered_status("running", false), "paused");
         assert_eq!(recovered_status("cancelling", false), "cancelled");
@@ -245,6 +267,7 @@ pub async fn durable_transfer_clear(
         // Persist intent before touching the socket: restart/reconnect must not
         // turn a discarded job into a resumable one or lose its owned artifacts.
         row.status = "cleanupPending".into();
+        row.backup_recovery = None;
         row.updated_at = crate::models::now_ms();
         Journal::upsert(&app, row.clone())?;
         let result = tokio::time::timeout(
@@ -259,6 +282,16 @@ pub async fn durable_transfer_clear(
             }
             failed => {
                 row.error = Some(match failed {
+                    Ok(Err(AppError::BackupRecovery {
+                        backup,
+                        destination,
+                    })) => {
+                        row.backup_recovery = Some(BackupRecovery {
+                            backup,
+                            destination,
+                        });
+                        "sftp.backupRecoveryRequired".into()
+                    }
                     Ok(Err(error)) => error.to_string(),
                     _ => "sftp.transferTimedOut".into(),
                 });

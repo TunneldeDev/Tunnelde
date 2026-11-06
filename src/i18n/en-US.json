@@ -682,6 +682,8 @@
     "compressionProtocol": "The compressed transfer stream was interrupted or invalid. Reconnect and resume; you can disable transfer compression in Settings → Files if it persists.",
     "compressionWorker": "The remote host could not read or write this transfer block. Check the file permissions, then reconnect and resume. Transfer compression can be disabled in Settings → Files.",
     "backupRecoveryRequired": "A previous destination backup needs recovery. The backup is a hidden .tunnelde file beside the destination; it and the transfer record have been kept.",
+    "backupPath": "Backup",
+    "backupDestination": "Original destination",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",
     "verifyingTransfer": "Verifying existing data…",
