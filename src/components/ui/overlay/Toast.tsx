@@ -25,9 +25,21 @@ export function ToastHost() {
       {items.map((toast) => {
         const Icon = ICONS[toast.variant];
         return (
-          <div key={toast.id} className={cn("td-toast", `td-toast--${toast.variant}`)}>
+          <div
+            key={toast.id}
+            className={cn("td-toast", `td-toast--${toast.variant}`, toast.action && "has-action")}
+          >
             <Icon size={14} className="td-toast__icon" />
             <span className="td-toast__text">{toast.message}</span>
+            {toast.action ? (
+              <button
+                type="button"
+                className="td-toast__action"
+                onClick={() => void toast.action?.onClick()}
+              >
+                {toast.action.label}
+              </button>
+            ) : null}
             <IconButton label={t("common.close")} size="sm" onClick={() => dismiss(toast.id)}>
               <X size={12} />
             </IconButton>

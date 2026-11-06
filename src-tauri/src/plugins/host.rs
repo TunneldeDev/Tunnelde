@@ -76,9 +76,10 @@ impl PluginHost {
         let stdin = Arc::new(Mutex::new(stdin));
         let pending: Pending = Arc::new(StdMutex::new(HashMap::new()));
 
+        let plugin_id = context.as_ref().map(|context| context.id.clone());
         tokio::spawn(read_loop(stdout, stdin.clone(), pending.clone(), context));
         if let Some(stderr) = stderr {
-            tokio::spawn(stderr_loop(stderr));
+            tokio::spawn(stderr_loop(stderr, plugin_id));
         }
 
         Ok(Self {
@@ -390,11 +391,11 @@ async fn write_reply(stdin: &Arc<Mutex<ChildStdin>>, reply: Value) -> AppResult<
     Ok(())
 }
 
-async fn stderr_loop(stderr: ChildStderr) {
+async fn stderr_loop(stderr: ChildStderr, plugin_id: Option<String>) {
     let mut reader = BufReader::new(stderr);
     while let Ok(Some(line)) = read_limited_line(&mut reader, 16 * 1024, true).await {
         if !line.trim().is_empty() {
-            tracing::warn!(target: "plugin", message = %line, "plugin stderr");
+            tracing::warn!(target: "plugin", plugin_id = plugin_id.as_deref().unwrap_or("unknown"), message = %line, "plugin stderr");
         }
     }
 }

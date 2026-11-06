@@ -8,6 +8,7 @@ import { useWorkspace } from "@/store/workspace";
 import { sidebarTabId } from "@/lib/session/sidebarDock";
 import { PluginViewPage } from "./PluginViewPage";
 import { PluginError } from "./PluginError";
+import { pluginFailure } from "@/lib/plugins/errors";
 
 export function PluginSidebarPanel({ view }: { view: PluginSidebarView }) {
   const { t } = useTranslation();
@@ -31,7 +32,7 @@ export function PluginSidebarPanel({ view }: { view: PluginSidebarView }) {
       ) : plugin.status !== "running" ? (
         <div className="plugins-sidebar__empty">
           <p>{t("pluginChat.startHint")}</p>
-          {plugin.error ? <PluginError message={plugin.error} /> : null}
+          {plugin.error ? <PluginError message={pluginFailure(new Error(plugin.error))} /> : null}
           <Button disabled={busy} onClick={() => void usePlugins.getState().start(plugin.id)}>
             {t("plugins.start")}
           </Button>

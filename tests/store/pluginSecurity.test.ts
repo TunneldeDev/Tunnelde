@@ -42,6 +42,14 @@ beforeEach(async () => {
 });
 
 describe("plugin security authorization", () => {
+  it("keeps the specific startup error in the recovery dialog", async () => {
+    const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
+    reportPluginExecutionFailure({
+      code: "validation",
+      message: "plugin.error: Invalid saved configuration",
+    });
+    expect(usePluginSecurity.getState().failure).toBe("Invalid saved configuration");
+  });
   it("does not recreate a cancelled prompt when a delayed initial load finishes after modes change", async () => {
     const response = deferred<PluginSecurityState>();
     mock.api.pluginSecurityState.mockReturnValueOnce(response.promise);

@@ -1087,6 +1087,10 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "api": {
+      "invalidStorage": "The plugin's saved data could not be read. Export or repair its data before retrying; existing data has been preserved.",
+      "storageTooLarge": "The plugin's saved data exceeds the supported size. Export or reduce it before retrying; existing data has been preserved."
+    },
     "input": {
       "invalid": "Invalid plugin input."
     },
@@ -1518,6 +1522,15 @@
       "unreachable": "Connection failed"
     }
   },
+  "pluginErrors": {
+    "startFailed": "Could not start {{name}}: {{error}}",
+    "openLog": "Open log",
+    "spawn": "Could not launch the plugin process",
+    "write": "Could not communicate with the plugin process",
+    "exited": "The plugin process exited during startup. Open the log for details.",
+    "timeout": "Plugin initialization timed out. Open the log for details.",
+    "unknown": "The plugin did not report a reason. Open the log for details."
+  },
   "forward": {
     "noHostsHint": "Add a host to configure and manage port forwarding.",
     "disconnectTitle": "Disconnect SSH?",
@@ -1637,6 +1650,7 @@
     "missing": "Unavailable theme ({{id}})"
   },
   "logs": {
+    "noFile": "No diagnostic log is available yet.",
     "title": "Logs",
     "description": "Inspect recent operations and application diagnostics.",
     "view": "View logs",

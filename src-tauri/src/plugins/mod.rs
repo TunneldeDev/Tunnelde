@@ -617,6 +617,9 @@ impl PluginsManager {
                 instance.error = None;
             }
             Err(error) => {
+                let detail = error.to_string();
+                let reason = detail.split(':').next().unwrap_or("plugin.error");
+                tracing::warn!(plugin_id = %id, reason, "plugin initialization failed");
                 let mut host = host;
                 host.kill();
                 self.remember_source(id, None);
