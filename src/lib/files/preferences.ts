@@ -1,4 +1,4 @@
-import type { FileViewPreferences } from "./view";
+import { FILE_COLUMNS, normalizeFileColumns, type FileViewPreferences } from "./view";
 
 const PREFIX = "tunnelde:file-view:v1:";
 const MAX_ENTRIES = 128;
@@ -19,7 +19,20 @@ export function readFileViewPreferences(
     if (!parsed || typeof parsed !== "object" || !("view" in parsed)) return fallback;
     const view = (parsed as { view: Record<string, unknown> }).view;
     if (!view || typeof view !== "object") return fallback;
+    const widths: NonNullable<FileViewPreferences["filesColumnWidths"]> = {};
+    if (view.filesColumnWidths && typeof view.filesColumnWidths === "object") {
+      const raw = view.filesColumnWidths as Record<string, unknown>;
+      for (const column of FILE_COLUMNS) {
+        const value = raw[column];
+        if (typeof value === "number" && Number.isFinite(value))
+          widths[column] = Math.max(56, Math.min(1000, value));
+      }
+    }
     return {
+      ...(Array.isArray(view.filesColumns)
+        ? { filesColumns: normalizeFileColumns(view.filesColumns) }
+        : {}),
+      ...(Object.keys(widths).length ? { filesColumnWidths: widths } : {}),
       ...(view.filesLayout === "details" || view.filesLayout === "columns"
         ? { filesLayout: view.filesLayout }
         : defaults.filesLayout

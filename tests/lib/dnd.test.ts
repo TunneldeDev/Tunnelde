@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   canPaste,
+  clearDragSource,
+  currentDragSource,
   DRAG_MIME,
   isInside,
   joinPath,
@@ -70,7 +72,10 @@ describe("drag payloads", () => {
   it("round-trips a selection", () => {
     const store = fakeTransfer();
     setDragPayload(store, { source: SERVER_B, items: [file, folder] });
+    expect(currentDragSource()).toEqual(SERVER_B);
     expect(readDragPayload(store)).toEqual({ source: SERVER_B, items: [file, folder] });
+    clearDragSource();
+    expect(currentDragSource()).toBeNull();
   });
 
   it("rejects unknown shapes", () => {
@@ -124,10 +129,10 @@ describe("resolveDrop", () => {
     });
   });
 
-  it("copies between panels even when both point at the same source", () => {
+  it("moves between panels when both point at the same source", () => {
     expect(
       resolveDrop({ source: SERVER_A, paneId: "left", items: [file] }, SERVER_A, "/srv", "right"),
-    ).toMatchObject({ kind: "copy" });
+    ).toMatchObject({ kind: "move" });
     expect(resolveDrop({ source: LOCAL, items: [file] }, LOCAL, "/tmp")).toMatchObject({
       ops: [{ to: "/tmp/a.txt" }],
     });

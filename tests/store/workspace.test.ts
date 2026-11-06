@@ -651,11 +651,11 @@ describe("workspace tabs", () => {
     expect(useWorkspace.getState().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
   });
 
-  it("opens one files tab per session and drops it on close", () => {
+  it("opens independent files tabs for one session and drops both on close", () => {
     useWorkspace.getState().openSftp(session("s1", "Alpha"));
     useWorkspace.getState().openSftp(session("s1", "Alpha"));
-    expect(useWorkspace.getState().tabs).toHaveLength(1);
-    expect(useWorkspace.getState().activeId).toBe("sftp:s1");
+    expect(useWorkspace.getState().tabs).toHaveLength(2);
+    expect(useWorkspace.getState().activeId).toMatch(/^sftp:s1:copy:/);
     useWorkspace.getState().closeSession("s1");
     expect(useWorkspace.getState().tabs).toHaveLength(0);
   });

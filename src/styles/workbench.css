@@ -491,7 +491,6 @@
 .sftp-row,
 .sftp-columns tr {
   min-width: 0;
-  --sftp-columns: 18px minmax(0, 1fr) 58px 64px 92px;
   grid-template-columns: var(--sftp-columns);
 }
 .sftp-row__name {
@@ -518,6 +517,7 @@
   padding: 0 8px;
 }
 .sftp-columns th {
+  position: relative;
   min-width: 0;
   padding: 0;
   font-weight: 500;
@@ -639,25 +639,43 @@
   font-family: var(--td-mono);
   font-size: 10px;
 }
-@container (max-width: 480px) {
-  .sftp-row,
-  .sftp-columns tr {
-    --sftp-columns: 18px minmax(0, 1fr) 64px 92px;
-  }
-  .sftp-row__type,
-  .sftp-columns__type {
-    display: none;
-  }
+/* Columns are explicitly configured by the user, including in narrow panes. */
+.sftp-details .sftp-row,
+.sftp-details .sftp-columns {
+  min-width: var(--sftp-min-width);
 }
-@container (max-width: 360px) {
-  .sftp-row,
-  .sftp-columns tr {
-    --sftp-columns: 18px minmax(0, 1fr) 58px;
-  }
-  .sftp-row__time,
-  .sftp-columns__modified {
-    display: none;
-  }
+.sftp-details .sftp-row__icon {
+  grid-column: var(--sftp-icon-column);
+}
+.sftp-details .sftp-row__name {
+  grid-column: var(--sftp-name-column);
+}
+.sftp-details .sftp-row__type {
+  grid-column: var(--sftp-type-column);
+}
+.sftp-details .sftp-row__size {
+  grid-column: var(--sftp-size-column);
+}
+.sftp-details .sftp-row__time {
+  grid-column: var(--sftp-modified-column);
+}
+.sftp-pane[data-hide-type] .sftp-details .sftp-row__type,
+.sftp-pane[data-hide-size] .sftp-details .sftp-row__size,
+.sftp-pane[data-hide-modified] .sftp-details .sftp-row__time {
+  display: none;
+}
+.sftp-columns__resize {
+  position: absolute;
+  z-index: 2;
+  right: -5px;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sftp-columns__resize:hover {
+  background: var(--td-accent-soft);
 }
 .sftp-pane {
   container-type: inline-size;
@@ -1080,4 +1098,15 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.sftp-pane__drag {
+  display: flex;
+  align-items: center;
+  flex: none;
+  cursor: grab;
+  color: var(--td-muted);
+}
+.sftp-pane__drag:hover {
+  color: var(--td-text);
 }

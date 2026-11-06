@@ -1,6 +1,24 @@
 import type { FileEntry } from "@/lib/api/types";
 
+export const FILE_COLUMNS = ["name", "type", "size", "modified"] as const;
+export type FileColumn = (typeof FILE_COLUMNS)[number];
+export const DEFAULT_COLUMN_WIDTHS: Record<FileColumn, number> = {
+  name: 220,
+  type: 90,
+  size: 90,
+  modified: 150,
+};
+export function normalizeFileColumns(value: unknown): FileColumn[] {
+  const valid = Array.isArray(value)
+    ? value.filter((v): v is FileColumn => FILE_COLUMNS.includes(v as FileColumn))
+    : [];
+  const unique = [...new Set(valid)];
+  return unique.includes("name") ? unique : ["name", ...unique];
+}
+
 export interface FileViewPreferences {
+  filesColumns?: FileColumn[];
+  filesColumnWidths?: Partial<Record<FileColumn, number>>;
   filesLayout?: "details" | "columns";
   filesShowHidden: boolean;
   filesFoldersFirst: boolean;

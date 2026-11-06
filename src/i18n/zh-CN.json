@@ -611,6 +611,7 @@
     "notRegularFile": "只能编辑普通文件",
     "fileTooLarge": "仅支持编辑不超过 2 MB 的文本文件",
     "viewOptions": "视图选项",
+    "showColumn": "显示列",
     "detailsView": "详细信息视图",
     "columnsView": "分栏视图",
     "editPath": "编辑路径",

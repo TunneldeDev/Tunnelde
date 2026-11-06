@@ -8,5 +8,6 @@ export interface MenuAction {
   separatorBefore?: boolean;
   description?: string;
   checked?: boolean;
+  checkable?: "radio" | "checkbox";
   onSelect: () => void;
 }

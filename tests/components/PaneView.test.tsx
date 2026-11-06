@@ -4,11 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/layout/TabContent", () => ({ TabContent: () => null }));
 
 import "@/i18n/i18n";
+import { zoneOf } from "@/components/layout/PaneView";
 import { PaneLayout } from "@/components/layout/PaneLayout";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useContextMenu } from "@/store/contextMenu";
+import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
 
 beforeEach(() => {
   useSettings.setState({ settings: DEFAULT_SETTINGS });
@@ -35,6 +37,51 @@ beforeEach(() => {
       first: { kind: "pane", paneId: "first" },
       second: { kind: "pane", paneId: "second" },
     },
+  });
+});
+
+describe("workspace drop targets", () => {
+  it("docks a dragged file panel beside an existing pane", () => {
+    const { container } = render(<PaneLayout />);
+    const body = container.querySelector('[data-pane-id="first"] .pane__body') as HTMLElement;
+    vi.spyOn(body, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 400,
+    } as DOMRect);
+    const token = beginFilePaneDrag(
+      { source: { kind: "local" }, path: "C:\\work", ownerSessionId: "session" },
+      "This computer",
+    );
+    const dataTransfer = {
+      types: [FILE_PANE_MIME],
+      getData: (type: string) => (type === FILE_PANE_MIME ? token : ""),
+      dropEffect: "move",
+    };
+    fireEvent.drop(body, { clientX: 100, clientY: 200, dataTransfer });
+    const tab = useWorkspace.getState().tabs.find((item) => item.filePane);
+    expect(tab?.filePane?.path).toBe("C:\\work");
+    expect(
+      useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(tab!.id))?.id,
+    ).not.toBe("first");
+    clearFilePaneDrag();
+  });
+  it("offers generous edge targets, an attainable center, and all four corners", () => {
+    const element = document.createElement("div");
+    vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+      left: 0,
+      top: 0,
+      width: 400,
+      height: 400,
+    } as DOMRect);
+    expect(zoneOf(element, { clientX: 130, clientY: 200 })).toBe("left");
+    expect(zoneOf(element, { clientX: 270, clientY: 200 })).toBe("right");
+    expect(zoneOf(element, { clientX: 200, clientY: 130 })).toBe("top");
+    expect(zoneOf(element, { clientX: 200, clientY: 270 })).toBe("bottom");
+    expect(zoneOf(element, { clientX: 200, clientY: 200 })).toBeNull();
+    expect(zoneOf(element, { clientX: 30, clientY: 10 })).toBe("top");
+    expect(zoneOf(element, { clientX: 10, clientY: 30 })).toBe("left");
   });
 });
 
