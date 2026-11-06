@@ -1,7 +1,7 @@
 # 插件 API 兼容性与安全
 
 [English](plugin-api.en-us.md) · [插件概览](plugins-overview.zh-cn.md) ·
-[插件开发详细指南（英文）](plugins.md)
+[插件开发详细指南](plugins.zh-cn.md)
 
 本文面向插件开发者，介绍当前的接口发现契约和安全边界。贡献格式、具体限制和各方法
 的用法请参阅详细指南及独立市场仓库中的 SDK 目录。应用和 SDK 可以独立发布，因此应

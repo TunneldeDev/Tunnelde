@@ -176,6 +176,6 @@ SSHFS 发行版验证。
 图片上限 32 MiB，PDF 上限 128 MiB。音视频在用户操作后开始播放，并取决于系统可用编解码器。PDF 按需
 加载，不执行文档脚本。远端媒体通过所选 SSH 会话执行有界范围读取，不在远端机器创建临时副本。
 关闭预览会撤销访问票据并关闭文件句柄。内建文本与 Markdown 无须插件；由提供者处理的文本或 Markdown
-上限为 2 MiB。支持的扩展名和资源限制见[预览贡献接口](plugins.md#file-preview-providers)。
+上限为 2 MiB。支持的扩展名和资源限制见[预览贡献接口](plugins.zh-cn.md#文件预览提供者)。
 
 [English](network-storage.en-us.md)

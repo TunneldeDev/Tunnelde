@@ -76,4 +76,4 @@ checks. The host exposes open buffers only, never arbitrary files. They retain
 API version 1 and do not change older plugin calls. See the independent marketplace
 SDK for the generated method catalogue and TypeScript interfaces.
 
-[中文](editor-plugins.zh-cn.md) · [Plugin development](plugins.md)
+[中文](editor-plugins.zh-cn.md) · [Plugin development](plugins.en-us.md)

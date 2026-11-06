@@ -1,7 +1,7 @@
 # Plugin API compatibility and security
 
 [简体中文](plugin-api.zh-cn.md) · [Plugin overview](plugins-overview.en-us.md) ·
-[Detailed plugin guide](plugins.md)
+[Detailed plugin guide](plugins.en-us.md)
 
 This guide describes the current discovery contract and security boundaries for plugin
 authors. For contribution formats, limits and individual methods, consult the detailed

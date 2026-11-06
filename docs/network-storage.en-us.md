@@ -281,7 +281,7 @@ and does not execute document scripts. Remote media uses bounded range requests
 over the selected SSH session without a temporary copy on the remote machine.
 Closing the preview revokes its access ticket and closes its file handles. Built-in
 text/Markdown remains available without a plugin; provider-based text/Markdown is
-limited to 2 MiB. See [preview contribution APIs](plugins.md#file-preview-providers)
+limited to 2 MiB. See [preview contribution APIs](plugins.en-us.md#file-preview-providers)
 for supported extensions and resource limits.
 
 [简体中文](network-storage.zh-cn.md)
