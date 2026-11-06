@@ -191,7 +191,7 @@ export function AppShell() {
         (item) =>
           item.scope === "workbench" &&
           (!isTextTarget(event.target) || terminal || item.input) &&
-            (!terminal || item.plugin?.command || terminalAllowsCommand(event, item.id, overrides)) &&
+          (!terminal || item.plugin?.command || terminalAllowsCommand(event, item.id, overrides)) &&
           matchesCommand(event, item.id, overrides, definitions),
       );
       for (const command of commands) {
@@ -222,8 +222,19 @@ export function AppShell() {
     if (!activeTab) {
       return null;
     }
-    if (activeTab.kind === "terminal" || activeTab.kind === "sftp") {
-      return sessions.find((session) => activeTab.id.endsWith(session.id)) ?? null;
+    if (activeTab.kind === "terminal") {
+      return sessions.find((session) => activeTab.id === `terminal:${session.id}`) ?? null;
+    }
+    if (activeTab.kind === "sftp") {
+      const id =
+        activeTab.fileSessionId !== undefined
+          ? activeTab.fileSessionId
+          : activeTab.filePane
+            ? activeTab.filePane.source.kind === "remote" && !activeTab.filePane.offline
+              ? activeTab.filePane.source.sessionId
+              : null
+            : activeTab.id.replace(/^sftp:/, "").split(":copy:")[0];
+      return sessions.find((session) => session.id === id) ?? null;
     }
     if (activeTab.kind === "editor") {
       const editor = useEditors.getState().entries[activeTab.id];

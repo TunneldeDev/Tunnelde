@@ -17,11 +17,17 @@ vi.mock("@/components/layout/CommandPalette", () => ({
     useQuickAccess((state) => state.query !== null) ? <div data-testid="command-palette" /> : null,
 }));
 vi.mock("@/components/layout/ActivityBar", () => ({ ActivityBar: () => null }));
-vi.mock("@/components/layout/RemotePanel", () => ({ RemotePanel: () => null }));
+vi.mock("@/components/layout/RemotePanel", () => ({
+  RemotePanel: ({ sessionId }: { sessionId: string }) => (
+    <div data-testid="remote-panel">{sessionId}</div>
+  ),
+}));
 vi.mock("@/components/layout/StatusBar", () => ({
   StatusBar: () => <footer data-testid="statusbar" />,
 }));
-vi.mock("@/components/layout/SystemPanel", () => ({ SystemPanel: () => null }));
+vi.mock("@/components/layout/SystemPanel", () => ({
+  SystemPanel: () => <div data-testid="system-panel" />,
+}));
 vi.mock("@/components/ui/overlay/Toast", () => ({ ToastHost: () => null }));
 vi.mock("@/components/ui/overlay/ContextMenu", () => ({ ContextMenuHost: () => null }));
 vi.mock("@/features/dialogs/DialogHost", () => ({ DialogHost: () => null }));
@@ -34,6 +40,7 @@ import { useQuickAccess } from "@/store/quickAccess";
 import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
 import { useWorkspace } from "@/store/workspace";
+import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
 import { useSettings } from "@/store/settings";
@@ -126,6 +133,37 @@ beforeEach(() => {
       first: { kind: "pane", paneId: "pane-1" },
       second: { kind: "pane", paneId: "pane-2" },
     },
+  });
+});
+
+describe("file tab remote monitor", () => {
+  it("tracks the selected remote source, duplicate tabs and local panels", () => {
+    useSsh.setState({
+      sessions: ["a", "b"].map((id) => ({
+        id,
+        hostId: id,
+        title: id,
+        address: `${id}:22`,
+        cols: 80,
+        rows: 24,
+        connectedAt: 0,
+      })),
+    });
+    const id = "sftp:a:copy:duplicate";
+    useWorkspace.setState({
+      tabs: [{ id, kind: "sftp", title: "a", hostId: "a", pinned: false }],
+      activeId: id,
+      panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
+      activePaneId: "pane-1",
+      layout: { kind: "pane", paneId: "pane-1" },
+    });
+    render(<AppShell />);
+    expect(screen.getByTestId("remote-panel").textContent).toBe("a");
+    act(() => useWorkspace.getState().setFileSession(id, "b"));
+    expect(screen.getByTestId("remote-panel").textContent).toBe("b");
+    act(() => useWorkspace.getState().setFileSession(id, null));
+    expect(screen.getByTestId("system-panel")).toBeTruthy();
+    act(() => useSsh.setState({ sessions: [] }));
   });
 });
 

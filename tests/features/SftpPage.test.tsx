@@ -998,6 +998,7 @@ describe("SftpPage source picker", () => {
       }),
     );
     expect(useWorkspace.getState().tabs[0]?.title).toBe("other server");
+    await waitFor(() => expect(useWorkspace.getState().tabs[0]?.fileSessionId).toBe("session-2"));
     await waitFor(() =>
       expect(fsMock.list).toHaveBeenCalledWith({ kind: "remote", sessionId: "session-2" }, null),
     );

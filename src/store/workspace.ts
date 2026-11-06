@@ -28,6 +28,8 @@ export interface WorkspaceTab {
   /** Collapsed docked sidebars remain in their original group and layout. */
   hidden?: boolean;
   filePane?: FilePaneOptions;
+  /** Live remote target of a file view; recomputed when its sources change. */
+  fileSessionId?: string | null;
 }
 
 export interface FilePaneOptions {
@@ -103,6 +105,7 @@ interface WorkspaceStore {
   openSftp: (session: SshSession) => void;
   openFilePane: (options: FilePaneOptions, title: string) => string;
   retainFilePane: (tabId: string, options: FilePaneOptions, title: string) => void;
+  setFileSession: (tabId: string, sessionId: string | null) => void;
   openEditor: (session: SshSession, path: string) => void;
   openLocalEditor: (path: string) => void;
   openHistory: (session: SshSession) => void;
@@ -552,6 +555,17 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
           tab.id === tabId && tab.kind === "sftp" ? { ...tab, filePane, title } : tab,
         ),
       })),
+
+    setFileSession: (tabId, sessionId) =>
+      set((state) => {
+        const tab = state.tabs.find((item) => item.id === tabId && item.kind === "sftp");
+        if (!tab || tab.fileSessionId === sessionId) return state;
+        return {
+          tabs: state.tabs.map((item) =>
+            item.id === tabId ? { ...item, fileSessionId: sessionId } : item,
+          ),
+        };
+      }),
 
     openEditor: (session, path) => {
       const id = `editor:${session.id}:${path}`;
