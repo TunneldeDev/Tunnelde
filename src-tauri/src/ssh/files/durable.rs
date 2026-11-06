@@ -40,6 +40,8 @@ pub struct DurableTransfer {
     pub error: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub backup_recovery: Option<BackupRecovery>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifact_recovery: Option<String>,
     pub updated_at: i64,
 }
 pub struct Journal;
@@ -58,12 +60,17 @@ pub(super) fn needs_review(error: Option<&str>) -> bool {
                 | "sftp.moveRecoveryUnverified"
                 | "sftp.moveSourceRetained"
                 | "sftp.backupPreserved"
+                | "sftp.transferArtifactUnrecognized"
         )
     )
 }
 
 pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
     row.error = Some(match error {
+        Some(AppError::TransferArtifactUnrecognized { path }) => {
+            row.artifact_recovery = Some(path);
+            "sftp.transferArtifactUnrecognized".into()
+        }
         Some(AppError::BackupRecovery {
             backup,
             destination,
@@ -260,6 +267,7 @@ mod tests {
             "sftp.backupPreserved",
             "sftp.moveRecoverySourcePresent",
             "sftp.moveRecoveryUnverified",
+            "sftp.transferArtifactUnrecognized",
         ] {
             assert!(needs_review(Some(error)));
         }
@@ -279,7 +287,35 @@ mod tests {
         }))
         .unwrap();
         assert!(row.backup_recovery.is_none());
+        assert!(row.artifact_recovery.is_none());
         assert_eq!(row.speed_limit_kib, 0);
+    }
+
+    #[test]
+    fn cleanup_retries_preserve_unrecognized_artifact_paths_across_serialization() {
+        let mut row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "/source",
+            "toSession": null, "toHostId": null, "toPath": "/destination",
+            "removeSource": false, "overwrite": false, "transferred": 0,
+            "total": 0, "status": "cleanupPending", "error": null, "updatedAt": 1
+        }))
+        .unwrap();
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::TransferArtifactUnrecognized {
+                path: "C:\\downloads\\owned.part".into(),
+            }),
+        );
+        assert!(needs_review(row.error.as_deref()));
+        for error in [Some(AppError::validation("sftp.reconnectRequired")), None] {
+            record_cleanup_failure(&mut row, error);
+            row = serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+            assert_eq!(
+                row.artifact_recovery.as_deref(),
+                Some("C:\\downloads\\owned.part")
+            );
+        }
     }
 
     #[test]

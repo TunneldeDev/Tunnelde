@@ -693,6 +693,8 @@
     "backupPath": "Backup",
     "backupDestination": "Original destination",
     "backupLastKnownHint": "Last detected recovery location; check that the files are still there.",
+    "transferArtifactUnrecognized": "The file at the temporary path cannot be identified as this task's original file. It was preserved. Inspect it, remove it yourself only if no longer needed, then retry cleanup.",
+    "transferArtifactPath": "Temporary file to inspect",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",
     "verifyingTransfer": "Verifying existing data…",

@@ -5,5 +5,6 @@ export function transferNeedsReview(error: string | null | undefined): boolean {
     "sftp.moveRecoveryUnverified",
     "sftp.moveSourceRetained",
     "sftp.backupPreserved",
+    "sftp.transferArtifactUnrecognized",
   ].includes(error ?? "");
 }

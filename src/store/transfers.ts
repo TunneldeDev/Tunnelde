@@ -27,6 +27,7 @@ export interface TransferItem extends Omit<TransferEvent, "status"> {
   fromPath?: string;
   toPath?: string;
   backupRecovery?: { backup: string; destination: string } | null;
+  artifactRecovery?: string | null;
 }
 
 interface TransfersStore {
@@ -96,6 +97,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
               // A newer progress event has no recovery metadata; the journal
               // remains the source for the last known backup location.
               backupRecovery: item.backupRecovery ?? row.backupRecovery,
+              artifactRecovery: item.artifactRecovery ?? row.artifactRecovery,
               clearing: previous?.clearing,
               speedLimitKib:
                 previous?.speedLimitKib !== limitsBefore.get(row.id)
@@ -211,6 +213,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       next.fromPath = previous?.fromPath;
       next.toPath = previous?.toPath;
       next.backupRecovery = previous?.backupRecovery;
+      next.artifactRecovery = previous?.artifactRecovery;
       next.total = Math.max(event.total, previous?.total ?? 0);
       if (event.status === "running") {
         next.cancelling = previous?.cancelling;

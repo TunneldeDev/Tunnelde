@@ -693,6 +693,8 @@
     "backupPath": "备份位置",
     "backupDestination": "原目标位置",
     "backupLastKnownHint": "上次发现的恢复位置，请确认文件仍在此处。",
+    "transferArtifactUnrecognized": "无法确认临时路径上的文件是此任务最初创建的文件，已保留。请先检查，确认不再需要时自行删除，再重试清理。",
+    "transferArtifactPath": "待检查的临时文件",
     "resizePanels": "调整文件面板大小",
     "detachPanel": "作为独立面板打开",
     "verifyingTransfer": "正在校验已传数据…",

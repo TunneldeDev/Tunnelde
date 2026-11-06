@@ -186,6 +186,51 @@ it("opens local recovery folders inside the application", () => {
   );
 });
 
+it.each(["failed", "cleanupPending"] as const)(
+  "preserves an unrecognized staging file and exposes its exact inspection folder: %s",
+  async (status) => {
+    const clear = vi.spyOn(transferApi, "clear").mockResolvedValue(null);
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    const open = vi.spyOn(useWorkspace.getState(), "openFilePane").mockReturnValue("files:review");
+    useTransfers.setState((state) => ({
+      items: state.items.map((item) => ({
+        ...item,
+        status,
+        error: "sftp.transferArtifactUnrecognized",
+        artifactRecovery: "C:\\downloads\\.tunnelde-job.part",
+        toSession: null,
+        toHostId: null,
+      })),
+    }));
+    render(<FileTransfers />);
+    expect(screen.getByText("Needs review")).toBeTruthy();
+    expect(screen.getByText(/cannot be identified as this task's original file/)).toBeTruthy();
+    expect(screen.getByText("C:\\downloads\\.tunnelde-job.part")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open Temporary file to inspect folder" }));
+    expect(open).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: { kind: "local" },
+        path: "C:\\downloads",
+        ownerSessionId: "local",
+      }),
+      "This computer",
+    );
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name:
+            status === "cleanupPending"
+              ? "Retry cleanup"
+              : "Remove transfer and clean temporary files",
+        }),
+      ),
+    );
+    expect(clear).toHaveBeenCalledWith("job");
+    expect(resume).not.toHaveBeenCalled();
+  },
+);
+
 it("does not inspect a disconnected, changed or unidentified remote as a local path", () => {
   const open = vi.spyOn(useWorkspace.getState(), "openFilePane").mockReturnValue("files:review");
   const item = {

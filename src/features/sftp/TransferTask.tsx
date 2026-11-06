@@ -28,9 +28,9 @@ export function TransferTask({
   const busy = item.clearing || item.cancelling || item.pausing;
   const pending = item.status === "cleanupPending";
   const running = item.status === "running";
-  const reviewRequired = item.status === "failed" && transferNeedsReview(item.error);
+  const reviewRequired = (item.status === "failed" || pending) && transferNeedsReview(item.error);
   const waiting = item.phase === "queued" || item.phase === "preparing";
-  const showRecoveryPaths = reviewRequired && !item.backupRecovery;
+  const showRecoveryPaths = reviewRequired && !item.backupRecovery && !item.artifactRecovery;
   const state = item.clearing
     ? t("sftp.cleaningTransfer")
     : reviewRequired
@@ -141,7 +141,7 @@ export function TransferTask({
                 label={t(pending ? "sftp.retryCleanup" : "sftp.clearTransfer")}
                 size="sm"
                 disabled={busy}
-                onClick={() => (pending ? onResume() : actions.clear(item.id))}
+                onClick={() => (pending && !reviewRequired ? onResume() : actions.clear(item.id))}
               >
                 {pending ? <RefreshCw size={13} /> : <Trash2 size={13} />}
               </IconButton>
@@ -176,7 +176,7 @@ export function TransferTask({
           <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
         ) : null}
       </div>
-      {pending && !item.backupRecovery ? (
+      {pending && !item.backupRecovery && !item.artifactRecovery ? (
         <p className="transfer-task__notice">{t("sftp.cleanupPendingHint")}</p>
       ) : null}
       {item.error ? (
@@ -199,6 +199,17 @@ export function TransferTask({
             side="to"
             path={item.backupRecovery.destination}
             label={t("sftp.backupDestination")}
+            inspect
+          />
+        </div>
+      ) : null}
+      {item.artifactRecovery ? (
+        <div className="transfer-task__details transfer-task__recovery">
+          <TransferLocation
+            item={item}
+            side="to"
+            path={item.artifactRecovery}
+            label={t("sftp.transferArtifactPath")}
             inspect
           />
         </div>

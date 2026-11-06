@@ -225,9 +225,21 @@ content digest. Cleanup deletes that same file object through its held handle.
 An existing writer, changed backup or cancellation preserves the backup and the
 journal for retry. This does not isolate privileged or memory-mapped changes.
 
+Windows local downloads record the volume, full 128-bit file identifier and creation
+time from the newly created staging file's handle. Resuming pins the identified file
+against ordinary rename/delete while permitting transfer writes and checkpoint trimming.
+Cleanup opens and locks the file, compares its recorded identity, then deletes through
+that same handle. A different file is preserved even if its contents are identical.
+Unknown staging files, including legacy Windows tasks without an identity record,
+require manual inspection before resuming or clearing. The task exposes the exact
+temporary path and an action to open its parent folder. Remove the file yourself only
+after checking that it is unneeded, then retry cleanup. Filesystems that cannot supply
+a usable identifier fail safely and retain the staging file. This does not protect
+against privileged interference, parent-directory redirection or every commit race.
+
 Transfer artifact cleanup uses file-only removal. If a staging or backup path
 has become a directory, it is preserved rather than recursively deleted. This
-does not make staging-file removal conditional on file identity. SFTP and Unix
+does not make SFTP or Unix staging-file removal conditional on file identity. SFTP and Unix
 backup cleanup keeps the previous destination even after the new destination was
 written, with a **Needs review** explanation and both paths. Inspect both files,
 remove the backup yourself if no longer needed, then clear the task. Retrying the
