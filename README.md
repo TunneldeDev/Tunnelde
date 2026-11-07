@@ -1,171 +1,69 @@
 # Tunnelde
 
-A desktop SSH and SFTP workbench for Windows, macOS and Linux, maintained by
-**quyansiyuanwang / TunneldeDev**. Built with Tauri 2, Rust, React and TypeScript.
+A desktop SSH and SFTP workbench for Windows, macOS and Linux.
+
+面向 Windows、macOS 和 Linux 的桌面 SSH 与 SFTP 工作台。
+
+**[English guide](README.en-us.md) · [简体中文指南](README.zh-cn.md)**
 
 ## Install
 
-Download a desktop installer from [GitHub Releases](https://github.com/TunneldeDev/Tunnelde/releases).
+Download the installer for your platform from [GitHub Releases](https://github.com/TunneldeDev/Tunnelde/releases).
+Windows uses `.exe`, macOS uses the matching Apple Silicon/Intel `.dmg`, and Linux offers AppImage or `.deb`.
 
-| Platform                          | Downloads                                  | Updates                                         |
-| --------------------------------- | ------------------------------------------ | ----------------------------------------------- |
-| Windows 10/11 x64                 | NSIS `.exe`                                | In-app updater                                  |
-| macOS 12+, Apple Silicon or Intel | Matching `.dmg`                            | Manual DMG updates while builds remain unsigned |
-| Linux x64                         | AppImage or `.deb`, WebKitGTK 4.1 required | In-app AppImage updates; manual deb updates     |
+从 [GitHub Releases](https://github.com/TunneldeDev/Tunnelde/releases) 下载对应平台的安装包。
+Windows 使用 `.exe`，macOS 按芯片选择 `.dmg`，Linux 提供 AppImage 和 `.deb`。
 
-Press **F1** for Quick Access: `>` lists application and installed plugin commands,
-`%` searches file contents in the selected local/SSH directory, and `@` finds hosts.
-**Ctrl/Cmd+P** opens files and existing tabs. Installed plugin commands can be run
-directly here and assigned keys in Settings → Keyboard Shortcuts.
-Local search results open a read-only preview; remote results open the editor at the
-matching line, preserving unsaved text. Search is literal, bounded, and cancellable.
+Updates default to the stable channel. Beta is optional; Nightly is not published.
+Built-in desktop features do not require Node. Executable Node plugins need an explicitly authorized runtime.
 
-The desktop application does **not** bundle or require Node for SSH, SFTP, monitoring,
-settings or theme packs. Executable Node plugins require a separately selected runtime;
-Tunnelde asks before discovering or using your system Node. Windows and macOS packages
-are currently unsigned.
-
-Update controls live in **Settings → Updates**: choose **Stable** or **Public beta (Beta)**, and the official **GitHub** source or a compatible **custom HTTPS source**.
-The update channel defaults to Stable, including on Beta installations.
-Automatic checks default to once daily; downloading and installing remain manual.
-Windows and AppImage use signed full-package updates. Switching to Stable never
-automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.en-us.md#in-app-channels-sources-and-ota).
+更新默认使用正式版渠道，可选公测版，不发布 Nightly。内置功能不需要 Node；可执行 Node 插件需要单独授权运行时。
 
 ## Workbench
 
-- Organize, search, tag, favorite and reorder hosts. Filter inside the search field with
-  `tag:PublicNet`, `@tag PublicNet`, quoted tags or `is:favorite`; choose tag suggestions
-  with the mouse or arrow keys and Enter. Connect with passwords, key files
-  or pasted private keys. Save passwords while editing a host and double click to
-  connect directly; unknown or changed server keys still require explicit trust.
-- Use an xterm.js terminal with ANSI colors, Unicode grapheme widths, monospace fonts,
-  native clipboard integration, configurable mouse behavior and live command history.
-- Browse local/remote locations independently in details or Finder-style columns.
-  Expand breadcrumb folders, edit the full path, type a name to select it, and resize
-  or detach file panels. Sort, filter, group, rename inline, create files or folders,
-  connect file management directly to a saved host, and drag transfers. Select a file
-  and press Space or click Preview to read local/remote text and rendered Markdown.
-  Install compatible icon and preview providers from the marketplace for additional
-  file types. Check each provider’s runtime and permission requirements. Media playback
-  depends on the operating system’s codecs.
-- Configure proxies per feature, connect through ordered SSH jump hosts, pause and
-  resume file transfers with speed, remaining bytes and time estimates, and manage
-  local or remote TCP forwards from the activity bar, host page or SSH terminal toolbar.
-  Removing an unfinished transfer
-  cleans its recorded staging files; offline cleanup retries after reconnection.
-  A compact status-bar entry opens background transfers from any page, with grouped
-  tasks, expandable details and temporary speed limits. Drag its title to move it,
-  resize from any edge or corner, and retain its layout across reopen and restart.
-  Optimized transfers use bounded SFTP request pipelines, automatic segmentation
-  and shared connection budgets. Adaptive compression is available; small-file archive
-  batching is not yet implemented.
-  See [network and storage](docs/network-storage.md) for behavior and limitations.
-- Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
-  italic preview tab; select the same item again, double-click its tab, or interact with
-  its controls to keep it open. Each pane has its own preview slot. Lock a pane as the
-  destination for new pages; hide and restore docked panels with placement and size remembered.
-- Inspect remote CPU, memory, network and disk I/O timelines with scales, timestamps
-  and mouse or keyboard sample inspection. Process termination requires confirmation.
-- Customize themes, individual colors, fonts, terminal behavior and keyboard shortcuts.
-  Export preferences and switch named profiles without exporting hosts or credentials.
-- Relocate settings/database, plugin packages and data, managed keys/runtimes, cache, logs
-  and deployment records in **Settings → Advanced → Storage locations**. Choose folders
-  individually or in a batch, review destinations, and fully quit/reopen to apply.
-  Copies are verified before switching, and originals are retained for recovery.
-- Choose native or compact title bars. Closing to the tray releases the WebView by
-  default while native SSH sessions and transfers continue. Reopening restores the
-  workspace, terminal screens and unsaved drafts. General settings also offer a
-  lightweight mode that avoids GPU terminal rendering, directory preloading and
-  frequent monitor sampling. On macOS, background Dock visibility is configurable.
-  Use Quit to exit.
+Manage hosts, terminals, local and remote files, transfers, port forwarding and monitoring in a dockable workspace.
+Extend it through marketplace plugins. Press **F1** for application and installed-plugin commands.
+
+在可自由停靠的工作区管理主机、终端、本地与远端文件、传输、端口转发和性能监控。
+通过插件市场扩展功能；按 **F1** 快速执行应用及已安装插件的命令。
+
+See complete feature descriptions and current limits in [English](README.en-us.md#workbench) or [简体中文](README.zh-cn.md#工作台).
 
 ## Plugin ecosystem
 
-The independent [Tunnelde Hub](https://github.com/TunneldeDev/tunnelde-hub) hosts the
-marketplace and plugin packages. Plugins can extend the workspace with commands, panels,
-themes, file tools, AI assistants and other integrations. Browse the marketplace for available
-plugins and check each listing for its capabilities, runtime requirements and permissions.
+Plugins can contribute commands, panels, themes, file tools and other integrations. The independent
+[Tunnelde Hub](https://github.com/TunneldeDev/Tunnelde-hub) maintains marketplace packages.
 
-Supported assistant integrations can run locally or on a connected SSH host. Setup,
-authentication, approval modes and available safeguards vary by plugin and execution target;
-see the [assistant guide](docs/ai-assistants.md) for details. Executable plugin permissions
-are not an operating-system sandbox for arbitrary code or shell commands. Using a system
-Node runtime requires explicit consent.
+插件可提供命令、面板、主题、文件工具等扩展；市场及插件包由独立的
+[Tunnelde Hub](https://github.com/TunneldeDev/Tunnelde-hub) 仓库维护。
 
-The optional `tunnelde-agent` helper is for MCP stdio and advanced persistent remote
-supervisors. Its source and downloads are maintained in the independent
-[Tunnelde-agent repository](https://github.com/TunneldeDev/Tunnelde-agent), with a separate release cycle.
-Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
+Read the plugin overview in [English](docs/plugins-overview.en-us.md) or [简体中文](docs/plugins-overview.zh-cn.md).
 
 ## Documentation
 
-- File browser, column layouts and keyboard navigation: [English](docs/files.en-us.md) · [简体中文](docs/files.zh-cn.md)
-
-- Settings and profiles: [English](docs/settings.en-us.md) · [简体中文](docs/settings.zh-cn.md)
-- Proxies, jump hosts, transfers and SSHFS: [English](docs/network-storage.en-us.md) · [简体中文](docs/network-storage.zh-cn.md)
-- Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)
-- AI local/remote setup: [English](docs/ai-assistants.en-us.md) · [简体中文](docs/ai-assistants.zh-cn.md)
-- Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
-- Plugin development and security: [English](docs/plugins.en-us.md) · [简体中文](docs/plugins.zh-cn.md)
-- Architecture and data locations: [English](docs/architecture.en-us.md) · [简体中文](docs/architecture.zh-cn.md)
-- Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
-- [Optional native helper](docs/native-helper.md)
-- [Changes by release](CHANGELOG.md)
+| Guide / 指南                                         | English                                  | 简体中文                                  |
+| ---------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
+| Installation and overview / 安装与概览               | [English](README.en-us.md)               | [简体中文](README.zh-cn.md)               |
+| File browser / 文件管理                              | [English](docs/files.en-us.md)           | [简体中文](docs/files.zh-cn.md)           |
+| Settings and profiles / 设置与配置方案               | [English](docs/settings.en-us.md)        | [简体中文](docs/settings.zh-cn.md)        |
+| Network, transfers and forwarding / 网络、传输与转发 | [English](docs/network-storage.en-us.md) | [简体中文](docs/network-storage.zh-cn.md) |
+| Keyboard shortcuts / 快捷键                          | [English](docs/shortcuts.en-us.md)       | [简体中文](docs/shortcuts.zh-cn.md)       |
+| Monitoring / 性能监控                                | [English](docs/monitoring.en-us.md)      | [简体中文](docs/monitoring.zh-cn.md)      |
+| Updates / 更新                                       | [English](docs/updates.en-us.md)         | [简体中文](docs/updates.zh-cn.md)         |
+| Plugin development / 插件开发                        | [English](docs/plugins.en-us.md)         | [简体中文](docs/plugins.zh-cn.md)         |
+| Architecture / 架构                                  | [English](docs/architecture.en-us.md)    | [简体中文](docs/architecture.zh-cn.md)    |
+| Troubleshooting / 故障排查                           | [English](docs/troubleshooting.en-us.md) | [简体中文](docs/troubleshooting.zh-cn.md) |
 
 ## Development
 
-Development requires Rust 1.92+, Node 24+, pnpm 10+ and the platform WebView build
-dependencies. These requirements apply to contributors, not ordinary desktop users.
+Contributions target `dev`; `main` contains stable releases. See [Contributing](CONTRIBUTING.md)
+and development instructions in [English](README.en-us.md#development) or [简体中文](README.zh-cn.md#开发).
 
-```sh
-pnpm install --frozen-lockfile
-pnpm tauri dev
-```
-
-```sh
-pnpm check
-pnpm i18n:check
-pnpm version:check
-pnpm build
-cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-cargo test --manifest-path src-tauri/Cargo.toml
-```
-
-Source layout:
-
-```text
-src/                 React workbench, UI primitives, feature stores and i18n
-src-tauri/           Rust SSH/SFTP core, plugin APIs, native integration and updater
-examples/plugins/   Minimal plugin examples
-scripts/            Build, validation, packaging and release tools
-docs/               User and developer documentation
-```
-
-The marketplace lives in the independent `TunneldeDev/tunnelde-hub` repository.
-CI validates web, native application and repository checks. `dev` is the protected default branch
-and contribution target; `main` contains stable releases. Use a Conventional Commit PR title.
-
-Each `dev` update runs CI and updates one release PR targeting `main`. That PR contains the next
-version, synchronized manifests and a summarized changelog. Ordinary PRs need no version edits.
-Beta and stable packages publish from immutable `v*` tags, with full version titles. Run
-**Prepare Beta** in Actions to select the current dev snapshot and allocate the next `beta.N`.
-Nightly publication is disabled. Use `pnpm build:local` for development testing;
-local builds do not create public releases or consume Beta sequence numbers.
-
-Use **Create a merge commit** for the generated release PR. Merging tags the exact reviewed main
-source and dispatches publication for Windows, Linux, Apple Silicon and Intel macOS. Every channel
-stages a draft until all installers, signatures and update metadata pass verification. Beta
-versions publish as prereleases, preserve historical releases and never replace the latest stable.
-
-See [Contributing](CONTRIBUTING.md) for PR conventions and Release operations in
-[English](docs/releases.en-us.md) or [简体中文](docs/releases.zh-cn.md) for branch protection,
-automation credentials and build recovery.
-`pnpm build:local` creates an unsigned local build without requiring an updater signing key.
+贡献目标分支是 `dev`，`main` 为稳定发布分支。开发依赖、运行与检查命令见上述指南。
+Beta 版本限于 `beta.1`–`beta.9`，达到上限前应审查并发布正式版。
 
 ## License
 
-Citation metadata is available in [CITATION.cff](CITATION.cff).
+[GNU GPL version 3 only](LICENSE) · [Third-party notices / 第三方声明](THIRD_PARTY_NOTICES.md) · [Citation / 引用信息](CITATION.cff)
 
-[GNU GPL version 3 only](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
 Copyright © 2026 quyansiyuanwang (TunneldeDev).
