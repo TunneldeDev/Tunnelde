@@ -82,9 +82,11 @@ automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight req
 Changes apply on start/resume and travel with settings profiles.
 
 Background tasks share a scheduler: up to four tasks run at once across the
-application. Each SSH connection has a budget of four transfer subsystem channels;
-an endpoint reserves one metadata and one data channel. This normally allows two
-uploads/downloads, or one remote copy using both endpoints on that connection.
+application. Each SSH connection has a budget of six transfer channels. An endpoint
+reserves one metadata and one data channel; a durable remote overwrite reserves
+an additional channel for atomic publication. This allows two overwrite uploads,
+three ordinary uploads/downloads, or one five-channel overwrite copy using both
+endpoints on that connection. Both endpoints are reserved together.
 Other tasks show **Queued** before opening channels. Independent connections can
 continue while one connection is busy; tasks sharing an endpoint keep their queue
 order. Pause/cancel also work while queued. Waiting does not consume file handles,
