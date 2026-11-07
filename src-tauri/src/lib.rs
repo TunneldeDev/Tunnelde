@@ -85,6 +85,7 @@ pub fn run() {
             update::spawn_auto_check(&handle);
             let cleanup_app = handle.clone();
             tauri::async_runtime::spawn(async move {
+                ssh::files::local_editor::on_start(&cleanup_app).await;
                 ssh::files::durable::on_reconnect(&cleanup_app).await;
                 ssh::files::remote_editor::on_reconnect(&cleanup_app).await;
             });

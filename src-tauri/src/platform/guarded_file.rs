@@ -6,14 +6,25 @@ use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::Path;
 use windows_sys::Win32::Storage::FileSystem::{
-    FileDispositionInfo, FileIdInfo, FileRenameInfo, GetFileInformationByHandle,
+    FileDispositionInfo, FileIdInfo, FileRenameInfo, FileRenameInfoEx, GetFileInformationByHandle,
     GetFileInformationByHandleEx, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
     FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_ID_INFO,
     FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
+use windows_sys::Win32::System::WindowsProgramming::{
+    FILE_RENAME_FLAG_POSIX_SEMANTICS, FILE_RENAME_FLAG_REPLACE_IF_EXISTS,
+};
 
 pub fn identity(file: &impl AsRawHandle) -> io::Result<FileIdentity> {
+    object_identity(file, false)
+}
+
+pub fn directory_identity(file: &impl AsRawHandle) -> io::Result<FileIdentity> {
+    object_identity(file, true)
+}
+
+fn object_identity(file: &impl AsRawHandle, directory: bool) -> io::Result<FileIdentity> {
     let mut info = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::uninit();
     // SAFETY: the borrowed file owns a live handle, and a successful call
     // initializes the complete information structure before it is read.
@@ -22,7 +33,9 @@ pub fn identity(file: &impl AsRawHandle) -> io::Result<FileIdentity> {
     }
     // SAFETY: the successful call above initialized every field.
     let info = unsafe { info.assume_init() };
-    if info.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_REPARSE_POINT) != 0 {
+    if info.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+        || (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0) != directory
+    {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             "Expected a regular file",
@@ -120,6 +133,16 @@ impl GuardedFile {
     /// Publish the held object without unlocking it or looking its source path up
     /// again. Never replace a destination created by another operation.
     pub fn rename_noreplace(&self, to: &Path) -> io::Result<()> {
+        self.rename(to, false)
+    }
+
+    /// Atomic editor publication. Callers separately verify the existing target;
+    /// this operation never truncates or looks up the held staging source again.
+    pub fn rename_replace(&self, to: &Path) -> io::Result<()> {
+        self.rename(to, true)
+    }
+
+    fn rename(&self, to: &Path, replace: bool) -> io::Result<()> {
         let to = std::path::absolute(to)?;
         let invalid = || io::Error::new(io::ErrorKind::InvalidInput, "Expected a file destination");
         let leaf = to.file_name().ok_or_else(invalid)?;
@@ -154,9 +177,18 @@ impl GuardedFile {
         let mut storage = vec![0usize; allocated.div_ceil(std::mem::size_of::<usize>())];
         let header = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
         // SAFETY: storage is aligned and large enough for the header and name.
-        // The zeroed union leaves ReplaceIfExists false. The source file handle
+        // The caller chooses replacement explicitly. The source file handle
         // remains live for the call; the destination name is absolute.
         unsafe {
+            (*header).Anonymous.Flags = if replace {
+                // Keep existing readers on the old object, including our own
+                // write-denying verification handle, while atomically replacing
+                // its directory entry. Requires supported Windows/filesystem
+                // semantics; failure must never fall back to truncation.
+                FILE_RENAME_FLAG_REPLACE_IF_EXISTS | FILE_RENAME_FLAG_POSIX_SEMANTICS
+            } else {
+                0
+            };
             (*header).RootDirectory = std::ptr::null_mut();
             (*header).FileNameLength =
                 u32::try_from(std::mem::size_of_val(name.as_slice())).map_err(|_| invalid())?;
@@ -167,7 +199,11 @@ impl GuardedFile {
             );
             if SetFileInformationByHandle(
                 self.0.as_raw_handle(),
-                FileRenameInfo,
+                if replace {
+                    FileRenameInfoEx
+                } else {
+                    FileRenameInfo
+                },
                 header.cast(),
                 u32::try_from(bytes).map_err(|_| invalid())?,
             ) == 0

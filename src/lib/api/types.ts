@@ -583,6 +583,7 @@ export interface HistoryEntry {
   executedAt: number;
 }
 export interface EditorCleanup {
+  source?: "local" | "remote";
   id: string;
   path: string;
   directory: string;

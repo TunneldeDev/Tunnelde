@@ -19,6 +19,34 @@ sends document text to the plugin. Changes stay in the unsaved buffer and can be
 undone in one step. Save explicitly when ready. Results from an older document
 version, a closed/reopened editor, or a revoked runtime are discarded.
 
+## Local document saves
+
+Local documents use the same draft retention and conflict review as remote
+documents. Saving writes a private sibling staging file, flushes and reads it
+back, checks the original identity and contents again, then replaces it atomically
+on the same volume. A write, verification or publication failure leaves the
+original intact. Deleted files are not recreated; symbolic links retain their
+resolved target behavior. Saving requires write access to the original file and
+permission to create a private staging directory in its parent.
+
+Windows saves preserve owner/group, DACL, alternate data streams and supported
+file attributes. Unix saves preserve owner/group, mode and extended attributes;
+macOS also copies native ACLs and resource forks. If required metadata cannot be
+preserved, saving fails before replacement. These guarantees depend on filesystem
+support; filesystem-specific attributes outside these contracts are not promised.
+
+Interrupted cleanup is journaled without document contents and appears in
+**Background tasks**, including its local path and retry action. Application
+startup retries known staging cleanup. Unknown or replaced staging objects are
+retained for review instead of being recursively deleted.
+
+Conflict detection is optimistic: another process can replace a pathname after
+the last check. Windows holds the original against ordinary in-place writes
+during staging; Unix writers do not have to honor application locks. Atomic saves
+create a new file object, so hard links and already-open readers keep the old
+object. Flushing staging data does not guarantee directory durability after
+power loss.
+
 ## Remote document saves
 
 Saving an existing remote text document checks its last loaded contents. If another
