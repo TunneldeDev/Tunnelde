@@ -4,11 +4,18 @@
   "enforcement": "active",
   "bypass_actors": [],
   "conditions": {
-    "ref_name": { "include": ["refs/heads/main"], "exclude": [] }
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
   },
   "rules": [
-    { "type": "deletion" },
-    { "type": "non_fast_forward" },
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
     {
       "type": "pull_request",
       "parameters": {
@@ -26,13 +33,30 @@
         "strict_required_status_checks_policy": true,
         "do_not_enforce_on_create": false,
         "required_status_checks": [
-          { "context": "Web", "integration_id": 15368 },
-          { "context": "Rust", "integration_id": 15368 },
-          { "context": "Repository hygiene", "integration_id": 15368 },
-          { "context": "Native helpers (ubuntu-latest)", "integration_id": 15368 },
-          { "context": "Native helpers (windows-latest)", "integration_id": 15368 },
-          { "context": "Native helpers (macos-15-intel)", "integration_id": 15368 },
-          { "context": "PR policy", "integration_id": 15368 }
+          {
+            "context": "Web",
+            "integration_id": 15368
+          },
+          {
+            "context": "Rust",
+            "integration_id": 15368
+          },
+          {
+            "context": "Repository hygiene",
+            "integration_id": 15368
+          },
+          {
+            "context": "PR policy",
+            "integration_id": 15368
+          },
+          {
+            "context": "Windows application check",
+            "integration_id": 15368
+          },
+          {
+            "context": "macOS application check",
+            "integration_id": 15368
+          }
         ]
       }
     }

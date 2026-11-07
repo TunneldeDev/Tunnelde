@@ -261,7 +261,7 @@ test("immutable source reads retry transient GitHub server errors only", async (
   }
 });
 
-test("stable and beta transforms update all eight versions, are idempotent, and reject missing metadata", () => {
+test("stable and beta transforms update all desktop version files, are idempotent, and reject missing metadata", () => {
   for (const version of ["0.26.2", "0.26.2-beta.1", "0.26.2-beta.2"]) {
     const updated = versionContents(versionFiles, version);
     for (const path of VERSION_PATHS) assert.ok(updated[path].includes(version), path);
@@ -353,6 +353,26 @@ test("hotfix protection permits main changes already incorporated into dev", asy
     },
   });
   assert.equal((await planDevelopment(f)).version, "0.26.2");
+});
+
+test("helper migration permits historical version-only changes but retains main hotfix protection", async () => {
+  for (const path of ["native-helpers/Cargo.toml", "native-helpers/Cargo.lock"]) {
+    const f = fixture();
+    f.files[SOURCE_PATH] = JSON.stringify({ ...marker, baseSha: baseline });
+    const prefix = path.endsWith(".lock") ? "[[package]]" : "[package]";
+    const before = `${prefix}\nname = "tunnelde-agent"\nversion = "0.26.1"\n`;
+    f.contents.set(`${baseline}:${path}`, before);
+    f.contents.set(`${main}:${path}`, before.replace("0.26.1", "0.30.3"));
+    f.github.rest.git.getTree = async ({ tree_sha }) => ({
+      data: {
+        truncated: false,
+        tree: tree_sha === dev ? [] : [{ path, type: "blob", mode: "100644", sha: tree_sha }],
+      },
+    });
+    assert.equal((await planDevelopment(f)).version, "0.26.2");
+    f.contents.set(`${main}:${path}`, before.replace("0.26.1", "0.30.3") + "changed = true\n");
+    await assert.rejects(planDevelopment(f), /merge main into dev/);
+  }
 });
 
 test("Beta reruns reuse their immutable tag rather than creating another commit", async () => {
@@ -1101,7 +1121,7 @@ test("required checks stay bound to Actions and main protection has no bypass", 
   assert.deepEqual(ruleset.bypass_actors, []);
   const checks = ruleset.rules.find((rule) => rule.type === "required_status_checks").parameters;
   assert.equal(checks.strict_required_status_checks_policy, true);
-  assert.equal(checks.required_status_checks.length, 7);
+  assert.equal(checks.required_status_checks.length, 6);
   for (const check of checks.required_status_checks) assert.equal(check.integration_id, 15368);
   assert.equal(typeof branchSha, "function");
 });

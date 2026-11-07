@@ -83,16 +83,16 @@
 
 Beta 和稳定版由不可变版本标签触发。手动运行 **Prepare Beta** 会为隔离的 `dev` 快照设置版本，并显式调用标签发布器，因为 `GITHUB_TOKEN` 创建标签不会触发 push 工作流。稳定版为审查后的 `main` 合并提交打标签，并使用同一发布器。Nightly 发布已停用；开发测试使用本地构建，不创建公开标签或 Release。
 
-可复用 Release 工作流构建四个桌面目标，验证签名、所有安装包和 `latest.json` 后才公开草稿。Release 标题包含完整版本标签。构建期间即使 `dev` 继续前进，已打标签的源码仍有效，但仍会验证其祖先关系。历史 Release 和标签保留；Beta 不会成为最新稳定版。应用只提供正式版和 Beta 渠道，按 SemVer 选择而不依赖 Release 列表顺序。历史 Nightly 元数据仍可读取，但拒绝发布新的 Nightly；旧 Nightly 偏好迁移到正式版，更新边界拒绝不支持的渠道。辅助程序仅作为 Actions 构建产物，不进入桌面 Release 下载。
+可复用 Release 工作流构建四个桌面目标，验证签名、所有安装包和 `latest.json` 后才公开草稿。Release 标题包含完整版本标签。构建期间即使 `dev` 继续前进，已打标签的源码仍有效，但仍会验证其祖先关系。历史 Release 和标签保留；Beta 不会成为最新稳定版。应用只提供正式版和 Beta 渠道，按 SemVer 选择而不依赖 Release 列表顺序。历史 Nightly 元数据仍可读取，但拒绝发布新的 Nightly；旧 Nightly 偏好迁移到正式版，更新边界拒绝不支持的渠道。辅助程序由独立的 Tunnelde-agent 仓库版本化、构建和发布，不进入桌面 Release 下载。
 
 仓库令牌显式触发生成 PR 的 CI 并写入 PR 策略状态，不需要个人令牌或 App 凭据。具有较高权限的策略工作流仅执行受信任目标分支的代码。`main` 和 `dev` 受保护，不允许机器人绕过或直接提交发布内容。保护规则、源码核对和恢复操作见[发布运维说明](releases.zh-cn.md)。
 
-两个 macOS 桌面架构均在 `macos-15-intel` 上构建：Rust 与已安装的 Apple SDK 交叉编译 `aarch64-apple-darwin`，x64 构建目标为 `x86_64-apple-darwin`。发布前对每个应用进行 ad-hoc 签名，并检查 Mach-O 架构和代码签名；更新器签名是另一套签名。这减少了对托管 Apple Silicon runner 容量的依赖，但不能替代在 Apple Silicon 上测试。原生辅助程序 CI 在 Intel macOS 上运行，也会编译并检查 arm64 二进制。
+两个 macOS 桌面架构均在 `macos-15-intel` 上构建：Rust 与已安装的 Apple SDK 交叉编译 `aarch64-apple-darwin`，x64 构建目标为 `x86_64-apple-darwin`。发布前对每个应用进行 ad-hoc 签名，并检查 Mach-O 架构和代码签名；更新器签名是另一套签名。这减少了对托管 Apple Silicon runner 容量的依赖，但不能替代在 Apple Silicon 上测试。辅助程序仓库在 Intel macOS 上运行独立 CI，也会编译并检查 arm64 二进制。
 
 桌面库仅输出供应用可执行文件使用的 `rlib`，不构建未使用的 C 静态或动态库；完整 LTO 和体积优化仍保持启用。发布依赖缓存为每个目标使用稳定共享键，使 Build performance 工作流可从 `main` 恢复并刷新同一缓存，供后续标签发布使用。可复用发布工作流从 `main` 运行，避免缓存仅归属于单个标签。
 
 可运行 Build performance，在相同源码、编译器、发布配置和 Intel runner 镜像下比较原来的三种库构建与 `rlib`。摘要报告耗时及原始、gzip 可执行文件大小，Actions 构建产物保留 Cargo 编译器时间图表。比较前应检查缓存恢复日志。发布构建也将编译器计时保留为 Actions 构建产物；测量结果和报告不加入公开 Release 资源。
 
-需要用更新后的构建基础设施恢复中断草稿时，可从 `main` 触发 Release 并将 `existing_tag` 设为原版本标签。工作流构建原标签源码、复用草稿、替换桌面资源并重新生成经验证的更新清单；不会移动标签或增加版本，也拒绝覆盖已公开的 Release。除非选择 `build_helpers`，可选辅助程序构建产物仍保留在原工作流运行中。
+需要用更新后的构建基础设施恢复中断草稿时，可从 `main` 触发 Release 并将 `existing_tag` 设为原版本标签。工作流构建原标签源码、复用草稿、替换桌面资源并重新生成经验证的更新清单；不会移动标签或增加版本，也拒绝覆盖已公开的 Release。可选辅助程序由 Tunnelde-agent 独立仓库构建和发布。
 
-CI 检查仓库卫生、Rust 格式/Clippy/测试、Web 版本和国际化/类型/代码检查/测试/构建，并在 Windows、macOS 和 Linux 上检查原生辅助程序。独立插件市场验证包清单、确定性归档和校验和、SDK 元数据及插件测试。
+CI 检查仓库卫生、Rust 格式/Clippy/测试、Web 版本和国际化/类型/代码检查/测试/构建，并在 Windows 和 macOS 上检查桌面应用。独立插件市场验证包清单、确定性归档和校验和、SDK 元数据及插件测试。

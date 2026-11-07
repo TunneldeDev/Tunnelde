@@ -4,11 +4,11 @@
 
 ## 分支与常规流程
 
-`dev` 是默认分支和贡献目标，`main` 是稳定分支。两者均要求通过 PR、解决审查讨论，并通过七项 CI 和策略检查。`dev` 要求线性历史；普通工作可 squash 合并，也可 rebase 合并以保留有意义的独立提交。只有自动生成的发布推进 PR 指向 `main`，且只能使用 **Create a merge commit**。
+`dev` 是默认分支和贡献目标，`main` 是稳定分支。两者均要求通过 PR、解决审查讨论，并通过前端、Rust、Windows/macOS 应用、仓库及策略检查。`dev` 要求线性历史；普通工作可 squash 合并，也可 rebase 合并以保留有意义的独立提交。只有自动生成的发布推进 PR 指向 `main`，且只能使用 **Create a merge commit**。
 
 1. 推送 `dev` 会运行 CI 和 **Development**。自动化读取实际的 `dev`、`main` 引用，并根据 `main` 上 `.github/release-source.json` 记录的上次推进的 `dev` 提交收集后续变更。`dev` 不需要包含 `main` 的发布提交。
 2. 自动创建或刷新唯一的 `release/dev-to-main` PR。其文件树基于 `dev`，另有同步后的版本、源码标记和新的 CHANGELOG 章节。最终准备提交以当前 `main` 和 `dev` 为两个父提交，既保留原始 `dev` 提交及 SHA，也满足严格的分支保护。生成分支可通过强制更新重建，但不会强制更新 `dev`、`main` 或已有标签。
-3. 推送 `dev` 不会发布安装包。通过 **Prepare Beta → Run workflow** 选择当前 `dev` 快照，在隔离提交中同步八处版本和 CHANGELOG，再创建下一个不可变的 `vX.Y.Z-beta.N` 标签。Beta 是明确选择的测试里程碑。
+3. 推送 `dev` 不会发布安装包。通过 **Prepare Beta → Run workflow** 选择当前 `dev` 快照，在隔离提交中同步六处桌面版本和 CHANGELOG，再创建下一个不可变的 `vX.Y.Z-beta.N` 标签。Beta 是明确选择的测试里程碑。
 4. **Publish version** 监听 `push.tags: ["v*"]`。稳定标签发布稳定版，Beta 标签发布预发布版。直接推送标签前，版本清单和发布说明必须一致，源码也必须属于正确的分支历史；支持轻量及附注标签。`GITHUB_TOKEN` 创建的标签不会触发 push 工作流，因此自动化会使用准确标签显式调度同一发布器。已经公开的标签不会重复构建。
 5. 在发布 PR 中审查版本及 CHANGELOG，然后使用 **Create a merge commit** 合并到 `main`。**Stable release** 验证已审查的父提交和文件树，为准确的合并提交打标签；**Publish version** 构建 Windows、Linux、Apple Silicon 和 Intel macOS 安装包。
 6. 所有构建先共享一个暂存草稿。全部桌面资源、签名及 `latest.json` 验证成功后才公开。标题使用完整版本标签，例如 `v0.28.0-beta.3` 或 `v0.27.1`。Beta 固定使用 `prerelease: true` 和 `make_latest: false`；稳定版使用 `/releases/latest/`，恢复较旧稳定版本不能将该指针倒退。历史 Release 和不可变标签保留。
@@ -30,7 +30,7 @@ Nightly 发布已停用，不存在定时或手动触发的 Nightly 工作流；
 
 版本策略另见 [English](versioning.en-us.md) 和[简体中文](versioning.zh-cn.md)。
 
-八处版本位置必须同步：`package.json`、Tauri 配置、两个 Cargo 清单及锁文件、兼容用途的 `.release-please-manifest.json` 和 `CITATION.cff`。原 Release Please action 已由仓库脚本替代，清单继续保留为版本元数据。
+六处桌面版本位置必须同步：`package.json`、Tauri 配置、桌面 Cargo 清单及锁文件、兼容用途的 `.release-please-manifest.json` 和 `CITATION.cff`。原 Release Please action 已由仓库脚本替代，清单继续保留为版本元数据。
 
 CHANGELOG 包含双语分类、亮点、可展开详情、PR/提交链接和贡献者。同名标题保留各自的来源和作者，`main` 上的历史逐字节保留。自上次推进的 `dev` 源码以来新编辑的可选 Unreleased 说明会成为本次亮点；未变更的旧摘要会被忽略，防止旧周期描述新版本。没有新摘要时，亮点由当前变更生成。在输入和日期固定时生成结果确定，不依赖 AI 服务，且在修改 `main` 之前就写入 PR。PR 正文保持简洁并指向准确的 CHANGELOG SHA。
 
@@ -54,13 +54,13 @@ PR 策略按 Conventional Commits 验证标题和每个提交标题。两种贡�
 
 ## 构建失败与恢复
 
-中断的构建会留下草稿和不可变标签。从包含当前工作流的分支运行 **Release**，将 `existing_tag` 设为原标签，并可选择 `build_helpers`。工作流重新构建该标签源码，所有构建器共享草稿，验证每项资源后自动发布。准备步骤会拒绝已公开的 Release；恢复不会替换公开安装包。不要移动已有标签或重复使用废弃版本。
+中断的构建会留下草稿和不可变标签。从包含当前工作流的分支运行 **Release**，将 `existing_tag` 设为原标签。工作流重新构建该标签源码，所有构建器共享草稿，验证每项资源后自动发布。准备步骤会拒绝已公开的 Release；恢复不会替换公开安装包。不要移动已有标签或重复使用废弃版本。
 
 发布会检查标签的不可变提交、渠道和分支祖先关系。构建期间 `dev` 前进不会使选定快照失效，也不会使已完整的草稿无法发布；从分支历史移除的源码会被拒绝。历史 Beta 发布不能覆盖稳定版或更新版本的安装包；恢复较旧稳定版时明确保持较新的稳定版为 latest。
 
 **Publish version → Run workflow → tag** 也可为已有版本标签验证并创建缺失草稿；**Release → existing_tag** 恢复已暂存的草稿。两者均保留原源码，不修改标签或重新构建已公开的包。Development 并发控制仅串行化发布 PR 维护；Beta 和版本发布有独立工作流组。
 
-原生辅助程序和编译器计时只作为可选 Actions 构建产物，不作为公开桌面 Release 下载；插件市场仓库有独立发布流程。
+编译器计时只作为可选 Actions 构建产物。原生辅助程序由 Tunnelde-agent 仓库独立版本化、构建和发布；插件市场仓库也有独立发布流程。辅助程序不会出现在桌面 Release 下载中。
 
 Rust 缓存恢复是可选的：每个步骤最长三分钟，缓存下载的分段超时为两分钟。恢复失败或超时时，一次性托管 runner 会删除受影响的 target 目录及 Cargo registry/Git 缓存，再从源码编译；保留源码、其他 Rust 工作区和已安装工具链。恢复旧发布标签时，从工作流源码加载该清理工具，但仍构建不可变标签。手动 **Release** 恢复还提供 `use_rust_cache: false`，可在缓存服务故障时从源码编译，无需更改源码标签或缓存命名空间。
 
