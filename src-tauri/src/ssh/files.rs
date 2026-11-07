@@ -14,6 +14,7 @@ use crate::state::AppState;
 
 mod artifacts;
 pub mod bandwidth;
+mod batch;
 mod compressed;
 pub mod durable;
 #[cfg(windows)]
@@ -1075,7 +1076,8 @@ struct Meter<'a> {
     last: u64,
     last_update: std::time::Instant,
     settings: crate::settings::Settings,
-    data_channels: Option<range_io::Sessions>,
+    data_channels: Arc<tokio::sync::OnceCell<range_io::Sessions>>,
+    batch_progress: Option<batch::Progress>,
 }
 
 impl<'a> Meter<'a> {
@@ -1096,12 +1098,17 @@ impl<'a> Meter<'a> {
             last: 0,
             last_update: std::time::Instant::now(),
             settings: app.state::<AppState>().settings(),
-            data_channels: None,
+            data_channels: Arc::new(tokio::sync::OnceCell::new()),
+            batch_progress: None,
         }
     }
 
     fn add(&mut self, bytes: u64) {
         self.transferred += bytes;
+        if let Some(progress) = &self.batch_progress {
+            progress.report(self.transferred);
+            return;
+        }
         if (self.transferred - self.last >= PROGRESS_STEP
             && self.last_update.elapsed() >= std::time::Duration::from_millis(100))
             || (self.transferred != self.last
@@ -1125,6 +1132,10 @@ impl<'a> Meter<'a> {
     fn retain(&mut self, bytes: u64) -> AppResult<()> {
         self.transferred = bytes;
         self.last = bytes;
+        if let Some(progress) = &self.batch_progress {
+            progress.report(bytes);
+            return Ok(());
+        }
         if let Ok(mut row) = durable::Journal::get(self.app, self.id) {
             row.transferred = bytes;
             durable::Journal::upsert(self.app, row)?;
@@ -1382,6 +1393,14 @@ async fn open_writer(
     overwrite: bool,
 ) -> AppResult<Writer> {
     reject_destination_link(endpoint, sftp).await?;
+    create_writer(endpoint, sftp, overwrite).await
+}
+
+async fn create_writer(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+    overwrite: bool,
+) -> AppResult<Writer> {
     Ok(match sftp {
         Some(handle) => Writer::Remote(Box::new(
             handle
@@ -1428,7 +1447,22 @@ async fn copy_entry(
 
     if interruptible(Some(cancel), is_dir(from, from_sftp)).await? {
         make_dir(to, to_sftp).await?;
-        for path in interruptible(Some(cancel), children(from, from_sftp)).await? {
+        let paths = interruptible(Some(cancel), children(from, from_sftp)).await?;
+        // Overwrites reserve one commit channel per task. Keep their proven
+        // sequential publication path until that protocol supports multiplexing.
+        // Nested workers remain sequential to bound the entire directory task.
+        if meter.settings.transfer_optimization
+            && !overwrite
+            && meter.batch_progress.is_none()
+            && (from_sftp.is_some() || to_sftp.is_some())
+            && paths.len() > 1
+        {
+            return copy_directory_batch(
+                from, to, from_sftp, to_sftp, meter, cancel, paths, durable_id, resuming,
+            )
+            .await;
+        }
+        for path in paths {
             let child_from = from.child(path);
             let child_to = to.join(&file_name_of(&child_from.path));
             let child_to = to.child(child_to);
@@ -1457,16 +1491,22 @@ async fn copy_entry(
     if from_sftp.is_some() || to_sftp.is_some() {
         let size = source_stamp(from, from_sftp).await?.0;
         open_writer(to, to_sftp, overwrite).await?.finish().await?;
-        let channels = range_io::Sessions::open(
-            meter.app,
-            from,
-            to,
-            &meter.settings,
-            from_sftp,
-            to_sftp,
-            meter.total,
-        )
-        .await?;
+        let channels = meter
+            .data_channels
+            .get_or_try_init(|| async {
+                range_io::Sessions::open(
+                    meter.app,
+                    from,
+                    to,
+                    &meter.settings,
+                    from_sftp,
+                    to_sftp,
+                    meter.total,
+                )
+                .await
+            })
+            .await?
+            .clone();
         let files = range_io::Files::open(&channels, from, to)
             .await?
             .with_throttle(meter.throttle());
@@ -1515,6 +1555,77 @@ async fn copy_entry(
     result?;
     closed?;
     Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn copy_directory_batch(
+    from: &Endpoint,
+    to: &Endpoint,
+    from_sftp: Option<&SftpSession>,
+    to_sftp: Option<&SftpSession>,
+    meter: &mut Meter<'_>,
+    cancel: &Arc<AtomicBool>,
+    paths: Vec<String>,
+    durable_id: Option<&str>,
+    resuming: bool,
+) -> AppResult<()> {
+    // Initialize once, lazily at the first validated regular file. Sampling a
+    // directory child here could follow a link before copy_entry rejects it.
+    let channels = meter.data_channels.clone();
+    let app = meter.app;
+    let id = meter.id;
+    let name = meter.name;
+    let total = meter.total;
+    let base = meter.transferred;
+    let mut settings = meter.settings.clone();
+    let concurrency = match settings.transfer_concurrency {
+        0 => 4,
+        value => usize::from(value).clamp(1, 8),
+    };
+    // Share the existing per-task packet budget across files, instead of
+    // multiplying segment parallelism by directory parallelism.
+    settings.transfer_requests = match settings.transfer_requests {
+        0 => 32 / concurrency as u16,
+        value => value.min(64 / concurrency as u16),
+    };
+    settings.transfer_concurrency = 1;
+    batch::run(
+        paths,
+        concurrency,
+        cancel,
+        |bytes| {
+            let bytes = base + bytes;
+            if bytes >= meter.transferred {
+                meter.add(bytes - meter.transferred);
+                Ok(())
+            } else {
+                meter.retain(bytes)
+            }
+        },
+        |path, progress, stop| {
+            let source = from.child(path);
+            let destination = to.child(to.join(&file_name_of(&source.path)));
+            let mut worker = Meter::new(app, id, name, total);
+            worker.settings = settings.clone();
+            worker.data_channels = channels.clone();
+            worker.batch_progress = Some(progress);
+            async move {
+                Box::pin(copy_entry(
+                    &source,
+                    &destination,
+                    from_sftp,
+                    to_sftp,
+                    &mut worker,
+                    &stop,
+                    false,
+                    durable_id,
+                    resuming,
+                ))
+                .await
+            }
+        },
+    )
+    .await
 }
 
 async fn file_length(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Option<u64>> {
@@ -1895,9 +2006,12 @@ async fn durable_copy_file(
     let mut writer = if partial.is_some() {
         match to_sftp {
             Some(s) => Writer::Remote(Box::new(
-                s.open_with_flags(&temp.path, OpenFlags::WRITE)
-                    .await
-                    .map_err(map_sftp)?,
+                interruptible(Some(cancel), async {
+                    s.open_with_flags(&temp.path, OpenFlags::WRITE)
+                        .await
+                        .map_err(map_sftp)
+                })
+                .await?,
             )),
             None => Writer::Local(
                 tokio::fs::OpenOptions::new()
@@ -1907,7 +2021,10 @@ async fn durable_copy_file(
             ),
         }
     } else {
-        open_writer(&temp, to_sftp, false).await?
+        // lstat is read-only and can stop immediately; CREATE_NEW itself must
+        // still acknowledge before its staging file is eligible for cleanup.
+        interruptible(Some(cancel), reject_destination_link(&temp, to_sftp)).await?;
+        create_writer(&temp, to_sftp, false).await?
     };
     #[cfg(windows)]
     artifacts::record_local_writer(
@@ -1929,7 +2046,9 @@ async fn durable_copy_file(
         }
     }
     meter.add(existing);
-    progress(meter.app, id, meter.name, meter.transferred, meter.total);
+    if meter.batch_progress.is_none() {
+        progress(meter.app, id, meter.name, meter.transferred, meter.total);
+    }
     let plan = segments::Plan::for_file(
         &meter.settings,
         stamp.0.saturating_sub(existing),
@@ -2147,8 +2266,9 @@ async fn parallel_copy_file(
     plan: segments::Plan,
 ) -> AppResult<()> {
     let previous_files = meter.transferred.saturating_sub(offset);
-    if meter.data_channels.is_none() {
-        meter.data_channels = Some(
+    let channels = meter
+        .data_channels
+        .get_or_try_init(|| async {
             interruptible(
                 Some(cancel),
                 range_io::Sessions::open(
@@ -2161,11 +2281,11 @@ async fn parallel_copy_file(
                     meter.total,
                 ),
             )
-            .await?,
-        );
-    }
-    let channels = meter.data_channels.as_ref().unwrap().clone();
-    let files = range_io::Files::open(&channels, from, temp)
+            .await
+        })
+        .await?
+        .clone();
+    let files = range_io::Files::open_cancellable(&channels, from, temp, cancel)
         .await?
         .with_throttle(meter.throttle());
     let result = async {
@@ -2179,7 +2299,11 @@ async fn parallel_copy_file(
             artifacts::begin_window(meter.app, key, stamp, offset)?;
             segments::copy_window(&files, offset..end, plan, cancel, |bytes| meter.add(bytes))
                 .await?;
-            artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, end..=end).await?;
+            interruptible(
+                Some(cancel),
+                artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, end..=end),
+            )
+            .await?;
             artifacts::end_window(meter.app, key)?;
             offset = end;
         }
@@ -2194,12 +2318,14 @@ async fn parallel_copy_file(
         )
         .await;
         if matches!(recovered, Ok(Ok(()))) {
-            artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, offset..=offset).await?;
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, offset..=offset),
+            )
+            .await
+            .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??;
             artifacts::end_window(meter.app, key)?;
         }
-    }
-    if result.is_err() || closed.is_err() {
-        meter.data_channels = None;
     }
     if result.is_err() {
         meter.retain(previous_files + offset)?;
