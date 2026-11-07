@@ -289,7 +289,14 @@ async fn read_loop(
     }
 
     requests.abort_all();
+    // Cancellation is cooperative. Wait for in-flight host calls to finish
+    // before removing their contributions, or a synchronous registration could
+    // otherwise complete just after cleanup and leave a crashed plugin's item.
+    while requests.join_next().await.is_some() {}
     if let Some(context) = &context {
+        super::status_bar::remove_runtime(&context.app, &context.id, |generation| {
+            generation == context.generation
+        });
         super::tasks::cancel_plugin(&context.id, Some(context.generation));
         context
             .app

@@ -13,7 +13,10 @@ import type {
 } from "@/lib/api/types";
 import { createEventBus } from "./bus";
 
+import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
+
 export interface NativeEvents {
+  "plugin://status-bar-changed": StatusBarSnapshot;
   "plugin://event": PluginEvent;
   "plugin:security-changed": PluginSecurityState;
   "plugins://download": PluginDownload;

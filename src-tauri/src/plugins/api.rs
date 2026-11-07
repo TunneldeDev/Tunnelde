@@ -75,6 +75,8 @@ macro_rules! stable_method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    stable_method!("statusBar.set", [], "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}", "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.", "0.31.1"),
+    stable_method!("statusBar.remove", [], "{id:string}", "Remove this runtime's status item; return false when absent. IDs are scoped to the plugin and runtime generation.", "0.31.1"),
     method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk."),
     method!("editor.replace", ["editor.write"], "{tabId:string,documentId:string,version:number,text:string}", "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents."),
     method!("mounts.browse", ["mounts.read"], "{sessionId:string,path?:string}", "Browse directories through an authenticated SFTP session for the mount chooser."),
@@ -671,6 +673,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
+        "statusBar.set" | "statusBar.remove" => super::status_bar::call(context, method, params),
         name if name.starts_with("workspace.")
             || name.starts_with("ui.")
             || name.starts_with("editor.") =>

@@ -7,10 +7,22 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
         "../../../../tests/fixtures/plugin-compat/core-v1.json"
     ))
     .unwrap();
-    assert_eq!(
-        contracts, floor,
-        "Change v1 contracts only through explicit compatibility review"
-    );
+    for (name, contract) in floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen core contract changed: {name}"
+        );
+    }
+    let status_floor: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/plugin-compat/status-bar-v1.json"
+    ))
+    .unwrap();
+    for (name, contract) in status_floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen status bar contract changed: {name}"
+        );
+    }
     let response = describe_api();
     for method in response["methods"].as_array().unwrap() {
         assert_eq!(
@@ -21,7 +33,14 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
     for name in contracts["methods"].as_object().unwrap().keys() {
         let method = method_info(name).expect("contract must name an implemented method");
         assert_eq!(method.stability, "stable");
-        assert_eq!(method.since, Some("0.21.0"));
+        assert_eq!(
+            method.since,
+            Some(if name.starts_with("statusBar.") {
+                "0.31.1"
+            } else {
+                "0.21.0"
+            })
+        );
         assert_eq!(
             method.permissions,
             if name == "sessions.list" {
@@ -73,6 +92,7 @@ async fn emit_core_contract_responses() {
             samples.push(json!({"method":method,"params":params,"result":result}));
         }
     }
+    samples.extend(super::super::status_bar::contract_samples());
     // Maximum legal ASCII key and the newline boundary of JSON-schema regexes.
     for key in ["a".repeat(128), "._-".into()] {
         let params = json!({"key":key,"value":123});
