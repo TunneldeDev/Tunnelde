@@ -262,17 +262,35 @@ impl<'a> Files<'a> {
         source: &'a Endpoint,
         target: &'a Endpoint,
     ) -> AppResult<Self> {
+        Self::open_inner(sessions, source, target, None).await
+    }
+
+    pub async fn open_cancellable(
+        sessions: &'a Sessions,
+        source: &'a Endpoint,
+        target: &'a Endpoint,
+        cancel: &AtomicBool,
+    ) -> AppResult<Self> {
+        Self::open_inner(sessions, source, target, Some(cancel)).await
+    }
+
+    async fn open_inner(
+        sessions: &'a Sessions,
+        source: &'a Endpoint,
+        target: &'a Endpoint,
+        cancel: Option<&AtomicBool>,
+    ) -> AppResult<Self> {
+        // Data opens never create, truncate or write: cancelling an unacknowledged
+        // open is safe. The task drops its shared channel after writers drain.
         let source_handle = match &sessions.source {
-            Some(session) => Some(session.open(&source.path, false).await?),
+            Some(session) => Some(interruptible(cancel, session.open(&source.path, false)).await?),
             None => None,
         };
         let target_handle = match &sessions.target {
-            Some(session) => match session.open(&target.path, true).await {
+            Some(session) => match interruptible(cancel, session.open(&target.path, true)).await {
                 Ok(handle) => Some(handle),
                 Err(error) => {
-                    if let (Some(session), Some(handle)) = (&sessions.source, &source_handle) {
-                        let _ = session.close(handle).await;
-                    }
+                    let _ = close_handle(&sessions.source, source_handle).await;
                     return Err(error);
                 }
             },

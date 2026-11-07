@@ -12,6 +12,8 @@ struct Observed {
     peak: usize,
     closes: usize,
     disconnected: bool,
+    open_gate: Option<Arc<tokio::sync::Semaphore>>,
+    opens: usize,
 }
 
 #[derive(Clone, Default)]
@@ -95,6 +97,19 @@ async fn server_with_close(
                     reply.push(102);
                     reply.extend_from_slice(id);
                     field(&mut reply, b"handle");
+                    let gate = {
+                        let mut state = state.lock().unwrap();
+                        state.opens += 1;
+                        state.open_gate.clone()
+                    };
+                    if let Some(gate) = gate {
+                        let send = send.clone();
+                        tokio::spawn(async move {
+                            let _permit = gate.acquire().await.unwrap();
+                            let _ = send.send((reply, false));
+                        });
+                        continue;
+                    }
                 }
                 5 => {
                     let mut pos = 5;
@@ -178,6 +193,39 @@ async fn wait_for(mut ready: impl FnMut() -> bool) {
     })
     .await
     .expect("protocol event did not arrive");
+}
+
+#[tokio::test]
+async fn cancelled_data_open_stops_without_waiting_for_handle_reply_or_aborting_other_writers() {
+    let (target, observed) = server(None, Duration::ZERO).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    observed.lock().unwrap().open_gate = Some(gate.clone());
+    let sessions = Sessions {
+        source: None,
+        target: Some(target),
+    };
+    let from = remote("unused-local-source");
+    let to = remote("target");
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(
+            Files::open_cancellable(&sessions, &from, &to, &cancel),
+            async {
+                wait_for(|| observed.lock().unwrap().opens == 1).await;
+                cancel.store(true, Ordering::SeqCst);
+            }
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.err().unwrap().to_string(), CANCELLED);
+    assert!(!observed.lock().unwrap().disconnected);
+    assert!(observed.lock().unwrap().writes.is_empty());
+    gate.add_permits(1);
+    observed.lock().unwrap().open_gate = None;
+    let next = Files::open(&sessions, &from, &to).await.unwrap();
+    next.finish(false).await.unwrap();
+    assert!(!observed.lock().unwrap().disconnected);
 }
 
 fn remote(name: &str) -> Endpoint {
