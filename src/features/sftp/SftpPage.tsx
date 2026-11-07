@@ -2391,24 +2391,42 @@ export function SftpPage({
                           event.stopPropagation();
                           event.dataTransfer.setData("application/x-tunnelde-file-column", sort);
                           event.dataTransfer.effectAllowed = "move";
+                          event.currentTarget.dataset.dragging = "true";
                         }}
                         onDragOver={(event) => {
                           if (
-                            event.dataTransfer.types.includes("application/x-tunnelde-file-column")
-                          ) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }
+                            !event.dataTransfer.types.includes("application/x-tunnelde-file-column")
+                          )
+                            return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          event.currentTarget.dataset.columnDrop =
+                            event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+                        }}
+                        onDragLeave={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                            delete event.currentTarget.dataset.columnDrop;
+                        }}
+                        onDragEnd={(event) => {
+                          delete event.currentTarget.dataset.dragging;
+                          for (const header of event.currentTarget
+                            .closest("tr")
+                            ?.querySelectorAll<HTMLElement>("[data-column-drop]") ?? [])
+                            delete header.dataset.columnDrop;
                         }}
                         onDrop={(event) => {
                           const dragged = event.dataTransfer.getData(
                             "application/x-tunnelde-file-column",
                           ) as FileColumn;
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          const after = event.clientX >= bounds.left + bounds.width / 2;
+                          delete event.currentTarget.dataset.columnDrop;
                           if (!columns.includes(dragged) || dragged === sort) return;
                           event.preventDefault();
                           event.stopPropagation();
                           const next = columns.filter((item) => item !== dragged);
-                          next.splice(next.indexOf(sort), 0, dragged);
+                          next.splice(next.indexOf(sort) + Number(after), 0, dragged);
                           updateView(id, { filesColumns: next });
                         }}
                         aria-sort={
@@ -2461,6 +2479,21 @@ export function SftpPage({
                             view.filesColumnWidths?.[sort] ?? DEFAULT_COLUMN_WIDTHS[sort]
                           }
                           aria-label={`${t("sftp.sortColumns")}: ${t(sort === "name" ? "sftp.sortName" : sort === "type" ? "sftp.sortType" : sort === "size" ? "sftp.sortSize" : "sftp.sortModified")}`}
+                          onDragStart={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          onDoubleClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            updateView(id, {
+                              filesColumnWidths: {
+                                ...view.filesColumnWidths,
+                                [sort]: DEFAULT_COLUMN_WIDTHS[sort],
+                              },
+                            });
+                          }}
+                          title={t("sftp.resizeColumnHint")}
                           onPointerDown={(event) => resizeColumn(sort, event)}
                           onKeyDown={(event) => {
                             if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;

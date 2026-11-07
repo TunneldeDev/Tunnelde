@@ -310,6 +310,37 @@ describe("SftpPage", () => {
     ]);
   });
 
+  it("drops a header on either side and resets an individual column width", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const target = pane.querySelector<HTMLElement>(".sftp-columns__modified")!;
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ left: 100, width: 150 } as DOMRect);
+    const transfer = {
+      types: ["application/x-tunnelde-file-column"],
+      setData: vi.fn(),
+      getData: () => "name",
+      effectAllowed: "move",
+    };
+    fireEvent.dragOver(target, { dataTransfer: transfer, clientX: 240 });
+    expect(target.dataset.columnDrop).toBe("after");
+    const drop = new MouseEvent("drop", { bubbles: true, clientX: 240 });
+    Object.defineProperty(drop, "dataTransfer", { value: transfer });
+    fireEvent(target, drop);
+    expect([...pane.querySelectorAll("th")].map((node) => node.className)).toEqual([
+      "sftp-columns__type",
+      "sftp-columns__size",
+      "sftp-columns__modified",
+      "sftp-columns__name",
+    ]);
+    expect(target.dataset.columnDrop).toBeUndefined();
+    const name = within(pane).getByRole("separator", { name: "File sorting: Name" });
+    fireEvent.keyDown(name, { key: "ArrowRight" });
+    expect(name.getAttribute("aria-valuenow")).toBe("230");
+    fireEvent.doubleClick(name);
+    expect(name.getAttribute("aria-valuenow")).toBe("220");
+  });
+
   it("resizes only the owning pointer, keeps concurrent column preferences and persists the release pixel", async () => {
     const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
     const view = render(<SftpPage sessionId="session-1" />);
