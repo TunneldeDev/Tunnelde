@@ -782,6 +782,7 @@
     "conflictTitle": "远端文件已更改",
     "localFileChanged": "文件已在 Tunnelde 外被修改，草稿已保留；请对比更改后再保存。",
     "readOnlyFile": "文件为只读，草稿已保留。",
+    "saveCancelled": "保存已取消，草稿已保留。",
     "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？",
     "format": "格式化文档",
     "formatting": "正在格式化…",

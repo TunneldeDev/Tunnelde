@@ -126,6 +126,56 @@ fn local_path(path: &str, roots: &[String]) -> AppResult<String> {
     }
     Err(AppError::validation("plugin.tools.outsideScope"))
 }
+
+struct LocalWriteApproval {
+    path: PathBuf,
+    root_paths: Vec<String>,
+    resolved_roots: Vec<PathBuf>,
+    hash: String,
+}
+
+impl LocalWriteApproval {
+    fn new(path: PathBuf, roots: &[String], hash: String) -> AppResult<Self> {
+        let resolved_roots = roots
+            .iter()
+            .map(std::fs::canonicalize)
+            .collect::<std::io::Result<Vec<_>>>()?;
+        let approval = Self {
+            path,
+            root_paths: roots.to_vec(),
+            resolved_roots,
+            hash,
+        };
+        approval.check_target(&approval.path)?;
+        Ok(approval)
+    }
+
+    fn check_target(&self, target: &Path) -> AppResult<()> {
+        let current = self
+            .root_paths
+            .iter()
+            .map(std::fs::canonicalize)
+            .collect::<std::io::Result<Vec<_>>>()?;
+        if current != self.resolved_roots
+            || target != self.path
+            || !self
+                .resolved_roots
+                .iter()
+                .any(|root| target.starts_with(root))
+        {
+            return Err(AppError::validation("plugin.tools.targetChanged"));
+        }
+        Ok(())
+    }
+
+    fn check(&self, target: &Path, original: &str) -> AppResult<()> {
+        self.check_target(target)?;
+        if format!("{:x}", Sha256::digest(original.as_bytes())) != self.hash {
+            return Err(AppError::validation("plugin.tools.fileChanged"));
+        }
+        Ok(())
+    }
+}
 fn remote_within(path: &str, root: &str) -> bool {
     let root = root.trim_end_matches('/');
     path == root || (path.starts_with(root) && path.as_bytes().get(root.len()) == Some(&b'/'))
@@ -315,6 +365,13 @@ fn client_revoked(plugin: &str, generation: u64, client: &str) -> bool {
                 && item.client == client
                 && item.id.is_empty()
         })
+}
+
+pub(super) fn authorize_client(context: &HostContext, client: &str) -> AppResult<()> {
+    if client_revoked(&context.id, context.generation, client) {
+        return Err(AppError::validation("plugin.tools.clientRevoked"));
+    }
+    Ok(())
 }
 fn register_pending(key: &str, request: Pending) -> AppResult<()> {
     let _gate = client_gate()
@@ -548,6 +605,18 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
     } else {
         None
     };
+    let local_approval = if method == "files.local.writeText" {
+        Some(LocalWriteApproval::new(
+            PathBuf::from(field::<String>(&normalized, "path")?),
+            &scope.local_roots,
+            original_hash
+                .as_ref()
+                .map(|(_, hash)| hash.clone())
+                .ok_or_else(|| AppError::validation("plugin.tools.fileChanged"))?,
+        )?)
+    } else {
+        None
+    };
     let auto_review = params.pointer("/review/approved").and_then(Value::as_bool) == Some(true);
     if !read_only(&method) && mode != "full" && !(mode == "approve" && auto_review) {
         let description = serde_json::to_string_pretty(&normalized)?;
@@ -565,7 +634,7 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
     if rechecked != normalized {
         return Err(AppError::validation("plugin.tools.targetChanged"));
     }
-    if let Some((read_method, hash)) = original_hash {
+    if let Some((read_method, hash)) = &original_hash {
         let current = Box::pin(super::api::dispatch(
             context,
             read_method,
@@ -575,7 +644,7 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
         if format!(
             "{:x}",
             Sha256::digest(current["content"].as_str().unwrap_or_default().as_bytes())
-        ) != hash
+        ) != *hash
         {
             return Err(AppError::validation("plugin.tools.fileChanged"));
         }
@@ -585,12 +654,19 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
         return Err(AppError::validation("plugin.tools.clientRevoked"));
     }
     invocation_context.tool_client = Some(client.into());
-    let mut result = Box::pin(super::api::dispatch(
-        &invocation_context,
-        &method,
-        normalized,
-    ))
-    .await?;
+    let mut result = if let Some(approval) = local_approval {
+        super::api::write_local(&invocation_context, &normalized, move |target, original| {
+            approval.check(target, original)
+        })
+        .await?
+    } else {
+        Box::pin(super::api::dispatch(
+            &invocation_context,
+            &method,
+            normalized,
+        ))
+        .await?
+    };
     if method.ends_with(".readText") {
         if let Some(content) = result.get("content").and_then(Value::as_str) {
             let hash = format!("{:x}", Sha256::digest(content.as_bytes()));
@@ -645,6 +721,77 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_write_approval_binds_the_exact_path_scope_and_preapproval_contents() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-write-scope-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("note.txt");
+        std::fs::write(&path, "approved").unwrap();
+        let path = std::fs::canonicalize(path).unwrap();
+        let approval = LocalWriteApproval::new(
+            path.clone(),
+            &[root.to_string_lossy().into_owned()],
+            format!("{:x}", Sha256::digest(b"approved")),
+        )
+        .unwrap();
+        approval.check(&path, "approved").unwrap();
+        assert_eq!(
+            approval
+                .check(&path, "changed during approval")
+                .unwrap_err()
+                .to_string(),
+            "plugin.tools.fileChanged"
+        );
+        assert_eq!(
+            approval
+                .check(&root.join("other.txt"), "approved")
+                .unwrap_err()
+                .to_string(),
+            "plugin.tools.targetChanged"
+        );
+        assert!(LocalWriteApproval::new(
+            std::fs::canonicalize(std::env::temp_dir()).unwrap(),
+            &[root.to_string_lossy().into_owned()],
+            approval.hash.clone()
+        )
+        .is_err());
+        std::fs::remove_file(&path).unwrap();
+        std::fs::remove_dir(&root).unwrap();
+        assert!(approval.check(&path, "approved").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_write_approval_rejects_grant_root_symlink_retargeting() {
+        use std::os::unix::fs::symlink;
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-write-scope-{}", uuid::Uuid::new_v4()));
+        let first = root.join("first");
+        let second = root.join("second");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir(&second).unwrap();
+        let path = first.join("note.txt");
+        std::fs::write(&path, "approved").unwrap();
+        let path = std::fs::canonicalize(path).unwrap();
+        let link = root.join("grant");
+        symlink(&first, &link).unwrap();
+        let approval = LocalWriteApproval::new(
+            path.clone(),
+            &[link.to_string_lossy().into_owned()],
+            format!("{:x}", Sha256::digest(b"approved")),
+        )
+        .unwrap();
+        approval.check(&path, "approved").unwrap();
+        std::fs::remove_file(&link).unwrap();
+        symlink(&second, &link).unwrap();
+        assert_eq!(
+            approval.check(&path, "approved").unwrap_err().to_string(),
+            "plugin.tools.targetChanged"
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
     #[test]
     fn cancelled_request_guard_cannot_remove_a_reused_request_id() {
         let plugin = uuid::Uuid::new_v4().to_string();
