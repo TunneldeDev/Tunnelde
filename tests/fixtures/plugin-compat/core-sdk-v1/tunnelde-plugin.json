@@ -1,0 +1,10 @@
+{
+  "id": "qa-core-sdk",
+  "name": "Core SDK compatibility probe",
+  "version": "1.0.0",
+  "apiVersion": 1,
+  "runtime": "node",
+  "main": "index.mjs",
+  "commands": [{ "id": "call", "title": "Call host API" }],
+  "permissions": ["sessions.read"]
+}

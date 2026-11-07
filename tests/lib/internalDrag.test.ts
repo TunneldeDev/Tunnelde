@@ -47,6 +47,7 @@ const pointer = (node: EventTarget, type: string, x: number, y = 20) => {
       cancelable: true,
       pointerId: 1,
       button: 0,
+      buttons: type === "pointerup" ? 0 : 1,
       clientX: x,
       clientY: y,
     }),
@@ -151,6 +152,56 @@ describe("internal pointer drag", () => {
     pointer(document, "pointermove", 30);
     expect(source.draggable).toBe(true);
     expect(document.querySelector("[data-drag-preview]")).toBeNull();
+  });
+
+  it("leaves column and panel separators to their resize handlers", () => {
+    source.insertAdjacentHTML("beforeend", '<span role="separator"><span>Resize</span></span>');
+    const separator = source.querySelector('[role="separator"]')!;
+    const resizing = vi.fn();
+    const started = vi.fn();
+    separator.addEventListener("pointerdown", resizing);
+    source.addEventListener("dragstart", started);
+    pointer(separator.firstElementChild!, "pointerdown", 10);
+    pointer(document, "pointermove", 90);
+    pointer(document, "pointerup", 90);
+    expect(resizing).toHaveBeenCalledOnce();
+    expect(started).not.toHaveBeenCalled();
+    expect(source.draggable).toBe(true);
+    expect(document.querySelector("[data-drag-preview]")).toBeNull();
+  });
+
+  it("abandons a missing release when the next move reports no pressed button", () => {
+    const started = vi.fn();
+    const dropped = vi.fn();
+    source.addEventListener("dragstart", started);
+    target.addEventListener("drop", dropped);
+    pointer(source, "pointerdown", 10);
+    document.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        pointerId: 1,
+        clientX: 100,
+        clientY: 20,
+        buttons: 0,
+      }),
+    );
+    pointer(document, "pointermove", 200);
+    pointer(document, "pointerup", 200);
+    expect(started).not.toHaveBeenCalled();
+    expect(dropped).not.toHaveBeenCalled();
+    expect(source.draggable).toBe(true);
+  });
+
+  it("clears a stale row gesture before a new press on a resize handle", () => {
+    source.insertAdjacentHTML("beforeend", '<span role="separator">Resize</span>');
+    const started = vi.fn();
+    source.addEventListener("dragstart", started);
+    pointer(source, "pointerdown", 10);
+    pointer(source.querySelector('[role="separator"]')!, "pointerdown", 100);
+    pointer(document, "pointermove", 200);
+    pointer(document, "pointerup", 200);
+    expect(started).not.toHaveBeenCalled();
+    expect(source.draggable).toBe(true);
   });
 
   it("notifies document listeners even when the drop removes the source", () => {

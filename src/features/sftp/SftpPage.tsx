@@ -90,11 +90,30 @@ import { useSearchRoots } from "@/store/searchRoots";
 import { useFilePreview } from "@/store/filePreview";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
+import { usePointerDrag } from "@/lib/session/usePointerDrag";
 
 type PaneId = "a" | "b";
 
 const PANE_IDS: PaneId[] = ["a", "b"];
 const SINGLE_PANE_IDS: PaneId[] = ["a"];
+
+function columnLayout(view: FileViewPreferences) {
+  const columns = view.filesColumns ?? [...FILE_COLUMNS];
+  const widths = columns.map((column) =>
+    Math.max(56, Math.min(1000, view.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column])),
+  );
+  return {
+    columns,
+    grid: columns
+      .map((column, index) =>
+        column === "name"
+          ? `18px ${Math.max(56, (widths[index] ?? 56) - 24)}px`
+          : `${widths[index]}px`,
+      )
+      .join(" "),
+    minimum: `${widths.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
+  };
+}
 
 function sameFilesystem(left: FsSource, right: FsSource): boolean {
   if (sameSource(left, right)) return true;
@@ -342,6 +361,7 @@ export function SftpPage({
   const mounted = useRef(true);
   const mutations = useRef(new Set<PaneId>());
   const typeSelectState = useRef<Partial<Record<PaneId, TypeSelectState>>>({});
+  const beginColumnResize = usePointerDrag();
 
   const rememberColumnScroll = (id: PaneId, path: string, top: number) => {
     const key = `${id}:${sourceKey(panesRef.current[id].source)}:${path}`;
@@ -500,7 +520,6 @@ export function SftpPage({
     async (
       id: PaneId,
       path?: string | null,
-      keep?: string | null,
       override?: FsSource,
       historyIndex?: number,
     ): Promise<Listing | null> => {
@@ -524,7 +543,7 @@ export function SftpPage({
           ancestors: columnAncestors(previousAncestors, previousListing, cached),
           error: null,
           busy: true,
-          draft: null,
+          ...(previousPath !== cached.path ? { draft: null } : {}),
         });
       } else {
         patch(id, { busy: true, error: null });
@@ -560,25 +579,40 @@ export function SftpPage({
             : current.history[current.historyIndex] === listing.path
               ? current.history
               : [...current.history.slice(0, current.historyIndex + 1), listing.path];
-        const selected = keep ? listing.entries.find((item) => item.path === keep) : null;
+        // Reconcile against current state, including changes made during an asynchronous refresh.
+        // A navigation starts a new selection; a refresh must not collapse a multi-selection.
+        const sameDirectory = previousPath === listing.path;
+        const available = new Set(listing.entries.map((entry) => entry.path));
+        const selectedPaths = sameDirectory
+          ? current.selectedPaths.filter((path) => available.has(path))
+          : [];
+        const cursor =
+          sameDirectory && current.cursor && available.has(current.cursor)
+            ? current.cursor
+            : (selectedPaths.at(-1) ?? null);
+        const anchor =
+          sameDirectory && current.anchor && available.has(current.anchor)
+            ? current.anchor
+            : (selectedPaths[0] ?? null);
         patch(id, {
           listing,
           ancestors,
-          selectedPaths: selected ? [selected.path] : [],
-          anchor: selected?.path ?? null,
-          cursor: selected?.path ?? null,
+          selectedPaths,
+          anchor,
+          cursor,
           history,
           historyIndex: targetHistoryIndex ?? history.length - 1,
           busy: false,
-          draft: null,
+          draft: sameDirectory ? current.draft : null,
+          renaming:
+            sameDirectory && current.renaming && available.has(current.renaming.path)
+              ? current.renaming
+              : null,
           revealedPaths: previousPath === listing.path ? current.revealedPaths : [],
           ...(previousPath !== listing.path
             ? { filter: "", filterKind: "all" as const, collapsedGroups: [] }
             : {}),
         });
-        if (selected) {
-          reveal(id);
-        }
         prefetch(id, source, listing);
         return listing;
       } catch (error) {
@@ -590,16 +624,16 @@ export function SftpPage({
         release?.();
       }
     },
-    [cache, patch, prefetch, preloader, remember, reveal],
+    [cache, patch, prefetch, preloader, remember],
   );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const first = panesRef.current.a.state;
-      void load("a", first.listing?.path ?? initialSinglePath.current, first.cursor);
+      void load("a", first.listing?.path ?? initialSinglePath.current);
       if (!isSingle) {
         const second = panesRef.current.b.state;
-        void load("b", second.listing?.path, second.cursor);
+        void load("b", second.listing?.path);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -693,7 +727,7 @@ export function SftpPage({
         useWorkspace.getState().renameTab(tabId, t("sftp.thisComputer"));
       }
       for (const id of stale) {
-        void load(id, null, null, LOCAL_SOURCE);
+        void load(id, null, LOCAL_SOURCE);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -947,7 +981,7 @@ export function SftpPage({
         filterKind: "all",
         collapsedGroups: [],
       });
-      void load(id, path, null, undefined, index);
+      void load(id, path, undefined, index);
     }
   };
 
@@ -1229,6 +1263,7 @@ export function SftpPage({
     const entry = state.listing?.entries.find((item) => item.path === renaming.path);
     if (!entry || !name || name === entry.name) {
       patch(id, { renaming: null });
+      bodies.current[id]?.focus({ preventScroll: true });
       return;
     }
     if (!validName(name, source, state.listing?.path ?? "")) {
@@ -1292,6 +1327,7 @@ export function SftpPage({
     const name = creating.value.trim();
     if (!name) {
       patch(id, { creating: null });
+      bodies.current[id]?.focus({ preventScroll: true });
       return;
     }
     if (!validName(name, source, directory)) {
@@ -1561,7 +1597,7 @@ export function SftpPage({
       event.stopPropagation();
       if (action === "hidden") toggleHidden(id);
       else if (action === "back" || action === "forward") travel(id, action === "back" ? -1 : 1);
-      else if (action === "refresh") void load(id, requested.current[id].path, state.cursor);
+      else if (action === "refresh") refreshPane(id);
       else if (!state.busy) {
         if (action === "parent" && state.listing) navigate(id, parentOf(state.listing.path));
         else if (action === "selectAll")
@@ -1637,7 +1673,7 @@ export function SftpPage({
     };
     panesRef.current = next;
     setPanes(next);
-    void load(id, null, null, source);
+    void load(id, null, source);
     if (tabId && (single || source.kind === "remote")) {
       const title =
         source.kind === "local"
@@ -1666,8 +1702,8 @@ export function SftpPage({
     setActive(id);
   };
 
-  const refreshPane = (id: PaneId, keep?: string | null) => {
-    void load(id, requested.current[id].path, keep);
+  const refreshPane = (id: PaneId) => {
+    void load(id, requested.current[id].path);
   };
 
   const filePaneOptions = (id: PaneId): { pane: FilePaneOptions; title: string } => {
@@ -1748,69 +1784,49 @@ export function SftpPage({
     };
     const draft = state.draft ?? state.listing?.path ?? "";
     const columnView = view.filesLayout === "columns";
-    const columns = view.filesColumns ?? [...FILE_COLUMNS];
+    const { columns, grid, minimum } = columnLayout(view);
     const columnIndex = (column: FileColumn) => {
       const index = columns.indexOf(column);
       if (index < 0) return 0;
       return 1 + index + (columns.indexOf("name") < index ? 1 : 0);
     };
-    const widths = columns.map((column) =>
-      Math.max(
-        56,
-        Math.min(1000, view.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column]),
-      ),
-    );
-    const grid = columns
-      .map((column, index) =>
-        column === "name"
-          ? `18px ${Math.max(56, (widths[index] ?? 56) - 24)}px`
-          : `${widths[index]}px`,
-      )
-      .join(" ");
-    const resizeColumn = (column: FileColumn, event: React.PointerEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
+    const resizeColumn = (column: FileColumn, event: React.PointerEvent<HTMLElement>) => {
       const origin = event.clientX;
       const start = view.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column];
       const pane = event.currentTarget.closest<HTMLElement>(".sftp-pane");
-      const originalMinimum = pane?.style.getPropertyValue("--sftp-min-width") ?? "";
+      const handle = event.currentTarget;
       let width = start;
+      const preview = (next: FileViewPreferences) => {
+        const layout = columnLayout(next);
+        pane?.style.setProperty("--sftp-columns", layout.grid);
+        pane?.style.setProperty("--sftp-min-width", layout.minimum);
+        handle.setAttribute(
+          "aria-valuenow",
+          String(next.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column]),
+        );
+      };
       const move = (next: PointerEvent) => {
-        width = Math.max(56, Math.min(1000, start + next.clientX - origin));
-        const parts = columns.map((item, index) =>
-          item === column ? width : (widths[index] ?? 56),
-        );
-        pane?.style.setProperty(
-          "--sftp-columns",
-          columns
-            .map((item, index) =>
-              item === "name"
-                ? `18px ${Math.max(56, (parts[index] ?? 56) - 24)}px`
-                : `${parts[index]}px`,
-            )
-            .join(" "),
-        );
-        pane?.style.setProperty(
-          "--sftp-min-width",
-          `${parts.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
-        );
+        const current = panesRef.current[id];
+        if (!Number.isFinite(next.clientX) || !sameSource(current.source, source)) return;
+        width = Math.max(56, Math.min(1000, Math.round(start + next.clientX - origin)));
+        preview({
+          ...current.view,
+          filesColumnWidths: { ...current.view.filesColumnWidths, [column]: width },
+        });
       };
-      const finish = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-        window.removeEventListener("pointercancel", cancel);
-        updateView(id, { filesColumnWidths: { ...view.filesColumnWidths, [column]: width } });
-      };
-      const cancel = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-        window.removeEventListener("pointercancel", cancel);
-        pane?.style.setProperty("--sftp-columns", grid);
-        pane?.style.setProperty("--sftp-min-width", originalMinimum);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", finish, { once: true });
-      window.addEventListener("pointercancel", cancel, { once: true });
+      beginColumnResize(event, {
+        move,
+        commit: () => {
+          if (!sameSource(panesRef.current[id].source, source)) {
+            preview(panesRef.current[id].view);
+            return;
+          }
+          updateView(id, {
+            filesColumnWidths: { ...panesRef.current[id].view.filesColumnWidths, [column]: width },
+          });
+        },
+        cancel: () => preview(panesRef.current[id].view),
+      });
     };
     const renaming = state.renaming;
     const creating = state.creating;
@@ -1965,6 +1981,7 @@ export function SftpPage({
                 if (event.key === "Escape") {
                   event.preventDefault();
                   patch(id, { renaming: null });
+                  bodies.current[id]?.focus({ preventScroll: true });
                 }
               }}
             />
@@ -2006,7 +2023,7 @@ export function SftpPage({
         style={
           {
             "--sftp-columns": grid,
-            "--sftp-min-width": `${widths.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
+            "--sftp-min-width": minimum,
             "--sftp-icon-column": columnIndex("name"),
             "--sftp-name-column": columnIndex("name") + 1,
             "--sftp-type-column": columnIndex("type") || "auto",
@@ -2099,13 +2116,7 @@ export function SftpPage({
             >
               <ArrowUp size={13} />
             </IconButton>
-            <IconButton
-              label={t("sftp.refresh")}
-              size="sm"
-              onClick={() =>
-                refreshPane(id, state.selectedPaths[state.selectedPaths.length - 1] ?? null)
-              }
-            >
+            <IconButton label={t("sftp.refresh")} size="sm" onClick={() => refreshPane(id)}>
               <RotateCw size={13} />
             </IconButton>
             <IconButton
@@ -2184,6 +2195,8 @@ export function SftpPage({
                     filesSortDirection: defaults.filesSortDirection,
                     filesGroupBy: "none",
                     filesLayout: "details",
+                    filesColumns: [...FILE_COLUMNS],
+                    filesColumnWidths: {},
                   },
                   { filter: "", filterKind: "all", filterOpen: false, collapsedGroups: [] },
                 );
@@ -2217,6 +2230,7 @@ export function SftpPage({
           onEditing={(editing) =>
             patch(id, { pathEditing: editing, ...(!editing ? { draft: null } : {}) })
           }
+          onFinishEditing={() => bodies.current[id]?.focus({ preventScroll: true })}
           onNavigate={(path) => navigate(id, path)}
         />
 
@@ -2344,7 +2358,7 @@ export function SftpPage({
             : null}
           <div
             className={cn("sftp-pane__scroll", columnView && "sftp-miller__column")}
-            key={columnView ? state.listing?.path : "details"}
+            key="current"
           >
             {columnView ? (
               <div className="sftp-miller__heading" title={state.listing?.path}>
@@ -2390,7 +2404,7 @@ export function SftpPage({
                           const dragged = event.dataTransfer.getData(
                             "application/x-tunnelde-file-column",
                           ) as FileColumn;
-                          if (!columns.includes(dragged)) return;
+                          if (!columns.includes(dragged) || dragged === sort) return;
                           event.preventDefault();
                           event.stopPropagation();
                           const next = columns.filter((item) => item !== dragged);
@@ -2567,6 +2581,7 @@ export function SftpPage({
                       if (event.key === "Escape") {
                         event.preventDefault();
                         patch(id, { creating: null });
+                        bodies.current[id]?.focus({ preventScroll: true });
                       }
                     }}
                   />

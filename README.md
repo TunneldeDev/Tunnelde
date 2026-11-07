@@ -99,6 +99,8 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 
 ## Documentation
 
+- File browser, column layouts and keyboard navigation: [English](docs/files.en-us.md) · [简体中文](docs/files.zh-cn.md)
+
 - Settings and profiles: [English](docs/settings.en-us.md) · [简体中文](docs/settings.zh-cn.md)
 - Proxies, jump hosts, transfers and SSHFS: [English](docs/network-storage.en-us.md) · [简体中文](docs/network-storage.zh-cn.md)
 - Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)

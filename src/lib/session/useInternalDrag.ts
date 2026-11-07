@@ -72,13 +72,20 @@ export function installInternalDrag(): () => void {
 
   const start = (event: PointerEvent) => {
     if (event.button !== 0 || event.isPrimary === false || event.pointerType === "touch") return;
+    // A release outside the WebView may never reach document. Every new primary
+    // press ends that previous gesture, including presses on resize handles.
+    cleanup(event);
+    suppressClick = null;
     const element = event.target instanceof Element ? event.target : null;
-    if (!element || element.closest("input, textarea, select, button, a, [contenteditable='true']"))
+    if (
+      !element ||
+      element.closest(
+        "input, textarea, select, button, a, [contenteditable='true'], [role='separator']",
+      )
+    )
       return;
     const source = element.closest<HTMLElement>("[draggable='true']");
     if (!source) return;
-    cleanup(event);
-    suppressClick = null;
     drag = {
       source,
       pointerId: event.pointerId,
@@ -99,6 +106,10 @@ export function installInternalDrag(): () => void {
   const move = (event: PointerEvent) => {
     const current = drag;
     if (!current || current.pointerId !== event.pointerId) return;
+    if ((event.buttons & 1) === 0 || !current.source.isConnected) {
+      cleanup(event);
+      return;
+    }
     if (!current.transfer) {
       if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 5) return;
       current.transfer = new DataTransfer();
