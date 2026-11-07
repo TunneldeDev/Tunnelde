@@ -10,6 +10,14 @@ struct Observed {
     reads: Vec<usize>,
     pending: usize,
     peak: usize,
+    closes: usize,
+    disconnected: bool,
+}
+
+#[derive(Clone, Default)]
+struct CloseReply {
+    gate: Option<Arc<tokio::sync::Semaphore>>,
+    status: u32,
 }
 
 fn string(bytes: &[u8], offset: &mut usize) -> Vec<u8> {
@@ -30,6 +38,14 @@ fn field(output: &mut Vec<u8>, bytes: &[u8]) {
 async fn server(
     write_limit: Option<u64>,
     delay: Duration,
+) -> (Arc<DataSession>, Arc<Mutex<Observed>>) {
+    server_with_close(write_limit, delay, CloseReply::default()).await
+}
+
+async fn server_with_close(
+    write_limit: Option<u64>,
+    delay: Duration,
+    close: CloseReply,
 ) -> (Arc<DataSession>, Arc<Mutex<Observed>>) {
     let (client, server) = tokio::io::duplex(1024 * 1024);
     let observed = Arc::new(Mutex::new(Observed::default()));
@@ -102,9 +118,23 @@ async fn server(
                 4 | 6 => {
                     reply.push(101);
                     reply.extend_from_slice(id);
-                    reply.extend_from_slice(&0_u32.to_be_bytes());
+                    reply.extend_from_slice(
+                        &(if kind == 4 { close.status } else { 0 }).to_be_bytes(),
+                    );
                     field(&mut reply, b"");
                     field(&mut reply, b"");
+                    if kind == 4 {
+                        state.lock().unwrap().closes += 1;
+                        if let Some(gate) = &close.gate {
+                            let gate = gate.clone();
+                            let send = send.clone();
+                            tokio::spawn(async move {
+                                let _permit = gate.acquire().await.unwrap();
+                                let _ = send.send((reply, false));
+                            });
+                            continue;
+                        }
+                    }
                     if kind == 6 {
                         let mut pos = 5;
                         let _ = string(&request, &mut pos);
@@ -135,8 +165,222 @@ async fn server(
                 break;
             }
         }
+        state.lock().unwrap().disconnected = true;
     });
     (Arc::new(DataSession::new(client).await.unwrap()), observed)
+}
+
+async fn wait_for(mut ready: impl FnMut() -> bool) {
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !ready() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("protocol event did not arrive");
+}
+
+fn remote(name: &str) -> Endpoint {
+    Endpoint {
+        session: Some(name.into()),
+        path: format!("/{name}"),
+    }
+}
+
+#[tokio::test]
+async fn cancelled_download_closes_source_channel_without_waiting_for_read_or_close_reply() {
+    let (session, observed) = server_with_close(
+        Some(131072),
+        Duration::from_secs(30),
+        CloseReply {
+            gate: Some(Arc::new(tokio::sync::Semaphore::new(0))),
+            ..Default::default()
+        },
+    )
+    .await;
+    observed.lock().unwrap().data = vec![1; 1024 * 1024];
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../.tmp/qa")
+        .join(format!("sftp-cancel-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&root).await.unwrap();
+    let destination = root.join("destination.bin");
+    let partial = root.join("destination.part");
+    tokio::fs::write(&destination, b"original destination")
+        .await
+        .unwrap();
+    tokio::fs::write(&partial, b"confirmed prefix")
+        .await
+        .unwrap();
+    let from = remote("source");
+    let to = Endpoint {
+        session: None,
+        path: display_path(&partial),
+    };
+    let sessions = Sessions {
+        source: Some(session),
+        target: None,
+    };
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let stop = AtomicBool::new(false);
+    let count = AtomicU64::new(0);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(files.segment(16..1024 * 1024, 8, &stop, &count), async {
+            wait_for(|| !observed.lock().unwrap().reads.is_empty()).await;
+            stop.store(true, Ordering::SeqCst);
+        })
+    })
+    .await
+    .expect("cancel waited for a read acknowledgement");
+    assert!(result.is_err());
+    tokio::time::timeout(Duration::from_millis(500), files.finish(true))
+        .await
+        .expect("cancel waited for a source CLOSE acknowledgement")
+        .unwrap();
+    wait_for(|| observed.lock().unwrap().disconnected).await;
+    assert_eq!(observed.lock().unwrap().closes, 0);
+    assert_eq!(count.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        tokio::fs::read(&partial).await.unwrap(),
+        b"confirmed prefix"
+    );
+    // All local segment writers have been dropped and the original stays intact.
+    tokio::fs::remove_file(&partial).await.unwrap();
+    assert_eq!(
+        tokio::fs::read(&destination).await.unwrap(),
+        b"original destination"
+    );
+    tokio::fs::remove_dir_all(root).await.unwrap();
+}
+
+#[tokio::test]
+async fn interrupted_remote_copy_still_waits_for_destination_close_and_reports_failure() {
+    let (source, input) = server(None, Duration::ZERO).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (target, output) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(gate.clone()),
+            status: 4,
+        },
+    )
+    .await;
+    let sessions = Sessions {
+        source: Some(source),
+        target: Some(target),
+    };
+    let from = remote("source");
+    let to = remote("target");
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let finish = files.finish(true);
+    tokio::pin!(finish);
+    tokio::select! {
+        result = &mut finish => panic!("destination CLOSE was not awaited: {result:?}"),
+        () = wait_for(|| output.lock().unwrap().closes == 1) => {}
+    }
+    assert!(tokio::time::timeout(Duration::from_millis(50), &mut finish)
+        .await
+        .is_err());
+    wait_for(|| input.lock().unwrap().disconnected).await;
+    gate.add_permits(1);
+    assert!(
+        finish.await.is_err(),
+        "destination CLOSE failure was swallowed"
+    );
+}
+
+#[tokio::test]
+async fn interrupted_copy_does_not_abort_a_source_channel_shared_with_its_writer() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (session, observed) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let sessions = Sessions {
+        source: Some(session.clone()),
+        target: Some(session),
+    };
+    let from = remote("source");
+    let to = remote("target");
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let finish = files.finish(true);
+    tokio::pin!(finish);
+    tokio::select! {
+        result = &mut finish => panic!("shared writer channel was aborted: {result:?}"),
+        () = wait_for(|| observed.lock().unwrap().closes == 2) => {}
+    }
+    assert!(!observed.lock().unwrap().disconnected);
+    gate.add_permits(2);
+    finish.await.unwrap();
+    let handle = sessions
+        .target
+        .as_ref()
+        .unwrap()
+        .open("/still-usable", true)
+        .await
+        .unwrap();
+    gate.add_permits(1);
+    sessions
+        .target
+        .as_ref()
+        .unwrap()
+        .close(&handle)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn completed_copy_waits_for_both_close_replies_and_reuses_its_channels() {
+    let source_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let target_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (source, input) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(source_gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let (target, output) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(target_gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let sessions = Sessions {
+        source: Some(source),
+        target: Some(target),
+    };
+    let from = remote("source");
+    let to = remote("target");
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let finish = files.finish(false);
+    tokio::pin!(finish);
+    tokio::select! {
+        result = &mut finish => panic!("successful copy skipped CLOSE: {result:?}"),
+        () = wait_for(|| input.lock().unwrap().closes == 1 && output.lock().unwrap().closes == 1) => {}
+    }
+    source_gate.add_permits(1);
+    assert!(tokio::time::timeout(Duration::from_millis(50), &mut finish)
+        .await
+        .is_err());
+    target_gate.add_permits(1);
+    finish.await.unwrap();
+    assert!(!input.lock().unwrap().disconnected);
+    assert!(!output.lock().unwrap().disconnected);
+    let next = Files::open(&sessions, &from, &to).await.unwrap();
+    source_gate.add_permits(1);
+    target_gate.add_permits(1);
+    next.finish(false).await.unwrap();
 }
 
 #[tokio::test]
@@ -166,7 +410,7 @@ async fn upload_uses_advertised_write_limit_and_keeps_a_bounded_pipeline() {
         .segment(0..bytes.len() as u64, 8, &AtomicBool::new(false), &count)
         .await
         .unwrap();
-    files.close().await.unwrap();
+    files.finish(false).await.unwrap();
     {
         let observed = state.lock().unwrap();
         assert_eq!(observed.data, bytes);
@@ -208,7 +452,7 @@ async fn remote_copy_respects_both_servers_and_preserves_offsets() {
         .segment(0..bytes.len() as u64, 8, &AtomicBool::new(false), &count)
         .await
         .unwrap();
-    files.close().await.unwrap();
+    files.finish(false).await.unwrap();
     assert_eq!(output.lock().unwrap().data, bytes);
     assert!(input
         .lock()
@@ -267,7 +511,7 @@ async fn cancel_pending_requests(limited: bool) {
     .expect("cancellation waited for server acknowledgement");
     assert!(result.is_err());
     assert_eq!(count.load(Ordering::Relaxed), 0);
-    files.close().await.unwrap();
+    files.finish(false).await.unwrap();
 }
 
 async fn limited_transfer(upload: bool) {
@@ -318,7 +562,7 @@ async fn limited_transfer(upload: bool) {
         .segment(0..bytes.len() as u64, 8, &AtomicBool::new(false), &count)
         .await
         .unwrap();
-    files.close().await.unwrap();
+    files.finish(false).await.unwrap();
     if upload {
         assert_eq!(state.lock().unwrap().data, bytes);
     } else {
@@ -383,7 +627,7 @@ async fn changing_a_limit_during_io_keeps_remote_copy_offsets_and_bytes() {
         }
     );
     result.unwrap();
-    files.close().await.unwrap();
+    files.finish(false).await.unwrap();
     assert_eq!(output.lock().unwrap().data, bytes);
     assert_eq!(count.load(Ordering::Relaxed), bytes.len() as u64);
     assert!(input.lock().unwrap().peak > 1);

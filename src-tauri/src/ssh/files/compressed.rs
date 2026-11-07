@@ -138,6 +138,12 @@ pub(super) async fn worthwhile(source: &Endpoint, sftp: Option<&SftpSession>) ->
 }
 
 impl Session {
+    /// End an interrupted read-only channel without waiting for a peer reply.
+    /// Callers must still await CLOSE before treating remote writes as settled.
+    pub fn abort(&self) {
+        self.worker.abort();
+    }
+
     pub(super) fn command(home: &str) -> String {
         format!("python3 -I -S -u -c {} {}", quote(SCRIPT), quote(home))
     }

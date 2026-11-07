@@ -133,6 +133,18 @@ impl DataSession {
             }
         }
     }
+
+    /// Only for an interrupted source channel. It owns no destination writers,
+    /// so a missing read/CLOSE acknowledgement cannot block local file cleanup.
+    fn stop_reading(&self) -> AppResult<()> {
+        match &self.backend {
+            Backend::Sftp(raw) => raw.close_session().map_err(map_sftp),
+            Backend::Compressed(worker) => {
+                worker.abort();
+                Ok(())
+            }
+        }
+    }
     async fn read(&self, handle: &str, offset: u64, length: usize) -> AppResult<Vec<u8>> {
         match &self.backend {
             Backend::Compressed(worker) => worker.read(handle, offset, length).await,
@@ -281,7 +293,22 @@ impl<'a> Files<'a> {
         self
     }
 
-    pub async fn close(self) -> AppResult<()> {
+    pub async fn finish(self, interrupted: bool) -> AppResult<()> {
+        // Source and destination normally use separate channels, even on the
+        // same SSH host. Never abort a channel that also owns a remote writer.
+        let interrupted_source = self.sessions.source.as_ref().filter(|source| {
+            interrupted
+                && !self
+                    .sessions
+                    .target
+                    .as_ref()
+                    .is_some_and(|target| Arc::ptr_eq(source, target))
+        });
+        if let Some(source) = interrupted_source {
+            let stopped = source.stop_reading();
+            let target = close_handle(&self.sessions.target, self.target_handle).await;
+            return stopped.and(target);
+        }
         let (source, target) = tokio::join!(
             close_handle(&self.sessions.source, self.source_handle),
             close_handle(&self.sessions.target, self.target_handle)

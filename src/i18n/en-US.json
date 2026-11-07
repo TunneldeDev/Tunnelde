@@ -599,7 +599,7 @@
     "loading": "Loading…",
     "invalidName": "Enter a valid file or folder name",
     "alreadyExists": "An item with this name already exists",
-    "overwriteUnsupported": "The server cannot replace this item safely during a move. Move it to a different name instead.",
+    "overwriteUnsupported": "The server does not support safely replacing this item. Choose a different destination name.",
     "overwriteTitle": "Replace existing items?",
     "overwriteBody": "These items already exist in {{path}}: {{names}}. Replace matching files and merge folders?",
     "overwrite": "Replace",
