@@ -134,6 +134,17 @@ function currentPath(index = 0): string | null {
   return pane.querySelector('[aria-current="location"]')?.getAttribute("title") ?? null;
 }
 
+function resizePointer(type: string, clientX: number, pointerId = 1, button = 0) {
+  const event = new MouseEvent(type, {
+    bubbles: true,
+    clientX,
+    button,
+    buttons: type === "pointermove" ? 1 : 0,
+  });
+  Object.defineProperty(event, "pointerId", { value: pointerId });
+  return event;
+}
+
 describe("SftpPage", () => {
   it("records the current local path of a standalone panel for workspace restoration", async () => {
     const filePane = {
@@ -298,6 +309,86 @@ describe("SftpPage", () => {
       "sftp-columns__modified",
     ]);
   });
+
+  it("resizes only the owning pointer, keeps concurrent column preferences and persists the release pixel", async () => {
+    const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const name = within(pane).getByRole("separator", { name: "File sorting: Name" });
+    fireEvent(name, resizePointer("pointerdown", 100, 1, 2));
+    fireEvent(window, resizePointer("pointerup", 400));
+    expect(name.getAttribute("aria-valuenow")).toBe("220");
+    fireEvent(name, resizePointer("pointerdown", 100));
+    fireEvent(window, resizePointer("pointermove", 400, 2));
+    fireEvent(window, resizePointer("pointerup", 400, 2));
+    fireEvent(window, resizePointer("pointercancel", 400, 2));
+    expect(name.getAttribute("aria-valuenow")).toBe("220");
+    for (let x = 101; x <= 150; x++) fireEvent(window, resizePointer("pointermove", x));
+    expect(frame).toHaveBeenCalledOnce();
+    act(() => frame.mock.calls[0]![0](0));
+    expect(name.getAttribute("aria-valuenow")).toBe("270");
+    expect(pane.style.getPropertyValue("--sftp-columns")).toBe("18px 246px 90px 90px 150px");
+    fireEvent.keyDown(within(pane).getByRole("separator", { name: "File sorting: Size" }), {
+      key: "ArrowRight",
+    });
+    fireEvent(window, resizePointer("pointerup", 180.4));
+    expect(pane.style.getPropertyValue("--sftp-columns")).toBe("18px 276px 90px 100px 150px");
+    view.unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(
+      document.querySelector<HTMLElement>(".sftp-pane")!.style.getPropertyValue("--sftp-columns"),
+    ).toBe("18px 276px 90px 100px 150px");
+  });
+
+  it("cancels only the drag preview while retaining another column's keyboard adjustment", async () => {
+    const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const name = within(pane).getByRole("separator", { name: "File sorting: Name" });
+    fireEvent(name, resizePointer("pointerdown", 100));
+    fireEvent(window, resizePointer("pointermove", 150));
+    act(() => frame.mock.calls[0]![0](0));
+    fireEvent.keyDown(within(pane).getByRole("separator", { name: "File sorting: Size" }), {
+      key: "ArrowRight",
+    });
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(pane.style.getPropertyValue("--sftp-columns")).toBe("18px 196px 90px 100px 150px");
+    expect(name.getAttribute("aria-valuenow")).toBe("220");
+  });
+
+  it.each(["pointercancel", "Escape", "blur", "unmount"])(
+    "discards an unfinished column resize on %s and ignores its later release",
+    async (reason) => {
+      const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+      const view = render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+      const handle = within(pane).getByRole("separator", { name: "File sorting: Name" });
+      const before = pane.style.getPropertyValue("--sftp-columns");
+      const minimum = pane.style.getPropertyValue("--sftp-min-width");
+      fireEvent(handle, resizePointer("pointerdown", 100));
+      fireEvent(window, resizePointer("pointermove", 150));
+      act(() => frame.mock.calls[0]![0](0));
+      expect(handle.getAttribute("aria-valuenow")).toBe("270");
+      if (reason === "unmount") view.unmount();
+      else if (reason === "Escape") fireEvent.keyDown(window, { key: "Escape" });
+      else if (reason === "blur") fireEvent(window, new Event("blur"));
+      else fireEvent(window, resizePointer(reason, 150));
+      expect(pane.style.getPropertyValue("--sftp-columns")).toBe(before);
+      expect(pane.style.getPropertyValue("--sftp-min-width")).toBe(minimum);
+      expect(handle.getAttribute("aria-valuenow")).toBe("220");
+      fireEvent(window, resizePointer("pointerup", 200));
+      if (reason !== "unmount") view.unmount();
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      expect(
+        document.querySelector<HTMLElement>(".sftp-pane")!.style.getPropertyValue("--sftp-columns"),
+      ).toBe(before);
+    },
+  );
 
   it("uses macOS file shortcuts without deleting while typing", async () => {
     const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");

@@ -1,5 +1,6 @@
 import { useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { usePointerDrag } from "@/lib/session/usePointerDrag";
 
 export function FileSplitView({
   storageKey,
@@ -12,7 +13,7 @@ export function FileSplitView({
 }) {
   const { t } = useTranslation();
   const root = useRef<HTMLDivElement>(null);
-  const drag = useRef<number | null>(null);
+  const beginResize = usePointerDrag();
   const [ratio, setRatio] = useState(() => {
     try {
       const stored = Number(localStorage.getItem(storageKey) ?? 50);
@@ -21,23 +22,23 @@ export function FileSplitView({
       return 50;
     }
   });
-  const latest = useRef(ratio);
-  const change = (next: number, persist = true) => {
-    latest.current = Math.max(20, Math.min(80, next));
-    setRatio(latest.current);
-    if (persist) {
-      try {
-        localStorage.setItem(storageKey, String(latest.current));
-      } catch {
-        /* Optional preference. */
-      }
+  const savedRatio = useRef(ratio);
+  const change = (next: number) => {
+    const clamped = Math.max(20, Math.min(80, next));
+    savedRatio.current = clamped;
+    setRatio(clamped);
+    try {
+      localStorage.setItem(storageKey, String(clamped));
+    } catch {
+      /* Optional preference. */
     }
   };
+  const grid = (value: number) => `minmax(0, ${value}fr) 6px minmax(0, ${100 - value}fr)`;
   return (
     <div
       className="sftp-panes sftp-panes--resizable"
       ref={root}
-      style={{ gridTemplateColumns: `minmax(0, ${ratio}fr) 6px minmax(0, ${100 - ratio}fr)` }}
+      style={{ gridTemplateColumns: grid(ratio) }}
     >
       {left}
       <div
@@ -51,32 +52,26 @@ export function FileSplitView({
         aria-valuenow={Math.round(ratio)}
         onDoubleClick={() => change(50)}
         onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.preventDefault();
-          drag.current = event.pointerId;
-          event.currentTarget.setPointerCapture?.(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          if (drag.current !== event.pointerId || !root.current) return;
-          const rect = root.current.getBoundingClientRect();
-          if (rect.width > 0) change(((event.clientX - rect.left) / rect.width) * 100, false);
-        }}
-        onPointerUp={(event) => {
-          if (drag.current !== event.pointerId) return;
-          drag.current = null;
-          change(latest.current);
-          if (event.currentTarget.hasPointerCapture?.(event.pointerId))
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }}
-        onLostPointerCapture={() => {
-          if (drag.current !== null) {
-            drag.current = null;
-            change(latest.current);
-          }
-        }}
-        onPointerCancel={() => {
-          drag.current = null;
-          change(latest.current);
+          const panel = root.current;
+          if (!panel) return;
+          const handle = event.currentTarget;
+          const origin = event.clientX;
+          let latest = ratio;
+          const preview = (value: number) => {
+            panel.style.gridTemplateColumns = grid(value);
+            handle.setAttribute("aria-valuenow", String(Math.round(value)));
+          };
+          beginResize(event, {
+            move: (next) => {
+              const rect = panel.getBoundingClientRect();
+              const width = rect.width - handle.getBoundingClientRect().width;
+              if (width <= 0 || !Number.isFinite(next.clientX)) return;
+              latest = Math.max(20, Math.min(80, ratio + ((next.clientX - origin) / width) * 100));
+              preview(latest);
+            },
+            commit: () => change(latest),
+            cancel: () => preview(savedRatio.current),
+          });
         }}
         onKeyDown={(event) => {
           const next =

@@ -19,6 +19,9 @@ In **View options**, choose **Details view** or **Column view**. Details view su
 
 Filtering, grouping, hidden files and folders-first ordering are independent for
 each panel. Column order and widths are saved with its view preferences.
+Resizing previews changes while dragging and saves them on release. Esc or switching
+away from the window cancels an unfinished drag. The separator between two file
+panels follows the same behavior; double-click it to restore equal widths.
 **Reset panel view** restores the default columns, order and widths, clears the
 filter and grouping, and restores sorting and hidden-file defaults from Settings.
 
