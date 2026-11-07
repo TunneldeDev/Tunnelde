@@ -6,6 +6,32 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.31.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.7...v0.31.0) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **tasks:** dock background tasks throughout the workbench
+- **files:** preserve selection and focus through file navigation
+- **drag:** keep resize handles out of internal drag operations
+
+<details open>
+<summary>详细变更 | Details (3)</summary>
+
+### 新增 | New
+
+- **tasks:** dock background tasks throughout the workbench ([#138](https://github.com/TunneldeDev/Tunnelde/pull/138)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **files:** preserve selection and focus through file navigation ([#140](https://github.com/TunneldeDev/Tunnelde/pull/140), [be0748e](https://github.com/TunneldeDev/Tunnelde/commit/be0748e5f034f5712f49944e5dd1f8cc975f5884)) @quyansiyuanwang
+- **drag:** keep resize handles out of internal drag operations ([#140](https://github.com/TunneldeDev/Tunnelde/pull/140)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.7](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.6...v0.30.7) - 2026-11-07
 
 ### 更新概览 | Highlights

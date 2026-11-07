@@ -1790,6 +1790,7 @@
     "moveHint": "Move task window · arrow keys move · Shift for fine adjustment · Escape cancels",
     "resizeHint": "Resize task window · arrow keys resize · Shift for fine adjustment",
     "resetLayout": "Reset task window layout",
+    "floatWindow": "Open as a floating window",
     "keepOpen": "Keep task window open",
     "installPlugin": "Install {{name}}",
     "status": {
