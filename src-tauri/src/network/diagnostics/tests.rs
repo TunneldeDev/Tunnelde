@@ -152,3 +152,36 @@ async fn live_tcp_quality() {
     println!("{}", serde_json::to_string_pretty(&result).unwrap());
     assert_eq!(result.successful, 3);
 }
+
+#[tokio::test]
+async fn tcp_success_does_not_imply_https_success() {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let proxy = format!("http://{}", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        for attempt in 0..4 {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                header.push(stream.read_u8().await.unwrap());
+            }
+            stream
+                .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                .await
+                .unwrap();
+            if attempt == 3 {
+                let mut hello = [0; 8192];
+                let _ = stream.read(&mut hello).await;
+            }
+        }
+    });
+    let tcp = measure_route("archive.example", 443, &proxy).await.unwrap();
+    assert_eq!(tcp.successful, 3);
+    let https = check_https("archive.example", &proxy).await;
+    assert!(!https.success);
+    assert_eq!(https.error.unwrap().to_string(), "network.httpsFailed");
+    server.await.unwrap();
+}

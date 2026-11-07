@@ -1106,7 +1106,10 @@
     "pagination": "插件分页",
     "previousPage": "上一页",
     "nextPage": "下一页",
-    "pageInfo": "{{page}} / {{pages}} · 共 {{count}} 个插件"
+    "pageInfo": "{{page}} / {{pages}} · 共 {{count}} 个插件",
+    "tlsHandshake": "当前线路 TLS 握手失败。请检查代理节点及 GitHub、release-assets.githubusercontent.com 规则，或在网络设置中选择其他代理。",
+    "connectFailed": "无法通过插件市场所配置的线路连接，请检查网络设置。",
+    "timeout": "插件下载超时，请检查当前代理线路后重试。"
   },
   "node": {
     "required": "启动此插件前请配置 Node。",
@@ -1551,14 +1554,18 @@
     "qualityLatency": "连接延迟（中位数）",
     "qualityFastest": "最快",
     "qualitySlowest": "最慢",
-    "qualityHint": "沿所选路径测量最多 3 次 TCP 连接，总时限 15 秒。包含 DNS 和代理协商，不代表 ping 往返延迟或带宽；失败不计入耗时统计。中位数 ≤100 毫秒为较低，≤300 毫秒为适中，更高为较高。",
+    "qualityHint": "测试 TCP/代理通道三次连接建立耗时，不是 ping 往返延迟或带宽。443 端口额外验证 HTTPS；其他端口不发送应用数据，不测试登录。",
     "quality": {
       "fast": "连接成功 · 延迟较低",
       "normal": "连接成功 · 延迟适中",
       "slow": "连接成功 · 延迟较高",
       "unstable": "部分连接尝试失败",
       "unreachable": "连接失败"
-    }
+    },
+    "httpsFailed": "TCP 代理通道已连通，但 HTTPS/TLS 握手失败；此线路暂不能证明可下载插件。请检查代理规则、节点与目标站点。",
+    "httpsPassed": "HTTPS 已响应（HTTP {{status}}，{{ms}}）；不代表其他下载域名也可达。",
+    "testMarketplaceRoute": "插件市场当前线路",
+    "testUpdatesRoute": "软件更新当前线路"
   },
   "pluginErrors": {
     "startFailed": "无法启动 {{name}}：{{error}}",

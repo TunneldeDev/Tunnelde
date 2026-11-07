@@ -1106,7 +1106,10 @@
     "pagination": "Plugin pages",
     "previousPage": "Previous page",
     "nextPage": "Next page",
-    "pageInfo": "{{page}} / {{pages}} · {{count}} plugins"
+    "pageInfo": "{{page}} / {{pages}} · {{count}} plugins",
+    "tlsHandshake": "TLS handshake failed through the selected route. Check the proxy node and rules for GitHub and release-assets.githubusercontent.com, or select another proxy in Network settings.",
+    "connectFailed": "Could not connect through the configured marketplace route. Check Network settings.",
+    "timeout": "Plugin download timed out. Check the selected proxy route and try again."
   },
   "node": {
     "required": "Set up Node to start this plugin.",
@@ -1551,14 +1554,18 @@
     "qualityLatency": "Connection latency (median)",
     "qualityFastest": "Fastest",
     "qualitySlowest": "Slowest",
-    "qualityHint": "Measures up to 3 TCP connections through the selected route, within 15 seconds. Includes DNS and proxy negotiation, not ping RTT or bandwidth. Failures are excluded from timing statistics. Fast ≤100 ms; normal ≤300 ms; higher values are slow.",
+    "qualityHint": "Measures three TCP/proxy connection setup times, not ping RTT or bandwidth. Port 443 also verifies HTTPS. Other ports send no application data; login is not tested.",
     "quality": {
       "fast": "Connection established · low latency",
       "normal": "Connection established · moderate latency",
       "slow": "Connection established · high latency",
       "unstable": "Some connection attempts failed",
       "unreachable": "Connection failed"
-    }
+    },
+    "httpsFailed": "The TCP proxy tunnel works, but HTTPS/TLS failed. Check proxy routing, the node and destination before downloading plugins.",
+    "httpsPassed": "HTTPS responded (HTTP {{status}}, {{ms}}); other download domains may differ.",
+    "testMarketplaceRoute": "Current marketplace route",
+    "testUpdatesRoute": "Current update route"
   },
   "pluginErrors": {
     "startFailed": "Could not start {{name}}: {{error}}",
