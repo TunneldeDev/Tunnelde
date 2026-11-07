@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
 
 export function checkParserParity(hostResponse, parsedResponse) {
@@ -13,12 +13,11 @@ export function checkParserParity(hostResponse, parsedResponse) {
 
 async function main(application, hub, responsePath) {
   assert.ok(application && hub && responsePath, "Expected application, hub, and response paths");
-  const { parseRustCatalogue } = await import(
+  const { loadRustCatalogue } = await import(
     pathToFileURL(resolve(hub, "scripts/sync-sdk.mjs")).href
   );
-  const source = await readFile(join(resolve(application), "src-tauri/src/plugins/api.rs"), "utf8");
   const hostResponse = JSON.parse(await readFile(resolve(responsePath), "utf8"));
-  checkParserParity(hostResponse, parseRustCatalogue(source));
+  checkParserParity(hostResponse, await loadRustCatalogue(application));
   console.log(`SDK parser matches ${hostResponse.methods.length} serialized host methods.`);
 }
 

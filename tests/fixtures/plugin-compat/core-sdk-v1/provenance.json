@@ -1,0 +1,7 @@
+{
+  "repository": "TunneldeDev/Tunnelde-hub",
+  "commit": "cb1be16f1bdaa0896c013e7ac3f5974cb2e89090",
+  "path": "sdk/tunnelde-plugin.mjs",
+  "sha256": "c8f22cd663e1978e5ad751e24f27ade321b74746896e915c66a1a1f478f9aaf9",
+  "note": "Frozen pre-contract SDK. The companion probe is newly authored, not a historical shipped plugin."
+}

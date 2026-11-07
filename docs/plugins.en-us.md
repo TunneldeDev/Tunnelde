@@ -317,6 +317,11 @@ send an empty object. Discovery emits no events. CI validates a response seriali
 and checks the discovery method's permissions and metadata. The schema permits additive fields
 and unknown stability values; it is not a schema for the other methods' request or result data.
 
+The stable core now also includes `sessions.list` and plugin-scoped `storage.get`,
+`storage.set` and `storage.delete`. Stable entries expose an optional versioned `contract`
+with input, result and error JSON Schemas. See [API compatibility](plugin-api.en-us.md)
+for field contracts, quotas, errors and the frozen pre-contract SDK regression probe.
+
 | Permission                          | Available operations                                                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |

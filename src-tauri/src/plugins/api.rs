@@ -21,6 +21,7 @@ const MAX_REQUEST: usize = 256 * 1024;
 const MAX_TEXT: usize = 512 * 1024;
 const MAX_STORAGE: usize = 256 * 1024;
 const FRONTEND_EVENT: &str = "plugin://workspace-request";
+const CORE_CONTRACTS: &str = include_str!("contracts/core-v1.json");
 
 #[derive(Clone)]
 pub struct HostContext {
@@ -124,7 +125,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("groups.create", ["hosts.write"], "{input:GroupInput}", "Create a validated host group."),
     method!("groups.update", ["hosts.write"], "{id:string,input:GroupInput}", "Update a validated host group."),
     method!("groups.delete", ["hosts.write"], "{id:string}", "Delete a host group through the normal group service."),
-    method!("sessions.list", ["sessions.read"], "{}", "List active SSH session metadata; no passwords or private keys."),
+    stable_method!("sessions.list", ["sessions.read"], "{}", "List active SSH session metadata; no passwords or private keys.", "0.21.0"),
     method!("sessions.connect", ["ssh.exec"], "{request:SshConnectRequest}", "Connect a saved host with normal host-key verification; never auto-trust a server."),
     method!("sessions.disconnect", ["ssh.exec"], "{sessionId:string}", "Disconnect an active SSH session."),
     method!("sessions.exec", ["ssh.exec"], "{sessionId:string,command:string,timeoutMs?:number}", "Execute in a separate SSH channel; return stdout/stderr/exitCode/signal. Timeout 100–60000ms, output at most 1MiB."),
@@ -176,9 +177,9 @@ pub const METHODS: &[ApiMethod] = &[
     method!("workspace.returnSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Return a docked list to the sidebar."),
     method!("clipboard.readText", ["clipboard.read"], "{}", "Read the system text clipboard."),
     method!("clipboard.writeText", ["clipboard.write"], "{text:string}", "Replace the system text clipboard."),
-    method!("storage.get", [], "{key:string}", "Read plugin-scoped JSON data. Keys use 1–128 ASCII letters, digits, dot, hyphen or underscore."),
-    method!("storage.set", [], "{key:string,value:JSON}", "Persist plugin-scoped JSON data, at most 256KiB total per plugin."),
-    method!("storage.delete", [], "{key:string}", "Remove a key from plugin-scoped JSON data."),
+    stable_method!("storage.get", [], "{key:string}", "Read plugin-scoped JSON data. Keys use 1–128 ASCII letters, digits, dot, hyphen or underscore.", "0.21.0"),
+    stable_method!("storage.set", [], "{key:string,value:JSON}", "Persist plugin-scoped JSON data, at most 256KiB total per plugin.", "0.21.0"),
+    stable_method!("storage.delete", [], "{key:string}", "Remove a key from plugin-scoped JSON data.", "0.21.0"),
     method!("ui.showMessage", [], "{message:string,kind?:info|success|error}", "Show a bounded notification prefixed with the installed plugin's identity."),
     method!("ui.confirm", [], "{message:string}", "Ask the user a plugin-identified confirmation; never replace an existing dialog."),
 ];
@@ -259,17 +260,37 @@ fn encode(value: impl Serialize) -> AppResult<Value> {
     Ok(serde_json::to_value(value)?)
 }
 
+pub(super) fn validate_params(params: &Value) -> AppResult<()> {
+    if !params.is_object() || serde_json::to_vec(params)?.len() > MAX_REQUEST {
+        return Err(AppError::validation("plugin.api.invalidParams"));
+    }
+    Ok(())
+}
+
 fn describe_api() -> Value {
-    json!({"version":1,"methods":METHODS})
+    static CONTRACTS: OnceLock<Value> = OnceLock::new();
+    let contracts = CONTRACTS.get_or_init(|| {
+        serde_json::from_str(CORE_CONTRACTS).expect("embedded core contracts must be valid JSON")
+    });
+    let methods: Vec<Value> = METHODS
+        .iter()
+        .map(|method| {
+            let mut description =
+                serde_json::to_value(method).expect("method metadata must serialize");
+            if let Some(contract) = contracts["methods"].get(method.name) {
+                description["contract"] = contract.clone();
+            }
+            description
+        })
+        .collect();
+    json!({"version":1,"methods":methods})
 }
 
 pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> AppResult<Value> {
     let entry =
         method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
     authorize(context, entry.permissions)?;
-    if !params.is_object() || serde_json::to_vec(&params)?.len() > MAX_REQUEST {
-        return Err(AppError::validation("plugin.api.invalidParams"));
-    }
+    validate_params(&params)?;
     let result = route(context, method, params).await?;
     // A revoked or replaced runtime must not receive a response after an await.
     authorize(context, entry.permissions)?;
@@ -887,6 +908,9 @@ async fn storage_at(
     authorize_request: impl Fn() -> AppResult<()>,
 ) -> AppResult<Value> {
     static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    if !matches!(method, "storage.get" | "storage.set" | "storage.delete") {
+        return Err(AppError::validation("plugin.api.unknownMethod"));
+    }
     let key = storage_key(params)?;
     let _guard = LOCK
         .get_or_init(|| tokio::sync::Mutex::new(()))
@@ -1058,6 +1082,10 @@ pub fn plugin_workspace_reply(
     let _ = request.reply.send(result);
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "contracts/tests.rs"]
+mod contract_tests;
 
 #[cfg(test)]
 mod tests {

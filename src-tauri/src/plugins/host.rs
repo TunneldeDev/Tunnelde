@@ -329,8 +329,8 @@ async fn handle_plugin_request(
     let result = if value.get("jsonrpc").and_then(Value::as_str) != Some("2.0") || method.is_empty()
     {
         Err(AppError::validation("plugin.api.invalidRequest"))
-    } else if !params.is_object() || params.to_string().len() > 256 * 1024 {
-        Err(AppError::validation("plugin.api.invalidParams"))
+    } else if let Err(error) = api::validate_params(&params) {
+        Err(error)
     } else if let Some(context) = context {
         let security = context
             .app
@@ -363,19 +363,21 @@ async fn handle_plugin_request(
         Ok(_) => {
             json!({"jsonrpc":"2.0","id":id,"error":{"code":-32002,"message":"plugin.api.responseTooLarge"}})
         }
-        Err(error) => {
-            let message = error.to_string();
-            let code = match message.as_str() {
-                "plugin.api.unknownMethod" => -32601,
-                "plugin.api.invalidRequest" => -32600,
-                "plugin.api.invalidParams" => -32602,
-                _ if message.starts_with("pluginSecurity.") => -32001,
-                _ => -32000,
-            };
-            json!({"jsonrpc":"2.0","id":id,"error":{"code":code,"message":message,"data":{"code":error.code()}}})
-        }
+        Err(error) => json!({"jsonrpc":"2.0","id":id,"error":error_payload(&error)}),
     };
     let _ = write_reply(stdin, reply).await;
+}
+
+pub(super) fn error_payload(error: &AppError) -> Value {
+    let message = error.to_string();
+    let code = match message.as_str() {
+        "plugin.api.unknownMethod" => -32601,
+        "plugin.api.invalidRequest" => -32600,
+        "plugin.api.invalidParams" => -32602,
+        _ if message.starts_with("pluginSecurity.") => -32001,
+        _ => -32000,
+    };
+    json!({"code":code,"message":message,"data":{"code":error.code()}})
 }
 
 async fn write_reply(stdin: &Arc<Mutex<ChildStdin>>, reply: Value) -> AppResult<()> {
@@ -482,6 +484,20 @@ mod tests {
         assert_eq!(manifest.api_version, 1);
         assert_eq!(manifest.id, "hello");
         assert_eq!(manifest.main, "index.js");
+    }
+
+    #[test]
+    fn frozen_core_sdk_is_unchanged_and_probe_manifest_loads() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/plugin-compat/core-sdk-v1");
+        let bytes = std::fs::read(dir.join("sdk.mjs")).unwrap();
+        assert_eq!(
+            format!("{:x}", Sha256::digest(bytes)),
+            "c8f22cd663e1978e5ad751e24f27ade321b74746896e915c66a1a1f478f9aaf9"
+        );
+        let manifest = super::super::manifest::load(&dir).unwrap();
+        assert_eq!(manifest.id, "qa-core-sdk");
+        assert_eq!(manifest.permissions, ["sessions.read"]);
     }
 
     #[tokio::test]
@@ -717,6 +733,44 @@ mod tests {
             .await
             .unwrap_err();
         assert!(error.to_string().contains("unknown method: unknown.method"));
+        assert_eq!(
+            host.request("shutdown", json!({}), timeout).await.unwrap(),
+            Value::Null
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires explicit TUNNELDE_TEST_NODE executable"]
+    async fn talks_json_rpc_with_the_frozen_core_sdk() {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../tests/fixtures/plugin-compat/core-sdk-v1");
+        let manifest = super::super::manifest::load(&dir).unwrap();
+        let entry = super::super::manifest::entry_path(&dir, &manifest.main).unwrap();
+        let node = std::env::var("TUNNELDE_TEST_NODE").expect("explicit test Node executable");
+        let host = PluginHost::spawn(&node, &entry, &dir, None).await.unwrap();
+        let timeout = Duration::from_secs(10);
+        assert_eq!(
+            host.request(
+                "initialize",
+                json!({"apiVersion":1,"pluginId":"qa-core-sdk"}),
+                timeout
+            )
+            .await
+            .unwrap(),
+            json!({"ok":true})
+        );
+        let error = host
+            .request(
+                "command.run",
+                json!({"command":"call","input":{"method":"api.describe","captureError":true}}),
+                timeout,
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            error,
+            json!({"code":-32001,"message":"pluginSecurity.unavailable","data":{"code":"validation"}})
+        );
         assert_eq!(
             host.request("shutdown", json!({}), timeout).await.unwrap(),
             Value::Null
