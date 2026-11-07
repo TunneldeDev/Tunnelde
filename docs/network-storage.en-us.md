@@ -190,7 +190,11 @@ its closed file's size and modification time. If both source and staging metadat
 still match, resume verifies the first and last blocks and continues at the saved
 offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
 verification. A changed source or mismatched partial file is rejected. Verification
-has its own visible status and can be cancelled while awaiting network reads.
+has its own visible status. Cancellation covers its metadata requests, read-only
+file opening, reads and closing; a delayed read or CLOSE reply does not block
+pausing. The shared connection remains available. Remote writer CLOSE,
+recovery truncation and final publication still await their server confirmations
+before the task reports completion or updates its checkpoint.
 
 New remote overwrite tasks negotiate `posix-rename@openssh.com` version 1 before
 uploading. The previous destination remains readable while the new file is staged;
