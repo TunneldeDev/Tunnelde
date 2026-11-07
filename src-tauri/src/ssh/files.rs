@@ -24,6 +24,8 @@ mod remote_commit;
 mod scheduler;
 pub mod search;
 mod segments;
+mod verification;
+use verification::{fingerprint_file, verify_prefix, verify_range};
 
 pub const TRANSFER_EVENT: &str = "sftp://transfer";
 
@@ -1158,6 +1160,12 @@ async fn interruptible<T>(
 }
 
 impl Reader {
+    /// A read handle has no writes to acknowledge. Let its queued CLOSE finish
+    /// on the shared channel, without holding up a cancelled transfer.
+    async fn finish_cancellable(self, cancel: &AtomicBool) -> AppResult<()> {
+        interruptible(Some(cancel), self.finish()).await
+    }
+
     async fn seek(&mut self, offset: u64) -> AppResult<()> {
         match self {
             Reader::Local(file) => file.seek(std::io::SeekFrom::Start(offset)).await?,
@@ -1418,9 +1426,9 @@ async fn copy_entry(
         return Err(AppError::Ssh(CANCELLED.into()));
     }
 
-    if is_dir(from, from_sftp).await? {
+    if interruptible(Some(cancel), is_dir(from, from_sftp)).await? {
         make_dir(to, to_sftp).await?;
-        for path in children(from, from_sftp).await? {
+        for path in interruptible(Some(cancel), children(from, from_sftp)).await? {
             let child_from = from.child(path);
             let child_to = to.join(&file_name_of(&child_from.path));
             let child_to = to.child(child_to);
@@ -1556,64 +1564,6 @@ async fn rename_endpoint(
         }
     }
 }
-async fn verify_prefix(
-    reader: &mut Reader,
-    partial: &Endpoint,
-    sftp: Option<&SftpSession>,
-    length: u64,
-    cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
-    verify_range(reader, partial, sftp, 0, length, cancel).await
-}
-
-async fn verify_range(
-    reader: &mut Reader,
-    partial: &Endpoint,
-    sftp: Option<&SftpSession>,
-    offset: u64,
-    length: u64,
-    cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
-    let mut other = open_reader(partial, sftp).await?;
-    let mut left = length;
-    let mut a = vec![0; CHUNK];
-    let mut b = vec![0; CHUNK];
-    let result = async {
-        reader.seek(offset).await?;
-        other.seek(offset).await?;
-        while left > 0 {
-            if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
-                return Err(AppError::Ssh(CANCELLED.into()));
-            }
-            let n = left.min(CHUNK as u64) as usize;
-            let mut got = 0;
-            while got < n {
-                let read = interruptible(cancel, reader.read(&mut a[got..n])).await?;
-                if read == 0 {
-                    return Err(AppError::validation("sftp.resumePrefixMismatch"));
-                }
-                got += read;
-            }
-            let mut got = 0;
-            while got < n {
-                let read = interruptible(cancel, other.read(&mut b[got..n])).await?;
-                if read == 0 {
-                    return Err(AppError::validation("sftp.resumePrefixMismatch"));
-                }
-                got += read;
-            }
-            if a[..n] != b[..n] {
-                return Err(AppError::validation("sftp.resumePrefixMismatch"));
-            }
-            left -= n as u64;
-        }
-        Ok(())
-    }
-    .await;
-    let closed = other.finish().await;
-    result?;
-    closed
-}
 async fn source_stamp(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
@@ -1657,38 +1607,6 @@ fn staging_endpoint(destination: &Endpoint, id: &str, suffix: &str) -> Endpoint 
 }
 
 type BackupFingerprint = (u64, Option<i64>, String);
-async fn fingerprint_file(
-    endpoint: &Endpoint,
-    sftp: Option<&SftpSession>,
-    cancel: &AtomicBool,
-) -> AppResult<BackupFingerprint> {
-    use sha2::{Digest, Sha256};
-    let before = source_stamp(endpoint, sftp).await?;
-    let mut reader = open_reader(endpoint, sftp).await?;
-    let result = async {
-        let mut hash = Sha256::new();
-        let mut buf = vec![0; CHUNK];
-        loop {
-            if cancel.load(Ordering::SeqCst) {
-                return Err(AppError::Ssh(CANCELLED.into()));
-            }
-            let n = interruptible(Some(cancel), reader.read(&mut buf)).await?;
-            if n == 0 {
-                break;
-            }
-            hash.update(&buf[..n]);
-        }
-        Ok(format!("{:x}", hash.finalize()))
-    }
-    .await;
-    let closed = reader.finish().await;
-    let digest = result?;
-    closed?;
-    if source_stamp(endpoint, sftp).await? != before {
-        return Err(AppError::validation("sftp.resumeSourceChanged"));
-    }
-    Ok((before.0, before.1, digest))
-}
 fn backup_checkpoint(app: &AppHandle, key: &str) -> AppResult<Option<BackupFingerprint>> {
     app.state::<AppState>().db.with(|conn| {
         use rusqlite::OptionalExtension;
@@ -1708,7 +1626,10 @@ async fn backup_is_owned(
     sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
 ) -> AppResult<bool> {
-    if file_length(backup, sftp).await?.is_none() {
+    if interruptible(Some(cancel), file_length(backup, sftp))
+        .await?
+        .is_none()
+    {
         return Ok(false);
     }
     let expected =
@@ -1797,7 +1718,10 @@ async fn cleanup_backup(
     let Some(expected) = backup_checkpoint(app, key)? else {
         return Ok(());
     };
-    if file_length(backup, sftp).await?.is_some() {
+    if interruptible(Some(cancel), file_length(backup, sftp))
+        .await?
+        .is_some()
+    {
         match remove_verified_backup(backup, sftp, &expected, cancel).await {
             Ok(true) => {}
             Ok(false) => {
@@ -1834,7 +1758,7 @@ async fn durable_copy_file(
     resuming: bool,
 ) -> AppResult<()> {
     use sha2::{Digest, Sha256};
-    let stamp = source_stamp(from, from_sftp).await?;
+    let stamp = interruptible(Some(cancel), source_stamp(from, from_sftp)).await?;
     let key = format!(
         "transfer-file:{id}:{:x}",
         Sha256::digest(to.path.as_bytes())
@@ -1856,12 +1780,12 @@ async fn durable_copy_file(
         }
         if old.2 {
             phase(meter.app, id, "verifying");
-            let mut source = open_reader(from, from_sftp).await?;
-            if file_length(to, to_sftp).await? != Some(stamp.0) {
+            let mut source = interruptible(Some(cancel), open_reader(from, from_sftp)).await?;
+            if interruptible(Some(cancel), file_length(to, to_sftp)).await? != Some(stamp.0) {
                 return Err(AppError::validation("sftp.resumePrefixMismatch"));
             }
             verify_prefix(&mut source, to, to_sftp, stamp.0, Some(cancel)).await?;
-            source.finish().await?;
+            source.finish_cancellable(cancel).await?;
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             meter.add(stamp.0);
             return Ok(());
@@ -1883,11 +1807,11 @@ async fn durable_copy_file(
         #[cfg(not(windows))]
         let can_recover_window = true;
         if can_recover_window {
-            artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp).await?;
+            artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp, Some(cancel)).await?;
         }
     }
     let partial = if resuming {
-        file_length(&temp, to_sftp).await?
+        interruptible(Some(cancel), file_length(&temp, to_sftp)).await?
     } else {
         None
     };
@@ -1895,11 +1819,14 @@ async fn durable_copy_file(
     if to_sftp.is_none() && partial.is_some() && local_staging.is_none() {
         return Err(AppError::TransferArtifactUnrecognized { path: temp.path });
     }
-    if resuming && partial.is_none() && file_length(to, to_sftp).await? == Some(stamp.0) {
+    if resuming
+        && partial.is_none()
+        && interruptible(Some(cancel), file_length(to, to_sftp)).await? == Some(stamp.0)
+    {
         phase(meter.app, id, "verifying");
-        let mut completed = open_reader(from, from_sftp).await?;
+        let mut completed = interruptible(Some(cancel), open_reader(from, from_sftp)).await?;
         let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
-        completed.finish().await?;
+        completed.finish_cancellable(cancel).await?;
         if checked.is_ok() {
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             save(true)?;
@@ -1911,7 +1838,7 @@ async fn durable_copy_file(
     if existing > stamp.0 {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
-    let mut reader = open_reader(from, from_sftp).await?;
+    let mut reader = interruptible(Some(cancel), open_reader(from, from_sftp)).await?;
     if existing > 0 {
         phase(meter.app, id, "verifying");
         let verified = artifacts::resume_offset(
@@ -1926,17 +1853,22 @@ async fn durable_copy_file(
         )
         .await;
         if let Err(error) = verified {
-            let _ = reader.finish().await;
+            let _ = reader.finish_cancellable(cancel).await;
             return Err(error);
         }
     }
-    let destination_exists = file_length(to, to_sftp).await?.is_some();
+    let destination_exists = interruptible(Some(cancel), file_length(to, to_sftp))
+        .await?
+        .is_some();
     if destination_exists && !overwrite {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
     let remote_replacement = if overwrite && backup_checkpoint(meter.app, &backup_key)?.is_none() {
         if let Some(session_id) = &to.session {
-            if file_length(&backup, to_sftp).await?.is_some() {
+            if interruptible(Some(cancel), file_length(&backup, to_sftp))
+                .await?
+                .is_some()
+            {
                 return Err(AppError::validation("sftp.alreadyExists"));
             }
             Some(
@@ -1952,7 +1884,11 @@ async fn durable_copy_file(
     } else {
         None
     };
-    if partial.is_none() && file_length(&temp, to_sftp).await?.is_some() {
+    if partial.is_none()
+        && interruptible(Some(cancel), file_length(&temp, to_sftp))
+            .await?
+            .is_some()
+    {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
     artifacts::record(meter.app, id, to)?;
@@ -2000,7 +1936,8 @@ async fn durable_copy_file(
         from_sftp.is_some() || to_sftp.is_some(),
     );
     let copied = if from_sftp.is_some() || to_sftp.is_some() {
-        let (closed, read_closed) = tokio::join!(writer.finish(), reader.finish());
+        let (closed, read_closed) =
+            tokio::join!(writer.finish(), reader.finish_cancellable(cancel));
         closed?;
         read_closed?;
         parallel_copy_file(
@@ -2029,7 +1966,7 @@ async fn durable_copy_file(
         }
         .await;
         let closed = writer.finish().await;
-        let read_closed = reader.finish().await;
+        let read_closed = reader.finish_cancellable(cancel).await;
         if closed.is_ok() && (result.is_ok() || cancel.load(Ordering::SeqCst)) {
             // Closing flushes an interrupted sequential write too. Its resulting
             // length must lie within the source bytes submitted to this writer.
@@ -2049,7 +1986,7 @@ async fn durable_copy_file(
         result.and(closed).and(read_closed)
     };
     copied?;
-    if source_stamp(from, from_sftp).await? != stamp {
+    if interruptible(Some(cancel), source_stamp(from, from_sftp)).await? != stamp {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
     }
     if cancel.load(Ordering::SeqCst) {
@@ -2406,7 +2343,11 @@ async fn run(
         if !resuming && from.session == to.session {
             match from_sftp.as_ref() {
                 Some(sftp) => {
-                    check_remote_destination(sftp, &from.path, &to.path, overwrite).await?
+                    interruptible(
+                        Some(cancel),
+                        check_remote_destination(sftp, &from.path, &to.path, overwrite),
+                    )
+                    .await?
                 }
                 None => {
                     check_local_destination(Path::new(&from.path), Path::new(&to.path), overwrite)?
@@ -2414,7 +2355,7 @@ async fn run(
             }
         } else if !resuming && !overwrite {
             let exists = match to_sftp.as_ref() {
-                Some(sftp) => remote_exists(sftp, &to.path).await?,
+                Some(sftp) => interruptible(Some(cancel), remote_exists(sftp, &to.path)).await?,
                 None => Path::new(&to.path).try_exists()?,
             };
             if exists {
@@ -4227,6 +4168,12 @@ mod tests {
         #[derive(Default)]
         struct State {
             closes: AtomicUsize,
+            hold_open: AtomicBool,
+            open_started: Notify,
+            release_open: Notify,
+            hold_metadata: AtomicBool,
+            metadata_started: Notify,
+            release_metadata: Notify,
             fail_write: AtomicBool,
             fail_close: AtomicBool,
             delay_close: AtomicBool,
@@ -4280,6 +4227,10 @@ mod tests {
                 flags: OpenFlags,
                 _attrs: FileAttributes,
             ) -> Result<Handle, StatusCode> {
+                self.state.open_started.notify_one();
+                if self.state.hold_open.load(Ordering::SeqCst) {
+                    self.state.release_open.notified().await;
+                }
                 // Real OS files model the protocol's truncate/create/exclusive behavior.
                 let file = std::fs::OpenOptions::new()
                     .read(flags.contains(OpenFlags::READ))
@@ -4367,6 +4318,10 @@ mod tests {
 
             async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
                 self.state.metadata_reads.fetch_add(1, Ordering::SeqCst);
+                self.state.metadata_started.notify_one();
+                if self.state.hold_metadata.load(Ordering::SeqCst) {
+                    self.state.release_metadata.notified().await;
+                }
                 let metadata =
                     std::fs::symlink_metadata(self.root.join(path)).map_err(io_status)?;
                 let mut attrs = FileAttributes::from(&metadata);
@@ -4649,6 +4604,218 @@ mod tests {
             state.release_read.notify_one();
             files.finish(false).await.unwrap();
             drop(sessions);
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn verification_cancellation_does_not_wait_for_readonly_open_read_or_close() {
+            for stage in ["open", "read", "close"] {
+                let root = temp_root("verify-cancel");
+                let content = vec![29; CHUNK + 17];
+                std::fs::write(root.join("source"), &content).unwrap();
+                std::fs::write(root.join("partial"), &content).unwrap();
+                let state = Arc::new(State::default());
+                let sftp = client(&root, state.clone()).await;
+                let source = Endpoint {
+                    session: None,
+                    path: display_path(&root.join("source")),
+                };
+                let partial = Endpoint {
+                    session: Some("test".into()),
+                    path: "partial".into(),
+                };
+                let mut reader = open_reader(&source, None).await.unwrap();
+                let (hold, started, release) = match stage {
+                    "open" => (&state.hold_open, &state.open_started, &state.release_open),
+                    "read" => (&state.hold_read, &state.read_started, &state.release_read),
+                    _ => (
+                        &state.delay_close,
+                        &state.close_started,
+                        &state.release_close,
+                    ),
+                };
+                hold.store(true, Ordering::SeqCst);
+                let cancel = AtomicBool::new(false);
+                let result = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                    tokio::join!(
+                        verify_prefix(
+                            &mut reader,
+                            &partial,
+                            Some(&sftp),
+                            content.len() as u64,
+                            Some(&cancel)
+                        ),
+                        async {
+                            started.notified().await;
+                            cancel.store(true, Ordering::SeqCst);
+                        }
+                    )
+                    .0
+                })
+                .await;
+                hold.store(false, Ordering::SeqCst);
+                release.notify_one();
+                reader.finish().await.unwrap();
+                // A late read/CLOSE reply must not kill this shared metadata channel.
+                tokio::time::timeout(std::time::Duration::from_secs(2), sftp.metadata("partial"))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                sftp.close().await.unwrap();
+                assert_eq!(std::fs::read(root.join("source")).unwrap(), content);
+                assert_eq!(std::fs::read(root.join("partial")).unwrap(), content);
+                std::fs::remove_dir_all(root).unwrap();
+                assert_eq!(result.expect(stage).unwrap_err().to_string(), CANCELLED);
+            }
+        }
+
+        #[tokio::test]
+        async fn fingerprint_cancellation_does_not_wait_for_metadata_read_or_close() {
+            for stage in ["metadata", "read", "close"] {
+                let root = temp_root("fingerprint-cancel");
+                let content = vec![31; CHUNK + 19];
+                std::fs::write(root.join("backup"), &content).unwrap();
+                let state = Arc::new(State::default());
+                let sftp = client(&root, state.clone()).await;
+                let backup = Endpoint {
+                    session: Some("test".into()),
+                    path: "backup".into(),
+                };
+                let (hold, started, release) = match stage {
+                    "metadata" => (
+                        &state.hold_metadata,
+                        &state.metadata_started,
+                        &state.release_metadata,
+                    ),
+                    "read" => (&state.hold_read, &state.read_started, &state.release_read),
+                    _ => (
+                        &state.delay_close,
+                        &state.close_started,
+                        &state.release_close,
+                    ),
+                };
+                hold.store(true, Ordering::SeqCst);
+                let cancel = AtomicBool::new(false);
+                let result = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                    tokio::join!(fingerprint_file(&backup, Some(&sftp), &cancel), async {
+                        started.notified().await;
+                        cancel.store(true, Ordering::SeqCst);
+                    })
+                    .0
+                })
+                .await;
+                hold.store(false, Ordering::SeqCst);
+                release.notify_one();
+                tokio::time::timeout(std::time::Duration::from_secs(2), sftp.metadata("backup"))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                sftp.close().await.unwrap();
+                assert_eq!(std::fs::read(root.join("backup")).unwrap(), content);
+                assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+                std::fs::remove_dir_all(root).unwrap();
+                assert_eq!(result.expect(stage).unwrap_err().to_string(), CANCELLED);
+            }
+        }
+
+        #[tokio::test]
+        async fn cancelling_read_close_preserves_shared_channel_and_writer_acknowledgements() {
+            let root = temp_root("read-close-cancel");
+            std::fs::write(root.join("source"), b"keep source").unwrap();
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let source = Endpoint {
+                session: Some("test".into()),
+                path: "source".into(),
+            };
+            let reader = open_reader(&source, Some(&sftp)).await.unwrap();
+            state.delay_close.store(true, Ordering::SeqCst);
+            let cancel = AtomicBool::new(false);
+            let (result, ()) = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                tokio::join!(reader.finish_cancellable(&cancel), async {
+                    state.close_started.notified().await;
+                    cancel.store(true, Ordering::SeqCst);
+                })
+            })
+            .await
+            .unwrap();
+            assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+            state.delay_close.store(false, Ordering::SeqCst);
+            state.release_close.notify_one();
+            // No channel abort: the late CLOSE is followed by an acknowledged write.
+            let target = Endpoint {
+                session: Some("test".into()),
+                path: "writer".into(),
+            };
+            let mut writer = open_writer(&target, Some(&sftp), false).await.unwrap();
+            writer.write_all(b"confirmed write").await.unwrap();
+            state.delay_close.store(true, Ordering::SeqCst);
+            let finish = writer.finish();
+            tokio::pin!(finish);
+            tokio::select! {
+                value = &mut finish => panic!("Writer must wait for CLOSE: {value:?}"),
+                _ = state.close_started.notified() => {}
+            }
+            // Even an already-set cancellation flag must not abandon a writer.
+            assert!(cancel.load(Ordering::SeqCst));
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(60), &mut finish)
+                    .await
+                    .is_err()
+            );
+            state.delay_close.store(false, Ordering::SeqCst);
+            state.release_close.notify_one();
+            finish.await.unwrap();
+            assert_eq!(state.closes.load(Ordering::SeqCst), 2);
+            assert_eq!(std::fs::read(root.join("source")).unwrap(), b"keep source");
+            assert_eq!(
+                std::fs::read(root.join("writer")).unwrap(),
+                b"confirmed write"
+            );
+            sftp.close().await.unwrap();
+            std::fs::remove_dir_all(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn readonly_verification_keeps_close_errors_without_cancellation() {
+            let root = temp_root("verify-close-error");
+            let content = b"verified contents";
+            std::fs::write(root.join("source"), content).unwrap();
+            std::fs::write(root.join("target"), content).unwrap();
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let source = Endpoint {
+                session: None,
+                path: display_path(&root.join("source")),
+            };
+            let target = Endpoint {
+                session: Some("test".into()),
+                path: "target".into(),
+            };
+            let cancel = AtomicBool::new(false);
+            state.fail_close.store(true, Ordering::SeqCst);
+            let mut reader = open_reader(&source, None).await.unwrap();
+            assert!(verify_prefix(
+                &mut reader,
+                &target,
+                Some(&sftp),
+                content.len() as u64,
+                Some(&cancel)
+            )
+            .await
+            .is_err());
+            reader.finish().await.unwrap();
+            assert!(fingerprint_file(&target, Some(&sftp), &cancel)
+                .await
+                .is_err());
+            state.fail_close.store(false, Ordering::SeqCst);
+            assert!(fingerprint_file(&target, Some(&sftp), &cancel)
+                .await
+                .is_ok());
+            assert_eq!(std::fs::read(root.join("source")).unwrap(), content);
+            assert_eq!(std::fs::read(root.join("target")).unwrap(), content);
+            assert_eq!(state.removals.load(Ordering::SeqCst), 0);
+            sftp.close().await.unwrap();
             std::fs::remove_dir_all(root).unwrap();
         }
 

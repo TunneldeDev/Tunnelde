@@ -165,6 +165,7 @@ pub(super) async fn recover_window(
     source: (u64, Option<i64>),
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
+    cancel: Option<&AtomicBool>,
 ) -> AppResult<()> {
     let marker = get(
         app,
@@ -172,7 +173,7 @@ pub(super) async fn recover_window(
     )?;
     let Some(marker) = marker else { return Ok(()) };
     let checkpoint: ParallelCheckpoint = serde_json::from_str(&marker)?;
-    restore_window_prefix(checkpoint, source, temp, sftp).await?;
+    restore_window_prefix(checkpoint, source, temp, sftp, cancel).await?;
     end_window(app, key)
 }
 
@@ -181,15 +182,21 @@ async fn restore_window_prefix(
     source: (u64, Option<i64>),
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
+    cancel: Option<&AtomicBool>,
 ) -> AppResult<()> {
     if checkpoint.source != source || checkpoint.offset > source.0 {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
     }
-    let length = file_length(temp, sftp).await?.unwrap_or(0);
+    let length = interruptible(cancel, file_length(temp, sftp))
+        .await?
+        .unwrap_or(0);
     if length < checkpoint.offset {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
     if length > checkpoint.offset {
+        if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+            return Err(AppError::Ssh(CANCELLED.into()));
+        }
         // Discard sparse or partially acknowledged writes from the interrupted
         // window before any prefix can be trusted as resumable data.
         segments::resize(temp, sftp, checkpoint.offset).await?;
@@ -270,7 +277,7 @@ pub(super) async fn resume_offset(
             && source.1.is_some()
             && saved.partial.0 == existing
             && saved.partial.1.is_some()
-            && saved.partial == source_stamp(temp, sftp).await?
+            && saved.partial == interruptible(Some(cancel), source_stamp(temp, sftp)).await?
     } else {
         false
     };
@@ -660,10 +667,26 @@ mod tests {
             .await
             .unwrap();
         let source = (1024, Some(123));
+        let before = tokio::fs::read(&target.path).await.unwrap();
+        assert_eq!(
+            restore_window_prefix(
+                ParallelCheckpoint { source, offset: 4 },
+                source,
+                &target,
+                None,
+                Some(&AtomicBool::new(true)),
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+            CANCELLED
+        );
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
         restore_window_prefix(
             ParallelCheckpoint { source, offset: 4 },
             source,
             &target,
+            None,
             None,
         )
         .await
@@ -673,6 +696,7 @@ mod tests {
             ParallelCheckpoint { source, offset: 4 },
             (1024, Some(124)),
             &target,
+            None,
             None
         )
         .await
@@ -681,6 +705,7 @@ mod tests {
             ParallelCheckpoint { source, offset: 5 },
             source,
             &target,
+            None,
             None
         )
         .await
