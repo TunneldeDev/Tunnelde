@@ -4,7 +4,12 @@
 
 The workbench task service separates execution, reporting and presentation. A feature can
 publish work in the shared, movable task window without depending on file management.
-The status-bar entry and the F1 **Background tasks** command open the same window.
+The status-bar entry and the F1 **Background tasks** command open the task list.
+It can stay in its resizable floating window, open from the activity bar, or move into
+the workbench through its header action. Drag its sidebar title or tab to dock it at
+any edge. Activity and status buttons hide and restore a docked panel in place; F1
+reveals it without opening a second window. **Open as a floating window** returns
+it to the saved floating size and position.
 Tasks never open it automatically. Groups load twenty rows at a time; completed work
 starts collapsed. A task may set `visible: false` to keep it out of this UI.
 

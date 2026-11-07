@@ -1,4 +1,12 @@
-import { ListTodo, CheckCheck, Pin, RotateCcw, X } from "lucide-react";
+import {
+  ListTodo,
+  CheckCheck,
+  PanelTop,
+  Pin,
+  RotateCcw,
+  SquareArrowOutUpRight,
+  X,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -12,6 +20,9 @@ import {
   type BackgroundTaskEntry,
 } from "@/lib/tasks/background";
 import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
+import { useWorkspace } from "@/store/workspace";
+import { useNavigation } from "@/store/navigation";
+import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 import { taskPresentation } from "./presentation";
 import { BackgroundTaskRow } from "./BackgroundTaskRow";
 import { toast } from "@/store/toasts";
@@ -21,6 +32,13 @@ import "./backgroundTasks.css";
 export function BackgroundTaskStatusButton({ floating = false }: { floating?: boolean }) {
   const { t } = useTranslation();
   const open = useBackgroundTaskPanel((s) => s.open);
+  const tabs = useWorkspace((s) => s.tabs);
+  const panes = useWorkspace((s) => s.panes);
+  const taskTab = tabs.find((tab) => tab.id === "sidebar:tasks");
+  const sidebarVisible = useNavigation((s) => s.sidebarVisible && s.activeSidebar === "tasks");
+  const active = taskTab
+    ? !taskTab.hidden && panes.some((pane) => pane.activeId === taskTab.id)
+    : sidebarVisible;
   const items = useBackgroundTasks((s) => s.items);
   const visible = items.filter((item) => item.visible !== false);
   const running = visible.filter((item) => item.status === "running");
@@ -69,10 +87,14 @@ export function BackgroundTaskStatusButton({ floating = false }: { floating?: bo
       aria-label={t("tasks.title")}
       aria-description={hint}
       title={hint}
-      aria-expanded={open}
-      aria-controls="background-tasks"
+      aria-expanded={taskTab ? active : sidebarVisible || open}
+      aria-controls={taskTab || sidebarVisible ? "sidebar-tasks" : "background-tasks"}
       data-task-trigger
-      onClick={() => useBackgroundTaskPanel.getState().toggle()}
+      onClick={() => {
+        if (taskTab) useWorkspace.getState().toggleDockedSidebar("tasks");
+        else if (sidebarVisible) useNavigation.getState().selectSidebar("tasks");
+        else useBackgroundTaskPanel.getState().toggle();
+      }}
     >
       <ListTodo size={13} />
       <span aria-live="polite" aria-atomic="true">
@@ -155,17 +177,39 @@ function TaskGroup({
 
 export function BackgroundTasks() {
   const open = useBackgroundTaskPanel((s) => s.open);
-  return open ? <BackgroundPanelContent /> : null;
+  const docked = useWorkspace((s) => s.tabs.some((tab) => tab.id === "sidebar:tasks"));
+  const inSidebar = useNavigation((s) => s.sidebarVisible && s.activeSidebar === "tasks");
+  useEffect(() => {
+    if (!open || (!docked && !inSidebar)) return;
+    if (docked) useWorkspace.getState().activate("sidebar:tasks");
+    useBackgroundTaskPanel.getState().close();
+  }, [open, docked, inSidebar]);
+  return open && !docked && !inSidebar ? <BackgroundPanelContent /> : null;
 }
 
-function BackgroundPanelContent() {
+export function DockedBackgroundTasks() {
+  return <BackgroundPanelContent embedded />;
+}
+
+function BackgroundPanelContent({ embedded = false }: { embedded?: boolean }) {
   const { t } = useTranslation();
   const allItems = useBackgroundTasks((s) => s.items);
   const items = allItems.filter((item) => item.visible !== false);
   const pinned = useBackgroundTaskPanel((s) => s.pinned);
+  const docked = useWorkspace((s) => s.tabs.some((tab) => tab.id === "sidebar:tasks"));
+  const activeTab = useWorkspace((s) => {
+    const tab = s.tabs.find((tab) => tab.id === "sidebar:tasks");
+    return !!tab && !tab.hidden && s.panes.some((pane) => pane.activeId === tab.id);
+  });
+  const activeSidebar = useNavigation((s) => s.sidebarVisible && s.activeSidebar === "tasks");
+  const visible = !embedded || (docked ? activeTab : activeSidebar);
   const panel = useRef<HTMLElement>(null);
   const bounds = useBackgroundTaskPanel((s) => s.bounds);
-  const floating = useFloatingPanel(panel, bounds, useBackgroundTaskPanel.getState().setBounds);
+  const floating = useFloatingPanel(
+    panel,
+    embedded ? null : bounds,
+    useBackgroundTaskPanel.getState().setBounds,
+  );
   const closeButton = useRef<HTMLButtonElement>(null);
   const [previousFocus] = useState(() => document.activeElement as HTMLElement | null);
   const [now, setNow] = useState(Date.now);
@@ -174,13 +218,13 @@ function BackgroundPanelContent() {
   const running = items.some((item) => item.status === "running");
   const close = () => useBackgroundTaskPanel.getState().close();
   useEffect(() => {
-    closeButton.current?.focus({ preventScroll: true });
+    if (!embedded) closeButton.current?.focus({ preventScroll: true });
     return () => {
-      if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
+      if (!embedded && previousFocus?.isConnected) previousFocus.focus({ preventScroll: true });
     };
-  }, [previousFocus]);
+  }, [embedded, previousFocus]);
   useEffect(() => {
-    if (pinned) return;
+    if (pinned || embedded) return;
     const outside = (event: PointerEvent) => {
       const target = event.target;
       if (
@@ -193,12 +237,12 @@ function BackgroundPanelContent() {
     };
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
-  }, [pinned]);
+  }, [embedded, pinned]);
   useEffect(() => {
-    if (!running) return;
+    if (!running || !visible) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [running]);
+  }, [running, visible]);
   const active = items.filter((item) => ["running", "paused"].includes(item.status));
   const attention = items.filter((item) => item.status === "attention");
   const finished = items.filter(isFinishedTask);
@@ -222,45 +266,62 @@ function BackgroundPanelContent() {
   return (
     <>
       <aside
-        className="background-panel"
-        id="background-tasks"
-        role="dialog"
-        aria-modal="false"
+        className={cn("background-panel", embedded && "is-embedded")}
+        id={embedded ? undefined : "background-tasks"}
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : "false"}
         aria-label={t("tasks.title")}
         ref={panel}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && !event.nativeEvent.isComposing) {
+          if (!embedded && event.key === "Escape" && !event.nativeEvent.isComposing) {
             event.stopPropagation();
             close();
           }
         }}
       >
-        <header className="background-panel__header">
-          <button
-            type="button"
-            className="background-panel__drag"
-            title={t("tasks.moveHint")}
-            {...floating.handle("move")}
-            onDoubleClick={floating.reset}
-          >
-            <ListTodo size={15} />
-            <strong>{t("tasks.title")}</strong>
-          </button>
-          <IconButton size="sm" label={t("tasks.resetLayout")} onClick={floating.reset}>
-            <RotateCcw size={13} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            active={pinned}
-            label={t("tasks.keepOpen")}
-            onClick={() => useBackgroundTaskPanel.getState().togglePinned()}
-          >
-            <Pin size={13} />
-          </IconButton>
-          <IconButton ref={closeButton} size="sm" label={t("common.close")} onClick={close}>
-            <X size={14} />
-          </IconButton>
-        </header>
+        {!embedded ? (
+          <header className="background-panel__header">
+            <button
+              type="button"
+              className="background-panel__drag"
+              title={t("tasks.moveHint")}
+              {...floating.handle("move")}
+              onDoubleClick={floating.reset}
+            >
+              <ListTodo size={15} />
+              <strong>{t("tasks.title")}</strong>
+            </button>
+            <IconButton
+              size="sm"
+              label={t("docking.moveToWorkspace")}
+              onClick={() => {
+                useBackgroundTaskPanel.getState().close();
+                useWorkspace.getState().openSidebar("tasks");
+              }}
+            >
+              <PanelTop size={13} />
+            </IconButton>
+            <IconButton size="sm" label={t("tasks.resetLayout")} onClick={floating.reset}>
+              <RotateCcw size={13} />
+            </IconButton>
+            <IconButton
+              size="sm"
+              active={pinned}
+              label={t("tasks.keepOpen")}
+              onClick={() => useBackgroundTaskPanel.getState().togglePinned()}
+            >
+              <Pin size={13} />
+            </IconButton>
+            <IconButton ref={closeButton} size="sm" label={t("common.close")} onClick={close}>
+              <X size={14} />
+            </IconButton>
+          </header>
+        ) : !docked ? (
+          <header className="sidebar__head">
+            <SidebarTitle view="tasks">{t("tasks.title")}</SidebarTitle>
+            <SidebarDockControls view="tasks" />
+          </header>
+        ) : null}
         <div className="background-panel__toolbar">
           <Button
             size="sm"
@@ -279,6 +340,21 @@ function BackgroundPanelContent() {
               </span>
             ) : null}
           </Button>
+          {embedded ? (
+            <IconButton
+              size="sm"
+              className="background-panel__float"
+              label={t("tasks.floatWindow")}
+              onClick={() => {
+                if (docked) useWorkspace.getState().returnSidebar("tasks");
+                if (useNavigation.getState().activeSidebar === "tasks")
+                  useNavigation.getState().selectSidebar("tasks");
+                useBackgroundTaskPanel.getState().show();
+              }}
+            >
+              <SquareArrowOutUpRight size={13} />
+            </IconButton>
+          ) : null}
         </div>
         <div className="background-panel__body">
           {!items.length ? (
@@ -296,16 +372,17 @@ function BackgroundPanelContent() {
             </>
           )}
         </div>
-        {(["n", "e", "s", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
-          <div
-            key={edge}
-            className={`background-panel__resize background-panel__resize--${edge}`}
-            {...floating.handle(edge)}
-            {...(edge === "se"
-              ? { role: "button", tabIndex: 0, "aria-label": t("tasks.resizeHint") }
-              : { "aria-hidden": true })}
-          />
-        ))}
+        {!embedded &&
+          (["n", "e", "s", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
+            <div
+              key={edge}
+              className={`background-panel__resize background-panel__resize--${edge}`}
+              {...floating.handle(edge)}
+              {...(edge === "se"
+                ? { role: "button", tabIndex: 0, "aria-label": t("tasks.resizeHint") }
+                : { "aria-hidden": true })}
+            />
+          ))}
       </aside>
     </>
   );

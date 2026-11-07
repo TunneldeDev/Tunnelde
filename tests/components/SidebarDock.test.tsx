@@ -1,4 +1,4 @@
-import { act, createEvent, fireEvent, render, screen } from "@testing-library/react";
+import { act, createEvent, fireEvent, render, screen, within } from "@testing-library/react";
 import { useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
@@ -14,6 +14,8 @@ import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { useHosts } from "@/store/hosts";
 import type { Host } from "@/lib/api/types";
 import { SIDEBAR_MIME, TAB_MIME } from "@/lib/session/sidebarDock";
+import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
+import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
 vi.mock("@/features/terminal/TerminalPage", () => ({ TerminalPage: () => null }));
 
 const { mounted, unmounted } = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn() }));
@@ -87,6 +89,7 @@ beforeEach(async () => {
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
   usePlugins.setState({ items: [] });
+  useBackgroundTaskPanel.setState({ open: false, pinned: false, bounds: null });
   useNavigation.setState({
     activeSidebar: "hosts",
     sidebarVisible: true,
@@ -160,6 +163,59 @@ describe("sidebar panel docking", () => {
     },
   );
 
+  it("docks background tasks from the floating window and restores it through the status button", () => {
+    useBackgroundTaskPanel.setState({ open: true, pinned: false, bounds: null });
+    render(
+      <>
+        <Shell />
+        <BackgroundTasks />
+        <BackgroundTaskStatusButton />
+      </>,
+    );
+    const dialog = screen.getByRole("dialog", { name: "Background tasks" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Move into workspace" }));
+    expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
+    const id = "sidebar:tasks";
+    expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(true);
+    expect(
+      screen.getByRole("region", { name: "Background tasks" }).closest('[data-docked="true"]'),
+    ).toBeTruthy();
+    const layout = useWorkspace.getState().layout;
+    const status = document.querySelector<HTMLButtonElement>("[data-task-trigger]")!;
+    fireEvent.click(status);
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === id)?.hidden).toBe(true);
+    fireEvent.click(status);
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === id)?.hidden).toBe(false);
+    expect(useWorkspace.getState().layout).toEqual(layout);
+    expect(workspaceRecords().some((record) => record.id === id)).toBe(true);
+    drop(screen.getByRole("navigation", { name: "Workspace" }), 20, 60, id);
+    expect(
+      screen.getByRole("region", { name: "Background tasks" }).closest(".sidebar-view"),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open as a floating window" }));
+    expect(screen.queryByRole("region", { name: "Background tasks" })).toBeNull();
+    expect(screen.getByRole("dialog", { name: "Background tasks" })).toBeTruthy();
+    expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(false);
+  });
+  it("opens a hidden docked task panel through the F1 task action without a duplicate window", async () => {
+    render(
+      <>
+        <Shell />
+        <BackgroundTasks />
+      </>,
+    );
+    act(() => useWorkspace.getState().openSidebar("tasks"));
+    act(() => useWorkspace.getState().toggleDockedSidebar("tasks"));
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "sidebar:tasks")?.hidden).toBe(
+      true,
+    );
+    await act(async () => useBackgroundTaskPanel.getState().show());
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === "sidebar:tasks")?.hidden).toBe(
+      false,
+    );
+    expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
+    expect(screen.getByRole("region", { name: "Background tasks" })).toBeTruthy();
+  });
   it("collapses and restores a docked AI panel through its activity icon while preserving its DOM, draft and split", () => {
     usePlugins.setState({
       items: [
