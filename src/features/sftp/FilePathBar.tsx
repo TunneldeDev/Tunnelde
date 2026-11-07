@@ -81,6 +81,7 @@ export function FilePathBar({
   history,
   onDraft,
   onEditing,
+  onFinishEditing,
   onNavigate,
 }: {
   source: FsSource;
@@ -92,6 +93,7 @@ export function FilePathBar({
   history: string[];
   onDraft: (value: string | null) => void;
   onEditing: (editing: boolean) => void;
+  onFinishEditing: () => void;
   onNavigate: (path: string) => void;
 }) {
   const { t } = useTranslation();
@@ -136,11 +138,13 @@ export function FilePathBar({
                 if (draft.trim()) {
                   onNavigate(draft.trim());
                   onEditing(false);
+                  onFinishEditing();
                 }
               } else if (event.key === "Escape") {
                 event.preventDefault();
                 event.stopPropagation();
                 cancel();
+                onFinishEditing();
               }
             }}
           />
