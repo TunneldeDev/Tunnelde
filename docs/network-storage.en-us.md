@@ -87,8 +87,8 @@ four directory entries at once; manual concurrency selects 1, 2, 4 or 8. Nested 
 share that limit instead of multiplying it at every level. The task shares a packet
 budget across these entries and combines their confirmed progress. A failure or
 cancellation stops queued entries and drains active writers before task cleanup.
-Overwrite tasks retain sequential atomic publication. This pipeline does not create
-an archive or install a remote helper, and works with ordinary SFTP servers.
+Overwrite tasks retain sequential atomic publication. The preparation pipeline
+works with ordinary SFTP servers; optional small-file archives are described below.
 
 Before copying, Tunnelde scans the source tree to estimate its size. Remote scans reuse
 file types and lengths supplied in directory listings, querying missing attributes
@@ -100,10 +100,11 @@ individual files are still checked by the copy and resume protocol.
 
 Background tasks share a scheduler: up to four tasks run at once across the
 application. Each SSH connection has a budget of six transfer channels. An endpoint
-reserves one metadata and one data channel; a durable remote overwrite reserves
-an additional channel for atomic publication. This allows two overwrite uploads,
-three ordinary uploads/downloads, or one five-channel overwrite copy using both
-endpoints on that connection. Both endpoints are reserved together.
+reserves one metadata and one data channel; an optimized durable copy reserves
+an additional archive channel per endpoint, while a remote overwrite reserves
+an additional target channel for atomic publication. This allows two optimized
+or overwrite uploads/downloads, three transfers without either extra channel,
+or one same-connection copy with up to six channels. Both endpoints are reserved together.
 Other tasks show **Queued** before opening channels. Independent connections can
 continue while one connection is busy; tasks sharing an endpoint keep their queue
 order. Pause/cancel also work while queued. Waiting does not consume file handles,
@@ -124,8 +125,8 @@ handles are closed or temporary files can be cleaned.
 ### Adaptive transfer compression
 
 **Compress transfer data automatically** is enabled by default with transfer
-optimization. Tasks totaling less than 256 KiB keep the standard SFTP path. Larger
-tasks first sample up to 16 KiB from the first source file. When it is compressible,
+optimization. For ordinary block transfers, tasks totaling less than 256 KiB keep
+the standard SFTP path. Larger tasks first sample up to 16 KiB from the first source file. When it is compressible,
 they try a temporary Python 3 worker over the existing authenticated SSH connection.
 Incompressible tasks retain the SFTP pipeline. Directory tasks reuse that initial
 transport choice; each subsequent block still decides whether compression helps.
@@ -146,7 +147,33 @@ with settings profiles.
 
 Progress and speed describe original file bytes, including when fewer compressed
 bytes cross the network. Compression benefits depend on file contents and CPU/network
-limits. Small-file archive batching is not yet implemented.
+limits.
+
+### Small-file archives
+
+Optimized directory copies can combine files up to 64 KiB into in-memory archives,
+with at most eight files and 1 MiB per archive. Uploads, downloads and remote copies
+use the same temporary Python worker requirements described above. No archive is
+written to disk or installed on the host. Archive members have numeric names and
+are matched against a separate validated manifest; arbitrary paths, links and
+special files are rejected. Each destination still uses the ordinary task-owned
+staging file, source checks, durable checkpoint and individual publication.
+
+Before an archive upload, the application records its staging generation. If the
+write is interrupted without acknowledgement, resume retires that temporary file
+and creates a fresh generation instead of reusing it. Only the affected small
+files restart; completed files retain their verified progress. Delayed requests
+cannot recreate retired paths or write into the replacement generation. Pause
+also interrupts the archive checkpoint's read-only metadata wait.
+
+Archives are independent of the compression toggle; when compression is enabled,
+each archive is compressed only if it saves at least 10%. Single files, larger
+files, partially resumed files, overwrites, unsupported hosts and groups that
+cannot obtain their entire bandwidth allowance retain the standard range pipeline.
+Live speed limits continue to apply. Directory workers share an archive channel;
+the scheduler includes it in the per-connection channel budget. A partial group
+flushes without waiting for every worker, and failed or cancelled groups drain
+before task cleanup. Progress counts original file bytes after acknowledged writes.
 
 ## Pause and resume transfers
 

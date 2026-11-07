@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod archive;
 mod artifacts;
 pub mod bandwidth;
 mod batch;
@@ -1082,6 +1083,7 @@ struct Meter<'a> {
     settings: crate::settings::Settings,
     data_channels: Arc<tokio::sync::OnceCell<range_io::Sessions>>,
     batch_progress: Option<batch::Progress>,
+    archives: Option<Arc<archive::Batcher>>,
 }
 
 impl<'a> Meter<'a> {
@@ -1104,6 +1106,7 @@ impl<'a> Meter<'a> {
             settings: app.state::<AppState>().settings(),
             data_channels: Arc::new(tokio::sync::OnceCell::new()),
             batch_progress: None,
+            archives: None,
         }
     }
 
@@ -1545,6 +1548,7 @@ async fn copy_directory_batch(
     // Initialize once, lazily at the first validated regular file. Sampling a
     // directory child here could follow a link before copy_entry rejects it.
     let channels = meter.data_channels.clone();
+    let archives = Arc::new(archive::Batcher::default());
     let app = meter.app;
     let id = meter.id;
     let name = meter.name;
@@ -1582,6 +1586,7 @@ async fn copy_directory_batch(
             worker.settings = settings.clone();
             worker.data_channels = channels.clone();
             worker.batch_progress = Some(progress);
+            worker.archives = Some(archives.clone());
             async move {
                 Box::pin(copy_entry(
                     &source,
@@ -1884,7 +1889,7 @@ async fn durable_copy_file(
         journal_app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&key,serde_json::to_string(&(stamp.0,stamp.1,completed))?,crate::models::now_ms()])?;Ok(())})
     };
     save(false)?;
-    let temp = staging_endpoint(to, id, "part");
+    let temp = artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel).await?;
     #[cfg(windows)]
     let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     if resuming {
@@ -1926,7 +1931,14 @@ async fn durable_copy_file(
     if existing > stamp.0 {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
-    let mut reader = interruptible(Some(cancel), open_reader(from, from_sftp)).await?;
+    // Fresh remote copies open their data reader in the range/archive channel.
+    // A metadata-channel reader is only needed for resume verification or the
+    // local sequential path; opening and immediately closing it costs two RTTs.
+    let mut reader = if existing > 0 || (from_sftp.is_none() && to_sftp.is_none()) {
+        Some(interruptible(Some(cancel), open_reader(from, from_sftp)).await?)
+    } else {
+        None
+    };
     if existing > 0 {
         phase(meter.app, id, "verifying");
         let verified = artifacts::resume_offset(
@@ -1935,13 +1947,17 @@ async fn durable_copy_file(
             stamp,
             &temp,
             to_sftp,
-            &mut reader,
+            reader
+                .as_mut()
+                .ok_or_else(|| AppError::internal("sftp.reader"))?,
             existing,
             cancel,
         )
         .await;
         if let Err(error) = verified {
-            let _ = reader.finish_cancellable(cancel).await;
+            if let Some(reader) = reader {
+                let _ = reader.finish_cancellable(cancel).await;
+            }
             return Err(error);
         }
     }
@@ -2032,15 +2048,20 @@ async fn durable_copy_file(
         from_sftp.is_some() || to_sftp.is_some(),
     );
     let copied = if from_sftp.is_some() || to_sftp.is_some() {
-        let (closed, read_closed) =
-            tokio::join!(writer.finish(), reader.finish_cancellable(cancel));
+        let (closed, read_closed) = tokio::join!(writer.finish(), async {
+            match reader {
+                Some(reader) => reader.finish_cancellable(cancel).await,
+                None => Ok(()),
+            }
+        });
         closed?;
         read_closed?;
         parallel_copy_file(
-            from, &temp, from_sftp, to_sftp, meter, cancel, &key, stamp, existing, plan,
+            from, to, &temp, from_sftp, to_sftp, meter, cancel, &key, stamp, existing, plan,
         )
         .await
     } else {
+        let mut reader = reader.ok_or_else(|| AppError::internal("sftp.reader"))?;
         let mut confirmed = existing;
         let mut attempted = existing;
         let result = async {
@@ -2082,6 +2103,10 @@ async fn durable_copy_file(
         result.and(closed).and(read_closed)
     };
     copied?;
+    tracing::debug!(
+        id,
+        "Transfer data closed; validating source before publication"
+    );
     if interruptible(Some(cancel), source_stamp(from, from_sftp)).await? != stamp {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
     }
@@ -2109,6 +2134,8 @@ async fn durable_copy_file(
         own_backup = true;
     }
     #[cfg(windows)]
+    tracing::debug!(id, "Publishing transfer staging file");
+    #[cfg(windows)]
     let committed = match local_staging.as_ref() {
         Some(guard) => guard
             .rename_noreplace(Path::new(&to.path))
@@ -2123,6 +2150,7 @@ async fn durable_copy_file(
     };
     #[cfg(not(windows))]
     let committed = rename_endpoint(&temp, to, to_sftp).await;
+    tracing::debug!(id, "Transfer publication returned");
     if let Err(e) = committed {
         if own_backup {
             // An existence check followed by rename could overwrite a file
@@ -2232,6 +2260,7 @@ async fn remove_transfer_file(endpoint: &Endpoint, sftp: Option<&SftpSession>) -
 #[allow(clippy::too_many_arguments)]
 async fn parallel_copy_file(
     from: &Endpoint,
+    to: &Endpoint,
     temp: &Endpoint,
     from_sftp: Option<&SftpSession>,
     to_sftp: Option<&SftpSession>,
@@ -2243,6 +2272,33 @@ async fn parallel_copy_file(
     plan: segments::Plan,
 ) -> AppResult<()> {
     let previous_files = meter.transferred.saturating_sub(offset);
+    if offset == 0 && stamp.0 <= archive::MAX_FILE {
+        if let Some(archives) = &meter.archives {
+            let copied = archives
+                .copy(
+                    meter.app,
+                    from,
+                    to,
+                    temp,
+                    from_sftp,
+                    to_sftp,
+                    stamp.0,
+                    meter.throttle(),
+                    cancel,
+                    meter.settings.transfer_compression,
+                )
+                .await?;
+            if copied {
+                interruptible(
+                    Some(cancel),
+                    artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, stamp.0..=stamp.0),
+                )
+                .await?;
+                meter.add(stamp.0);
+                return Ok(());
+            }
+        }
+    }
     let channels = meter
         .data_channels
         .get_or_try_init(|| async {
@@ -2327,12 +2383,15 @@ async fn run(
     options: TransferOptions,
 ) -> Outcome {
     let scheduler = app.state::<AppState>().transfers.scheduler.clone();
+    let settings = app.state::<AppState>().settings();
+    let archive_channels = options.durable && !options.overwrite && settings.transfer_optimization;
     let waiting = async {
         Ok(scheduler
-            .acquire(
+            .reserve(
                 from.session.as_deref(),
                 to.session.as_deref(),
                 options.durable && options.overwrite,
+                archive_channels,
             )
             .await)
     };
@@ -2382,7 +2441,6 @@ async fn run(
         }
     }
 
-    let settings = app.state::<AppState>().settings();
     let config = segments::config(&settings);
     let scan_concurrency = config.max_concurrent_reads;
     let from_sftp = match &from.session {
@@ -2485,6 +2543,7 @@ async fn run(
     progress(app, id, name, 0, total);
 
     let mut meter = Meter::new(app, id, name, total);
+    meter.settings = settings;
     if let Ok(mut row) = durable::Journal::get(app, id) {
         row.total = total;
         let _ = durable::Journal::upsert(app, row);
