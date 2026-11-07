@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.5](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.4...v0.30.5) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **files:** recover verified Windows move deletion
+
+<details open>
+<summary>详细变更 | Details (1)</summary>
+
+### 修复 | Fix
+
+- **files:** recover verified Windows move deletion ([#129](https://github.com/TunneldeDev/Tunnelde/pull/129)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.4](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.3...v0.30.4) - 2026-11-07
 
 ### 更新概览 | Highlights

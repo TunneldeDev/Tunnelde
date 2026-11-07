@@ -9,8 +9,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FileDispositionInfo, FileIdInfo, FileRenameInfo, GetFileInformationByHandle,
     GetFileInformationByHandleEx, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
-    FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_ID_INFO, FILE_RENAME_INFO,
-    FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_ID_INFO,
+    FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 
 pub fn identity(file: &impl AsRawHandle) -> io::Result<FileIdentity> {
@@ -71,6 +71,12 @@ impl GuardedFile {
 
     pub fn read(path: &Path) -> io::Result<Self> {
         Self::open(path, FILE_GENERIC_READ)
+    }
+
+    /// A verified move must flush the completed destination before deleting its
+    /// source. Windows requires write access for FlushFileBuffers/sync_all.
+    pub fn syncable(path: &Path) -> io::Result<Self> {
+        Self::open(path, FILE_GENERIC_READ | FILE_GENERIC_WRITE)
     }
 
     pub fn deletable(path: &Path) -> io::Result<Self> {

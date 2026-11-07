@@ -144,8 +144,9 @@ limits. Small-file archive batching is not yet implemented.
 
 For local Windows file moves that require copying, the source is held against
 ordinary writes and replacement before copying begins. Before removing it, the
-application locks the completed destination and compares both files byte for byte.
-Both handles remain held while saving the removal checkpoint and deleting the
+application locks the completed destination, compares both files byte for byte,
+and flushes the destination to disk. Both handles remain held while durably saving
+the file identities, length and SHA-256 in the removal checkpoint and deleting the
 source through its handle. An open writer, verification failure, cancellation or
 checkpoint failure leaves the source intact. This protection applies to regular
 local files; it does not establish the same guarantee for remote or Unix moves.
@@ -219,13 +220,21 @@ privileged interference or concurrent changes to the staging path.
 Local overwrite and older remote tasks with a saved backup transaction retain
 the recoverable, verified backup flow. For a move, source removal happens after
 the copy succeeds and is checkpointed separately.
-If the app is interrupted during source removal, Resume preserves both locations
-and reports that manual review is required. An existing source path may have been
-recreated; a missing source and an existing destination alone do not prove that the
-move completed. Check both locations before clearing the task. Saved tasks do not
-yet contain a verified destination digest for automatic recovery of this phase.
-These errors keep both paths visible in the task and hide Resume; ordinary
-interrupted transfers still offer Resume.
+If the app is interrupted during source removal, Resume never starts copying again.
+For a Windows local file move with the new removal checkpoint, it reacquires file
+guards and verifies both identities and the complete contents against the saved
+digest before removing the source. If the source is already absent, it reports
+success only when the original destination still has the recorded identity, length
+and digest. Replaced files, including identical copies, or modified contents require
+manual review and are preserved. An open writer or I/O failure leaves the checkpoint
+available for retry. Pausing before deletion also preserves it; cancelling keeps
+the source if it has not yet been deleted and the committed destination.
+
+Older tasks without this proof and other platforms retain manual review. A missing
+source and an existing destination alone do not prove completion. Review errors
+keep both paths visible and hide Resume; check both locations before clearing the
+task. These guards do not cover privileged interference, pre-existing writable
+memory mappings or replacement of parent directory paths.
 Pause retains partial data for Resume. Cancel stops the transfer and removes its owned
 temporary data before reporting completion. It keeps already completed destination
 files and never deletes source data. Cancelled tasks cannot resume. If cleanup fails

@@ -1,12 +1,13 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use sha2::{Digest, Sha256};
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use crate::error::{AppError, AppResult};
 use crate::platform::guarded_file::GuardedFile;
 
-use super::{CANCELLED, CHUNK};
+use super::{durable::MoveRecovery, CANCELLED, CHUNK};
 
 /// Hold the source before copying. Existing writers prevent acquisition;
 /// ordinary writes, renames and replacement cannot race the later deletion.
@@ -17,6 +18,7 @@ pub(super) struct Source(GuardedFile);
 pub(super) struct Verified {
     source: GuardedFile,
     _destination: GuardedFile,
+    proof: MoveRecovery,
 }
 
 fn check_cancelled(cancel: &AtomicBool) -> AppResult<()> {
@@ -37,17 +39,27 @@ impl Source {
         cancel: &AtomicBool,
     ) -> AppResult<Verified> {
         check_cancelled(cancel)?;
-        let destination = GuardedFile::read(destination)?;
+        let destination = GuardedFile::syncable(destination)?;
+        self.verify_guarded(destination, cancel).await
+    }
+
+    async fn verify_guarded(
+        self,
+        destination: GuardedFile,
+        cancel: &AtomicBool,
+    ) -> AppResult<Verified> {
         let mut source_reader = tokio::fs::File::from_std(self.0.reader()?);
         let mut destination_reader = tokio::fs::File::from_std(destination.reader()?);
         source_reader.seek(std::io::SeekFrom::Start(0)).await?;
         destination_reader.seek(std::io::SeekFrom::Start(0)).await?;
         let mut remaining = source_reader.metadata().await?.len();
+        let length = remaining;
         if destination_reader.metadata().await?.len() != remaining {
             return Err(AppError::validation("sftp.moveVerificationFailed"));
         }
         let mut source_bytes = vec![0; CHUNK];
         let mut destination_bytes = vec![0; CHUNK];
+        let mut hash = Sha256::new();
         while remaining > 0 {
             check_cancelled(cancel)?;
             let count = remaining.min(CHUNK as u64) as usize;
@@ -58,21 +70,96 @@ impl Source {
             if source_bytes[..count] != destination_bytes[..count] {
                 return Err(AppError::validation("sftp.moveVerificationFailed"));
             }
+            hash.update(&source_bytes[..count]);
             remaining -= count as u64;
         }
         check_cancelled(cancel)?;
+        // Do not remove the original while the only verified copy is still in
+        // volatile write buffers. The write-capable guard stays held afterward.
+        destination_reader.sync_all().await?;
+        let proof = MoveRecovery {
+            source: self.0.identity()?,
+            destination: destination.identity()?,
+            length,
+            sha256: format!("{:x}", hash.finalize()),
+        };
         Ok(Verified {
             source: self.0,
             _destination: destination,
+            proof,
         })
     }
 }
 
 impl Verified {
+    pub(super) fn proof(&self) -> &MoveRecovery {
+        &self.proof
+    }
+
     pub(super) fn delete(self, cancel: &AtomicBool) -> AppResult<()> {
         check_cancelled(cancel)?;
         self.source.delete()?;
         Ok(())
+    }
+}
+
+/// Never start the copy phase again after deletion intent was committed. A
+/// restart releases the old locks, so both identities and all bytes need fresh
+/// verification before deleting anything or acknowledging a missing source.
+pub(super) async fn recover(
+    source: &Path,
+    destination: &Path,
+    proof: &MoveRecovery,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    check_cancelled(cancel)?;
+    let unverified = || AppError::validation("sftp.moveRecoveryUnverified");
+    match Source::open(source) {
+        Ok(source) => {
+            if source.0.identity()? != proof.source {
+                return Err(unverified());
+            }
+            let destination = GuardedFile::syncable(destination)?;
+            if destination.identity()? != proof.destination {
+                return Err(unverified());
+            }
+            let verified = source.verify_guarded(destination, cancel).await.map_err(|error| {
+                if matches!(&error, AppError::Validation(key) if key == "sftp.moveVerificationFailed") {
+                    unverified()
+                } else {
+                    error
+                }
+            })?;
+            if verified.proof() != proof {
+                return Err(unverified());
+            }
+            verified.delete(cancel)
+        }
+        Err(AppError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+            let destination = GuardedFile::read(destination)?;
+            if destination.identity()? != proof.destination {
+                return Err(unverified());
+            }
+            let mut reader = tokio::fs::File::from_std(destination.reader()?);
+            if reader.metadata().await?.len() != proof.length {
+                return Err(unverified());
+            }
+            let mut hash = Sha256::new();
+            let mut bytes = vec![0; CHUNK];
+            loop {
+                check_cancelled(cancel)?;
+                let count = reader.read(&mut bytes).await?;
+                if count == 0 {
+                    break;
+                }
+                hash.update(&bytes[..count]);
+            }
+            if format!("{:x}", hash.finalize()) != proof.sha256 {
+                return Err(unverified());
+            }
+            check_cancelled(cancel)
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -108,6 +195,152 @@ mod tests {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.root).unwrap();
         }
+    }
+
+    async fn checkpoint(files: &Files) -> MoveRecovery {
+        let verified = Source::open(&files.source)
+            .unwrap()
+            .verify(&files.destination, &AtomicBool::new(false))
+            .await
+            .unwrap();
+        // Roundtrip the persisted proof and drop all original handles, as when
+        // the process exits after committing intent but before deleting source.
+        serde_json::from_str(&serde_json::to_string(verified.proof()).unwrap()).unwrap()
+    }
+
+    #[tokio::test]
+    async fn restart_recovers_before_and_after_source_deletion_including_empty_files() {
+        for content in [vec![], vec![29; CHUNK * 3 + 7]] {
+            let files = Files::new(&content);
+            let proof = checkpoint(&files).await;
+            assert_eq!(proof.length, content.len() as u64);
+            assert_eq!(proof.sha256, format!("{:x}", Sha256::digest(&content)));
+            let cancel = AtomicBool::new(false);
+            recover(&files.source, &files.destination, &proof, &cancel)
+                .await
+                .unwrap();
+            assert!(!files.source.exists());
+            assert_eq!(std::fs::read(&files.destination).unwrap(), content);
+            // Another interruption after deletion, before 'done' is recorded,
+            // can acknowledge the original destination without copying again.
+            recover(&files.source, &files.destination, &proof, &cancel)
+                .await
+                .unwrap();
+            assert_eq!(std::fs::read(&files.destination).unwrap(), content);
+        }
+    }
+
+    #[tokio::test]
+    async fn restart_preserves_identical_replacements_at_either_path() {
+        for replace_source in [true, false] {
+            let files = Files::new(b"identical bytes are not object identity");
+            let proof = checkpoint(&files).await;
+            let replaced = if replace_source {
+                &files.source
+            } else {
+                &files.destination
+            };
+            // Keep the old object alive so even an aggressively reusing
+            // filesystem cannot give the replacement its old identity.
+            std::fs::rename(replaced, files.root.join("original")).unwrap();
+            std::fs::write(replaced, b"identical bytes are not object identity").unwrap();
+            assert_eq!(
+                recover(
+                    &files.source,
+                    &files.destination,
+                    &proof,
+                    &AtomicBool::new(false)
+                )
+                .await
+                .unwrap_err()
+                .to_string(),
+                "sftp.moveRecoveryUnverified"
+            );
+            assert!(files.source.exists());
+            assert!(files.destination.exists());
+            assert!(files.root.join("original").exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn restart_rejects_content_changed_on_both_original_objects() {
+        let files = Files::new(b"original");
+        let proof = checkpoint(&files).await;
+        // The new bytes match each other and retain the original lengths and
+        // identities, but must not authorize deletion using the old checkpoint.
+        std::fs::write(&files.source, b"modified").unwrap();
+        std::fs::write(&files.destination, b"modified").unwrap();
+        assert_eq!(
+            recover(
+                &files.source,
+                &files.destination,
+                &proof,
+                &AtomicBool::new(false)
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
+            "sftp.moveRecoveryUnverified"
+        );
+        assert_eq!(std::fs::read(&files.source).unwrap(), b"modified");
+        assert_eq!(std::fs::read(&files.destination).unwrap(), b"modified");
+    }
+
+    #[tokio::test]
+    async fn missing_source_still_requires_original_complete_destination() {
+        for replacement in [false, true] {
+            let files = Files::new(b"original");
+            let proof = checkpoint(&files).await;
+            std::fs::remove_file(&files.source).unwrap();
+            if replacement {
+                std::fs::rename(&files.destination, files.root.join("original")).unwrap();
+                std::fs::write(&files.destination, b"original").unwrap();
+            } else {
+                std::fs::write(&files.destination, b"modified").unwrap();
+            }
+            assert_eq!(
+                recover(
+                    &files.source,
+                    &files.destination,
+                    &proof,
+                    &AtomicBool::new(false)
+                )
+                .await
+                .unwrap_err()
+                .to_string(),
+                "sftp.moveRecoveryUnverified"
+            );
+            assert!(files.destination.exists());
+        }
+    }
+
+    #[tokio::test]
+    async fn restart_cancellation_and_busy_writer_preserve_files_and_allow_retry() {
+        let files = Files::new(b"original");
+        let proof = checkpoint(&files).await;
+        let cancel = AtomicBool::new(true);
+        assert_eq!(
+            recover(&files.source, &files.destination, &proof, &cancel)
+                .await
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        cancel.store(false, Ordering::SeqCst);
+        for path in [&files.source, &files.destination] {
+            let writer = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+            assert!(recover(&files.source, &files.destination, &proof, &cancel)
+                .await
+                .is_err());
+            assert!(files.source.exists());
+            assert!(files.destination.exists());
+            drop(writer);
+        }
+        recover(&files.source, &files.destination, &proof, &cancel)
+            .await
+            .unwrap();
+        assert!(!files.source.exists());
+        assert_eq!(std::fs::read(&files.destination).unwrap(), b"original");
     }
 
     #[tokio::test]
