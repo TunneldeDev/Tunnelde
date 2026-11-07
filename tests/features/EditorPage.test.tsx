@@ -167,6 +167,51 @@ describe("editor formatting shortcuts", () => {
     expect(api.pluginRun).not.toHaveBeenCalled();
   });
 
+  it("updates the format action as matching providers are installed, removed, or the file changes", () => {
+    prepare();
+    const label = /格式化文档|Format document/i;
+    expect(screen.getByRole("button", { name: label })).toHaveProperty("disabled", false);
+    act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
+    expect(screen.queryByRole("button", { name: label })).toBeNull();
+    act(() => useEditors.setState({ entries: { editor: { ...entry, path: "/test.JSON" } } }));
+    expect(screen.getByRole("button", { name: label })).toHaveProperty("disabled", false);
+    const plugins = usePlugins.getState().items;
+    act(() => usePlugins.setState({ items: [] }));
+    expect(screen.queryByRole("button", { name: label })).toBeNull();
+    act(() => usePlugins.setState({ items: plugins }));
+    expect(screen.getByRole("button", { name: label })).toHaveProperty("disabled", false);
+  });
+
+  it("does not offer formatting for editor commands without a formatter contribution", () => {
+    prepare();
+    act(() =>
+      usePlugins.setState((state) => ({
+        items: state.items.map((plugin) => ({
+          ...plugin,
+          commands: plugin.commands.map((command) => ({
+            ...command,
+            editor: { extensions: ["json"], format: false },
+          })),
+        })),
+      })),
+    );
+    expect(screen.queryByRole("button", { name: /格式化文档|Format document/i })).toBeNull();
+  });
+
+  it("retains the disabled progress action until an in-flight formatter finishes after uninstall", () => {
+    prepare();
+    act(() => useFormatting.setState({ busy: ["editor"] }));
+    act(() => usePlugins.setState({ items: [] }));
+    expect(screen.getByRole("button", { name: /正在格式化|Formatting/i })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    act(() => useFormatting.setState({ busy: [] }));
+    expect(
+      screen.queryByRole("button", { name: /格式化文档|Format document|正在格式化|Formatting/i }),
+    ).toBeNull();
+  });
+
   it("does not capture keys from a different visible editor", async () => {
     prepare();
     const other = { ...entry, tabId: "other", path: "/other.txt", name: "other.txt" };
