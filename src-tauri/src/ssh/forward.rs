@@ -89,24 +89,57 @@ type RemoteForward = (
     u16,
 );
 
+async fn release_remote((handle, routes, host, port): RemoteForward) -> AppResult<()> {
+    tokio::time::timeout(
+        TIMEOUT,
+        handle.cancel_tcpip_forward(host.clone(), port as u32),
+    )
+    .await
+    .map_err(|_| AppError::Ssh("forward.stopFailed".into()))?
+    .map_err(|_| AppError::Ssh("forward.stopFailed".into()))?;
+    if let Ok(mut entries) = routes.entries.lock() {
+        entries.remove(&(host, port));
+    }
+    Ok(())
+}
+
 struct ActiveForward {
     session: String,
     owner: Option<String>,
     generation: Option<u64>,
     cancel: watch::Sender<bool>,
+    listener: Option<tokio::task::JoinHandle<()>>,
     remote: Option<RemoteForward>,
+}
+impl ActiveForward {
+    async fn shutdown(mut self) -> AppResult<()> {
+        let _ = self.cancel.send(true);
+        if let Some(listener) = self.listener.take() {
+            listener.abort();
+            // The join completes only after the local socket has been dropped.
+            let _ = listener.await;
+        }
+        if let Some(remote) = self.remote.take() {
+            release_remote(remote).await?;
+        }
+        Ok(())
+    }
 }
 impl Drop for ActiveForward {
     fn drop(&mut self) {
         let _ = self.cancel.send(true);
-        if let Some((handle, routes, host, port)) = self.remote.take() {
-            if let Ok(mut entries) = routes.entries.lock() {
-                entries.remove(&(host.clone(), port));
-            }
+        if let Some(listener) = self.listener.take() {
+            listener.abort();
+        }
+        if let Some(remote) = self.remote.take() {
+            // Reserve the endpoint until the cancellation request completes.
+            // A new forward must never overtake an older detached cleanup.
+            let completion = self.cancel.clone();
             tauri::async_runtime::spawn(async move {
-                let _ =
-                    tokio::time::timeout(TIMEOUT, handle.cancel_tcpip_forward(host, port as u32))
-                        .await;
+                if let Err(error) = release_remote(remote).await {
+                    tracing::warn!(%error, "Could not release remote forwarding listener");
+                }
+                drop(completion);
             });
         }
     }
@@ -161,11 +194,22 @@ impl ForwardRegistry {
             })
             .unwrap_or(false)
     }
-    pub fn stop(&self, id: &str) {
-        if let Ok(mut m) = self.active.lock() {
+    pub async fn stop(&self, id: &str) -> AppResult<()> {
+        let item = {
+            let mut m = self
+                .active
+                .lock()
+                .map_err(|_| AppError::internal("forward.lock"))?;
             self.invalidate(format!("rule:{id}"));
-            m.remove(id);
+            m.remove(id)
+        };
+        if let Some(item) = item {
+            // Cleanup keeps running if an IPC/plugin caller is cancelled.
+            tauri::async_runtime::spawn(item.shutdown())
+                .await
+                .map_err(|_| AppError::internal("forward.stopFailed"))??;
         }
+        Ok(())
     }
     pub fn stop_session(&self, session: &str) {
         if let Ok(mut m) = self.active.lock() {
@@ -412,8 +456,8 @@ pub async fn forwarding_start(app: AppHandle, id: String, session_id: String) ->
     start(&app, &id, &session_id).await
 }
 #[tauri::command]
-pub fn forwarding_stop(app: AppHandle, id: String) {
-    app.state::<AppState>().forwards.stop(&id);
+pub async fn forwarding_stop(app: AppHandle, id: String) -> AppResult<()> {
+    app.state::<AppState>().forwards.stop(&id).await
 }
 
 #[cfg(test)]
@@ -453,6 +497,7 @@ mod tests {
                 owner: None,
                 generation: None,
                 cancel: tx,
+                listener: None,
                 remote: None,
             },
         );
@@ -474,14 +519,14 @@ async fn open_forward(
         .map(|(id, generation)| (Some(id), Some(generation)))
         .unwrap_or_default();
     let (cancel, mut cancelled) = watch::channel(false);
-    let remote = if rule.mode == "local" {
+    let listener = if rule.mode == "local" {
         let listener = TcpListener::bind((rule.bind_host.as_str(), rule.bind_port))
             .await
             .map_err(|_| AppError::validation("forward.bindFailed"))?;
         let h = handle.clone();
         let host = rule.target_host.clone();
         let port = rule.target_port;
-        tokio::spawn(async move {
+        Some(tokio::spawn(async move {
             loop {
                 let accepted = tokio::select! { _ = cancelled.changed() => break, result = listener.accept() => result };
                 let Ok((socket, origin)) = accepted else {
@@ -498,26 +543,43 @@ async fn open_forward(
                     relay(socket, channel.into_stream(), c).await;
                 });
             }
-        });
-        None
+        }))
     } else {
-        {
-            let mut entries = routes
-                .entries
-                .lock()
-                .map_err(|_| AppError::internal("forward.lock"))?;
-            let key = (rule.bind_host.clone(), rule.bind_port);
-            if entries.contains_key(&key) {
-                return Err(AppError::validation("forward.bindFailed"));
-            }
-            entries.insert(
-                key,
-                RemoteTarget {
-                    host: rule.target_host.clone(),
-                    port: rule.target_port,
-                    cancel: cancelled,
-                },
-            );
+        loop {
+            let stopping = {
+                let mut entries = routes
+                    .entries
+                    .lock()
+                    .map_err(|_| AppError::internal("forward.lock"))?;
+                let key = (rule.bind_host.clone(), rule.bind_port);
+                if let Some(previous) = entries.get(&key) {
+                    if !*previous.cancel.borrow() {
+                        return Err(AppError::validation("forward.bindFailed"));
+                    }
+                    if previous.cancel.has_changed().is_err() {
+                        // Failed/uncertain cleanup requires a new SSH connection;
+                        // its late cancellation must not close a newer listener.
+                        return Err(AppError::Ssh("forward.stopFailed".into()));
+                    }
+                    Some(previous.cancel.clone())
+                } else {
+                    entries.insert(
+                        key,
+                        RemoteTarget {
+                            host: rule.target_host.clone(),
+                            port: rule.target_port,
+                            cancel: cancelled.clone(),
+                        },
+                    );
+                    None
+                }
+            };
+            let Some(mut stopping) = stopping else { break };
+            // A cleanup task retains the sender until it has removed the old
+            // route. Waiting for channel closure avoids polling and lost wakes.
+            tokio::time::timeout(TIMEOUT, async { while stopping.changed().await.is_ok() {} })
+                .await
+                .map_err(|_| AppError::Ssh("forward.stopFailed".into()))?;
         }
         // Own cleanup before awaiting the request. Dropping an in-flight setup
         // must revoke the route and cancel a listener the server may yet accept.
@@ -526,6 +588,7 @@ async fn open_forward(
             owner,
             generation,
             cancel,
+            listener: None,
             remote: Some((
                 handle.clone(),
                 routes,
@@ -548,7 +611,8 @@ async fn open_forward(
         owner,
         generation,
         cancel,
-        remote,
+        listener,
+        remote: None,
     })
 }
 #[cfg(test)]
