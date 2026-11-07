@@ -10,6 +10,17 @@ pub struct BackupRecovery {
     pub destination: String,
 }
 
+/// Proof saved before a guarded local move may remove its source. File identity
+/// rejects replacements even when their contents match the original exactly.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MoveRecovery {
+    pub source: crate::platform::file_identity::FileIdentity,
+    pub destination: crate::platform::file_identity::FileIdentity,
+    pub length: u64,
+    pub sha256: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DurableTransfer {
@@ -29,6 +40,8 @@ pub struct DurableTransfer {
     pub remove_source: bool,
     #[serde(default)]
     pub deleting_source: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub move_recovery: Option<MoveRecovery>,
     pub overwrite: bool,
     pub transferred: u64,
     pub total: u64,
@@ -51,6 +64,33 @@ pub struct Journal;
 // stale snapshot's limit.
 const UPSERT_TRANSFER: &str = "INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=json_set(excluded.value,'$.speedLimitKib',coalesce(json_extract(settings.value,'$.speedLimitKib'),0)),updated_at=excluded.updated_at";
 const SET_SPEED_LIMIT: &str = "UPDATE settings SET value=json_set(value,'$.speedLimitKib',?1,'$.updatedAt',?2),updated_at=?2 WHERE key=?3";
+
+fn write_row(conn: &rusqlite::Connection, row: &DurableTransfer) -> AppResult<()> {
+    conn.execute(
+        UPSERT_TRANSFER,
+        rusqlite::params![
+            format!("transfer:{}", row.id),
+            serde_json::to_string(row)?,
+            row.updated_at
+        ],
+    )?;
+    Ok(())
+}
+
+fn write_move_intent(conn: &rusqlite::Connection, row: &DurableTransfer) -> AppResult<()> {
+    if !conn.is_autocommit() || !row.deleting_source || row.move_recovery.is_none() {
+        return Err(AppError::internal("Invalid move deletion checkpoint"));
+    }
+    // Progress uses NORMAL for performance. This single destructive boundary
+    // requires a synced WAL commit while the application's DB mutex is held.
+    let previous: i64 = conn.pragma_query_value(None, "synchronous", |r| r.get(0))?;
+    conn.pragma_update(None, "synchronous", "FULL")?;
+    let written = write_row(conn, row);
+    let restored = conn.pragma_update(None, "synchronous", previous);
+    written?;
+    restored?;
+    Ok(())
+}
 
 pub(super) fn needs_review(error: Option<&str>) -> bool {
     matches!(
@@ -116,17 +156,15 @@ fn recovered_status(status: &str, active: bool) -> &str {
 }
 impl Journal {
     pub fn upsert(app: &AppHandle, row: DurableTransfer) -> AppResult<()> {
-        app.state::<AppState>().db.with(|conn| {
-            conn.execute(
-                UPSERT_TRANSFER,
-                rusqlite::params![
-                    format!("transfer:{}", row.id),
-                    serde_json::to_string(&row)?,
-                    row.updated_at
-                ],
-            )?;
-            Ok(())
-        })
+        app.state::<AppState>()
+            .db
+            .with(|conn| write_row(conn, &row))
+    }
+
+    pub(super) fn commit_move_intent(app: &AppHandle, row: DurableTransfer) -> AppResult<()> {
+        app.state::<AppState>()
+            .db
+            .with(|conn| write_move_intent(conn, &row))
     }
 
     pub(super) fn set_speed_limit(app: &AppHandle, id: &str, kib: u32) -> AppResult<()> {
@@ -288,7 +326,84 @@ mod tests {
         .unwrap();
         assert!(row.backup_recovery.is_none());
         assert!(row.artifact_recovery.is_none());
+        assert!(row.move_recovery.is_none());
         assert_eq!(row.speed_limit_kib, 0);
+    }
+
+    fn move_intent() -> DurableTransfer {
+        serde_json::from_value(serde_json::json!({
+            "id": "job", "direction": "transfer", "name": "file",
+            "fromSession": null, "fromHostId": null, "fromPath": "C:\\source",
+            "toSession": null, "toHostId": null, "toPath": "D:\\destination",
+            "removeSource": true, "deletingSource": true,
+            "moveRecovery": {
+                "source": { "platform": "windows", "volume": u64::MAX - 2, "index": vec![1; 16], "created": 134385039605809181u64 },
+                "destination": { "platform": "windows", "volume": 2, "index": vec![2; 16], "created": 20 },
+                "length": 3, "sha256": "abc"
+            },
+            "overwrite": false, "transferred": 3,
+            "total": 3, "status": "running", "error": null, "updatedAt": 1
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn removal_checkpoint_uses_synced_commit_and_survives_database_reopen() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-move-journal-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("journal.db");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL);
+            CREATE TRIGGER require_synced_intent BEFORE INSERT ON settings WHEN (SELECT synchronous FROM pragma_synchronous) < 2 BEGIN SELECT RAISE(ABORT,'checkpoint is not durable'); END;").unwrap();
+        let row = move_intent();
+        assert!(write_row(&conn, &row).is_err());
+        write_move_intent(&conn, &row).unwrap();
+        // SQLite's JSON edits for live limits must preserve identifiers beyond
+        // JavaScript's exact-integer range and even beyond SQLite's signed i64.
+        conn.execute(SET_SPEED_LIMIT, rusqlite::params![128, 2, "transfer:job"])
+            .unwrap();
+        assert_eq!(
+            conn.pragma_query_value(None, "synchronous", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(conn);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let raw: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key='transfer:job'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let restored: DurableTransfer = serde_json::from_str(&raw).unwrap();
+        assert!(restored.deleting_source);
+        assert_eq!(restored.move_recovery, row.move_recovery);
+        assert_eq!(restored.transferred, 3);
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn rejected_removal_checkpoint_restores_normal_progress_sync_policy() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("PRAGMA synchronous=NORMAL; CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL); CREATE TRIGGER reject_intent BEFORE INSERT ON settings BEGIN SELECT RAISE(ABORT,'disk failure'); END;").unwrap();
+        assert!(write_move_intent(&conn, &move_intent()).is_err());
+        assert_eq!(
+            conn.pragma_query_value(None, "synchronous", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM settings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        let mut row = move_intent();
+        row.move_recovery = None;
+        assert!(write_move_intent(&conn, &row).is_err());
+        let tx = conn.unchecked_transaction().unwrap();
+        assert!(write_move_intent(&tx, &move_intent()).is_err());
     }
 
     #[test]

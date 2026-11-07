@@ -909,6 +909,7 @@ fn spawn_transfer_inner(
                 to_path: to.path.clone(),
                 remove_source,
                 deleting_source: false,
+                move_recovery: None,
                 overwrite,
                 transferred: 0,
                 total: 0,
@@ -2438,21 +2439,39 @@ async fn run(
 
     if durable && resuming && remove_source {
         let recovery = match durable::Journal::get(app, id) {
-            Ok(row) if row.deleting_source => Some((
-                row.transferred,
-                interrupted_move_error(from, from_sftp.as_ref()).await,
-            )),
+            Ok(row) if row.deleting_source => {
+                #[cfg(windows)]
+                let result = if from_sftp.is_none() && to_sftp.is_none() {
+                    if let Some(proof) = &row.move_recovery {
+                        phase(app, id, "verifying");
+                        local_move::recover(
+                            Path::new(&from.path),
+                            Path::new(&to.path),
+                            proof,
+                            cancel,
+                        )
+                        .await
+                    } else {
+                        Err(interrupted_move_error(from, None).await)
+                    }
+                } else {
+                    Err(interrupted_move_error(from, from_sftp.as_ref()).await)
+                };
+                #[cfg(not(windows))]
+                let result = Err(interrupted_move_error(from, from_sftp.as_ref()).await);
+                Some((row.transferred, result))
+            }
             Ok(_) => None,
-            Err(error) => Some((0, error)),
+            Err(error) => Some((0, Err(error))),
         };
-        if let Some((transferred, error)) = recovery {
+        if let Some((transferred, result)) = recovery {
             if let Some(s) = from_sftp {
                 let _ = tokio::time::timeout(std::time::Duration::from_secs(5), s.close()).await;
             }
             if let Some(s) = to_sftp {
                 let _ = tokio::time::timeout(std::time::Duration::from_secs(5), s.close()).await;
             }
-            return Outcome::from_result(Err(error), transferred, cancel);
+            return Outcome::from_result(result, transferred, cancel);
         }
     }
     if durable && remove_source {
@@ -2566,8 +2585,13 @@ async fn run(
                 }
                 let mut row = durable::Journal::get(app, id)?;
                 row.deleting_source = true;
+                row.transferred = meter.transferred;
                 row.total = meter.total;
-                durable::Journal::upsert(app, row)?;
+                #[cfg(windows)]
+                if let Some(verified) = &verified_local_move {
+                    row.move_recovery = Some(verified.proof().clone());
+                }
+                durable::Journal::commit_move_intent(app, row)?;
             }
             if cancel.load(Ordering::SeqCst) {
                 return Err(AppError::Ssh(CANCELLED.into()));
