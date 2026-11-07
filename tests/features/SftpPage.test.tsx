@@ -311,6 +311,111 @@ describe("SftpPage", () => {
       platform.mockRestore();
     }
   });
+  it("resets hidden, reordered and resized columns only in the chosen pane and persists the reset", async () => {
+    const { unmount } = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    fireEvent.keyDown(within(pane).getByRole("separator", { name: "File sorting: Name" }), {
+      key: "ArrowRight",
+    });
+    fireEvent.click(within(pane).getByRole("button", { name: "View options" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Show column: Type" }));
+    const data = new Map<string, string>();
+    const transfer = {
+      types: ["application/x-tunnelde-file-column"],
+      setData: (key: string, value: string) => data.set(key, value),
+      getData: (key: string) => data.get(key) ?? "",
+    };
+    fireEvent.dragStart(pane.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
+    fireEvent.drop(pane.querySelector(".sftp-columns__name")!, { dataTransfer: transfer });
+    expect(pane.querySelector("th")?.className).toBe("sftp-columns__size");
+    expect(pane.style.getPropertyValue("--sftp-columns")).toContain("206px");
+    fireEvent.click(within(pane).getByRole("button", { name: "View options" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reset panel view" }));
+    expect(pane.style.getPropertyValue("--sftp-columns")).toBe("18px 196px 90px 90px 150px");
+    expect([...pane.querySelectorAll("th")].map((entry) => entry.className)).toEqual([
+      "sftp-columns__name",
+      "sftp-columns__type",
+      "sftp-columns__size",
+      "sftp-columns__modified",
+    ]);
+    unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(
+      document.querySelector<HTMLElement>(".sftp-pane")!.style.getPropertyValue("--sftp-columns"),
+    ).toBe("18px 196px 90px 90px 150px");
+  });
+
+  it.each(["Enter", "Escape"])(
+    "returns path %s to the same pane's keyboard navigation",
+    async (key) => {
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("readme.md");
+      const input = openPath(1);
+      fireEvent.keyDown(input, { key });
+      const remote = screen.getAllByRole("listbox")[1]!;
+      const proxy = within(remote).getByRole("textbox", {
+        name: "Type to select a file or folder",
+      });
+      expect(document.activeElement).toBe(proxy);
+      await waitFor(() => expect(remote.getAttribute("aria-busy")).toBe("false"));
+      fireEvent.keyDown(proxy, { key: "Home" });
+      expect(within(remote).getByRole("option", { selected: true }).textContent).toContain(
+        "readme.md",
+      );
+    },
+  );
+
+  it.each(["rename", "file", "folder"] as const)(
+    "returns cancelled %s to keyboard navigation without stealing focus on blur",
+    async (operation) => {
+      render(<SftpPage sessionId="session-1" />);
+      fireEvent.click(await screen.findByText("notes.txt"));
+      const local = screen.getAllByRole("listbox")[0]!;
+      const start = () => {
+        if (operation === "rename") fireEvent.keyDown(local, { key: "F2" });
+        else
+          fireEvent.click(
+            screen.getAllByRole("button", {
+              name: operation === "file" ? "New file" : "New folder",
+            })[0]!,
+          );
+      };
+      start();
+      const input = local.querySelector<HTMLInputElement>(".sftp-row input")!;
+      expect(document.activeElement).toBe(input);
+      fireEvent.keyDown(input, { key: "Escape" });
+      const proxy = within(local).getByRole("textbox", { name: "Type to select a file or folder" });
+      expect(document.activeElement).toBe(proxy);
+      fireEvent.keyDown(proxy, { key: "Home" });
+      expect(within(local).getByRole("option", { selected: true }).textContent).toContain("src");
+      start();
+      const remote = screen.getAllByRole("listbox")[1]!;
+      act(() => remote.focus());
+      expect(local.querySelector(".sftp-row input")).toBeNull();
+      expect(document.activeElement).toBe(
+        within(remote).getByRole("textbox", { name: "Type to select a file or folder" }),
+      );
+    },
+  );
+
+  it.each(["rename", "create"] as const)(
+    "keeps list focus after an unchanged %s",
+    async (operation) => {
+      render(<SftpPage sessionId="session-1" />);
+      fireEvent.click(await screen.findByText("notes.txt"));
+      const local = screen.getAllByRole("listbox")[0]!;
+      if (operation === "rename") fireEvent.keyDown(local, { key: "F2" });
+      else fireEvent.click(screen.getAllByRole("button", { name: "New file" })[0]!);
+      fireEvent.keyDown(local.querySelector(".sftp-row input")!, { key: "Enter" });
+      expect(document.activeElement).toBe(
+        within(local).getByRole("textbox", { name: "Type to select a file or folder" }),
+      );
+      expect(fsMock.rename).not.toHaveBeenCalled();
+      expect(fsMock.createFile).not.toHaveBeenCalled();
+    },
+  );
   it("opens local text inside Tunnelde and offers the system application separately", async () => {
     render(<SftpPage sessionId="session-1" />);
     const file = await screen.findByText("notes.txt");
@@ -443,7 +548,15 @@ describe("SftpPage", () => {
     expect(screen.getByText("notes.txt")).toBeTruthy();
     const columns = document.querySelectorAll('.sftp-miller__column [role="listbox"]');
     expect(columns.length).toBe(2);
-    fireEvent.keyDown(columns[1]!, { key: "ArrowLeft" });
+    const proxy = within(columns[1]! as HTMLElement).getByRole("textbox", {
+      name: "Type to select a file or folder",
+    });
+    expect(document.activeElement).toBe(proxy);
+    fireEvent.keyDown(proxy, { key: "Home" });
+    expect(
+      within(columns[1]! as HTMLElement).getByRole("option", { selected: true }).textContent,
+    ).toContain("child.ts");
+    fireEvent.keyDown(proxy, { key: "ArrowLeft" });
     expect(screen.queryByText("child.ts")).toBeNull();
     expect(currentPath()).toBe("C:\\work");
   });
@@ -750,6 +863,77 @@ describe("SftpPage", () => {
 });
 
 describe("SftpPage asynchronous interactions", () => {
+  it.each(["button", "keyboard", "external"] as const)(
+    "preserves a multi-selection and range anchor across a %s refresh",
+    async (trigger) => {
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("notes.txt");
+      const local = screen.getAllByRole("listbox")[0]!;
+      fireEvent.click(within(local).getByText("notes.txt"));
+      fireEvent.click(within(local).getByText("src"), { ctrlKey: true });
+      const before = fsMock.list.mock.calls.length;
+      if (trigger === "external")
+        act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "another-pane" }));
+      else if (trigger === "keyboard") fireEvent.keyDown(local, { key: "F5" });
+      else fireEvent.click(screen.getAllByRole("button", { name: "Refresh" })[0]!);
+      await waitFor(() => expect(fsMock.list.mock.calls.length).toBeGreaterThan(before));
+      await waitFor(() => expect(local.getAttribute("aria-busy")).toBe("false"));
+      expect(within(local).getAllByRole("option", { selected: true })).toHaveLength(2);
+      fireEvent.keyDown(local, { key: "ArrowDown", shiftKey: true });
+      expect(within(local).getAllByRole("option", { selected: true })).toHaveLength(2);
+      fireEvent.keyDown(local, { key: "c", ctrlKey: true });
+      expect(useFileClipboard.getState().clip?.items.map((entry) => entry.name)).toEqual([
+        "src",
+        "notes.txt",
+      ]);
+    },
+  );
+
+  it("prunes vanished selections and keeps keyboard actions on a surviving file", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const local = screen.getAllByRole("listbox")[0]!;
+    fireEvent.click(within(local).getByText("notes.txt"));
+    fireEvent.click(within(local).getByText("src"), { ctrlKey: true });
+    fsMock.list.mockImplementation(async (source: FsSource) =>
+      source.kind === "local"
+        ? { ...localListing, entries: [localListing.entries[0]!] }
+        : remoteListing,
+    );
+    act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "another-pane" }));
+    await waitFor(() => expect(within(local).queryByText("src")).toBeNull());
+    expect(within(local).getByRole("option", { selected: true }).textContent).toContain(
+      "notes.txt",
+    );
+    fireEvent.keyDown(local, { key: "F2" });
+    expect(await screen.findByDisplayValue("notes.txt")).toBeTruthy();
+  });
+
+  it("keeps a path draft and its focus when another pane changes files", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const input = openPath();
+    fireEvent.change(input, { target: { value: "C:\\unfinished" } });
+    const before = fsMock.list.mock.calls.length;
+    act(() => domainEvents.filesChanged({ source: { kind: "local" }, origin: "another-pane" }));
+    await waitFor(() => expect(fsMock.list.mock.calls.length).toBeGreaterThan(before));
+    await waitFor(() =>
+      expect(screen.getAllByRole("listbox")[0]!.getAttribute("aria-busy")).toBe("false"),
+    );
+    expect(input.value).toBe("C:\\unfinished");
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("starts a new selection on navigation even when the destination has matching entries", async () => {
+    render(<SftpPage sessionId="session-1" />);
+    fireEvent.click(await screen.findByText("notes.txt"));
+    const input = openPath();
+    fireEvent.change(input, { target: { value: "C:\\elsewhere" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(currentPath()).toBe("C:\\elsewhere"));
+    expect(screen.getAllByRole("listbox")[0]!.querySelector('[aria-selected="true"]')).toBeNull();
+  });
+
   it("refreshes an in-flight navigation destination and discards the superseded response", async () => {
     const pending: Array<(value: typeof localListing) => void> = [];
     fsMock.list.mockImplementation((source: FsSource, path?: string | null) => {
