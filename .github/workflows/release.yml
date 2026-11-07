@@ -7,9 +7,6 @@ on:
         description: Immutable stable or beta draft tag to build and publish
         required: true
         type: string
-      build_helpers:
-        type: boolean
-        default: true
       use_rust_cache:
         description: Restore Rust caches; disable when recovering a cache service outage
         type: boolean
@@ -20,10 +17,6 @@ on:
         description: Resume an existing draft release using its immutable source tag
         required: true
         type: string
-      build_helpers:
-        description: Also rebuild optional helper Actions artifacts
-        type: boolean
-        default: false
       use_rust_cache:
         description: Restore Rust caches; disable to rebuild from source
         type: boolean
@@ -264,81 +257,6 @@ jobs:
           path: src-tauri/target/cargo-timings/*.html
           if-no-files-found: ignore
           retention-days: 14
-
-  helpers:
-    name: Native helper ${{ matrix.asset }}
-    needs: prepare
-    if: inputs.build_helpers
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            asset: windows-x86_64
-          - os: macos-15-intel
-            asset: macos-aarch64
-            target: aarch64-apple-darwin
-          - os: macos-15-intel
-            asset: macos-x86_64
-            target: x86_64-apple-darwin
-          - os: ubuntu-22.04
-            asset: linux-x86_64
-          - os: ubuntu-24.04-arm
-            asset: linux-aarch64
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.prepare.outputs.tag }}
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.workflow_sha }}
-          path: .release-tools
-          persist-credentials: false
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Add macOS helper target
-        if: matrix.target != ''
-        env:
-          TARGET: ${{ matrix.target }}
-        run: rustup target add "${TARGET}"
-      - uses: Swatinem/rust-cache@v2
-        if: inputs.use_rust_cache
-        id: rust-cache
-        timeout-minutes: 3
-        continue-on-error: true
-        with:
-          workspaces: native-helpers
-          key: ${{ matrix.asset }}
-      - name: Discard incomplete Rust cache
-        if: steps.rust-cache.outcome == 'failure'
-        run: node .release-tools/scripts/ci/reset-rust-cache.mjs native-helpers
-      - run: cargo test --locked --manifest-path native-helpers/Cargo.toml
-      - name: Build native helper
-        env:
-          TARGET: ${{ matrix.target }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${TARGET}" ]; then
-            cargo build --release --locked --manifest-path native-helpers/Cargo.toml --target "${TARGET}"
-          else
-            cargo build --release --locked --manifest-path native-helpers/Cargo.toml
-          fi
-      - name: Package native helper and checksum
-        env:
-          HELPER_ASSET: ${{ matrix.asset }}
-          HELPER_TARGET: ${{ matrix.target }}
-        run: node scripts/release/native-helper.mjs
-      - name: Upload optional helper build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: tunnelde-agent-${{ matrix.asset }}
-          path: artifacts/helpers/*
-          if-no-files-found: error
-          retention-days: 30
 
   updater:
     name: Verify and publish release

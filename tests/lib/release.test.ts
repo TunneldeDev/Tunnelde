@@ -1,5 +1,4 @@
 import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
@@ -23,15 +22,6 @@ function fixture(notes = "- Fix a reproducible bug.") {
   temporary.push(root);
   mkdirSync(join(root, "scripts/release"), { recursive: true });
   mkdirSync(join(root, "src-tauri"));
-  mkdirSync(join(root, "native-helpers"));
-  writeFileSync(
-    join(root, "native-helpers/Cargo.toml"),
-    '[package]\nname = "tunnelde-agent"\nversion = "0.18.1"\n',
-  );
-  writeFileSync(
-    join(root, "native-helpers/Cargo.lock"),
-    '[[package]]\nname = "tunnelde-agent"\nversion = "0.18.1"\n',
-  );
   for (const name of [
     "version",
     "metadata/channels",
@@ -39,7 +29,6 @@ function fixture(notes = "- Fix a reproducible bug.") {
     "changelog",
     "release",
     "verify-assets",
-    "native-helper",
     "updater-json",
   ]) {
     mkdirSync(dirname(join(root, `scripts/release/${name}.mjs`)), { recursive: true });
@@ -88,8 +77,6 @@ describe("release preparation", () => {
       "src-tauri/Cargo.toml",
       "src-tauri/Cargo.lock",
       "src-tauri/tauri.conf.json",
-      "native-helpers/Cargo.toml",
-      "native-helpers/Cargo.lock",
       "CHANGELOG.md",
     ];
     const before = names.map(f.read);
@@ -101,32 +88,28 @@ describe("release preparation", () => {
     const f = fixture();
     expect(f.run("release", "--part", "minor").status).toBe(0);
     expect(f.run("version", "check", "v0.19.0").status).toBe(0);
-    expect(f.read("native-helpers/Cargo.toml")).toContain('version = "0.19.0"');
-    expect(f.read("native-helpers/Cargo.lock")).toContain('version = "0.19.0"');
     expect(JSON.parse(f.read(".release-please-manifest.json"))["."]).toBe("0.19.0");
     expect(f.read("CITATION.cff")).toContain("version: 0.19.0");
     expect(f.read("CHANGELOG.md")).toContain("## [0.19.0] - ");
     expect(f.run("changelog", "notes", "0.19.0").stdout.trim()).toBe("- Fix a reproducible bug.");
   });
 
-  it("checks beta versions across every manifest and allows idempotent recovery", () => {
+  it.each([
+    "0.19.0-beta.12.1",
+    "0.19.0-beta.13",
+    "0.19.0-beta01",
+    "0.19.0-beta12",
+    "0.19.0-beta99",
+    "0.19.0-beta12.d.2.gabcdef012345",
+    "0.19.0-alpha.1.d.10.gabcdef012345",
+    "0.19.0-beta.13.d.2.gabcdef012345",
+  ])("checks %s across every manifest and allows idempotent recovery", (version) => {
     const f = fixture();
-    for (const version of [
-      "0.19.0-beta.12.1",
-      "0.19.0-beta.13",
-      "0.19.0-beta01",
-      "0.19.0-beta12",
-      "0.19.0-beta99",
-      "0.19.0-beta12.d.2.gabcdef012345",
-      "0.19.0-alpha.1.d.10.gabcdef012345",
-      "0.19.0-beta.13.d.2.gabcdef012345",
-    ]) {
-      expect(f.run("version", "set", version).status).toBe(0);
-      expect(f.run("version", "check", `v${version}`).status).toBe(0);
-      expect(f.run("version", "check", "v0.19.0-beta.14").status).toBe(1);
-      expect(f.run("version", "set", version).status).toBe(0);
-      expect(f.read("CITATION.cff")).toContain(`version: ${version}`);
-    }
+    expect(f.run("version", "set", version).status).toBe(0);
+    expect(f.run("version", "check", `v${version}`).status).toBe(0);
+    expect(f.run("version", "check", "v0.19.0-beta.14").status).toBe(1);
+    expect(f.run("version", "set", version).status).toBe(0);
+    expect(f.read("CITATION.cff")).toContain(`version: ${version}`);
   });
 
   it("rejects a stale Cargo lock version", () => {
@@ -155,58 +138,6 @@ describe("release preparation", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("CITATION.cff 0.18.0 != package.json 0.18.1");
   });
-});
-
-describe("native helper packaging", () => {
-  it.each([
-    ["windows-x86_64", "", ".exe"],
-    ["linux-x86_64", "", ""],
-    ["macos-aarch64", "aarch64-apple-darwin", ""],
-    ["macos-x86_64", "x86_64-apple-darwin", ""],
-  ])("packages the intended binary and checksum for %s", (asset, triple, extension) => {
-    const f = fixture();
-    const source = join(
-      f.root,
-      "native-helpers/target",
-      triple,
-      "release",
-      `tunnelde-agent${extension}`,
-    );
-    mkdirSync(dirname(source), { recursive: true });
-    const bytes = Buffer.from(`target binary: ${asset}`);
-    writeFileSync(source, bytes);
-    if (triple) {
-      const hostDirectory = join(f.root, "native-helpers/target/release");
-      mkdirSync(hostDirectory, { recursive: true });
-      writeFileSync(join(hostDirectory, "tunnelde-agent"), "wrong host binary");
-    }
-    const result = spawnSync(process.execPath, ["scripts/release/native-helper.mjs"], {
-      cwd: f.root,
-      encoding: "utf8",
-      env: { ...process.env, HELPER_ASSET: asset, HELPER_TARGET: triple },
-    });
-    expect(result.stderr).toBe("");
-    expect(result.status).toBe(0);
-    const name = `tunnelde-agent-${asset}${extension}`;
-    expect(readFileSync(join(f.root, "artifacts/helpers", name))).toEqual(bytes);
-    expect(f.read(`artifacts/helpers/${name}.sha256`)).toBe(
-      `${createHash("sha256").update(bytes).digest("hex")}  ${name}\n`,
-    );
-  });
-
-  it.each(["x86_64-apple-darwin", "../../outside"])(
-    "rejects a mismatched or unsafe target before packaging: %s",
-    (triple) => {
-      const f = fixture();
-      const result = spawnSync(process.execPath, ["scripts/release/native-helper.mjs"], {
-        cwd: f.root,
-        encoding: "utf8",
-        env: { ...process.env, HELPER_ASSET: "macos-aarch64", HELPER_TARGET: triple },
-      });
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("HELPER_TARGET does not match HELPER_ASSET");
-    },
-  );
 });
 
 describe("release publishing", () => {
@@ -441,7 +372,7 @@ describe("release publishing", () => {
     writeFileSync(join(f.root, "assets.json"), JSON.stringify({ assets }));
     const result = run();
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain("native helpers belong in Actions artifacts");
+    expect(result.stderr).toContain("native helpers belong in their independent repository");
     expect(result.stderr).toContain(name);
   });
 
@@ -452,27 +383,19 @@ describe("release publishing", () => {
     expect(result.stderr).toContain("--helpers is no longer supported");
   });
 
-  it("builds helpers as Actions artifacts and gates the desktop release separately", () => {
+  it("keeps desktop publication independent from helper builds", () => {
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
-    const helpers = workflow.split("\n  helpers:\n")[1]!.split("\n  updater:\n")[0]!;
-    expect(helpers).toContain("cargo test --locked --manifest-path native-helpers/Cargo.toml");
-    expect(helpers).toContain(
-      "cargo build --release --locked --manifest-path native-helpers/Cargo.toml",
-    );
-    expect(helpers).toContain("actions/upload-artifact@v4");
-    expect(helpers).toContain("if-no-files-found: error");
-    expect(helpers).toContain("key: ${{ matrix.asset }}");
-    expect(helpers).not.toContain("gh release upload");
-    expect(workflow).not.toContain("--assets assets.json --helpers");
+    expect(workflow).not.toContain("build_helpers");
+    expect(workflow).not.toContain("native-helpers");
+    expect(workflow).not.toContain("\n  helpers:\n");
     const updater = workflow.split("\n  updater:\n")[1]!;
     expect(updater).toContain("needs: [prepare, build]");
-    expect(updater).not.toContain("needs: [prepare, build, helpers]");
   });
 
   it("reuses one draft and publishes only after all desktop assets have passed verification", () => {
     const workflow = readFileSync(join(process.cwd(), ".github/workflows/release.yml"), "utf8");
     const prepare = workflow.split("\n  prepare:\n")[1]!.split("\n  build:\n")[0]!;
-    const build = workflow.split("\n  build:\n")[1]!.split("\n  helpers:\n")[0]!;
+    const build = workflow.split("\n  build:\n")[1]!.split("\n  updater:\n")[0]!;
     expect(prepare).toContain("Validate and reuse the shared draft");
     expect(prepare).toContain("release_id: ${{ steps.draft.outputs.id }}");
     expect(prepare).toContain("Expected exactly one existing release draft for ${TAG}");

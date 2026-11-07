@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.4](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.3...v0.30.4) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **helper:** separate native helper release lifecycle
+
+<details open>
+<summary>详细变更 | Details (1)</summary>
+
+### 改进 | Improved
+
+- **helper:** separate native helper release lifecycle ([#127](https://github.com/TunneldeDev/Tunnelde/pull/127)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.3](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.2...v0.30.3) - 2026-11-07
 
 ### 更新概览 | Highlights

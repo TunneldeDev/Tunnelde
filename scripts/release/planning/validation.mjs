@@ -1,10 +1,34 @@
-import { SHA, sourceTrees } from "../github/sources.mjs";
+import { SHA, sourceTrees, readText } from "../github/sources.mjs";
 import { VERSION_PATHS } from "../metadata/version-files.mjs";
 
 export const RELEASE_BRANCH = "release/dev-to-main";
 export const POLICY_CONTEXT = "PR policy";
 export const SOURCE_PATH = ".github/release-source.json";
 const RELEASE_METADATA = new Set([...VERSION_PATHS, "CHANGELOG.md", SOURCE_PATH]);
+const RETIRED_HELPER_METADATA = new Set(["native-helpers/Cargo.toml", "native-helpers/Cargo.lock"]);
+
+// A previously promoted main has renumbered these historical files. Removing the
+// helper from dev must not look like an unmerged main hotfix. Only the package's
+// version may differ; real helper changes still stop promotion.
+async function retiredVersionOnly(github, repo, path, main, source, trees) {
+  if (
+    !RETIRED_HELPER_METADATA.has(path) ||
+    trees[2].has(path) ||
+    !trees[0].has(path) ||
+    !trees[1].has(path)
+  )
+    return false;
+  const versions = await Promise.all(
+    [main, source].map((ref) => readText(github, repo, path, ref)),
+  );
+  const pattern = path.endsWith(".lock")
+    ? /(\[\[package\]\]\r?\nname = "tunnelde-agent"\r?\nversion = ")[^"]+(")/
+    : /(\[package\][\s\S]*?\nversion = ")[^"]+(")/;
+  return (
+    versions.every((text) => pattern.test(text)) &&
+    versions[0].replace(pattern, "$1<retired>$2") === versions[1].replace(pattern, "$1<retired>$2")
+  );
+}
 
 export function validateTitle(title) {
   if (
@@ -50,7 +74,8 @@ export async function assertMainHasNoUnpromotedChanges(github, repo, main, dev, 
     if (
       !RELEASE_METADATA.has(path) &&
       trees[0].get(path) !== trees[1].get(path) &&
-      trees[0].get(path) !== trees[2].get(path)
+      trees[0].get(path) !== trees[2].get(path) &&
+      !(await retiredVersionOnly(github, repo, path, main, marker.sourceSha, trees))
     )
       throw new Error(
         `Main has changes outside release metadata (${path}); merge main into dev before promoting`,

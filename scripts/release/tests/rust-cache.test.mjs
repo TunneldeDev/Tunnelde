@@ -15,9 +15,9 @@ function fixture(t) {
   const cargoHome = join(root, "cargo");
   const files = [
     "workspace/src-tauri/target/release/partial.rlib",
-    "workspace/native-helpers/target/debug/partial.rlib",
+    "workspace/other-rust-workspace/target/debug/partial.rlib",
     "workspace/src-tauri/src/main.rs",
-    "workspace/native-helpers/src/main.rs",
+    "workspace/other-rust-workspace/src/main.rs",
     "cargo/registry/src/partial.rs",
     "cargo/git/db/partial",
     "cargo/bin/cargo",
@@ -44,7 +44,7 @@ function fixture(t) {
 }
 
 test("failed Rust restores discard incomplete cache but retain sources, tools and other workspaces", (t) => {
-  for (const workspace of ["src-tauri", "native-helpers"]) {
+  for (const workspace of ["src-tauri"]) {
     const f = fixture(t);
     const result = f.run(workspace);
     assert.equal(result.status, 0, result.stderr);
@@ -53,9 +53,9 @@ test("failed Rust restores discard incomplete cache but retain sources, tools an
     assert.equal(existsSync(join(f.root, "cargo/git")), false);
     for (const path of [
       "workspace/src-tauri/src/main.rs",
-      "workspace/native-helpers/src/main.rs",
+      "workspace/other-rust-workspace/src/main.rs",
       "cargo/bin/cargo",
-      `workspace/${workspace === "src-tauri" ? "native-helpers" : "src-tauri"}/target`,
+      `workspace/${workspace === "src-tauri" ? "other-rust-workspace" : "src-tauri"}/target`,
     ])
       assert.equal(existsSync(join(f.root, path)), true, path);
     assert.equal(f.run(workspace).status, 0, "recovery is idempotent");
@@ -69,6 +69,7 @@ test("cache recovery refuses local execution, self-hosted runners and unknown wo
     ["src-tauri", { GITHUB_WORKSPACE: "" }],
     ["src-tauri", { GITHUB_WORKSPACE: "relative/path" }],
     ["../src-tauri", {}],
+    ["other-rust-workspace", {}],
   ]) {
     const f = fixture(t);
     assert.notEqual(f.run(workspace, env).status, 0);

@@ -184,7 +184,7 @@ releases and tags remain available. Beta cannot become the latest stable release
 The app exposes only Stable and Beta channels and chooses by SemVer, never release-list order.
 Historical Nightly metadata remains readable, but new Nightly publication is rejected.
 Legacy Nightly preferences migrate to Stable; the update boundary rejects unsupported channels.
-Helpers remain Actions artifacts and are rejected in desktop release downloads.
+Helpers are versioned, built and released by the independent Tunnelde-agent repository and are rejected in desktop release downloads.
 
 The repository token explicitly dispatches CI on generated PR heads and writes PR-policy status;
 no personal token or App credential is needed. The privileged policy workflow executes only trusted
@@ -196,7 +196,7 @@ cross compile `aarch64-apple-darwin`; the x64 build targets `x86_64-apple-darwin
 ad-hoc signed and checked for its expected Mach-O architecture and a valid code signature before
 the release is published. Updater signatures remain separate. This avoids depending on the
 capacity of hosted Apple Silicon runners; it does not replace testing the app on Apple Silicon.
-Native helper CI runs on Intel macOS and also compiles/checks an arm64 binary.
+The helper repository runs its own CI on Intel macOS and also compiles/checks an arm64 binary.
 
 The desktop library emits only `rlib`, which the application executable consumes; it does not
 build unused C static/shared libraries. Full LTO and size optimization remain enabled. Release
@@ -214,8 +214,8 @@ Actions artifacts. Neither measurements nor compiler reports are added to public
 To recover an interrupted draft with updated build infrastructure, dispatch Release from `main`
 with `existing_tag` set to its original version tag. This builds the original tagged source, reuses its draft, replaces desktop assets and
 regenerates the validated updater manifest. It never moves the tag or bumps a version and refuses
-to overwrite a public release. Optional helper artifacts remain in the original workflow run unless `build_helpers` is selected.
+to overwrite a public release. Optional helpers are built and released independently in the Tunnelde-agent repository.
 
 CI checks repository hygiene, Rust (fmt, clippy, tests), Web (version/i18n checks, typecheck,
-lint, tests, build), and native helpers across Windows, macOS and Linux. The independent hub
+lint, tests, build), and the application on Windows and macOS. The independent hub
 validates package manifests, deterministic archives/checksums, SDK metadata and plugin tests.

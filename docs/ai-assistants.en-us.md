@@ -107,7 +107,7 @@ an OS sandbox around arbitrary commands.
 Old durable deployments remain available under the collapsed advanced configuration.
 They require an explicit deployment directory, remote runtime and optional matching
 native helper. They are separate from the ordinary location menu. See
-[native helper setup](../native-helpers/README.md). Never assume a disconnected supervisor
+[native helper setup](native-helper.md). Never assume a disconnected supervisor
 has stopped; inspect and stop it explicitly after reconnecting.
 
 [简体中文](ai-assistants.zh-cn.md)

@@ -376,13 +376,13 @@ private remote directory and an explicitly chosen remote runtime. No service or 
 is installed. Closing the app preserves remote tasks; stopping a plugin or entering restricted
 mode records stop requests and retries unreachable hosts on SSH reconnect. Runner records bind
 to a saved host, so reconnecting with a new session ID can recover the same task. See
-[native helper setup](../native-helpers/README.md).
+[native helper setup](native-helper.md).
 
 The optional `tunnelde-agent` executable supports MCP stdio and remote runners. Ordinary SSH,
-SFTP, terminal and local API chat use does not require it. Helper binaries and checksums are
-provided as platform-specific artifacts of successful **Release** workflow runs in GitHub
-**Actions**, with 30-day retention, or can be built from `native-helpers/`. They are not included
-in desktop installers or the main GitHub Release downloads.
+SFTP, terminal and local API chat use does not require it. Helper source, platform binaries and checksums are maintained in the independent
+[Tunnelde-agent repository](https://github.com/TunneldeDev/Tunnelde-agent). Its versions and
+releases are independent of the desktop application. Helpers are not included in desktop
+installers or the desktop GitHub Release downloads.
 
 Host/session snapshots never return passwords or private keys. There is no generic
 Tauri command invocation, vault access, host-key auto-trust, self-approval or API for

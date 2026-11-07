@@ -11,8 +11,6 @@ const files = {
   config: join(root, "src-tauri", "tauri.conf.json"),
   cargo: join(root, "src-tauri", "Cargo.toml"),
   lock: join(root, "src-tauri", "Cargo.lock"),
-  helper: join(root, "native-helpers", "Cargo.toml"),
-  helperLock: join(root, "native-helpers", "Cargo.lock"),
   manifest: join(root, ".release-please-manifest.json"),
   citation: join(root, "CITATION.cff"),
 };
@@ -92,17 +90,6 @@ export function checkVersion(tag) {
   if (manifestVersion !== pkg) {
     problems.push(`release manifest ${manifestVersion} != package.json ${pkg}`);
   }
-  const helperVersion = /^version = "([^"]+)"$/m.exec(readFileSync(files.helper, "utf8"))?.[1];
-  const helperLockVersion =
-    /\[\[package\]\]\r?\nname = "tunnelde-agent"\r?\nversion = "([^"]+)"/.exec(
-      readFileSync(files.helperLock, "utf8"),
-    )?.[1];
-  if (helperVersion !== pkg || helperLockVersion !== pkg) {
-    problems.push(
-      `native helper versions ${helperVersion}/${helperLockVersion} != package.json ${pkg}`,
-    );
-  }
-
   if (!cargoMatch) {
     problems.push("src-tauri/Cargo.toml has no package version");
   } else if (cargoMatch[1] !== pkg) {
