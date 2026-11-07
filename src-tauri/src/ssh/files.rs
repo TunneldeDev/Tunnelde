@@ -17,6 +17,7 @@ pub mod bandwidth;
 mod batch;
 mod compressed;
 pub mod durable;
+pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
 mod move_verification;
@@ -2673,7 +2674,13 @@ pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
 }
 
 /// Check the last loaded content before overwriting an existing local file.
+#[cfg(test)]
 pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
+    // Internal tests run the same engine without an application journal.
+    local_editor::save_without_app(path, content, baseline).await
+}
+
+fn validate_editor_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
     let path = Path::new(path);
     if !path.is_absolute() {
         return Err(AppError::validation("sftp.absolutePathRequired"));
@@ -2684,32 +2691,6 @@ pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppR
     if content.contains('\0') {
         return Err(AppError::Ssh("sftp.binaryFile".into()));
     }
-    // Check before opening to avoid blocking on device files or named pipes.
-    if !tokio::fs::metadata(path).await?.is_file() {
-        return Err(AppError::validation("sftp.notRegularFile"));
-    }
-    // Opening without create preserves deletion, and avoids truncation before validation.
-    let mut file = tokio::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .await?;
-    let metadata = file.metadata().await?;
-    if !metadata.is_file() {
-        return Err(AppError::validation("sftp.notRegularFile"));
-    }
-    let mut bytes = Vec::new();
-    (&mut file)
-        .take(MAX_TEXT + 1)
-        .read_to_end(&mut bytes)
-        .await?;
-    if decode_text(bytes)?.content != baseline {
-        return Err(AppError::validation("editor.localFileChanged"));
-    }
-    file.seek(std::io::SeekFrom::Start(0)).await?;
-    file.write_all(content.as_bytes()).await?;
-    file.set_len(content.len() as u64).await?;
-    file.flush().await?;
     Ok(())
 }
 

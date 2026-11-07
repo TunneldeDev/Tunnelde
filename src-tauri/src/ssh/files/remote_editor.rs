@@ -34,13 +34,14 @@ struct Record {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PendingCleanup {
-    id: String,
-    path: String,
-    directory: String,
-    address: String,
-    updated_at: i64,
-    error: Option<String>,
-    running: bool,
+    pub(super) id: String,
+    pub(super) path: String,
+    pub(super) directory: String,
+    pub(super) address: String,
+    pub(super) source: &'static str,
+    pub(super) updated_at: i64,
+    pub(super) error: Option<String>,
+    pub(super) running: bool,
 }
 
 struct Reservation(String);
@@ -91,11 +92,12 @@ fn forget(app: &AppHandle, record: &Record) -> AppResult<()> {
 #[tauri::command]
 pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
     let active = ACTIVE.get_or_init(Default::default).lock().unwrap();
-    Ok(records(&app)?
+    let mut pending: Vec<_> = records(&app)?
         .into_iter()
         .filter(|r| active.get(&r.id) != Some(&false))
         .map(|r| PendingCleanup {
             running: active.get(&r.id) == Some(&true),
+            source: "remote",
             id: r.id,
             path: r.path,
             directory: r.directory,
@@ -103,7 +105,10 @@ pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
             updated_at: r.updated_at,
             error: r.error,
         })
-        .collect())
+        .collect();
+    drop(active);
+    pending.extend(local_editor::pending(&app)?);
+    Ok(pending)
 }
 
 fn session_for(app: &AppHandle, record: &Record) -> AppResult<String> {
@@ -113,6 +118,9 @@ fn session_for(app: &AppHandle, record: &Record) -> AppResult<String> {
 
 #[tauri::command]
 pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
+    if id.starts_with("local-") {
+        return local_editor::retry(app, id).await;
+    }
     let _reservation = Reservation::acquire(&id, true)?;
     let _ = app.emit(EVENT, ());
     let mut record = records(&app)?

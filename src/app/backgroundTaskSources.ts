@@ -40,7 +40,7 @@ export function registerBackgroundTaskSources(): () => void {
             status: item.running ? "running" : "attention",
             execution: "native",
             updatedAt: item.updatedAt,
-            message: `${item.address} · ${item.directory}`,
+            message: `${item.source === "local" ? i18n.t("sftp.local") : item.address} · ${item.directory}`,
             error: item.error ? translateError({ code: "ssh", message: item.error }) : undefined,
             actions: [
               {
