@@ -663,7 +663,11 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         name if name.starts_with("files.")
             && !matches!(
                 name,
-                "files.upload" | "files.download" | "files.cancelTransfer" | "files.transferStatus"
+                "files.upload"
+                    | "files.download"
+                    | "files.cancelTransfer"
+                    | "files.transferStatus"
+                    | "files.local.writeText"
             )
             && !name.ends_with(".readText")
             && !name.ends_with(".list")
@@ -719,6 +723,7 @@ pub(super) async fn write_local(
         validate_text(baseline.as_bytes())?;
     }
     authorize(context, &["fs.write"])?;
+    let app = context.app.clone();
     let context = context.clone();
     crate::ssh::files::local_editor::save_checked(
         context.app.clone(),
@@ -734,6 +739,14 @@ pub(super) async fn write_local(
             }
             validate_text(original.as_bytes())?;
             check_scope(target, original)
+        },
+        move || {
+            // Direct calls and scoped AI/MCP tools share this publication event.
+            // It survives RPC cancellation after the atomic publication gate.
+            let _ = app.emit(
+                "plugin://domain-changed",
+                json!({"domain":"files","sessionId":null}),
+            );
         },
     )
     .await?;

@@ -149,7 +149,7 @@ pub async fn save(
     content: String,
     baseline: String,
 ) -> AppResult<()> {
-    save_checked(app, path, content, Some(baseline), |_, _| Ok(())).await
+    save_checked(app, path, content, Some(baseline), |_, _| Ok(()), || {}).await
 }
 
 // Dropping an RPC future does not stop spawn_blocking. Propagate cancellation
@@ -168,8 +168,9 @@ pub(crate) async fn save_checked(
     content: String,
     baseline: Option<String>,
     check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
+    on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
-    save_async(Some(app), path, content, baseline, check).await
+    save_async(Some(app), path, content, baseline, check, on_saved).await
 }
 
 async fn save_async(
@@ -178,12 +179,14 @@ async fn save_async(
     content: String,
     baseline: Option<String>,
     check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
+    on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
     validate_editor_text(&path, &content, baseline.as_deref().unwrap_or_default())?;
     let lifetime = SaveLifetime(Arc::new(AtomicBool::new(true)));
     let active = lifetime.0.clone();
     tokio::task::spawn_blocking(move || {
-        save_transaction(
+        let mut on_saved = Some(on_saved);
+        let result = save_transaction(
             app.as_ref(),
             &path,
             &content,
@@ -194,8 +197,24 @@ async fn save_async(
                 }
                 check(path, original)
             },
-            |_, _| Ok(()),
-        )
+            |phase, _| {
+                if phase == "published" {
+                    // Publication cannot be undone by dropping the RPC future.
+                    // Notify on this worker before fallible staging cleanup.
+                    if let Some(on_saved) = on_saved.take() {
+                        on_saved();
+                    }
+                }
+                Ok(())
+            },
+        );
+        if result.is_ok() {
+            // A successful no-op still reconciles a caller's potentially stale view.
+            if let Some(on_saved) = on_saved.take() {
+                on_saved();
+            }
+        }
+        result
     })
     .await
     .map_err(|e| AppError::internal(e.to_string()))?
