@@ -73,7 +73,12 @@ export function installInternalDrag(): () => void {
   const start = (event: PointerEvent) => {
     if (event.button !== 0 || event.isPrimary === false || event.pointerType === "touch") return;
     const element = event.target instanceof Element ? event.target : null;
-    if (!element || element.closest("input, textarea, select, button, a, [contenteditable='true']"))
+    if (
+      !element ||
+      element.closest(
+        "input, textarea, select, button, a, [contenteditable='true'], [role='separator']",
+      )
+    )
       return;
     const source = element.closest<HTMLElement>("[draggable='true']");
     if (!source) return;

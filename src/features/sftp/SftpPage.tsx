@@ -2404,7 +2404,7 @@ export function SftpPage({
                           const dragged = event.dataTransfer.getData(
                             "application/x-tunnelde-file-column",
                           ) as FileColumn;
-                          if (!columns.includes(dragged)) return;
+                          if (!columns.includes(dragged) || dragged === sort) return;
                           event.preventDefault();
                           event.stopPropagation();
                           const next = columns.filter((item) => item !== dragged);
