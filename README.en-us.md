@@ -59,8 +59,8 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   tasks, expandable details and temporary speed limits. Drag its title to move it,
   resize from any edge or corner, and retain its layout across reopen and restart.
   Optimized transfers use bounded SFTP request pipelines, automatic segmentation
-  and shared connection budgets. Adaptive compression is available; small-file archive
-  batching is not yet implemented.
+  and shared connection budgets. Adaptive compression and bounded in-memory archives
+  reduce small-file round trips on compatible SSH hosts.
   See [network and storage](docs/network-storage.en-us.md) for behavior and limitations.
 - Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
   italic preview tab; select the same item again, double-click its tab, or interact with

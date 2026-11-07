@@ -257,3 +257,106 @@ async fn aborting_read_only_transport_closes_peer_and_releases_unacknowledged_re
     .await
     .expect("interrupted read-only transport retained its peer or requests");
 }
+
+#[tokio::test]
+async fn archive_upload_waits_for_acknowledgement_and_preserves_member_boundaries() {
+    let (client, server) = duplex(1024 * 1024);
+    let (ready, waiting) = oneshot::channel();
+    let (acknowledge, acknowledged) = oneshot::channel();
+    let fixture = tokio::spawn(async move {
+        let (input, mut output) = tokio::io::split(server);
+        let mut input = BufReader::new(input);
+        output.write_all(MAGIC).await.unwrap();
+        let request = header(&mut input).await;
+        assert_eq!(request["op"], "archive_write");
+        assert_eq!(request["entries"][0]["path"], "/owned/文件.part");
+        let mut payload = vec![0; request["size"].as_u64().unwrap() as usize];
+        input.read_exact(&mut payload).await.unwrap();
+        let archive = decode(
+            payload,
+            request["length"].as_u64().unwrap() as usize,
+            request["compressed"].as_bool().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::archive::unpack(archive, &[65536, 0]).unwrap(),
+            vec![vec![b'x'; 65536], vec![]]
+        );
+        ready.send(()).unwrap();
+        acknowledged.await.unwrap();
+        output
+            .write_all(format!("{{\"id\":{},\"size\":0}}\n", request["id"]).as_bytes())
+            .await
+            .unwrap();
+        let _ = input.read(&mut [0]).await;
+    });
+    let session = Arc::new(Session::new(client).await.unwrap());
+    let writing = session.clone();
+    let operation = tokio::spawn(async move {
+        writing
+            .write_archive(
+                vec![
+                    super::super::archive::Entry {
+                        path: "/owned/文件.part".into(),
+                        length: 65536,
+                    },
+                    super::super::archive::Entry {
+                        path: "/owned/empty.part".into(),
+                        length: 0,
+                    },
+                ],
+                vec![vec![b'x'; 65536], vec![]],
+                true,
+            )
+            .await
+    });
+    waiting.await.unwrap();
+    assert!(
+        !operation.is_finished(),
+        "archive completion preceded its write acknowledgement"
+    );
+    acknowledge.send(()).unwrap();
+    operation.await.unwrap().unwrap();
+    drop(session);
+    fixture.await.unwrap();
+}
+
+#[tokio::test]
+async fn archive_download_rejects_wrong_member_lengths_from_peer() {
+    let (client, server) = duplex(1024 * 1024);
+    let fixture = tokio::spawn(async move {
+        let (input, mut output) = tokio::io::split(server);
+        let mut input = BufReader::new(input);
+        output.write_all(MAGIC).await.unwrap();
+        let request = header(&mut input).await;
+        assert_eq!(request["op"], "archive_read");
+        let archive = super::super::archive::pack(vec![b"wrong length".to_vec()]).unwrap();
+        output
+            .write_all(
+                format!(
+                    "{{\"id\":{},\"size\":{},\"length\":{}}}\n",
+                    request["id"],
+                    archive.len(),
+                    archive.len()
+                )
+                .as_bytes(),
+            )
+            .await
+            .unwrap();
+        output.write_all(&archive).await.unwrap();
+        let _ = input.read(&mut [0]).await;
+    });
+    let session = Session::new(client).await.unwrap();
+    assert!(session
+        .read_archive(
+            vec![super::super::archive::Entry {
+                path: "/owned/source".into(),
+                length: 4,
+            }],
+            false
+        )
+        .await
+        .is_err());
+    drop(session);
+    fixture.await.unwrap();
+}

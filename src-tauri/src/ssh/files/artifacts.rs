@@ -10,8 +10,18 @@ enum ArtifactRecord {
     Current {
         path: String,
         identity: Option<FileIdentity>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        archive: Option<ArchiveWrite>,
     },
     Legacy(String),
+}
+
+/// Persisted before sending a remote archive. A missing acknowledgement makes
+/// this staging generation disposable, never safe to reuse or publish.
+#[derive(Default, Serialize, Deserialize)]
+struct ArchiveWrite {
+    generation: Option<String>,
+    pending: bool,
 }
 
 impl ArtifactRecord {
@@ -40,6 +50,132 @@ fn artifact_record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<Option
     get(app, &artifact_key(id, to))?
         .map(|raw| serde_json::from_str(&raw).map_err(AppError::from))
         .transpose()
+}
+
+fn part_from_record(
+    to: &Endpoint,
+    id: &str,
+    record: Option<&ArtifactRecord>,
+) -> AppResult<Endpoint> {
+    let generation = match record {
+        Some(ArtifactRecord::Current {
+            archive: Some(archive),
+            ..
+        }) => archive.generation.as_deref(),
+        _ => None,
+    };
+    let owner = match generation {
+        Some(value) => format!(
+            "{id}-{}",
+            uuid::Uuid::parse_str(value)
+                .map_err(|_| AppError::internal("Invalid archive staging generation"))?
+        ),
+        None => id.to_owned(),
+    };
+    Ok(staging_endpoint(to, &owner, "part"))
+}
+
+/// Retire an uncertain archive before making another writer. The worker only
+/// opens existing files: a delayed open now fails, and an already-open writer
+/// can only touch the unlinked old inode. The next generation has a fresh path.
+pub(super) async fn prepare_staging(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+) -> AppResult<Endpoint> {
+    let mut record = artifact_record(app, id, to)?;
+    let temp = part_from_record(to, id, record.as_ref())?;
+    if let Some(ArtifactRecord::Current {
+        archive: Some(archive),
+        ..
+    }) = record.as_mut()
+    {
+        if archive.pending {
+            if sftp.is_none() {
+                return Err(AppError::internal(
+                    "Remote archive journal on a local staging file",
+                ));
+            }
+            if interruptible(Some(cancel), file_length(&temp, sftp))
+                .await?
+                .is_some()
+            {
+                interruptible(Some(cancel), remove_transfer_file(&temp, sftp)).await?;
+            }
+            archive.generation = Some(uuid::Uuid::new_v4().to_string());
+            archive.pending = false;
+            // Persist the generation and discard checkpoints from the retired
+            // inode together. Cancellation/crash before this commit retries the
+            // old unlink; it can never make the old pathname writable again.
+            app.state::<AppState>().db.with(|conn| {
+                let tx = conn.unchecked_transaction()?;
+                tx.execute(
+                    "UPDATE settings SET value=?1,updated_at=?2 WHERE key=?3",
+                    rusqlite::params![
+                        serde_json::to_string(record.as_ref().unwrap())?,
+                        crate::models::now_ms(),
+                        artifact_key(id, to)
+                    ],
+                )?;
+                let digest = format!("{:x}", Sha256::digest(to.path.as_bytes()));
+                tx.execute(
+                    "DELETE FROM settings WHERE key=?1 OR key=?2",
+                    rusqlite::params![
+                        format!("transfer-part:{id}:{digest}"),
+                        format!("transfer-parallel:{id}:{digest}")
+                    ],
+                )?;
+                tx.commit()?;
+                Ok(())
+            })?;
+            return part_from_record(to, id, record.as_ref());
+        }
+    }
+    Ok(temp)
+}
+
+/// One transaction covers every member before the first network write. Clear
+/// it only after the worker acknowledges all writes and has closed its handles.
+pub(super) fn archive_pending(
+    app: &AppHandle,
+    id: &str,
+    files: &[(&Endpoint, &Endpoint)],
+    pending: bool,
+) -> AppResult<()> {
+    app.state::<AppState>().db.with(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        for (to, temp) in files {
+            let key = artifact_key(id, to);
+            let raw: String =
+                tx.query_row("SELECT value FROM settings WHERE key=?1", [&key], |r| {
+                    r.get(0)
+                })?;
+            let mut record: ArtifactRecord = serde_json::from_str(&raw)?;
+            if to.session.is_none() || part_from_record(to, id, Some(&record))?.path != temp.path {
+                return Err(AppError::internal("Archive staging journal mismatch"));
+            }
+            match &mut record {
+                ArtifactRecord::Current { archive, .. } => {
+                    archive.get_or_insert_with(ArchiveWrite::default).pending = pending
+                }
+                ArtifactRecord::Legacy(_) => {
+                    return Err(AppError::internal("Unowned archive staging file"))
+                }
+            }
+            tx.execute(
+                "UPDATE settings SET value=?1,updated_at=?2 WHERE key=?3",
+                rusqlite::params![
+                    serde_json::to_string(&record)?,
+                    crate::models::now_ms(),
+                    key
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
 }
 
 #[cfg(windows)]
@@ -104,6 +240,7 @@ pub(super) fn record_local_writer(
             serde_json::to_string(&ArtifactRecord::Current {
                 path: to.path.clone(),
                 identity: Some(current.clone()),
+                archive: None,
             })?,
         )?;
         let guard = GuardedFile::pin(Path::new(&temp.path))?;
@@ -234,6 +371,7 @@ pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> 
         serde_json::to_string(&ArtifactRecord::Current {
             path: to.path.clone(),
             identity: None,
+            archive: None,
         })?,
     )
 }
@@ -343,9 +481,11 @@ async fn cleanup_file(
         Sha256::digest(to.path.as_bytes())
     );
     let artifact = artifact_record(app, id, to)?;
-    cleanup_owned(
+    let temp = part_from_record(to, id, artifact.as_ref())?;
+    cleanup_at(
         id,
         to,
+        &temp,
         sftp,
         backup_checkpoint(app, &key)?.as_ref(),
         artifact.as_ref().and_then(ArtifactRecord::identity),
@@ -353,6 +493,7 @@ async fn cleanup_file(
     .await
 }
 
+#[cfg(test)]
 pub(super) async fn cleanup_owned(
     id: &str,
     to: &Endpoint,
@@ -361,6 +502,17 @@ pub(super) async fn cleanup_owned(
     identity: Option<&FileIdentity>,
 ) -> AppResult<()> {
     let temp = staging_endpoint(to, id, "part");
+    cleanup_at(id, to, &temp, sftp, expected, identity).await
+}
+
+async fn cleanup_at(
+    id: &str,
+    to: &Endpoint,
+    temp: &Endpoint,
+    sftp: Option<&SftpSession>,
+    expected: Option<&BackupFingerprint>,
+    identity: Option<&FileIdentity>,
+) -> AppResult<()> {
     let backup = staging_endpoint(to, id, "backup");
     let cancel = AtomicBool::new(false);
     if file_length(&backup, sftp).await?.is_some() {
@@ -381,8 +533,8 @@ pub(super) async fn cleanup_owned(
         // destination created concurrently by another process or SFTP client.
         return Err(recovery());
     }
-    if file_length(&temp, sftp).await?.is_some() {
-        cleanup_partial(&temp, sftp, identity).await?;
+    if file_length(temp, sftp).await?.is_some() {
+        cleanup_partial(temp, sftp, identity).await?;
     }
     Ok(())
 }
@@ -554,6 +706,7 @@ mod tests {
         let record = ArtifactRecord::Current {
             path: "/destination".into(),
             identity: Some(id.clone()),
+            archive: None,
         };
         let restored: ArtifactRecord =
             serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
@@ -565,6 +718,51 @@ mod tests {
                 .identity()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn archive_generations_round_trip_and_never_reuse_retired_paths() {
+        let to = Endpoint {
+            session: Some("remote".into()),
+            path: "/home/test/文件.bin".into(),
+        };
+        let legacy: ArtifactRecord =
+            serde_json::from_str(r#"{"path":"/home/test/文件.bin","identity":null}"#).unwrap();
+        let first = part_from_record(&to, "task", Some(&legacy)).unwrap();
+        assert_eq!(first.path, staging_endpoint(&to, "task", "part").path);
+        let mut paths = std::collections::HashSet::from([first.path]);
+        for _ in 0..20 {
+            let record = ArtifactRecord::Current {
+                path: to.path.clone(),
+                identity: None,
+                archive: Some(ArchiveWrite {
+                    generation: Some(uuid::Uuid::new_v4().to_string()),
+                    pending: true,
+                }),
+            };
+            let restored: ArtifactRecord =
+                serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
+            let part = part_from_record(&to, "task", Some(&restored)).unwrap();
+            assert!(part.path.starts_with("/home/test/.tunnelde-task-"));
+            assert!(part.path.ends_with(".part"));
+            assert!(paths.insert(part.path));
+            assert!(matches!(
+                restored,
+                ArtifactRecord::Current {
+                    archive: Some(ArchiveWrite { pending: true, .. }),
+                    ..
+                }
+            ));
+        }
+        let invalid = ArtifactRecord::Current {
+            path: to.path.clone(),
+            identity: None,
+            archive: Some(ArchiveWrite {
+                generation: Some("../other".into()),
+                pending: true,
+            }),
+        };
+        assert!(part_from_record(&to, "task", Some(&invalid)).is_err());
     }
 
     #[cfg(windows)]
