@@ -47,6 +47,21 @@ create a new file object, so hard links and already-open readers keep the old
 object. Flushing staging data does not guarantee directory durability after
 power loss.
 
+`files.local.writeText` uses the same transaction for existing UTF-8 text files,
+with an optional `baseline` holding the last text read. Older callers can omit it:
+the host snapshots the file at the start and checks it again before publication.
+Without a baseline, changes made before the call cannot be detected. Both the
+original and replacement must be text and at most 512 KiB; the serialized request
+must also fit the existing 256 KiB RPC limit. `fs.write` is sufficient; the internal
+comparison does not require granting `fs.read`.
+
+For AI/MCP tool writes, the approved path, canonical grant roots and original
+content hash are checked again inside the transaction. Runtime authorization,
+client revocation and request cancellation are checked before staging and just
+before publication. Cancellation or revocation after that final gate cannot roll
+back a replacement already in progress. Pending cleanup uses the same background
+task and startup recovery mechanism as editor saves.
+
 ## Remote document saves
 
 Saving an existing remote text document checks its last loaded contents. If another

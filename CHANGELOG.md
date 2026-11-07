@@ -6,6 +6,27 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.7](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.6...v0.30.7) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **plugins:** save local text atomically with approval guards
+- **plugins:** refresh file panels after local tool saves
+
+<details open>
+<summary>详细变更 | Details (2)</summary>
+
+### 修复 | Fix
+
+- **plugins:** save local text atomically with approval guards ([#135](https://github.com/TunneldeDev/Tunnelde/pull/135)) @quyansiyuanwang
+- **plugins:** refresh file panels after local tool saves ([#137](https://github.com/TunneldeDev/Tunnelde/pull/137)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.6](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.5...v0.30.6) - 2026-11-07
 
 ### 更新概览 | Highlights
