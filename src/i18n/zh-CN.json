@@ -1127,6 +1127,12 @@
     "consentRequired": "使用本机 Node 前需要你的授权。"
   },
   "plugin": {
+    "statusBar": {
+      "invalidItem": "插件提供的状态栏项目无效。",
+      "unknownCommand": "此插件的状态栏命令不可用。",
+      "limit": "插件已达到状态栏项目数量上限。",
+      "expired": "此状态栏操作已失效，请点击更新后的项目。"
+    },
     "api": {
       "invalidStorage": "无法读取插件保存的数据。请先导出或修复数据再重试；原有数据已保留。",
       "storageTooLarge": "插件保存的数据超过支持的大小。请先导出或精简数据再重试；原有数据已保留。"

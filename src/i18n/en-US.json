@@ -1127,6 +1127,12 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "statusBar": {
+      "invalidItem": "The plugin supplied an invalid status bar item.",
+      "unknownCommand": "The plugin's status bar command is unavailable.",
+      "limit": "The plugin reached the status bar item limit.",
+      "expired": "This status bar action has expired. Try the updated item."
+    },
     "api": {
       "invalidStorage": "The plugin's saved data could not be read. Export or repair its data before retrying; existing data has been preserved.",
       "storageTooLarge": "The plugin's saved data exceeds the supported size. Export or reduce it before retrying; existing data has been preserved."
