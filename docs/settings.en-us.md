@@ -33,7 +33,7 @@ channels and check frequency are included in settings profiles.
 File transfer optimization is enabled under **Settings → Files → Transfers**. Concurrency,
 segment size and per-segment request depth default to Automatic and can be overridden
 individually. Turning optimization off retains the manual choices for later use. Changes
-apply when starting/resuming a transfer; see [transfer behavior](network-storage.md#transfer-performance).
+apply when starting/resuming a transfer; see [transfer behavior](network-storage.en-us.md#transfer-performance).
 
 Automatic transfer compression also defaults to enabled. It compresses blocks only
 when this saves traffic, skips tiny tasks and falls back to SFTP on unsupported
@@ -49,7 +49,7 @@ Open **Transfers** in the status bar, or F1 → **Background transfers**, to ins
 tasks from any page. Pin the list to keep it open while working. Drag its title to
 move it and its edges/corners to resize it. The layout is remembered across reopen,
 restart and tray restoration; Reset layout or double-clicking the title restores
-the default placement. See [transfer controls](network-storage.md#pause-and-resume-transfers)
+the default placement. See [transfer controls](network-storage.en-us.md#pause-and-resume-transfers)
 for keyboard adjustments and reconnect/cleanup behavior.
 
 ## Quick Access and plugin shortcuts
@@ -63,14 +63,14 @@ for keyboard adjustments and reconnect/cleanup behavior.
 - When an installed or updated plugin introduces a shortcut conflict, keep either binding,
   retain both, or open the filtered conflict in Settings. Retained conflicts are highlighted;
   matching commands can run together. Filter with `@is:conflict` and
-  `@plugins:plugin-id,another-id`. See the [shortcuts guide](shortcuts.md).
+  `@plugins:plugin-id,another-id`. See the [shortcuts guide](shortcuts.en-us.md).
 - From a terminal, F1 and Ctrl+Shift+P open Quick Access. Ctrl+K and Ctrl+P retain
   their shell behavior; macOS Command shortcuts remain application shortcuts.
 
 Content search uses a visible local/SSH directory, literal case-insensitive matching,
 and no shell. It skips links, hidden/build directories, binary and oversized files,
 and stops at 100 matches, 4,000 entries, 8 directory levels, 8 MiB read or 15 seconds
-(plus bounded connection setup/close). Remote editor drafts override disk search
+(plus bounded connection setup/close). Local and remote editor drafts override disk search
 results and remain intact when navigating to a matching line.
 
 Appearance starts with compact built-in palette choices and installed plugin themes. One plugin
@@ -151,7 +151,7 @@ their defaults without overwriting existing choices.
 
 Host-specific proxies and ordered jump hosts live in the host editor's collapsed
 **Proxy & jump hosts** section. Port forwards can be managed from the host detail page or the independent forwarding workspace. See
-[network and storage](network-storage.md) for route precedence, process-environment
+[network and storage](network-storage.en-us.md) for route precedence, process-environment
 behavior, transfer recovery and SSHFS dependencies.
 
 A single click opens host details by default. **Workspace → Host activation** can change
