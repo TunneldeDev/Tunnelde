@@ -99,7 +99,7 @@ it("shows a localized explanation when a directory move is rejected", () => {
 
 it.each([
   ["sftp.moveRecoverySourcePresent", /an entry now exists at the source path/],
-  ["sftp.moveRecoveryUnverified", /destination cannot be verified from the saved task/],
+  ["sftp.moveRecoveryUnverified", /saved task cannot verify the current files/],
   ["sftp.moveSourceRetained", /source has been kept/],
 ])("explains interrupted source removal without expanding task details: %s", (error, message) => {
   useTransfers.setState((state) => ({

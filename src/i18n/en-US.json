@@ -673,7 +673,7 @@
     "resumePrefixMismatch": "Partial file differs from source. Restart to a new target.",
     "resumeSourceChanged": "Source changed; restart to a new target.",
     "moveVerificationFailed": "The copied file differs from the source. Both files were kept. Check the destination before retrying the move.",
-    "moveRecoveryUnverified": "The move was interrupted while removing its source. The source is missing, and the destination cannot be verified from the saved task. Check the destination before clearing this task.",
+    "moveRecoveryUnverified": "The move was interrupted while removing its source. The saved task cannot verify the current files. Both locations are preserved; check them before clearing this task.",
     "moveRecoverySourcePresent": "The move was interrupted while removing its source, and an entry now exists at the source path. Check both locations; the source will not be removed automatically.",
     "moveSourceRetained": "The file was copied and checked. This connection cannot protect both files from concurrent changes during source removal, so the source has been kept. Review both locations before removing the source yourself. Clearing this task keeps both files.",
     "reviewTransfer": "Needs review",
