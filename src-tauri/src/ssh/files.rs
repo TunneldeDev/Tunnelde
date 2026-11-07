@@ -24,6 +24,7 @@ mod move_verification;
 mod range_io;
 mod remote_commit;
 pub mod remote_editor;
+mod scan;
 mod scheduler;
 pub mod search;
 mod segments;
@@ -1241,23 +1242,21 @@ async fn finish_remote_file(mut file: russh_sftp::client::fs::File) -> AppResult
 }
 
 async fn is_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<bool> {
-    let (directory, symlink) = match sftp {
+    let kind = match sftp {
         Some(handle) => {
             let metadata = handle
                 .symlink_metadata(&endpoint.path)
                 .await
                 .map_err(map_sftp)?;
-            (metadata.is_dir(), metadata.is_symlink())
+            scan::remote_kind(&metadata)?
+                .ok_or_else(|| AppError::validation("sftp.fileMetadataMissing"))?
         }
         None => {
             let metadata = tokio::fs::symlink_metadata(&endpoint.path).await?;
-            (metadata.is_dir(), local_metadata_is_link(&metadata))
+            scan::local_kind(&metadata)?
         }
     };
-    if symlink {
-        return Err(AppError::validation("sftp.symlinkUnsupported"));
-    }
-    Ok(directory)
+    Ok(matches!(kind, scan::Kind::Directory))
 }
 
 fn local_metadata_is_link(metadata: &std::fs::Metadata) -> bool {
@@ -1349,36 +1348,7 @@ async fn make_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<
 }
 
 async fn measure(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<u64> {
-    // One lstat supplies both the type and the length. A separate metadata
-    // request for every file doubles the network round trips for large trees.
-    let (directory, symlink, length) = match sftp {
-        Some(handle) => {
-            let metadata = handle
-                .symlink_metadata(&endpoint.path)
-                .await
-                .map_err(map_sftp)?;
-            (metadata.is_dir(), metadata.is_symlink(), metadata.len())
-        }
-        None => {
-            let metadata = tokio::fs::symlink_metadata(&endpoint.path).await?;
-            (
-                metadata.is_dir(),
-                local_metadata_is_link(&metadata),
-                metadata.len(),
-            )
-        }
-    };
-    if symlink {
-        return Err(AppError::validation("sftp.symlinkUnsupported"));
-    }
-    if directory {
-        let mut total = 0;
-        for path in children(endpoint, sftp).await? {
-            total += Box::pin(measure(&endpoint.child(path), sftp)).await?;
-        }
-        return Ok(total);
-    }
-    Ok(length)
+    scan::measure(endpoint, sftp, 4).await
 }
 
 async fn open_reader(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Reader> {
@@ -1685,15 +1655,19 @@ async fn source_stamp(
     match sftp {
         Some(s) => {
             let m = s.symlink_metadata(&endpoint.path).await.map_err(map_sftp)?;
-            if m.is_symlink() {
-                return Err(AppError::validation("sftp.symlinkUnsupported"));
-            }
+            match scan::remote_kind(&m)? {
+                Some(scan::Kind::File(_)) => {}
+                Some(scan::Kind::Directory) => {
+                    return Err(AppError::validation("sftp.resumeSourceChanged"))
+                }
+                None => return Err(AppError::validation("sftp.fileMetadataMissing")),
+            };
             Ok((m.len(), m.modified().ok().and_then(millis)))
         }
         None => {
             let m = tokio::fs::symlink_metadata(&endpoint.path).await?;
-            if local_metadata_is_link(&m) {
-                return Err(AppError::validation("sftp.symlinkUnsupported"));
+            if !matches!(scan::local_kind(&m)?, scan::Kind::File(_)) {
+                return Err(AppError::validation("sftp.resumeSourceChanged"));
             }
             Ok((m.len(), m.modified().ok().and_then(millis)))
         }
@@ -2410,6 +2384,7 @@ async fn run(
 
     let settings = app.state::<AppState>().settings();
     let config = segments::config(&settings);
+    let scan_concurrency = config.max_concurrent_reads;
     let from_sftp = match &from.session {
         Some(session_id) => match interruptible(
             Some(cancel),
@@ -2487,17 +2462,26 @@ async fn run(
             return Outcome::from_result(Err(error), 0, cancel);
         }
     }
-    let measured = interruptible(Some(cancel), measure(from, from_sftp.as_ref())).await;
-    if cancel.load(Ordering::SeqCst) {
-        if let Some(sftp) = from_sftp {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+    let measured = interruptible(
+        Some(cancel),
+        scan::measure(from, from_sftp.as_ref(), scan_concurrency),
+    )
+    .await;
+    let total = match measured {
+        Ok(total) if !cancel.load(Ordering::SeqCst) => total,
+        result => {
+            if let Some(sftp) = from_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+            }
+            if let Some(sftp) = to_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+            }
+            let error = result
+                .err()
+                .unwrap_or_else(|| AppError::Ssh(CANCELLED.into()));
+            return Outcome::from_result(Err(error), 0, cancel);
         }
-        if let Some(sftp) = to_sftp {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
-        }
-        return Outcome::Cancelled(0);
-    }
-    let total = measured.unwrap_or(0);
+    };
     progress(app, id, name, 0, total);
 
     let mut meter = Meter::new(app, id, name, total);
@@ -2885,11 +2869,9 @@ fn remove_local_entry(path: &Path) -> AppResult<()> {
 
 fn copy_local_entry(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
     let metadata = std::fs::symlink_metadata(from)?;
-    if local_metadata_is_link(&metadata) {
-        return Err(AppError::validation("sftp.symlinkUnsupported"));
-    }
+    let kind = scan::local_kind(&metadata)?;
     reject_local_destination_link(to)?;
-    if metadata.is_dir() {
+    if matches!(kind, scan::Kind::Directory) {
         std::fs::create_dir_all(to)?;
         for entry in std::fs::read_dir(from)? {
             let entry = entry?;
@@ -2926,11 +2908,10 @@ async fn copy_remote_entry_with(
     overwrite: bool,
 ) -> AppResult<()> {
     let metadata = sftp.symlink_metadata(from).await.map_err(map_sftp)?;
-    if metadata.is_symlink() {
-        return Err(AppError::validation("sftp.symlinkUnsupported"));
-    }
+    let kind = scan::remote_kind(&metadata)?
+        .ok_or_else(|| AppError::validation("sftp.fileMetadataMissing"))?;
     reject_remote_destination_link(sftp, to).await?;
-    if metadata.is_dir() {
+    if matches!(kind, scan::Kind::Directory) {
         if remote_exists(sftp, to).await? {
             if !overwrite {
                 return Err(AppError::validation("sftp.alreadyExists"));
