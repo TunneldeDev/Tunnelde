@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   pluginLoad: vi.fn(),
   pluginStart: vi.fn(),
   transferHydrate: vi.fn(async () => {}),
+  editorCleanupList: vi.fn(async () => []),
   hosts: [] as { id: string }[],
   events: {
     onSettingsChanged: vi.fn(),
@@ -24,6 +25,7 @@ const mocks = vi.hoisted(() => ({
     onPluginSecurity: vi.fn(),
     onTransfer: vi.fn(),
     onTransfersChanged: vi.fn(),
+    onEditorCleanupChanged: vi.fn(),
     onSshClosed: vi.fn(),
   },
 }));

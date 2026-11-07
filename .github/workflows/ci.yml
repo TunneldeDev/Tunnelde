@@ -181,6 +181,7 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
@@ -220,6 +221,7 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification

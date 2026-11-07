@@ -6261,7 +6261,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tunnelde"
-version = "0.30.5"
+version = "0.30.6"
 dependencies = [
  "base64 0.23.1",
  "chrono",
@@ -6302,6 +6302,7 @@ dependencies = [
  "webview2-com",
  "windows-core",
  "windows-sys 0.61.2",
+ "xattr",
  "zip 5.1.1",
 ]
 

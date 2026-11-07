@@ -85,7 +85,9 @@ pub fn run() {
             update::spawn_auto_check(&handle);
             let cleanup_app = handle.clone();
             tauri::async_runtime::spawn(async move {
+                ssh::files::local_editor::on_start(&cleanup_app).await;
                 ssh::files::durable::on_reconnect(&cleanup_app).await;
+                ssh::files::remote_editor::on_reconnect(&cleanup_app).await;
             });
             tracing::info!(
                 version = %handle.package_info().version,
@@ -100,6 +102,8 @@ pub fn run() {
             platform::background::main_window_suspend,
             mounts::plugin_mounts_action,
             ssh::files::durable::durable_transfer_list,
+            ssh::files::remote_editor::editor_cleanup_list,
+            ssh::files::remote_editor::editor_cleanup_retry,
             ssh::files::durable::durable_transfer_clear,
             ssh::files::durable::durable_transfer_pause,
             ssh::files::durable::durable_transfer_resume,
