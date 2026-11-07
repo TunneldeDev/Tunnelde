@@ -81,6 +81,15 @@ Segment size can be automatic or 256 KiB, 1 MiB, 4 MiB or 16 MiB. Request depth 
 automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight requests.
 Changes apply on start/resume and travel with settings profiles.
 
+For directory copies without replacement, optimization also overlaps file preparation,
+data transfer and publication on the existing channels. Automatic mode processes up to
+four directory entries at once; manual concurrency selects 1, 2, 4 or 8. Nested trees
+share that limit instead of multiplying it at every level. The task shares a packet
+budget across these entries and combines their confirmed progress. A failure or
+cancellation stops queued entries and drains active writers before task cleanup.
+Overwrite tasks retain sequential atomic publication. This pipeline does not create
+an archive or install a remote helper, and works with ordinary SFTP servers.
+
 Background tasks share a scheduler: up to four tasks run at once across the
 application. Each SSH connection has a budget of six transfer channels. An endpoint
 reserves one metadata and one data channel; a durable remote overwrite reserves
