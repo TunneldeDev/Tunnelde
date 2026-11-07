@@ -339,3 +339,42 @@ it("keeps the saved rule visible with startup progress while waiting for SSH", a
   await act(async () => completeStart());
   await screen.findByText("Running");
 });
+
+it("keeps stopping feedback and actions disabled until the listener is released", async () => {
+  connect();
+  rows = [
+    {
+      id: "rule",
+      hostId: "host",
+      name: "Database",
+      mode: "remote",
+      bindHost: "127.0.0.1",
+      bindPort: 8000,
+      targetHost: "127.0.0.1",
+      targetPort: 80,
+      active: true,
+      sessionId: "current",
+    },
+  ];
+  let release!: () => void;
+  const implementation = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation(async (command, args) => {
+    if (command === "forwarding_stop")
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+    return implementation(command, args);
+  });
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Stop" }));
+  expect(
+    ((await screen.findByRole("button", { name: "Stopping…" })) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "Actions for Database" }) as HTMLButtonElement).disabled,
+  ).toBe(true);
+  expect(screen.queryByText("Stopped")).toBeNull();
+  await act(async () => release());
+  await screen.findByText("Stopped");
+  expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
+});

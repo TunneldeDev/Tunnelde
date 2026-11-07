@@ -354,7 +354,10 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "forwards.stop" => {
-            state.forwards.stop(&field::<String>(&params, "id")?);
+            state
+                .forwards
+                .stop(&field::<String>(&params, "id")?)
+                .await?;
             Ok(Value::Null)
         }
         "events.publish" => {

@@ -334,6 +334,14 @@ Startup failures stay beside the saved rule so Start can retry without creating 
 save failures keep the editor draft. Other open forwarding views refresh after changes.
 Endpoint groups stack vertically in narrow panes.
 
+Stopping waits for the local listener to close or for the SSH server to acknowledge
+releasing a remote listener. Actions remain disabled with a **Stopping…** status
+until that finishes, so a saved port can be edited and restarted immediately.
+If release cannot be confirmed, the rule shows an error; disconnect the host's
+forwarding connection before retrying. Interrupted cleanup also reserves its remote
+endpoint until cancellation finishes, preventing an older cleanup from closing a
+new listener on the same port.
+
 Rules persist, but listeners start manually after connecting. Loopback is the
 default; exposing a listener requires confirmation. Remote listeners depend on
 the SSH server's forwarding policy and `GatewayPorts`. Stopping a rule or closing
