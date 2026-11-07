@@ -90,6 +90,14 @@ cancellation stops queued entries and drains active writers before task cleanup.
 Overwrite tasks retain sequential atomic publication. This pipeline does not create
 an archive or install a remote helper, and works with ordinary SFTP servers.
 
+Before copying, Tunnelde scans the source tree to estimate its size. Remote scans reuse
+file types and lengths supplied in directory listings, querying missing attributes
+separately. At most four metadata operations run across the tree; a smaller configured
+request budget is respected. Directory types are checked again before traversal.
+Unreadable folders, symbolic links, special files and incomplete required metadata
+stop preparation before the destination is created. The size is a progress estimate;
+individual files are still checked by the copy and resume protocol.
+
 Background tasks share a scheduler: up to four tasks run at once across the
 application. Each SSH connection has a budget of six transfer channels. An endpoint
 reserves one metadata and one data channel; a durable remote overwrite reserves
