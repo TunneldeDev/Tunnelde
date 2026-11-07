@@ -782,6 +782,7 @@
     "conflictTitle": "Remote file changed",
     "localFileChanged": "The file changed outside Tunnelde. Your draft is retained; compare the changes before saving.",
     "readOnlyFile": "This file is read-only. Your draft has been retained.",
+    "saveCancelled": "Saving was cancelled. Your draft has been retained.",
     "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?",
     "format": "Format document",
     "formatting": "Formatting…",
