@@ -30,6 +30,47 @@ pub struct ConnectionQuality {
     spread_ms: Option<u64>,
     quality: Quality,
     last_error: Option<AppError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    https: Option<HttpsQuality>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct HttpsQuality {
+    elapsed_ms: u64,
+    success: bool,
+    status: Option<u16>,
+    error: Option<AppError>,
+}
+
+async fn check_https(host: &str, url: &str) -> HttpsQuality {
+    let started = std::time::Instant::now();
+    let result = async {
+        let client = super::http_client_for_proxy(Some(url))?;
+        let target = reqwest::Url::parse(&format!("https://{}/", super::authority(host)))
+            .map_err(|_| AppError::validation("network.invalid"))?;
+        // Complete TLS and HTTP through the same explicit route as the TCP test.
+        let response = client
+            .head(target)
+            .timeout(Duration::from_secs(15))
+            .send()
+            .await
+            .map_err(|error| {
+                if error.is_timeout() {
+                    AppError::validation("network.timeout")
+                } else {
+                    AppError::validation("network.httpsFailed")
+                }
+            })?;
+        Ok::<_, AppError>(response.status().as_u16())
+    }
+    .await;
+    HttpsQuality {
+        elapsed_ms: started.elapsed().as_millis().min(u64::MAX as u128) as u64,
+        success: result.is_ok(),
+        status: result.as_ref().ok().copied(),
+        error: result.err(),
+    }
 }
 
 fn summarize(samples_ms: Vec<Option<u64>>, last_error: Option<AppError>) -> ConnectionQuality {
@@ -57,6 +98,7 @@ fn summarize(samples_ms: Vec<Option<u64>>, last_error: Option<AppError>) -> Conn
         samples_ms,
         quality,
         last_error,
+        https: None,
     }
 }
 
@@ -115,7 +157,11 @@ pub async fn proxy_test_quality(
 ) -> AppResult<ConnectionQuality> {
     // Freeze the selected route across all samples, including system proxy resolution.
     let url = super::tcp_proxy(&app, &host, port, &proxy)?;
-    measure_route(&host, port, &url).await
+    let mut quality = measure_route(&host, port, &url).await?;
+    if port == 443 && quality.successful > 0 {
+        quality.https = Some(check_https(&host, &url).await);
+    }
+    Ok(quality)
 }
 
 #[cfg(test)]
