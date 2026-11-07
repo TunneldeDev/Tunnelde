@@ -20,8 +20,11 @@ must be approved and running. Every later request is authorized separately; appe
 the catalogue does not grant access.
 
 Method descriptions include `name`, `permissions`, `params`, `description`, `stability`,
-`since` and `deprecated`. `params` is descriptive text, not a machine-validated schema
-for that method. Older hosts can omit the stability metadata; treat it as unknown.
+`since` and `deprecated`. Stable core methods also provide an optional `contract` with
+`version: 1`, draft-07 JSON `inputSchema`, `resultSchema`, `errorSchema`, `knownErrors`
+and `events`. `params` remains descriptive text. Schemas describe structural validity;
+authorization, encoded byte limits and current runtime state are checked separately.
+Older hosts can omit the contract or stability metadata; treat missing metadata as unknown.
 Ignore additional fields and unrecognized stability values.
 
 | Stability      | Meaning                                                                                                                                                                              |
@@ -30,30 +33,66 @@ Ignore additional fields and unrecognized stability values.
 | `experimental` | Behavior and payloads may change; discover capabilities and handle failures.                                                                                                         |
 | `deprecated`   | Consult `deprecated` for migration guidance.                                                                                                                                         |
 
-At present, `api.describe` is the method explicitly marked stable. Do not treat the
-presence of settings, workspace, chat, runner or panel methods as a stability commitment.
+The first stable core consists of `api.describe`, `sessions.list`, `storage.get`,
+`storage.set` and `storage.delete`. These methods have been available since 0.21.0;
+the `since` field records availability, not when this stability commitment was made.
+Settings, workspace, chat, runner and panel methods remain experimental.
 An incompatible change to a stable contract requires an explicitly versioned migration.
 
 The frozen discovery [request schema](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
 and [response schema](../tests/fixtures/plugin-compat/api-describe-v1.schema.json) define
 its v1 compatibility floor. Discovery emits no events. CI validates a host-produced
-response and checks the method's metadata and permissions. These schemas do not define
-other methods' inputs, outputs or events.
+response and checks the method's metadata and permissions. The separate frozen
+[core v1 contracts](../tests/fixtures/plugin-compat/core-v1.json) define the other
+stable methods. New fields may be added; consumers must ignore fields they do not know.
+
+## Stable core behavior
+
+| Method           | Permission      | Input and result                                                                                                      |
+| ---------------- | --------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `api.describe`   | None            | Object parameters; returns protocol version and method descriptions.                                                  |
+| `sessions.list`  | `sessions.read` | Object parameters; returns current authenticated SSH sessions, possibly an empty array. Saved hosts are not sessions. |
+| `storage.get`    | None            | `{key}`; returns this plugin's JSON value, or `null` when absent. A stored JSON `null` has the same result.           |
+| `storage.set`    | None            | `{key,value}`; accepts any JSON value including `null`; returns `null` after replacement.                             |
+| `storage.delete` | None            | `{key}`; removes the value if present; returns `null` even when the key was absent.                                   |
+
+All methods require a running, approved plugin and reject revoked or restricted runtimes.
+Storage is isolated by plugin identity, persists across runtime restarts, and does not
+require filesystem permission. Keys contain 1–128 ASCII letters, digits, dots, underscores
+or hyphens; `__proto__`, `constructor` and `prototype` are reserved. Unknown object fields
+are ignored. Requests are limited to 256 KiB of encoded UTF-8 JSON. The complete persisted
+storage object, including all keys and JSON overhead, is also limited to 256 KiB; a request
+that fits the request limit may still exceed the aggregate storage quota. These byte limits
+are independent of the structural schemas. Storage writes replace the stored JSON file;
+power-loss durability is not promised. None of these five methods emits events.
+
+Session results contain `id`, `hostId`, `title`, `address`, `cols`, `rows` and `connectedAt`
+(Unix epoch milliseconds). Internal terminal and connection-purpose fields are excluded.
+Listing a session does not reserve it: later operations can fail if it disconnects.
+`sessions.connect` uses the same result DTO but remains experimental.
+
+Failed host calls return JSON-RPC `error` with integer `code`, string `message`, and usually
+`data.code` identifying the error category. Invalid parameter objects or oversized requests
+use `-32602`; authorization failures use `-32001`; domain, quota and IO failures use
+`-32000`. Missing storage fields report `plugin.api.missing:<field>`, incorrect types
+`plugin.api.invalid:<field>`, rejected keys `plugin.api.invalidStorageKey`, corrupt stored
+data `plugin.api.invalidStorage`, and quota overflow `plugin.api.storageTooLarge`.
+`knownErrors` lists recognized identifiers, not every possible IO message. The transport
+may reject an oversized response with `-32002` and no `data`; callers must not require
+`data` for every error. Handle additional error messages without parsing OS-specific text.
 
 ## Compatibility testing
 
 CI loads a frozen v0.28.0 example through the current host's manifest loader and JSON-RPC
-lifecycle. This exercises one historical plugin's transport and view response, not every
+lifecycle. A separate, newly authored probe uses a frozen pre-contract SDK, with source
+commit and SHA-256 recorded alongside it, to exercise the current host. Core schema checks
+validate real storage results, session serialization and JSON-RPC errors, and reject
+narrowed contracts or changed permissions. This exercises a defined core, not every
 method, permission, event or stored-data migration. Test a plugin against the oldest
 application version it declares, and again against newer hosts. Check for unavailable
 methods, authorization changes and errors; do not depend on undocumented fields or a
 fixed method count. The market SDK catalogue and `api.describe` can differ when their
 releases are not synchronized.
-
-The plugin-facing `sessions.list` and `sessions.connect` responses use a separate data
-structure with the existing v1 fields `id`, `hostId`, `title`, `address`, `cols`, `rows`
-and `connectedAt`. This separation does not make those methods stable or guarantee their
-connection lifecycle and error behavior.
 
 ## Approval and runtime boundaries
 

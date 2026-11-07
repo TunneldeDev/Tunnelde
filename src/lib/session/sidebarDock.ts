@@ -5,12 +5,19 @@ import type { TFunction } from "i18next";
 
 export const TAB_MIME = "application/x-tunnelde-tab";
 export const SIDEBAR_MIME = "application/x-tunnelde-sidebar";
-export const SIDEBAR_VIEWS: BuiltinSidebarView[] = ["hosts", "knownHosts", "plugins", "forwarding"];
+export const SIDEBAR_VIEWS: BuiltinSidebarView[] = [
+  "hosts",
+  "knownHosts",
+  "plugins",
+  "forwarding",
+  "tasks",
+];
 export const SIDEBAR_LABELS = {
   hosts: "sidebar.hosts",
   forwarding: "forward.title",
   knownHosts: "settings.knownHosts",
   plugins: "settings.plugins",
+  tasks: "tasks.title",
 } as const satisfies Record<BuiltinSidebarView, string>;
 export const sidebarTabId = (view: SidebarView): string => `sidebar:${view}`;
 

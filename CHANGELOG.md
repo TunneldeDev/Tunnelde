@@ -6,6 +6,36 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.31.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.7...v0.31.0) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **tasks:** dock background tasks throughout the workbench
+- **plugins:** define and verify stable core API contracts
+- **files:** preserve selection and focus through file navigation
+- **drag:** keep resize handles out of internal drag operations
+- **files:** clean up resize gestures and avoid redundant renders
+
+<details open>
+<summary>详细变更 | Details (5)</summary>
+
+### 新增 | New
+
+- **tasks:** dock background tasks throughout the workbench ([#138](https://github.com/TunneldeDev/Tunnelde/pull/138)) @quyansiyuanwang
+- **plugins:** define and verify stable core API contracts ([#142](https://github.com/TunneldeDev/Tunnelde/pull/142)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **files:** preserve selection and focus through file navigation ([#140](https://github.com/TunneldeDev/Tunnelde/pull/140), [be0748e](https://github.com/TunneldeDev/Tunnelde/commit/be0748e5f034f5712f49944e5dd1f8cc975f5884)) @quyansiyuanwang
+- **drag:** keep resize handles out of internal drag operations ([#140](https://github.com/TunneldeDev/Tunnelde/pull/140)) @quyansiyuanwang
+- **files:** clean up resize gestures and avoid redundant renders ([#141](https://github.com/TunneldeDev/Tunnelde/pull/141)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.7](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.6...v0.30.7) - 2026-11-07
 
 ### 更新概览 | Highlights
