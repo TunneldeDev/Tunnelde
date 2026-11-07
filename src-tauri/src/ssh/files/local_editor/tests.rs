@@ -149,6 +149,7 @@ async fn dropping_an_in_progress_async_save_refuses_publication_and_cleans_stagi
             }
             Ok(())
         },
+        || {},
     ));
     tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
         .await
@@ -164,6 +165,43 @@ async fn dropping_an_in_progress_async_save_refuses_publication_and_cleans_stagi
         .await
         .unwrap();
     assert_eq!(f.disk(), "original");
+    f.clean();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn committed_save_notifies_once_even_when_its_rpc_is_dropped() {
+    let f = Fixture::new();
+    let (published, waiting) = tokio::sync::oneshot::channel();
+    let (release, blocker) = std::sync::mpsc::channel();
+    let notifications = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let notified = notifications.clone();
+    let save = tokio::spawn(save_async(
+        None,
+        display_path(&f.file),
+        "committed".into(),
+        None,
+        |_, _| Ok(()),
+        move || {
+            notified.fetch_add(1, Ordering::AcqRel);
+            published.send(()).unwrap();
+            blocker
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .unwrap();
+        },
+    ));
+    tokio::time::timeout(std::time::Duration::from_secs(10), waiting)
+        .await
+        .unwrap()
+        .unwrap();
+    let lock = lock_for(&std::fs::canonicalize(&f.file).unwrap());
+    save.abort();
+    assert!(save.await.unwrap_err().is_cancelled());
+    release.send(()).unwrap();
+    tokio::task::spawn_blocking(move || drop(lock.lock().unwrap()))
+        .await
+        .unwrap();
+    assert_eq!(f.disk(), "committed");
+    assert_eq!(notifications.load(Ordering::Acquire), 1);
     f.clean();
 }
 
@@ -196,6 +234,7 @@ async fn dropping_a_queued_async_save_does_not_publish_when_the_lock_becomes_ava
             checked.store(true, Ordering::Release);
             Ok(())
         },
+        || {},
     ));
     // Poll the real future once, dispatching its blocking worker behind the lock.
     assert!(matches!(
