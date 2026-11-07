@@ -1790,6 +1790,7 @@
     "moveHint": "移动任务窗口 · 方向键移动 · Shift 微调 · Escape 取消",
     "resizeHint": "调整任务窗口大小 · 方向键调整 · Shift 微调",
     "resetLayout": "重置任务窗口布局",
+    "floatWindow": "作为浮动窗口打开",
     "keepOpen": "保持任务窗口打开",
     "installPlugin": "安装 {{name}}",
     "status": {

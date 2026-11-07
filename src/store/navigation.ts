@@ -17,7 +17,7 @@ export type SettingsSection =
   | "updates"
   | "about"
   | "advanced";
-export type BuiltinSidebarView = "hosts" | "knownHosts" | "plugins" | "forwarding";
+export type BuiltinSidebarView = "hosts" | "knownHosts" | "plugins" | "forwarding" | "tasks";
 export type SidebarView = BuiltinSidebarView | PluginSidebarView;
 
 export const useNavigation = create<{

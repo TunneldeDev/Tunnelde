@@ -1,4 +1,5 @@
 import { ForwardingPanel } from "@/features/forwarding/ForwardingPanel";
+import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { HostTree } from "@/components/layout/HostTree";
@@ -131,6 +132,8 @@ export function SidebarContents() {
         <HostTree />
       ) : view === "forwarding" ? (
         <ForwardingPanel />
+      ) : view === "tasks" ? (
+        <DockedBackgroundTasks />
       ) : view === "plugins" ? (
         <PluginsSidebar />
       ) : parsePluginSidebar(view) ? (

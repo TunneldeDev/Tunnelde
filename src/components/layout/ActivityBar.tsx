@@ -2,6 +2,7 @@ import {
   Blocks,
   Bot,
   Folder,
+  ListTodo,
   MessageCircle,
   MessageSquare,
   Network,
@@ -32,6 +33,7 @@ import { usePlugins } from "@/store/plugins";
 import { pluginSidebars } from "@/lib/plugins/sidebars";
 import type { SidebarView } from "@/store/navigation";
 import { useQuickAccess } from "@/store/quickAccess";
+import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
 
 const PLUGIN_ICONS = {
   bot: Bot,
@@ -61,6 +63,7 @@ export function ActivityBar() {
   const views = [
     { view: "hosts", Icon: Server },
     { view: "forwarding", Icon: Network },
+    { view: "tasks", Icon: ListTodo },
     { view: "knownHosts", Icon: ShieldCheck },
     { view: "plugins", Icon: Blocks },
     ...pluginSidebars(plugins).map((view) => ({
@@ -71,6 +74,7 @@ export function ActivityBar() {
     })),
   ] satisfies { view: SidebarView; Icon: typeof Server }[];
   const selectView = async (view: SidebarView) => {
+    if (view === "tasks") useBackgroundTaskPanel.getState().close();
     const current = useWorkspace.getState();
     const currentTab = current.tabs.find((tab) => tab.id === sidebarTabId(view));
     if (
