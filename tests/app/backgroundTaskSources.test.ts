@@ -22,7 +22,7 @@ it("distinguishes local cleanup paths from remote hosts and retries the native t
     address: "",
     updatedAt: 1,
     running: false,
-    error: null,
+    error: "Access denied (os error 5)",
   };
   const remote = {
     ...local,
@@ -40,6 +40,7 @@ it("distinguishes local cleanup paths from remote hosts and retries the native t
   expect(tasks[0]?.message).toBe(`Local · ${local.directory}`);
   expect(tasks[1]?.message).toBe(`user@server · ${remote.directory}`);
   expect(tasks[0]?.title).toBe("Clean up editor staging");
+  expect(tasks[0]?.error).toBe("Access denied (os error 5)");
   await tasks[0]?.actions?.find((a) => a.id === "retry")?.run();
   expect(api.editorCleanupRetry).toHaveBeenCalledWith("local-save");
   expect(useBackgroundTasks.getState().items.some((t) => t.id === "local-save")).toBe(false);
