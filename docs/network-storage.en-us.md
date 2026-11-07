@@ -244,6 +244,8 @@ journal for retry. This does not isolate privileged or memory-mapped changes.
 Windows local downloads record the volume, full 128-bit file identifier and creation
 time from the newly created staging file's handle. Resuming pins the identified file
 against ordinary rename/delete while permitting transfer writes and checkpoint trimming.
+After its writers close, publication renames through that same held handle without
+unlocking and reopening the staging path. A concurrently created destination is preserved.
 Cleanup opens and locks the file, compares its recorded identity, then deletes through
 that same handle. A different file is preserved even if its contents are identical.
 Unknown staging files, including legacy Windows tasks without an identity record,

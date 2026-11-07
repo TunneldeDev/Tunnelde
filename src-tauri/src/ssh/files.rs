@@ -2013,8 +2013,21 @@ async fn durable_copy_file(
         own_backup = true;
     }
     #[cfg(windows)]
-    drop(local_staging);
-    if let Err(e) = rename_endpoint(&temp, to, to_sftp).await {
+    let committed = match local_staging.as_ref() {
+        Some(guard) => guard
+            .rename_noreplace(Path::new(&to.path))
+            .map_err(|error| {
+                if error.kind() == std::io::ErrorKind::AlreadyExists {
+                    AppError::validation("sftp.alreadyExists")
+                } else {
+                    AppError::from(error)
+                }
+            }),
+        None => rename_endpoint(&temp, to, to_sftp).await,
+    };
+    #[cfg(not(windows))]
+    let committed = rename_endpoint(&temp, to, to_sftp).await;
+    if let Err(e) = committed {
         if own_backup {
             // An existence check followed by rename could overwrite a file
             // created concurrently. Leave the journal and backup for recovery.
@@ -2025,6 +2038,8 @@ async fn durable_copy_file(
         }
         return Err(e);
     }
+    #[cfg(windows)]
+    drop(local_staging);
     cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
     save(true)?;
     Ok(())
