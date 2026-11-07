@@ -68,8 +68,12 @@ export function MonitorPage({ sessionId, active = true }: { sessionId: string; a
   return (
     <div className="monitor-page">
       <header className="monitor-head">
-        <span className="monitor-head__title">{session.title}</span>
-        <span className="monitor-head__meta">{session.address}</span>
+        <span className="monitor-head__title" title={session.title}>
+          {session.title}
+        </span>
+        <span className="monitor-head__meta" title={session.address}>
+          {session.address}
+        </span>
         <span className="monitor-head__live">
           <span className="monitor-dot" aria-hidden="true" />
           {t("monitor.live", { count: samples.length })}

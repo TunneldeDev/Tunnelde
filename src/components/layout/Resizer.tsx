@@ -1,5 +1,6 @@
-import { useEffect, useRef, type PointerEvent } from "react";
+import { useLayoutEffect, useRef } from "react";
 
+import { usePointerDrag } from "@/lib/session/usePointerDrag";
 import { cn } from "@/lib/text/format";
 
 interface ResizerProps {
@@ -8,92 +9,73 @@ interface ResizerProps {
   max: number;
   edge: "left" | "right";
   label: string;
+  /** Preview dimensions without persisting or rerendering the workbench. */
   onChange: (value: number) => void;
   onCommit: (value: number) => void;
 }
 
-/**
- * Vertical drag handle between panels. Updates stay local while dragging and
- * are persisted once on release.
- */
-export function Resizer({ value, min, max, edge, label, onChange, onCommit }: ResizerProps) {
-  const drag = useRef({ startX: 0, startValue: 0, latest: 0, active: false, pointerId: -1 });
-  const frame = useRef<number | null>(null);
-  const reported = useRef(value);
-
-  useEffect(
-    () => () => {
-      if (frame.current !== null) cancelAnimationFrame(frame.current);
-    },
-    [],
-  );
-
-  const report = () => {
-    frame.current = null;
-    if (reported.current === drag.current.latest) return;
-    reported.current = drag.current.latest;
-    onChange(drag.current.latest);
-  };
-
+/** Preview once per frame; save only a completed gesture. */
+export function Resizer(props: ResizerProps) {
+  const { value, min, max, edge, label } = props;
+  const current = useRef(props);
+  useLayoutEffect(() => {
+    current.current = props;
+  });
+  const beginResize = usePointerDrag();
   const clamp = (next: number) => Math.round(Math.min(max, Math.max(min, next)));
-
-  const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (event.button !== 0 || drag.current.active) return;
-    event.preventDefault();
-    reported.current = value;
-    drag.current = {
-      startX: event.clientX,
-      startValue: value,
-      latest: value,
-      active: true,
-      pointerId: event.pointerId,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  };
-
-  const onPointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current.active || event.pointerId !== drag.current.pointerId) {
-      return;
-    }
-    // A scaled display reports fractional client coordinates; keep whole pixels
-    // so the persisted width stays an integer.
-    const delta = (event.clientX - drag.current.startX) * (edge === "right" ? 1 : -1);
-    const next = clamp(drag.current.startValue + delta);
-    if (!Number.isFinite(next)) {
-      return;
-    }
-    drag.current.latest = next;
-    if (frame.current === null) frame.current = requestAnimationFrame(report);
-  };
-
-  const onPointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (!drag.current.active || event.pointerId !== drag.current.pointerId) {
-      return;
-    }
-    drag.current.active = false;
-    if (frame.current !== null) cancelAnimationFrame(frame.current);
-    report();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    // Commit what the drag ended on, not the value the render started with.
-    onCommit(drag.current.latest);
-  };
-
   return (
     <div
       role="separator"
+      tabIndex={0}
       aria-orientation="vertical"
       aria-label={label}
       aria-valuenow={value}
       aria-valuemin={min}
       aria-valuemax={max}
       className={cn("td-resizer", `td-resizer--${edge}`)}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-      onLostPointerCapture={onPointerUp}
+      onPointerDown={(event) => {
+        const handle = event.currentTarget;
+        const origin = event.clientX;
+        let latest = value;
+        let reported = value;
+        const preview = (next: number) => {
+          handle.setAttribute("aria-valuenow", String(next));
+          if (reported !== next) {
+            reported = next;
+            current.current.onChange(next);
+          }
+        };
+        beginResize(event, {
+          move: (next) => {
+            if (!Number.isFinite(next.clientX)) return;
+            latest = clamp(value + (next.clientX - origin) * (edge === "right" ? 1 : -1));
+            preview(latest);
+          },
+          commit: () => {
+            if (latest !== value) current.current.onCommit(latest);
+            else preview(current.current.value);
+          },
+          cancel: () => preview(current.current.value),
+        });
+      }}
+      onKeyDown={(event) => {
+        const direction = edge === "right" ? 1 : -1;
+        const next =
+          event.key === "ArrowRight"
+            ? value + direction * 10
+            : event.key === "ArrowLeft"
+              ? value - direction * 10
+              : event.key === "Home"
+                ? min
+                : event.key === "End"
+                  ? max
+                  : null;
+        if (next === null) return;
+        event.preventDefault();
+        event.stopPropagation();
+        const clamped = clamp(next);
+        if (clamped !== value) current.current.onCommit(clamped);
+      }}
     />
   );
 }
