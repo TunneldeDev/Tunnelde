@@ -341,6 +341,22 @@ describe("SftpPage", () => {
     expect(name.getAttribute("aria-valuenow")).toBe("220");
   });
 
+  it("includes the icon and gap in the minimum name column width and retains it on reopen", async () => {
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const handle = within(pane).getByRole("separator", { name: "File sorting: Name" });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(handle, { key: "ArrowLeft", shiftKey: true });
+    expect(handle.getAttribute("aria-valuenow")).toBe("56");
+    expect(pane.style.getPropertyValue("--sftp-columns")).toBe("18px 32px 90px 90px 150px");
+    view.unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(
+      document.querySelector<HTMLElement>(".sftp-pane")!.style.getPropertyValue("--sftp-columns"),
+    ).toBe("18px 32px 90px 90px 150px");
+  });
+
   it("resizes only the owning pointer, keeps concurrent column preferences and persists the release pixel", async () => {
     const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
     const view = render(<SftpPage sessionId="session-1" />);

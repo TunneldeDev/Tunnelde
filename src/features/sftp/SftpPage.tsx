@@ -107,7 +107,7 @@ function columnLayout(view: FileViewPreferences) {
     grid: columns
       .map((column, index) =>
         column === "name"
-          ? `18px ${Math.max(56, (widths[index] ?? 56) - 24)}px`
+          ? `18px ${(widths[index] ?? 56) - 24}px`
           : `${widths[index]}px`,
       )
       .join(" "),
