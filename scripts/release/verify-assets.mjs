@@ -7,7 +7,7 @@ export function verifyAssets(tag, manifest, assets) {
   for (const asset of assets) {
     if (/^tunnelde-agent(?:[-.]|$)/i.test(asset.name))
       throw new Error(
-        `native helpers belong in Actions artifacts, not desktop releases: ${asset.name}`,
+        `native helpers belong in their independent repository, not desktop releases: ${asset.name}`,
       );
     if (asset.name.startsWith("Tunnelde_") && !asset.name.startsWith(`Tunnelde_${version}_`))
       throw new Error(`release asset filename does not match version: ${asset.name}`);
@@ -38,7 +38,7 @@ if (process.argv[1]?.endsWith("verify-assets.mjs")) {
   try {
     if (process.argv.includes("--helpers"))
       throw new Error(
-        "--helpers is no longer supported; native helpers belong in Actions artifacts",
+        "--helpers is no longer supported; native helpers belong in their independent repository",
       );
     const tag = flag("--tag");
     const manifest = JSON.parse(readFileSync(flag("--manifest"), "utf8"));
