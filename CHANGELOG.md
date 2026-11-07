@@ -6,6 +6,25 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.3](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.2...v0.30.3) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **files:** pipeline directory transfers on shared channels
+
+<details open>
+<summary>详细变更 | Details (1)</summary>
+
+### 改进 | Improved
+
+- **files:** pipeline directory transfers on shared channels ([#125](https://github.com/TunneldeDev/Tunnelde/pull/125)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.2](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.1...v0.30.2) - 2026-11-07
 
 ### 更新概览 | Highlights
