@@ -142,7 +142,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("files.sftp.list", ["sftp.read"], "{sessionId:string,path?:string}", "List a remote directory using an active SSH session."),
     method!("files.sftp.resolveDirectory", ["sftp.read"], "{sessionId:string,path?:string}", "Resolve the SSH account home and an optional working directory through SFTP without listing entries or executing a shell. Return {home,path}. Supports ~ and relative paths."),
     method!("files.sftp.readText", ["sftp.read"], "{sessionId:string,path:string}", "Read remote UTF-8 text through the editor service; API response size limits apply."),
-    method!("files.sftp.writeText", ["sftp.write"], "{sessionId:string,path:string,content:string}", "Replace existing remote text through the editor service."),
+    method!("files.sftp.writeText", ["sftp.write"], "{sessionId:string,path:string,content:string,baseline?:string}", "Atomically replace existing remote text; optional baseline detects external edits."),
     method!("files.sftp.createFile", ["sftp.write"], "{sessionId:string,path:string}", "Create an empty remote file without replacing an existing file."),
     method!("files.sftp.mkdir", ["sftp.write"], "{sessionId:string,path:string}", "Create a remote directory."),
     method!("files.sftp.rename", ["sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Rename a remote file/directory; overwriting is opt-in."),
@@ -516,6 +516,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                 field(&params, "sessionId")?,
                 field(&params, "path")?,
                 field(&params, "content")?,
+                optional(&params, "baseline")?,
             )
             .await?;
             Ok(Value::Null)

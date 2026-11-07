@@ -827,6 +827,7 @@ async fn connect_for_auth(
     let runner_app = app.clone();
     tokio::spawn(async move {
         crate::ssh::files::durable::on_reconnect(&runner_app).await;
+        crate::ssh::files::remote_editor::on_reconnect(&runner_app).await;
         crate::plugins::runners::on_reconnect(&runner_app).await;
     });
     Ok(info)

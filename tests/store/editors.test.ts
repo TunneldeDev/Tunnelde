@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api/ipc";
-import { useEditors } from "@/store/editors";
+import { editorDocument, undoEditorEdit, useEditors } from "@/store/editors";
 
 const id = "editor:s1:/a.txt";
 const deferred = <T>() => {
@@ -20,6 +20,60 @@ beforeEach(() => {
 });
 
 describe("editor requests", () => {
+  it("retains a remote draft and baseline on conflict, then uses the reviewed disk as the next baseline", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "my draft");
+    vi.mocked(api.sftpWriteText).mockRejectedValueOnce({
+      code: "validation",
+      message: "editor.remoteFileChanged",
+    });
+    expect(await state().save(id)).toBe(false);
+    expect(state().entries[id]).toMatchObject({
+      content: "my draft",
+      baseline: "original",
+      saveConflict: true,
+      saving: false,
+    });
+    const review = editorDocument(id)!;
+    expect(await state().resolveConflict(review, "external edit", "replace")).toBe(true);
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith("s1", "/a.txt", "my draft", "external edit");
+    expect(state().entries[id]).toMatchObject({
+      content: "my draft",
+      baseline: "my draft",
+      saveConflict: false,
+    });
+  });
+
+  it("refuses stale conflict decisions and allows undo after reloading from disk", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "my draft");
+    const stale = editorDocument(id)!;
+    state().change(id, "newer draft");
+    expect(await state().resolveConflict(stale, "external", "replace")).toBe(false);
+    expect(api.sftpWriteText).not.toHaveBeenCalled();
+    expect(state().entries[id]?.content).toBe("newer draft");
+    expect(await state().resolveConflict(editorDocument(id)!, "external", "reload")).toBe(true);
+    expect(state().isDirty(id)).toBe(false);
+    undoEditorEdit(id, false);
+    expect(state().entries[id]).toMatchObject({ content: "newer draft", baseline: "external" });
+    expect(state().isDirty(id)).toBe(true);
+  });
+
+  it("keeps the draft dirty after a failed reviewed replacement", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "my draft");
+    vi.mocked(api.sftpWriteText).mockRejectedValueOnce({
+      code: "ssh",
+      message: "sftp.reconnectRequired",
+    });
+    expect(await state().resolveConflict(editorDocument(id)!, "external", "replace")).toBe(false);
+    expect(state().entries[id]).toMatchObject({
+      content: "my draft",
+      baseline: "external",
+      saving: false,
+    });
+    expect(state().isDirty(id)).toBe(true);
+  });
   it("opens and saves local documents without an SSH session, preserving drafts on conflict", async () => {
     const localId = "editor-local:C:\\work\\notes.txt";
     const path = "C:\\work\\notes.txt";
@@ -63,7 +117,7 @@ describe("editor requests", () => {
     write.resolve();
     expect(await first).toBe(true);
     expect(api.sftpWriteText).toHaveBeenCalledTimes(1);
-    expect(api.sftpWriteText).toHaveBeenCalledWith("s1", "/a.txt", "first");
+    expect(api.sftpWriteText).toHaveBeenCalledWith("s1", "/a.txt", "first", "original");
     expect(state().entries[id]?.baseline).toBe("first");
     expect(state().entries[id]?.content).toBe("second");
     expect(state().isDirty(id)).toBe(true);

@@ -19,6 +19,43 @@ sends document text to the plugin. Changes stay in the unsaved buffer and can be
 undone in one step. Save explicitly when ready. Results from an older document
 version, a closed/reopened editor, or a revoked runtime are discarded.
 
+## Remote document saves
+
+Saving an existing remote text document checks its last loaded contents. If another
+program changed the file, the editor retains your draft and offers **Compare changes**.
+The comparison shows the current disk version and your draft. Reloading the disk
+version is undoable; replacing it checks the reviewed disk contents again. A stale
+comparison cannot apply after the document changes or reconnects.
+
+Remote saves use a private `.tunnelde-save-<uuid>` sibling directory. The host writes
+and reads back the complete staged text, waits for write and close acknowledgements,
+preserves the SFTP owner/group/mode fields, checks the original again, and publishes
+with `posix-rename@openssh.com`. The original is never truncated as a fallback.
+The server must support that extension and allow creating a sibling directory;
+otherwise saving fails while retaining the original and the editor draft. Deleted
+files are not recreated. Editing a symbolic link updates its resolved target and
+keeps the link itself.
+
+Only cleanup metadata, not document contents, is journaled locally. Cleanup failures
+appear in **Background tasks**, with a retry action. Reconnecting to the same saved
+host and address retries cleanup, including after restarting the application.
+Cleanup verifies the private directory and ownership marker and never recursively
+deletes unrecognized contents. Changed or unverifiable staging directories are
+preserved for review; the task shows their location.
+
+This is optimistic conflict detection: SFTP v3 provides no conditional rename, so a
+different program can still write between the last comparison and publication.
+Atomic replacement creates a new inode; existing hard links continue to reference
+the old inode. SFTP v3 does not expose a complete ACL/xattr contract, so preservation
+of those extended attributes is not guaranteed. `fsync@openssh.com` is used when
+advertised; file and directory durability after server power loss is not guaranteed.
+
+`files.sftp.writeText` accepts optional `baseline` text. Pass the last contents read
+to reject external edits. Older plugins that omit it remain supported: the host
+reads a baseline at the start and checks it again before publication. Omitting it
+cannot detect changes made before the save call. Inspect `api.describe` to determine
+whether a host supports the parameter.
+
 ## Contributions (Tunnelde 0.29.0-beta.2 and later)
 
 ```json

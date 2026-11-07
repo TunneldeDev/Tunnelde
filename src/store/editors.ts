@@ -4,6 +4,7 @@ import { translateError } from "@/lib/api/errors";
 import { api } from "@/lib/api/ipc";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
+import { isIpcError } from "@/lib/api/types";
 
 export const EDITOR_DOCUMENT_MAX_BYTES = 128 * 1024;
 
@@ -17,6 +18,8 @@ export interface EditorEntry {
   loading: boolean;
   saving: boolean;
   error: string | null;
+  saveFailure?: string;
+  saveConflict?: boolean;
   disconnected?: boolean;
   documentId?: string;
   version?: number;
@@ -27,6 +30,11 @@ interface EditorsStore {
   open: (tabId: string, sessionId: string | null, path: string) => Promise<void>;
   change: (tabId: string, content: string) => void;
   save: (tabId: string) => Promise<boolean>;
+  resolveConflict: (
+    document: EditorDocument,
+    disk: string,
+    action: "reload" | "replace",
+  ) => Promise<boolean>;
   discard: (tabId: string) => void;
   isDirty: (tabId: string) => boolean;
   markDisconnected: (sessionId: string) => void;
@@ -293,7 +301,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         if (current.sessionId === null) {
           await api.localWriteText(current.path, submitted, current.baseline);
         } else {
-          await api.sftpWriteText(current.sessionId, current.path, submitted);
+          await api.sftpWriteText(current.sessionId, current.path, submitted, current.baseline);
         }
         if (versions.get(tabId) !== version || !get().entries[tabId]) return false;
         set((state) => {
@@ -304,7 +312,13 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           return {
             entries: {
               ...state.entries,
-              [tabId]: { ...entry, baseline: submitted, saving: false },
+              [tabId]: {
+                ...entry,
+                baseline: submitted,
+                saving: false,
+                saveFailure: undefined,
+                saveConflict: false,
+              },
             },
           };
         });
@@ -317,7 +331,19 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           if (!entry) {
             return state;
           }
-          return { entries: { ...state.entries, [tabId]: { ...entry, saving: false } } };
+          return {
+            entries: {
+              ...state.entries,
+              [tabId]: {
+                ...entry,
+                saving: false,
+                saveFailure: translateError(error),
+                saveConflict:
+                  isIpcError(error) &&
+                  ["editor.localFileChanged", "editor.remoteFileChanged"].includes(error.message),
+              },
+            },
+          };
         });
         toast(translateError(error), "error");
         return false;
@@ -327,6 +353,35 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     })();
     saves.set(tabId, operation);
     return operation;
+  },
+
+  resolveConflict: async (document, disk, action) => {
+    const entry = get().entries[document.tabId];
+    if (
+      !entry ||
+      entry.saving ||
+      entry.disconnected ||
+      entry.documentId !== document.documentId ||
+      entry.version !== document.version
+    ) {
+      toast(i18n.t("editor.reviewStale"), "error");
+      return false;
+    }
+    if (action === "reload") recordEdit(entry, false);
+    set((state) => ({
+      entries: {
+        ...state.entries,
+        [document.tabId]: {
+          ...entry,
+          baseline: disk,
+          content: action === "reload" ? disk : entry.content,
+          version: (entry.version ?? 0) + (action === "reload" ? 1 : 0),
+          saveFailure: undefined,
+          saveConflict: false,
+        },
+      },
+    }));
+    return action === "replace" ? get().save(document.tabId) : true;
   },
 
   discard: (tabId) => {

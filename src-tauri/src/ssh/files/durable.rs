@@ -680,7 +680,7 @@ pub fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
     super::resume_transfer(app, from, to, row)
 }
 
-fn resolve_session(
+pub(super) fn resolve_session(
     app: &AppHandle,
     host: Option<&str>,
     old: Option<&str>,

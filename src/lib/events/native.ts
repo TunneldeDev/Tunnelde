@@ -28,6 +28,7 @@ export interface NativeEvents {
   "plugin://state": PluginInfo;
   "sftp://transfer": TransferEvent;
   "sftp://changed": null;
+  "editor://cleanup-changed": null;
   "plugin://domain-changed": { domain: string; sessionId?: string | null };
   "plugin://workspace-request": {
     requestId: string;
