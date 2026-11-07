@@ -153,6 +153,22 @@ describe("internal pointer drag", () => {
     expect(document.querySelector("[data-drag-preview]")).toBeNull();
   });
 
+  it("leaves column and panel separators to their resize handlers", () => {
+    source.insertAdjacentHTML("beforeend", '<span role="separator"><span>Resize</span></span>');
+    const separator = source.querySelector('[role="separator"]')!;
+    const resizing = vi.fn();
+    const started = vi.fn();
+    separator.addEventListener("pointerdown", resizing);
+    source.addEventListener("dragstart", started);
+    pointer(separator.firstElementChild!, "pointerdown", 10);
+    pointer(document, "pointermove", 90);
+    pointer(document, "pointerup", 90);
+    expect(resizing).toHaveBeenCalledOnce();
+    expect(started).not.toHaveBeenCalled();
+    expect(source.draggable).toBe(true);
+    expect(document.querySelector("[data-drag-preview]")).toBeNull();
+  });
+
   it("notifies document listeners even when the drop removes the source", () => {
     const ended = vi.fn();
     document.addEventListener("dragend", ended, { once: true });

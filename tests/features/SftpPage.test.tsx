@@ -290,6 +290,13 @@ describe("SftpPage", () => {
       "sftp-columns__name",
       "sftp-columns__modified",
     ]);
+    fireEvent.dragStart(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
+    fireEvent.drop(local.querySelector(".sftp-columns__size")!, { dataTransfer: transfer });
+    expect([...local.querySelectorAll(".sftp-columns th")].map((el) => el.className)).toEqual([
+      "sftp-columns__size",
+      "sftp-columns__name",
+      "sftp-columns__modified",
+    ]);
   });
 
   it("uses macOS file shortcuts without deleting while typing", async () => {
