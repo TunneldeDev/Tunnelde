@@ -5,8 +5,6 @@ export const VERSION_PATHS = [
   "src-tauri/tauri.conf.json",
   "src-tauri/Cargo.toml",
   "src-tauri/Cargo.lock",
-  "native-helpers/Cargo.toml",
-  "native-helpers/Cargo.lock",
   ".release-please-manifest.json",
   "CITATION.cff",
 ];
@@ -27,9 +25,7 @@ export function versionContents(contents, version) {
         path === "CITATION.cff"
           ? /^version: [^\r\n]+$/m
           : path.endsWith(".lock")
-            ? new RegExp(
-                `(\\[\\[package\\]\\]\\r?\\nname = "${path.startsWith("native") ? "tunnelde-agent" : "tunnelde"}"\\r?\\nversion = ")[^"]+(")`,
-              )
+            ? new RegExp(`(\\[\\[package\\]\\]\\r?\\nname = "tunnelde"\\r?\\nversion = ")[^"]+(")`)
             : /(\[package\][\s\S]*?\nversion = ")[^"]+(")/;
       if (!pattern.test(text)) throw new Error(`Cannot locate version in ${path}`);
       return [

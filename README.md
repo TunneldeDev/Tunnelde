@@ -93,7 +93,8 @@ are not an operating-system sandbox for arbitrary code or shell commands. Using 
 Node runtime requires explicit consent.
 
 The optional `tunnelde-agent` helper is for MCP stdio and advanced persistent remote
-supervisors. It is an Actions artifact or source build, **not a desktop Release download**.
+supervisors. Its source and downloads are maintained in the independent
+[Tunnelde-agent repository](https://github.com/TunneldeDev/Tunnelde-agent), with a separate release cycle.
 Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 
 ## Documentation
@@ -106,7 +107,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 - Plugin development and security: [English](docs/plugins.en-us.md) · [简体中文](docs/plugins.zh-cn.md)
 - Architecture and data locations: [English](docs/architecture.en-us.md) · [简体中文](docs/architecture.zh-cn.md)
 - Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
-- [Optional native helper](native-helpers/README.md)
+- [Optional native helper](docs/native-helper.md)
 - [Changes by release](CHANGELOG.md)
 
 ## Development
@@ -134,14 +135,13 @@ Source layout:
 ```text
 src/                 React workbench, UI primitives, feature stores and i18n
 src-tauri/           Rust SSH/SFTP core, plugin APIs, native integration and updater
-native-helpers/     Optional MCP/remote-supervisor executable
 examples/plugins/   Minimal plugin examples
 scripts/            Build, validation, packaging and release tools
 docs/               User and developer documentation
 ```
 
 The marketplace lives in the independent `TunneldeDev/tunnelde-hub` repository.
-CI validates web, native, helper and repository checks. `dev` is the protected default branch
+CI validates web, native application and repository checks. `dev` is the protected default branch
 and contribution target; `main` contains stable releases. Use a Conventional Commit PR title.
 
 Each `dev` update runs CI and updates one release PR targeting `main`. That PR contains the next

@@ -18,7 +18,7 @@ generated release promotion targets `main`, where **Create a merge commit** is t
    dev commit and SHA while remaining up to date with strict branch protection. The branch can be
    rebuilt with a forced update; dev, main and existing tags are never force updated.
 3. Dev pushes do not publish installers. Use **Prepare Beta → Run workflow** to select the
-   current dev snapshot, synchronize its eight version files and changelog in an isolated commit,
+   current dev snapshot, synchronize its six desktop version files and changelog in an isolated commit,
    and create the next immutable `vX.Y.Z-beta.N` tag. Beta is an explicit testing milestone.
 4. **Publish version** listens to `push.tags: ["v*"]`. Stable tags publish stable releases; Beta
    tags publish prereleases. Direct tag pushes must already have matching version manifests and
@@ -75,8 +75,8 @@ Normal publication retains history and never moves existing tags.
 The maintained version policy is available in [English](versioning.en-us.md)
 and [简体中文](versioning.zh-cn.md).
 
-All eight version locations stay synchronized: package.json, Tauri config, both Cargo manifests
-and lockfiles, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous
+All six desktop version locations stay synchronized: package.json, Tauri config, the desktop
+Cargo manifest and lockfile, the compatibility `.release-please-manifest.json`, and CITATION.cff. The previous
 Release Please action is replaced by repository scripts; the manifest remains version metadata.
 
 The changelog has bilingual categories, highlights, expandable detail, PR/commit links and
@@ -145,7 +145,7 @@ titles, PR/commit links, original commit authors, PR authors and recognized coau
 ## Failed builds and recovery
 
 An interrupted build leaves its draft and immutable tag. Dispatch **Release** with that original
-`existing_tag` from a branch containing the current workflow, and optionally `build_helpers`.
+`existing_tag` from a branch containing the current workflow.
 It rebuilds the tagged source, shares the same draft across builders, validates every asset, and
 publishes automatically. Already public releases are rejected by the build preparation step;
 recovery never replaces public installers. Never move an existing tag or reuse an abandoned version.
@@ -160,7 +160,7 @@ version tag. **Release → existing_tag** resumes an already staged draft. Both 
 source; neither changes tags or rebuilds public packages. Development concurrency serializes only
 release-PR maintenance; Beta and version publication have independent workflow groups.
 
-Native helpers and compiler timings remain optional Actions artifacts, never public desktop
+Compiler timings remain optional Actions artifacts, never public desktop
 release downloads. The plugin marketplace repository has its own independent release process.
 
 Rust cache restoration is optional: each step has a three-minute ceiling and cache downloads

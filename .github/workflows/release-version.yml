@@ -43,5 +43,4 @@ jobs:
     uses: ./.github/workflows/release.yml
     with:
       existing_tag: ${{ needs.prepare.outputs.tag }}
-      build_helpers: false
     secrets: inherit

@@ -7,8 +7,7 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 if (process.env.GITHUB_ACTIONS !== "true" || process.env.RUNNER_ENVIRONMENT !== "github-hosted")
   throw new Error("Rust cache recovery requires a disposable GitHub-hosted runner");
 const workspace = process.argv[2];
-if (!["src-tauri", "native-helpers"].includes(workspace))
-  throw new Error("Expected a known Rust workspace");
+if (workspace !== "src-tauri") throw new Error("Expected a known Rust workspace");
 const root = process.env.GITHUB_WORKSPACE;
 if (!root || !isAbsolute(root)) throw new Error("Expected an absolute GitHub workspace");
 const cargoHome = resolve(process.env.CARGO_HOME || join(homedir(), ".cargo"));
