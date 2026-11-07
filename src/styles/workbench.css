@@ -552,6 +552,7 @@
   padding: 0 8px;
 }
 .sftp-columns th {
+  grid-row: 1;
   position: relative;
   min-width: 0;
   padding: 0;
@@ -679,6 +680,9 @@
 .sftp-details .sftp-columns {
   min-width: var(--sftp-min-width);
 }
+.sftp-details .sftp-row > * {
+  grid-row: 1;
+}
 .sftp-details .sftp-row__icon {
   grid-column: var(--sftp-icon-column);
 }
@@ -702,15 +706,50 @@
 .sftp-columns__resize {
   position: absolute;
   z-index: 2;
-  right: -5px;
+  right: -4px;
   top: 0;
   bottom: 0;
-  width: 10px;
+  width: 9px;
   cursor: col-resize;
   touch-action: none;
 }
-.sftp-columns__resize:hover {
-  background: var(--td-accent-soft);
+.sftp-columns__resize::after {
+  content: "";
+  position: absolute;
+  inset: 5px 4px;
+  width: 1px;
+  background: var(--td-border);
+  pointer-events: none;
+}
+.sftp-columns th:hover .sftp-columns__resize::after {
+  background: var(--td-muted);
+}
+.sftp-columns__resize:hover::after,
+.sftp-columns__resize:focus-visible::after,
+.sftp-columns__resize:active::after {
+  inset-block: 0;
+  inset-inline: 3px;
+  width: 3px;
+  background: var(--td-accent);
+}
+.sftp-columns__resize:focus-visible {
+  outline: none;
+}
+.sftp-columns th[data-column-drop="before"] {
+  box-shadow: inset 2px 0 var(--td-accent);
+}
+.sftp-columns th[data-column-drop="after"] {
+  box-shadow: inset -2px 0 var(--td-accent);
+}
+.sftp-columns th[draggable] button {
+  cursor: grab;
+  padding-right: 8px;
+}
+.sftp-columns th[draggable]:active button {
+  cursor: grabbing;
+}
+.sftp-columns__size button {
+  padding-right: 8px;
 }
 .sftp-pane {
   container-type: inline-size;

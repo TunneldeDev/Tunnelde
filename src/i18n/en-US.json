@@ -726,7 +726,8 @@
     "transferTo": "To",
     "moveTasksHint": "Drag to move · Arrow keys to move · Double-click to reset",
     "resetTasksLayout": "Reset transfer window layout",
-    "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)"
+    "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)",
+    "resizeColumnHint": "Drag to resize; double-click to reset. Use arrow keys when focused."
   },
   "processes": {
     "title": "Processes",
