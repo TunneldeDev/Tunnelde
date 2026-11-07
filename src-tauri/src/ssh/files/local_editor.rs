@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock, Weak};
 
 #[cfg(test)]
@@ -148,9 +149,53 @@ pub async fn save(
     content: String,
     baseline: String,
 ) -> AppResult<()> {
-    validate_editor_text(&path, &content, &baseline)?;
+    save_checked(app, path, content, Some(baseline), |_, _| Ok(())).await
+}
+
+// Dropping an RPC future does not stop spawn_blocking. Propagate cancellation
+// into the publication gate. Cancellation after that gate cannot roll back a
+// publication already in progress.
+struct SaveLifetime(Arc<AtomicBool>);
+impl Drop for SaveLifetime {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
+    }
+}
+
+pub(crate) async fn save_checked(
+    app: AppHandle,
+    path: String,
+    content: String,
+    baseline: Option<String>,
+    check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
+) -> AppResult<()> {
+    save_async(Some(app), path, content, baseline, check).await
+}
+
+async fn save_async(
+    app: Option<AppHandle>,
+    path: String,
+    content: String,
+    baseline: Option<String>,
+    check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
+) -> AppResult<()> {
+    validate_editor_text(&path, &content, baseline.as_deref().unwrap_or_default())?;
+    let lifetime = SaveLifetime(Arc::new(AtomicBool::new(true)));
+    let active = lifetime.0.clone();
     tokio::task::spawn_blocking(move || {
-        save_sync(Some(&app), &path, &content, &baseline, |_, _| Ok(()))
+        save_transaction(
+            app.as_ref(),
+            &path,
+            &content,
+            baseline.as_deref(),
+            |path, original| {
+                if !active.load(Ordering::Acquire) {
+                    return Err(AppError::validation("editor.saveCancelled"));
+                }
+                check(path, original)
+            },
+            |_, _| Ok(()),
+        )
     })
     .await
     .map_err(|e| AppError::internal(e.to_string()))?
@@ -164,11 +209,23 @@ pub(super) async fn save_without_app(path: &str, content: &str, baseline: &str) 
 
 // The stage hook permits tests to inject actual partial writes/failures and
 // concurrent filesystem mutations at the production transaction boundaries.
+#[cfg(test)]
 fn save_sync(
     app: Option<&AppHandle>,
     requested: &str,
     content: &str,
     baseline: &str,
+    hook: impl FnMut(&str, &Record) -> AppResult<()>,
+) -> AppResult<()> {
+    save_transaction(app, requested, content, Some(baseline), |_, _| Ok(()), hook)
+}
+
+fn save_transaction(
+    app: Option<&AppHandle>,
+    requested: &str,
+    content: &str,
+    baseline: Option<&str>,
+    check: impl Fn(&Path, &str) -> AppResult<()>,
     mut hook: impl FnMut(&str, &Record) -> AppResult<()>,
 ) -> AppResult<()> {
     let requested = Path::new(requested);
@@ -184,6 +241,8 @@ fn save_sync(
         return Err(AppError::validation("editor.readOnlyFile"));
     }
     let original = decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?;
+    let baseline = baseline.unwrap_or(&original.content);
+    check(&target, &original.content)?;
     if original.content == content {
         return Ok(());
     }
@@ -247,6 +306,7 @@ fn save_sync(
             return Err(AppError::validation("editor.localFileChanged"));
         }
         hook("verified", &record)?;
+        check(&target, &original.content)?;
         native::publish(&staging, &target, record.staging_identity.as_ref().unwrap())?;
         hook("published", &record)?;
         Ok(())

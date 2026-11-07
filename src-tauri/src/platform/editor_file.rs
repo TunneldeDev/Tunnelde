@@ -164,7 +164,7 @@ pub fn copy_original(
     {
         use std::os::unix::fs::OpenOptionsExt;
         let _ = source_path;
-        let mut destination = OpenOptions::new()
+        let destination = OpenOptions::new()
             .read(true)
             .write(true)
             .create_new(true)
@@ -193,7 +193,7 @@ pub fn copy_original(
         }
         #[cfg(not(target_os = "macos"))]
         {
-            io::copy(&mut source.take(maximum + 1), &mut destination)?;
+            io::copy(&mut source.take(maximum + 1), &mut &destination)?;
         }
         if destination.metadata()?.len() > maximum {
             return Err(io::Error::new(

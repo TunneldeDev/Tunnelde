@@ -9,7 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::{json, Map, Value};
 use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 
 use crate::commands;
@@ -133,7 +133,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("files.local.home", ["fs.read"], "{}", "Read the local home directory path."),
     method!("files.local.list", ["fs.read"], "{path?:string}", "List a local directory."),
     method!("files.local.readText", ["fs.read"], "{path:string}", "Read a UTF-8 local text file, at most 512KiB; reject binary data."),
-    method!("files.local.writeText", ["fs.write"], "{path:string,content:string}", "Replace an existing local UTF-8 file, at most 512KiB."),
+    method!("files.local.writeText", ["fs.write"], "{path:string,content:string,baseline?:string}", "Atomically replace existing local UTF-8 text, at most 512KiB; optional baseline detects external edits."),
     method!("files.local.createFile", ["fs.write"], "{path:string}", "Create an empty local file without replacing an existing file."),
     method!("files.local.mkdir", ["fs.write"], "{path:string}", "Create a local directory."),
     method!("files.local.rename", ["fs.write"], "{from:string,to:string,overwrite?:boolean}", "Rename a local file or directory; overwriting is opt-in."),
@@ -445,19 +445,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         "files.local.home" => encode(commands::local_home()),
         "files.local.list" => encode(commands::local_list(optional(&params, "path")?)?),
         "files.local.readText" => local_read(field(&params, "path")?).await,
-        "files.local.writeText" => {
-            let content: String = field(&params, "content")?;
-            validate_text(content.as_bytes())?;
-            let mut file = tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(field::<String>(&params, "path")?)
-                .await?;
-            authorize(context, &["fs.write"])?;
-            file.set_len(0).await?;
-            file.write_all(content.as_bytes()).await?;
-            file.flush().await?;
-            Ok(Value::Null)
-        }
+        "files.local.writeText" => write_local(context, &params, |_, _| Ok(())).await,
         "files.local.createFile" => {
             commands::local_create_file(field(&params, "path")?)?;
             Ok(Value::Null)
@@ -705,18 +693,51 @@ fn validate_text(bytes: &[u8]) -> AppResult<()> {
 }
 
 async fn local_read(path: String) -> AppResult<Value> {
-    let file = tokio::fs::File::open(path).await?;
-    if file.metadata().await?.len() > MAX_TEXT as u64 {
-        return Err(AppError::validation("plugin.api.fileTooLarge"));
+    tokio::task::spawn_blocking(move || {
+        let target = std::fs::canonicalize(path)?;
+        let mut file = crate::platform::editor_file::open_regular(&target, false)?;
+        let mut bytes = Vec::new();
+        std::io::Read::read_to_end(
+            &mut std::io::Read::take(&mut file, MAX_TEXT as u64 + 1),
+            &mut bytes,
+        )?;
+        validate_text(&bytes)?;
+        Ok(json!({"size":bytes.len(),"content":String::from_utf8(bytes).map_err(|_| AppError::validation("plugin.api.invalidText"))?}))
+    }).await.map_err(|error| AppError::internal(error.to_string()))?
+}
+
+pub(super) async fn write_local(
+    context: &HostContext,
+    params: &Value,
+    check_scope: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
+) -> AppResult<Value> {
+    let path: String = field(params, "path")?;
+    let content: String = field(params, "content")?;
+    let baseline: Option<String> = optional(params, "baseline")?;
+    validate_text(content.as_bytes())?;
+    if let Some(baseline) = &baseline {
+        validate_text(baseline.as_bytes())?;
     }
-    let mut bytes = Vec::new();
-    file.take(MAX_TEXT as u64 + 1)
-        .read_to_end(&mut bytes)
-        .await?;
-    validate_text(&bytes)?;
-    Ok(
-        json!({"size":bytes.len(),"content":String::from_utf8(bytes).map_err(|_| AppError::validation("plugin.api.invalidText"))?}),
+    authorize(context, &["fs.write"])?;
+    let context = context.clone();
+    crate::ssh::files::local_editor::save_checked(
+        context.app.clone(),
+        path,
+        content,
+        baseline,
+        move |target, original| {
+            // Recheck on the blocking worker after lock acquisition and again
+            // immediately before atomic publication, including RPC revocation.
+            authorize(&context, &["fs.write"])?;
+            if let Some(client) = &context.tool_client {
+                super::tools::authorize_client(&context, client)?;
+            }
+            validate_text(original.as_bytes())?;
+            check_scope(target, original)
+        },
     )
+    .await?;
+    Ok(Value::Null)
 }
 
 // Cancellation drops the host dispatch future immediately. Close the dedicated
@@ -1029,6 +1050,53 @@ pub fn plugin_workspace_reply(
 mod tests {
     use super::*;
     use std::collections::HashSet;
+
+    #[tokio::test]
+    async fn local_text_reads_are_bounded_and_reject_nonregular_or_binary_inputs() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-plugin-read-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("note.txt");
+        for (bytes, error) in [
+            (b"hello".to_vec(), None),
+            (vec![b'x'; MAX_TEXT], None),
+            (vec![b'x'; MAX_TEXT + 1], Some("plugin.api.fileTooLarge")),
+            (vec![b'a', 0], Some("plugin.api.invalidText")),
+            (vec![255], Some("plugin.api.invalidText")),
+        ] {
+            std::fs::write(&file, &bytes).unwrap();
+            let result = local_read(file.to_string_lossy().into_owned()).await;
+            if let Some(error) = error {
+                assert_eq!(result.unwrap_err().to_string(), error);
+            } else {
+                assert_eq!(
+                    result.unwrap(),
+                    json!({"size":bytes.len(),"content":String::from_utf8(bytes).unwrap()})
+                );
+            }
+        }
+        assert!(local_read(root.to_string_lossy().into_owned())
+            .await
+            .is_err());
+        #[cfg(unix)]
+        {
+            let fifo = root.join("pipe");
+            assert!(std::process::Command::new("mkfifo")
+                .args(["-m", "600"])
+                .arg(&fifo)
+                .status()
+                .unwrap()
+                .success());
+            assert!(tokio::time::timeout(
+                Duration::from_secs(2),
+                local_read(fifo.to_string_lossy().into_owned())
+            )
+            .await
+            .unwrap()
+            .is_err());
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn plugin_session_wire_shape_is_explicit_and_preserves_existing_fields() {
