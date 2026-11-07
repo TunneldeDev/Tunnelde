@@ -859,8 +859,9 @@ pub async fn sftp_write_text(
     session_id: String,
     path: String,
     content: String,
+    baseline: Option<String>,
 ) -> AppResult<()> {
-    sftp::write_text(&app, &session_id, &path, &content).await
+    sftp::write_text(&app, &session_id, &path, &content, baseline.as_deref()).await
 }
 
 #[tauri::command]

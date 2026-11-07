@@ -8,6 +8,9 @@ use std::time::Duration;
 pub(super) struct Replacement(RawSftpSession);
 
 impl Replacement {
+    pub(super) fn raw(&self) -> &RawSftpSession {
+        &self.0
+    }
     pub async fn connect(app: &AppHandle, session_id: &str) -> AppResult<Self> {
         tokio::time::timeout(Duration::from_secs(10), async {
             let handle = app.state::<AppState>().ssh.handle(session_id)?;
@@ -42,6 +45,12 @@ impl Replacement {
     /// rename fallback may expose a missing destination or destroy an old file.
     /// Consuming this channel also prevents reuse after a lost acknowledgement.
     pub async fn commit(self, from: &str, to: &str) -> AppResult<()> {
+        self.replace(from, to).await
+    }
+
+    // Editor staging owns the channel until its cleanup has been attempted.
+    // A failed commit is never retried on this channel.
+    pub(super) async fn replace(&self, from: &str, to: &str) -> AppResult<()> {
         let mut payload = Vec::new();
         for path in [from, to] {
             let length = u32::try_from(path.len())

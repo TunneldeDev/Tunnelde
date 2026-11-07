@@ -582,6 +582,16 @@ export interface HistoryEntry {
   command: string;
   executedAt: number;
 }
+export interface EditorCleanup {
+  id: string;
+  path: string;
+  directory: string;
+  address: string;
+  updatedAt: number;
+  error: string | null;
+  running: boolean;
+}
+
 export interface KnownHostEntry {
   host: string;
   port: number;
