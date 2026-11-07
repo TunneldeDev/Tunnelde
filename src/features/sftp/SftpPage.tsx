@@ -90,11 +90,30 @@ import { useSearchRoots } from "@/store/searchRoots";
 import { useFilePreview } from "@/store/filePreview";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
+import { usePointerDrag } from "@/lib/session/usePointerDrag";
 
 type PaneId = "a" | "b";
 
 const PANE_IDS: PaneId[] = ["a", "b"];
 const SINGLE_PANE_IDS: PaneId[] = ["a"];
+
+function columnLayout(view: FileViewPreferences) {
+  const columns = view.filesColumns ?? [...FILE_COLUMNS];
+  const widths = columns.map((column) =>
+    Math.max(56, Math.min(1000, view.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column])),
+  );
+  return {
+    columns,
+    grid: columns
+      .map((column, index) =>
+        column === "name"
+          ? `18px ${Math.max(56, (widths[index] ?? 56) - 24)}px`
+          : `${widths[index]}px`,
+      )
+      .join(" "),
+    minimum: `${widths.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
+  };
+}
 
 function sameFilesystem(left: FsSource, right: FsSource): boolean {
   if (sameSource(left, right)) return true;
@@ -342,6 +361,7 @@ export function SftpPage({
   const mounted = useRef(true);
   const mutations = useRef(new Set<PaneId>());
   const typeSelectState = useRef<Partial<Record<PaneId, TypeSelectState>>>({});
+  const beginColumnResize = usePointerDrag();
 
   const rememberColumnScroll = (id: PaneId, path: string, top: number) => {
     const key = `${id}:${sourceKey(panesRef.current[id].source)}:${path}`;
@@ -1764,69 +1784,49 @@ export function SftpPage({
     };
     const draft = state.draft ?? state.listing?.path ?? "";
     const columnView = view.filesLayout === "columns";
-    const columns = view.filesColumns ?? [...FILE_COLUMNS];
+    const { columns, grid, minimum } = columnLayout(view);
     const columnIndex = (column: FileColumn) => {
       const index = columns.indexOf(column);
       if (index < 0) return 0;
       return 1 + index + (columns.indexOf("name") < index ? 1 : 0);
     };
-    const widths = columns.map((column) =>
-      Math.max(
-        56,
-        Math.min(1000, view.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column]),
-      ),
-    );
-    const grid = columns
-      .map((column, index) =>
-        column === "name"
-          ? `18px ${Math.max(56, (widths[index] ?? 56) - 24)}px`
-          : `${widths[index]}px`,
-      )
-      .join(" ");
-    const resizeColumn = (column: FileColumn, event: React.PointerEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
+    const resizeColumn = (column: FileColumn, event: React.PointerEvent<HTMLElement>) => {
       const origin = event.clientX;
       const start = view.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column];
       const pane = event.currentTarget.closest<HTMLElement>(".sftp-pane");
-      const originalMinimum = pane?.style.getPropertyValue("--sftp-min-width") ?? "";
+      const handle = event.currentTarget;
       let width = start;
+      const preview = (next: FileViewPreferences) => {
+        const layout = columnLayout(next);
+        pane?.style.setProperty("--sftp-columns", layout.grid);
+        pane?.style.setProperty("--sftp-min-width", layout.minimum);
+        handle.setAttribute(
+          "aria-valuenow",
+          String(next.filesColumnWidths?.[column] ?? DEFAULT_COLUMN_WIDTHS[column]),
+        );
+      };
       const move = (next: PointerEvent) => {
-        width = Math.max(56, Math.min(1000, start + next.clientX - origin));
-        const parts = columns.map((item, index) =>
-          item === column ? width : (widths[index] ?? 56),
-        );
-        pane?.style.setProperty(
-          "--sftp-columns",
-          columns
-            .map((item, index) =>
-              item === "name"
-                ? `18px ${Math.max(56, (parts[index] ?? 56) - 24)}px`
-                : `${parts[index]}px`,
-            )
-            .join(" "),
-        );
-        pane?.style.setProperty(
-          "--sftp-min-width",
-          `${parts.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
-        );
+        const current = panesRef.current[id];
+        if (!Number.isFinite(next.clientX) || !sameSource(current.source, source)) return;
+        width = Math.max(56, Math.min(1000, Math.round(start + next.clientX - origin)));
+        preview({
+          ...current.view,
+          filesColumnWidths: { ...current.view.filesColumnWidths, [column]: width },
+        });
       };
-      const finish = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-        window.removeEventListener("pointercancel", cancel);
-        updateView(id, { filesColumnWidths: { ...view.filesColumnWidths, [column]: width } });
-      };
-      const cancel = () => {
-        window.removeEventListener("pointermove", move);
-        window.removeEventListener("pointerup", finish);
-        window.removeEventListener("pointercancel", cancel);
-        pane?.style.setProperty("--sftp-columns", grid);
-        pane?.style.setProperty("--sftp-min-width", originalMinimum);
-      };
-      window.addEventListener("pointermove", move);
-      window.addEventListener("pointerup", finish, { once: true });
-      window.addEventListener("pointercancel", cancel, { once: true });
+      beginColumnResize(event, {
+        move,
+        commit: () => {
+          if (!sameSource(panesRef.current[id].source, source)) {
+            preview(panesRef.current[id].view);
+            return;
+          }
+          updateView(id, {
+            filesColumnWidths: { ...panesRef.current[id].view.filesColumnWidths, [column]: width },
+          });
+        },
+        cancel: () => preview(panesRef.current[id].view),
+      });
     };
     const renaming = state.renaming;
     const creating = state.creating;
@@ -2023,7 +2023,7 @@ export function SftpPage({
         style={
           {
             "--sftp-columns": grid,
-            "--sftp-min-width": `${widths.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
+            "--sftp-min-width": minimum,
             "--sftp-icon-column": columnIndex("name"),
             "--sftp-name-column": columnIndex("name") + 1,
             "--sftp-type-column": columnIndex("type") || "auto",
