@@ -2211,7 +2211,11 @@ async fn run(
     let scheduler = app.state::<AppState>().transfers.scheduler.clone();
     let waiting = async {
         Ok(scheduler
-            .acquire(from.session.as_deref(), to.session.as_deref())
+            .acquire(
+                from.session.as_deref(),
+                to.session.as_deref(),
+                options.durable && options.overwrite,
+            )
             .await)
     };
     tokio::pin!(waiting);

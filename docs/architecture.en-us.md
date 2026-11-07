@@ -101,7 +101,9 @@ restart-persistent permissions.
 
 The transfer scheduler atomically reserves source and destination channel budgets
 before opening files. At most four tasks run globally; each remote endpoint reserves
-two slots from its SSH connection's four-slot transfer budget. Waiting tasks retain
+two slots from its SSH connection's six-slot transfer budget. Durable remote
+overwrites reserve one extra destination slot for the independent atomic commit
+channel; a same-connection overwrite copy therefore reserves five slots. Waiting tasks retain
 Pause/Cancel controls and do not open transfer channels. Independent connections can
 progress around a task blocked on another connection. Explicit-offset SFTP pipelines
 remain polled while bandwidth credits are pending, with bounded request and buffer
