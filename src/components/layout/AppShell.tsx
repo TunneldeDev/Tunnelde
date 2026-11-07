@@ -63,14 +63,13 @@ export function AppShell() {
   const activeId = useWorkspace((state) => state.activeId);
   const sessions = useSsh((state) => state.sessions);
 
-  const [sidebarDraft, setSidebarDraft] = useState<number | null>(null);
-  const [panelDraft, setPanelDraft] = useState<number | null>(null);
   const [tabDrag, setTabDrag] = useState(false);
   const [edge, setEdge] = useState<string | null>(null);
   const palette = useQuickAccess((state) => state.query !== null);
   const workspace = useRef<HTMLElement>(null);
-  const sidebarWidth = sidebarDraft ?? settings.sidebarWidth;
-  const panelWidth = panelDraft ?? settings.rightPanelWidth;
+  const app = useRef<HTMLDivElement>(null);
+  const sidebarWidth = settings.sidebarWidth;
+  const panelWidth = settings.rightPanelWidth;
 
   useEffect(() => {
     const element = workspace.current;
@@ -222,8 +221,8 @@ export function AppShell() {
     if (!activeTab) {
       return null;
     }
-    if (activeTab.kind === "terminal") {
-      return sessions.find((session) => activeTab.id === `terminal:${session.id}`) ?? null;
+    if (["terminal", "monitor", "history"].includes(activeTab.kind)) {
+      return sessions.find((session) => activeTab.id === `${activeTab.kind}:${session.id}`) ?? null;
     }
     if (activeTab.kind === "sftp") {
       const id =
@@ -253,6 +252,7 @@ export function AppShell() {
 
   return (
     <div
+      ref={app}
       className={cn(
         "app",
         isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
@@ -275,9 +275,8 @@ export function AppShell() {
             max={420}
             edge="right"
             label="Sidebar width"
-            onChange={setSidebarDraft}
+            onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
             onCommit={(value) => {
-              setSidebarDraft(null);
               void updateSettings({ sidebarWidth: Math.round(value) });
             }}
           />
@@ -303,9 +302,8 @@ export function AppShell() {
             max={460}
             edge="left"
             label="Panel width"
-            onChange={setPanelDraft}
+            onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
             onCommit={(value) => {
-              setPanelDraft(null);
               void updateSettings({ rightPanelWidth: Math.round(value) });
             }}
           />

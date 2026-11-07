@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Keep the real pane layout, tab handlers and workspace store. Surrounding
@@ -137,6 +138,34 @@ beforeEach(() => {
 });
 
 describe("file tab remote monitor", () => {
+  it.each(["monitor", "history"] as const)(
+    "keeps the owning remote selected for a %s tab",
+    (kind) => {
+      const session = {
+        id: "remote-qa",
+        hostId: "host-qa",
+        title: "Remote",
+        address: "qa:22",
+        cols: 80,
+        rows: 24,
+        connectedAt: 0,
+      };
+      useSsh.setState({ sessions: [session] });
+      const id = `${kind}:${session.id}`;
+      useWorkspace.setState({
+        tabs: [{ id, kind, title: "Remote", hostId: session.hostId, pinned: false }],
+        activeId: id,
+        panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
+        activePaneId: "pane-1",
+        layout: { kind: "pane", paneId: "pane-1" },
+      });
+      render(<AppShell />);
+      expect(screen.getByTestId("remote-panel").textContent).toBe(session.id);
+      act(() => useSsh.setState({ sessions: [] }));
+      expect(screen.getByTestId("system-panel")).toBeTruthy();
+    },
+  );
+
   it("tracks the selected remote source, duplicate tabs and local panels", () => {
     useSsh.setState({
       sessions: ["a", "b"].map((id) => ({
@@ -165,6 +194,48 @@ describe("file tab remote monitor", () => {
     expect(screen.getByTestId("system-panel")).toBeTruthy();
     act(() => useSsh.setState({ sessions: [] }));
   });
+});
+
+describe("workbench side widths", () => {
+  it.each(["Sidebar width", "Panel width"])(
+    "previews %s without rerendering the shell and persists only on release",
+    (label) => {
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, rightPanel: true } });
+      const onRender = vi.fn();
+      const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+      const view = render(
+        <Profiler id="workbench" onRender={onRender}>
+          <AppShell />
+        </Profiler>,
+      );
+      const handle = screen.getByRole("separator", { name: label });
+      const property = label === "Sidebar width" ? "--td-sidebar-w" : "--td-panel-w";
+      const app = view.container.querySelector<HTMLElement>(".app")!;
+      const before = app.style.getPropertyValue(property);
+      const commits = onRender.mock.calls.length;
+      const pointer = (type: string, x: number) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          clientX: x,
+          buttons: type === "pointerup" ? 0 : 1,
+        });
+        Object.defineProperty(event, "pointerId", { value: 1 });
+        fireEvent(type === "pointerdown" ? handle : window, event);
+      };
+      pointer("pointerdown", 500);
+      pointer("pointermove", 530);
+      act(() => frame.mock.calls[0]![0](0));
+      expect(app.style.getPropertyValue(property)).not.toBe(before);
+      expect(onRender).toHaveBeenCalledTimes(commits);
+      expect(useSettings.getState().update).not.toHaveBeenCalled();
+      pointer("pointerup", 540);
+      expect(useSettings.getState().update).toHaveBeenCalledExactlyOnceWith(
+        label === "Sidebar width"
+          ? { sidebarWidth: DEFAULT_SETTINGS.sidebarWidth + 40 }
+          : { rightPanelWidth: DEFAULT_SETTINGS.rightPanelWidth - 40 },
+      );
+    },
+  );
 });
 
 describe("scoped plugin shortcut conflicts", () => {

@@ -222,6 +222,12 @@ icon hides and restores a docked panel while retaining its position, size and li
 The panel menu also provides Return to sidebar. Each pane can be locked as the destination
 for new pages, independently of keyboard focus.
 
+Drag the separators to resize sidebars or split panes. Dimensions preview while you
+drag and are saved when you release the pointer. Press Esc to discard a drag;
+losing window focus also restores the saved dimensions. Focus a sidebar separator
+and use Left/Right to resize it, or Home/End for its minimum/maximum width. Workspace
+separators use arrows along their split direction; Home or double-click centers them.
+
 macOS keeps the application and sessions running when its close button is used. **General →
 Show in Dock while running in the background** defaults to off. With it off, closing
 the window removes its running Dock presence; use the menu-bar tray or launch the app

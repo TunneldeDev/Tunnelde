@@ -69,7 +69,7 @@ export function SystemPanel({ width, onHide, hidden }: SystemPanelProps) {
   return (
     <aside
       className={cn("panel", hidden && "is-collapsed")}
-      style={{ width }}
+      style={{ width: `var(--td-panel-w, ${width}px)` }}
       aria-label={t("panel.system")}
     >
       <header className="panel__head">
