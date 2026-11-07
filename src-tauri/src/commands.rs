@@ -840,8 +840,13 @@ pub async fn local_read_text(path: String) -> AppResult<sftp::TextFile> {
 }
 
 #[tauri::command]
-pub async fn local_write_text(path: String, content: String, baseline: String) -> AppResult<()> {
-    sftp::local_write_text(&path, &content, &baseline).await
+pub async fn local_write_text(
+    app: AppHandle,
+    path: String,
+    content: String,
+    baseline: String,
+) -> AppResult<()> {
+    sftp::local_editor::save(app, path, content, baseline).await
 }
 
 #[tauri::command]
@@ -859,8 +864,9 @@ pub async fn sftp_write_text(
     session_id: String,
     path: String,
     content: String,
+    baseline: Option<String>,
 ) -> AppResult<()> {
-    sftp::write_text(&app, &session_id, &path, &content).await
+    sftp::write_text(&app, &session_id, &path, &content, baseline.as_deref()).await
 }
 
 #[tauri::command]

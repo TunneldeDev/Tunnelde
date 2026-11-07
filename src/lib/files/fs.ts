@@ -76,7 +76,7 @@ export const fs = {
   writeText(source: FsSource, path: string, content: string, baseline: string): Promise<void> {
     return source.kind === "local"
       ? api.localWriteText(path, content, baseline)
-      : api.sftpWriteText(source.sessionId, path, content);
+      : api.sftpWriteText(source.sessionId, path, content, baseline);
   },
 
   /** Hands a local file or folder to the system default application. */

@@ -1,4 +1,5 @@
 pub mod background;
+pub mod editor_file;
 pub mod file_identity;
 pub mod file_ops;
 #[cfg(windows)]

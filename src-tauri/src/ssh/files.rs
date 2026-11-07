@@ -17,11 +17,13 @@ pub mod bandwidth;
 mod batch;
 mod compressed;
 pub mod durable;
+pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
 mod move_verification;
 mod range_io;
 mod remote_commit;
+pub mod remote_editor;
 mod scheduler;
 pub mod search;
 mod segments;
@@ -2672,7 +2674,13 @@ pub async fn local_read_text(path: &str) -> AppResult<TextFile> {
 }
 
 /// Check the last loaded content before overwriting an existing local file.
+#[cfg(test)]
 pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
+    // Internal tests run the same engine without an application journal.
+    local_editor::save_without_app(path, content, baseline).await
+}
+
+fn validate_editor_text(path: &str, content: &str, baseline: &str) -> AppResult<()> {
     let path = Path::new(path);
     if !path.is_absolute() {
         return Err(AppError::validation("sftp.absolutePathRequired"));
@@ -2683,32 +2691,6 @@ pub async fn local_write_text(path: &str, content: &str, baseline: &str) -> AppR
     if content.contains('\0') {
         return Err(AppError::Ssh("sftp.binaryFile".into()));
     }
-    // Check before opening to avoid blocking on device files or named pipes.
-    if !tokio::fs::metadata(path).await?.is_file() {
-        return Err(AppError::validation("sftp.notRegularFile"));
-    }
-    // Opening without create preserves deletion, and avoids truncation before validation.
-    let mut file = tokio::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)
-        .await?;
-    let metadata = file.metadata().await?;
-    if !metadata.is_file() {
-        return Err(AppError::validation("sftp.notRegularFile"));
-    }
-    let mut bytes = Vec::new();
-    (&mut file)
-        .take(MAX_TEXT + 1)
-        .read_to_end(&mut bytes)
-        .await?;
-    if decode_text(bytes)?.content != baseline {
-        return Err(AppError::validation("editor.localFileChanged"));
-    }
-    file.seek(std::io::SeekFrom::Start(0)).await?;
-    file.write_all(content.as_bytes()).await?;
-    file.set_len(content.len() as u64).await?;
-    file.flush().await?;
     Ok(())
 }
 
@@ -2721,6 +2703,9 @@ pub async fn read_text(app: &AppHandle, session_id: &str, path: &str) -> AppResu
 
 async fn read_remote_text(sftp: &SftpSession, path: &str) -> AppResult<TextFile> {
     let metadata = sftp.metadata(path).await.map_err(map_sftp)?;
+    if !metadata.is_regular() {
+        return Err(AppError::validation("sftp.notRegularFile"));
+    }
     if metadata.len() > MAX_TEXT {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
@@ -2742,26 +2727,18 @@ pub async fn write_text(
     session_id: &str,
     path: &str,
     content: &str,
+    baseline: Option<&str>,
 ) -> AppResult<()> {
-    if content.len() as u64 > MAX_TEXT {
+    if content.len() as u64 > MAX_TEXT || baseline.is_some_and(|s| s.len() as u64 > MAX_TEXT) {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
+    if content.contains('\0') {
+        return Err(AppError::Ssh("sftp.binaryFile".into()));
+    }
     let sftp = session(app, session_id).await?;
-    let result = write_remote_text(&sftp, path, content).await;
+    let result = remote_editor::save(app, session_id, &sftp, path, content, baseline).await;
     let _ = sftp.close().await;
     result
-}
-
-async fn write_remote_text(sftp: &SftpSession, path: &str, content: &str) -> AppResult<()> {
-    // Saving edits replaces an existing file; it must not recreate a deleted one.
-    let mut writer = sftp
-        .open_with_flags(path, OpenFlags::WRITE | OpenFlags::TRUNCATE)
-        .await
-        .map_err(map_sftp)?;
-    let written = writer.write_all(content.as_bytes()).await;
-    let closed = finish_remote_file(writer).await;
-    written?;
-    closed
 }
 
 pub async fn remote_copy(
@@ -5485,84 +5462,30 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn saving_shorter_and_empty_text_truncates_without_recreating_deleted_files() {
-            let root = temp_root("protocol-save");
-            let path = root.join("note.txt");
-            std::fs::write(&path, "a long original file with a tail").unwrap();
+        async fn text_reads_wait_for_the_close_acknowledgement() {
+            let root = temp_root("protocol-read-ack");
+            std::fs::write(root.join("note.txt"), "original").unwrap();
             let state = Arc::new(State::default());
+            state.delay_close.store(true, Ordering::SeqCst);
             let sftp = client(&root, state.clone()).await;
-            write_remote_text(&sftp, "note.txt", "短\r\n")
-                .await
-                .unwrap();
-            assert_eq!(std::fs::read(&path).unwrap(), "短\r\n".as_bytes());
-            write_remote_text(&sftp, "note.txt", "").await.unwrap();
-            assert!(std::fs::read(&path).unwrap().is_empty());
-            std::fs::remove_file(&path).unwrap();
-            assert!(write_remote_text(&sftp, "note.txt", "do not recreate")
-                .await
-                .is_err());
-            assert!(!path.exists());
-            assert_eq!(state.closes.load(Ordering::SeqCst), 2);
+            let task_client = sftp.clone();
+            let operation =
+                tokio::spawn(async move { read_remote_text(&task_client, "note.txt").await });
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                state.close_started.notified(),
+            )
+            .await
+            .expect("CLOSE request");
+            assert!(
+                !operation.is_finished(),
+                "read returned before CLOSE acknowledgement"
+            );
+            state.release_close.notify_one();
+            operation.await.unwrap().unwrap();
+            assert_eq!(state.closes.load(Ordering::SeqCst), 1);
             sftp.close().await.unwrap();
-            let _ = std::fs::remove_dir_all(root);
-        }
-
-        #[tokio::test]
-        async fn text_reads_and_writes_wait_for_the_close_acknowledgement() {
-            for read in [false, true] {
-                let root = temp_root(if read {
-                    "protocol-read-ack"
-                } else {
-                    "protocol-write-ack"
-                });
-                std::fs::write(root.join("note.txt"), "original").unwrap();
-                let state = Arc::new(State::default());
-                state.delay_close.store(true, Ordering::SeqCst);
-                let sftp = client(&root, state.clone()).await;
-                let task_client = sftp.clone();
-                let operation = tokio::spawn(async move {
-                    if read {
-                        read_remote_text(&task_client, "note.txt").await.map(|_| ())
-                    } else {
-                        write_remote_text(&task_client, "note.txt", "saved").await
-                    }
-                });
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    state.close_started.notified(),
-                )
-                .await
-                .expect("CLOSE request");
-                assert!(
-                    !operation.is_finished(),
-                    "operation returned before CLOSE acknowledgement"
-                );
-                state.release_close.notify_one();
-                operation.await.unwrap().unwrap();
-                assert_eq!(state.closes.load(Ordering::SeqCst), 1);
-                sftp.close().await.unwrap();
-                let _ = std::fs::remove_dir_all(root);
-            }
-        }
-
-        #[tokio::test]
-        async fn text_save_reports_write_and_close_failures_and_closes_the_handle() {
-            for failed_write in [false, true] {
-                let root = temp_root(if failed_write {
-                    "protocol-write-fail"
-                } else {
-                    "protocol-close-fail"
-                });
-                std::fs::write(root.join("note.txt"), "original").unwrap();
-                let state = Arc::new(State::default());
-                state.fail_write.store(failed_write, Ordering::SeqCst);
-                state.fail_close.store(!failed_write, Ordering::SeqCst);
-                let sftp = client(&root, state.clone()).await;
-                assert!(write_remote_text(&sftp, "note.txt", "saved").await.is_err());
-                assert_eq!(state.closes.load(Ordering::SeqCst), 1);
-                sftp.close().await.unwrap();
-                let _ = std::fs::remove_dir_all(root);
-            }
+            std::fs::remove_dir_all(root).unwrap();
         }
 
         #[tokio::test]

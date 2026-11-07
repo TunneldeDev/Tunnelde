@@ -10,6 +10,7 @@ import { useMonitor } from "@/store/monitor";
 import { usePlugins } from "@/store/plugins";
 import { reportPluginExecutionFailure, usePluginSecurity } from "@/store/pluginSecurity";
 import { useTransfers } from "@/store/transfers";
+import { useEditorCleanup } from "@/store/editorCleanup";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
@@ -101,6 +102,10 @@ async function start(signal: AbortSignal): Promise<void> {
   if (signal.aborted) return;
   // The global background task list must work before any file page is opened.
   void useTransfers.getState().hydrate();
+  void useEditorCleanup
+    .getState()
+    .hydrate()
+    .catch((error) => toast(translateError(error), "error"));
   useWorkspace.getState().ensureWelcome();
 
   cleanups.push(
@@ -201,6 +206,16 @@ async function wireEvents(): Promise<void> {
       register: (signal) =>
         events.onPluginSecurity((payload) => usePluginSecurity.getState().apply(payload), signal),
       recover: () => usePluginSecurity.getState().load(true),
+    },
+    {
+      register: (signal) =>
+        events.onEditorCleanupChanged(() => {
+          void useEditorCleanup
+            .getState()
+            .hydrate()
+            .catch((error) => toast(translateError(error), "error"));
+        }, signal),
+      recover: () => useEditorCleanup.getState().hydrate(),
     },
     {
       register: (signal) =>

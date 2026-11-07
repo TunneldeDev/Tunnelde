@@ -299,6 +299,41 @@
 .terminal-head__text {
   min-width: 0;
 }
+.editor-review__columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.editor-review__columns label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.editor-review__columns textarea {
+  width: 100%;
+  min-height: 240px;
+  max-height: 50vh;
+  resize: vertical;
+  padding: 10px;
+  color: var(--td-text);
+  background: var(--td-bg);
+  border: 1px solid var(--td-border);
+  border-radius: 4px;
+  font: 12px/1.6 var(--td-mono);
+}
+
+@media (max-width: 640px) {
+  .editor-review__columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .editor-review__columns textarea {
+    min-height: 120px;
+  }
+}
+
 .editor-offline {
   display: flex;
   gap: 10px;

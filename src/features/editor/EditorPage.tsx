@@ -21,6 +21,7 @@ import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useEditorLocation } from "@/store/editorLocation";
 import { useViewElementState, useBackgroundGuard } from "@/lib/session/viewState";
+import { EditorConflictDialog } from "./EditorConflictDialog";
 
 interface EditorPageProps {
   tabId: string;
@@ -41,10 +42,11 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     state.sessions.find((session) => session.hostId === hostId && session.purpose !== "forwarding"),
   );
   const [reconnecting, setReconnecting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const formatting = useFormatting((state) => state.busy.includes(tabId));
   const textarea = useRef<HTMLTextAreaElement>(null);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
-  useBackgroundGuard(reconnecting || formatting);
+  useBackgroundGuard(reconnecting || formatting || reviewing);
   const location = useEditorLocation((state) => state.target);
   useEffect(() => {
     if (
@@ -197,6 +199,20 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           {t(entry.saving ? "editor.saving" : "editor.save")}
         </Button>
       </header>
+
+      {entry.saveFailure ? (
+        <div className="editor-offline" role="alert">
+          <span>{entry.saveFailure}</span>
+          {entry.saveConflict && !entry.disconnected ? (
+            <Button size="sm" onClick={() => setReviewing(true)}>
+              {t("editor.reviewChanges")}
+            </Button>
+          ) : null}
+        </div>
+      ) : null}
+      {reviewing ? (
+        <EditorConflictDialog tabId={tabId} onClose={() => setReviewing(false)} />
+      ) : null}
 
       {entry.disconnected ? (
         <div className="editor-offline" role="status">

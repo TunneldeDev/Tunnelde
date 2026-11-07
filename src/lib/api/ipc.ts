@@ -7,6 +7,7 @@ import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/
 
 import type {
   AppInfo,
+  EditorCleanup,
   Group,
   Host,
   HostInput,
@@ -276,8 +277,11 @@ export const api = {
     invoke<void>("local_write_text", { path, content, baseline }),
   sftpReadText: (sessionId: string, path: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path }),
-  sftpWriteText: (sessionId: string, path: string, content: string) =>
-    invoke<void>("sftp_write_text", { sessionId, path, content }),
+  sftpWriteText: (sessionId: string, path: string, content: string, baseline?: string) =>
+    invoke<void>("sftp_write_text", { sessionId, path, content, baseline }),
+
+  editorCleanupList: () => invoke<EditorCleanup[]>("editor_cleanup_list"),
+  editorCleanupRetry: (id: string) => invoke<void>("editor_cleanup_retry", { id }),
 
   fsTransfer: (
     fromSession: string | null,
@@ -310,6 +314,8 @@ export const api = {
 };
 
 export const events = {
+  onEditorCleanupChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("editor://cleanup-changed", handler, signal),
   onTransfersChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
     nativeEvents.on("sftp://changed", handler, signal),
   onPluginEvent: (

@@ -6,6 +6,29 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.6](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.5...v0.30.6) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **editor:** preserve remote files during failed saves
+- **editor:** atomically save local documents and recover staging cleanup
+- **tasks:** preserve editor cleanup error details
+
+<details open>
+<summary>详细变更 | Details (3)</summary>
+
+### 修复 | Fix
+
+- **editor:** preserve remote files during failed saves ([#131](https://github.com/TunneldeDev/Tunnelde/pull/131)) @quyansiyuanwang
+- **editor:** atomically save local documents and recover staging cleanup ([#133](https://github.com/TunneldeDev/Tunnelde/pull/133)) @quyansiyuanwang
+- **tasks:** preserve editor cleanup error details ([#134](https://github.com/TunneldeDev/Tunnelde/pull/134)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.5](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.4...v0.30.5) - 2026-11-07
 
 ### 更新概览 | Highlights
