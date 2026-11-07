@@ -6,6 +6,33 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.30.2](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.1...v0.30.2) - 2026-11-07
+
+### 更新概览 | Highlights
+
+- **files:** stop interrupted download source channels promptly
+- **files:** commit remote overwrites with atomic rename
+- **files:** cancel stalled transfer verification promptly
+- **files:** reserve atomic transfer channels
+- **files:** publish Windows staging files by handle
+
+<details open>
+<summary>详细变更 | Details (5)</summary>
+
+### 修复 | Fix
+
+- **files:** stop interrupted download source channels promptly ([#119](https://github.com/TunneldeDev/Tunnelde/pull/119)) @quyansiyuanwang
+- **files:** commit remote overwrites with atomic rename ([#121](https://github.com/TunneldeDev/Tunnelde/pull/121)) @quyansiyuanwang
+- **files:** cancel stalled transfer verification promptly ([#122](https://github.com/TunneldeDev/Tunnelde/pull/122)) @quyansiyuanwang
+- **files:** reserve atomic transfer channels ([#123](https://github.com/TunneldeDev/Tunnelde/pull/123)) @quyansiyuanwang
+- **files:** publish Windows staging files by handle ([#124](https://github.com/TunneldeDev/Tunnelde/pull/124)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.30.1](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.0...v0.30.1) - 2026-11-06
 
 ### 更新概览 | Highlights

@@ -82,9 +82,11 @@ automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight req
 Changes apply on start/resume and travel with settings profiles.
 
 Background tasks share a scheduler: up to four tasks run at once across the
-application. Each SSH connection has a budget of four transfer subsystem channels;
-an endpoint reserves one metadata and one data channel. This normally allows two
-uploads/downloads, or one remote copy using both endpoints on that connection.
+application. Each SSH connection has a budget of six transfer channels. An endpoint
+reserves one metadata and one data channel; a durable remote overwrite reserves
+an additional channel for atomic publication. This allows two overwrite uploads,
+three ordinary uploads/downloads, or one five-channel overwrite copy using both
+endpoints on that connection. Both endpoints are reserved together.
 Other tasks show **Queued** before opening channels. Independent connections can
 continue while one connection is busy; tasks sharing an endpoint keep their queue
 order. Pause/cancel also work while queued. Waiting does not consume file handles,
@@ -190,10 +192,24 @@ its closed file's size and modification time. If both source and staging metadat
 still match, resume verifies the first and last blocks and continues at the saved
 offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
 verification. A changed source or mismatched partial file is rejected. Verification
-has its own visible status and can be cancelled while awaiting network reads.
+has its own visible status. Cancellation covers its metadata requests, read-only
+file opening, reads and closing; a delayed read or CLOSE reply does not block
+pausing. The shared connection remains available. Remote writer CLOSE,
+recovery truncation and final publication still await their server confirmations
+before the task reports completion or updates its checkpoint.
 
-Overwrite uses a recoverable, verified backup of the previous destination. For a
-move, source removal happens after the copy succeeds and is checkpointed separately.
+New remote overwrite tasks negotiate `posix-rename@openssh.com` version 1 before
+uploading. The previous destination remains readable while the new file is staged;
+after the staging writer closes, one server-side atomic rename replaces it. These
+tasks create no backup. Unsupported servers reject overwrite before new upload data
+is written; the application never deletes the old file as a fallback. If the commit
+acknowledgement is lost, Resume verifies the completed destination against the source
+before reporting success. This provides atomic publication, not protection against
+privileged interference or concurrent changes to the staging path.
+
+Local overwrite and older remote tasks with a saved backup transaction retain
+the recoverable, verified backup flow. For a move, source removal happens after
+the copy succeeds and is checkpointed separately.
 If the app is interrupted during source removal, Resume preserves both locations
 and reports that manual review is required. An existing source path may have been
 recreated; a missing source and an existing destination alone do not prove that the
@@ -228,6 +244,8 @@ journal for retry. This does not isolate privileged or memory-mapped changes.
 Windows local downloads record the volume, full 128-bit file identifier and creation
 time from the newly created staging file's handle. Resuming pins the identified file
 against ordinary rename/delete while permitting transfer writes and checkpoint trimming.
+After its writers close, publication renames through that same held handle without
+unlocking and reopening the staging path. A concurrently created destination is preserved.
 Cleanup opens and locks the file, compares its recorded identity, then deletes through
 that same handle. A different file is preserved even if its contents are identical.
 Unknown staging files, including legacy Windows tasks without an identity record,
@@ -240,7 +258,7 @@ against privileged interference, parent-directory redirection or every commit ra
 Transfer artifact cleanup uses file-only removal. If a staging or backup path
 has become a directory, it is preserved rather than recursively deleted. This
 does not make SFTP or Unix staging-file removal conditional on file identity. SFTP and Unix
-backup cleanup keeps the previous destination even after the new destination was
+backup cleanup for existing backup transactions keeps the previous destination even after the new destination was
 written, with a **Needs review** explanation and both paths. Inspect both files,
 remove the backup yourself if no longer needed, then clear the task. Retrying the
 transfer cannot safely remove it. Recovery paths have buttons to open their parent
