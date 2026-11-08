@@ -183,6 +183,14 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
 
   const requestClose = (tab: WorkspaceTab) => closeTab(tab);
   const activeTab = items.find((tab) => tab.id === pane.activeId);
+  // The public contribution kind is independent of the workbench's store kind.
+  const contributionContext = activeTab
+    ? {
+        tabId: activeTab.id,
+        tabKind: activeTab.kind === "pluginView" ? "plugin" : activeTab.kind,
+        paneId: pane.id,
+      }
+    : null;
   const activeSidebarView = activeTab?.kind === "sidebar" ? sidebarViewOf(activeTab.id) : null;
   const focusActiveTab = () => {
     requestAnimationFrame(() => {
@@ -221,11 +229,8 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
         reserveTrafficLights && "has-native-window-controls",
       )}
     >
-      {activeTab ? (
-        <TabBarContributions
-          placement="leading"
-          context={{ tabId: activeTab.id, tabKind: activeTab.kind, paneId: pane.id }}
-        />
+      {contributionContext ? (
+        <TabBarContributions placement="leading" context={contributionContext} />
       ) : null}
       <div
         ref={strip}
@@ -393,11 +398,7 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
           );
         })}
       </div>
-      {activeTab ? (
-        <TabBarContributions
-          context={{ tabId: activeTab.id, tabKind: activeTab.kind, paneId: pane.id }}
-        />
-      ) : null}
+      {contributionContext ? <TabBarContributions context={contributionContext} /> : null}
       <div className="pane__actions">
         <IconButton
           label={t(pane.locked ? "tab.unlockPane" : "tab.lockPane")}
