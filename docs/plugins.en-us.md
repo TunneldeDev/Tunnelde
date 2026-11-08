@@ -54,6 +54,14 @@ description, compatibility requirements and permissions before installation.
 
 Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure theme packs contain only a manifest and theme colors; they do not start a process or require Node.
 
+Startup errors offer **Open log**. A host-version mismatch reports the installed
+plugin version, current Tunnelde version and the exact `engines.tunnelde` range,
+before attempting to launch a runtime. Update Tunnelde or install a plugin version
+compatible with your host. Older minimum versions also accept later compatible
+host Betas; explicit upper bounds and minimum stable releases are still enforced.
+Diagnostic logs record the compatibility stage and these versions rather than
+only the internal error key. Installed plugins are independent of Node consent.
+
 ## SSHFS and data-only plugins (0.27.0+)
 
 Mount providers can use the native mount panel, including declarative plugins that do not

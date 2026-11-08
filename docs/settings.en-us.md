@@ -295,6 +295,15 @@ zero readings.
 
 ## Output and diagnostic logs
 
+Update failures identify the request source/stage, HTTP status and rate-limit
+evidence. When available, the log includes quota/remaining requests, reset time
+(Unix seconds), retry delay and GitHub request ID. A 403 is treated as a rate limit
+only when the quota headers indicate it; other 403 responses remain source errors.
+The log records automatic public-feed fallback and its outcome. Transport failures
+retain a bounded cause chain with URL-like values removed; URLs, query tokens and
+proxy credentials are not logged. **Settings → Updates** shows the final failure;
+an API failure alone does not imply the public-feed fallback also failed.
+
 Open **Output** from the activity bar, search for **Show output** in F1, or use
 `Ctrl+Shift+U` (`Cmd+Shift+U` on macOS). Settings also links to this same panel.
 It initially opens below the workspace; drag its title or tab to move it to any

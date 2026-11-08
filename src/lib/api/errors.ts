@@ -23,6 +23,22 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    if (error.message === "plugin.engine.unsupported") {
+      const details = error.details;
+      if (
+        details &&
+        ["hostVersion", "pluginVersion", "required"].every(
+          (key) => typeof details[key] === "string",
+        )
+      ) {
+        return translate("pluginErrors.hostVersionMismatch", {
+          hostVersion: details.hostVersion,
+          pluginVersion: details.pluginVersion,
+          required: details.required,
+        });
+      }
+      return translate("pluginErrors.hostVersionUnsupported");
+    }
     if (error.message.startsWith("ssh.error:")) {
       return error.message.slice("ssh.error:".length).trim();
     }
