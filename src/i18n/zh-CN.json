@@ -546,6 +546,7 @@
     "testCancelled": "已取消连接测试"
   },
   "sftp": {
+    "copyInterrupted": "复制任务在报告完成前意外停止。请先检查后台任务列表和日志，再决定是否重试。",
     "title": "文件",
     "local": "本地",
     "remote": "远端",

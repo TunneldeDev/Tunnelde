@@ -490,12 +490,41 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             )?;
             Ok(Value::Null)
         }
-        "files.local.copy" => {
-            commands::local_copy(
-                field(&params, "from")?,
-                field(&params, "to")?,
-                optional(&params, "overwrite")?,
+        "files.local.copy" | "files.sftp.copy" => {
+            let session: Option<String> = if method == "files.sftp.copy" {
+                let session: String = field(&params, "sessionId")?;
+                state.ssh.handle(&session)?;
+                Some(session)
+            } else {
+                None
+            };
+            let task = crate::ssh::files::start_copy(
+                app.clone(),
+                crate::ssh::files::Endpoint {
+                    session: session.clone(),
+                    path: field(&params, "from")?,
+                },
+                crate::ssh::files::Endpoint {
+                    session,
+                    path: field(&params, "to")?,
+                },
+                optional::<bool>(&params, "overwrite")?.unwrap_or(false),
+                Some(super::security::Lease {
+                    id: context.id.clone(),
+                    fingerprint: context.fingerprint.clone(),
+                    permissions: context.permissions.clone(),
+                    generation: context.generation,
+                }),
             )?;
+            let id = task.id.clone();
+            if !super::tools::register_resource(context, &id, true) {
+                state
+                    .transfers
+                    .cancel_owned(&id, &context.id, context.generation);
+                return Err(AppError::validation("plugin.tools.cancelled"));
+            }
+            let _request = super::tools::CopyRequest(context.clone(), id);
+            task.wait().await?;
             Ok(Value::Null)
         }
         "files.local.delete" => {
@@ -557,17 +586,6 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         }
         "files.sftp.rename" => {
             commands::sftp_rename(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "from")?,
-                field(&params, "to")?,
-                optional(&params, "overwrite")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
-        "files.sftp.copy" => {
-            commands::sftp_copy(
                 app.clone(),
                 field(&params, "sessionId")?,
                 field(&params, "from")?,
@@ -698,6 +716,8 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                     | "files.cancelTransfer"
                     | "files.transferStatus"
                     | "files.local.writeText"
+                    | "files.local.copy"
+                    | "files.sftp.copy"
             )
             && !name.ends_with(".readText")
             && !name.ends_with(".list")

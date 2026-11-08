@@ -546,6 +546,7 @@
     "testCancelled": "Connection test cancelled"
   },
   "sftp": {
+    "copyInterrupted": "The copy worker stopped before reporting completion. Check the background task list and logs before retrying.",
     "title": "Files",
     "local": "Local",
     "remote": "Remote",

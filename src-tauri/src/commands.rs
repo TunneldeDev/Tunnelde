@@ -1274,12 +1274,46 @@ pub async fn sftp_copy(
     to: String,
     overwrite: Option<bool>,
 ) -> AppResult<()> {
-    sftp::remote_copy(&app, &session_id, from, to, overwrite.unwrap_or(false)).await
+    app.state::<AppState>().ssh.handle(&session_id)?;
+    sftp::start_copy(
+        app,
+        sftp::Endpoint {
+            session: Some(session_id.clone()),
+            path: from,
+        },
+        sftp::Endpoint {
+            session: Some(session_id),
+            path: to,
+        },
+        overwrite.unwrap_or(false),
+        None,
+    )?
+    .wait()
+    .await
 }
 
 #[tauri::command]
-pub fn local_copy(from: String, to: String, overwrite: Option<bool>) -> AppResult<()> {
-    sftp::local_copy(from, to, overwrite.unwrap_or(false))
+pub async fn local_copy(
+    app: AppHandle,
+    from: String,
+    to: String,
+    overwrite: Option<bool>,
+) -> AppResult<()> {
+    sftp::start_copy(
+        app,
+        sftp::Endpoint {
+            session: None,
+            path: from,
+        },
+        sftp::Endpoint {
+            session: None,
+            path: to,
+        },
+        overwrite.unwrap_or(false),
+        None,
+    )?
+    .wait()
+    .await
 }
 
 #[tauri::command]

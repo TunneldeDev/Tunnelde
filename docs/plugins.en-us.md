@@ -438,6 +438,17 @@ under an expired runtime's permissions. The task list allows cancellation, speed
 and cleanup, but pause/resume belongs to user transfers. Start a fresh transfer from the
 plugin when needed. Completed destination files and source files are retained.
 
+`files.local.copy({from,to,overwrite?})` and
+`files.sftp.copy({sessionId,from,to,overwrite?})` also use the journaled task
+engine, with the same lease, cancellation, staging and publication rules. They
+retain their existing completion contract: return `null` only after the worker
+finishes, and reject on cancellation or failure. Directory copies commit each file
+independently; files already committed are retained on failure. Cancelling a
+pending `tools.invoke` copy signals cancellation and drains outstanding IO before
+staging cleanup. Do not interpret a caller-side RPC timeout as proof of rollback.
+For long transfers, prefer upload/download and poll their returned task IDs rather
+than holding a copy RPC open beyond the SDK call timeout.
+
 Poll `files.transferStatus({transferId})` to await completion before the next task.
 It returns a transfer event with `running`, `done`, `failed`, `cancelled` or `cleanupPending`, or `null`
 for a missing/expired ID or a transfer outside the current plugin runtime. The host
