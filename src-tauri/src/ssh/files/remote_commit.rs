@@ -64,13 +64,19 @@ impl Replacement {
         )
         .await
         .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
-        .map_err(map_sftp)?;
+        .map_err(|error| rename::failure(from, to, error))?;
         match reply {
             Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
-            Packet::Status(status) => {
-                Err(map_sftp(russh_sftp::client::error::Error::Status(status)))
-            }
-            _ => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
+            Packet::Status(status) => Err(rename::failure(
+                from,
+                to,
+                russh_sftp::client::error::Error::Status(status),
+            )),
+            _ => Err(rename::failure(
+                from,
+                to,
+                russh_sftp::client::error::Error::UnexpectedPacket,
+            )),
         }
     }
 }

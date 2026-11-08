@@ -23,6 +23,27 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    if (error.code === "ssh" && error.details?.operation === "rename") {
+      const details = error.details;
+      if (["from", "to", "reason"].every((key) => typeof details[key] === "string")) {
+        const serverMessage =
+          typeof details.serverMessage === "string" ? details.serverMessage.trim() : "";
+        const unspecified =
+          details.statusCode === 4 &&
+          (!serverMessage || /^failure(?::\s*failure)?$/i.test(serverMessage));
+        const reason = unspecified
+          ? translate("sftp.renameServerFailure")
+          : typeof details.statusCode === "number" && serverMessage
+            ? translate("sftp.renameStatusReason", {
+                statusCode: details.statusCode,
+                reason: serverMessage,
+              })
+            : String(details.reason).startsWith("sftp.")
+              ? translateError({ code: "ssh", message: String(details.reason) })
+              : String(details.reason);
+        return translate("sftp.renameFailed", { from: details.from, to: details.to, reason });
+      }
+    }
     if (error.message === "plugin.engine.unsupported") {
       const details = error.details;
       if (
@@ -46,7 +67,10 @@ export function translateError(error: unknown): string {
     // "SSH error", which prevents users from distinguishing reconnection,
     // permission and server failures.
     if (/^sftp\.(error|channel|subsystem):/.test(error.message)) {
-      return error.message.slice(error.message.indexOf(":") + 1).trim() || translate("error.ssh");
+      const detail = error.message.slice(error.message.indexOf(":") + 1).trim();
+      if (/^sftp\.error:/.test(error.message) && /^failure:\s*failure$/i.test(detail))
+        return translate("sftp.serverUnspecifiedFailure");
+      return detail || translate("error.ssh");
     }
     const known = translateKey(error.message);
     if (known) {
