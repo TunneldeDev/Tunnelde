@@ -253,11 +253,14 @@ New remote transfers write their `.tunnelde-….part` file inside a task-owned
 directory-creation operation itself and verified before opening the file. The
 directory is removed after publication or cancellation; cleanup never recursively
 deletes unrecognized contents. Local transfers and existing journals retain their
-original sibling staging paths. Completed parallel windows and cleanly closed local
-sequential writes save the file's size and modification time. If both source and staging metadata
-still match, resume verifies the first and last blocks and continues at the saved
-offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
-verification. A changed source or mismatched partial file is rejected. Verification
+original sibling staging paths. Before continuing, resume compares every retained
+byte with the current source, including for cleanly paused and legacy tasks. Matching
+sizes and modification times cannot establish content integrity, so they never bypass
+this check. The two readers run concurrently with bounded SFTP read-ahead; completed
+parallel windows no longer write metadata-only resume checkpoints. Verification may
+read a large retained prefix again and has its own visible status. A changed source
+or mismatched partial file is rejected without publishing it. This check does not
+lock remote files against concurrent changes. Verification
 has its own visible status. Cancellation covers its metadata requests, read-only
 file opening, reads and closing; a delayed read or CLOSE reply does not block
 pausing. The shared connection remains available. Closing an empty remote staging

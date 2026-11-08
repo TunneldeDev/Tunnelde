@@ -6,21 +6,15 @@ use russh_sftp::client::SftpSession;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(test)]
+mod live_tests;
+#[cfg(test)]
+mod tests;
+
 pub(super) async fn verify_prefix(
     reader: &mut Reader,
     partial: &Endpoint,
     sftp: Option<&SftpSession>,
-    length: u64,
-    cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
-    verify_range(reader, partial, sftp, 0, length, cancel).await
-}
-
-pub(super) async fn verify_range(
-    reader: &mut Reader,
-    partial: &Endpoint,
-    sftp: Option<&SftpSession>,
-    offset: u64,
     length: u64,
     cancel: Option<&AtomicBool>,
 ) -> AppResult<()> {
@@ -32,29 +26,20 @@ pub(super) async fn verify_range(
         let mut a = vec![0; CHUNK];
         let mut b = vec![0; CHUNK];
         let result = async {
-            reader.seek(offset).await?;
-            other.seek(offset).await?;
+            reader.seek(0).await?;
+            other.seek(0).await?;
             while left > 0 {
                 if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
                     return Err(AppError::Ssh(CANCELLED.into()));
                 }
                 let n = left.min(CHUNK as u64) as usize;
-                let mut got = 0;
-                while got < n {
-                    let read = reader.read(&mut a[got..n]).await?;
-                    if read == 0 {
-                        return Err(AppError::validation("sftp.resumePrefixMismatch"));
-                    }
-                    got += read;
-                }
-                let mut got = 0;
-                while got < n {
-                    let read = other.read(&mut b[got..n]).await?;
-                    if read == 0 {
-                        return Err(AppError::validation("sftp.resumePrefixMismatch"));
-                    }
-                    got += read;
-                }
+                // Poll both sides together so remote-to-remote verification
+                // does not serialize their network latency. Each SFTP reader
+                // retains the session's existing bounded read-ahead pipeline.
+                tokio::try_join!(
+                    read_block(reader, &mut a[..n]),
+                    read_block(&mut other, &mut b[..n]),
+                )?;
                 if a[..n] != b[..n] {
                     return Err(AppError::validation("sftp.resumePrefixMismatch"));
                 }
@@ -68,6 +53,17 @@ pub(super) async fn verify_range(
         closed
     })
     .await
+}
+
+async fn read_block(reader: &mut Reader, mut buffer: &mut [u8]) -> AppResult<()> {
+    while !buffer.is_empty() {
+        let read = reader.read(buffer).await?;
+        if read == 0 {
+            return Err(AppError::validation("sftp.resumePrefixMismatch"));
+        }
+        buffer = &mut buffer[read..];
+    }
+    Ok(())
 }
 
 pub(super) async fn fingerprint_file(

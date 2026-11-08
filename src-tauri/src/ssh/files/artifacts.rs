@@ -461,12 +461,6 @@ pub(super) fn record_local_writer(
 }
 
 #[derive(Serialize, Deserialize)]
-struct ResumeCheckpoint {
-    source: (u64, Option<i64>),
-    partial: (u64, Option<i64>),
-}
-
-#[derive(Serialize, Deserialize)]
 struct ParallelCheckpoint {
     source: (u64, Option<i64>),
     offset: u64,
@@ -601,73 +595,31 @@ pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint, fresh: bool) -> A
     )
 }
 
-pub(super) async fn checkpoint(
-    app: &AppHandle,
-    key: &str,
-    source: (u64, Option<i64>),
+pub(super) async fn validate_partial_length(
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     submitted: std::ops::RangeInclusive<u64>,
 ) -> AppResult<()> {
-    let partial = source_stamp(temp, sftp).await?;
-    if submitted.contains(&partial.0) && partial.0 <= source.0 {
-        put(
-            app,
-            &key.replacen("transfer-file:", "transfer-part:", 1),
-            serde_json::to_string(&ResumeCheckpoint { source, partial })?,
-        )?;
-    } else {
+    if !file_length(temp, sftp)
+        .await?
+        .is_some_and(|length| submitted.contains(&length))
+    {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn resume_offset(
-    app: &AppHandle,
-    key: &str,
-    source: (u64, Option<i64>),
-    temp: &Endpoint,
-    sftp: Option<&SftpSession>,
-    reader: &mut Reader,
-    existing: u64,
-    cancel: &AtomicBool,
-) -> AppResult<()> {
-    let saved = get(app, &key.replacen("transfer-file:", "transfer-part:", 1))?
-        .and_then(|raw| serde_json::from_str::<ResumeCheckpoint>(&raw).ok());
-    let unchanged = if let Some(saved) = saved {
-        saved.source == source
-            && source.1.is_some()
-            && saved.partial.0 == existing
-            && saved.partial.1.is_some()
-            && saved.partial == interruptible(Some(cancel), source_stamp(temp, sftp)).await?
-    } else {
-        false
-    };
-    verify_resume(reader, temp, sftp, existing, unchanged, cancel).await
-}
-
-async fn verify_resume(
     reader: &mut Reader,
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     existing: u64,
-    unchanged: bool,
     cancel: &AtomicBool,
 ) -> AppResult<()> {
-    if unchanged {
-        // A cleanly closed staging file is our checkpoint. Check its boundaries
-        // against the unchanged source instead of downloading gigabytes again.
-        let head = existing.min(CHUNK as u64);
-        verify_range(reader, temp, sftp, 0, head, Some(cancel)).await?;
-        let offset = head.max(existing.saturating_sub(CHUNK as u64));
-        verify_range(reader, temp, sftp, offset, existing - offset, Some(cancel)).await?;
-    } else {
-        // Crashes, legacy records and externally changed staging files retain
-        // the complete byte-for-byte verification path.
-        verify_prefix(reader, temp, sftp, existing, Some(cancel)).await?;
-    }
-    reader.seek(existing).await
+    // Size and mtime (including legacy transfer-part checkpoints) cannot prove
+    // that the middle of either file is unchanged. Verify every retained byte;
+    // success leaves the source reader exactly at the continuation offset.
+    verify_prefix(reader, temp, sftp, existing, Some(cancel)).await
 }
 
 fn recorded_paths(app: &AppHandle, id: &str) -> AppResult<Vec<String>> {
@@ -1437,7 +1389,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn checkpoint_resume_reads_boundaries_and_positions_at_the_real_offset() {
+    async fn resume_rejects_middle_changes_with_preserved_metadata() {
+        let root = std::env::temp_dir().join(format!("tunnelde-resume-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        let temp = source.child(display_path(&root.join("partial")));
+        let data: Vec<u8> = (0..CHUNK * 5 + 13).map(|i| (i % 251) as u8).collect();
+        let existing = (CHUNK * 4 + 3) as u64;
+        let cancel = AtomicBool::new(false);
+        let mut errors = Vec::new();
+        for changed_source in [false, true] {
+            tokio::fs::write(&source.path, &data).await.unwrap();
+            tokio::fs::write(&temp.path, &data[..existing as usize])
+                .await
+                .unwrap();
+            let changed = if changed_source { &source } else { &temp };
+            let before = source_stamp(changed, None).await.unwrap();
+            let modified = std::fs::metadata(&changed.path)
+                .unwrap()
+                .modified()
+                .unwrap();
+            let mut bytes = tokio::fs::read(&changed.path).await.unwrap();
+            bytes[CHUNK * 2] ^= 1;
+            tokio::fs::write(&changed.path, bytes).await.unwrap();
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&changed.path)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+            assert_eq!(source_stamp(changed, None).await.unwrap(), before);
+            let mut reader = open_reader(&source, None).await.unwrap();
+            errors.push(
+                resume_offset(&mut reader, &temp, None, existing, &cancel)
+                    .await
+                    .err()
+                    .map(|error| error.to_string()),
+            );
+            reader.finish().await.unwrap();
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
+        assert_eq!(
+            errors,
+            vec![Some("sftp.resumePrefixMismatch".into()); 2],
+            "Matching sizes and timestamps must not hide source or staging corruption",
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_verifies_the_prefix_and_positions_at_the_real_offset() {
         let root = std::env::temp_dir().join(format!("tunnelde-resume-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
         let source = Endpoint {
@@ -1453,7 +1456,7 @@ mod tests {
             .unwrap();
         let mut reader = open_reader(&source, None).await.unwrap();
         let cancel = AtomicBool::new(false);
-        verify_resume(&mut reader, &temp, None, existing, true, &cancel)
+        resume_offset(&mut reader, &temp, None, existing, &cancel)
             .await
             .unwrap();
         let mut next = [0; 10];
@@ -1462,11 +1465,9 @@ mod tests {
         let mut changed = data[..existing as usize].to_vec();
         changed[CHUNK * 2] ^= 1;
         tokio::fs::write(&temp.path, changed).await.unwrap();
-        assert!(
-            verify_resume(&mut reader, &temp, None, existing, false, &cancel)
-                .await
-                .is_err()
-        );
+        assert!(resume_offset(&mut reader, &temp, None, existing, &cancel)
+            .await
+            .is_err());
         reader.finish().await.unwrap();
         tokio::fs::remove_dir_all(root).await.unwrap();
     }
