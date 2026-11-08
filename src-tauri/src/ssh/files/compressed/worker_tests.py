@@ -73,6 +73,31 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(zlib.decompress(replies[5][1]), text)
         self.assertEqual(path.read_bytes()[:9 + len(text) + 3], b'preserved' + text + b'END')
 
+    def test_private_directory_creation_is_exclusive_and_private(self):
+        path = self.root / "暂存 ' directory"
+        frames = self.frame(1, 'mkdir_private', path=str(path))
+        frames += self.frame(2, 'mkdir_private', path=str(path))
+        replies = self.replies(frames)
+        self.assertNotIn('error', replies[0][0])
+        self.assertIn('error', replies[1][0])
+        self.assertEqual(path.stat().st_mode & 0o777, 0o700)
+        self.assertEqual(list(path.iterdir()), [])
+
+    def test_private_directory_rejects_payload_relative_paths_and_existing_objects(self):
+        file = self.root / 'keep.txt'
+        file.write_bytes(b'preserve')
+        link = self.root / 'keep-link'
+        link.symlink_to(file)
+        frames = self.frame(1, 'mkdir_private', path=str(file))
+        frames += self.frame(2, 'mkdir_private', path=str(link))
+        frames += self.frame(3, 'mkdir_private', path='relative')
+        frames += self.frame(4, 'mkdir_private', b'unexpected', path=str(self.root / 'invalid'))
+        self.assertTrue(all('error' in reply for reply, _ in self.replies(frames)))
+        self.assertEqual(file.read_bytes(), b'preserve')
+        self.assertTrue(link.is_symlink())
+        self.assertFalse((self.root / 'relative').exists())
+        self.assertFalse((self.root / 'invalid').exists())
+
     def archive(self, files, names=None, kinds=None):
         output = io.BytesIO()
         with tarfile.open(fileobj=output, mode='w', format=tarfile.USTAR_FORMAT) as archive:

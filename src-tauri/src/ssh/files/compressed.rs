@@ -332,6 +332,16 @@ impl Session {
         Ok(result)
     }
 
+    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+        let (reply, _) = self
+            .request(json!({"op":"mkdir_private","path":path}), Vec::new())
+            .await?;
+        if reply.size != 0 {
+            return Err(protocol_error());
+        }
+        Ok(())
+    }
+
     pub async fn open(&self, path: &str, write: bool) -> AppResult<String> {
         self.request(json!({"op":"open","path":path,"write":write}), Vec::new())
             .await?
