@@ -231,6 +231,22 @@ pub(super) struct Files<'a> {
     source_handle: Option<String>,
     target_handle: Option<String>,
     throttle: Option<bandwidth::Throttle>,
+    unsettled_write: AtomicBool,
+}
+
+/// A dropped request may still run on the server. Its handle must finish
+/// draining before recovery is allowed to truncate the same staging inode.
+struct WriteAttempt<'a> {
+    unsettled: &'a AtomicBool,
+    acknowledged: bool,
+}
+
+impl Drop for WriteAttempt<'_> {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            self.unsettled.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>) -> AppResult<()> {
@@ -303,12 +319,26 @@ impl<'a> Files<'a> {
             source_handle,
             target_handle,
             throttle: None,
+            unsettled_write: AtomicBool::new(false),
         })
     }
 
     pub fn with_throttle(mut self, throttle: bandwidth::Throttle) -> Self {
         self.throttle = Some(throttle);
         self
+    }
+
+    pub async fn finish_cancellable(self, interrupted: bool, cancel: &AtomicBool) -> AppResult<()> {
+        if self.unsettled_write.load(Ordering::SeqCst) {
+            // An interrupted WRITE may still mutate the target. Keep the
+            // existing bounded drain rather than trusting its partial length.
+            self.finish(interrupted).await
+        } else {
+            // Every destination WRITE has acknowledged (or none was sent).
+            // A delayed CLOSE cannot introduce additional bytes. Do not abort
+            // a data channel shared by other files in this directory transfer.
+            interruptible(Some(cancel), self.finish(interrupted)).await
+        }
     }
 
     pub async fn finish(self, interrupted: bool) -> AppResult<()> {
@@ -365,6 +395,10 @@ impl<'a> Files<'a> {
             let mut written = 0;
             while written < data.len() {
                 let size = (data.len() - written).min(session.write_size);
+                let mut attempt = WriteAttempt {
+                    unsettled: &self.unsettled_write,
+                    acknowledged: false,
+                };
                 interruptible(Some(stop), async {
                     session
                         .write(
@@ -376,6 +410,7 @@ impl<'a> Files<'a> {
                     Ok(())
                 })
                 .await?;
+                attempt.acknowledged = true;
                 written += size;
             }
         }

@@ -1215,6 +1215,15 @@ enum Writer {
 }
 
 impl Writer {
+    /// Used only before the range/archive pipeline, while this handle has
+    /// never written bytes. A delayed CLOSE cannot change the staging file.
+    async fn finish_empty(self, cancel: &AtomicBool) -> AppResult<()> {
+        match self {
+            Self::Remote(_) => interruptible(Some(cancel), self.finish()).await,
+            Self::Local(_) => self.finish().await,
+        }
+    }
+
     async fn write_all(&mut self, buffer: &[u8]) -> AppResult<()> {
         match self {
             Writer::Local(file) => file.write_all(buffer).await?,
@@ -2064,7 +2073,8 @@ async fn durable_copy_file(
         from_sftp.is_some() || to_sftp.is_some(),
     );
     let copied = if from_sftp.is_some() || to_sftp.is_some() {
-        let (closed, read_closed) = tokio::join!(writer.finish(), async {
+        tracing::debug!(id, "Closing empty transfer staging writer");
+        let (closed, read_closed) = tokio::join!(writer.finish_empty(cancel), async {
             match reader {
                 Some(reader) => reader.finish_cancellable(cancel).await,
                 None => Ok(()),
@@ -2367,7 +2377,8 @@ async fn parallel_copy_file(
         Ok::<(), AppError>(())
     }
     .await;
-    let closed = files.finish(result.is_err()).await;
+    tracing::debug!(id = meter.id, "Closing transfer data handles");
+    let closed = files.finish_cancellable(result.is_err(), cancel).await;
     if result.is_err() && closed.is_ok() {
         let recovered = tokio::time::timeout(
             std::time::Duration::from_secs(5),

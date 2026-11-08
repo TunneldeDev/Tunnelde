@@ -49,6 +49,15 @@ async fn server_with_close(
     delay: Duration,
     close: CloseReply,
 ) -> (Arc<DataSession>, Arc<Mutex<Observed>>) {
+    let (client, observed) = stream_with_close(write_limit, delay, close).await;
+    (Arc::new(DataSession::new(client).await.unwrap()), observed)
+}
+
+async fn stream_with_close(
+    write_limit: Option<u64>,
+    delay: Duration,
+    close: CloseReply,
+) -> (tokio::io::DuplexStream, Arc<Mutex<Observed>>) {
     let (client, server) = tokio::io::duplex(1024 * 1024);
     let observed = Arc::new(Mutex::new(Observed::default()));
     let state = observed.clone();
@@ -182,7 +191,7 @@ async fn server_with_close(
         }
         state.lock().unwrap().disconnected = true;
     });
-    (Arc::new(DataSession::new(client).await.unwrap()), observed)
+    (client, observed)
 }
 
 async fn wait_for(mut ready: impl FnMut() -> bool) {
@@ -429,6 +438,168 @@ async fn completed_copy_waits_for_both_close_replies_and_reuses_its_channels() {
     source_gate.add_permits(1);
     target_gate.add_permits(1);
     next.finish(false).await.unwrap();
+}
+
+#[tokio::test]
+async fn empty_staging_close_cancels_without_duplicate_close_or_disconnecting_metadata() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (stream, observed) = stream_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let session = SftpSession::new(stream).await.unwrap();
+    let writer = Writer::Remote(Box::new(
+        session
+            .open_with_flags("/staging", OpenFlags::WRITE)
+            .await
+            .unwrap(),
+    ));
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(writer.finish_empty(&cancel), async {
+            wait_for(|| observed.lock().unwrap().closes == 1).await;
+            cancel.store(true, Ordering::SeqCst);
+        })
+    })
+    .await
+    .expect("pause waited for empty staging CLOSE");
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert!(observed.lock().unwrap().writes.is_empty());
+    assert!(!observed.lock().unwrap().disconnected);
+    gate.add_permits(1);
+    let mut next = session
+        .open_with_flags("/another-file", OpenFlags::WRITE)
+        .await
+        .unwrap();
+    next.write_all(b"still usable").await.unwrap();
+    next.flush().await.unwrap();
+    assert_eq!(observed.lock().unwrap().data, b"still usable");
+    gate.add_permits(1);
+    next.close().await.unwrap();
+    assert_eq!(
+        observed.lock().unwrap().closes,
+        2,
+        "abandoned CLOSE was sent twice"
+    );
+}
+
+#[tokio::test]
+async fn acknowledged_writes_allow_prompt_close_cancellation_and_shared_channel_reuse() {
+    let source_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let target_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (source, input) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(source_gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let (target, output) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(target_gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let bytes = b"all destination writes acknowledged";
+    input.lock().unwrap().data = bytes.to_vec();
+    let sessions = Sessions {
+        source: Some(source),
+        target: Some(target),
+    };
+    let from = remote("source");
+    let to = remote("target");
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    files
+        .segment(
+            0..bytes.len() as u64,
+            4,
+            &AtomicBool::new(false),
+            &AtomicU64::new(0),
+        )
+        .await
+        .unwrap();
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(files.finish_cancellable(false, &cancel), async {
+            wait_for(|| input.lock().unwrap().closes == 1 && output.lock().unwrap().closes == 1)
+                .await;
+            cancel.store(true, Ordering::SeqCst);
+        })
+    })
+    .await
+    .expect("pause waited for acknowledged data CLOSE");
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert_eq!(output.lock().unwrap().data, bytes);
+    assert!(!input.lock().unwrap().disconnected);
+    assert!(!output.lock().unwrap().disconnected);
+    source_gate.add_permits(2);
+    target_gate.add_permits(2);
+    let next = Files::open(&sessions, &from, &to).await.unwrap();
+    next.finish_cancellable(false, &AtomicBool::new(false))
+        .await
+        .unwrap();
+    assert_eq!(input.lock().unwrap().closes, 2);
+    assert_eq!(output.lock().unwrap().closes, 2);
+    assert_eq!(output.lock().unwrap().data, bytes);
+}
+
+#[tokio::test]
+async fn unacknowledged_write_keeps_destination_close_drain_even_when_cancelled() {
+    let (source, input) = server(None, Duration::ZERO).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (target, output) = server_with_close(
+        None,
+        Duration::from_secs(30),
+        CloseReply {
+            gate: Some(gate.clone()),
+            status: 4,
+        },
+    )
+    .await;
+    input.lock().unwrap().data = b"pending write".to_vec();
+    let sessions = Sessions {
+        source: Some(source),
+        target: Some(target),
+    };
+    let from = remote("source");
+    let to = remote("target");
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let cancel = AtomicBool::new(false);
+    let transferred = AtomicU64::new(0);
+    let (copied, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(files.segment(0..13, 1, &cancel, &transferred), async {
+            wait_for(|| !output.lock().unwrap().writes.is_empty()).await;
+            cancel.store(true, Ordering::SeqCst);
+        })
+    })
+    .await
+    .expect("WRITE cancellation blocked");
+    assert_eq!(copied.unwrap_err().to_string(), CANCELLED);
+    let finish = files.finish_cancellable(true, &cancel);
+    tokio::pin!(finish);
+    tokio::select! {
+        result = &mut finish => panic!("unacknowledged writer was released: {result:?}"),
+        () = wait_for(|| output.lock().unwrap().closes == 1) => {}
+    }
+    assert!(tokio::time::timeout(Duration::from_millis(50), &mut finish)
+        .await
+        .is_err());
+    gate.add_permits(1);
+    assert_ne!(
+        finish.await.unwrap_err().to_string(),
+        CANCELLED,
+        "CLOSE failure was swallowed by cancellation"
+    );
 }
 
 #[tokio::test]

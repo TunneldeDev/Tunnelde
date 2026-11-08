@@ -239,10 +239,14 @@ offset. Interrupted writes, legacy tasks and changed staging metadata use full p
 verification. A changed source or mismatched partial file is rejected. Verification
 has its own visible status. Cancellation covers its metadata requests, read-only
 file opening, reads and closing; a delayed read or CLOSE reply does not block
-pausing. The shared connection remains available. Remote writer CLOSE and
-recovery truncation still await their server confirmations before the task
-updates its checkpoint; creating a new remote staging file also waits for its
-acknowledgement.
+pausing. The shared connection remains available. Closing an empty remote staging
+handle, or data handles whose writes have all been acknowledged, can also stop
+waiting when paused. This does not abort a destination data channel shared by
+other files in a directory transfer. If a write's result is uncertain, the
+application retains the bounded CLOSE wait before recovery may truncate the
+staging file. Successful transfers still wait for CLOSE confirmation. Recovery
+truncation and creation of a new remote staging file also await their server
+confirmations.
 
 Pausing during a remote file's final rename stops waiting for the reply. The
 application first records that publication is uncertain. On Resume it moves any
