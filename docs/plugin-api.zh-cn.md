@@ -30,7 +30,8 @@
 `storage.delete`。这些方法自 0.21.0 起提供；`since` 表示首次可用版本，不表示稳定承诺
 建立的版本。稳定范围还包括 `statusBar.set`/`statusBar.remove` 和
 `editor.active`/`editor.replace`。编辑器方法自 0.29.0-beta.2 起提供，本次明确冻结
-其 v1 契约。设置、工作区、聊天、远端运行器及其余面板方法仍为实验接口。
+其 v1 契约。`workspace.snapshot` 也具有冻结的只读 v1 契约；设置、工作区修改、
+聊天、远端运行器及其余面板方法仍为实验接口。
 稳定契约的不兼容变更需要明确的版本化迁移。
 
 冻结的接口发现[请求结构](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
@@ -69,6 +70,35 @@
 `plugin.api.storageTooLarge`。`knownErrors` 列出已知标识，不穷举 IO 错误文字。
 传输层可能以 `-32002` 拒绝过大的响应且不附带 `data`，因此调用方不能要求所有错误都有
 `data`。请处理未知错误消息，不要依赖操作系统特定错误文字。
+
+## 稳定的工作区快照
+
+`workspace.snapshot` 需要 `workspace.read` 权限，自 0.21.0 起提供。冻结的
+[工作区 v1 契约](../tests/fixtures/plugin-compat/workspace-v1.json)定义其只读结果。
+该方法接受对象参数并忽略未知字段；返回当前 `tabs`、`panes`、`activeId`、
+`activePaneId` 和递归的 `layout`。空工作区也有一个窗格和布局，当前标签可以是 `null`。
+
+结果使用独立的协议数据结构，并逐字段投影和复制。内部状态后续新增的字段不会自动
+暴露给插件，插件修改返回值也不会改变应用状态。快照只含布局和文件窗格元数据，
+不含编辑器内容、草稿或凭据。返回的路径、主机和会话标识不授予文件或 SSH 权限。
+
+- 标签保留 `id`、`kind`、`title`、可空的 `hostId`、`pinned`，以及原有可选字段
+  `preview`、`hidden`、`filePane` 和可空的 `fileSessionId`。`kind` 是开放字符串，
+  插件必须容忍不认识的标签类型。
+- 文件窗格包含本地或远端 `source`、可空的 `path` 和 `ownerSessionId`，以及可选的
+  `view`、`remoteIdentity` 和 `offline`。视图保留列顺序、列宽、布局、隐藏文件、
+  文件夹优先、排序和分组设置。选项字符串是开放值；省略、`false` 和 `null` 含义不同。
+- 窗格包含 `id`、`tabIds`、可空的 `activeId` 和可选的 `locked`。隐藏的面板标签
+  可保留在原窗格中；它的存在不表示当前可见。布局节点是 `pane` 或递归的 `split`；
+  `row` 为水平排列，`column` 为垂直排列，`ratio` 在 0 到 1 之间。
+
+每次调用读取当时的状态；快照不保留路径、标签或会话，也不提供跨请求的原子性。
+调用前必须通过运行实例与权限校验，撤销后不能继续读取。本方法不发送事件；
+运行时失效、请求过期等错误遵循发现目录中的契约。工作区修改方法仍为实验接口。
+
+SDK 的工作区类型声明由宿主的独立数据结构同步，检查模式验证声明漂移而不写文件。
+CI 将真实前端响应交给 Rust 响应编码器，再用冻结结构和历史 SDK 检查，避免仅验证
+手写结果副本。平台和实际插件的验收仍需单独进行。
 
 ## 稳定的编辑器缓冲区接口
 

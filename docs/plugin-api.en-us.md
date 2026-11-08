@@ -38,8 +38,9 @@ The first stable core consists of `api.describe`, `sessions.list`, `storage.get`
 the `since` field records availability, not when this stability commitment was made.
 The stable surface also includes `statusBar.set`/`statusBar.remove` and
 `editor.active`/`editor.replace`. Editor methods have been available since
-0.29.0-beta.2; their frozen v1 contract is now explicit. Settings, workspace,
-chat, runner and other panel methods remain experimental.
+0.29.0-beta.2; their frozen v1 contract is now explicit. Settings, workspace mutation,
+chat, runner and other panel methods remain experimental. `workspace.snapshot`
+also has a frozen v1 read-only contract; workspace mutation methods remain experimental.
 An incompatible change to a stable contract requires an explicitly versioned migration.
 
 The frozen discovery [request schema](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
@@ -83,6 +84,34 @@ data `plugin.api.invalidStorage`, and quota overflow `plugin.api.storageTooLarge
 `knownErrors` lists recognized identifiers, not every possible IO message. The transport
 may reject an oversized response with `-32002` and no `data`; callers must not require
 `data` for every error. Handle additional error messages without parsing OS-specific text.
+
+## Stable workspace snapshot
+
+`workspace.snapshot` requires `workspace.read` and approved execution. It returns
+`tabs`, `panes`, `activeId`, `activePaneId` and the recursive `layout`, projected into
+independent protocol DTOs rather than forwarding internal store objects. Every array
+and nested object is detached. The SDK's `PluginWorkspaceSnapshot` types are generated
+from these DTO declarations and checked against the selected host during SDK sync.
+The frozen [workspace v1 contract](../tests/fixtures/plugin-compat/workspace-v1.json)
+defines required and optional fields. The method has existed since 0.21.0; that is
+availability, not the date of this stability commitment.
+
+Tabs preserve IDs, kind, title, host identity, pin/preview/hidden state and optional
+file-pane metadata. File-pane source and session identifiers, path, offline state,
+remote identity and documented view preferences are metadata only; no file contents,
+editor drafts, credentials or arbitrary internal fields are returned. Hidden docked
+panels remain in the snapshot so plugins can identify their remembered placement.
+A pane's `activeId` and the global `activeId` can be `null`, including an empty group.
+
+Layout leaves identify a pane; split nodes provide an ID, ratio, children and direction:
+`row` places children horizontally, `column` vertically. Tab kinds and file-view option
+strings are open vocabularies: tolerate unfamiliar values and ignore additional fields.
+New fields may be added compatibly. Read-only snapshots do not reserve tabs, sessions or
+paths and grant no file/SSH permissions; later actions can fail after state changes.
+The host checks authorization before dispatch and after the reply, and bounds encoded
+responses. A missing WebView/reply can time out; no application events are promised by
+this method. The same projection is used by experimental workspace actions that return
+a snapshot, without making their mutation behavior stable.
 
 ## Stable editor buffers
 
