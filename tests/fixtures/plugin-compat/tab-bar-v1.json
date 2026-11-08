@@ -1,0 +1,440 @@
+{
+  "version": 1,
+  "methods": {
+    "tabBar.set": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Structural validity. Option values must also be unique and include the selected value; commands must belong to the approved runtime. Unknown properties are ignored. Full replacement, not a partial update.",
+        "type": "object",
+        "required": ["id", "title", "kind"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+          },
+          "kind": {
+            "enum": ["button", "select", "text"]
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -1000,
+            "maximum": 1000,
+            "default": 0
+          },
+          "icon": {
+            "enum": [
+              "activity",
+              "check",
+              "alert",
+              "info",
+              "sync",
+              "terminal",
+              "cloud",
+              "code",
+              "plug",
+              "copy",
+              "clear",
+              "folder",
+              "file",
+              "wrap",
+              "follow",
+              "play",
+              "pause",
+              "filter",
+              null
+            ]
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "disabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "when": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "tabKind": {
+                    "enum": [
+                      "welcome",
+                      "host",
+                      "terminal",
+                      "sftp",
+                      "editor",
+                      "history",
+                      "monitor",
+                      "plugin",
+                      "pluginDetail",
+                      "settings",
+                      "about",
+                      "updates",
+                      "knownHosts",
+                      "sidebar",
+                      null
+                    ]
+                  },
+                  "tabId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "options": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "type": "object",
+              "required": ["value", "label"],
+              "properties": {
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                }
+              },
+              "additionalProperties": true
+            },
+            "default": []
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "placement": {
+            "enum": ["leading", "trailing"],
+            "default": "trailing"
+          },
+          "group": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "tooltip": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "showLabel": {
+            "type": "boolean",
+            "default": false
+          },
+          "checked": {
+            "type": ["boolean", "null"]
+          }
+        },
+        "additionalProperties": true,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "button"
+                }
+              }
+            },
+            "then": {
+              "required": ["command"],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                },
+                "options": {
+                  "maxItems": 0
+                },
+                "value": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "text"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "command": {
+                  "type": "null"
+                },
+                "options": {
+                  "maxItems": 0
+                },
+                "value": {
+                  "type": "null"
+                },
+                "checked": {
+                  "type": "null"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "kind": {
+                  "const": "select"
+                }
+              }
+            },
+            "then": {
+              "required": ["command", "options", "value"],
+              "properties": {
+                "command": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                },
+                "options": {
+                  "minItems": 1
+                },
+                "value": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                "checked": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "resultSchema": {
+        "type": "null"
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.tabBar.invalidItem",
+        "plugin.tabBar.unknownCommand",
+        "plugin.tabBar.limit",
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.api.missing:id",
+        "plugin.api.invalid:id",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": [],
+      "commandContextSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["_locale", "_tabBar"],
+        "properties": {
+          "_locale": {
+            "type": ["string", "null"]
+          },
+          "_tabBar": {
+            "type": "object",
+            "required": ["itemId", "tabId", "tabKind", "paneId", "value"],
+            "properties": {
+              "itemId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+              },
+              "tabId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512,
+                "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+              },
+              "tabKind": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 32,
+                "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+              },
+              "paneId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+              },
+              "value": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "tabBar.remove": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "type": "boolean"
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.tabBar.invalidItem",
+        "plugin.tabBar.unknownCommand",
+        "plugin.tabBar.limit",
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.api.missing:id",
+        "plugin.api.invalid:id",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": []
+    }
+  }
+}

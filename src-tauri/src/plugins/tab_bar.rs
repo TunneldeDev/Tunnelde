@@ -294,7 +294,7 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
     Ok(result)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClickContext {
     pub tab_id: String,
@@ -302,19 +302,29 @@ pub struct ClickContext {
     pub pane_id: String,
 }
 
-#[tauri::command]
-pub async fn plugin_tab_bar_execute(
-    app: AppHandle,
-    token: String,
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CommandContext {
+    item_id: String,
+    #[serde(flatten)]
+    view: ClickContext,
+    value: Option<String>,
+}
+
+#[derive(Serialize)]
+struct CommandInput {
+    _locale: Option<String>,
+    #[serde(rename = "_tabBar")]
+    tab_bar: CommandContext,
+}
+
+fn command_request(
+    item: &Owned<TabBarItem>,
     context: ClickContext,
     value: Option<String>,
     locale: Option<String>,
-) -> AppResult<Value> {
-    let item = entries(&app)
-        .1
-        .into_iter()
-        .find(|item| item.token == token)
-        .ok_or_else(|| AppError::validation("plugin.tabBar.expired"))?;
+    command_exists: impl Fn(&str) -> bool,
+) -> AppResult<(String, Value)> {
     if item.value.disabled
         || !plain(&context.tab_id, 512)
         || !plain(&context.pane_id, 128)
@@ -346,20 +356,44 @@ pub async fn plugin_tab_bar_execute(
     let command = item
         .value
         .command
+        .as_ref()
+        .filter(|command| command_exists(command))
         .ok_or_else(|| AppError::validation("plugin.tabBar.unknownCommand"))?;
-    if !app
-        .state::<AppState>()
-        .plugins
-        .status_bar_command(&item.lease.id, &command)
-    {
-        return Err(AppError::validation("plugin.tabBar.unknownCommand"));
-    }
+    let input = serde_json::to_value(CommandInput {
+        _locale: locale,
+        tab_bar: CommandContext {
+            item_id: item.value.id.clone(),
+            view: context,
+            value,
+        },
+    })?;
+    Ok((command.clone(), input))
+}
+
+#[tauri::command]
+pub async fn plugin_tab_bar_execute(
+    app: AppHandle,
+    token: String,
+    context: ClickContext,
+    value: Option<String>,
+    locale: Option<String>,
+) -> AppResult<Value> {
+    let item = entries(&app)
+        .1
+        .into_iter()
+        .find(|item| item.token == token)
+        .ok_or_else(|| AppError::validation("plugin.tabBar.expired"))?;
+    let (command, input) = command_request(&item, context, value, locale, |command| {
+        app.state::<AppState>()
+            .plugins
+            .status_bar_command(&item.lease.id, command)
+    })?;
     app.state::<AppState>()
         .plugins
         .run_bound(
             &item.lease.id,
             &command,
-            Some(json!({"_locale":locale,"_tabBar":{"itemId":item.value.id,"tabId":context.tab_id,"tabKind":context.tab_kind,"paneId":context.pane_id,"value":value}})),
+            Some(input),
             Some(item.lease.generation),
         )
         .await
@@ -372,8 +406,224 @@ pub async fn plugin_tab_bar_execute(
 }
 
 #[cfg(test)]
+pub(super) fn contract_samples() -> Vec<Value> {
+    let registry = Registry::default();
+    let lease = Lease {
+        id: "sample".into(),
+        fingerprint: "digest".into(),
+        permissions: vec![],
+        generation: 1,
+    };
+    let mut samples = Vec::new();
+    let mut run = |method, params: Value, input_valid| {
+        let result = apply(
+            &registry,
+            lease.clone(),
+            method,
+            params.clone(),
+            |command| command == "go",
+            |_| Ok(()),
+        );
+        let mut sample = match result {
+            Ok(result) => {
+                json!({"method":method,"params":params,"result":result,"inputValid":input_valid})
+            }
+            Err(error) => {
+                json!({"method":method,"params":params,"error":super::host::error_payload(&error),"inputValid":input_valid})
+            }
+        };
+        if method == "tabBar.set" && sample.get("result").is_some() {
+            let item = registry
+                .snapshot(|_| true)
+                .1
+                .into_iter()
+                .find(|item| Some(item.value.id.as_str()) == params["id"].as_str())
+                .unwrap();
+            if item.value.command.is_some() && !item.value.disabled {
+                let selected = matches!(item.value.kind, ControlKind::Select)
+                    .then(|| item.value.value.clone().unwrap());
+                let context = ClickContext {
+                    tab_id: "plugin:sample:main".into(),
+                    tab_kind: "plugin".into(),
+                    pane_id: "pane-1".into(),
+                };
+                let (_, input) =
+                    command_request(&item, context, selected, Some("zh-CN".into()), |_| true)
+                        .unwrap();
+                sample["commandInput"] = input;
+            }
+        }
+        samples.push(sample);
+    };
+    for params in [
+        json!({"id":"a","title":"就绪 😀","kind":"text","future":true}),
+        json!({"id":"a","title":"运行","kind":"button","command":"go"}),
+        json!({"id":"a","title":"Follow","kind":"button","command":"go","placement":"leading","group":"output.view","tooltip":"Follow latest output","showLabel":true,"checked":false,"when":{}}),
+        json!({"id":"a","title":"Target","kind":"select","command":"go","options":[{"value":"本机","label":"本机"},{"value":"远端","label":"远端"}],"value":"本机"}),
+        json!({"id":"a","title":"😀".repeat(128),"kind":"text","priority":-1000,"icon":null,"command":null,"when":null,"value":null,"group":null,"tooltip":null,"checked":null}),
+        json!({"id":"a","title":"\u{feff}","kind":"text"}),
+    ] {
+        run("tabBar.set", params, true);
+    }
+    run("tabBar.remove", json!({"id":"a","future":true}), true);
+    run("tabBar.remove", json!({"id":"a"}), true);
+    // Cross-field and ownership constraints require live runtime validation.
+    for params in [
+        json!({"id":"a","title":"x","kind":"button","command":"missing"}),
+        json!({"id":"a","title":"x","kind":"select","command":"go","options":[{"value":"one","label":"a"},{"value":"one","label":"b"}],"value":"one"}),
+        json!({"id":"a","title":"x","kind":"select","command":"go","options":[{"value":"one","label":"a"}],"value":"two"}),
+    ] {
+        run("tabBar.set", params, true);
+    }
+    for params in [
+        json!({}),
+        json!({"id":"a","title":"x","kind":"raw"}),
+        json!({"id":"bad/id","title":"x","kind":"text"}),
+        json!({"id":"a\n","title":"x","kind":"text"}),
+        json!({"id":"a","title":"\u{85}","kind":"text"}),
+        json!({"id":"a","title":" ","kind":"text"}),
+        json!({"id":"a","title":"x\n","kind":"text"}),
+        json!({"id":"a","title":"x\u{202e}","kind":"text"}),
+        json!({"id":"a","title":"😀".repeat(129),"kind":"text"}),
+        json!({"id":"a","title":"x","kind":"text","priority":0.5}),
+        json!({"id":"a","title":"x","kind":"text","priority":1001}),
+        json!({"id":"a","title":"x","kind":"text","placement":null}),
+        json!({"id":"a","title":"x","kind":"text","icon":"html"}),
+        json!({"id":"a","title":"x","kind":"text","when":{"tabKind":"unknown"}}),
+        json!({"id":"a","title":"x","kind":"text","tooltip":"x".repeat(513)}),
+        json!({"id":"a","title":"x","kind":"text","command":"go"}),
+        json!({"id":"a","title":"x","kind":"text","checked":false}),
+        json!({"id":"a","title":"x","kind":"button","command":null}),
+        json!({"id":"a","title":"x","kind":"button","command":"go","value":"x"}),
+        json!({"id":"a","title":"x","kind":"select","command":"go","options":[],"value":"x"}),
+        json!({"id":"a","title":"x","kind":"select","command":"go","options":[{"value":"x","label":"x"}],"value":"x","checked":true}),
+        json!({"id":"a","title":"x","kind":"text","disabled":null}),
+    ] {
+        run("tabBar.set", params, false);
+    }
+    for params in [json!({}), json!({"id":null}), json!({"id":"a\n"})] {
+        run("tabBar.remove", params, false);
+    }
+    for index in 0..9 {
+        run(
+            "tabBar.set",
+            json!({"id":format!("quota-{index}"),"title":"x","kind":"text"}),
+            true,
+        );
+    }
+    samples
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    fn context(tab_id: &str, tab_kind: &str) -> ClickContext {
+        ClickContext {
+            tab_id: tab_id.into(),
+            tab_kind: tab_kind.into(),
+            pane_id: "pane-1".into(),
+        }
+    }
+
+    #[test]
+    fn command_contract_preserves_opaque_ids_nulls_and_scope_checks() {
+        let mut item = Owned {
+            lease: Lease {
+                id: "sample".into(),
+                fingerprint: "digest".into(),
+                permissions: vec![],
+                generation: 1,
+            },
+            token: "host-private-token".into(),
+            value: TabBarItem::parse(
+                json!({"id":"run","kind":"button","title":"Run","command":"go"}),
+            )
+            .unwrap(),
+        };
+        for (tab, kind) in [
+            ("plugin:sample:main", "plugin"),
+            ("sidebar:plugin:sample:chat", "sidebar"),
+        ] {
+            let (command, input) =
+                command_request(&item, context(tab, kind), None, None, |_| true).unwrap();
+            assert_eq!(command, "go");
+            assert_eq!(
+                input,
+                json!({"_locale":null,"_tabBar":{"itemId":"run","tabId":tab,"tabKind":kind,"paneId":"pane-1","value":null}})
+            );
+        }
+        for view in [
+            context("plugin:sample-other:main", "plugin"),
+            context("editor:local:/a.json", "editor"),
+            context("sidebar:plugin:other:chat", "sidebar"),
+        ] {
+            assert_eq!(
+                command_request(&item, view, None, None, |_| true)
+                    .unwrap_err()
+                    .to_string(),
+                "plugin.tabBar.invalidContext"
+            );
+        }
+        item.value.when = Some(When {
+            tab_id: Some("editor:local:/a.json".into()),
+            tab_kind: Some("editor".into()),
+        });
+        assert!(command_request(
+            &item,
+            context("editor:local:/a.json", "editor"),
+            None,
+            Some("en-US".into()),
+            |_| true
+        )
+        .is_ok());
+        assert!(command_request(
+            &item,
+            context("editor:local:/b.json", "editor"),
+            None,
+            None,
+            |_| true
+        )
+        .is_err());
+        item.value.when = Some(When::default());
+        assert_eq!(
+            command_request(&item, context("opaque", "future"), None, None, |_| false)
+                .unwrap_err()
+                .to_string(),
+            "plugin.tabBar.unknownCommand"
+        );
+        item.value.disabled = true;
+        assert!(command_request(&item, context("opaque", "future"), None, None, |_| true).is_err());
+    }
+
+    #[test]
+    fn select_command_requires_a_current_option_and_never_changes_registration() {
+        let item = Owned {
+            lease: Lease {
+                id: "sample".into(),
+                fingerprint: "digest".into(),
+                permissions: vec![],
+                generation: 1,
+            },
+            token: "token".into(),
+            value: TabBarItem::parse(json!({"id":"target","kind":"select","title":"Target","command":"go","when":{},"options":[{"value":"local","label":"Local"},{"value":"remote","label":"Remote"}],"value":"local"})).unwrap(),
+        };
+        for value in [None, Some("missing".into())] {
+            assert!(
+                command_request(&item, context("opaque", "future"), value, None, |_| true).is_err()
+            );
+        }
+        let (_, input) = command_request(
+            &item,
+            context("opaque", "future"),
+            Some("remote".into()),
+            Some("zh-CN".into()),
+            |_| true,
+        )
+        .unwrap();
+        assert_eq!(input["_tabBar"]["value"], "remote");
+        assert_eq!(item.value.value.as_deref(), Some("local"));
+    }
+
     #[test]
     fn validates_declarative_controls_and_rejects_unowned_commands() {
         for params in [
