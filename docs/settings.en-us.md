@@ -304,15 +304,18 @@ retain a bounded cause chain with URL-like values removed; URLs, query tokens an
 proxy credentials are not logged. **Settings → Updates** shows the final failure;
 an API failure alone does not imply the public-feed fallback also failed.
 
-Open **Output** from the activity bar, search for **Show output** in F1, or use
+Click **Output** in the status bar, search for **Show output** in F1, or use
 `Ctrl+Shift+U` (`Cmd+Shift+U` on macOS). Settings also links to this same panel.
 It initially opens below the workspace; drag its title or tab to move it to any
-pane. Hiding and reopening it preserves its location and filters.
+pane. The status bar button hides and restores it, preserving its location, size
+and filters. Output does not add an activity bar button.
 
 The channel selector includes application diagnostics, recorded operations,
 runtime information, modules and individual plugins. Text and minimum severity
 filters narrow the visible entries. Logs are displayed as readable text with time,
-level and source. Word wrap, copying, follow output, refresh and original log/folder
+level and source. Severity colors follow the theme: INFO is green, DEBUG cyan,
+WARN amber and ERROR red; timestamps are muted and sources use cyan.
+Word wrap, copying, follow output, refresh and original log/folder
 actions are available. Scrolling away from the bottom pauses following without
 stopping collection. Clearing affects only the display and does not delete logs.
 

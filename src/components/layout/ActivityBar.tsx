@@ -3,7 +3,6 @@ import {
   Bot,
   Folder,
   ListTodo,
-  Logs,
   MessageCircle,
   MessageSquare,
   Network,
@@ -65,7 +64,6 @@ export function ActivityBar() {
     { view: "hosts", Icon: Server },
     { view: "forwarding", Icon: Network },
     { view: "tasks", Icon: ListTodo },
-    { view: "output", Icon: Logs },
     { view: "knownHosts", Icon: ShieldCheck },
     { view: "plugins", Icon: Blocks },
     ...pluginSidebars(plugins).map((view) => ({
@@ -76,10 +74,6 @@ export function ActivityBar() {
     })),
   ] satisfies { view: SidebarView; Icon: typeof Server }[];
   const selectView = async (view: SidebarView) => {
-    if (view === "output" && !useNavigation.getState().visitedSidebars.includes("output")) {
-      useNavigation.getState().showOutput();
-      return;
-    }
     if (view === "tasks") useBackgroundTaskPanel.getState().close();
     const current = useWorkspace.getState();
     const currentTab = current.tabs.find((tab) => tab.id === sidebarTabId(view));

@@ -99,9 +99,13 @@ export function matchesOutput(
   );
 }
 
+export function formatOutputTime(timestamp: string): string {
+  const date = new Date(timestamp);
+  return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour12: false });
+}
+
 export function formatOutput(entry: OutputEntry): string {
-  const date = new Date(entry.timestamp);
-  const time = Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString([], { hour12: false });
+  const time = formatOutputTime(entry.timestamp);
   return `${time} [${entry.level}] [${entry.plugin ?? entry.domain}] ${entry.message}`.trim();
 }
 

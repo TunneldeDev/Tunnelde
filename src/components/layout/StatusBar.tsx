@@ -16,6 +16,7 @@ import { useStatusBarContributions, wireStatusBarContributions } from "@/store/s
 import { orderStatusItems } from "@/lib/plugins/statusBar";
 import { isTauri } from "@/lib/api/ipc";
 import { BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
+import { OutputStatusButton } from "@/features/output/OutputStatusButton";
 
 interface StatusBarProps {
   panelOpen: boolean;
@@ -86,6 +87,7 @@ export function StatusBar({ panelOpen, onTogglePanel }: StatusBarProps) {
             </button>
           ) : null}
           <BackgroundTaskStatusButton />
+          <OutputStatusButton />
           <UpdatePill />
           <PluginSecurityBadge />
           <IconButton

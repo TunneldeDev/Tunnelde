@@ -108,13 +108,11 @@ export const useNavigation = create<{
     const navigation = useNavigation.getState();
     const workspace = useWorkspace.getState();
     const id = sidebarTabId("output");
-    if (
-      workspace.tabs.some((tab) => tab.id === id) ||
-      navigation.visitedSidebars.includes("output")
-    ) {
+    if (workspace.tabs.some((tab) => tab.id === id)) {
       navigation.showSidebar("output");
       return;
     }
+    workspace.ensureWelcome();
     workspace.splitTab(id, "column", "after", "root");
     const layout = useWorkspace.getState().layout;
     if (layout.kind === "split") useWorkspace.getState().resizeSplit(layout.id, 0.68);
