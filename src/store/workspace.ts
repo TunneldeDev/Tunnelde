@@ -474,7 +474,15 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     returnSidebar: (view) => {
-      useWorkspace.getState().close(sidebarTabId(view));
+      const id = sidebarTabId(view);
+      set((state) => {
+        const tabs = state.tabs.filter((tab) => tab.id !== id);
+        return {
+          tabs,
+          ...settle(dropTab(state.panes, id), state.activePaneId, state.split, state.layout, tabs),
+        };
+      });
+      useNavigation.getState().showSidebar(view);
     },
 
     openPage: (kind, options) => {
@@ -686,15 +694,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
 
     close: (id) => {
       set((state) => {
-        if (!state.tabs.some((tab) => tab.id === id)) {
+        const closing = state.tabs.find((tab) => tab.id === id);
+        if (!closing || closing.hidden) {
           return state;
+        }
+        // Closing a docked panel collapses its remembered slot. Removing its
+        // record would make SidebarArea immediately render it on the left.
+        if (closing.kind === "sidebar") {
+          const tabs = state.tabs.map((tab) => (tab.id === id ? { ...tab, hidden: true } : tab));
+          return {
+            tabs,
+            ...settle(state.panes, state.activePaneId, state.split, state.layout, tabs),
+          };
         }
         const tabs = state.tabs.filter((tab) => tab.id !== id);
         const panes = dropTab(state.panes, id);
         return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout, tabs) };
       });
-      const view = sidebarViewOf(id);
-      if (view) useNavigation.getState().showSidebar(view);
     },
 
     closeOthers: (id) => {
@@ -705,10 +721,17 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         (tab) => origin.tabIds.includes(tab.id) && tab.id !== id && !tab.pinned && !tab.hidden,
       );
       const commit = () => {
-        const removedIds = new Set(removed.map((tab) => tab.id));
+        const removedIds = new Set(
+          removed.filter((tab) => tab.kind !== "sidebar").map((tab) => tab.id),
+        );
+        const collapsedIds = new Set(
+          removed.filter((tab) => tab.kind === "sidebar").map((tab) => tab.id),
+        );
         for (const tab of removed) if (tab.kind === "editor") useEditors.getState().discard(tab.id);
         set((current) => {
-          const tabs = current.tabs.filter((tab) => !removedIds.has(tab.id));
+          const tabs = current.tabs
+            .filter((tab) => !removedIds.has(tab.id))
+            .map((tab) => (collapsedIds.has(tab.id) ? { ...tab, hidden: true } : tab));
           const panes = current.panes.map((item) =>
             item.id === origin.id
               ? {
