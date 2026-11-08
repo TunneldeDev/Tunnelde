@@ -1150,6 +1150,13 @@
     },
     "fileIcons": {
       "invalid": "The file icon theme is invalid or exceeds its limits."
+    },
+    "tabBar": {
+      "invalidItem": "The plugin supplied an invalid tab bar control.",
+      "unknownCommand": "This plugin command is unavailable.",
+      "limit": "The plugin reached the tab bar control limit.",
+      "expired": "This tab bar control has expired. Try the updated control.",
+      "invalidContext": "This tab bar control is unavailable for the current tab."
     }
   },
   "themes": {
@@ -1863,6 +1870,7 @@
     "debug": "Debug",
     "release": "Release",
     "sessions": "Active SSH connections",
-    "plugins": "Running plugins"
+    "plugins": "Running plugins",
+    "actions": "Output actions"
   }
 }

@@ -14,8 +14,10 @@ import type {
 import { createEventBus } from "./bus";
 
 import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
+import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
 
 export interface NativeEvents {
+  "plugin://tab-bar-changed": TabBarSnapshot;
   "plugin://status-bar-changed": StatusBarSnapshot;
   "plugin://event": PluginEvent;
   "plugin:security-changed": PluginSecurityState;

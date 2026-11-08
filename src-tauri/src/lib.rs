@@ -123,6 +123,8 @@ pub fn run() {
             plugins::security::plugin_set_permissions,
             plugins::status_bar::plugin_status_bar_snapshot,
             plugins::status_bar::plugin_status_bar_execute,
+            plugins::tab_bar::plugin_tab_bar_snapshot,
+            plugins::tab_bar::plugin_tab_bar_execute,
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             commands::app_info,

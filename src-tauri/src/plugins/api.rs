@@ -75,6 +75,8 @@ macro_rules! stable_method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("tabBar.set", [], "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string}", "Register a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views; when:{} targets all tabs. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization."),
+    method!("tabBar.remove", [], "{id:string}", "Remove this runtime's tab-bar control; return false if absent."),
     stable_method!("statusBar.set", [], "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}", "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.", "0.32.0-beta.1"),
     stable_method!("statusBar.remove", [], "{id:string}", "Remove this runtime's status item; return false when absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.1"),
     method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk."),
@@ -674,6 +676,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         }
         "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
         "statusBar.set" | "statusBar.remove" => super::status_bar::call(context, method, params),
+        "tabBar.set" | "tabBar.remove" => super::tab_bar::call(context, method, params),
         name if name.starts_with("workspace.")
             || name.starts_with("ui.")
             || name.starts_with("editor.") =>

@@ -302,6 +302,9 @@ async fn read_loop(
         super::status_bar::remove_runtime(&context.app, &context.id, |generation| {
             generation == context.generation
         });
+        super::tab_bar::remove_runtime(&context.app, &context.id, |generation| {
+            generation == context.generation
+        });
         super::tasks::cancel_plugin(&context.id, Some(context.generation));
         context
             .app
