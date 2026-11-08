@@ -140,7 +140,7 @@ export function SidebarContents() {
       ) : view === "plugins" ? (
         <PluginsSidebar />
       ) : parsePluginSidebar(view) ? (
-        <PluginSidebarPanel view={view as PluginSidebarView} />
+        <PluginSidebarPanel view={view as PluginSidebarView} visible={active} />
       ) : (
         <TrustedHostsSidebar active={active} />
       ),

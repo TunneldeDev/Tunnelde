@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowDown,
@@ -53,14 +53,23 @@ export function PluginChat({
   pluginId,
   viewId,
   block: initial,
+  visible = true,
 }: {
   pluginId: string;
   viewId: string;
   block: PluginChatBlock;
+  visible?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [block, setBlock] = useState(initial);
   const current = useRef(block);
+  const viewVisible = useRef(visible);
+  useLayoutEffect(() => {
+    viewVisible.current = visible;
+    // Keep the event subscription alive while hidden, then publish the latest
+    // snapshot once on reveal without remounting drafts or restarting the agent.
+    if (visible) setBlock(current.current);
+  }, [visible]);
   const [drafts, setDrafts] = useViewState<Record<string, string>>(
     `chat:${pluginId}:${viewId}:${initial.id}`,
     {},
@@ -95,7 +104,7 @@ export function PluginChat({
   const update = (next: PluginChatBlock | ((previous: PluginChatBlock) => PluginChatBlock)) => {
     const value = typeof next === "function" ? next(current.current) : next;
     current.current = value;
-    setBlock(value);
+    if (viewVisible.current) setBlock(value);
   };
   useEffect(() => {
     // Refreshes must not replace streaming output with an older render snapshot.
@@ -106,7 +115,7 @@ export function PluginChat({
       (initial.run?.seq ?? 0) >= (previous.run?.seq ?? 0)
     ) {
       current.current = initial;
-      setBlock(initial);
+      if (viewVisible.current) setBlock(initial);
     }
   }, [initial]);
   useEffect(() => {
@@ -127,7 +136,7 @@ export function PluginChat({
           const value = applyChatEvent(current.current, viewId, event.payload);
           if (value !== current.current) {
             current.current = value;
-            setBlock(value);
+            if (viewVisible.current) setBlock(value);
           }
         })
         .then((unlisten) => {
@@ -149,6 +158,7 @@ export function PluginChat({
     };
   }, [pluginId, viewId, streamAttempt]);
   useEffect(() => {
+    if (!visible) return;
     if (visibleSession.current !== block.activeSessionId) {
       visibleSession.current = block.activeSessionId;
       nearBottom.current = true;
@@ -156,12 +166,12 @@ export function PluginChat({
     }
     if (nearBottom.current && viewport.current)
       viewport.current.scrollTop = viewport.current.scrollHeight;
-  }, [block.activeSessionId, block.messages, block.approvals, block.tasks]);
+  }, [visible, block.activeSessionId, block.messages, block.approvals, block.tasks]);
 
   const active = block.run?.status === "running" || block.run?.status === "waiting";
   const preparing = block.readiness?.status === "checking";
   useEffect(() => {
-    if (!preparing || !isTauri()) return;
+    if (!visible || !preparing || !isTauri()) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
@@ -187,7 +197,7 @@ export function PluginChat({
           next.execution?.cwd === previous.execution?.cwd
         ) {
           current.current = next;
-          setBlock(next);
+          if (viewVisible.current) setBlock(next);
         }
       } catch {
         // The event stream remains primary; a temporary refresh error is retryable.
@@ -201,7 +211,7 @@ export function PluginChat({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [preparing, pluginId, viewId, i18n.resolvedLanguage, i18n.language]);
+  }, [visible, preparing, pluginId, viewId, i18n.resolvedLanguage, i18n.language]);
   const messages = block.messages.filter(
     (message) =>
       message.role !== "assistant" ||

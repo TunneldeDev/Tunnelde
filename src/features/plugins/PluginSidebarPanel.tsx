@@ -10,7 +10,13 @@ import { PluginViewPage } from "./PluginViewPage";
 import { PluginError } from "./PluginError";
 import { pluginFailure } from "@/lib/plugins/errors";
 
-export function PluginSidebarPanel({ view }: { view: PluginSidebarView }) {
+export function PluginSidebarPanel({
+  view,
+  visible = true,
+}: {
+  view: PluginSidebarView;
+  visible?: boolean;
+}) {
   const { t } = useTranslation();
   const reference = parsePluginSidebar(view)!;
   const plugin = usePlugins((state) => state.items.find((item) => item.id === reference.pluginId));
@@ -38,7 +44,7 @@ export function PluginSidebarPanel({ view }: { view: PluginSidebarView }) {
           </Button>
         </div>
       ) : (
-        <PluginViewPage pluginId={plugin.id} viewId={contribution.id} embedded />
+        <PluginViewPage pluginId={plugin.id} viewId={contribution.id} visible={visible} embedded />
       )}
     </section>
   );

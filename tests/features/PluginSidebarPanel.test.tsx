@@ -2,7 +2,9 @@ import { act, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@/features/plugins/PluginViewPage", () => ({
-  PluginViewPage: () => <div>Live plugin content</div>,
+  PluginViewPage: ({ visible = true }: { visible?: boolean }) => (
+    <div data-visible={visible}>Live plugin content</div>
+  ),
 }));
 
 import "@/i18n/i18n";
@@ -32,9 +34,14 @@ describe("plugin sidebar title ownership", () => {
       pinned: false,
     };
     useWorkspace.setState({ tabs: [tab] });
-    const { container } = render(<PluginSidebarPanel view="plugin:formatter:chat" />);
+    const { container, rerender } = render(<PluginSidebarPanel view="plugin:formatter:chat" />);
     expect(container.querySelector(".sidebar__head")).toBeNull();
     const content = screen.getByText("Live plugin content");
+    expect(content.dataset.visible).toBe("true");
+    rerender(<PluginSidebarPanel view="plugin:formatter:chat" visible={false} />);
+    expect(content.dataset.visible).toBe("false");
+    rerender(<PluginSidebarPanel view="plugin:formatter:chat" visible />);
+    expect(content.dataset.visible).toBe("true");
     act(() => useWorkspace.setState({ tabs: [] }));
     expect(container.querySelector(".sidebar__head")).toBeTruthy();
     expect(screen.getByText("AI assistant")).toBeTruthy();
