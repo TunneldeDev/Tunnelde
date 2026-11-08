@@ -1461,7 +1461,17 @@
     "goBack": "后退",
     "goForward": "前进",
     "selectAll": "全选",
-    "parent": "上级目录"
+    "parent": "上级目录",
+    "filters": {
+      "title": "筛选快捷键",
+      "hint": "点击筛选按钮查找冲突、已修改的快捷键或插件命令，可与搜索文字组合使用。",
+      "conflict": "快捷键冲突",
+      "modified": "已修改的快捷键",
+      "unassigned": "未设置快捷键的命令",
+      "builtin": "内置命令",
+      "plugins": "插件命令",
+      "clear": "清除筛选条件"
+    }
   },
   "profiles": {
     "title": "设置方案",
