@@ -1,0 +1,39 @@
+.tabbar-contributions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 45%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-left: 6px;
+}
+.tabbar-contributions::-webkit-scrollbar {
+  display: none;
+}
+.tabbar-contribution {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+.tabbar-contribution .td-icon-btn {
+  height: 26px;
+  min-width: 26px;
+}
+.tabbar-contribution__select {
+  width: 136px;
+}
+.tabbar-contribution__select .td-select__control {
+  min-height: 26px;
+  height: 26px;
+  font-size: 11px;
+}
+.tabbar-contribution__text {
+  display: block;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}

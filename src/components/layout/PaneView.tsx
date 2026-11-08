@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TabContent } from "@/components/layout/TabContent";
+import { TabBarContributions } from "./TabBarContributions";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
 import { useFileIconResolver } from "@/lib/files/icons";
@@ -385,6 +386,11 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
           );
         })}
       </div>
+      {activeTab ? (
+        <TabBarContributions
+          context={{ tabId: activeTab.id, tabKind: activeTab.kind, paneId: pane.id }}
+        />
+      ) : null}
       <div className="pane__actions">
         <IconButton
           label={t(pane.locked ? "tab.unlockPane" : "tab.lockPane")}

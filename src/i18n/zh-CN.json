@@ -1150,6 +1150,13 @@
     },
     "fileIcons": {
       "invalid": "文件图标主题无效或超出限制。"
+    },
+    "tabBar": {
+      "invalidItem": "插件提供的标签栏控件无效。",
+      "unknownCommand": "此插件命令不可用。",
+      "limit": "插件已达到标签栏控件数量上限。",
+      "expired": "标签栏控件已失效，请使用更新后的控件。",
+      "invalidContext": "此标签栏控件不适用于当前标签页。"
     }
   },
   "themes": {
@@ -1863,6 +1870,7 @@
     "debug": "调试版",
     "release": "发行版",
     "sessions": "活动 SSH 连接",
-    "plugins": "运行中的插件"
+    "plugins": "运行中的插件",
+    "actions": "输出操作"
   }
 }

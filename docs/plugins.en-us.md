@@ -648,3 +648,5 @@ local fonts/CMaps/decoders, fetches ranges on demand, renders one page to a boun
 not run document scripts or interactive forms. Password-protected PDFs require an external viewer.
 
 [Stable plugin status bar API](plugin-status-bar.en-us.md)
+
+[Tab bar contributions](plugin-tab-bar.en-us.md)

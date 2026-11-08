@@ -136,7 +136,7 @@ export function SidebarContents() {
       ) : view === "tasks" ? (
         <DockedBackgroundTasks />
       ) : view === "output" ? (
-        <OutputPanel active={active} />
+        <OutputPanel active={active} docked={!!owner} />
       ) : view === "plugins" ? (
         <PluginsSidebar />
       ) : parsePluginSidebar(view) ? (

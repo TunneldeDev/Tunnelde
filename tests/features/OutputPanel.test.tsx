@@ -102,7 +102,8 @@ it("renders readable output, filters plugin channels, copies and clears without 
   expect(screen.queryByText(/"timestamp":/)).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Output channel" }));
   fireEvent.click(screen.getByRole("option", { name: "Plugin: formatter" }));
-  fireEvent.click(screen.getByRole("button", { name: "Copy displayed output" }));
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Copy displayed output" }));
   expect(api.clipboardWriteText).toHaveBeenCalledWith(
     expect.stringContaining("[WARN] [formatter]"),
   );
@@ -115,7 +116,8 @@ it("renders readable output, filters plugin channels, copies and clears without 
   });
   fireEvent.click(screen.getByRole("button", { name: "Clear displayed output" }));
   expect(screen.queryByText(/plugin start failed · reason=/)).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Open original log" }));
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open original log" }));
   expect(api.openLatestLog).toHaveBeenCalledOnce();
 });
 
@@ -137,7 +139,8 @@ it("surfaces read failures and permits retry; runtime information does not depen
   api.logsOutputRead.mockRejectedValueOnce(new Error("Read failed"));
   render(<OutputPanel active />);
   expect(await screen.findByRole("alert")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Refresh" }));
   await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   fireEvent.click(screen.getByRole("button", { name: "Output channel" }));
   fireEvent.click(screen.getByRole("option", { name: "Runtime information" }));

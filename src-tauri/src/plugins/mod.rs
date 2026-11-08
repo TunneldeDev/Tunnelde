@@ -12,6 +12,7 @@ pub mod node;
 pub mod runners;
 pub mod security;
 pub mod status_bar;
+pub mod tab_bar;
 pub mod tasks;
 mod tools;
 pub mod wasm;
@@ -180,6 +181,7 @@ pub struct PluginsManager {
     runtime_sources: std::sync::RwLock<HashMap<String, String>>,
     pub(super) security: Arc<security::PluginSecurity>,
     status_bar: contributions::Registry<status_bar::StatusBarItem>,
+    tab_bar: contributions::Registry<tab_bar::TabBarItem>,
 }
 
 impl PluginsManager {
@@ -192,6 +194,7 @@ impl PluginsManager {
     fn stop_network_resources(&self, app: &AppHandle, id: &str) {
         let boundary = self.security.cleanup_boundary(id);
         status_bar::remove_runtime(app, id, |generation| generation < boundary);
+        tab_bar::remove_runtime(app, id, |generation| generation < boundary);
         app.state::<crate::state::AppState>()
             .forwards
             .stop_before_generation(id, boundary);
@@ -398,6 +401,7 @@ impl PluginsManager {
             runtime_sources: std::sync::RwLock::new(HashMap::new()),
             security: Arc::new(security::PluginSecurity::default()),
             status_bar: contributions::Registry::default(),
+            tab_bar: contributions::Registry::default(),
         }
     }
 

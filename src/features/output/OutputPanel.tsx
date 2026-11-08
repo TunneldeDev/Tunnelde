@@ -1,16 +1,8 @@
-import {
-  ArrowDownToLine,
-  Copy,
-  FileText,
-  FolderOpen,
-  ListFilter,
-  RefreshCw,
-  Search,
-  Trash2,
-  WrapText,
-} from "lucide-react";
+import { ArrowDownToLine, ListFilter, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Menu } from "@/components/ui/overlay/Menu";
+import { useTabBarContribution } from "@/store/tabBar";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
@@ -24,7 +16,7 @@ import { formatOutput, matchesOutput } from "./model";
 import { useOutput } from "./useOutput";
 import "./output.css";
 
-export function OutputPanel({ active }: { active: boolean }) {
+export function OutputPanel({ active, docked = false }: { active: boolean; docked?: boolean }) {
   const { t } = useTranslation();
   const output = useOutput(active);
   const [channel, setChannel] = useState("all");
@@ -82,33 +74,61 @@ export function OutputPanel({ active }: { active: boolean }) {
     channel === "runtime" ? runtime.join("\n") : filtered.map(formatOutput).join("\n");
 
   useEffect(() => {
-    if (active && follow && scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight;
-  }, [active, follow, renderedText, wrap]);
+    if (active && follow && scroll.current)
+      scroll.current.scrollTop = channel === "runtime" ? 0 : scroll.current.scrollHeight;
+  }, [active, follow, renderedText, wrap, channel]);
   const attempt = (action: () => Promise<unknown>) =>
     void action().catch((error) => toast(translateError(error), "error"));
 
+  const controls = (
+    <div className="output-panel__actions">
+      <IconButton
+        size="sm"
+        label={t("output.follow")}
+        active={follow}
+        onClick={() => setFollow((value) => !value)}
+      >
+        <ArrowDownToLine size={14} />
+      </IconButton>
+      <IconButton
+        size="sm"
+        label={t("output.clear")}
+        disabled={channel === "runtime"}
+        onClick={output.clear}
+      >
+        <Trash2 size={14} />
+      </IconButton>
+      <Menu
+        label={t("output.actions")}
+        items={[
+          { label: t("common.refresh"), onSelect: output.refresh },
+          {
+            label: t("output.copy"),
+            disabled: !renderedText,
+            onSelect: () => attempt(() => api.clipboardWriteText(renderedText)),
+          },
+          { label: t("output.wrap"), checked: wrap, onSelect: () => setWrap((value) => !value) },
+          {
+            label: t("output.openFile"),
+            separatorBefore: true,
+            onSelect: () => attempt(api.openLatestLog),
+          },
+          { label: t("logs.openFolder"), onSelect: () => attempt(api.openLogDir) },
+        ]}
+      />
+    </div>
+  );
+  useTabBarContribution("sidebar:output", "output.actions", docked ? controls : null, 100);
+
   return (
     <section className="output-panel" aria-label={t("output.title")}>
-      <header className="sidebar__header output-panel__header">
-        <SidebarTitle view="output">{t("output.title")}</SidebarTitle>
-        <div className="output-panel__actions">
-          <IconButton
-            size="sm"
-            label={t("output.openFile")}
-            onClick={() => attempt(api.openLatestLog)}
-          >
-            <FileText size={14} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            label={t("logs.openFolder")}
-            onClick={() => attempt(api.openLogDir)}
-          >
-            <FolderOpen size={14} />
-          </IconButton>
+      {!docked ? (
+        <header className="sidebar__head output-panel__header">
+          <SidebarTitle view="output">{t("output.title")}</SidebarTitle>
+          {controls}
           <SidebarDockControls view="output" />
-        </div>
-      </header>
+        </header>
+      ) : null}
       <div className="output-panel__toolbar">
         <Select
           className="output-panel__channel"
@@ -117,43 +137,6 @@ export function OutputPanel({ active }: { active: boolean }) {
           options={options}
           onChange={setChannel}
         />
-        <div className="output-panel__actions">
-          <IconButton
-            size="sm"
-            label={t("output.follow")}
-            active={follow}
-            onClick={() => setFollow((value) => !value)}
-          >
-            <ArrowDownToLine size={14} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            label={t("output.wrap")}
-            active={wrap}
-            onClick={() => setWrap((value) => !value)}
-          >
-            <WrapText size={14} />
-          </IconButton>
-          <IconButton size="sm" label={t("common.refresh")} onClick={output.refresh}>
-            <RefreshCw size={14} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            label={t("output.copy")}
-            disabled={!renderedText}
-            onClick={() => attempt(() => api.clipboardWriteText(renderedText))}
-          >
-            <Copy size={14} />
-          </IconButton>
-          <IconButton
-            size="sm"
-            label={t("output.clear")}
-            disabled={channel === "runtime"}
-            onClick={output.clear}
-          >
-            <Trash2 size={14} />
-          </IconButton>
-        </div>
       </div>
       <div className="output-panel__filters">
         <label className="output-panel__search">
