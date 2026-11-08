@@ -52,6 +52,15 @@ deadlock. Geometry restoration runs on the main thread to avoid a window-state
 cache/resize-event lock inversion. Bootstrap reconciles native sessions, transfers
 and plugin events after restoring the memory-only workspace and drafts.
 
+## Panel visibility and placement
+
+Closing a docked built-in or plugin panel hides its tab while retaining its group,
+split ratio and view state. The activity-bar or status-bar entry reopens it in that
+remembered position. Closing other tabs follows the same rule for panels. Closing
+does not return a panel to the left sidebar; use **Move to side bar** or drag it
+back explicitly to change its placement. Hidden panel slots are included in saved
+workspace layouts and do not count as visible content.
+
 ## Data
 
 - Database: `<app data>/tunnelde.db` (SQLite, WAL).

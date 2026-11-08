@@ -160,8 +160,9 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const dirty = tab.kind === "editor" && useEditors.getState().isDirty(tabId);
       if (dirty && useDialogs.getState().dialog.kind !== "none") throw new Error("dialog.busy");
       closeTab(tab);
+      const remaining = useWorkspace.getState().tabs.find((item) => item.id === tabId);
       return {
-        closed: !useWorkspace.getState().tabs.some((item) => item.id === tabId),
+        closed: !remaining || remaining.hidden === true,
         pendingConfirmation: dirty,
       };
     }
