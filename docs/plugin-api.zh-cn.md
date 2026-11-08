@@ -28,7 +28,9 @@
 
 首批稳定核心为 `api.describe`、`sessions.list`、`storage.get`、`storage.set` 和
 `storage.delete`。这些方法自 0.21.0 起提供；`since` 表示首次可用版本，不表示稳定承诺
-建立的版本。设置、工作区、聊天、远端运行器和面板方法仍为实验接口。
+建立的版本。稳定范围还包括 `statusBar.set`/`statusBar.remove` 和
+`editor.active`/`editor.replace`。编辑器方法自 0.29.0-beta.2 起提供，本次明确冻结
+其 v1 契约。设置、工作区、聊天、远端运行器及其余面板方法仍为实验接口。
 稳定契约的不兼容变更需要明确的版本化迁移。
 
 冻结的接口发现[请求结构](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
@@ -68,11 +70,43 @@
 传输层可能以 `-32002` 拒绝过大的响应且不附带 `data`，因此调用方不能要求所有错误都有
 `data`。请处理未知错误消息，不要依赖操作系统特定错误文字。
 
+## 稳定的编辑器缓冲区接口
+
+冻结的[编辑器 v1 契约](../tests/fixtures/plugin-compat/editor-v1.json)定义两个方法，
+使用独立的数据结构，不直接返回内部存储字段。
+
+| 方法             | 权限           | 输入与返回值                                                                                                         |
+| ---------------- | -------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `editor.active`  | `editor.read`  | `{}`；当前聚焦标签没有就绪编辑器时返回 `null`，否则返回 `{tabId, documentId, version, path, name, content, dirty}`。 |
+| `editor.replace` | `editor.write` | `{tabId, documentId, version, text}`；核对文档身份和版本后返回 `{tabId, documentId, version, dirty}`。               |
+
+快照读取已打开的缓冲区，包括未保存修改，不会重新读文件。加载中、读取失败、断线或
+已关闭的编辑器返回 `null`。内容超过 128 KiB UTF-8 字节时报告
+`plugin.api.frontend:editor.documentTooLarge`。当前标签指获得焦点的工作区标签；聚焦
+其他面板后，不会自动继续将之前的编辑器视为当前文档。明确针对某份文档继续执行的
+命令应保留该文档身份。
+
+替换是一次可撤销的缓冲区操作，不会自动保存。内容改变时递增版本；内容相同则保持
+版本和撤销历史不变。撤销与重做也会递增版本。用户编辑、重新加载、关闭再打开或
+缓冲区不可用后，旧身份或版本不再有效，报告 `plugin.api.frontend:editor.documentChanged`。
+插件应重新读取并让用户重试，不能覆盖更新的内容。`dirty` 比较替换后的内容和已保存
+基线，不代表替换后一定为 `true`。
+
+替换参数中的 ID 必须非空、不含 NUL，且不超过 1,024 个 UTF-16 码元；版本必须是
+非负安全整数。文本允许为空，UTF-8 编码后最多 128 KiB。忽略未知输入字段，调用方也
+必须忽略未来新增的返回字段。结构中的字符长度不能代替编码限制与运行状态校验。
+字段错误使用 `plugin.api.frontend:invalid:<field>`，JSON-RPC 代码为 `-32000`；
+授权失败仍为 `-32001`。共享前端桥错误还包括 `plugin.api.busy`、
+`plugin.api.frontendTimeout`、`plugin.api.frontendClosed` 和 `plugin.api.requestExpired`。
+这两个 RPC 不产生插件事件，也不会自动订阅缓冲区变化。
+
 ## 兼容性测试
 
 CI 使用当前宿主的清单加载器和 JSON-RPC 生命周期运行固定保存的 v0.28.0 示例。
 另有新编写的探针使用冻结的契约引入前 SDK，旁附来源提交和 SHA-256，用于验证当前宿主。
 核心结构检查会校验真实存储结果、会话序列化和 JSON-RPC 错误，并拒绝契约收窄或权限变更。
+编辑器检查执行真实缓冲区状态下的前端桥，将捕获的返回值和错误经过 Rust 回复编码，
+校验冻结结构，再把合并后的响应交给历史 SDK 回放。
 这些验证覆盖明确的核心范围，并不证明所有方法、权限、事件或存储数据迁移均兼容。
 请在插件声明的最低应用版本及较新宿主上测试，处理方法不可用、授权变化和错误，不要
 依赖未记录字段或固定的方法数量。市场 SDK 目录与 `api.describe` 可能因发布不同步而
