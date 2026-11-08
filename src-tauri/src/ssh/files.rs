@@ -86,8 +86,20 @@ pub struct TransferEvent {
 #[derive(Default)]
 pub struct TransferRegistry {
     inner: std::sync::Mutex<TransferState>,
+    released: tokio::sync::Notify,
     pub bandwidth: Arc<bandwidth::Controller>,
     scheduler: scheduler::Scheduler,
+}
+
+struct CleanupReservation<'a> {
+    registry: &'a TransferRegistry,
+    id: &'a str,
+}
+
+impl Drop for CleanupReservation<'_> {
+    fn drop(&mut self) {
+        self.registry.release(self.id);
+    }
 }
 
 #[derive(Default)]
@@ -125,12 +137,18 @@ impl ActiveTransfer {
 }
 
 impl TransferRegistry {
+    fn reserve_cleanup<'a>(&'a self, id: &'a str) -> AppResult<CleanupReservation<'a>> {
+        self.register(id, Arc::new(AtomicBool::new(false)), None)?;
+        Ok(CleanupReservation { registry: self, id })
+    }
+
     fn release(&self, id: &str) {
         if let Ok(mut state) = self.inner.lock() {
             state.active.remove(id);
             state.paused.remove(id);
             self.bandwidth.remove(id);
         }
+        self.released.notify_waiters();
     }
     pub fn is_active(&self, id: &str) -> bool {
         self.inner
@@ -246,6 +264,7 @@ impl TransferRegistry {
                 }
             }
         }
+        self.released.notify_waiters();
         event
     }
 
@@ -3746,6 +3765,49 @@ mod tests {
         registry.pause("test");
         registry.cancel("test");
         assert!(!registry.take_paused("test"));
+    }
+
+    #[tokio::test]
+    async fn abandoned_cleanup_releases_its_claim_and_wakes_reconnect_waiters() {
+        let registry = Arc::new(TransferRegistry::default());
+        let worker = registry.clone();
+        let (entered, ready) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _reservation = worker.reserve_cleanup("dispose").unwrap();
+            entered.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        ready.await.unwrap();
+        assert!(registry.reserve_cleanup("dispose").is_err());
+        let released = registry.released.notified();
+        tokio::pin!(released);
+        released.as_mut().enable();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(std::time::Duration::from_millis(250), released)
+            .await
+            .expect("cleanup cancellation lost the reconnect notification");
+        assert!(!registry.is_active("dispose"));
+        let reservation = registry.reserve_cleanup("dispose").unwrap();
+        assert!(registry.is_active("dispose"));
+        drop(reservation);
+        assert!(!registry.is_active("dispose"));
+    }
+
+    #[tokio::test]
+    async fn completed_transfer_wakes_an_enabled_but_unpolled_cleanup_waiter() {
+        let registry = TransferRegistry::default();
+        registry
+            .register("dispose", Arc::new(AtomicBool::new(false)), None)
+            .unwrap();
+        let released = registry.released.notified();
+        tokio::pin!(released);
+        released.as_mut().enable();
+        registry.complete(transfer_event("dispose", TransferStatus::Cancelled));
+        tokio::time::timeout(std::time::Duration::from_millis(250), released)
+            .await
+            .expect("completion between registration and polling lost the wakeup");
+        assert!(!registry.is_active("dispose"));
     }
 
     #[test]
