@@ -1,7 +1,7 @@
 import { ArrowDownToLine, ListFilter, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Menu } from "@/components/ui/overlay/Menu";
+import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
 import { useTabBarContribution } from "@/store/tabBar";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
@@ -80,12 +80,33 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
   const attempt = (action: () => Promise<unknown>) =>
     void action().catch((error) => toast(translateError(error), "error"));
 
+  const menuActions: MenuAction[] = [
+    { label: t("common.refresh"), onSelect: output.refresh },
+    {
+      label: t("output.copy"),
+      disabled: !renderedText,
+      onSelect: () => attempt(() => api.clipboardWriteText(renderedText)),
+    },
+    {
+      label: t("output.wrap"),
+      checked: wrap,
+      checkable: "checkbox",
+      onSelect: () => setWrap((value) => !value),
+    },
+    {
+      label: t("output.openFile"),
+      separatorBefore: true,
+      onSelect: () => attempt(api.openLatestLog),
+    },
+    { label: t("logs.openFolder"), onSelect: () => attempt(api.openLogDir) },
+  ];
   const controls = (
     <div className="output-panel__actions">
       <IconButton
         size="sm"
         label={t("output.follow")}
         active={follow}
+        aria-pressed={follow}
         onClick={() => setFollow((value) => !value)}
       >
         <ArrowDownToLine size={14} />
@@ -98,27 +119,40 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
       >
         <Trash2 size={14} />
       </IconButton>
-      <Menu
-        label={t("output.actions")}
-        items={[
-          { label: t("common.refresh"), onSelect: output.refresh },
-          {
-            label: t("output.copy"),
-            disabled: !renderedText,
-            onSelect: () => attempt(() => api.clipboardWriteText(renderedText)),
-          },
-          { label: t("output.wrap"), checked: wrap, onSelect: () => setWrap((value) => !value) },
-          {
-            label: t("output.openFile"),
-            separatorBefore: true,
-            onSelect: () => attempt(api.openLatestLog),
-          },
-          { label: t("logs.openFolder"), onSelect: () => attempt(api.openLogDir) },
-        ]}
-      />
+      <Menu label={t("output.actions")} items={menuActions} />
     </div>
   );
-  useTabBarContribution("sidebar:output", "output.actions", docked ? controls : null, 100);
+  useTabBarContribution("sidebar:output", "output.actions", docked ? controls : null, 100, {
+    group: "output.actions",
+    overflowActions: [
+      {
+        label: t("output.follow"),
+        checked: follow,
+        checkable: "checkbox",
+        onSelect: () => setFollow((value) => !value),
+      },
+      { label: t("output.clear"), disabled: channel === "runtime", onSelect: output.clear },
+      ...menuActions,
+    ],
+  });
+  const channelControl = (
+    <Select
+      className="tabbar-contribution__select"
+      label={t("output.channel")}
+      value={channel}
+      options={options}
+      onChange={setChannel}
+    />
+  );
+  useTabBarContribution("sidebar:output", "output.channel", docked ? channelControl : null, 200, {
+    group: "output.channel",
+    overflowActions: options.map((option) => ({
+      label: `${t("output.channel")}: ${option.label}`,
+      checked: channel === option.value,
+      checkable: "radio",
+      onSelect: () => setChannel(option.value),
+    })),
+  });
 
   return (
     <section className="output-panel" aria-label={t("output.title")}>
@@ -129,15 +163,17 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
           <SidebarDockControls view="output" />
         </header>
       ) : null}
-      <div className="output-panel__toolbar">
-        <Select
-          className="output-panel__channel"
-          label={t("output.channel")}
-          value={channel}
-          options={options}
-          onChange={setChannel}
-        />
-      </div>
+      {!docked ? (
+        <div className="output-panel__toolbar">
+          <Select
+            className="output-panel__channel"
+            label={t("output.channel")}
+            value={channel}
+            options={options}
+            onChange={setChannel}
+          />
+        </div>
+      ) : null}
       <div className="output-panel__filters">
         <label className="output-panel__search">
           <Search size={13} aria-hidden="true" />

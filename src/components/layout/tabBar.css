@@ -1,39 +1,90 @@
 .tabbar-contributions {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
-  gap: 4px;
   min-width: 0;
   max-width: 45%;
-  overflow-x: auto;
-  scrollbar-width: none;
-  padding-left: 6px;
+  padding-inline: 4px;
+  box-sizing: content-box;
 }
-.tabbar-contributions::-webkit-scrollbar {
-  display: none;
+.tabbar-contributions--leading {
+  max-width: 25%;
+  border-right: 1px solid var(--td-border);
 }
 .tabbar-contribution {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+  padding-inline: 2px;
 }
-.tabbar-contribution .td-icon-btn {
-  height: 26px;
-  min-width: 26px;
+.tabbar-contribution[data-group-start] {
+  border-left: 1px solid var(--td-border);
+  padding-left: 7px;
+}
+.tabbar-contribution.is-overflowed {
+  position: fixed;
+  left: -10000px;
+  visibility: hidden;
+  pointer-events: none;
+}
+.tabbar-contribution .td-icon-btn,
+.tabbar-contributions__more {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 4px;
+}
+.tabbar-contribution .td-icon-btn > svg {
+  display: block;
+}
+.tabbar-contribution__button {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 7px;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--td-muted);
+}
+.tabbar-contribution__button[data-active] {
+  color: var(--td-accent);
+  background: var(--td-accent-soft);
 }
 .tabbar-contribution__select {
-  width: 136px;
+  width: 148px;
 }
 .tabbar-contribution__select .td-select__control {
   min-height: 26px;
   height: 26px;
-  font-size: 11px;
+  font-size: 12px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.tabbar-contribution__select .td-select__control:hover,
+.tabbar-contribution__select .td-select__control.is-open {
+  background: var(--td-hover);
+}
+.tabbar-contribution__select .td-select__control:focus-visible {
+  outline: 1px solid var(--td-accent);
+  outline-offset: -1px;
 }
 .tabbar-contribution__text {
   display: block;
-  max-width: 120px;
+  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 12px;
+}
+.tabbar-contribution > .tabbar-contribution__text {
+  padding-inline: 4px;
+  color: var(--td-muted);
+}
+.tabbar-contributions__menu {
+  min-width: min(300px, calc(100vw - 16px));
+  max-width: min(420px, calc(100vw - 16px));
 }

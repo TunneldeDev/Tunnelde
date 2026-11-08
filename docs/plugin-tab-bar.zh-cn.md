@@ -6,6 +6,24 @@
 HTML、CSS 或脚本。内置面板通过 `useTabBarContribution(tabId, id, content, priority)`
 使用同一个标签栏插槽；组件卸载自动注销，旧注册的延迟注销不会移除新控件。
 
+操作按钮统一使用 28 px 尺寸和应用主题，不同组之间使用细分隔线。
+`placement: "leading"` 放在标签之前，默认 `"trailing"` 放在标签之后、窗格操作之前。
+`group` 是插件作用域内的 ASCII 标识，同组控件保持相邻，优先级高的组先显示。
+`showLabel: true` 让按钮同时显示图标和标题；`tooltip` 提供最多 512 字符的纯文本提示；
+`checked` 提供按钮选中状态，`false` 同样会声明可访问的未按下状态。
+命令完成后插件应再次调用 `set` 更新选中状态，宿主不会提前假定命令成功。
+
+窗格变窄时，优先级较低的控件自动进入“标签栏操作”菜单，不依赖隐藏的横向滚动条。
+下拉选择变成带选中标记的菜单选项，开关保留选中状态；窗格变宽后恢复显示。
+无障碍标签和菜单始终标明插件身份。命令执行期间禁止重复触发，替换注册也不会绕过此限制。
+
+内置组件可向 `useTabBarContribution` 传入第五个参数：
+`{ placement, group, overflowActions }`。`overflowActions` 提供等价原生菜单操作；
+没有等价菜单的自定义组件会保留在栏内。命令的正确性不得依赖控件所在位置。
+
+这些可选字段属于实验 API 的增量扩展，兼容旧宿主时应检查 `host.describe()` 中
+`tabBar.set` 的参数说明。已有控件保持默认靠后的位置和仅显示图标的按钮。
+
 ```js
 await host.tabBar.set({
   id: "execution-target",
@@ -17,6 +35,8 @@ await host.tabBar.set({
     { value: "remote", label: "远端" },
   ],
   value: "local",
+  placement: "trailing",
+  group: "execution",
 });
 ```
 

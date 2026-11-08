@@ -972,7 +972,8 @@
     "lockPane": "锁定为新页面默认打开的窗格",
     "unlockPane": "解除新页面默认打开窗格的锁定",
     "keepOpen": "保持打开",
-    "previewHint": "预览 · 双击后保持打开"
+    "previewHint": "预览 · 双击后保持打开",
+    "actions": "标签栏操作"
   },
   "panel": {
     "system": "本机",
