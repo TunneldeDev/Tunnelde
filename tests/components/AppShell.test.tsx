@@ -40,6 +40,7 @@ vi.mock("@/components/layout/TabContent", () => ({
 import { useQuickAccess } from "@/store/quickAccess";
 import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
+import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
@@ -104,6 +105,7 @@ function renderWorkspace() {
 }
 
 beforeEach(() => {
+  clearFilePaneDrag();
   useQuickAccess.setState({ query: null });
   usePlugins.setState({ items: [] });
   useDialogs.getState().close();
@@ -134,6 +136,57 @@ beforeEach(() => {
       first: { kind: "pane", paneId: "pane-1" },
       second: { kind: "pane", paneId: "pane-2" },
     },
+  });
+});
+
+describe("detached file panels at workspace edges", () => {
+  it.each([
+    { x: 110, y: 300, direction: "row", position: "first", fraction: 240 / 796 },
+    { x: 890, y: 300, direction: "row", position: "second", fraction: 240 / 796 },
+    { x: 500, y: 90, direction: "column", position: "first", fraction: 180 / 596 },
+    { x: 500, y: 640, direction: "column", position: "second", fraction: 180 / 596 },
+  ])("docks at $position/$direction with the original file-panel size", (test) => {
+    const { workspace, bodies } = renderWorkspace();
+    const onMoved = vi.fn();
+    const token = beginFilePaneDrag(
+      { source: { kind: "local" }, path: "C:\\work", ownerSessionId: "s1" },
+      "This computer",
+      onMoved,
+      { width: 240, height: 180 },
+    );
+    const transfer = {
+      types: [FILE_PANE_MIME],
+      getData: (format: string) => (format === FILE_PANE_MIME ? token : ""),
+      dropEffect: "none",
+    };
+    const send = (type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        clientX: { value: test.x },
+        clientY: { value: test.y },
+        dataTransfer: { value: transfer },
+      });
+      fireEvent(bodies[0]!, event);
+      return event;
+    };
+    expect(send("dragover").defaultPrevented).toBe(true);
+    expect(useWorkspace.getState().tabs).toHaveLength(3);
+    expect(send("drop").defaultPrevented).toBe(true);
+    const state = useWorkspace.getState();
+    expect(state.tabs).toHaveLength(4);
+    expect(state.layout.kind).toBe("split");
+    if (state.layout.kind !== "split") throw new Error("Expected root split");
+    expect(state.layout.direction).toBe(test.direction);
+    const leaf = test.position === "first" ? state.layout.first : state.layout.second;
+    expect(leaf.kind).toBe("pane");
+    if (leaf.kind !== "pane") throw new Error("Expected file pane");
+    const owner = state.panes.find((pane) => pane.id === leaf.paneId)!;
+    expect(state.tabs.find((tab) => tab.id === owner.activeId)?.filePane?.path).toBe("C:\\work");
+    expect(test.position === "first" ? state.layout.ratio : 1 - state.layout.ratio).toBeCloseTo(
+      test.fraction,
+    );
+    expect(onMoved).toHaveBeenCalledOnce();
+    expect(workspace.querySelectorAll(".pane")).toHaveLength(3);
   });
 });
 

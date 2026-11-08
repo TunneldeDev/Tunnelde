@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { FormatterPicker } from "@/features/editor/FormatterPicker";
-import { TAB_MIME } from "@/components/layout/PaneView";
+import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
 import { PaneLayout } from "@/components/layout/PaneLayout";
 import { WorkspaceContents } from "@/components/layout/TabContent";
 import { ActivityBar } from "@/components/layout/ActivityBar";
@@ -84,7 +84,7 @@ export function AppShell() {
     const element = workspace.current;
     if (!element) return;
     const rootEdge = (event: DragEvent) => {
-      if (!event.dataTransfer?.types.includes(TAB_MIME)) return null;
+      if (!isWorkspaceDrag(event.dataTransfer)) return null;
       if (event.target instanceof Element && event.target.closest(".pane__header")) return null;
       const rect = element.getBoundingClientRect();
       const x = event.clientX - rect.left;
@@ -113,12 +113,16 @@ export function AppShell() {
     };
     const drop = (event: DragEvent) => {
       const target = rootEdge(event);
-      const tabId = event.dataTransfer?.getData(TAB_MIME);
       setEdge(null);
-      if (!target || !tabId) return;
+      if (!target) return;
+      const dropped = readWorkspaceDrop(event.dataTransfer);
+      if (!dropped) return;
       event.preventDefault();
       event.stopPropagation();
-      useWorkspace.getState().splitTab(tabId, target.direction, target.position, "root");
+      useWorkspace
+        .getState()
+        .splitTab(dropped.tabId, target.direction, target.position, "root", dropped.size);
+      dropped.finish();
       setTabDrag(false);
     };
     element.addEventListener("dragover", over, true);
@@ -131,7 +135,7 @@ export function AppShell() {
 
   useEffect(() => {
     const onDragStart = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes(TAB_MIME)) {
+      if (isWorkspaceDrag(event.dataTransfer)) {
         setTabDrag(true);
       }
     };

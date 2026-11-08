@@ -502,6 +502,63 @@ describe("workspace tabs", () => {
     expect(useNavigation.getState().visitedSidebars).toContain("plugins");
   });
 
+  it.each(["sftp", "terminal", "monitor", "pluginView"] as const)(
+    "preserves the width of a sole %s tab when moving its group to the opposite edge",
+    (kind) => {
+      state().openPage("welcome", { preview: false });
+      state().openPage("settings", { preview: false });
+      state().splitTab("page:settings", "row");
+      const movingPane = state().activePaneId;
+      useWorkspace.setState({
+        tabs: state().tabs.map((tab) =>
+          tab.id === "page:settings" ? { ...tab, kind, title: "Narrow panel" } : tab,
+        ),
+      });
+      const workspace = document.createElement("main");
+      workspace.className = "workspace";
+      const source = document.createElement("section");
+      source.dataset.paneId = movingPane;
+      workspace.append(source);
+      document.body.append(workspace);
+      vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({
+        width: 1000,
+        height: 700,
+      } as DOMRect);
+      vi.spyOn(source, "getBoundingClientRect").mockReturnValue({
+        width: 260,
+        height: 210,
+      } as DOMRect);
+      try {
+        state().splitTab("page:settings", "row", "before", "pane-1");
+        const layout = state().layout;
+        expect(layout.kind).toBe("split");
+        if (layout.kind === "split") expect(layout.ratio * 996).toBeCloseTo(260);
+        expect(state().panes.some((pane) => pane.id === movingPane)).toBe(false);
+        expect(state().tabs).toHaveLength(2);
+      } finally {
+        workspace.remove();
+      }
+    },
+  );
+
+  it("uses equal halves for an ordinary split of tabs from the same group", () => {
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
+    const source = document.createElement("section");
+    source.dataset.paneId = "pane-1";
+    document.body.append(source);
+    vi.spyOn(source, "getBoundingClientRect").mockReturnValue({
+      width: 1000,
+      height: 700,
+    } as DOMRect);
+    try {
+      state().splitTab("page:settings", "row");
+      expect(state().layout).toMatchObject({ kind: "split", ratio: 0.5 });
+    } finally {
+      source.remove();
+    }
+  });
+
   it("saves and restores sidebar panels in nested splits without accepting arbitrary sidebar ids", () => {
     state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:hosts", "row", "before", "pane-1");

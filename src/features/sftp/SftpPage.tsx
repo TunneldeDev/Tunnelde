@@ -2081,8 +2081,12 @@ export function SftpPage({
                   return;
                 }
                 const detached = filePaneOptions(id);
-                const token = beginFilePaneDrag(detached.pane, detached.title, () =>
-                  retainOtherPane(id),
+                const rect = event.currentTarget.closest(".sftp-pane")?.getBoundingClientRect();
+                const token = beginFilePaneDrag(
+                  detached.pane,
+                  detached.title,
+                  () => retainOtherPane(id),
+                  rect ? { width: rect.width, height: rect.height } : undefined,
                 );
                 event.dataTransfer.setData(FILE_PANE_MIME, token);
                 event.dataTransfer.effectAllowed = "move";
