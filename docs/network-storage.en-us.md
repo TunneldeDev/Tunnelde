@@ -98,6 +98,12 @@ Unreadable folders, symbolic links, special files and incomplete required metada
 stop preparation before the destination is created. The size is a progress estimate;
 individual files are still checked by the copy and resume protocol.
 
+Copy dispatch obtains each source file's type, size and modification time from
+one metadata response. The source is read again after copying and must still
+match before publication. Existing remote destination directories are classified
+with one LSTAT without following links; a missing directory is created only after
+an explicit not-found response. Other metadata errors stop the operation.
+
 Background tasks share a scheduler: up to four tasks run at once across the
 application. Each SSH connection has a budget of six transfer channels. An endpoint
 reserves one metadata and one data channel; an optimized durable copy reserves

@@ -1305,22 +1305,49 @@ async fn finish_remote_file(mut file: russh_sftp::client::fs::File) -> AppResult
     Ok(())
 }
 
-async fn is_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<bool> {
-    let kind = match sftp {
+#[derive(Debug, PartialEq)]
+enum SourceMetadata {
+    Directory,
+    File(u64, Option<i64>),
+}
+
+/// Classify and stamp the same LSTAT result. Copy entry dispatch must not pay
+/// another network round trip to fetch the metadata it just validated.
+async fn inspect_source(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+) -> AppResult<SourceMetadata> {
+    let (kind, modified) = match sftp {
         Some(handle) => {
             let metadata = handle
                 .symlink_metadata(&endpoint.path)
                 .await
                 .map_err(map_sftp)?;
-            scan::remote_kind(&metadata)?
-                .ok_or_else(|| AppError::validation("sftp.fileMetadataMissing"))?
+            (
+                scan::remote_kind(&metadata)?
+                    .ok_or_else(|| AppError::validation("sftp.fileMetadataMissing"))?,
+                metadata.modified().ok().and_then(millis),
+            )
         }
         None => {
             let metadata = tokio::fs::symlink_metadata(&endpoint.path).await?;
-            scan::local_kind(&metadata)?
+            (
+                scan::local_kind(&metadata)?,
+                metadata.modified().ok().and_then(millis),
+            )
         }
     };
-    Ok(matches!(kind, scan::Kind::Directory))
+    Ok(match kind {
+        scan::Kind::Directory => SourceMetadata::Directory,
+        scan::Kind::File(size) => SourceMetadata::File(size, modified),
+    })
+}
+
+async fn is_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<bool> {
+    Ok(matches!(
+        inspect_source(endpoint, sftp).await?,
+        SourceMetadata::Directory
+    ))
 }
 
 fn local_metadata_is_link(metadata: &std::fs::Metadata) -> bool {
@@ -1387,24 +1414,22 @@ async fn children(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<
 }
 
 async fn make_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
-    reject_destination_link(endpoint, sftp).await?;
     match sftp {
-        Some(handle) => {
-            if remote_exists(handle, &endpoint.path).await? {
-                if !handle
-                    .metadata(&endpoint.path)
-                    .await
-                    .map_err(map_sftp)?
-                    .is_dir()
-                {
-                    return Err(AppError::validation("sftp.typeConflict"));
-                }
-                Ok(())
-            } else {
+        Some(handle) => match handle.symlink_metadata(&endpoint.path).await {
+            Ok(metadata) if metadata.is_symlink() => {
+                Err(AppError::validation("sftp.symlinkUnsupported"))
+            }
+            Ok(metadata) if metadata.is_dir() => Ok(()),
+            Ok(_) => Err(AppError::validation("sftp.typeConflict")),
+            Err(russh_sftp::client::error::Error::Status(status))
+                if status.status_code == StatusCode::NoSuchFile =>
+            {
                 handle.create_dir(&endpoint.path).await.map_err(map_sftp)
             }
-        }
+            Err(error) => Err(map_sftp(error)),
+        },
         None => {
+            reject_local_destination_link(Path::new(&endpoint.path))?;
             tokio::fs::create_dir_all(&endpoint.path).await?;
             Ok(())
         }
@@ -1482,7 +1507,9 @@ async fn copy_entry(
         return Err(AppError::Ssh(CANCELLED.into()));
     }
 
-    if interruptible(Some(cancel), is_dir(from, from_sftp)).await? {
+    let SourceMetadata::File(size, modified) =
+        interruptible(Some(cancel), inspect_source(from, from_sftp)).await?
+    else {
         make_dir(to, to_sftp).await?;
         let paths = interruptible(Some(cancel), children(from, from_sftp)).await?;
         // Overwrites reserve one commit channel per task. Keep their proven
@@ -1517,16 +1544,23 @@ async fn copy_entry(
             .await?;
         }
         return Ok(());
-    }
-
+    };
     if let Some(id) = durable_id {
         return durable_copy_file(
-            from, to, from_sftp, to_sftp, meter, cancel, overwrite, id, resuming,
+            from,
+            to,
+            from_sftp,
+            to_sftp,
+            meter,
+            cancel,
+            overwrite,
+            id,
+            resuming,
+            (size, modified),
         )
         .await;
     }
     if from_sftp.is_some() || to_sftp.is_some() {
-        let size = source_stamp(from, from_sftp).await?.0;
         open_writer(to, to_sftp, overwrite).await?.finish().await?;
         let channels = meter
             .data_channels
@@ -1723,25 +1757,9 @@ async fn source_stamp(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
 ) -> AppResult<(u64, Option<i64>)> {
-    match sftp {
-        Some(s) => {
-            let m = s.symlink_metadata(&endpoint.path).await.map_err(map_sftp)?;
-            match scan::remote_kind(&m)? {
-                Some(scan::Kind::File(_)) => {}
-                Some(scan::Kind::Directory) => {
-                    return Err(AppError::validation("sftp.resumeSourceChanged"))
-                }
-                None => return Err(AppError::validation("sftp.fileMetadataMissing")),
-            };
-            Ok((m.len(), m.modified().ok().and_then(millis)))
-        }
-        None => {
-            let m = tokio::fs::symlink_metadata(&endpoint.path).await?;
-            if !matches!(scan::local_kind(&m)?, scan::Kind::File(_)) {
-                return Err(AppError::validation("sftp.resumeSourceChanged"));
-            }
-            Ok((m.len(), m.modified().ok().and_then(millis)))
-        }
+    match inspect_source(endpoint, sftp).await? {
+        SourceMetadata::File(size, modified) => Ok((size, modified)),
+        SourceMetadata::Directory => Err(AppError::validation("sftp.resumeSourceChanged")),
     }
 }
 fn staging_endpoint(destination: &Endpoint, id: &str, suffix: &str) -> Endpoint {
@@ -1915,9 +1933,9 @@ async fn durable_copy_file(
     overwrite: bool,
     id: &str,
     resuming: bool,
+    stamp: (u64, Option<i64>),
 ) -> AppResult<()> {
     use sha2::{Digest, Sha256};
-    let stamp = interruptible(Some(cancel), source_stamp(from, from_sftp)).await?;
     let key = format!(
         "transfer-file:{id}:{:x}",
         Sha256::digest(to.path.as_bytes())
@@ -4516,6 +4534,7 @@ mod tests {
             open_started: Notify,
             release_open: Notify,
             hold_metadata: AtomicBool,
+            fail_metadata: AtomicBool,
             metadata_started: Notify,
             release_metadata: Notify,
             fail_write: AtomicBool,
@@ -4530,6 +4549,7 @@ mod tests {
             release_read: Notify,
             replace_before_remove: AtomicBool,
             metadata_reads: AtomicUsize,
+            directories_created: AtomicUsize,
             removals: AtomicUsize,
         }
 
@@ -4666,6 +4686,9 @@ mod tests {
                 if self.state.hold_metadata.load(Ordering::SeqCst) {
                     self.state.release_metadata.notified().await;
                 }
+                if self.state.fail_metadata.load(Ordering::SeqCst) {
+                    return Err(StatusCode::PermissionDenied);
+                }
                 let metadata =
                     std::fs::symlink_metadata(self.root.join(path)).map_err(io_status)?;
                 let mut attrs = FileAttributes::from(&metadata);
@@ -4673,6 +4696,19 @@ mod tests {
                     attrs.set_type(russh_sftp::protocol::FileMode::LNK);
                 }
                 Ok(Attrs { id, attrs })
+            }
+
+            async fn mkdir(
+                &mut self,
+                id: u32,
+                path: String,
+                _attrs: FileAttributes,
+            ) -> Result<Status, StatusCode> {
+                self.state
+                    .directories_created
+                    .fetch_add(1, Ordering::SeqCst);
+                std::fs::create_dir(self.root.join(path)).map_err(io_status)?;
+                Ok(status(id))
             }
 
             async fn remove(&mut self, id: u32, filename: String) -> Result<Status, StatusCode> {
@@ -5624,6 +5660,63 @@ mod tests {
             sftp.close().await.unwrap();
             std::fs::remove_file(root.join("folder/file.txt")).unwrap();
             std::fs::remove_dir(root.join("folder")).unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn directory_preparation_uses_one_lstat_without_following_links_or_truncating_files()
+        {
+            let root = temp_root("sftp-directory-metadata");
+            std::fs::create_dir(root.join("existing")).unwrap();
+            std::fs::write(root.join("file"), b"preserved").unwrap();
+            directory_link(&root.join("existing"), &root.join("link"));
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            for (index, path) in ["existing", "created", "file", "link"]
+                .into_iter()
+                .enumerate()
+            {
+                let result = make_dir(
+                    &Endpoint {
+                        session: Some("test".into()),
+                        path: path.into(),
+                    },
+                    Some(&sftp),
+                )
+                .await;
+                match path {
+                    "existing" | "created" => result.unwrap(),
+                    "file" => assert_eq!(result.unwrap_err().to_string(), "sftp.typeConflict"),
+                    "link" => {
+                        assert_eq!(result.unwrap_err().to_string(), "sftp.symlinkUnsupported")
+                    }
+                    _ => unreachable!(),
+                }
+                assert_eq!(state.metadata_reads.load(Ordering::SeqCst), index + 1);
+            }
+            assert_eq!(state.directories_created.load(Ordering::SeqCst), 1);
+            state.fail_metadata.store(true, Ordering::SeqCst);
+            assert!(make_dir(
+                &Endpoint {
+                    session: Some("test".into()),
+                    path: "denied".into(),
+                },
+                Some(&sftp),
+            )
+            .await
+            .is_err());
+            assert_eq!(state.directories_created.load(Ordering::SeqCst), 1);
+            assert!(!root.join("denied").exists());
+            assert!(root.join("created").is_dir());
+            assert_eq!(std::fs::read(root.join("file")).unwrap(), b"preserved");
+            sftp.close().await.unwrap();
+            #[cfg(windows)]
+            std::fs::remove_dir(root.join("link")).unwrap();
+            #[cfg(unix)]
+            std::fs::remove_file(root.join("link")).unwrap();
+            std::fs::remove_file(root.join("file")).unwrap();
+            std::fs::remove_dir(root.join("existing")).unwrap();
+            std::fs::remove_dir(root.join("created")).unwrap();
             std::fs::remove_dir(root).unwrap();
         }
 

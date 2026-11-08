@@ -17,6 +17,7 @@ struct Calls {
     stats: Vec<String>,
     directories: Vec<String>,
     closed: usize,
+    attributes: HashMap<String, FileAttributes>,
 }
 
 struct Node {
@@ -38,11 +39,12 @@ impl russh_sftp::server::Handler for Server {
     }
 
     async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
-        self.calls.lock().unwrap().stats.push(path.clone());
+        let mut calls = self.calls.lock().unwrap();
+        calls.stats.push(path.clone());
         let node = self.nodes.get(&path).ok_or(StatusCode::PermissionDenied)?;
         Ok(Attrs {
             id,
-            attrs: node.attrs.clone(),
+            attrs: calls.attributes.get(&path).unwrap_or(&node.attrs).clone(),
         })
     }
 
@@ -112,6 +114,113 @@ fn directory(entries: Vec<(String, FileAttributes)>) -> Node {
         attrs: attrs(0o040755, None),
         entries,
     }
+}
+
+#[tokio::test]
+async fn source_dispatch_reads_type_size_and_time_in_one_lstat_and_rechecks_changes() {
+    let path = "/source";
+    let mut metadata = attrs(0o100644, Some(1234));
+    metadata.mtime = Some(123);
+    let (sftp, calls) = client(HashMap::from([(
+        path.into(),
+        Node {
+            attrs: metadata.clone(),
+            entries: vec![],
+        },
+    )]))
+    .await;
+    let endpoint = remote(path);
+    assert_eq!(
+        inspect_source(&endpoint, Some(&sftp)).await.unwrap(),
+        SourceMetadata::File(1234, Some(123000))
+    );
+    assert_eq!(calls.lock().unwrap().stats, [path]);
+
+    // The completion check must read the source again; it cannot reuse the
+    // dispatch snapshot after the contents or file type may have changed.
+    metadata.size = Some(1235);
+    metadata.mtime = Some(124);
+    calls
+        .lock()
+        .unwrap()
+        .attributes
+        .insert(path.into(), metadata);
+    assert_eq!(
+        source_stamp(&endpoint, Some(&sftp)).await.unwrap(),
+        (1235, Some(124000))
+    );
+    calls
+        .lock()
+        .unwrap()
+        .attributes
+        .insert(path.into(), attrs(0o040755, None));
+    assert_eq!(
+        source_stamp(&endpoint, Some(&sftp))
+            .await
+            .unwrap_err()
+            .to_string(),
+        "sftp.resumeSourceChanged"
+    );
+    assert_eq!(calls.lock().unwrap().stats, [path, path, path]);
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn source_dispatch_rejects_links_special_files_and_incomplete_metadata() {
+    for (metadata, error) in [
+        (attrs(0o120777, Some(1)), "sftp.symlinkUnsupported"),
+        (attrs(0o010644, Some(1)), "sftp.fileTypeUnsupported"),
+        (attrs(0o100644, None), "sftp.fileMetadataMissing"),
+        (attrs(0, Some(1)), "sftp.fileMetadataMissing"),
+    ] {
+        let (sftp, calls) = client(HashMap::from([(
+            "/source".into(),
+            Node {
+                attrs: metadata,
+                entries: vec![],
+            },
+        )]))
+        .await;
+        assert_eq!(
+            inspect_source(&remote("/source"), Some(&sftp))
+                .await
+                .unwrap_err()
+                .to_string(),
+            error
+        );
+        assert_eq!(calls.lock().unwrap().stats, ["/source"]);
+        assert!(calls.lock().unwrap().directories.is_empty());
+        sftp.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn source_dispatch_preserves_unknown_mtime_and_classifies_empty_directories() {
+    let (sftp, calls) = client(HashMap::from([
+        (
+            "/source".into(),
+            Node {
+                attrs: attrs(0o100644, Some(0)),
+                entries: vec![],
+            },
+        ),
+        ("/directory".into(), directory(vec![])),
+    ]))
+    .await;
+    assert_eq!(
+        inspect_source(&remote("/source"), Some(&sftp))
+            .await
+            .unwrap(),
+        SourceMetadata::File(0, None)
+    );
+    assert_eq!(
+        inspect_source(&remote("/directory"), Some(&sftp))
+            .await
+            .unwrap(),
+        SourceMetadata::Directory
+    );
+    assert_eq!(calls.lock().unwrap().stats, ["/source", "/directory"]);
+    sftp.close().await.unwrap();
 }
 
 #[tokio::test]
