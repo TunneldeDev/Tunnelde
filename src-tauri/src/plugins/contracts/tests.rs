@@ -36,7 +36,7 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
         assert_eq!(
             method.since,
             Some(if name.starts_with("statusBar.") {
-                "0.31.1"
+                "0.32.0-beta.1"
             } else {
                 "0.21.0"
             })
