@@ -2,7 +2,7 @@
 
 [简体中文](plugin-status-bar.zh-cn.md)
 
-Status bar v1 is a stable, additive API available from host 0.31.1. Use
+Status bar v1 is a stable, additive API available from host 0.32.0-beta.1. Use
 `api.describe` to detect `statusBar.set` before calling it on older hosts.
 No protocol version change is needed. Existing stable core contracts remain unchanged.
 
