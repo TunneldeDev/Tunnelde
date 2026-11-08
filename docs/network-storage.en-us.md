@@ -232,6 +232,10 @@ connection matching the original saved host and recorded address is used; changi
 the host's address does not silently redirect an existing transfer. Local transfers
 can resume immediately.
 
+If reconnection arrives during an older connection's cleanup attempt, the
+application waits for that attempt to release the task, then retries disposal
+using the newest matching connection. Unfinished cleanup keeps its pending record.
+
 Data is written into a task-owned `.tunnelde-….part` sibling. A clean pause saves
 its closed file's size and modification time. If both source and staging metadata
 still match, resume verifies the first and last blocks and continues at the saved
