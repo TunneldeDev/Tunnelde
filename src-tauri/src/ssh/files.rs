@@ -32,7 +32,7 @@ mod scheduler;
 pub mod search;
 mod segments;
 mod verification;
-use verification::{fingerprint_file, verify_prefix, verify_range};
+use verification::{fingerprint_file, verify_prefix};
 
 pub const TRANSFER_EVENT: &str = "sftp://transfer";
 
@@ -2066,14 +2066,11 @@ async fn durable_copy_file(
     if existing > 0 {
         phase(meter.app, id, "verifying");
         let verified = artifacts::resume_offset(
-            meter.app,
-            &key,
-            stamp,
-            &temp,
-            to_sftp,
             reader
                 .as_mut()
                 .ok_or_else(|| AppError::internal("sftp.reader"))?,
+            &temp,
+            to_sftp,
             existing,
             cancel,
         )
@@ -2232,17 +2229,10 @@ async fn durable_copy_file(
         if closed.is_ok() && (result.is_ok() || cancel.load(Ordering::SeqCst)) {
             // Closing flushes an interrupted sequential write too. Its resulting
             // length must lie within the source bytes submitted to this writer.
-            if let Err(error) = artifacts::checkpoint(
-                meter.app,
-                &key,
-                stamp,
-                &temp,
-                to_sftp,
-                confirmed..=attempted,
-            )
-            .await
+            if let Err(error) =
+                artifacts::validate_partial_length(&temp, to_sftp, confirmed..=attempted).await
             {
-                tracing::warn!(%error, "Cannot save transfer resume checkpoint");
+                tracing::warn!(%error, "Cannot validate transfer partial length");
             }
         }
         result.and(closed).and(read_closed)
@@ -2447,7 +2437,7 @@ async fn parallel_copy_file(
             if copied {
                 interruptible(
                     Some(cancel),
-                    artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, stamp.0..=stamp.0),
+                    artifacts::validate_partial_length(temp, to_sftp, stamp.0..=stamp.0),
                 )
                 .await?;
                 meter.add(stamp.0);
@@ -2484,7 +2474,7 @@ async fn parallel_copy_file(
                 .await?;
             interruptible(
                 Some(cancel),
-                artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, end..=end),
+                artifacts::validate_partial_length(temp, to_sftp, end..=end),
             )
             .await?;
             artifacts::end_window(meter.app, key)?;
