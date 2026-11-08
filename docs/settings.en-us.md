@@ -293,6 +293,28 @@ read/write use timestamped timelines with labeled dashed scales and mouse/keyboa
 sample inspection. Missing disk samples are shown as unavailable rather than invented
 zero readings.
 
+## Output and diagnostic logs
+
+Open **Output** from the activity bar, search for **Show output** in F1, or use
+`Ctrl+Shift+U` (`Cmd+Shift+U` on macOS). Settings also links to this same panel.
+It initially opens below the workspace; drag its title or tab to move it to any
+pane. Hiding and reopening it preserves its location and filters.
+
+The channel selector includes application diagnostics, recorded operations,
+runtime information, modules and individual plugins. Text and minimum severity
+filters narrow the visible entries. Logs are displayed as readable text with time,
+level and source. Word wrap, copying, follow output, refresh and original log/folder
+actions are available. Scrolling away from the bottom pauses following without
+stopping collection. Clearing affects only the display and does not delete logs.
+
+Only visible panels poll, every two seconds without overlapping requests. Reads
+are incremental and bounded to 256 KiB; display retention is at most 2,000 entries
+and approximately 1 MiB of text. Incomplete lines wait for the next read. New files
+use the UTC daily name `YYYY-MM-DD.tunnelde.jsonl.log`; module and plugin channels
+are derived from structured fields in that file. Older `tunnelde.log.YYYY-MM-DD`
+files remain readable. Diagnostics may contain private information; review them
+before sharing.
+
 ## Remote process management
 
 The remote process manager supports automatic refresh, CPU/memory, disk I/O,

@@ -1,7 +1,7 @@
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 use crate::{db::Database, error::AppResult, models::now_ms, state::AppState};
@@ -27,6 +27,106 @@ pub struct LogSnapshot {
     operations: Vec<AuditEntry>,
 }
 
+#[derive(Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputCursor {
+    filename: Option<String>,
+    offset: u64,
+    operation_id: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutputSnapshot {
+    diagnostic: String,
+    operations: Vec<AuditEntry>,
+    cursor: OutputCursor,
+    truncated: bool,
+}
+
+/// Only the current rotated log is read. A cursor never selects a filesystem path.
+fn output_tail(dir: &Path, cursor: &OutputCursor) -> AppResult<(OutputCursor, String, bool)> {
+    let filename = latest_name(dir)?;
+    let mut next = OutputCursor {
+        filename: filename.clone(),
+        operation_id: cursor.operation_id,
+        ..Default::default()
+    };
+    let Some(filename) = filename else {
+        return Ok((next, String::new(), false));
+    };
+    let mut file = std::fs::File::open(dir.join(filename))?;
+    let len = file.metadata()?.len();
+    let offset = if cursor.filename == next.filename && cursor.offset <= len {
+        cursor.offset
+    } else {
+        0
+    };
+    let start = offset.max(len.saturating_sub(MAX_BYTES));
+    let truncated = start > offset;
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(MAX_BYTES).read_to_end(&mut bytes)?;
+    let first = if truncated {
+        bytes
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|i| i + 1)
+            .unwrap_or(bytes.len())
+    } else {
+        0
+    };
+    // Keep incomplete UTF-8 and JSON lines for the next poll, never duplicate them.
+    let end = bytes
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    next.offset = start + end.max(first) as u64;
+    Ok((
+        next,
+        String::from_utf8_lossy(&bytes[first..end.max(first)]).into_owned(),
+        truncated,
+    ))
+}
+
+#[tauri::command]
+pub async fn logs_output_read(
+    app: AppHandle,
+    cursor: Option<OutputCursor>,
+) -> AppResult<OutputSnapshot> {
+    let cursor = cursor.unwrap_or_default();
+    let state = app.state::<AppState>();
+    let operations = state.db.with(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT id, ts, action, target FROM audit_log WHERE id > ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(rusqlite::params![cursor.operation_id, MAX_AUDIT], |row| {
+            Ok(AuditEntry {
+                id: row.get(0)?,
+                timestamp: row.get(1)?,
+                action: row.get(2)?,
+                target: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    })?;
+    let dir = state.log_dir.clone();
+    let (mut cursor, diagnostic, truncated) =
+        tauri::async_runtime::spawn_blocking(move || output_tail(&dir, &cursor))
+            .await
+            .map_err(|error| crate::error::AppError::internal(error.to_string()))??;
+    cursor.operation_id = operations
+        .first()
+        .map_or(cursor.operation_id, |entry| entry.id);
+    Ok(OutputSnapshot {
+        diagnostic,
+        operations,
+        cursor,
+        truncated,
+    })
+}
+
 // Operation records contain only a fixed action and opaque object identifier.
 pub fn record(db: &Database, action: &'static str, target: Option<&str>) {
     if let Err(error) = db.with(|conn| {
@@ -46,7 +146,11 @@ pub(crate) fn latest_name(dir: &Path) -> AppResult<Option<String>> {
     for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        let suffix = name.strip_prefix("tunnelde.log.").unwrap_or("");
+        let suffix = name
+            .strip_suffix(".tunnelde.jsonl.log")
+            .or_else(|| name.strip_suffix(".tunnelde.log"))
+            .or_else(|| name.strip_prefix("tunnelde.log."))
+            .unwrap_or("");
         let valid = suffix.len() == 10
             && suffix.bytes().enumerate().all(|(i, c)| {
                 if i == 4 || i == 7 {
@@ -56,11 +160,13 @@ pub(crate) fn latest_name(dir: &Path) -> AppResult<Option<String>> {
                 }
             });
         if valid && entry.file_type()?.is_file() {
-            names.push(name);
+            // The date is the primary key across both naming generations.
+            let preferred = name.ends_with(".tunnelde.jsonl.log");
+            names.push((suffix.to_string(), preferred, name));
         }
     }
     names.sort_unstable();
-    Ok(names.pop())
+    Ok(names.pop().map(|(_, _, name)| name))
 }
 
 fn recent_file(dir: &Path) -> AppResult<(Option<String>, String, bool)> {
@@ -114,6 +220,51 @@ pub async fn logs_read(app: AppHandle) -> AppResult<LogSnapshot> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn output_cursor_reads_only_new_complete_lines_and_handles_rotation_and_truncation() {
+        let dir = std::env::temp_dir().join(format!("tunnelde-output-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("2026-11-08.tunnelde.jsonl.log");
+        std::fs::write(&path, "first\n中").unwrap();
+        let (cursor, text, _) = output_tail(&dir, &OutputCursor::default()).unwrap();
+        assert_eq!(text, "first\n");
+        assert_eq!(cursor.offset, 6);
+        std::fs::write(&path, "first\n中文\n").unwrap();
+        let (cursor, text, _) = output_tail(&dir, &cursor).unwrap();
+        assert_eq!(text, "中文\n");
+        assert_eq!(output_tail(&dir, &cursor).unwrap().1, "");
+        std::fs::write(&path, "reset\n").unwrap();
+        let (cursor, text, _) = output_tail(&dir, &cursor).unwrap();
+        assert_eq!(text, "reset\n");
+        std::fs::write(dir.join("2026-11-09.tunnelde.jsonl.log"), "rotated\n").unwrap();
+        assert_eq!(output_tail(&dir, &cursor).unwrap().1, "rotated\n");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn output_tail_bounds_oversized_lines_and_prefers_new_names_for_same_date() {
+        let dir = std::env::temp_dir().join(format!("tunnelde-output-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("tunnelde.log.2026-11-08"), "legacy\n").unwrap();
+        let path = dir.join("2026-11-08.tunnelde.jsonl.log");
+        std::fs::write(
+            &path,
+            format!("{}\ntail\n", "x".repeat(MAX_BYTES as usize + 10)),
+        )
+        .unwrap();
+        let (cursor, text, truncated) = output_tail(&dir, &OutputCursor::default()).unwrap();
+        assert!(truncated);
+        assert_eq!(text, "tail\n");
+        assert_eq!(
+            cursor.filename.as_deref(),
+            Some("2026-11-08.tunnelde.jsonl.log")
+        );
+        assert_eq!(output_tail(&dir, &cursor).unwrap().1, "");
+        // Mixed generations must sort by date, not their different prefixes.
+        std::fs::write(dir.join("tunnelde.log.2026-11-09"), "newer legacy\n").unwrap();
+        assert_eq!(output_tail(&dir, &cursor).unwrap().1, "newer legacy\n");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn latest_log_selects_daily_files_and_ignores_directories_and_links() {
         let dir = std::env::temp_dir().join(format!("tunnelde-logs-{}", uuid::Uuid::new_v4()));

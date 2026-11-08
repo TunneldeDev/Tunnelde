@@ -11,7 +11,11 @@ use crate::error::AppResult;
 pub fn init(log_dir: &Path) -> AppResult<WorkerGuard> {
     std::fs::create_dir_all(log_dir)?;
 
-    let writer = tracing_appender::rolling::daily(log_dir, "tunnelde.log");
+    let writer = tracing_appender::rolling::RollingFileAppender::builder()
+        .rotation(tracing_appender::rolling::Rotation::DAILY)
+        .filename_suffix("tunnelde.jsonl.log")
+        .build(log_dir)
+        .map_err(|error| crate::error::AppError::internal(error.to_string()))?;
     let (writer, guard) = tracing_appender::non_blocking(writer);
 
     let filter = EnvFilter::try_from_env("TUNNELDE_LOG")

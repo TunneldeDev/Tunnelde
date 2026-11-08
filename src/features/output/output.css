@@ -1,0 +1,125 @@
+.output-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  background: var(--td-panel);
+  color: var(--td-text);
+}
+.output-panel__header {
+  flex-shrink: 0;
+}
+.output-panel__actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.output-panel__toolbar,
+.output-panel__filters {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--td-border);
+}
+.output-panel__channel {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+.output-panel__filters {
+  flex-wrap: nowrap;
+}
+.output-panel__filters > .td-select {
+  flex: 0 0 104px;
+  min-width: 0;
+}
+.output-panel__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-left: 8px;
+  flex: 1;
+  min-width: 0;
+  background: var(--td-bg);
+  border: 1px solid var(--td-border-strong);
+  border-radius: 4px;
+  color: var(--td-muted);
+}
+.output-panel__search:focus-within {
+  border-color: var(--td-accent);
+}
+.output-panel__search .td-input {
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  min-width: 0;
+  width: 100%;
+  padding-left: 0;
+}
+.output-panel__search .td-input:focus {
+  box-shadow: none;
+}
+.output-panel__scroll {
+  overflow: auto;
+  flex: 1;
+  min-height: 0;
+  background: var(--td-bg);
+  overscroll-behavior: contain;
+}
+.output-panel__scroll:focus-visible {
+  outline: 1px solid var(--td-accent);
+  outline-offset: -1px;
+}
+.output-panel__lines {
+  margin: 0;
+  padding: 10px 12px;
+  font: 12px/1.7 var(--td-mono);
+  tab-size: 2;
+  white-space: pre;
+  user-select: text;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+.output-panel__lines.is-wrapped {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  width: 100%;
+}
+.output-panel__line.is-warn {
+  color: var(--td-orange);
+}
+.output-panel__line.is-error {
+  color: var(--td-red);
+}
+.output-panel__line.is-debug,
+.output-panel__line.is-trace {
+  color: var(--td-muted);
+}
+.output-panel__error {
+  padding: 6px 10px;
+  color: var(--td-red);
+  overflow-wrap: anywhere;
+}
+.output-panel__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 16px;
+  color: var(--td-muted);
+  font-size: 12px;
+}
+.output-panel__footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 4px 10px;
+  color: var(--td-muted);
+  font-size: 11px;
+  border-top: 1px solid var(--td-border);
+}
