@@ -470,18 +470,24 @@ struct ResumeCheckpoint {
 struct ParallelCheckpoint {
     source: (u64, Option<i64>),
     offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    end: Option<u64>,
 }
 
 pub(super) fn begin_window(
     app: &AppHandle,
     key: &str,
     source: (u64, Option<i64>),
-    offset: u64,
+    window: std::ops::Range<u64>,
 ) -> AppResult<()> {
     put(
         app,
         &key.replacen("transfer-file:", "transfer-parallel:", 1),
-        serde_json::to_string(&ParallelCheckpoint { source, offset })?,
+        serde_json::to_string(&ParallelCheckpoint {
+            source,
+            offset: window.start,
+            end: Some(window.end),
+        })?,
     )
 }
 
@@ -502,15 +508,20 @@ pub(super) async fn recover_window(
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
+) -> AppResult<Option<std::ops::Range<u64>>> {
     let marker = get(
         app,
         &key.replacen("transfer-file:", "transfer-parallel:", 1),
     )?;
-    let Some(marker) = marker else { return Ok(()) };
+    let Some(marker) = marker else {
+        return Ok(None);
+    };
     let checkpoint: ParallelCheckpoint = serde_json::from_str(&marker)?;
-    restore_window_prefix(checkpoint, source, temp, sftp, cancel).await?;
-    end_window(app, key)
+    // Retain this marker through verification and the first replay. A crash or
+    // another pause must never promote the old sparse tail to a valid prefix.
+    restore_window_prefix(checkpoint, source, temp, sftp, cancel)
+        .await
+        .map(Some)
 }
 
 async fn restore_window_prefix(
@@ -519,25 +530,30 @@ async fn restore_window_prefix(
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
-    if checkpoint.source != source || checkpoint.offset > source.0 {
+) -> AppResult<std::ops::Range<u64>> {
+    if checkpoint.source != source
+        || checkpoint.offset > source.0
+        || checkpoint
+            .end
+            .is_some_and(|end| end < checkpoint.offset || end > source.0)
+    {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
     }
     let length = interruptible(cancel, file_length(temp, sftp))
         .await?
         .unwrap_or(0);
-    if length < checkpoint.offset {
+    if length < checkpoint.offset
+        || length > source.0
+        || checkpoint.end.is_some_and(|end| length > end)
+    {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
-    if length > checkpoint.offset {
-        if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
-            return Err(AppError::Ssh(CANCELLED.into()));
-        }
-        // Discard sparse or partially acknowledged writes from the interrupted
-        // window before any prefix can be trusted as resumable data.
-        segments::resize(temp, sftp, checkpoint.offset).await?;
-    }
-    Ok(())
+    // Only bytes before offset are eligible for verification/resume. Rewrite
+    // the entire old window instead of truncating it: SETSTAT can stall and a
+    // late truncate could destroy bytes acknowledged by a later resume.
+    // Legacy markers did not record the submitted end. Conservatively replay
+    // the remaining source: a delayed WRITE can extend the observed length.
+    Ok(checkpoint.offset..checkpoint.end.unwrap_or(source.0))
 }
 
 fn get(app: &AppHandle, key: &str) -> AppResult<Option<String>> {
@@ -1111,7 +1127,7 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn active_writers_prevent_cleanup_and_pins_allow_checkpoint_trimming() {
+    async fn active_writers_and_pins_prevent_cleanup_until_their_handles_close() {
         let root =
             std::env::temp_dir().join(format!("tunnelde-cleanup-writer-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
@@ -1130,8 +1146,7 @@ mod tests {
             .await
             .is_err());
         let pin = pin_partial(&part, Some(&expected)).unwrap().unwrap();
-        segments::resize(&part, None, 4).await.unwrap();
-        assert_eq!(file_length(&part, None).await.unwrap(), Some(4));
+        assert_eq!(file_length(&part, None).await.unwrap(), Some(16));
         assert_eq!(pin.identity().unwrap(), expected);
         assert!(tokio::fs::remove_file(&part.path).await.is_err());
         writer.finish().await.unwrap();
@@ -1147,7 +1162,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn interrupted_parallel_windows_trim_only_uncommitted_bytes_and_reject_changed_sources() {
+    async fn interrupted_parallel_windows_preserve_the_tail_and_reject_changed_sources() {
         let root = std::env::temp_dir().join(format!("tunnelde-window-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
         let target = Endpoint {
@@ -1161,7 +1176,11 @@ mod tests {
         let before = tokio::fs::read(&target.path).await.unwrap();
         assert_eq!(
             restore_window_prefix(
-                ParallelCheckpoint { source, offset: 4 },
+                ParallelCheckpoint {
+                    source,
+                    offset: 4,
+                    end: Some(128)
+                },
                 source,
                 &target,
                 None,
@@ -1173,8 +1192,12 @@ mod tests {
             CANCELLED
         );
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
-        restore_window_prefix(
-            ParallelCheckpoint { source, offset: 4 },
+        let replay = restore_window_prefix(
+            ParallelCheckpoint {
+                source,
+                offset: 4,
+                end: Some(128),
+            },
             source,
             &target,
             None,
@@ -1182,9 +1205,14 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
+        assert_eq!(replay, 4..128);
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
         assert!(restore_window_prefix(
-            ParallelCheckpoint { source, offset: 4 },
+            ParallelCheckpoint {
+                source,
+                offset: 4,
+                end: Some(128)
+            },
             (1024, Some(124)),
             &target,
             None,
@@ -1193,7 +1221,11 @@ mod tests {
         .await
         .is_err());
         assert!(restore_window_prefix(
-            ParallelCheckpoint { source, offset: 5 },
+            ParallelCheckpoint {
+                source,
+                offset: before.len() as u64 + 1,
+                end: Some(128)
+            },
             source,
             &target,
             None,
@@ -1201,8 +1233,100 @@ mod tests {
         )
         .await
         .is_err());
-        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
         tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn recovery_rejects_invalid_extents_and_never_mutates_the_staging_file() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-window-bounds-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("owned.part")),
+        };
+        let bytes = b"safe-unconfirmed-tail";
+        tokio::fs::write(&target.path, bytes).await.unwrap();
+        let source = (64, Some(123));
+        for (offset, end) in [
+            (65, Some(65)),
+            (4, Some(3)),
+            (4, Some(65)),
+            (4, Some(8)),
+            (32, Some(64)),
+        ] {
+            assert!(restore_window_prefix(
+                ParallelCheckpoint {
+                    source,
+                    offset,
+                    end
+                },
+                source,
+                &target,
+                None,
+                None
+            )
+            .await
+            .is_err());
+            assert_eq!(tokio::fs::read(&target.path).await.unwrap(), bytes);
+        }
+        let legacy: ParallelCheckpoint =
+            serde_json::from_str(r#"{"source":[64,123],"offset":4}"#).unwrap();
+        assert!(legacy.end.is_none());
+        // An old unacknowledged write could arrive beyond the current length.
+        assert_eq!(
+            restore_window_prefix(legacy, source, &target, None, None)
+                .await
+                .unwrap(),
+            4..64
+        );
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), bytes);
+        let small = (8, Some(123));
+        assert!(restore_window_prefix(
+            ParallelCheckpoint {
+                source: small,
+                offset: 4,
+                end: None
+            },
+            small,
+            &target,
+            None,
+            None
+        )
+        .await
+        .is_err());
+        tokio::fs::remove_file(&target.path).await.unwrap();
+        assert_eq!(
+            restore_window_prefix(
+                ParallelCheckpoint {
+                    source,
+                    offset: 0,
+                    end: Some(64)
+                },
+                source,
+                &target,
+                None,
+                None
+            )
+            .await
+            .unwrap(),
+            0..64
+        );
+        assert!(restore_window_prefix(
+            ParallelCheckpoint {
+                source,
+                offset: 4,
+                end: Some(64)
+            },
+            source,
+            &target,
+            None,
+            None
+        )
+        .await
+        .is_err());
+        tokio::fs::remove_dir(root).await.unwrap();
     }
 
     #[tokio::test]
@@ -1345,6 +1469,19 @@ mod tests {
         );
         reader.finish().await.unwrap();
         tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_operations_are_never_polled() {
+        let flag = AtomicBool::new(true);
+        let polled = AtomicBool::new(false);
+        let result = interruptible(Some(&flag), async {
+            polled.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+        assert!(!polled.load(Ordering::SeqCst));
     }
 
     #[tokio::test]

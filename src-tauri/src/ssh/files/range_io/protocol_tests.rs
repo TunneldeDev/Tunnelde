@@ -648,6 +648,51 @@ async fn unadvertised_servers_keep_compatible_write_packets() {
 }
 
 #[tokio::test]
+async fn replay_rewrites_a_sparse_tail_without_exceeding_new_request_and_worker_limits() {
+    use crate::ssh::files::segments::{self, Plan};
+    let bytes: Vec<u8> = (0..2 * 1024 * 1024 + 71).map(|n| (n % 251) as u8).collect();
+    let prefix = 32768;
+    for workers in [1, 2, 3] {
+        let (source, input) = server(Some(131072), Duration::from_millis(2)).await;
+        let (target, output) = server(Some(131072), Duration::from_millis(10)).await;
+        input.lock().unwrap().data = bytes.clone();
+        let mut partial = vec![0; bytes.len() - 30];
+        partial[..prefix].copy_from_slice(&bytes[..prefix]);
+        partial[prefix..prefix + 31].fill(255);
+        output.lock().unwrap().data = partial;
+        let sessions = Sessions {
+            source: Some(source),
+            target: Some(target),
+        };
+        let from = remote("source");
+        let to = remote("target");
+        let files = Files::open(&sessions, &from, &to).await.unwrap();
+        let plan = Plan {
+            workers,
+            chunk: 16384,
+            requests: 2,
+        };
+        let mut progress = 0;
+        // Much larger than chunk * workers, as when options change on Resume.
+        segments::copy_window(
+            &files,
+            prefix as u64..bytes.len() as u64,
+            plan,
+            &AtomicBool::new(false),
+            |count| progress += count,
+        )
+        .await
+        .unwrap();
+        files.finish(false).await.unwrap();
+        assert_eq!(output.lock().unwrap().data, bytes);
+        assert_eq!(progress, (bytes.len() - prefix) as u64);
+        assert!(input.lock().unwrap().peak <= workers * plan.requests);
+        assert!(output.lock().unwrap().peak <= workers * plan.requests);
+        // The wire fixture rejects any SETSTAT or other unimplemented request.
+    }
+}
+
+#[tokio::test]
 async fn remote_copy_respects_both_servers_and_preserves_offsets() {
     let (source_session, input) = server(Some(131072), Duration::from_millis(10)).await;
     let (target_session, output) = server(Some(65536), Duration::from_millis(10)).await;
