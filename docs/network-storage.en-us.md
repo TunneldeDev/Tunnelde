@@ -87,15 +87,30 @@ four directory entries at once; manual concurrency selects 1, 2, 4 or 8. Nested 
 share that limit instead of multiplying it at every level. The task shares a packet
 budget across these entries and combines their confirmed progress. A failure or
 cancellation stops queued entries and drains active writers before task cleanup.
-Overwrite tasks retain sequential atomic publication. This pipeline does not create
-an archive or install a remote helper, and works with ordinary SFTP servers.
+Overwrite tasks retain sequential atomic publication. The preparation pipeline
+works with ordinary SFTP servers; optional small-file archives are described below.
+
+Before copying, Tunnelde scans the source tree to estimate its size. Remote scans reuse
+file types and lengths supplied in directory listings, querying missing attributes
+separately. At most four metadata operations run across the tree; a smaller configured
+request budget is respected. Directory types are checked again before traversal.
+Unreadable folders, symbolic links, special files and incomplete required metadata
+stop preparation before the destination is created. The size is a progress estimate;
+individual files are still checked by the copy and resume protocol.
+
+Copy dispatch obtains each source file's type, size and modification time from
+one metadata response. The source is read again after copying and must still
+match before publication. Existing remote destination directories are classified
+with one LSTAT without following links; a missing directory is created only after
+an explicit not-found response. Other metadata errors stop the operation.
 
 Background tasks share a scheduler: up to four tasks run at once across the
 application. Each SSH connection has a budget of six transfer channels. An endpoint
-reserves one metadata and one data channel; a durable remote overwrite reserves
-an additional channel for atomic publication. This allows two overwrite uploads,
-three ordinary uploads/downloads, or one five-channel overwrite copy using both
-endpoints on that connection. Both endpoints are reserved together.
+reserves one metadata and one data channel; an optimized durable copy reserves
+an additional archive channel per endpoint, while a remote overwrite reserves
+an additional target channel for atomic publication. This allows two optimized
+or overwrite uploads/downloads, three transfers without either extra channel,
+or one same-connection copy with up to six channels. Both endpoints are reserved together.
 Other tasks show **Queued** before opening channels. Independent connections can
 continue while one connection is busy; tasks sharing an endpoint keep their queue
 order. Pause/cancel also work while queued. Waiting does not consume file handles,
@@ -109,15 +124,43 @@ retain their own channels. Upload packet sizes use the server's advertised write
 within a 256 KiB memory bound; servers without a write limit retain the compatible
 32 KiB fallback. Each queued packet fits both endpoints, avoiding sequential write
 acknowledgements inside a larger logical packet. A journal records the confirmed contiguous prefix before each
-window of segments. Resume discards an interrupted window before verifying the prefix;
-sparse writes are never interpreted as completed data. Workers stop and drain before file
+window of segments, together with that window's end. Resume verifies only the confirmed
+prefix and rewrites the entire interrupted window without truncating the staging file;
+sparse writes are never interpreted as completed data. The journal remains until every
+byte in the replayed window has been acknowledged and checkpointed. Lowering chunk size
+or concurrency cannot leave the old tail behind or exceed the new worker/request budget:
+workers stream larger ranges through the same bounded packet pipeline. Legacy markers
+without a recorded end conservatively replay the remaining source, because a delayed
+write can extend the currently observed file length. Workers stop and drain before file
 handles are closed or temporary files can be cleaned.
+
+### Copies within one remote connection
+
+With transfer optimization enabled, background copies between folders on the same
+SSH connection use the server's `copy-data` extension when it advertises version
+`1`. Source and destination handles share one SFTP data channel, and each request
+copies at most 1 MiB directly on the server. File contents do not travel through
+the desktop for this data-copy step. Source checks, resume-prefix verification and
+metadata operations still use their existing paths. Copies between separate SSH
+connections, including connections to the same saved host, use the normal transfer
+pipeline; servers without this extension also retain the normal pipeline.
+
+Server copies retain task staging, bounded concurrency, confirmed progress,
+pause/cancel and replay of interrupted windows. Progress and speed represent
+logical file bytes copied on the server; both configured upload and download
+limits still apply. Small-file archive relay and compression are skipped for this
+path. An extension error stops the task rather than retrying through a different
+transport after an uncertain write.
+
+This optimization does not change move safety. A failed rename across remote
+filesystems does not authorize deleting a source file. Moves that cannot establish
+safe source removal retain the source and report the limitation.
 
 ### Adaptive transfer compression
 
 **Compress transfer data automatically** is enabled by default with transfer
-optimization. Tasks totaling less than 256 KiB keep the standard SFTP path. Larger
-tasks first sample up to 16 KiB from the first source file. When it is compressible,
+optimization. For ordinary block transfers, tasks totaling less than 256 KiB keep
+the standard SFTP path. Larger tasks first sample up to 16 KiB from the first source file. When it is compressible,
 they try a temporary Python 3 worker over the existing authenticated SSH connection.
 Incompressible tasks retain the SFTP pipeline. Directory tasks reuse that initial
 transport choice; each subsequent block still decides whether compression helps.
@@ -138,7 +181,33 @@ with settings profiles.
 
 Progress and speed describe original file bytes, including when fewer compressed
 bytes cross the network. Compression benefits depend on file contents and CPU/network
-limits. Small-file archive batching is not yet implemented.
+limits.
+
+### Small-file archives
+
+Optimized directory copies can combine files up to 64 KiB into in-memory archives,
+with at most eight files and 1 MiB per archive. Uploads, downloads and remote copies
+use the same temporary Python worker requirements described above. No archive is
+written to disk or installed on the host. Archive members have numeric names and
+are matched against a separate validated manifest; arbitrary paths, links and
+special files are rejected. Each destination still uses the ordinary task-owned
+staging file, source checks, durable checkpoint and individual publication.
+
+Before an archive upload, the application records its staging generation. If the
+write is interrupted without acknowledgement, resume retires that temporary file
+and creates a fresh generation instead of reusing it. Only the affected small
+files restart; completed files retain their verified progress. Delayed requests
+cannot recreate retired paths or write into the replacement generation. Pause
+also interrupts the archive checkpoint's read-only metadata wait.
+
+Archives are independent of the compression toggle; when compression is enabled,
+each archive is compressed only if it saves at least 10%. Single files, larger
+files, partially resumed files, overwrites, unsupported hosts and groups that
+cannot obtain their entire bandwidth allowance retain the standard range pipeline.
+Live speed limits continue to apply. Directory workers share an archive channel;
+the scheduler includes it in the per-connection channel budget. A partial group
+flushes without waiting for every worker, and failed or cancelled groups drain
+before task cleanup. Progress counts original file bytes after acknowledged writes.
 
 ## Pause and resume transfers
 
@@ -197,16 +266,56 @@ connection matching the original saved host and recorded address is used; changi
 the host's address does not silently redirect an existing transfer. Local transfers
 can resume immediately.
 
-Data is written into a task-owned `.tunnelde-….part` sibling. A clean pause saves
-its closed file's size and modification time. If both source and staging metadata
-still match, resume verifies the first and last blocks and continues at the saved
-offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
-verification. A changed source or mismatched partial file is rejected. Verification
+If reconnection arrives during an older connection's cleanup attempt, the
+application waits for that attempt to release the task, then retries disposal
+using the newest matching connection. Unfinished cleanup keeps its pending record.
+
+New remote transfers write their `.tunnelde-….part` file inside a task-owned
+`.tunnelde-….stage` sibling directory. Its private mode (0700) is set by the
+directory-creation operation itself and verified before opening the file. The
+directory is removed after publication or cancellation; cleanup never recursively
+deletes unrecognized contents. Local transfers and existing journals retain their
+original sibling staging paths. Before continuing, resume compares every retained
+byte with the current source, including for cleanly paused and legacy tasks. Matching
+sizes and modification times cannot establish content integrity, so they never bypass
+this check. The two readers run concurrently with bounded SFTP read-ahead; completed
+parallel windows no longer write metadata-only resume checkpoints. Verification may
+read a large retained prefix again and has its own visible status. A changed source
+or mismatched partial file is rejected without publishing it. This check does not
+lock remote files against concurrent changes. Verification
 has its own visible status. Cancellation covers its metadata requests, read-only
 file opening, reads and closing; a delayed read or CLOSE reply does not block
-pausing. The shared connection remains available. Remote writer CLOSE,
-recovery truncation and final publication still await their server confirmations
-before the task reports completion or updates its checkpoint.
+pausing. The shared connection remains available. Closing an empty remote staging
+handle, or data handles whose writes have all been acknowledged, can also stop
+waiting when paused. This does not abort a destination data channel shared by
+other files in a directory transfer. If a write's result is uncertain, the
+application retains the bounded CLOSE wait and the unconfirmed window's journal.
+Pause/error handling and recovery do not send truncation requests. Successful transfers
+still wait for CLOSE confirmation. Legacy staging-file creation and private-directory creation still await
+their server confirmations.
+
+After the private directory has been acknowledged, creating its empty staging file
+can stop waiting immediately on pause. The application journals the uncertain open
+before sending it. Resume or cancellation removes the known empty child and its
+empty parent before proceeding; a delayed original create cannot recreate a file
+under the retired parent. Resume uses a newly journalled directory generation.
+Nonempty files, links, unexpected permissions or foreign directory contents are
+preserved and reported for review. If directory creation committed but its reply
+or checkpoint was lost, recovery accepts only an empty private directory at the
+recorded path, without changing its permissions. This does not make directory
+creation or legacy mutations immediately cancellable.
+
+Pausing during a remote file's final rename stops waiting for the reply. The
+application first records that publication is uncertain. On Resume it moves any
+surviving, fully written staging file to a newly journalled generation before
+using it again; a delayed original rename cannot publish the replacement staging
+file. A lost recovery reply retries the same generation. If the original rename
+already committed, Resume compares the complete destination against the source
+before reporting success. A missing or changed destination fails verification
+and remains protected on later retries instead of being uploaded over again.
+Successful transfers still wait for publication confirmation before reporting
+completion. These checks assume the task-owned staging paths are not independently
+modified by another application.
 
 New remote overwrite tasks negotiate `posix-rename@openssh.com` version 1 before
 uploading. The previous destination remains readable while the new file is staged;
@@ -325,6 +434,14 @@ Delete in each rule's actions menu. An active rule must be stopped before editin
 Startup failures stay beside the saved rule so Start can retry without creating duplicates;
 save failures keep the editor draft. Other open forwarding views refresh after changes.
 Endpoint groups stack vertically in narrow panes.
+
+Stopping waits for the local listener to close or for the SSH server to acknowledge
+releasing a remote listener. Actions remain disabled with a **Stopping…** status
+until that finishes, so a saved port can be edited and restarted immediately.
+If release cannot be confirmed, the rule shows an error; disconnect the host's
+forwarding connection before retrying. Interrupted cleanup also reserves its remote
+endpoint until cancellation finishes, preventing an older cleanup from closing a
+new listener on the same port.
 
 Rules persist, but listeners start manually after connecting. Loopback is the
 default; exposing a listener requires confirmation. Remote listeners depend on

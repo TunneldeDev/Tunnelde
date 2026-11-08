@@ -159,10 +159,16 @@ fn log_from_guest(caller: &mut Caller<'_, GuestState>, level: i32, ptr: i32, len
         return;
     }
     let message = String::from_utf8_lossy(&buffer);
+    let plugin_id = caller
+        .data()
+        .authority
+        .as_ref()
+        .map(|(_, lease)| lease.id.as_str())
+        .unwrap_or("unknown");
     if level >= 2 {
-        tracing::warn!(message = %message, "plugin log");
+        tracing::warn!(plugin_id, message = %message, "plugin log");
     } else {
-        tracing::info!(message = %message, "plugin log");
+        tracing::info!(plugin_id, message = %message, "plugin log");
     }
 }
 

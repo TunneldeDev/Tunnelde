@@ -2,6 +2,13 @@
 
 [简体中文](monitoring.zh-cn.md)
 
+CPU, memory, network and disk I/O charts share a timestamped history. Dashed
+horizontal lines show the scale; hover a chart to inspect the sample time and exact
+values. Keyboard users can focus a chart and use Left/Right or Home/End to inspect
+samples. Open the full monitoring view from the panel header for larger charts.
+The panel and full view share one sampling loop for the same connection. Resizing
+changes the chart dimensions without rebuilding its sample geometry.
+
 Open **Processes** from the remote monitoring panel. The process manager refreshes
 using **Settings → Monitoring → Sampling interval**, waits for each request to finish,
 and pauses while the application is hidden. Lightweight mode uses at least five

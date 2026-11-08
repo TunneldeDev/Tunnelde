@@ -9,6 +9,7 @@ import { cn } from "@/lib/text/format";
 import { useEditors, undoEditorEdit } from "@/store/editors";
 import { usePlugins } from "@/store/plugins";
 import {
+  documentFormatters,
   editorCommandMatches,
   formatEditorDocument,
   useFormatting,
@@ -44,6 +45,9 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   const [reconnecting, setReconnecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const formatting = useFormatting((state) => state.busy.includes(tabId));
+  const hasFormatter = usePlugins(
+    (state) => !!entry && documentFormatters(entry.path, state.items).length > 0,
+  );
   const textarea = useRef<HTMLTextAreaElement>(null);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
   useBackgroundGuard(reconnecting || formatting || reviewing);
@@ -176,17 +180,19 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         <span className="editor-head__path" title={entry.path}>
           {entry.path}
         </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          leading={<WandSparkles size={13} />}
-          aria-label={t(formatting ? "editor.formatting" : "editor.format")}
-          title={t(formatting ? "editor.formatting" : "editor.format")}
-          disabled={formatting || entry.loading || !!entry.error || entry.disconnected}
-          onClick={() => formatEditorDocument(tabId)}
-        >
-          {t(formatting ? "editor.formatting" : "editor.format")}
-        </Button>
+        {hasFormatter || formatting ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            leading={<WandSparkles size={13} />}
+            aria-label={t(formatting ? "editor.formatting" : "editor.format")}
+            title={t(formatting ? "editor.formatting" : "editor.format")}
+            disabled={formatting || entry.loading || !!entry.error || entry.disconnected}
+            onClick={() => formatEditorDocument(tabId)}
+          >
+            {t(formatting ? "editor.formatting" : "editor.format")}
+          </Button>
+        ) : null}
         <Button
           variant="secondary"
           size="sm"

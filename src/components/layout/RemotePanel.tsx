@@ -99,7 +99,7 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
   return (
     <aside
       className={cn("panel", hidden && "is-collapsed")}
-      style={{ width }}
+      style={{ width: `var(--td-panel-w, ${width}px)` }}
       aria-label={t("panel.remote")}
     >
       <header className="panel__head">

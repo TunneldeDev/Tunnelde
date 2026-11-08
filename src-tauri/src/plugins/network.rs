@@ -15,25 +15,7 @@ type Jobs = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 #[derive(Default)]
 pub struct DownloadRegistry(Jobs);
 
-fn diagnostic(value: &str) -> String {
-    // Source URLs may contain access tokens; proxy URLs may carry credentials.
-    // Preserve the error chain while removing every URL-like span.
-    let mut value = value.to_owned();
-    for scheme in ["https://", "http://"] {
-        let mut offset = 0;
-        while let Some(start) = value[offset..].find(scheme).map(|index| index + offset) {
-            let end = value[start..]
-                .find(|character: char| {
-                    character.is_whitespace() || matches!(character, '"' | '\'' | ')' | ']' | '}')
-                })
-                .map(|index| start + index)
-                .unwrap_or(value.len());
-            value.replace_range(start..end, "[url]");
-            offset = start + 5;
-        }
-    }
-    value.chars().take(2048).collect()
-}
+use crate::network::diagnostics::redact_error_detail as diagnostic;
 
 fn network_error(error: reqwest::Error) -> AppError {
     let timeout = error.is_timeout();
@@ -47,7 +29,36 @@ fn network_error(error: reqwest::Error) -> AppError {
         detail,
         "plugin HTTPS request failed"
     );
-    AppError::validation("market.network")
+    AppError::validation(if timeout {
+        "market.timeout"
+    } else if detail.to_ascii_lowercase().contains("tls") {
+        "market.tlsHandshake"
+    } else if connect {
+        "market.connectFailed"
+    } else {
+        "market.network"
+    })
+}
+
+// Replay only an idempotent GET whose TLS handshake ended prematurely. Never
+// retry certificate/authentication failures or change the configured route.
+async fn request(
+    client: &reqwest::Client,
+    url: reqwest::Url,
+    timeout: Duration,
+) -> Result<reqwest::Response, reqwest::Error> {
+    for attempt in 0..3 {
+        let result = client.get(url.clone()).timeout(timeout).send().await;
+        if let Err(error) = &result {
+            let detail = format!("{error:?}").to_ascii_lowercase();
+            if attempt < 2 && error.is_connect() && detail.contains("tls handshake eof") {
+                tokio::time::sleep(Duration::from_millis(250 * (attempt + 1))).await;
+                continue;
+            }
+        }
+        return result;
+    }
+    unreachable!("bounded request retries always return")
 }
 
 pub fn validate_url(url: &str) -> AppResult<reqwest::Url> {
@@ -69,10 +80,8 @@ pub async fn fetch_json<T: DeserializeOwned>(
     url: &str,
     max: usize,
 ) -> AppResult<T> {
-    let response = crate::network::http_client(app, "marketplace")?
-        .get(validate_url(url)?)
-        .timeout(Duration::from_secs(25))
-        .send()
+    let client = crate::network::http_client(app, "marketplace")?;
+    let response = request(&client, validate_url(url)?, Duration::from_secs(25))
         .await
         .map_err(network_error)?;
     let bytes = read(response, max, None).await?;
@@ -142,7 +151,7 @@ impl DownloadTask {
     pub async fn download(&self, url: &str, max: usize) -> AppResult<Vec<u8>> {
         self.check()?;
         let client = crate::network::http_client(&self.app, "marketplace")?;
-        let request = client.get(validate_url(url)?).send();
+        let request = request(&client, validate_url(url)?, Duration::from_secs(300));
         let response = tokio::select! {
             result = request => result.map_err(network_error)?,
             _ = self.wait_cancel() => return Err(AppError::validation("market.cancelled")),
@@ -252,5 +261,84 @@ mod tests {
         assert!(!result.contains("secret"));
         assert!(!result.contains("u:p"));
         assert!(!result.contains("example.org"));
+    }
+    #[tokio::test]
+    async fn premature_tls_eof_retries_the_selected_proxy_without_direct_fallback() {
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            for _ in 0..3 {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut header = Vec::new();
+                while !header.ends_with(b"\r\n\r\n") {
+                    header.push(stream.read_u8().await.unwrap());
+                }
+                assert!(
+                    String::from_utf8_lossy(&header).starts_with("CONNECT archive.example:443 ")
+                );
+                stream
+                    .write_all(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                    .await
+                    .unwrap();
+                let mut hello = [0; 8192];
+                assert!(stream.read(&mut hello).await.unwrap() > 0);
+                stream.shutdown().await.unwrap();
+            }
+        });
+        let client = crate::network::http_client_for_proxy(Some(&proxy)).unwrap();
+        let error = tokio::time::timeout(
+            Duration::from_secs(8),
+            request(
+                &client,
+                validate_url("https://archive.example/plugin.zip").unwrap(),
+                Duration::from_secs(2),
+            ),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert_eq!(network_error(error).to_string(), "market.tlsHandshake");
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn rejected_proxy_authentication_is_never_retried() {
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpListener,
+        };
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let proxy = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut header = Vec::new();
+            while !header.ends_with(b"\r\n\r\n") {
+                header.push(stream.read_u8().await.unwrap());
+            }
+            stream
+                .write_all(
+                    b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n",
+                )
+                .await
+                .unwrap();
+            assert!(
+                tokio::time::timeout(Duration::from_millis(1200), listener.accept())
+                    .await
+                    .is_err()
+            );
+        });
+        let client = crate::network::http_client_for_proxy(Some(&proxy)).unwrap();
+        assert!(request(
+            &client,
+            validate_url("https://archive.example/plugin.zip").unwrap(),
+            Duration::from_secs(2)
+        )
+        .await
+        .is_err());
+        server.await.unwrap();
     }
 }

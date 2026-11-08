@@ -52,6 +52,22 @@ deadlock. Geometry restoration runs on the main thread to avoid a window-state
 cache/resize-event lock inversion. Bootstrap reconciles native sessions, transfers
 and plugin events after restoring the memory-only workspace and drafts.
 
+The F1 **Reload window** command waits for the current document's native close
+listener to unregister before navigating. A reload retains the native window;
+leaving that listener behind would block later closes after its JavaScript
+callback disappears. Failed unregistration cancels the reload and reports the
+error. Application restart instead hands off to a new process, preserving explicit
+restricted-mode choices and marking the planned exit before the handoff.
+
+## Panel visibility and placement
+
+Closing a docked built-in or plugin panel hides its tab while retaining its group,
+split ratio and view state. The activity-bar or status-bar entry reopens it in that
+remembered position. Closing other tabs follows the same rule for panels. Closing
+does not return a panel to the left sidebar; use **Move to side bar** or drag it
+back explicitly to change its placement. Hidden panel slots are included in saved
+workspace layouts and do not count as visible content.
+
 ## Data
 
 - Database: `<app data>/tunnelde.db` (SQLite, WAL).
@@ -90,8 +106,8 @@ and jump handles stay owned by the destination session.
 Durable desktop transfers journal tasks under `transfer:<id>`, per-file checkpoints
 under `transfer-file:<id>:…`, and overwrite recovery intent under
 `transfer-backup:<id>:…`. Stable host IDs and endpoint addresses rebind tasks after
-reconnecting. Clean unchanged checkpoints use bounded head/tail verification;
-crashed, changed or legacy checkpoints retain full prefix verification. Source stamps and owned-backup checks support resume and
+reconnecting. Resuming compares every retained byte against the source, including
+when size and modification time are unchanged. Source stamps and owned-backup checks support resume and
 overwrite recovery, but do not make file operations atomic against concurrent changes.
 New remote overwrite tasks without a backup transaction negotiate an independent
 SFTP commit channel before upload and publish the closed staging file with the

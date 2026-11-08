@@ -7,6 +7,27 @@ afterEach(async () => {
 });
 
 describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
+  it("explains exact version requirements and supports errors from older hosts", async () => {
+    await i18n.changeLanguage(language);
+    const details = { pluginVersion: "1.8.1", hostVersion: "0.32.0-beta.6", required: ">=0.33.0" };
+    const message = pluginFailure({
+      code: "validation",
+      message: "plugin.engine.unsupported",
+      details,
+    });
+    for (const value of Object.values(details)) expect(message).toContain(value);
+    expect(message).not.toContain("plugin.engine.unsupported");
+    expect(pluginFailure(new Error("plugin.engine.unsupported"))).toBe(
+      i18n.t("pluginErrors.hostVersionUnsupported"),
+    );
+    expect(
+      pluginFailure({
+        code: "validation",
+        message: "plugin.engine.unsupported",
+        details: { hostVersion: 42 },
+      }),
+    ).toBe(i18n.t("pluginErrors.hostVersionUnsupported"));
+  });
   it("localizes keys carried by both IPC rejections and plugin status", async () => {
     await i18n.changeLanguage(language);
     for (const message of [

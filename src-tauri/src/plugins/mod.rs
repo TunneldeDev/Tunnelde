@@ -1,6 +1,8 @@
 pub mod api;
 pub mod config;
+mod contributions;
 mod declarative;
+mod engines;
 pub mod file_icons;
 mod host;
 pub mod manifest;
@@ -9,6 +11,8 @@ pub mod network;
 pub mod node;
 pub mod runners;
 pub mod security;
+pub mod status_bar;
+pub mod tab_bar;
 pub mod tasks;
 mod tools;
 pub mod wasm;
@@ -119,12 +123,14 @@ impl Instance {
 
     fn require_runtime(&self) -> AppResult<()> {
         if let Some(range) = self.manifest.engines.get("tunnelde") {
-            let compatible = semver::VersionReq::parse(range)
-                .ok()
-                .zip(semver::Version::parse(env!("CARGO_PKG_VERSION")).ok())
-                .is_some_and(|(range, version)| range.matches(&version));
+            let compatible = engines::supports_host(range, env!("CARGO_PKG_VERSION"));
             if !compatible {
-                return Err(AppError::validation("plugin.engine.unsupported"));
+                return Err(AppError::PluginEngineUnsupported {
+                    plugin_id: self.manifest.id.clone(),
+                    plugin_version: self.manifest.version.clone(),
+                    host_version: env!("CARGO_PKG_VERSION").into(),
+                    required: range.clone(),
+                });
             }
         }
         if self.manifest.runtime.as_deref() == Some("theme") {
@@ -179,6 +185,8 @@ pub struct PluginsManager {
     snapshots: std::sync::RwLock<HashMap<String, PluginInfo>>,
     runtime_sources: std::sync::RwLock<HashMap<String, String>>,
     pub(super) security: Arc<security::PluginSecurity>,
+    status_bar: contributions::Registry<status_bar::StatusBarItem>,
+    tab_bar: contributions::Registry<tab_bar::TabBarItem>,
 }
 
 impl PluginsManager {
@@ -190,6 +198,8 @@ impl PluginsManager {
     }
     fn stop_network_resources(&self, app: &AppHandle, id: &str) {
         let boundary = self.security.cleanup_boundary(id);
+        status_bar::remove_runtime(app, id, |generation| generation < boundary);
+        tab_bar::remove_runtime(app, id, |generation| generation < boundary);
         app.state::<crate::state::AppState>()
             .forwards
             .stop_before_generation(id, boundary);
@@ -395,7 +405,29 @@ impl PluginsManager {
             snapshots: std::sync::RwLock::new(snapshots),
             runtime_sources: std::sync::RwLock::new(HashMap::new()),
             security: Arc::new(security::PluginSecurity::default()),
+            status_bar: contributions::Registry::default(),
+            tab_bar: contributions::Registry::default(),
         }
+    }
+
+    pub(super) fn status_bar_name(&self, id: &str) -> String {
+        self.snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(id)
+            .map_or_else(|| id.to_owned(), |item| item.name.clone())
+    }
+
+    pub(super) fn status_bar_command(&self, id: &str, command: &str) -> bool {
+        self.snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(id)
+            .is_some_and(|item| {
+                item.commands.iter().any(|entry| {
+                    entry.id == command && entry.editor.is_none() && entry.file_menu.is_none()
+                })
+            })
     }
 
     pub fn directory(&self) -> &Path {
@@ -764,6 +796,16 @@ impl PluginsManager {
     }
 
     pub async fn run(&self, id: &str, command: &str, input: Option<Value>) -> AppResult<Value> {
+        self.run_bound(id, command, input, None).await
+    }
+
+    pub(super) async fn run_bound(
+        &self,
+        id: &str,
+        command: &str,
+        input: Option<Value>,
+        expected_generation: Option<u64>,
+    ) -> AppResult<Value> {
         if input
             .as_ref()
             .is_some_and(|value| !value.is_object() || value.to_string().len() > 256 * 1024)
@@ -781,6 +823,9 @@ impl PluginsManager {
             security::fingerprint_async(instance.dir.clone()).await?,
             instance.manifest.permissions.clone(),
         )?;
+        if expected_generation.is_some_and(|generation| generation != lease.generation) {
+            return Err(AppError::validation("plugin.statusBar.expired"));
+        }
         if instance.is_wasm() {
             let result = wasm_call(
                 &instance,

@@ -75,8 +75,12 @@ macro_rules! stable_method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
-    method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk."),
-    method!("editor.replace", ["editor.write"], "{tabId:string,documentId:string,version:number,text:string}", "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents."),
+    method!("tabBar.set", [], "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string,placement?:leading|trailing,group?:string,tooltip?:string,showLabel?:boolean,checked?:boolean}", "Register a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views and trailing placement; when:{} targets all tabs. Groups are plugin-scoped. showLabel keeps button text alongside its icon; checked is button-only, host-rendered, and acknowledged through set. Narrow panes move controls into an accessible overflow menu. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization."),
+    method!("tabBar.remove", [], "{id:string}", "Remove this runtime's tab-bar control; return false if absent."),
+    stable_method!("statusBar.set", [], "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}", "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.", "0.32.0-beta.1"),
+    stable_method!("statusBar.remove", [], "{id:string}", "Remove this runtime's status item; return false when absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.1"),
+    stable_method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk.", "0.29.0-beta.2"),
+    stable_method!("editor.replace", ["editor.write"], "{tabId:string,documentId:string,version:number,text:string}", "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents.", "0.29.0-beta.2"),
     method!("mounts.browse", ["mounts.read"], "{sessionId:string,path?:string}", "Browse directories through an authenticated SFTP session for the mount chooser."),
     method!("mounts.open", ["mounts.write"], "{id:string}", "Open this plugin's mount in the system file manager."),
     method!("mounts.documentation", ["mounts.read"], "{}", "Open platform SSHFS installation instructions in the system browser."),
@@ -354,7 +358,10 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "forwards.stop" => {
-            state.forwards.stop(&field::<String>(&params, "id")?);
+            state
+                .forwards
+                .stop(&field::<String>(&params, "id")?)
+                .await?;
             Ok(Value::Null)
         }
         "events.publish" => {
@@ -668,6 +675,8 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
+        "statusBar.set" | "statusBar.remove" => super::status_bar::call(context, method, params),
+        "tabBar.set" | "tabBar.remove" => super::tab_bar::call(context, method, params),
         name if name.starts_with("workspace.")
             || name.starts_with("ui.")
             || name.starts_with("editor.") =>
@@ -1065,7 +1074,14 @@ pub fn plugin_workspace_reply(
         .map_err(|_| AppError::internal("plugin.api.lock"))?
         .remove(&request_id)
         .ok_or_else(|| AppError::validation("plugin.api.requestExpired"))?;
-    let result = authorize(&request.context, request.permissions).and_then(|_| match error {
+    let result = authorize(&request.context, request.permissions)
+        .and_then(|_| frontend_result(result, error));
+    let _ = request.reply.send(result);
+    Ok(())
+}
+
+fn frontend_result(result: Option<Value>, error: Option<String>) -> AppResult<Value> {
+    match error {
         Some(error) => Err(AppError::validation(format!(
             "plugin.api.frontend:{}",
             error.chars().take(512).collect::<String>()
@@ -1078,9 +1094,7 @@ pub fn plugin_workspace_reply(
                 Ok(result)
             }
         }
-    });
-    let _ = request.reply.send(result);
-    Ok(())
+    }
 }
 
 #[cfg(test)]

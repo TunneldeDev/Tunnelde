@@ -599,6 +599,10 @@
     "loading": "正在加载…",
     "invalidName": "请输入有效的文件或文件夹名称",
     "alreadyExists": "已存在同名文件或文件夹",
+    "renameFailed": "无法将 {{from}} 移动或重命名为 {{to}}。{{reason}}",
+    "renameServerFailure": "服务器拒绝了操作，但未说明具体原因（SFTP 4）。跨挂载点移动、目标冲突或服务端限制均可能导致此错误，请检查两端路径并查看软件日志。",
+    "renameStatusReason": "SFTP {{statusCode}}：{{reason}}",
+    "serverUnspecifiedFailure": "SFTP 服务器拒绝了文件操作，但未说明具体原因（状态码 4）。请检查路径、权限及软件日志。",
     "overwriteUnsupported": "服务器不支持安全覆盖此项目，请选择其他目标名称。",
     "overwriteTitle": "替换已有项目？",
     "overwriteBody": "{{path}} 中已存在以下项目：{{names}}。是否替换同名文件并合并文件夹？",
@@ -608,6 +612,9 @@
     "samePath": "无法将项目复制或移动到其自身或子目录",
     "typeConflict": "文件与文件夹不能相互替换",
     "symlinkUnsupported": "暂不支持复制符号链接",
+    "fileTypeUnsupported": "只能传输普通文件和文件夹，不支持设备、管道和套接字。",
+    "fileMetadataMissing": "服务器未提供准备传输所需的文件类型或大小。",
+    "transferTooLarge": "传输文件的总大小超出支持范围。",
     "unsupportedEncoding": "仅支持编辑 UTF-8 编码的文本文件",
     "binaryFile": "无法将二进制文件作为文本编辑",
     "absolutePathRequired": "需要绝对路径",
@@ -723,7 +730,9 @@
     "transferTo": "目标",
     "moveTasksHint": "拖动或按方向键移动 · 双击恢复默认布局",
     "resetTasksLayout": "恢复传输窗口默认布局",
-    "resizeTasksHint": "调整传输窗口大小（方向键调整，Shift 精细调整）"
+    "resizeTasksHint": "调整传输窗口大小（方向键调整，Shift 精细调整）",
+    "resizeColumnHint": "拖动调整列宽，双击适配内容；聚焦后使用方向键调整",
+    "columnHeaderHint": "单击按此列排序，拖动列名调整列的顺序"
   },
   "processes": {
     "title": "进程",
@@ -967,7 +976,8 @@
     "lockPane": "锁定为新页面默认打开的窗格",
     "unlockPane": "解除新页面默认打开窗格的锁定",
     "keepOpen": "保持打开",
-    "previewHint": "预览 · 双击后保持打开"
+    "previewHint": "预览 · 双击后保持打开",
+    "actions": "标签栏操作"
   },
   "panel": {
     "system": "本机",
@@ -1102,7 +1112,10 @@
     "pagination": "插件分页",
     "previousPage": "上一页",
     "nextPage": "下一页",
-    "pageInfo": "{{page}} / {{pages}} · 共 {{count}} 个插件"
+    "pageInfo": "{{page}} / {{pages}} · 共 {{count}} 个插件",
+    "tlsHandshake": "当前线路 TLS 握手失败。请检查代理节点及 GitHub、release-assets.githubusercontent.com 规则，或在网络设置中选择其他代理。",
+    "connectFailed": "无法通过插件市场所配置的线路连接，请检查网络设置。",
+    "timeout": "插件下载超时，请检查当前代理线路后重试。"
   },
   "node": {
     "required": "启动此插件前请配置 Node。",
@@ -1120,6 +1133,12 @@
     "consentRequired": "使用本机 Node 前需要你的授权。"
   },
   "plugin": {
+    "statusBar": {
+      "invalidItem": "插件提供的状态栏项目无效。",
+      "unknownCommand": "此插件的状态栏命令不可用。",
+      "limit": "插件已达到状态栏项目数量上限。",
+      "expired": "此状态栏操作已失效，请点击更新后的项目。"
+    },
     "api": {
       "invalidStorage": "无法读取插件保存的数据。请先导出或修复数据再重试；原有数据已保留。",
       "storageTooLarge": "插件保存的数据超过支持的大小。请先导出或精简数据再重试；原有数据已保留。"
@@ -1136,6 +1155,13 @@
     },
     "fileIcons": {
       "invalid": "文件图标主题无效或超出限制。"
+    },
+    "tabBar": {
+      "invalidItem": "插件提供的标签栏控件无效。",
+      "unknownCommand": "此插件命令不可用。",
+      "limit": "插件已达到标签栏控件数量上限。",
+      "expired": "标签栏控件已失效，请使用更新后的控件。",
+      "invalidContext": "此标签栏控件不适用于当前标签页。"
     }
   },
   "themes": {
@@ -1439,7 +1465,17 @@
     "goBack": "后退",
     "goForward": "前进",
     "selectAll": "全选",
-    "parent": "上级目录"
+    "parent": "上级目录",
+    "filters": {
+      "title": "筛选快捷键",
+      "hint": "点击筛选按钮查找冲突、已修改的快捷键或插件命令，可与搜索文字组合使用。",
+      "conflict": "快捷键冲突",
+      "modified": "已修改的快捷键",
+      "unassigned": "未设置快捷键的命令",
+      "builtin": "内置命令",
+      "plugins": "插件命令",
+      "clear": "清除筛选条件"
+    }
   },
   "profiles": {
     "title": "设置方案",
@@ -1547,16 +1583,22 @@
     "qualityLatency": "连接延迟（中位数）",
     "qualityFastest": "最快",
     "qualitySlowest": "最慢",
-    "qualityHint": "沿所选路径测量最多 3 次 TCP 连接，总时限 15 秒。包含 DNS 和代理协商，不代表 ping 往返延迟或带宽；失败不计入耗时统计。中位数 ≤100 毫秒为较低，≤300 毫秒为适中，更高为较高。",
+    "qualityHint": "测试 TCP/代理通道三次连接建立耗时，不是 ping 往返延迟或带宽。443 端口额外验证 HTTPS；其他端口不发送应用数据，不测试登录。",
     "quality": {
       "fast": "连接成功 · 延迟较低",
       "normal": "连接成功 · 延迟适中",
       "slow": "连接成功 · 延迟较高",
       "unstable": "部分连接尝试失败",
       "unreachable": "连接失败"
-    }
+    },
+    "httpsFailed": "TCP 代理通道已连通，但 HTTPS/TLS 握手失败；此线路暂不能证明可下载插件。请检查代理规则、节点与目标站点。",
+    "httpsPassed": "HTTPS 已响应（HTTP {{status}}，{{ms}}）；不代表其他下载域名也可达。",
+    "testMarketplaceRoute": "插件市场当前线路",
+    "testUpdatesRoute": "软件更新当前线路"
   },
   "pluginErrors": {
+    "hostVersionMismatch": "插件版本 {{pluginVersion}} 要求 Tunnelde {{required}}，当前软件为 {{hostVersion}}。请更新 Tunnelde 或安装兼容的插件版本。检查未通过，尚未启动运行环境。",
+    "hostVersionUnsupported": "此插件不支持当前 Tunnelde 版本。请在插件详情中查看版本要求，再更新软件或安装兼容的插件版本。",
     "startFailed": "无法启动 {{name}}：{{error}}",
     "openLog": "打开日志",
     "spawn": "无法启动插件进程",
@@ -1601,6 +1643,7 @@
     "bindFailed": "无法监听此地址和端口，可能已被占用。",
     "remoteRejected": "SSH 服务器拒绝了远程转发或未响应，请检查其转发策略和监听地址。",
     "startCancelled": "转发启动已取消。",
+    "stopFailed": "无法确认监听端口已释放。请先断开此主机的转发连接，再重试。",
     "localEndpoint": "本机",
     "remoteEndpoint": "远端",
     "localBindHost": "本机监听地址",
@@ -1815,5 +1858,36 @@
     "clearing": "正在清空…",
     "clearHint": "一键清空可移除的已完成、已取消和失败记录，包含折叠分组中的记录。正在运行和暂停的任务会保留。",
     "clearFailed": "{{count}} 项任务未能清空：{{error}}。相关记录已保留，可稍后重试。"
+  },
+  "output": {
+    "title": "输出",
+    "show": "显示输出",
+    "all": "全部输出",
+    "runtime": "运行信息",
+    "domain": "模块",
+    "plugin": "插件",
+    "channel": "输出频道",
+    "follow": "跟随最新输出",
+    "wrap": "切换自动换行",
+    "copy": "复制当前输出",
+    "clear": "清空显示内容",
+    "openFile": "打开原始日志",
+    "search": "筛选输出…",
+    "level": "最低日志级别",
+    "allLevels": "所有级别",
+    "content": "输出内容",
+    "empty": "暂无输出，新日志将自动显示。",
+    "noMatches": "没有符合筛选条件的记录。",
+    "count": "{{count}} 条记录",
+    "bounded": "已省略较早记录 · 仅影响显示",
+    "following": "正在跟随输出",
+    "scrollPaused": "已暂停自动滚动",
+    "platform": "平台",
+    "build": "构建类型",
+    "debug": "调试版",
+    "release": "发行版",
+    "sessions": "活动 SSH 连接",
+    "plugins": "运行中的插件",
+    "actions": "输出操作"
   }
 }

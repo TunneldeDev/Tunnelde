@@ -3,8 +3,9 @@ use std::sync::{Arc, Mutex};
 use tokio::sync::Notify;
 
 const ACTIVE_TASKS: usize = 4;
-// Metadata + data per remote endpoint, plus a pre-negotiated commit channel
-// for a durable remote overwrite. A same-connection overwrite copy needs five.
+// Metadata + data per remote endpoint, plus either an optional archive channel
+// or the target's overwrite commit channel. A same-connection archive copy
+// needs six; an overwrite copy needs five.
 // Reserve all endpoints together, while leaving interactive work outside this
 // bounded transfer budget.
 const CHANNELS_PER_CONNECTION: usize = 6;
@@ -68,18 +69,32 @@ impl State {
 }
 
 impl Scheduler {
+    #[cfg(test)]
     pub async fn acquire(
         &self,
         source: Option<&str>,
         target: Option<&str>,
         atomic_target: bool,
     ) -> Permit {
+        self.reserve(source, target, atomic_target, false).await
+    }
+
+    pub async fn reserve(
+        &self,
+        source: Option<&str>,
+        target: Option<&str>,
+        atomic_target: bool,
+        archive: bool,
+    ) -> Permit {
         let ticket = {
             let mut state = self.0.state.lock().unwrap_or_else(|e| e.into_inner());
             let id = state.next;
             state.next += 1;
             let mut channels = BTreeMap::new();
-            for (connection, slots) in [(source, 2), (target, 2 + usize::from(atomic_target))] {
+            for (connection, slots) in [
+                (source, 2 + usize::from(archive)),
+                (target, 2 + usize::from(atomic_target || archive)),
+            ] {
                 if let Some(connection) = connection {
                     *channels.entry(connection.to_owned()).or_default() += slots;
                 }
@@ -133,6 +148,46 @@ impl Drop for Ticket {
 mod tests {
     use super::*;
     use std::time::Duration;
+
+    #[tokio::test]
+    async fn archive_channels_are_reserved_for_both_endpoints() {
+        let queue = Scheduler::default();
+        let first = queue.reserve(None, Some("host"), false, true).await;
+        let second = queue.reserve(Some("host"), None, false, true).await;
+        let mut third = Box::pin(queue.reserve(None, Some("host"), false, true));
+        assert!(futures_util::poll!(&mut third).is_pending());
+        assert_eq!(
+            queue
+                .0
+                .state
+                .lock()
+                .unwrap()
+                .active
+                .values()
+                .map(|channels| channels["host"])
+                .sum::<usize>(),
+            CHANNELS_PER_CONNECTION
+        );
+        drop(first);
+        let third = tokio::time::timeout(Duration::from_millis(250), third)
+            .await
+            .unwrap();
+        drop((second, third));
+        let same_host = queue.reserve(Some("host"), Some("host"), false, true).await;
+        assert_eq!(
+            queue
+                .0
+                .state
+                .lock()
+                .unwrap()
+                .active
+                .values()
+                .map(|channels| channels["host"])
+                .sum::<usize>(),
+            CHANNELS_PER_CONNECTION
+        );
+        drop(same_host);
+    }
 
     #[tokio::test]
     async fn uploads_queue_after_two_and_release_advances_the_next_task() {

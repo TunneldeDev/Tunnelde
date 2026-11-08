@@ -352,15 +352,27 @@ describe("sidebar panel docking", () => {
     },
   );
 
-  it("offers keyboard reachable move commands and restores a closed panel to the sidebar", () => {
+  it("closes a docked panel without reopening the sidebar, then restores its position through activity navigation", () => {
     render(<Shell />);
     const input = screen.getByRole("textbox", { name: "hosts search" });
     fireEvent.click(screen.getByRole("button", { name: i18n.t("docking.moveToWorkspace") }));
     fireEvent.click(screen.getByRole("menuitem", { name: i18n.t("docking.moveBottom") }));
     expect(useWorkspace.getState().split).toBe("column");
-    act(() => useWorkspace.getState().close("sidebar:hosts"));
+    const layout = useWorkspace.getState().layout;
+    const group = useWorkspace.getState().activePaneId;
+    fireEvent.click(
+      within(screen.getByRole("tab", { name: "Hosts" })).getByRole("button", {
+        name: i18n.t("tab.close"),
+      }),
+    );
+    expect(screen.queryByRole("textbox", { name: "hosts search" })).toBeNull();
+    expect(input.closest(".sidebar-view")).toBeNull();
+    expect(useWorkspace.getState().layout).toEqual(layout);
+    fireEvent.click(screen.getByRole("button", { name: "Hosts" }));
     expect(screen.getByRole("textbox", { name: "hosts search" })).toBe(input);
-    expect(input.closest(".sidebar-view")).toBeTruthy();
+    expect(input.closest('[data-docked="true"]')).toBeTruthy();
+    expect(useWorkspace.getState().activePaneId).toBe(group);
+    expect(useWorkspace.getState().layout).toEqual(layout);
     expect(unmounted).not.toHaveBeenCalled();
   });
 

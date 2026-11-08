@@ -1,4 +1,5 @@
 import { ForwardingPanel } from "@/features/forwarding/ForwardingPanel";
+import { OutputPanel } from "@/features/output/OutputPanel";
 import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -134,6 +135,8 @@ export function SidebarContents() {
         <ForwardingPanel />
       ) : view === "tasks" ? (
         <DockedBackgroundTasks />
+      ) : view === "output" ? (
+        <OutputPanel active={active} docked={!!owner} />
       ) : view === "plugins" ? (
         <PluginsSidebar />
       ) : parsePluginSidebar(view) ? (

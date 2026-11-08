@@ -183,6 +183,21 @@ pub fn http_client(app: &AppHandle, feature: &str) -> AppResult<reqwest::Client>
     }) {
         return Ok(cached.client.clone());
     }
+    let client = http_client_for_proxy(url.as_deref())?;
+    clients.insert(
+        feature.to_owned(),
+        CachedClient {
+            route,
+            created: Instant::now(),
+            client: client.clone(),
+        },
+    );
+    Ok(client)
+}
+
+/// Shared HTTPS transport for real requests and proxy diagnostics. Explicit
+/// routes always disable ambient proxy inheritance; TLS verification stays on.
+pub(super) fn http_client_for_proxy(url: Option<&str>) -> AppResult<reqwest::Client> {
     let mut builder = reqwest::Client::builder()
         .https_only(true)
         .connect_timeout(Duration::from_secs(15))
@@ -197,18 +212,9 @@ pub fn http_client(app: &AppHandle, feature: &str) -> AppResult<reqwest::Client>
             );
         }
     }
-    let client = builder
+    builder
         .build()
-        .map_err(|_| AppError::validation("network.failed"))?;
-    clients.insert(
-        feature.to_owned(),
-        CachedClient {
-            route,
-            created: Instant::now(),
-            client: client.clone(),
-        },
-    );
-    Ok(client)
+        .map_err(|_| AppError::validation("network.failed"))
 }
 
 pub fn process_environment(

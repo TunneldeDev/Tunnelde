@@ -54,6 +54,14 @@ description, compatibility requirements and permissions before installation.
 
 Executable plugins speak JSON-RPC 2.0 over stdio in separate processes. Pure theme packs contain only a manifest and theme colors; they do not start a process or require Node.
 
+Startup errors offer **Open log**. A host-version mismatch reports the installed
+plugin version, current Tunnelde version and the exact `engines.tunnelde` range,
+before attempting to launch a runtime. Update Tunnelde or install a plugin version
+compatible with your host. Older minimum versions also accept later compatible
+host Betas; explicit upper bounds and minimum stable releases are still enforced.
+Diagnostic logs record the compatibility stage and these versions rather than
+only the internal error key. Installed plugins are independent of Node consent.
+
 ## SSHFS and data-only plugins (0.27.0+)
 
 Mount providers can use the native mount panel, including declarative plugins that do not
@@ -134,6 +142,12 @@ see [editor commands](editor-plugins.en-us.md) and the generated SDK for their
 validation rules. The host lists contributed bindings only while the plugin is
 installed. Conflicts can be retained, resolved by keeping one binding, or opened
 in Keyboard Shortcuts with `@is:conflict` and `@plugins:plugin-id,another-id`.
+
+Host version requirements include prerelease application versions while preserving
+the declared comparator bounds. For example, `>=0.29.0-beta.2` accepts
+`0.32.0-beta.4`, but `>=0.32.0` still rejects that Beta and `^0.31.0` does not
+accept it. This lets compatible plugins run on newer public Betas without removing
+their upper bounds. Node version requirements retain normal runtime SemVer rules.
 
 The host runs Node plugins in a separate process. **Node is not bundled.** Before using an
 existing system Node, Tunnelde asks for permission. Alternatively choose an executable explicitly
@@ -640,3 +654,7 @@ Images are limited to 32 MiB, PDFs to 128 MiB, text/Markdown to 2 MiB; audio/vid
 requests. Playback depends on OS codecs and starts only on user action. PDF.js is lazy-loaded with
 local fonts/CMaps/decoders, fetches ranges on demand, renders one page to a bounded canvas and does
 not run document scripts or interactive forms. Password-protected PDFs require an external viewer.
+
+[Stable plugin status bar API](plugin-status-bar.en-us.md)
+
+[Tab bar contributions](plugin-tab-bar.en-us.md)

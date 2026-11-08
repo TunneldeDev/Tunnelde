@@ -7,10 +7,32 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
         "../../../../tests/fixtures/plugin-compat/core-v1.json"
     ))
     .unwrap();
-    assert_eq!(
-        contracts, floor,
-        "Change v1 contracts only through explicit compatibility review"
-    );
+    for (name, contract) in floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen core contract changed: {name}"
+        );
+    }
+    let status_floor: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/plugin-compat/status-bar-v1.json"
+    ))
+    .unwrap();
+    for (name, contract) in status_floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen status bar contract changed: {name}"
+        );
+    }
+    let editor_floor: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/plugin-compat/editor-v1.json"
+    ))
+    .unwrap();
+    for (name, contract) in editor_floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen editor contract changed: {name}"
+        );
+    }
     let response = describe_api();
     for method in response["methods"].as_array().unwrap() {
         assert_eq!(
@@ -21,11 +43,24 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
     for name in contracts["methods"].as_object().unwrap().keys() {
         let method = method_info(name).expect("contract must name an implemented method");
         assert_eq!(method.stability, "stable");
-        assert_eq!(method.since, Some("0.21.0"));
+        assert_eq!(
+            method.since,
+            Some(if name.starts_with("statusBar.") {
+                "0.32.0-beta.1"
+            } else if name.starts_with("editor.") {
+                "0.29.0-beta.2"
+            } else {
+                "0.21.0"
+            })
+        );
         assert_eq!(
             method.permissions,
             if name == "sessions.list" {
                 &["sessions.read"][..]
+            } else if name == "editor.active" {
+                &["editor.read"][..]
+            } else if name == "editor.replace" {
+                &["editor.write"][..]
             } else {
                 &[][..]
             }
@@ -71,6 +106,30 @@ async fn emit_core_contract_responses() {
                 assert!(result.is_null());
             }
             samples.push(json!({"method":method,"params":params,"result":result}));
+        }
+    }
+    samples.extend(super::super::status_bar::contract_samples());
+    if let Some(path) = std::env::var_os("TUNNELDE_EDITOR_CONTRACT_INPUT") {
+        let frontend: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        for sample in frontend["samples"].as_array().unwrap() {
+            assert!(matches!(
+                sample["method"].as_str(),
+                Some("editor.active" | "editor.replace")
+            ));
+            let mut sample = sample.clone();
+            let error = sample.as_object_mut().unwrap().remove("frontendError");
+            let value = sample.as_object_mut().unwrap().remove("result");
+            let result =
+                frontend_result(value, error.map(|value| value.as_str().unwrap().to_owned()));
+            match result {
+                Ok(value) => {
+                    sample["result"] = value;
+                }
+                Err(error) => {
+                    sample["error"] = super::super::host::error_payload(&error);
+                }
+            }
+            samples.push(sample);
         }
     }
     // Maximum legal ASCII key and the newline boundary of JSON-schema regexes.
@@ -184,13 +243,15 @@ async fn emit_core_contract_responses() {
         "storage.get",
         "storage.set",
         "storage.delete",
+        "editor.active",
+        "editor.replace",
     ] {
         for error in [
             AppError::validation("pluginSecurity.blocked"),
             AppError::validation("pluginSecurity.permissionDenied"),
             AppError::Io(std::io::Error::other("fixture IO failure")),
         ] {
-            samples.push(json!({"method":method,"params":{},"inputValid":!method.starts_with("storage."),"error":super::super::host::error_payload(&error)}));
+            samples.push(json!({"method":method,"params":{},"inputValid":!method.starts_with("storage.") && method != "editor.replace","error":super::super::host::error_payload(&error)}));
         }
     }
     if let Some(path) = std::env::var_os("TUNNELDE_CORE_CONTRACT_OUTPUT") {

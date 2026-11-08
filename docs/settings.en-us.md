@@ -33,7 +33,7 @@ channels and check frequency are included in settings profiles.
 File transfer optimization is enabled under **Settings → Files → Transfers**. Concurrency,
 segment size and per-segment request depth default to Automatic and can be overridden
 individually. Turning optimization off retains the manual choices for later use. Changes
-apply when starting/resuming a transfer; see [transfer behavior](network-storage.md#transfer-performance).
+apply when starting/resuming a transfer; see [transfer behavior](network-storage.en-us.md#transfer-performance).
 
 Automatic transfer compression also defaults to enabled. It compresses blocks only
 when this saves traffic, skips tiny tasks and falls back to SFTP on unsupported
@@ -49,7 +49,7 @@ Open **Transfers** in the status bar, or F1 → **Background transfers**, to ins
 tasks from any page. Pin the list to keep it open while working. Drag its title to
 move it and its edges/corners to resize it. The layout is remembered across reopen,
 restart and tray restoration; Reset layout or double-clicking the title restores
-the default placement. See [transfer controls](network-storage.md#pause-and-resume-transfers)
+the default placement. See [transfer controls](network-storage.en-us.md#pause-and-resume-transfers)
 for keyboard adjustments and reconnect/cleanup behavior.
 
 ## Quick Access and plugin shortcuts
@@ -63,14 +63,14 @@ for keyboard adjustments and reconnect/cleanup behavior.
 - When an installed or updated plugin introduces a shortcut conflict, keep either binding,
   retain both, or open the filtered conflict in Settings. Retained conflicts are highlighted;
   matching commands can run together. Filter with `@is:conflict` and
-  `@plugins:plugin-id,another-id`. See the [shortcuts guide](shortcuts.md).
+  `@plugins:plugin-id,another-id`. See the [shortcuts guide](shortcuts.en-us.md).
 - From a terminal, F1 and Ctrl+Shift+P open Quick Access. Ctrl+K and Ctrl+P retain
   their shell behavior; macOS Command shortcuts remain application shortcuts.
 
 Content search uses a visible local/SSH directory, literal case-insensitive matching,
 and no shell. It skips links, hidden/build directories, binary and oversized files,
 and stops at 100 matches, 4,000 entries, 8 directory levels, 8 MiB read or 15 seconds
-(plus bounded connection setup/close). Remote editor drafts override disk search
+(plus bounded connection setup/close). Local and remote editor drafts override disk search
 results and remain intact when navigating to a matching line.
 
 Appearance starts with compact built-in palette choices and installed plugin themes. One plugin
@@ -151,7 +151,7 @@ their defaults without overwriting existing choices.
 
 Host-specific proxies and ordered jump hosts live in the host editor's collapsed
 **Proxy & jump hosts** section. Port forwards can be managed from the host detail page or the independent forwarding workspace. See
-[network and storage](network-storage.md) for route precedence, process-environment
+[network and storage](network-storage.en-us.md) for route precedence, process-environment
 behavior, transfer recovery and SSHFS dependencies.
 
 A single click opens host details by default. **Workspace → Host activation** can change
@@ -222,6 +222,12 @@ icon hides and restores a docked panel while retaining its position, size and li
 The panel menu also provides Return to sidebar. Each pane can be locked as the destination
 for new pages, independently of keyboard focus.
 
+Drag the separators to resize sidebars or split panes. Dimensions preview while you
+drag and are saved when you release the pointer. Press Esc to discard a drag;
+losing window focus also restores the saved dimensions. Focus a sidebar separator
+and use Left/Right to resize it, or Home/End for its minimum/maximum width. Workspace
+separators use arrows along their split direction; Home or double-click centers them.
+
 macOS keeps the application and sessions running when its close button is used. **General →
 Show in Dock while running in the background** defaults to off. With it off, closing
 the window removes its running Dock presence; use the menu-bar tray or launch the app
@@ -286,6 +292,40 @@ not close sessions or discard editor drafts. Remote CPU, memory, network and dis
 read/write use timestamped timelines with labeled dashed scales and mouse/keyboard
 sample inspection. Missing disk samples are shown as unavailable rather than invented
 zero readings.
+
+## Output and diagnostic logs
+
+Update failures identify the request source/stage, HTTP status and rate-limit
+evidence. When available, the log includes quota/remaining requests, reset time
+(Unix seconds), retry delay and GitHub request ID. A 403 is treated as a rate limit
+only when the quota headers indicate it; other 403 responses remain source errors.
+The log records automatic public-feed fallback and its outcome. Transport failures
+retain a bounded cause chain with URL-like values removed; URLs, query tokens and
+proxy credentials are not logged. **Settings → Updates** shows the final failure;
+an API failure alone does not imply the public-feed fallback also failed.
+
+Click **Output** in the status bar, search for **Show output** in F1, or use
+`Ctrl+Shift+U` (`Cmd+Shift+U` on macOS). Settings also links to this same panel.
+It initially opens below the workspace; drag its title or tab to move it to any
+pane. The status bar button hides and restores it, preserving its location, size
+and filters. Output does not add an activity bar button.
+
+The channel selector includes application diagnostics, recorded operations,
+runtime information, modules and individual plugins. Text and minimum severity
+filters narrow the visible entries. Logs are displayed as readable text with time,
+level and source. Severity colors follow the theme: INFO is green, DEBUG cyan,
+WARN amber and ERROR red; timestamps are muted and sources use cyan.
+Word wrap, copying, follow output, refresh and original log/folder
+actions are available. Scrolling away from the bottom pauses following without
+stopping collection. Clearing affects only the display and does not delete logs.
+
+Only visible panels poll, every two seconds without overlapping requests. Reads
+are incremental and bounded to 256 KiB; display retention is at most 2,000 entries
+and approximately 1 MiB of text. Incomplete lines wait for the next read. New files
+use the UTC daily name `YYYY-MM-DD.tunnelde.jsonl.log`; module and plugin channels
+are derived from structured fields in that file. Older `tunnelde.log.YYYY-MM-DD`
+files remain readable. Diagnostics may contain private information; review them
+before sharing.
 
 ## Remote process management
 

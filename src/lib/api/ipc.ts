@@ -53,8 +53,22 @@ export interface LogSnapshot {
   operations: Array<{ id: number; timestamp: number; action: string; target: string | null }>;
 }
 
+export interface OutputCursor {
+  filename: string | null;
+  offset: number;
+  operationId: number;
+}
+export interface OutputSnapshot {
+  diagnostic: string;
+  operations: LogSnapshot["operations"];
+  cursor: OutputCursor;
+  truncated: boolean;
+}
+
 export const api = {
   logsRead: () => invoke<LogSnapshot>("logs_read"),
+  logsOutputRead: (cursor: OutputCursor | null) =>
+    invoke<OutputSnapshot>("logs_output_read", { cursor }),
   appRestart: () => invoke<void>("app_restart"),
   storageRestartPending: () => invoke<boolean>("storage_restart_pending"),
   storageStatus: () => invoke<StorageStatus>("storage_status"),

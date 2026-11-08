@@ -608,12 +608,9 @@ pub async fn durable_transfer_clear(
     id: String,
 ) -> AppResult<Option<DurableTransfer>> {
     // Reserve the same registry entry as resume so cleanup and writing cannot race.
-    app.state::<AppState>().transfers.register(
-        &id,
-        std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        None,
-    )?;
-    let result = async {
+    let state = app.state::<AppState>();
+    let _reservation = state.transfers.reserve_cleanup(&id)?;
+    async {
         let mut row = Journal::get(&app, &id)?;
         if row.status == "done" {
             Journal::remove(&app, &id)?;
@@ -643,9 +640,7 @@ pub async fn durable_transfer_clear(
             }
         }
     }
-    .await;
-    app.state::<AppState>().transfers.release(&id);
-    result
+    .await
 }
 #[tauri::command]
 pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
@@ -731,8 +726,44 @@ pub(crate) async fn on_reconnect(app: &AppHandle) {
             )
             .is_ok()
         {
-            if let Err(error) = durable_transfer_clear(app.clone(), row.id).await {
-                tracing::debug!(%error, "Deferred transfer cleanup remains pending");
+            // A reconnect can arrive while an older connection still owns a
+            // bounded cleanup attempt. Retain that request until its registry
+            // claim is released, then re-read both disposal intent and target.
+            // Never clear an entry from a stale snapshot or spin on busy work.
+            let retried = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+                loop {
+                    let state = app.state::<AppState>();
+                    let released = state.transfers.released.notified();
+                    tokio::pin!(released);
+                    released.as_mut().enable();
+                    let current = match Journal::get(app, &row.id) {
+                        Ok(current) => current,
+                        Err(AppError::NotFound(_)) => return Ok(()),
+                        Err(error) => return Err(error),
+                    };
+                    if current.status != "cleanupPending" {
+                        return Ok(());
+                    }
+                    match durable_transfer_clear(app.clone(), current.id).await {
+                        Err(AppError::Validation(message)) if message == "sftp.transferBusy" => {
+                            released.await;
+                        }
+                        result => return result.map(|_| ()),
+                    }
+                }
+            })
+            .await;
+            match retried {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    tracing::debug!(%error, "Deferred transfer cleanup remains pending");
+                }
+                Err(_) => {
+                    tracing::debug!(
+                        transfer_id = row.id,
+                        "Deferred transfer cleanup retry timed out"
+                    );
+                }
             }
         }
     }

@@ -4,6 +4,7 @@ import { translateError } from "@/lib/api/errors";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { toast } from "@/store/toasts";
+import { prepareWindowReload } from "./reload";
 
 export type ApplicationAction = "reload" | "restart";
 
@@ -21,8 +22,10 @@ export function requestApplicationAction(action: ApplicationAction): void {
     danger: dirty.length > 0,
     onConfirm: async () => {
       try {
-        if (action === "reload") window.location.reload();
-        else if (isTauri()) await api.appRestart();
+        if (action === "reload") {
+          await prepareWindowReload();
+          window.location.reload();
+        } else if (isTauri()) await api.appRestart();
         else throw new Error(i18n.t("restart.nativeOnly"));
       } catch (error) {
         toast(translateError(error), "error");

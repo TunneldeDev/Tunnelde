@@ -36,7 +36,10 @@ Ignore additional fields and unrecognized stability values.
 The first stable core consists of `api.describe`, `sessions.list`, `storage.get`,
 `storage.set` and `storage.delete`. These methods have been available since 0.21.0;
 the `since` field records availability, not when this stability commitment was made.
-Settings, workspace, chat, runner and panel methods remain experimental.
+The stable surface also includes `statusBar.set`/`statusBar.remove` and
+`editor.active`/`editor.replace`. Editor methods have been available since
+0.29.0-beta.2; their frozen v1 contract is now explicit. Settings, workspace,
+chat, runner and other panel methods remain experimental.
 An incompatible change to a stable contract requires an explicitly versioned migration.
 
 The frozen discovery [request schema](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
@@ -81,13 +84,51 @@ data `plugin.api.invalidStorage`, and quota overflow `plugin.api.storageTooLarge
 may reject an oversized response with `-32002` and no `data`; callers must not require
 `data` for every error. Handle additional error messages without parsing OS-specific text.
 
+## Stable editor buffers
+
+The frozen [editor v1 contract](../tests/fixtures/plugin-compat/editor-v1.json)
+defines two methods with independent DTOs; internal store fields are never returned.
+
+| Method           | Permission     | Input and result                                                                                                                                |
+| ---------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `editor.active`  | `editor.read`  | `{}`; returns `null` if the focused tab has no ready editor, or `{tabId, documentId, version, path, name, content, dirty}`.                     |
+| `editor.replace` | `editor.write` | `{tabId, documentId, version, text}`; returns `{tabId, documentId, version, dirty}` after comparing the current document identity and revision. |
+
+A snapshot reads the open buffer, including unsaved edits, without reading the file
+again. Loading, failed, disconnected or missing editors return `null`. A document with
+more than 128 KiB of UTF-8 content fails with `plugin.api.frontend:editor.documentTooLarge`.
+The active tab is the focused workspace tab; focusing a different panel does not imply
+that a previous editor is still active. Retain its identity if an explicit command
+continues work on that document.
+
+Replacement is a single undoable buffer operation and never saves to disk. Changed text
+increments the revision; identical text leaves the revision and undo history intact.
+Undo/redo also advance the revision. A user edit, reload, close/reopen, or unavailable
+buffer invalidates a previously captured identity/revision and produces
+`plugin.api.frontend:editor.documentChanged`. Read again and let the user retry rather
+than overwriting newer content. `dirty` compares the resulting buffer with its saved
+baseline; it is not always `true` after replacement.
+
+Replacement IDs must be nonempty, contain no NUL and fit 1,024 UTF-16 code units.
+Versions must be nonnegative safe integers. Text may be empty, but must fit 128 KiB
+after UTF-8 encoding. Unknown input fields are ignored; consumers must ignore future
+result fields. Schema character lengths do not replace these encoding and state checks.
+Bad fields use `plugin.api.frontend:invalid:<field>` with JSON-RPC code `-32000`;
+authorization still uses `-32001`. Shared frontend bridge failures include
+`plugin.api.busy`, `plugin.api.frontendTimeout`, `plugin.api.frontendClosed` and
+`plugin.api.requestExpired`. These RPC methods emit no plugin events; they do not
+subscribe the caller to buffer changes.
+
 ## Compatibility testing
 
 CI loads a frozen v0.28.0 example through the current host's manifest loader and JSON-RPC
 lifecycle. A separate, newly authored probe uses a frozen pre-contract SDK, with source
 commit and SHA-256 recorded alongside it, to exercise the current host. Core schema checks
 validate real storage results, session serialization and JSON-RPC errors, and reject
-narrowed contracts or changed permissions. This exercises a defined core, not every
+narrowed contracts or changed permissions. Editor checks execute the frontend bridge
+against real buffer state, pass its captured results/errors through the Rust reply
+encoder, validate the frozen schemas and replay the combined responses through the
+historical SDK. This exercises a defined core, not every
 method, permission, event or stored-data migration. Test a plugin against the oldest
 application version it declares, and again against newer hosts. Check for unavailable
 methods, authorization changes and errors; do not depend on undocumented fields or a

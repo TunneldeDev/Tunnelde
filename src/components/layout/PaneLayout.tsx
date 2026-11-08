@@ -1,39 +1,51 @@
-import { useRef } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 
 import { PaneView } from "@/components/layout/PaneView";
 import { useWorkspace, visibleWorkspaceLayout, type WorkspaceLayout } from "@/store/workspace";
+import { usePointerDrag } from "@/lib/session/usePointerDrag";
 
 function LayoutNode({ node }: { node: WorkspaceLayout }) {
-  const { t } = useTranslation();
   const panes = useWorkspace((state) => state.panes);
   const activePaneId = useWorkspace((state) => state.activePaneId);
-  const resize = useWorkspace((state) => state.resizeSplit);
-  const container = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
   if (node.kind === "pane") {
     const pane = panes.find((item) => item.id === node.paneId);
     return pane ? <PaneView pane={pane} active={pane.id === activePaneId} /> : null;
   }
+  return <SplitLayout key={`${node.id}:${node.direction}`} node={node} />;
+}
+
+function SplitLayout({ node }: { node: Extract<WorkspaceLayout, { kind: "split" }> }) {
+  const { t } = useTranslation();
+  const resize = useWorkspace((state) => state.resizeSplit);
+  const container = useRef<HTMLDivElement>(null);
+  const beginResize = usePointerDrag();
+  const savedRatio = useRef(node.ratio);
+  useLayoutEffect(() => {
+    savedRatio.current = node.ratio;
+  }, [node.ratio]);
   const horizontal = node.direction === "row";
   return (
     <div
       ref={container}
       className="pane-layout"
-      style={{
-        display: "flex",
-        flexDirection: node.direction,
-        flex: "1 1 0",
-        minWidth: 0,
-        minHeight: 0,
-        overflow: "hidden",
-      }}
+      style={
+        {
+          "--td-split-ratio": node.ratio,
+          display: "flex",
+          flexDirection: node.direction,
+          flex: "1 1 0",
+          minWidth: 0,
+          minHeight: 0,
+          overflow: "hidden",
+        } as CSSProperties
+      }
     >
       <div
         className="pane-layout__child"
         style={{
           display: "flex",
-          flex: `${node.ratio} 1 0`,
+          flex: "var(--td-split-ratio) 1 0px",
           minWidth: 0,
           minHeight: 0,
           overflow: "hidden",
@@ -56,29 +68,33 @@ function LayoutNode({ node }: { node: WorkspaceLayout }) {
           touchAction: "none",
         }}
         onPointerDown={(event) => {
-          if (event.button !== 0) return;
-          event.preventDefault();
-          dragging.current = true;
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }}
-        onPointerMove={(event) => {
-          if (!dragging.current) return;
-          const rect = container.current?.getBoundingClientRect();
-          if (!rect) return;
-          resize(
-            node.id,
-            horizontal
-              ? (event.clientX - rect.left) / rect.width
-              : (event.clientY - rect.top) / rect.height,
-          );
-        }}
-        onPointerUp={(event) => {
-          dragging.current = false;
-          if (event.currentTarget.hasPointerCapture(event.pointerId))
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        }}
-        onPointerCancel={() => {
-          dragging.current = false;
+          const panel = container.current;
+          if (!panel) return;
+          const handle = event.currentTarget;
+          const origin = horizontal ? event.clientX : event.clientY;
+          let latest = node.ratio;
+          const preview = (ratio: number) => {
+            panel.style.setProperty("--td-split-ratio", String(ratio));
+            handle.setAttribute("aria-valuenow", String(Math.round(ratio * 100)));
+          };
+          beginResize(event, {
+            move: (next) => {
+              const rect = panel.getBoundingClientRect();
+              const separator = handle.getBoundingClientRect();
+              const size = horizontal
+                ? rect.width - separator.width
+                : rect.height - separator.height;
+              const position = horizontal ? next.clientX : next.clientY;
+              if (size <= 0 || !Number.isFinite(position)) return;
+              latest = Math.max(0.15, Math.min(0.85, node.ratio + (position - origin) / size));
+              preview(latest);
+            },
+            commit: () => {
+              if (latest !== node.ratio) resize(node.id, latest);
+              else preview(savedRatio.current);
+            },
+            cancel: () => preview(savedRatio.current),
+          });
         }}
         onDoubleClick={() => resize(node.id, 0.5)}
         onKeyDown={(event) => {
@@ -96,7 +112,7 @@ function LayoutNode({ node }: { node: WorkspaceLayout }) {
         className="pane-layout__child"
         style={{
           display: "flex",
-          flex: `${1 - node.ratio} 1 0`,
+          flex: "calc(1 - var(--td-split-ratio)) 1 0px",
           minWidth: 0,
           minHeight: 0,
           overflow: "hidden",

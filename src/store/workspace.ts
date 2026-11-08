@@ -136,6 +136,7 @@ interface WorkspaceStore {
     direction: SplitDirection,
     position?: PanePosition,
     targetPaneId?: string,
+    preferredSize?: LayoutSize,
   ) => void;
   resizeSplit: (id: string, ratio: number) => void;
   moveTab: (tabId: string, targetPaneId: string, beforeTabId?: string | null) => void;
@@ -473,7 +474,15 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
     },
 
     returnSidebar: (view) => {
-      useWorkspace.getState().close(sidebarTabId(view));
+      const id = sidebarTabId(view);
+      set((state) => {
+        const tabs = state.tabs.filter((tab) => tab.id !== id);
+        return {
+          tabs,
+          ...settle(dropTab(state.panes, id), state.activePaneId, state.split, state.layout, tabs),
+        };
+      });
+      useNavigation.getState().showSidebar(view);
     },
 
     openPage: (kind, options) => {
@@ -685,15 +694,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
 
     close: (id) => {
       set((state) => {
-        if (!state.tabs.some((tab) => tab.id === id)) {
+        const closing = state.tabs.find((tab) => tab.id === id);
+        if (!closing || closing.hidden) {
           return state;
+        }
+        // Closing a docked panel collapses its remembered slot. Removing its
+        // record would make SidebarArea immediately render it on the left.
+        if (closing.kind === "sidebar") {
+          const tabs = state.tabs.map((tab) => (tab.id === id ? { ...tab, hidden: true } : tab));
+          return {
+            tabs,
+            ...settle(state.panes, state.activePaneId, state.split, state.layout, tabs),
+          };
         }
         const tabs = state.tabs.filter((tab) => tab.id !== id);
         const panes = dropTab(state.panes, id);
         return { tabs, ...settle(panes, state.activePaneId, state.split, state.layout, tabs) };
       });
-      const view = sidebarViewOf(id);
-      if (view) useNavigation.getState().showSidebar(view);
     },
 
     closeOthers: (id) => {
@@ -704,10 +721,17 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         (tab) => origin.tabIds.includes(tab.id) && tab.id !== id && !tab.pinned && !tab.hidden,
       );
       const commit = () => {
-        const removedIds = new Set(removed.map((tab) => tab.id));
+        const removedIds = new Set(
+          removed.filter((tab) => tab.kind !== "sidebar").map((tab) => tab.id),
+        );
+        const collapsedIds = new Set(
+          removed.filter((tab) => tab.kind === "sidebar").map((tab) => tab.id),
+        );
         for (const tab of removed) if (tab.kind === "editor") useEditors.getState().discard(tab.id);
         set((current) => {
-          const tabs = current.tabs.filter((tab) => !removedIds.has(tab.id));
+          const tabs = current.tabs
+            .filter((tab) => !removedIds.has(tab.id))
+            .map((tab) => (collapsedIds.has(tab.id) ? { ...tab, hidden: true } : tab));
           const panes = current.panes.map((item) =>
             item.id === origin.id
               ? {
@@ -817,7 +841,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
       }),
 
-    splitTab: (tabId, direction, position = "after", targetPaneId) => {
+    splitTab: (tabId, direction, position = "after", targetPaneId, preferredSize) => {
       useWorkspace.getState().keepTab(tabId);
       const view = sidebarViewOf(tabId);
       if (view) useNavigation.getState().rememberSidebar(view);
@@ -841,13 +865,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
         const panes = [...dropTab(state.panes, tabId), created];
         let ratio = 0.5;
-        if (view) {
-          const size = measureSidebar(view);
+        {
+          const size = preferredSize
+            ? { ...preferredSize, fromSidebar: false }
+            : view
+              ? measureSidebar(view)
+              : source.id !== target?.id &&
+                  source.tabIds.filter((id) => !state.tabs.find((tab) => tab.id === id)?.hidden)
+                    .length === 1
+                ? measurePane(source.id)
+                : null;
           const workspaceSize = measureWorkspace();
           if (size) {
             const rootSize = workspaceSize
               ? {
-                  width: workspaceSize.width + (size.fromSidebar ? size.width : 0),
+                  width:
+                    workspaceSize.width +
+                    ("fromSidebar" in size && size.fromSidebar ? size.width : 0),
                   height: workspaceSize.height,
                 }
               : null;
@@ -865,7 +899,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
                     : null;
             const total = direction === "row" ? targetSize?.width : targetSize?.height;
             const requestedSize = direction === "row" ? size.width : size.height;
-            if (total && total > 4) {
+            if (total && total > 4 && Number.isFinite(requestedSize) && requestedSize > 0) {
               const fraction = Math.max(0.15, Math.min(0.85, requestedSize / (total - 4)));
               ratio = position === "before" ? fraction : 1 - fraction;
             }
