@@ -1144,6 +1144,7 @@
       "expired": "This status bar action has expired. Try the updated item."
     },
     "api": {
+      "busy": "The plugin has too many requests in progress. Wait for a task to finish or stop the plugin, then try again.",
       "invalidStorage": "The plugin's saved data could not be read. Export or repair its data before retrying; existing data has been preserved.",
       "storageTooLarge": "The plugin's saved data exceeds the supported size. Export or reduce it before retrying; existing data has been preserved."
     },
@@ -1607,8 +1608,8 @@
     "openLog": "Open log",
     "spawn": "Could not launch the plugin process",
     "write": "Could not communicate with the plugin process",
-    "exited": "The plugin process exited during startup. Open the log for details.",
-    "timeout": "Plugin initialization timed out. Open the log for details.",
+    "exited": "The plugin process exited or its connection was closed. Open the log for details.",
+    "timeout": "The plugin request timed out. Open the log for details.",
     "unknown": "The plugin did not report a reason. Open the log for details."
   },
   "forward": {

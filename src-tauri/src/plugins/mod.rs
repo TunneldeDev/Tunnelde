@@ -781,7 +781,11 @@ impl PluginsManager {
         let host = instance
             .host
             .as_ref()
-            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
+            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?
+            .connection();
+        // An async plugin reply must not hold up its other commands/views or
+        // lifecycle changes. This transport remains bound to the captured lease.
+        drop(instance);
 
         self.security
             .guard(
@@ -845,7 +849,9 @@ impl PluginsManager {
         let host = instance
             .host
             .as_ref()
-            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?;
+            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?
+            .connection();
+        drop(instance);
 
         self.security
             .guard(
