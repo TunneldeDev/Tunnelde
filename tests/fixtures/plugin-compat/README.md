@@ -10,3 +10,9 @@ plugin through initialization, command, view, error and shutdown exchanges.
 It does not cover the full application, permission approval, storage, or host
 API calls. CI explicitly supplies its Node executable; the test never discovers
 or uses a user's Node runtime automatically.
+
+`editor-v1.json` freezes the editor buffer RPC contract. CI executes the actual
+frontend bridge to generate response samples, runs them through the Rust frontend
+reply/error encoder, validates their schemas and replays them through the frozen
+SDK. This complements desktop acceptance; mock authorization in the bridge test
+alone does not prove native permission enforcement or cross-platform UI behavior.
