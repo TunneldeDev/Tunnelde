@@ -7,6 +7,7 @@ import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { useDialogs } from "@/store/dialogs";
+import { usePlugins } from "@/store/plugins";
 
 beforeEach(() => {
   useSettings.setState({
@@ -18,6 +19,7 @@ beforeEach(() => {
     }),
   });
   useDialogs.getState().close();
+  usePlugins.setState({ items: [] });
   useShortcutConflicts.setState({ query: "", request: 0, queue: [] });
 });
 const search = (value: string) =>
@@ -26,6 +28,61 @@ const search = (value: string) =>
   });
 
 describe("KeyboardShortcuts", () => {
+  it("inserts and removes conflict filters from a discoverable menu, retaining text and focus", () => {
+    render(<KeyboardShortcuts />);
+    search("page.settings");
+    fireEvent.click(screen.getByRole("button", { name: "Filter shortcuts" }));
+    expect(screen.getByText("@is:conflict")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Conflicting shortcuts" }));
+    const input = screen.getByRole("textbox", { name: "Search commands or shortcuts" });
+    expect(input).toHaveProperty("value", "page.settings @is:conflict");
+    expect(document.activeElement).toBe(input);
+    fireEvent.click(screen.getByRole("button", { name: "Filter shortcuts" }));
+    expect(
+      screen
+        .getByRole("menuitemcheckbox", { name: "Conflicting shortcuts" })
+        .getAttribute("aria-checked"),
+    ).toBe("true");
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clear filters" }));
+    expect(input).toHaveProperty("value", "page.settings");
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+  });
+  it("synchronizes typed modified filters with the checkbox and supports clearing an unassigned filter", () => {
+    render(<KeyboardShortcuts />);
+    search("@IS:MODIFIED");
+    expect(screen.getByRole("checkbox", { name: "Modified" })).toHaveProperty("checked", true);
+    fireEvent.click(screen.getByRole("checkbox", { name: "Modified" }));
+    expect(screen.getByRole("textbox", { name: "Search commands or shortcuts" })).toHaveProperty(
+      "value",
+      "",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Filter shortcuts" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Unassigned commands" }));
+    expect(
+      screen.getAllByRole("listitem").every((row) => within(row).queryByText("Unassigned")),
+    ).toBe(true);
+  });
+  it("offers installed plugins and combines their selection with related conflicts", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "formatter",
+          name: "Formatter",
+          runtime: "node",
+          views: [],
+          commands: [{ id: "format", title: "Format", keybindings: ["Mod+Comma"] }],
+        },
+      ] as never,
+    });
+    render(<KeyboardShortcuts />);
+    fireEvent.click(screen.getByRole("button", { name: "Filter shortcuts" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Formatter" }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Filter shortcuts" }));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "Conflicting shortcuts" }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(screen.getByText("page.settings")).toBeTruthy();
+  });
   it("provides translated command labels in both shipped languages", () => {
     for (const lng of ["en-US", "zh-CN"])
       for (const command of SHORTCUT_COMMANDS)

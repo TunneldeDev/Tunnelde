@@ -57,10 +57,24 @@
   flex-wrap: wrap;
   gap: 12px;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 6px;
 }
 .shortcuts__toolbar .settings-search {
   flex: 1 1 260px;
+}
+.shortcuts__filter.is-active {
+  color: var(--td-accent);
+  background: var(--td-accent-soft);
+}
+.shortcuts__filter-menu {
+  width: min(300px, calc(100vw - 16px));
+  max-height: min(520px, calc(100vh - 16px));
+}
+.shortcuts__filter-hint {
+  margin: 0 0 14px;
+  color: var(--td-muted);
+  font-size: 11px;
+  line-height: 1.5;
 }
 .shortcuts__list {
   border-top: 1px solid var(--td-border);

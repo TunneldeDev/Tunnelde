@@ -1461,7 +1461,17 @@
     "goBack": "Back",
     "goForward": "Forward",
     "selectAll": "Select all",
-    "parent": "Parent folder"
+    "parent": "Parent folder",
+    "filters": {
+      "title": "Filter shortcuts",
+      "hint": "Use the filter button to find conflicts, modified bindings or plugin commands. Filters can be combined with search text.",
+      "conflict": "Conflicting shortcuts",
+      "modified": "Modified shortcuts",
+      "unassigned": "Unassigned commands",
+      "builtin": "Built-in commands",
+      "plugins": "Plugin commands",
+      "clear": "Clear filters"
+    }
   },
   "profiles": {
     "title": "Settings profiles",
