@@ -10,6 +10,7 @@ import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
 import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 import { Button } from "@/components/ui/form/Button";
 import { readPreviewRange } from "@/lib/files/preview";
+import { translateError } from "@/lib/api/errors";
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 
@@ -52,7 +53,7 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
   const [rendering, setRendering] = useState(true);
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);
@@ -68,7 +69,8 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
         requestQueue = requestQueue
           .then(async () => {
             if (controller.signal.aborted) return;
-            if (end - begin > 16 * 1024 * 1024) throw new Error(t("preview.pdfRangeLimit"));
+            if (end - begin > 16 * 1024 * 1024)
+              throw Object.assign(new Error("preview.pdfRangeLimit"), { code: "validation" });
             const bytes = new Uint8Array(end - begin);
             for (let start = begin; start < end; start += 1024 * 1024) {
               const finish = Math.min(start + 1024 * 1024, end);
@@ -79,7 +81,7 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
           })
           .catch((cause: unknown) => {
             if (!disposed) {
-              setError(cause instanceof Error ? cause.message : t("preview.pdfError"));
+              setFailure((previous) => previous ?? { cause });
               void loading.destroy();
             }
           });
@@ -101,7 +103,7 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
       canvasMaxAreaInBytes: 64 * 1024 * 1024,
     });
     loading.onPassword = () => {
-      if (!disposed) setError(t("preview.pdfPassword"));
+      if (!disposed) setFailure({ cause: { code: "validation", message: "preview.pdfPassword" } });
       void loading.destroy();
     };
     void loading.promise
@@ -109,14 +111,16 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
         if (!disposed) setDocument(result);
       })
       .catch((cause: unknown) => {
-        if (!disposed) setError(cause instanceof Error ? cause.message : t("preview.pdfError"));
+        // Destroying a rejected/password-protected document also rejects its
+        // loading promise. Keep the actionable error that triggered cleanup.
+        if (!disposed) setFailure((previous) => previous ?? { cause });
       });
     return () => {
       disposed = true;
       controller.abort();
       void loading.destroy();
     };
-  }, [url, size, t]);
+  }, [url, size]);
   useEffect(() => {
     const target = container.current;
     if (!target || typeof ResizeObserver === "undefined") return;
@@ -159,13 +163,13 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
         }
       })
       .catch((cause: unknown) => {
-        if (!disposed) setError(cause instanceof Error ? cause.message : t("preview.pdfError"));
+        if (!disposed) setFailure((previous) => previous ?? { cause });
       });
     return () => {
       disposed = true;
       task?.cancel();
     };
-  }, [document, pageNumber, zoom, width, t]);
+  }, [document, pageNumber, zoom, width]);
   return (
     <div className="file-preview__pdf">
       <div className="file-preview__toolbar" role="toolbar" aria-label={t("preview.pdfControls")}>
@@ -213,9 +217,9 @@ export default function PdfPreview({ url, size }: { url: string; size: number })
           <Plus size={16} />
         </Button>
       </div>
-      {error ? <p role="alert">{error}</p> : null}
-      <div className="file-preview__pdf-pages" ref={container} aria-busy={rendering && !error}>
-        {!error ? (
+      {failure ? <p role="alert">{translateError(failure.cause)}</p> : null}
+      <div className="file-preview__pdf-pages" ref={container} aria-busy={rendering && !failure}>
+        {!failure ? (
           <canvas ref={canvas} aria-label={t("preview.pdfPage", { page: pageNumber })} role="img" />
         ) : null}
       </div>

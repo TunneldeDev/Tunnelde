@@ -23,7 +23,7 @@ export function ProviderPreview({
   const { t } = useTranslation();
   const [info, setInfo] = useState<FilePreviewInfo | null>(null);
   const [content, setContent] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
@@ -63,28 +63,29 @@ export function ProviderPreview({
             offset += chunk.byteLength;
           }
           const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-          if (text.includes("\0")) throw new Error(t("sftp.binaryFile"));
+          if (text.includes("\0"))
+            throw Object.assign(new Error("sftp.binaryFile"), { code: "validation" });
           if (controller.signal.aborted) return;
           setContent(text);
         }
         if (!controller.signal.aborted) setInfo(result);
       })
       .catch((cause) => {
-        if (!controller.signal.aborted) setError(translateError(cause));
+        if (!controller.signal.aborted) setFailure({ cause });
       });
     return () => {
       controller.abort();
       close();
     };
-  }, [file, provider.id, attempt, t]);
-  if (error)
+  }, [file, provider.id, attempt]);
+  if (failure)
     return (
       <div className="file-preview__empty">
-        <p role="alert">{error}</p>
+        <p role="alert">{translateError(failure.cause)}</p>
         <Button
           variant="secondary"
           onClick={() => {
-            setError("");
+            setFailure(null);
             setInfo(null);
             setContent(null);
             setAttempt((value) => value + 1);
@@ -111,7 +112,7 @@ export function ProviderPreview({
       kind={info.renderer}
       url={url}
       name={fileName(file.path)}
-      onError={() => setError(t("preview.mediaError"))}
+      onError={() => setFailure({ cause: { code: "validation", message: "preview.mediaError" } })}
     />
   );
 }
