@@ -4,6 +4,11 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod staging;
+use staging::{
+    missing, prepare_remote_staging, remote_staging, retire_remote_staging, staging_directory,
+};
+
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum ArtifactRecord {
@@ -14,6 +19,8 @@ enum ArtifactRecord {
         archive: Option<ArchiveWrite>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         publication: Option<Publication>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        staging: Option<RemoteStaging>,
     },
     Legacy(String),
 }
@@ -31,6 +38,15 @@ struct Publication {
     // Persisted before retiring the original path. A restart retries the same
     // rename pair instead of losing a successfully moved, fully uploaded file.
     successor: Option<String>,
+}
+
+/// An acknowledged private directory fences a delayed CREATE: after removing
+/// this directory, an old OPEN cannot recreate its child on a resumed task.
+#[derive(Serialize, Deserialize)]
+struct RemoteStaging {
+    generation: String,
+    prepared: bool,
+    opening: bool,
 }
 
 impl ArtifactRecord {
@@ -81,20 +97,85 @@ fn part_from_record(
         ),
         None => id.to_owned(),
     };
-    Ok(staging_endpoint(to, &owner, "part"))
+    let part = staging_endpoint(to, &owner, "part");
+    match record {
+        Some(ArtifactRecord::Current {
+            staging: Some(staging),
+            ..
+        }) => {
+            let directory = staging_directory(to, id, staging)?;
+            Ok(to.child(join_remote(&directory.path, &file_name_of(&part.path))))
+        }
+        _ => Ok(part),
+    }
 }
 
-/// Retire an uncertain archive before making another writer. The worker only
-/// opens existing files: a delayed open now fails, and an already-open writer
-/// can only touch the unlinked old inode. The next generation has a fresh path.
-pub(super) async fn prepare_staging(
+pub(super) fn creation_pending(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    pending: bool,
+) -> AppResult<bool> {
+    let Some(mut record) = artifact_record(app, id, to)? else {
+        return Ok(false);
+    };
+    let ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    } = &mut record
+    else {
+        return Ok(false);
+    };
+    if !staging.prepared {
+        return Err(AppError::internal("Staging directory not acknowledged"));
+    }
+    staging.opening = pending;
+    put(app, &artifact_key(id, to), serde_json::to_string(&record)?)?;
+    Ok(true)
+}
+
+/// Called only after publication is saved. A failed or interrupted RMDIR leaves
+/// the completed-file checkpoint so Resume verifies the target and retries it.
+pub(super) async fn finish_staging(
     app: &AppHandle,
     id: &str,
     to: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
-) -> AppResult<(Endpoint, bool)> {
+) -> AppResult<()> {
+    let record = artifact_record(app, id, to)?;
+    let Some(staging) = remote_staging(record.as_ref()) else {
+        return Ok(());
+    };
+    let sftp = sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?;
+    let directory = staging_directory(to, id, staging)?;
+    interruptible(Some(cancel), async {
+        match sftp.remove_dir(&directory.path).await {
+            Ok(()) => Ok(()),
+            Err(error) if missing(&error) => Ok(()),
+            Err(error) => Err(map_sftp(error)),
+        }
+    })
+    .await
+}
+
+/// Retire an uncertain archive before making another writer. The worker only
+/// opens existing files: a delayed open now fails, and an already-open writer
+/// can only touch the unlinked old inode. The next generation has a fresh path.
+pub(super) async fn prepare_staging<F, Fut>(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+    create_directory: F,
+) -> AppResult<(Endpoint, bool)>
+where
+    F: FnOnce(Endpoint) -> Fut,
+    Fut: std::future::Future<Output = AppResult<()>>,
+{
     let mut record = artifact_record(app, id, to)?;
+    prepare_remote_staging(app, id, to, sftp, cancel, &mut record, create_directory).await?;
     let temp = part_from_record(to, id, record.as_ref())?;
     let recovering_publication = matches!(
         record,
@@ -121,7 +202,7 @@ pub(super) async fn prepare_staging(
             &artifact_key(id, to),
             serde_json::to_string(&record.as_ref().unwrap())?,
         )?;
-        let next = publication_successor(to, id, &successor)?;
+        let next = publication_successor(to, id, &successor, record.as_ref())?;
         if !publication::fence(&temp, &next, sftp, cancel).await? {
             // Keep the uncertainty record until the published target has been
             // verified. A failed verification must remain protected on every
@@ -195,10 +276,25 @@ pub(super) async fn prepare_staging(
     Ok((temp, false))
 }
 
-fn publication_successor(to: &Endpoint, id: &str, generation: &str) -> AppResult<Endpoint> {
+fn publication_successor(
+    to: &Endpoint,
+    id: &str,
+    generation: &str,
+    record: Option<&ArtifactRecord>,
+) -> AppResult<Endpoint> {
     let generation = uuid::Uuid::parse_str(generation)
         .map_err(|_| AppError::internal("Invalid publication staging generation"))?;
-    Ok(staging_endpoint(to, &format!("{id}-{generation}"), "part"))
+    let part = staging_endpoint(to, &format!("{id}-{generation}"), "part");
+    match record {
+        Some(ArtifactRecord::Current {
+            staging: Some(staging),
+            ..
+        }) => {
+            let directory = staging_directory(to, id, staging)?;
+            Ok(to.child(join_remote(&directory.path, &file_name_of(&part.path))))
+        }
+        _ => Ok(part),
+    }
 }
 
 pub(super) fn begin_publication(
@@ -343,6 +439,7 @@ pub(super) fn record_local_writer(
                 identity: Some(current.clone()),
                 archive: None,
                 publication: None,
+                staging: None,
             })?,
         )?;
         let guard = GuardedFile::pin(Path::new(&temp.path))?;
@@ -461,7 +558,7 @@ fn put(app: &AppHandle, key: &str, value: String) -> AppResult<()> {
     })
 }
 
-pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> {
+pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint, fresh: bool) -> AppResult<()> {
     let key = artifact_key(id, to);
     // A resumed writer must never replace its original ownership record.
     if get(app, &key)?.is_some() {
@@ -475,6 +572,15 @@ pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> 
             identity: None,
             archive: None,
             publication: None,
+            staging: to
+                .session
+                .as_ref()
+                .filter(|_| fresh)
+                .map(|_| RemoteStaging {
+                    generation: uuid::Uuid::new_v4().to_string(),
+                    prepared: false,
+                    opening: false,
+                }),
         })?,
     )
 }
@@ -584,6 +690,16 @@ async fn cleanup_file(
         Sha256::digest(to.path.as_bytes())
     );
     let artifact = artifact_record(app, id, to)?;
+    if remote_staging(artifact.as_ref()).is_some_and(|staging| staging.opening) {
+        return retire_remote_staging(
+            id,
+            to,
+            sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?,
+            artifact.as_ref().unwrap(),
+            &AtomicBool::new(false),
+        )
+        .await;
+    }
     let temp = part_from_record(to, id, artifact.as_ref())?;
     cleanup_at(
         id,
@@ -601,11 +717,12 @@ async fn cleanup_file(
         ..
     }) = artifact.as_ref()
     {
-        let next = publication_successor(to, id, generation)?;
+        let next = publication_successor(to, id, generation, artifact.as_ref())?;
         if file_length(&next, sftp).await?.is_some() {
             cleanup_partial(&next, sftp, None).await?;
         }
     }
+    finish_staging(app, id, to, sftp, &AtomicBool::new(false)).await?;
     Ok(())
 }
 
@@ -824,6 +941,7 @@ mod tests {
             identity: Some(id.clone()),
             archive: None,
             publication: None,
+            staging: None,
         };
         let restored: ArtifactRecord =
             serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
@@ -857,6 +975,7 @@ mod tests {
                     pending: true,
                 }),
                 publication: None,
+                staging: None,
             };
             let restored: ArtifactRecord =
                 serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
@@ -880,6 +999,7 @@ mod tests {
                 pending: true,
             }),
             publication: None,
+            staging: None,
         };
         assert!(part_from_record(&to, "task", Some(&invalid)).is_err());
     }
@@ -906,7 +1026,9 @@ mod tests {
                 serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
             assert_eq!(
                 part_from_record(&to, "task", Some(&restored)).unwrap().path,
-                publication_successor(&to, "task", &previous).unwrap().path
+                publication_successor(&to, "task", &previous, Some(&restored))
+                    .unwrap()
+                    .path
             );
             let ArtifactRecord::Current {
                 publication: Some(publication),
@@ -918,11 +1040,13 @@ mod tests {
             assert_eq!(publication.successor.as_deref(), Some(successor.as_str()));
             assert_ne!(
                 part_from_record(&to, "task", Some(&restored)).unwrap().path,
-                publication_successor(&to, "task", &successor).unwrap().path
+                publication_successor(&to, "task", &successor, Some(&restored))
+                    .unwrap()
+                    .path
             );
             record = restored;
         }
-        assert!(publication_successor(&to, "task", "../other").is_err());
+        assert!(publication_successor(&to, "task", "../other", None).is_err());
         let initial: ArtifactRecord =
             serde_json::from_str(r#"{"path":"/target","identity":null,"publication":{}}"#).unwrap();
         assert!(matches!(

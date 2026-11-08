@@ -236,7 +236,12 @@ If reconnection arrives during an older connection's cleanup attempt, the
 application waits for that attempt to release the task, then retries disposal
 using the newest matching connection. Unfinished cleanup keeps its pending record.
 
-Data is written into a task-owned `.tunnelde-….part` sibling. A clean pause saves
+New remote transfers write their `.tunnelde-….part` file inside a task-owned
+`.tunnelde-….stage` sibling directory. Its private mode (0700) is set by the
+directory-creation operation itself and verified before opening the file. The
+directory is removed after publication or cancellation; cleanup never recursively
+deletes unrecognized contents. Local transfers and existing journals retain their
+original sibling staging paths. A clean pause saves
 its closed file's size and modification time. If both source and staging metadata
 still match, resume verifies the first and last blocks and continues at the saved
 offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
@@ -249,8 +254,19 @@ waiting when paused. This does not abort a destination data channel shared by
 other files in a directory transfer. If a write's result is uncertain, the
 application retains the bounded CLOSE wait before recovery may truncate the
 staging file. Successful transfers still wait for CLOSE confirmation. Recovery
-truncation and creation of a new remote staging file also await their server
-confirmations.
+truncation, legacy staging-file creation and private-directory creation still await
+their server confirmations.
+
+After the private directory has been acknowledged, creating its empty staging file
+can stop waiting immediately on pause. The application journals the uncertain open
+before sending it. Resume or cancellation removes the known empty child and its
+empty parent before proceeding; a delayed original create cannot recreate a file
+under the retired parent. Resume uses a newly journalled directory generation.
+Nonempty files, links, unexpected permissions or foreign directory contents are
+preserved and reported for review. If directory creation committed but its reply
+or checkpoint was lost, recovery accepts only an empty private directory at the
+recorded path, without changing its permissions. This does not make directory
+creation or legacy mutations immediately cancellable.
 
 Pausing during a remote file's final rename stops waiting for the reply. The
 application first records that publication is uncertain. On Resume it moves any

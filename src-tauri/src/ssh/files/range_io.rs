@@ -23,6 +23,26 @@ enum Backend {
 }
 
 impl DataSession {
+    /// Set private permissions in MKDIR itself; a separate chmod leaves a crash
+    /// window and cannot safely distinguish an interrupted create on restart.
+    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+        match &self.backend {
+            Backend::Sftp(raw) => {
+                raw.mkdir(
+                    path,
+                    russh_sftp::protocol::FileAttributes {
+                        permissions: Some(0o700),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(map_sftp)?;
+                Ok(())
+            }
+            Backend::Compressed(worker) => worker.create_private_directory(path).await,
+        }
+    }
+
     pub async fn new(
         stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     ) -> AppResult<Self> {

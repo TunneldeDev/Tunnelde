@@ -1107,6 +1107,33 @@ struct Meter<'a> {
 }
 
 impl<'a> Meter<'a> {
+    async fn data_sessions(
+        &self,
+        from: &Endpoint,
+        to: &Endpoint,
+        from_sftp: Option<&SftpSession>,
+        to_sftp: Option<&SftpSession>,
+        cancel: &AtomicBool,
+    ) -> AppResult<&range_io::Sessions> {
+        self.data_channels
+            .get_or_try_init(|| async {
+                interruptible(
+                    Some(cancel),
+                    range_io::Sessions::open(
+                        self.app,
+                        from,
+                        to,
+                        &self.settings,
+                        from_sftp,
+                        to_sftp,
+                        self.total,
+                    ),
+                )
+                .await
+            })
+            .await
+    }
+
     fn throttle(&self) -> bandwidth::Throttle {
         bandwidth::Throttle {
             controller: self.app.state::<AppState>().transfers.bandwidth.clone(),
@@ -1636,9 +1663,11 @@ async fn copy_directory_batch(
 }
 
 async fn file_length(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<Option<u64>> {
-    reject_destination_link(endpoint, sftp).await?;
+    // Classify and read the same LSTAT result. A separate link probe doubles
+    // metadata RTTs and can inspect a different object after path replacement.
     match sftp {
         Some(s) => match s.symlink_metadata(&endpoint.path).await {
+            Ok(m) if m.is_symlink() => Err(AppError::validation("sftp.symlinkUnsupported")),
             Ok(m) if m.is_dir() => Err(AppError::validation("sftp.typeConflict")),
             Ok(m) => Ok(Some(m.len())),
             Err(russh_sftp::client::error::Error::Status(st))
@@ -1649,6 +1678,9 @@ async fn file_length(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResu
             Err(e) => Err(map_sftp(e)),
         },
         None => match tokio::fs::symlink_metadata(&endpoint.path).await {
+            Ok(m) if local_metadata_is_link(&m) => {
+                Err(AppError::validation("sftp.symlinkUnsupported"))
+            }
             Ok(m) if m.is_dir() => Err(AppError::validation("sftp.typeConflict")),
             Ok(m) => Ok(Some(m.len())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -1910,6 +1942,7 @@ async fn durable_copy_file(
             source.finish_cancellable(cancel).await?;
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             artifacts::confirm_publication(meter.app, id, to)?;
+            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -1919,8 +1952,20 @@ async fn durable_copy_file(
         journal_app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&key,serde_json::to_string(&(stamp.0,stamp.1,completed))?,crate::models::now_ms()])?;Ok(())})
     };
     save(false)?;
+    artifacts::record(meter.app, id, to, !resuming)?;
+    let preparation_meter = &*meter;
     let (temp, recovering_publication) =
-        artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel).await?;
+        artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel, |directory| async move {
+            preparation_meter
+                .data_sessions(from, to, from_sftp, to_sftp, cancel)
+                .await?
+                .target
+                .as_ref()
+                .ok_or_else(|| AppError::internal("Missing staging data channel"))?
+                .create_private_directory(&directory.path)
+                .await
+        })
+        .await?;
     #[cfg(windows)]
     let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     if resuming {
@@ -1962,6 +2007,7 @@ async fn durable_copy_file(
             if recovering_publication {
                 artifacts::confirm_publication(meter.app, id, to)?;
             }
+            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2032,14 +2078,16 @@ async fn durable_copy_file(
     } else {
         None
     };
+    let isolated_create =
+        partial.is_none() && artifacts::creation_pending(meter.app, id, to, true)?;
     if partial.is_none()
+        && !isolated_create
         && interruptible(Some(cancel), file_length(&temp, to_sftp))
             .await?
             .is_some()
     {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
-    artifacts::record(meter.app, id, to)?;
     let mut writer = if partial.is_some() {
         match to_sftp {
             Some(s) => Writer::Remote(Box::new(
@@ -2057,9 +2105,16 @@ async fn durable_copy_file(
                     .await?,
             ),
         }
+    } else if isolated_create {
+        // Exclusive CREATE inside the acknowledged private directory rejects
+        // existing files and links atomically. Repeating LSTAT here cannot
+        // make that check safer and costs several RTTs per small file.
+        tracing::debug!(id, "Creating isolated transfer staging file");
+        let writer = interruptible(Some(cancel), create_writer(&temp, to_sftp, false)).await?;
+        artifacts::creation_pending(meter.app, id, to, false)?;
+        writer
     } else {
-        // lstat is read-only and can stop immediately; CREATE_NEW itself must
-        // still acknowledge before its staging file is eligible for cleanup.
+        // Old journals do not own a removable parent that fences CREATE.
         interruptible(Some(cancel), reject_destination_link(&temp, to_sftp)).await?;
         create_writer(&temp, to_sftp, false).await?
     };
@@ -2167,6 +2222,7 @@ async fn durable_copy_file(
         interruptible(Some(cancel), replacement.commit(&temp.path, &to.path)).await?;
         save(true)?;
         artifacts::confirm_publication(meter.app, id, to)?;
+        artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
         return Ok(());
     }
     // Persist the old target fingerprint before moving it, so both rename
@@ -2219,6 +2275,7 @@ async fn durable_copy_file(
     if to_sftp.is_some() {
         artifacts::confirm_publication(meter.app, id, to)?;
     }
+    artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
     Ok(())
 }
 
@@ -2353,22 +2410,7 @@ async fn parallel_copy_file(
         }
     }
     let channels = meter
-        .data_channels
-        .get_or_try_init(|| async {
-            interruptible(
-                Some(cancel),
-                range_io::Sessions::open(
-                    meter.app,
-                    from,
-                    temp,
-                    &meter.settings,
-                    from_sftp,
-                    to_sftp,
-                    meter.total,
-                ),
-            )
-            .await
-        })
+        .data_sessions(from, temp, from_sftp, to_sftp, cancel)
         .await?
         .clone();
     let files = range_io::Files::open_cancellable(&channels, from, temp, cancel)

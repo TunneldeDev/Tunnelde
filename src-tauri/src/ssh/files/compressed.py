@@ -162,6 +162,14 @@ try:
             elif op == 'archive_write':
                 archive_write(request, payload)
                 reply(request_id)
+            elif op == 'mkdir_private':
+                name = request['path']
+                if size or not isinstance(name, str) or not os.path.isabs(name):
+                    raise ValueError('invalid private directory')
+                # Do not adopt existing paths or chmod them. The host validates
+                # mode/type/emptiness before acknowledging its durable journal.
+                os.mkdir(name, 0o700)
+                reply(request_id)
             elif op == 'open':
                 if size:
                     raise ValueError('unexpected open payload')
