@@ -5,6 +5,7 @@ import { OutputPanel } from "@/features/output/OutputPanel";
 import { useNavigation } from "@/store/navigation";
 import {
   boundOutput,
+  formatOutput,
   matchesOutput,
   parseDiagnostic,
   snapshotEntries,
@@ -151,4 +152,47 @@ it("does not read logs while the panel is inactive", () => {
   useNavigation.setState({ activeSidebar: "hosts" });
   render(<OutputPanel active={false} />);
   expect(api.logsOutputRead).not.toHaveBeenCalled();
+});
+
+it("keeps severity, source, time and message separately styled while copying the same plain text", async () => {
+  const levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
+  api.logsOutputRead.mockResolvedValue({
+    ...snapshot,
+    diagnostic: levels
+      .map((level) => JSON.stringify({ ...JSON.parse(diagnostic), level }))
+      .join("\n"),
+  });
+  const { container } = render(<OutputPanel active />);
+  await waitFor(() => expect(container.querySelectorAll(".output-panel__line")).toHaveLength(5));
+  for (const level of levels) {
+    const line = container.querySelector(`.output-panel__line.is-${level.toLowerCase()}`)!;
+    expect(line.querySelector(".output-panel__level")?.textContent).toBe(`[${level}]`);
+    expect(line.querySelector(".output-panel__source")?.textContent).toBe("[formatter]");
+    expect(line.querySelector(".output-panel__time")?.textContent?.trim()).toBeTruthy();
+    expect(line.textContent).toBe(
+      formatOutput({ ...parseDiagnostic(diagnostic), id: 1, level }) + "\n",
+    );
+  }
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Copy displayed output" }));
+  expect(api.clipboardWriteText).toHaveBeenCalledWith(
+    container.querySelector(".output-panel__lines")!.textContent!.trimEnd(),
+  );
+});
+
+it("preserves plain-text formatting for untimestamped and empty messages", async () => {
+  api.logsOutputRead.mockResolvedValue({
+    ...snapshot,
+    diagnostic: ["  indented output  ", JSON.stringify({ fields: { message: "   " } })].join("\n"),
+  });
+  const { container } = render(<OutputPanel active />);
+  await waitFor(() => expect(container.querySelectorAll(".output-panel__line")).toHaveLength(2));
+  const lines = container.querySelectorAll(".output-panel__line");
+  expect(lines[0]!.textContent).toBe("[INFO] [application]   indented output\n");
+  expect(lines[1]!.textContent).toBe("[INFO] [application]\n");
+  fireEvent.click(screen.getByRole("button", { name: "Output actions" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Copy displayed output" }));
+  expect(api.clipboardWriteText).toHaveBeenCalledWith(
+    container.querySelector(".output-panel__lines")!.textContent!.trimEnd(),
+  );
 });

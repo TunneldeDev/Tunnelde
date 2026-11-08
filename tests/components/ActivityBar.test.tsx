@@ -28,6 +28,7 @@ describe("activity sidebar navigation", () => {
   it("selects one side view without opening a workspace page or changing settings", () => {
     render(<ActivityBar />);
     expect(screen.queryByRole("button", { name: "Welcome" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Output" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Trusted hosts" }));
     expect(useNavigation.getState().activeSidebar).toBe("knownHosts");
     expect(screen.getByRole("button", { name: "Trusted hosts" }).getAttribute("aria-pressed")).toBe(

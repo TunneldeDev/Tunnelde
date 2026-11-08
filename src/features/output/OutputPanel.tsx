@@ -1,5 +1,5 @@
 import { ArrowDownToLine, ListFilter, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
 import { useTabBarContribution } from "@/store/tabBar";
@@ -12,9 +12,28 @@ import { usePlugins } from "@/store/plugins";
 import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
-import { formatOutput, matchesOutput } from "./model";
+import { formatOutput, formatOutputTime, matchesOutput, type OutputEntry } from "./model";
 import { useOutput } from "./useOutput";
 import "./output.css";
+
+const OutputLine = memo(function OutputLine({ entry }: { entry: OutputEntry }) {
+  const time = formatOutputTime(entry.timestamp);
+  const message = entry.message.trimEnd();
+  return (
+    <span className={`output-panel__line is-${entry.level.toLowerCase()}`}>
+      {time ? <span className="output-panel__time">{time} </span> : null}
+      <span className="output-panel__level">[{entry.level}]</span>{" "}
+      <span className="output-panel__source">[{entry.plugin ?? entry.domain}]</span>
+      {message ? (
+        <>
+          {" "}
+          <span className="output-panel__message">{message}</span>
+        </>
+      ) : null}
+      {"\n"}
+    </span>
+  );
+});
 
 export function OutputPanel({ active, docked = false }: { active: boolean; docked?: boolean }) {
   const { t } = useTranslation();
@@ -217,15 +236,7 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
           <pre className={`output-panel__lines${wrap ? " is-wrapped" : ""}`}>
             {channel === "runtime"
               ? renderedText
-              : filtered.map((entry) => (
-                  <span
-                    key={entry.id}
-                    className={`output-panel__line is-${entry.level.toLowerCase()}`}
-                  >
-                    {formatOutput(entry)}
-                    {"\n"}
-                  </span>
-                ))}
+              : filtered.map((entry) => <OutputLine key={entry.id} entry={entry} />)}
           </pre>
         ) : (
           <div className="output-panel__empty">
