@@ -239,9 +239,22 @@ offset. Interrupted writes, legacy tasks and changed staging metadata use full p
 verification. A changed source or mismatched partial file is rejected. Verification
 has its own visible status. Cancellation covers its metadata requests, read-only
 file opening, reads and closing; a delayed read or CLOSE reply does not block
-pausing. The shared connection remains available. Remote writer CLOSE,
-recovery truncation and final publication still await their server confirmations
-before the task reports completion or updates its checkpoint.
+pausing. The shared connection remains available. Remote writer CLOSE and
+recovery truncation still await their server confirmations before the task
+updates its checkpoint; creating a new remote staging file also waits for its
+acknowledgement.
+
+Pausing during a remote file's final rename stops waiting for the reply. The
+application first records that publication is uncertain. On Resume it moves any
+surviving, fully written staging file to a newly journalled generation before
+using it again; a delayed original rename cannot publish the replacement staging
+file. A lost recovery reply retries the same generation. If the original rename
+already committed, Resume compares the complete destination against the source
+before reporting success. A missing or changed destination fails verification
+and remains protected on later retries instead of being uploaded over again.
+Successful transfers still wait for publication confirmation before reporting
+completion. These checks assume the task-owned staging paths are not independently
+modified by another application.
 
 New remote overwrite tasks negotiate `posix-rename@openssh.com` version 1 before
 uploading. The previous destination remains readable while the new file is staged;
