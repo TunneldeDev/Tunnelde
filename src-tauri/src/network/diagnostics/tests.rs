@@ -6,6 +6,13 @@ use tokio::{
 };
 
 #[test]
+fn diagnostic_text_redacts_credential_urls_and_control_characters() {
+    let message = "TLS EOF at https://user:secret@host/path?token=hidden via socks5h://user:password@proxy:123\n\u{1b}";
+    assert_eq!(redact_error_detail(message), "TLS EOF at [url] via [url]");
+    assert_eq!(redact_error_detail(&"x".repeat(3000)).len(), 2048);
+}
+
+#[test]
 fn statistics_exclude_failures_and_keep_small_values() {
     let result = summarize(vec![Some(20), None, Some(40)], None);
     assert_eq!(result.median_ms, Some(30));

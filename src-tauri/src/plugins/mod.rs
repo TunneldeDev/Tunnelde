@@ -125,7 +125,12 @@ impl Instance {
         if let Some(range) = self.manifest.engines.get("tunnelde") {
             let compatible = engines::supports_host(range, env!("CARGO_PKG_VERSION"));
             if !compatible {
-                return Err(AppError::validation("plugin.engine.unsupported"));
+                return Err(AppError::PluginEngineUnsupported {
+                    plugin_id: self.manifest.id.clone(),
+                    plugin_version: self.manifest.version.clone(),
+                    host_version: env!("CARGO_PKG_VERSION").into(),
+                    required: range.clone(),
+                });
             }
         }
         if self.manifest.runtime.as_deref() == Some("theme") {

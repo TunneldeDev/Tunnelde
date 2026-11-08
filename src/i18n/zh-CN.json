@@ -1593,6 +1593,8 @@
     "testUpdatesRoute": "软件更新当前线路"
   },
   "pluginErrors": {
+    "hostVersionMismatch": "插件版本 {{pluginVersion}} 要求 Tunnelde {{required}}，当前软件为 {{hostVersion}}。请更新 Tunnelde 或安装兼容的插件版本。检查未通过，尚未启动运行环境。",
+    "hostVersionUnsupported": "此插件不支持当前 Tunnelde 版本。请在插件详情中查看版本要求，再更新软件或安装兼容的插件版本。",
     "startFailed": "无法启动 {{name}}：{{error}}",
     "openLog": "打开日志",
     "spawn": "无法启动插件进程",

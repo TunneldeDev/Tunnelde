@@ -15,7 +15,10 @@ const RELEASES_API: &str =
 const MAX_FEED_BYTES: usize = 4 * 1024 * 1024;
 
 fn network_error(error: reqwest::Error) -> AppError {
-    // Do not log the URL: custom sources and proxy URLs may contain credentials.
+    let source = source_kind(error.url());
+    let timeout = error.is_timeout();
+    let connect = error.is_connect();
+    let body = error.is_body();
     let key = if error.is_timeout() {
         "updates.timeout"
     } else if error.is_connect() {
@@ -23,9 +26,17 @@ fn network_error(error: reqwest::Error) -> AppError {
     } else {
         "updates.sourceUnavailable"
     };
+    let detail =
+        crate::network::diagnostics::redact_error_detail(&format!("{:?}", error.without_url()));
     tracing::debug!(
-        timeout = error.is_timeout(),
-        connect = error.is_connect(),
+        source,
+        stage = if body { "response-body" } else { "request" },
+        timeout,
+        connect,
+        body,
+        detail,
+        reason = key,
+        action = "check_update_proxy_and_retry",
         "update request failed"
     );
     AppError::Update(key.into())
@@ -40,7 +51,28 @@ pub(super) async fn request(client: &reqwest::Client, url: &str) -> AppResult<re
         .map_err(network_error)
 }
 
-fn status_error(status: reqwest::StatusCode, headers: &reqwest::header::HeaderMap) -> AppError {
+fn source_kind(url: Option<&reqwest::Url>) -> &'static str {
+    match url.and_then(reqwest::Url::host_str) {
+        Some("api.github.com") => "github-api",
+        Some("github.com") if url.is_some_and(|url| url.path().ends_with(".atom")) => {
+            "github-public-feed"
+        }
+        Some(
+            "github.com" | "release-assets.githubusercontent.com" | "objects.githubusercontent.com",
+        ) => "github-release",
+        _ => "custom-update-source",
+    }
+}
+
+fn header_number(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64> {
+    headers.get(name)?.to_str().ok()?.parse().ok()
+}
+
+fn status_error(
+    status: reqwest::StatusCode,
+    headers: &reqwest::header::HeaderMap,
+    source: &str,
+) -> AppError {
     let limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
         || (status == reqwest::StatusCode::FORBIDDEN
             && (headers
@@ -48,8 +80,29 @@ fn status_error(status: reqwest::StatusCode, headers: &reqwest::header::HeaderMa
                 .is_some_and(|value| value == "0")
                 || headers.contains_key(reqwest::header::RETRY_AFTER)));
     tracing::debug!(
+        source,
+        stage = "http-response",
         status = status.as_u16(),
         limited,
+        rate_limit_remaining = header_number(headers, "x-ratelimit-remaining"),
+        rate_limit_limit = header_number(headers, "x-ratelimit-limit"),
+        rate_limit_reset_unix = header_number(headers, "x-ratelimit-reset"),
+        retry_after_seconds = header_number(headers, "retry-after"),
+        request_id = headers
+            .get("x-github-request-id")
+            .and_then(|value| value.to_str().ok())
+            .filter(|value| value.len() <= 128
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b":-".contains(&byte)))
+            .unwrap_or("unavailable"),
+        action = if limited && source == "github-api" {
+            "try_public_feed_then_retry_later"
+        } else if limited {
+            "retry_later"
+        } else {
+            "check_update_source_and_proxy"
+        },
         "update source returned an error"
     );
     AppError::Update(
@@ -64,7 +117,11 @@ fn status_error(status: reqwest::StatusCode, headers: &reqwest::header::HeaderMa
 
 pub(super) async fn read_response(mut response: reqwest::Response) -> AppResult<Vec<u8>> {
     if !response.status().is_success() {
-        return Err(status_error(response.status(), response.headers()));
+        return Err(status_error(
+            response.status(),
+            response.headers(),
+            source_kind(Some(response.url())),
+        ));
     }
     if response
         .content_length()
@@ -183,7 +240,7 @@ async fn discover_github_feed(client: &reqwest::Client, channel: &str) -> AppRes
     match primary {
         Ok(feed) => Ok(feed),
         Err(primary) => {
-            tracing::info!(reason = %primary, "GitHub update API unavailable; checking recent public releases");
+            tracing::info!(reason = %primary, channel, source = "github-api", next_source = "github-public-feed", action = "automatic_fallback", "GitHub update API unavailable; checking recent public releases");
             let fallback = tokio::time::timeout(
                 Duration::from_secs(28),
                 super::atom::fallback(client, channel),
@@ -191,9 +248,17 @@ async fn discover_github_feed(client: &reqwest::Client, channel: &str) -> AppRes
             .await
             .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
             match fallback {
-                Ok(feed) => Ok(feed),
+                Ok(feed) => {
+                    tracing::info!(
+                        channel,
+                        source = "github-public-feed",
+                        version = feed.version.as_ref().map(ToString::to_string),
+                        "public release feed fallback succeeded"
+                    );
+                    Ok(feed)
+                }
                 Err(fallback) => {
-                    tracing::debug!(reason = %fallback, "public release feed fallback failed");
+                    tracing::debug!(reason = %fallback, primary_reason = %primary, channel, source = "github-public-feed", action = "check_update_proxy_or_retry_later", "public release feed fallback failed");
                     if primary.to_string() == "updates.rateLimited"
                         && fallback.to_string() == "updates.sourceUnavailable"
                     {
@@ -232,6 +297,87 @@ async fn api_feed(client: &reqwest::Client, channel: &str) -> AppResult<Feed> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn source_labels_never_expose_custom_urls_or_credentials() {
+        for (url, expected) in [
+            (
+                "https://api.github.com/repos/TunneldeDev/Tunnelde/releases?secret=hidden",
+                "github-api",
+            ),
+            (
+                "https://github.com/TunneldeDev/Tunnelde/releases.atom",
+                "github-public-feed",
+            ),
+            (
+                "https://github.com/TunneldeDev/Tunnelde/releases/download/v1/latest.json",
+                "github-release",
+            ),
+            (
+                "https://user:secret@private.example/feed?token=hidden",
+                "custom-update-source",
+            ),
+        ] {
+            assert_eq!(source_kind(Some(&url.parse().unwrap())), expected);
+        }
+    }
+
+    #[test]
+    fn quota_log_includes_actionable_allowlisted_response_context() {
+        use std::{
+            io::Write,
+            sync::{Arc, Mutex},
+        };
+        #[derive(Clone)]
+        struct Buffer(Arc<Mutex<Vec<u8>>>);
+        impl Write for Buffer {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let buffer = Buffer(bytes.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || buffer.clone())
+            .finish();
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (key, value) in [
+            ("x-ratelimit-remaining", "0"),
+            ("x-ratelimit-limit", "60"),
+            ("x-ratelimit-reset", "1800000000"),
+            ("retry-after", "120"),
+            ("x-github-request-id", "ABCD:1234"),
+            ("authorization", "Bearer secret-token"),
+        ] {
+            headers.insert(
+                reqwest::header::HeaderName::from_static(key),
+                value.parse().unwrap(),
+            );
+        }
+        tracing::subscriber::with_default(subscriber, || {
+            let _ = status_error(reqwest::StatusCode::FORBIDDEN, &headers, "github-api");
+        });
+        let output = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+        assert!(!output.contains("secret-token"));
+        let event: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
+        let fields = &event["fields"];
+        assert_eq!(fields["source"], "github-api");
+        assert_eq!(fields["stage"], "http-response");
+        assert_eq!(fields["status"], 403);
+        assert_eq!(fields["limited"], true);
+        assert_eq!(fields["request_id"], "ABCD:1234");
+        assert_eq!(fields["rate_limit_remaining"], 0);
+        assert_eq!(fields["rate_limit_limit"], 60);
+        assert_eq!(fields["rate_limit_reset_unix"], 1800000000);
+        assert_eq!(fields["retry_after_seconds"], 120);
+        assert_eq!(fields["action"], "try_public_feed_then_retry_later");
+    }
 
     #[test]
     fn github_lexical_beta_order_never_controls_update_selection() {
@@ -361,16 +507,21 @@ mod tests {
         use reqwest::{header::HeaderMap, StatusCode};
         let mut headers = HeaderMap::new();
         assert_eq!(
-            status_error(StatusCode::FORBIDDEN, &headers).to_string(),
+            status_error(StatusCode::FORBIDDEN, &headers, "github-api").to_string(),
             "updates.sourceUnavailable"
         );
         headers.insert("x-ratelimit-remaining", "0".parse().unwrap());
         assert_eq!(
-            status_error(StatusCode::FORBIDDEN, &headers).to_string(),
+            status_error(StatusCode::FORBIDDEN, &headers, "github-api").to_string(),
             "updates.rateLimited"
         );
         assert_eq!(
-            status_error(StatusCode::TOO_MANY_REQUESTS, &HeaderMap::new()).to_string(),
+            status_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                &HeaderMap::new(),
+                "github-api"
+            )
+            .to_string(),
             "updates.rateLimited"
         );
     }

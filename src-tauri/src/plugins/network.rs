@@ -15,25 +15,7 @@ type Jobs = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
 #[derive(Default)]
 pub struct DownloadRegistry(Jobs);
 
-fn diagnostic(value: &str) -> String {
-    // Source URLs may contain access tokens; proxy URLs may carry credentials.
-    // Preserve the error chain while removing every URL-like span.
-    let mut value = value.to_owned();
-    for scheme in ["https://", "http://"] {
-        let mut offset = 0;
-        while let Some(start) = value[offset..].find(scheme).map(|index| index + offset) {
-            let end = value[start..]
-                .find(|character: char| {
-                    character.is_whitespace() || matches!(character, '"' | '\'' | ')' | ']' | '}')
-                })
-                .map(|index| start + index)
-                .unwrap_or(value.len());
-            value.replace_range(start..end, "[url]");
-            offset = start + 5;
-        }
-    }
-    value.chars().take(2048).collect()
-}
+use crate::network::diagnostics::redact_error_detail as diagnostic;
 
 fn network_error(error: reqwest::Error) -> AppError {
     let timeout = error.is_timeout();

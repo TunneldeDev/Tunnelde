@@ -264,6 +264,7 @@ export interface ReleaseHistory {
 export interface IpcError {
   code: string;
   message: string;
+  details?: Record<string, unknown>;
 }
 
 export function isIpcError(value: unknown): value is IpcError {

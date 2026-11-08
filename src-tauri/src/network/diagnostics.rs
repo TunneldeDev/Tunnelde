@@ -8,6 +8,29 @@ use crate::error::{AppError, AppResult};
 const BUDGET: Duration = Duration::from_secs(15);
 const SAMPLES: usize = 3;
 
+/// Preserve transport causes without persisting credential-bearing URLs.
+pub(crate) fn redact_error_detail(value: &str) -> String {
+    let mut value = value.to_owned();
+    for scheme in ["https://", "http://", "socks5://", "socks5h://"] {
+        let mut offset = 0;
+        while let Some(start) = value[offset..].find(scheme).map(|index| index + offset) {
+            let end = value[start..]
+                .find(|character: char| {
+                    character.is_whitespace() || matches!(character, '"' | '\'' | ')' | ']' | '}')
+                })
+                .map(|index| start + index)
+                .unwrap_or(value.len());
+            value.replace_range(start..end, "[url]");
+            offset = start + 5;
+        }
+    }
+    value
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(2048)
+        .collect()
+}
+
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Quality {

@@ -1593,6 +1593,8 @@
     "testUpdatesRoute": "Current update route"
   },
   "pluginErrors": {
+    "hostVersionMismatch": "This plugin version ({{pluginVersion}}) requires Tunnelde {{required}}; you are running {{hostVersion}}. Update Tunnelde or install a compatible plugin version. Startup stopped before launching a runtime.",
+    "hostVersionUnsupported": "This plugin does not support this Tunnelde version. Check the version requirement in Plugin details, then update Tunnelde or install a compatible plugin version.",
     "startFailed": "Could not start {{name}}: {{error}}",
     "openLog": "Open log",
     "spawn": "Could not launch the plugin process",
