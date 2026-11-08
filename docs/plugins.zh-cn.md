@@ -323,6 +323,12 @@ runner 记录绑定已保存主机，新连接 ID 可用于恢复同一任务，
 任务列表支持取消、限速和清理；暂停与恢复只用于用户传输，需要重试时请从插件重新发起。
 源文件和已经提交的目标文件会保留。
 
+`files.local.copy({from,to,overwrite?})` 与 `files.sftp.copy({sessionId,from,to,overwrite?})`
+也使用持久任务引擎，遵循相同的运行代次、取消、暂存与提交规则。原有完成契约保持不变：工作结束后才返回
+`null`，取消或失败会拒绝调用。目录逐文件提交，失败时保留已提交文件。取消尚未结束的 `tools.invoke` 复制请求
+会通知工作任务停止，等待在途读写收尾后清理暂存文件。调用端 RPC 超时不能视为已经回滚的证明。
+长传输优先使用上传／下载返回的任务 ID 查询进度，避免复制 RPC 超过 SDK 调用超时。
+
 用 `files.transferStatus({transferId})` 等待完成，返回 `running`、`done`、`failed`、`cancelled` 或 `cleanupPending` 事件，
 找不到、已过期或不属于本运行代次时返回 `null`。内存只保留最近 256 个完成事件，每插件最多 8 个并发传输。
 
