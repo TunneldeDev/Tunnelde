@@ -26,6 +26,7 @@ mod publication;
 mod range_io;
 mod remote_commit;
 pub mod remote_editor;
+mod rename;
 mod scan;
 mod scheduler;
 pub mod search;
@@ -571,15 +572,18 @@ pub async fn remote_rename(
     to: String,
     overwrite: bool,
 ) -> AppResult<()> {
-    let sftp = session(app, session_id).await?;
+    let sftp = session(app, session_id)
+        .await
+        .map_err(|error| rename::context(&from, &to, error))?;
     let result = async {
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
         if overwrite && remote_exists(&sftp, &to).await? {
             return remote_replace(app, session_id, &from, &to).await;
         }
-        sftp.rename(from, to).await.map_err(map_sftp)
+        rename::entry(&sftp, &from, &to).await
     }
-    .await;
+    .await
+    .map_err(|error| rename::context(&from, &to, error));
     let _ = sftp.close().await;
     result
 }
@@ -1733,7 +1737,7 @@ async fn rename_endpoint(
     sftp: Option<&SftpSession>,
 ) -> AppResult<()> {
     match sftp {
-        Some(s) => s.rename(&from.path, &to.path).await.map_err(map_sftp),
+        Some(s) => rename::entry(s, &from.path, &to.path).await,
         None => {
             let source = PathBuf::from(&from.path);
             let destination = PathBuf::from(&to.path);
@@ -2563,10 +2567,11 @@ async fn run(
                         return Err(AppError::Ssh(CANCELLED.into()));
                     }
                     check_remote_destination(&sftp, &from.path, &to.path, overwrite).await?;
-                    sftp.rename(&from.path, &to.path).await.map_err(map_sftp)?;
+                    rename::entry(&sftp, &from.path, &to.path).await?;
                     Ok::<(), AppError>(())
                 }
-                .await;
+                .await
+                .map_err(|error| rename::context(&from.path, &to.path, error));
                 let _ = sftp.close().await;
                 let transferred = if result.is_ok() { total } else { 0 };
                 return Outcome::from_result(result, transferred, cancel);

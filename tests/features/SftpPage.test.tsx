@@ -45,6 +45,7 @@ import { plugin } from "../fixtures/plugins";
 import * as clipboard from "@/lib/session/clipboard";
 import * as mountedMenu from "@/lib/plugins/mountFileMenu";
 import { domainEvents } from "@/lib/events/domain";
+import { useToasts } from "@/store/toasts";
 
 const session: SshSession = {
   id: "session-1",
@@ -1719,6 +1720,50 @@ describe("SftpPage source picker", () => {
       ),
     );
     expect(fsMock.transfer).not.toHaveBeenCalled();
+  });
+
+  it("reports same-host move paths and opens its log while keeping the failed cut selection", async () => {
+    const clip = {
+      source: { kind: "remote", sessionId: "session-1" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "/other/move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    useToasts.setState({ items: [] });
+    fsMock.rename.mockRejectedValue({
+      code: "ssh",
+      message: "Remote move/rename failed",
+      details: {
+        operation: "rename",
+        from: "/other/move.txt",
+        to: "/srv/app/move.txt",
+        statusCode: 4,
+        serverMessage: "Failure",
+        reason: "Failure: Failure",
+      },
+    });
+    const openLog = vi.spyOn(api, "openLatestLog").mockResolvedValueOnce(undefined);
+    try {
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("readme.md");
+      fsMock.list.mockClear();
+      fireEvent.keyDown(screen.getAllByRole("listbox")[1]!, { key: "v", ctrlKey: true });
+      await waitFor(() => expect(useToasts.getState().items).toHaveLength(1));
+      const notice = useToasts.getState().items[0]!;
+      expect(notice.message).toContain("/other/move.txt");
+      expect(notice.message).toContain("/srv/app/move.txt");
+      expect(notice.message).toContain("SFTP 4");
+      expect(notice.message).not.toContain("Failure: Failure");
+      expect(notice.action?.label).toBe("Open original log");
+      await notice.action!.onClick();
+      expect(openLog).toHaveBeenCalledOnce();
+      expect(useFileClipboard.getState().clip).toBe(clip);
+      expect(fsMock.transfer).not.toHaveBeenCalled();
+      expect(fsMock.remove).not.toHaveBeenCalled();
+      await waitFor(() => expect(fsMock.list.mock.calls.length).toBeGreaterThan(1));
+    } finally {
+      openLog.mockRestore();
+    }
   });
 
   it("lists one row per host even when the host has several sessions", () => {

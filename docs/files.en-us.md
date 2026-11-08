@@ -57,3 +57,17 @@ compatible plugins can add preview formats. Local entries offer explicit native
 application/file-manager actions in their context menu. Transfer behavior,
 recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.en-us.md).
+
+## Failed remote moves
+
+Cut/paste within one remote host uses a server-side rename, avoiding a round trip
+through this computer. A server may reject a rename between different mount points.
+SFTP status 4 (`Failure`) is a general failure and does not identify its cause;
+destination conflicts and server restrictions can also produce it.
+
+Failed moves report both paths and preserve the server's available explanation.
+Use **Open original log** in the error notification for the structured details.
+The failed item remains in the cut selection; successful items in the same batch
+are removed from it. Refresh both locations before retrying after a lost connection,
+because a missing reply cannot prove whether the server completed the operation.
+An unspecified failure does not trigger an automatic copy-and-delete retry.

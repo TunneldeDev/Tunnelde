@@ -36,6 +36,14 @@ pub enum AppError {
     Update(String),
     #[error("{0}")]
     Ssh(String),
+    #[error("sftp.error: Remote move/rename failed ({from} -> {to}): {reason}")]
+    RemoteRename {
+        from: String,
+        to: String,
+        reason: String,
+        status_code: Option<u32>,
+        server_message: Option<String>,
+    },
 }
 
 impl AppError {
@@ -60,7 +68,7 @@ impl AppError {
             Self::Io(_) => "io",
             Self::Internal(_) => "internal",
             Self::Update(_) => "update",
-            Self::Ssh(_) => "ssh",
+            Self::Ssh(_) | Self::RemoteRename { .. } => "ssh",
         }
     }
 }
@@ -88,7 +96,10 @@ impl Serialize for AppError {
     where
         S: Serializer,
     {
-        let detailed = matches!(self, Self::PluginEngineUnsupported { .. });
+        let detailed = matches!(
+            self,
+            Self::PluginEngineUnsupported { .. } | Self::RemoteRename { .. }
+        );
         let mut state = serializer.serialize_struct("AppError", if detailed { 3 } else { 2 })?;
         state.serialize_field("code", self.code())?;
         state.serialize_field("message", &self.to_string())?;
@@ -105,6 +116,23 @@ impl Serialize for AppError {
                     "pluginId": plugin_id, "pluginVersion": plugin_version,
                     "hostVersion": host_version, "required": required,
                     "stage": "compatibility"
+                }),
+            )?;
+        }
+        if let Self::RemoteRename {
+            from,
+            to,
+            reason,
+            status_code,
+            server_message,
+        } = self
+        {
+            state.serialize_field(
+                "details",
+                &serde_json::json!({
+                    "operation": "rename", "from": from, "to": to,
+                    "statusCode": status_code, "serverMessage": server_message,
+                    "reason": reason,
                 }),
             )?;
         }

@@ -38,6 +38,7 @@ import { domainEvents, type FilesChanged } from "@/lib/events/domain";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
+import { isIpcError } from "@/lib/api/types";
 import {
   canPaste,
   clearDragSource,
@@ -1054,7 +1055,17 @@ export function SftpPage({
         onDone?.(op.from);
       }
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(
+        translateError(error),
+        "error",
+        isIpcError(error) && error.details?.operation === "rename"
+          ? {
+              label: t("output.openFile"),
+              onClick: () =>
+                api.openLatestLog().catch((cause) => toast(translateError(cause), "error")),
+            }
+          : undefined,
+      );
     } finally {
       await refreshSource(source);
     }
