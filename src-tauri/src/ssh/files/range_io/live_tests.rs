@@ -49,6 +49,7 @@ async fn configured_data_channel(
             backend: Backend::Compressed(worker),
             read_size: 256 * 1024,
             write_size: 256 * 1024,
+            copy_data: false,
         });
     }
     channel.request_subsystem(true, "sftp").await.unwrap();
@@ -210,6 +211,11 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
             source: Some(configured_data_channel(&handle, false).await),
             target: None,
         };
+        let same_channel = configured_data_channel(&handle, false).await;
+        let server_copy_sessions = Sessions {
+            source: Some(same_channel.clone()),
+            target: Some(same_channel),
+        };
         let mut cases = vec![
             (
                 "baseline-upload",
@@ -247,6 +253,15 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
                 true,
             ),
         ];
+        if server_copy_sessions.server_copy() {
+            cases.push((
+                "server-side-remote-copy",
+                endpoint("parallel.bin", true),
+                endpoint("server-copy.bin", true),
+                &server_copy_sessions,
+                true,
+            ));
+        }
         if std::env::var_os("TUNNELDE_TEST_COMPRESSED").is_some() {
             cases.push((
                 "sftp-pipeline-upload",
@@ -316,6 +331,7 @@ async fn live_segmented_transfers_match_bytes_and_measure_baseline() {
         "baseline.bin",
         "parallel.bin",
         "remote-copy.bin",
+        "server-copy.bin",
         "sftp-pipeline.bin",
         "sftp-pipeline-2.bin",
         "parallel-2.bin",

@@ -2418,7 +2418,15 @@ async fn parallel_copy_file(
     mut replay_end: Option<u64>,
 ) -> AppResult<()> {
     let previous_files = meter.transferred.saturating_sub(offset);
-    if offset == 0 && replay_end.is_none() && stamp.0 <= archive::MAX_FILE {
+    let channels = meter
+        .data_sessions(from, temp, from_sftp, to_sftp, cancel)
+        .await?
+        .clone();
+    if !channels.server_copy()
+        && offset == 0
+        && replay_end.is_none()
+        && stamp.0 <= archive::MAX_FILE
+    {
         if let Some(archives) = &meter.archives {
             let copied = archives
                 .copy(
@@ -2445,10 +2453,6 @@ async fn parallel_copy_file(
             }
         }
     }
-    let channels = meter
-        .data_sessions(from, temp, from_sftp, to_sftp, cancel)
-        .await?
-        .clone();
     let files = range_io::Files::open_cancellable(&channels, from, temp, cancel)
         .await?
         .with_throttle(meter.throttle());

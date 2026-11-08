@@ -134,6 +134,28 @@ without a recorded end conservatively replay the remaining source, because a del
 write can extend the currently observed file length. Workers stop and drain before file
 handles are closed or temporary files can be cleaned.
 
+### Copies within one remote connection
+
+With transfer optimization enabled, background copies between folders on the same
+SSH connection use the server's `copy-data` extension when it advertises version
+`1`. Source and destination handles share one SFTP data channel, and each request
+copies at most 1 MiB directly on the server. File contents do not travel through
+the desktop for this data-copy step. Source checks, resume-prefix verification and
+metadata operations still use their existing paths. Copies between separate SSH
+connections, including connections to the same saved host, use the normal transfer
+pipeline; servers without this extension also retain the normal pipeline.
+
+Server copies retain task staging, bounded concurrency, confirmed progress,
+pause/cancel and replay of interrupted windows. Progress and speed represent
+logical file bytes copied on the server; both configured upload and download
+limits still apply. Small-file archive relay and compression are skipped for this
+path. An extension error stops the task rather than retrying through a different
+transport after an uncertain write.
+
+This optimization does not change move safety. A failed rename across remote
+filesystems does not authorize deleting a source file. Moves that cannot establish
+safe source removal retain the source and report the limitation.
+
 ### Adaptive transfer compression
 
 **Compress transfer data automatically** is enabled by default with transfer

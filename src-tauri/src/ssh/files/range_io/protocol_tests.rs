@@ -14,12 +14,23 @@ struct Observed {
     disconnected: bool,
     open_gate: Option<Arc<tokio::sync::Semaphore>>,
     opens: usize,
+    open_flags: Vec<u32>,
+    copies: Vec<(u64, u64, u64)>,
+    copied: Vec<u8>,
 }
 
 #[derive(Clone, Default)]
 struct CloseReply {
     gate: Option<Arc<tokio::sync::Semaphore>>,
     status: u32,
+}
+
+#[derive(Clone, Default)]
+struct CopyReply {
+    advertised: Option<String>,
+    gate: Option<Arc<tokio::sync::Semaphore>>,
+    status: u32,
+    partial: Option<usize>,
 }
 
 fn string(bytes: &[u8], offset: &mut usize) -> Vec<u8> {
@@ -58,6 +69,15 @@ async fn stream_with_close(
     delay: Duration,
     close: CloseReply,
 ) -> (tokio::io::DuplexStream, Arc<Mutex<Observed>>) {
+    stream_with_copy(write_limit, delay, close, None).await
+}
+
+async fn stream_with_copy(
+    write_limit: Option<u64>,
+    delay: Duration,
+    close: CloseReply,
+    copy: Option<CopyReply>,
+) -> (tokio::io::DuplexStream, Arc<Mutex<Observed>>) {
     let (client, server) = tokio::io::duplex(1024 * 1024);
     let observed = Arc::new(Mutex::new(Observed::default()));
     let state = observed.clone();
@@ -94,21 +114,72 @@ async fn stream_with_close(
                         field(&mut reply, b"limits@openssh.com");
                         field(&mut reply, b"1");
                     }
+                    if let Some(version) = copy.as_ref().and_then(|v| v.advertised.as_ref()) {
+                        field(&mut reply, b"copy-data");
+                        field(&mut reply, version.as_bytes());
+                    }
                 }
                 200 => {
-                    reply.push(201);
-                    reply.extend_from_slice(id);
-                    for value in [262144_u64, 131072, write_limit.unwrap(), 128] {
-                        reply.extend_from_slice(&value.to_be_bytes());
+                    let mut pos = 5;
+                    let name = string(&request, &mut pos);
+                    if name == b"limits@openssh.com" {
+                        reply.push(201);
+                        reply.extend_from_slice(id);
+                        for value in [262144_u64, 131072, write_limit.unwrap(), 128] {
+                            reply.extend_from_slice(&value.to_be_bytes());
+                        }
+                    } else {
+                        assert_eq!(name, b"copy-data");
+                        let copy = copy.as_ref().expect("copy-data must be configured");
+                        assert_eq!(string(&request, &mut pos), b"/source");
+                        let from = u64::from_be_bytes(request[pos..pos + 8].try_into().unwrap());
+                        pos += 8;
+                        let length = u64::from_be_bytes(request[pos..pos + 8].try_into().unwrap());
+                        pos += 8;
+                        assert_eq!(string(&request, &mut pos), b"/target");
+                        let to = u64::from_be_bytes(request[pos..pos + 8].try_into().unwrap());
+                        pos += 8;
+                        assert_eq!(pos, request.len());
+                        assert!(length > 0 && length <= 1024 * 1024);
+                        {
+                            let mut state = state.lock().unwrap();
+                            state.copies.push((from, length, to));
+                            let count = copy.partial.unwrap_or(length as usize);
+                            let data = state.data[from as usize..from as usize + count].to_vec();
+                            let size = (to as usize + count).max(state.copied.len());
+                            state.copied.resize(size, 0);
+                            state.copied[to as usize..to as usize + count].copy_from_slice(&data);
+                            state.pending += 1;
+                            state.peak = state.peak.max(state.pending);
+                        }
+                        reply.push(101);
+                        reply.extend_from_slice(id);
+                        reply.extend_from_slice(&copy.status.to_be_bytes());
+                        field(&mut reply, b"copy result");
+                        field(&mut reply, b"");
+                        if let Some(gate) = &copy.gate {
+                            let gate = gate.clone();
+                            let send = send.clone();
+                            tokio::spawn(async move {
+                                let _permit = gate.acquire().await.unwrap();
+                                let _ = send.send((reply, true));
+                            });
+                            continue;
+                        }
+                        delayed = true;
                     }
                 }
                 3 => {
                     reply.push(102);
                     reply.extend_from_slice(id);
-                    field(&mut reply, b"handle");
+                    let mut pos = 5;
+                    let path = string(&request, &mut pos);
+                    let flags = u32::from_be_bytes(request[pos..pos + 4].try_into().unwrap());
+                    field(&mut reply, if copy.is_some() { &path } else { b"handle" });
                     let gate = {
                         let mut state = state.lock().unwrap();
                         state.opens += 1;
+                        state.open_flags.push(flags);
                         state.open_gate.clone()
                     };
                     if let Some(gate) = gate {
@@ -161,16 +232,22 @@ async fn stream_with_close(
                     }
                     if kind == 6 {
                         let mut pos = 5;
-                        let _ = string(&request, &mut pos);
+                        let handle = string(&request, &mut pos);
                         let offset =
                             u64::from_be_bytes(request[pos..pos + 8].try_into().unwrap()) as usize;
                         pos += 8;
                         let bytes = string(&request, &mut pos);
                         assert!(bytes.len() <= write_limit.unwrap_or(32768) as usize);
                         let mut state = state.lock().unwrap();
-                        let size = state.data.len().max(offset + bytes.len());
-                        state.data.resize(size, 0);
-                        state.data[offset..offset + bytes.len()].copy_from_slice(&bytes);
+                        let output = if copy.is_some() {
+                            assert_eq!(handle, b"/target");
+                            &mut state.copied
+                        } else {
+                            &mut state.data
+                        };
+                        let size = output.len().max(offset + bytes.len());
+                        output.resize(size, 0);
+                        output[offset..offset + bytes.len()].copy_from_slice(&bytes);
                         state.writes.push(bytes.len());
                         state.pending += 1;
                         state.peak = state.peak.max(state.pending);
@@ -202,6 +279,308 @@ async fn wait_for(mut ready: impl FnMut() -> bool) {
     })
     .await
     .expect("protocol event did not arrive");
+}
+
+async fn copy_server(
+    reply: CopyReply,
+    close: CloseReply,
+) -> (Sessions, Arc<Mutex<Observed>>, Endpoint, Endpoint) {
+    let (stream, state) =
+        stream_with_copy(None, Duration::from_millis(5), close, Some(reply)).await;
+    let channel = Arc::new(DataSession::new(stream).await.unwrap());
+    let from = Endpoint {
+        session: Some("same-session".into()),
+        path: "/source".into(),
+    };
+    let to = Endpoint {
+        session: from.session.clone(),
+        path: "/target".into(),
+    };
+    (
+        Sessions {
+            source: Some(channel.clone()),
+            target: Some(channel),
+        },
+        state,
+        from,
+        to,
+    )
+}
+
+fn copy_supported() -> CopyReply {
+    CopyReply {
+        advertised: Some("1".into()),
+        ..Default::default()
+    }
+}
+
+#[tokio::test]
+async fn same_channel_copy_uses_bounded_server_ranges_and_preserves_resume_prefix() {
+    let (sessions, state, from, to) = copy_server(copy_supported(), CloseReply::default()).await;
+    let bytes: Vec<_> = (0..3 * 1024 * 1024 + 51).map(|n| (n % 239) as u8).collect();
+    let prefix = 32771;
+    {
+        let mut state = state.lock().unwrap();
+        state.data = bytes.clone();
+        state.copied = bytes[..prefix].to_vec();
+    }
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let count = AtomicU64::new(0);
+    files
+        .segment(
+            prefix as u64..bytes.len() as u64,
+            3,
+            &AtomicBool::new(false),
+            &count,
+        )
+        .await
+        .unwrap();
+    files.finish(false).await.unwrap();
+    let state = state.lock().unwrap();
+    assert_eq!(state.copied, bytes);
+    assert_eq!(count.load(Ordering::Relaxed), (bytes.len() - prefix) as u64);
+    assert_eq!(
+        state.open_flags,
+        [OpenFlags::READ.bits(), OpenFlags::WRITE.bits()]
+    );
+    assert!(state.reads.is_empty() && state.writes.is_empty());
+    assert_eq!(
+        state.copies.len(),
+        (bytes.len() - prefix).div_ceil(1024 * 1024)
+    );
+    assert!(state.copies.iter().all(|(from, length, to)| from == to
+        && *from >= prefix as u64
+        && *length > 0
+        && *length <= 1024 * 1024));
+    assert!(state.peak > 1 && state.peak <= 3);
+    assert_eq!(state.closes, 2);
+}
+
+#[tokio::test]
+async fn copy_requires_exact_extension_version_shared_channel_and_matching_session() {
+    for advertised in [None, Some("0"), Some("2"), Some("1")] {
+        let (sessions, state, from, mut to) = copy_server(
+            CopyReply {
+                advertised: advertised.map(String::from),
+                ..Default::default()
+            },
+            CloseReply::default(),
+        )
+        .await;
+        state.lock().unwrap().data = b"compatible fallback".to_vec();
+        if advertised == Some("1") {
+            to.session = Some("another-session".into());
+        }
+        let files = Files::open(&sessions, &from, &to).await.unwrap();
+        assert!(files.server_copy().is_none());
+        files
+            .segment(0..19, 2, &AtomicBool::new(false), &AtomicU64::new(0))
+            .await
+            .unwrap();
+        files.finish(false).await.unwrap();
+        let state = state.lock().unwrap();
+        assert_eq!(state.copied, b"compatible fallback");
+        assert!(state.copies.is_empty());
+        assert!(!state.reads.is_empty() && !state.writes.is_empty());
+    }
+    let (mut sessions, _, from, to) = copy_server(copy_supported(), CloseReply::default()).await;
+    let (other, _) = server(None, Duration::ZERO).await;
+    sessions.target = Some(other);
+    assert!(!sessions.server_copy());
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    assert!(files.server_copy().is_none());
+    files.finish(false).await.unwrap();
+}
+
+#[tokio::test]
+async fn failed_server_copy_never_falls_back_or_counts_unacknowledged_bytes() {
+    let (sessions, state, from, to) = copy_server(
+        CopyReply {
+            status: 4,
+            partial: Some(3),
+            ..copy_supported()
+        },
+        CloseReply::default(),
+    )
+    .await;
+    state.lock().unwrap().data = b"partial mutation".to_vec();
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let count = AtomicU64::new(0);
+    let result = files
+        .segment(0..16, 1, &AtomicBool::new(false), &count)
+        .await;
+    assert!(result.is_err());
+    assert_eq!(count.load(Ordering::Relaxed), 0);
+    assert!(files.unsettled_write.load(Ordering::SeqCst));
+    files.finish(true).await.unwrap();
+    let state = state.lock().unwrap();
+    assert_eq!(state.copied, b"par");
+    assert_eq!(state.copies.len(), 1);
+    assert!(state.reads.is_empty() && state.writes.is_empty());
+    assert!(!state.disconnected);
+    assert_eq!(state.closes, 2);
+}
+
+#[tokio::test]
+async fn cancelled_server_copy_drains_shared_destination_before_retiring_task() {
+    let copy_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let close_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (sessions, state, from, to) = copy_server(
+        CopyReply {
+            gate: Some(copy_gate.clone()),
+            ..copy_supported()
+        },
+        CloseReply {
+            gate: Some(close_gate.clone()),
+            status: 0,
+        },
+    )
+    .await;
+    state.lock().unwrap().data = b"pending".to_vec();
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let cancel = AtomicBool::new(false);
+    let count = AtomicU64::new(0);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(files.segment(0..7, 1, &cancel, &count), async {
+            wait_for(|| !state.lock().unwrap().copies.is_empty()).await;
+            cancel.store(true, Ordering::SeqCst);
+        })
+    })
+    .await
+    .expect("copy cancellation waited for its acknowledgement");
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert_eq!(count.load(Ordering::Relaxed), 0);
+    let finish = files.finish_cancellable(true, &cancel);
+    tokio::pin!(finish);
+    tokio::select! {
+        result = &mut finish => panic!("uncertain copy released before CLOSE: {result:?}"),
+        () = wait_for(|| state.lock().unwrap().closes == 2) => {}
+    }
+    assert!(tokio::time::timeout(Duration::from_millis(40), &mut finish)
+        .await
+        .is_err());
+    assert!(!state.lock().unwrap().disconnected);
+    copy_gate.add_permits(1);
+    close_gate.add_permits(2);
+    finish.await.unwrap();
+    let next = Files::open(&sessions, &from, &to).await.unwrap();
+    next.segment(0..0, 1, &AtomicBool::new(false), &count)
+        .await
+        .unwrap();
+    close_gate.add_permits(2);
+    next.finish(false).await.unwrap();
+    assert_eq!(
+        state.lock().unwrap().copies.len(),
+        1,
+        "empty source sent an unbounded copy-to-EOF request"
+    );
+    assert_eq!(state.lock().unwrap().closes, 4);
+}
+
+#[tokio::test]
+async fn acknowledged_server_copy_close_is_cancellable_without_aborting_shared_channel() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (sessions, state, from, to) = copy_server(
+        copy_supported(),
+        CloseReply {
+            gate: Some(gate.clone()),
+            status: 0,
+        },
+    )
+    .await;
+    state.lock().unwrap().data = b"done".to_vec();
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    files
+        .segment(0..4, 1, &AtomicBool::new(false), &AtomicU64::new(0))
+        .await
+        .unwrap();
+    assert!(!files.unsettled_write.load(Ordering::SeqCst));
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(files.finish_cancellable(false, &cancel), async {
+            wait_for(|| state.lock().unwrap().closes == 2).await;
+            cancel.store(true, Ordering::SeqCst);
+        })
+    })
+    .await
+    .expect("acknowledged copy blocked close cancellation");
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert!(!state.lock().unwrap().disconnected);
+    gate.add_permits(4);
+    let next = Files::open(&sessions, &from, &to).await.unwrap();
+    next.finish(false).await.unwrap();
+}
+
+#[tokio::test]
+async fn server_copy_replays_cancelled_window_with_new_limits_and_smaller_segments() {
+    let gate = Arc::new(tokio::sync::Semaphore::new(1));
+    let (sessions, state, from, to) = copy_server(
+        CopyReply {
+            gate: Some(gate.clone()),
+            ..copy_supported()
+        },
+        CloseReply::default(),
+    )
+    .await;
+    let bytes: Vec<_> = (0..2 * 1024 * 1024 + 31).map(|n| (n % 239) as u8).collect();
+    state.lock().unwrap().data = bytes.clone();
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let count = AtomicU64::new(0);
+    let prefix = 4099;
+    files
+        .segment(0..prefix, 1, &AtomicBool::new(false), &count)
+        .await
+        .unwrap();
+    // Semaphore permits are returned by the fixture after each ACK.
+    gate.acquire().await.unwrap().forget();
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::join!(
+        files.segment(prefix..bytes.len() as u64, 3, &cancel, &count),
+        async {
+            wait_for(|| state.lock().unwrap().copies.len() > 1).await;
+            cancel.store(true, Ordering::SeqCst);
+        }
+    );
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert_eq!(count.load(Ordering::Relaxed), prefix);
+    gate.add_permits(4);
+    files.finish(true).await.unwrap();
+    wait_for(|| state.lock().unwrap().pending == 0).await;
+    let controller = Arc::new(bandwidth::Controller::default());
+    controller.register("server-replay");
+    controller.configure(128, 64);
+    let files = Files::open(&sessions, &from, &to)
+        .await
+        .unwrap()
+        .with_throttle(bandwidth::Throttle {
+            controller: controller.clone(),
+            id: "server-replay".into(),
+        });
+    let cancel = AtomicBool::new(false);
+    let mut progress = 0;
+    let (result, ()) = tokio::join!(
+        super::super::segments::copy_window(
+            &files,
+            prefix..bytes.len() as u64,
+            super::super::segments::Plan {
+                workers: 2,
+                chunk: 16384,
+                requests: 2
+            },
+            &cancel,
+            |bytes| progress += bytes,
+        ),
+        async {
+            tokio::time::sleep(Duration::from_millis(80)).await;
+            controller.configure(0, 0);
+        }
+    );
+    result.unwrap();
+    files.finish(false).await.unwrap();
+    let state = state.lock().unwrap();
+    assert_eq!(state.copied, bytes);
+    assert_eq!(progress, bytes.len() as u64 - prefix);
+    assert!(state.reads.is_empty() && state.writes.is_empty());
 }
 
 #[tokio::test]
