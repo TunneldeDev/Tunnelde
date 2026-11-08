@@ -118,8 +118,14 @@ retain their own channels. Upload packet sizes use the server's advertised write
 within a 256 KiB memory bound; servers without a write limit retain the compatible
 32 KiB fallback. Each queued packet fits both endpoints, avoiding sequential write
 acknowledgements inside a larger logical packet. A journal records the confirmed contiguous prefix before each
-window of segments. Resume discards an interrupted window before verifying the prefix;
-sparse writes are never interpreted as completed data. Workers stop and drain before file
+window of segments, together with that window's end. Resume verifies only the confirmed
+prefix and rewrites the entire interrupted window without truncating the staging file;
+sparse writes are never interpreted as completed data. The journal remains until every
+byte in the replayed window has been acknowledged and checkpointed. Lowering chunk size
+or concurrency cannot leave the old tail behind or exceed the new worker/request budget:
+workers stream larger ranges through the same bounded packet pipeline. Legacy markers
+without a recorded end conservatively replay the remaining source, because a delayed
+write can extend the currently observed file length. Workers stop and drain before file
 handles are closed or temporary files can be cleaned.
 
 ### Adaptive transfer compression
@@ -241,8 +247,8 @@ New remote transfers write their `.tunnelde-….part` file inside a task-owned
 directory-creation operation itself and verified before opening the file. The
 directory is removed after publication or cancellation; cleanup never recursively
 deletes unrecognized contents. Local transfers and existing journals retain their
-original sibling staging paths. A clean pause saves
-its closed file's size and modification time. If both source and staging metadata
+original sibling staging paths. Completed parallel windows and cleanly closed local
+sequential writes save the file's size and modification time. If both source and staging metadata
 still match, resume verifies the first and last blocks and continues at the saved
 offset. Interrupted writes, legacy tasks and changed staging metadata use full prefix
 verification. A changed source or mismatched partial file is rejected. Verification
@@ -252,9 +258,9 @@ pausing. The shared connection remains available. Closing an empty remote stagin
 handle, or data handles whose writes have all been acknowledged, can also stop
 waiting when paused. This does not abort a destination data channel shared by
 other files in a directory transfer. If a write's result is uncertain, the
-application retains the bounded CLOSE wait before recovery may truncate the
-staging file. Successful transfers still wait for CLOSE confirmation. Recovery
-truncation, legacy staging-file creation and private-directory creation still await
+application retains the bounded CLOSE wait and the unconfirmed window's journal.
+Pause/error handling and recovery do not send truncation requests. Successful transfers
+still wait for CLOSE confirmation. Legacy staging-file creation and private-directory creation still await
 their server confirmations.
 
 After the private directory has been acknowledged, creating its empty staging file

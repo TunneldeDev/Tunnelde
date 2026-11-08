@@ -1209,6 +1209,11 @@ async fn interruptible<T>(
     cancel: Option<&AtomicBool>,
     operation: impl std::future::Future<Output = AppResult<T>>,
 ) -> AppResult<T> {
+    // A ready operation can win before the interval's first tick. Do not even
+    // poll it when cancellation was already requested (especially mutations).
+    if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
     tokio::pin!(operation);
     let mut tick = tokio::time::interval(std::time::Duration::from_millis(40));
     loop {
@@ -1968,15 +1973,18 @@ async fn durable_copy_file(
         .await?;
     #[cfg(windows)]
     let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
+    let mut replay = None;
     if resuming {
         // A missing Windows staging file can reappear between the pin attempt
-        // and recovery. Never truncate such an unrecognized object by path.
+        // and recovery. Never trust such an unrecognized object by path.
         #[cfg(windows)]
         let can_recover_window = to_sftp.is_some() || local_staging.is_some();
         #[cfg(not(windows))]
         let can_recover_window = true;
         if can_recover_window {
-            artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp, Some(cancel)).await?;
+            replay =
+                artifacts::recover_window(meter.app, &key, stamp, &temp, to_sftp, Some(cancel))
+                    .await?;
         }
     }
     let partial = if resuming {
@@ -2017,7 +2025,11 @@ async fn durable_copy_file(
             checked?;
         }
     }
-    let existing = partial.unwrap_or(0);
+    // A sparse tail from an interrupted parallel window is not a completed
+    // prefix. Retain the physical bytes and verify only the journalled prefix.
+    let existing = replay
+        .as_ref()
+        .map_or(partial.unwrap_or(0), |window| window.start);
     if existing > stamp.0 {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
@@ -2157,7 +2169,18 @@ async fn durable_copy_file(
         closed?;
         read_closed?;
         parallel_copy_file(
-            from, to, &temp, from_sftp, to_sftp, meter, cancel, &key, stamp, existing, plan,
+            from,
+            to,
+            &temp,
+            from_sftp,
+            to_sftp,
+            meter,
+            cancel,
+            &key,
+            stamp,
+            existing,
+            plan,
+            replay.map(|window| window.end),
         )
         .await
     } else {
@@ -2380,9 +2403,10 @@ async fn parallel_copy_file(
     stamp: (u64, Option<i64>),
     mut offset: u64,
     plan: segments::Plan,
+    mut replay_end: Option<u64>,
 ) -> AppResult<()> {
     let previous_files = meter.transferred.saturating_sub(offset);
-    if offset == 0 && stamp.0 <= archive::MAX_FILE {
+    if offset == 0 && replay_end.is_none() && stamp.0 <= archive::MAX_FILE {
         if let Some(archives) = &meter.archives {
             let copied = archives
                 .copy(
@@ -2421,10 +2445,19 @@ async fn parallel_copy_file(
             if cancel.load(Ordering::SeqCst) {
                 return Err(AppError::Ssh(CANCELLED.into()));
             }
-            let end = offset
-                .saturating_add(plan.chunk * plan.workers as u64)
-                .min(stamp.0);
-            artifacts::begin_window(meter.app, key, stamp, offset)?;
+            let replaying = replay_end.is_some();
+            let end = plan.window_end(offset, stamp.0, replay_end.take());
+            artifacts::begin_window(meter.app, key, stamp, offset..end)?;
+            if replaying {
+                tracing::debug!(
+                    id = meter.id,
+                    offset,
+                    end,
+                    workers = plan.workers,
+                    requests = plan.requests,
+                    "Replaying unconfirmed transfer window"
+                );
+            }
             segments::copy_window(&files, offset..end, plan, cancel, |bytes| meter.add(bytes))
                 .await?;
             interruptible(
@@ -2440,22 +2473,8 @@ async fn parallel_copy_file(
     .await;
     tracing::debug!(id = meter.id, "Closing transfer data handles");
     let closed = files.finish_cancellable(result.is_err(), cancel).await;
-    if result.is_err() && closed.is_ok() {
-        let recovered = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            segments::resize(temp, to_sftp, offset),
-        )
-        .await;
-        if matches!(recovered, Ok(Ok(()))) {
-            tokio::time::timeout(
-                std::time::Duration::from_secs(5),
-                artifacts::checkpoint(meter.app, key, stamp, temp, to_sftp, offset..=offset),
-            )
-            .await
-            .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??;
-            artifacts::end_window(meter.app, key)?;
-        }
-    }
+    // Keep an interrupted window journalled, including its maximum extent.
+    // Resume rewrites it without issuing a potentially delayed truncate.
     if result.is_err() {
         meter.retain(previous_files + offset)?;
     }

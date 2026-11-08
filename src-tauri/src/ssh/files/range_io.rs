@@ -254,8 +254,8 @@ pub(super) struct Files<'a> {
     unsettled_write: AtomicBool,
 }
 
-/// A dropped request may still run on the server. Its handle must finish
-/// draining before recovery is allowed to truncate the same staging inode.
+/// A dropped request may still run on the server. Drain its handle before
+/// retiring a task; recovery must replay its entire journalled write window.
 struct WriteAttempt<'a> {
     unsettled: &'a AtomicBool,
     acknowledged: bool,

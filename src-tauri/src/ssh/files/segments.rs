@@ -11,6 +11,22 @@ pub(super) struct Plan {
 }
 
 impl Plan {
+    pub fn window_end(self, offset: u64, size: u64, replay_end: Option<u64>) -> u64 {
+        offset
+            .saturating_add(self.chunk.saturating_mul(self.workers as u64))
+            .max(replay_end.unwrap_or(offset))
+            .min(size)
+    }
+
+    fn for_window(self, length: u64) -> Self {
+        Self {
+            // A resumed window can be larger than the new chunk/concurrency
+            // settings. Each worker streams its range; it never buffers it all.
+            chunk: self.chunk.max(length.div_ceil(self.workers as u64)),
+            ..self
+        }
+    }
+
     pub fn for_file(settings: &crate::settings::Settings, size: u64, remote: bool) -> Self {
         let chunk = match settings.transfer_chunk_kib {
             0 if size < 64 * 1024 * 1024 => 1024 * 1024,
@@ -64,32 +80,6 @@ pub(super) fn config(settings: &crate::settings::Settings) -> russh_sftp::client
     }
 }
 
-pub(super) async fn resize(
-    target: &Endpoint,
-    sftp: Option<&SftpSession>,
-    length: u64,
-) -> AppResult<()> {
-    reject_destination_link(target, sftp).await?;
-    match sftp {
-        Some(sftp) => {
-            let mut attributes = russh_sftp::protocol::FileAttributes::empty();
-            attributes.size = Some(length);
-            sftp.set_metadata(&target.path, attributes)
-                .await
-                .map_err(map_sftp)?;
-        }
-        None => {
-            tokio::fs::OpenOptions::new()
-                .write(true)
-                .open(&target.path)
-                .await?
-                .set_len(length)
-                .await?;
-        }
-    }
-    Ok(())
-}
-
 /// Parallel writes are bounded to one window. The caller journals its contiguous
 /// prefix before entering; a crash can only invalidate this uncommitted window.
 #[allow(clippy::too_many_arguments)]
@@ -100,6 +90,7 @@ pub(super) async fn copy_window(
     cancel: &AtomicBool,
     mut progress: impl FnMut(u64),
 ) -> AppResult<()> {
+    let plan = plan.for_window(range.end.saturating_sub(range.start));
     let stop = AtomicBool::new(cancel.load(Ordering::SeqCst));
     let transferred = AtomicU64::new(0);
     let mut workers = FuturesUnordered::new();
@@ -143,6 +134,46 @@ pub(super) async fn copy_window(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resumed_windows_rewrite_the_old_extent_with_the_new_worker_budget() {
+        let mut settings = crate::settings::Settings {
+            transfer_chunk_kib: 256,
+            transfer_requests: 64,
+            ..Default::default()
+        };
+        let old_end = 128 * 1024 * 1024;
+        for workers in 1..=8 {
+            settings.transfer_concurrency = workers;
+            let plan = Plan::for_file(&settings, old_end + 17, true);
+            let end = plan.window_end(1, old_end + 17, Some(old_end));
+            assert_eq!(end, old_end);
+            let replay = plan.for_window(end - 1);
+            assert!((end - 1).div_ceil(replay.chunk) <= u64::from(workers));
+            assert_eq!(replay.workers, usize::from(workers));
+            assert_eq!(replay.requests, plan.requests);
+            assert!(replay.workers * replay.requests <= 64);
+        }
+        let plan = Plan {
+            workers: 8,
+            chunk: u64::MAX,
+            requests: 1,
+        };
+        assert_eq!(plan.window_end(1, u64::MAX, None), u64::MAX);
+        assert_eq!(
+            (u64::MAX - 1).div_ceil(plan.for_window(u64::MAX - 1).chunk),
+            1
+        );
+        let plan = Plan {
+            workers: 3,
+            chunk: 7,
+            requests: 2,
+        };
+        assert_eq!(plan.window_end(20, 100, None), 41);
+        assert_eq!(plan.window_end(20, 100, Some(80)), 80);
+        assert_eq!(plan.window_end(90, 100, Some(95)), 100);
+        assert_eq!(plan.for_window(61).chunk, 21);
+    }
 
     #[test]
     fn automatic_plans_bound_parallelism_and_requests() {
