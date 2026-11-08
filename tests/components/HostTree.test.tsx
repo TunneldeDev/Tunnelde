@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
 import { HostTree } from "@/components/layout/HostTree";
-import type { Host } from "@/lib/api/types";
+import type { Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useHosts } from "@/store/hosts";
 import { useWorkspace } from "@/store/workspace";
@@ -34,6 +34,14 @@ const host = (id: string, name: string, sortOrder: number): Host => ({
   updatedAt: 0,
 });
 const openHostDetails = useWorkspace.getState().openHost;
+const group = (id: string, parentId: string | null = null): Group => ({
+  id,
+  name: id,
+  parentId,
+  sortOrder: 0,
+  createdAt: 0,
+  updatedAt: 0,
+});
 
 beforeEach(() => {
   useContextMenu.setState({ menu: null });
@@ -57,6 +65,101 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("renders hosts at every group depth and counts all descendants", () => {
+    useHosts.setState({
+      groups: [
+        group("Root"),
+        group("Child", "Root"),
+        group("Grandchild", "Child"),
+        group("Leaf", "Grandchild"),
+      ],
+      hosts: [
+        { ...host("deep", "Deep host", 0), groupId: "Leaf" },
+        { ...host("root", "Root host", 1), groupId: "Root" },
+      ],
+    });
+    render(<HostTree />);
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+    for (const name of ["Root", "Child", "Grandchild", "Leaf"]) {
+      const row = screen.getByRole("button", { name: new RegExp(`^${name} `) });
+      expect(row.querySelector(".group-row__count")?.textContent).toBe(name === "Root" ? "2" : "1");
+    }
+    const tree = screen.getByRole("tree");
+    fireEvent.keyDown(tree, { key: "End" });
+    expect(tree.getAttribute("aria-activedescendant")).toBe("host-deep");
+    fireEvent.keyDown(tree, { key: "Enter" });
+    expect(useWorkspace.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ hostId: "deep" })]),
+    );
+  });
+
+  it("reveals deep search matches while preserving normal collapsed groups", () => {
+    useHosts.setState({
+      groups: [group("Root"), group("Child", "Root"), group("Leaf", "Child"), group("Unrelated")],
+      hosts: [{ ...host("deep", "Deep host", 0), groupId: "Leaf", tags: ["production"] }],
+    });
+    render(<HostTree />);
+    fireEvent.click(screen.getByRole("button", { name: /^Root / }));
+    expect(screen.queryByRole("treeitem")).toBeNull();
+    const search = screen.getByRole("combobox");
+    fireEvent.change(search, { target: { value: "tag:production" } });
+    expect(screen.getByRole("treeitem").textContent).toContain("Deep host");
+    expect(screen.queryByRole("button", { name: /^Unrelated / })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Child / }));
+    expect(screen.queryByRole("treeitem")).toBeNull();
+    fireEvent.change(search, { target: { value: "Deep" } });
+    expect(screen.getByRole("treeitem")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "" } });
+    expect(screen.getByRole("button", { name: /^Root / }).getAttribute("aria-expanded")).toBe(
+      "false",
+    );
+    expect(screen.queryByRole("treeitem")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Root / }));
+    expect(screen.getByRole("treeitem")).toBeTruthy();
+    fireEvent.change(search, { target: { value: "tag:production" } });
+    expect(screen.getByRole("treeitem")).toBeTruthy();
+  });
+
+  it("keeps hosts reachable when imported groups have missing or cyclic parents", () => {
+    useHosts.setState({
+      groups: [
+        group("Orphan", "missing"),
+        group("Cycle A", "Cycle B"),
+        group("Cycle B", "Cycle A"),
+      ],
+      hosts: [
+        { ...host("orphan", "Orphan host", 0), groupId: "Orphan" },
+        { ...host("cycle", "Cycle host", 1), groupId: "Cycle B" },
+        { ...host("missing", "Missing group host", 2), groupId: "missing" },
+      ],
+    });
+    render(<HostTree />);
+    expect(screen.getAllByRole("treeitem")).toHaveLength(3);
+    expect(screen.getByRole("button", { name: /^Cycle A / })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Cycle B / })).toBeTruthy();
+  });
+
+  it("clears a hidden keyboard target when its ancestor is collapsed", () => {
+    useHosts.setState({
+      groups: [group("Root"), group("Child", "Root"), group("Leaf", "Child")],
+      hosts: [
+        { ...host("deep", "Deep host", 0), groupId: "Leaf" },
+        host("ungrouped", "Ungrouped host", 1),
+      ],
+    });
+    render(<HostTree />);
+    const tree = screen.getByRole("tree");
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    expect(tree.getAttribute("aria-activedescendant")).toBe("host-deep");
+    fireEvent.click(screen.getByRole("button", { name: /^Child / }));
+    expect(tree.hasAttribute("aria-activedescendant")).toBe(false);
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    fireEvent.keyDown(tree, { key: "Enter" });
+    expect(useWorkspace.getState().tabs).toEqual(
+      expect.arrayContaining([expect.objectContaining({ hostId: "ungrouped" })]),
+    );
+  });
+
   it("keeps tags in search suggestions and supports @tag filtering and one-click clear", () => {
     useHosts.setState({
       hosts: [

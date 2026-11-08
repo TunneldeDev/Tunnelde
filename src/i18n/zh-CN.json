@@ -141,7 +141,7 @@
     "editTitle": "编辑主机",
     "open": "打开主机",
     "deleteTitle": "删除主机",
-    "deleteBody": "删除“{{name}}”及其中的全部内容？此操作不可撤销。",
+    "deleteBody": "删除已保存的主机“{{name}}”？这会移除其连接配置，不会删除远端机器上的文件。",
     "details": "详情",
     "emptyTitle": "未选择",
     "emptyBody": "从左侧选择一个主机。",
@@ -171,7 +171,7 @@
     "namePlaceholder": "生产环境",
     "open": "打开主机",
     "deleteTitle": "删除分组",
-    "deleteBody": "删除“{{name}}”及其中的全部内容？组内主机保留并移到未分组。"
+    "deleteBody": "删除分组“{{name}}”及其子分组？已保存的主机会保留并移至未分组。"
   },
   "settings": {
     "transferOptimization": "优化文件传输",

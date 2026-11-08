@@ -430,10 +430,6 @@
   background: var(--td-hover);
 }
 
-.host-row.is-nested {
-  padding-left: 27px;
-}
-
 .host-row.is-active {
   background: var(--td-accent-soft);
   box-shadow: inset 2px 0 0 var(--td-accent);
