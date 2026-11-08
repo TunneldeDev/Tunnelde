@@ -135,6 +135,12 @@ validation rules. The host lists contributed bindings only while the plugin is
 installed. Conflicts can be retained, resolved by keeping one binding, or opened
 in Keyboard Shortcuts with `@is:conflict` and `@plugins:plugin-id,another-id`.
 
+Host version requirements include prerelease application versions while preserving
+the declared comparator bounds. For example, `>=0.29.0-beta.2` accepts
+`0.32.0-beta.4`, but `>=0.32.0` still rejects that Beta and `^0.31.0` does not
+accept it. This lets compatible plugins run on newer public Betas without removing
+their upper bounds. Node version requirements retain normal runtime SemVer rules.
+
 The host runs Node plugins in a separate process. **Node is not bundled.** Before using an
 existing system Node, Tunnelde asks for permission. Alternatively choose an executable explicitly
 or install a private runtime on demand. The process is killed when the plugin is stopped,

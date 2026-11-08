@@ -2,6 +2,7 @@ pub mod api;
 pub mod config;
 mod contributions;
 mod declarative;
+mod engines;
 pub mod file_icons;
 mod host;
 pub mod manifest;
@@ -121,10 +122,7 @@ impl Instance {
 
     fn require_runtime(&self) -> AppResult<()> {
         if let Some(range) = self.manifest.engines.get("tunnelde") {
-            let compatible = semver::VersionReq::parse(range)
-                .ok()
-                .zip(semver::Version::parse(env!("CARGO_PKG_VERSION")).ok())
-                .is_some_and(|(range, version)| range.matches(&version));
+            let compatible = engines::supports_host(range, env!("CARGO_PKG_VERSION"));
             if !compatible {
                 return Err(AppError::validation("plugin.engine.unsupported"));
             }
