@@ -33,6 +33,14 @@ impl Source {
         Ok(Self(GuardedFile::deletable(path)?))
     }
 
+    pub(super) fn identity(&self) -> AppResult<crate::platform::file_identity::FileIdentity> {
+        Ok(self.0.identity()?)
+    }
+
+    pub(super) fn length(&self) -> AppResult<u64> {
+        Ok(self.0.reader()?.metadata()?.len())
+    }
+
     pub(super) async fn verify(
         self,
         destination: &Path,

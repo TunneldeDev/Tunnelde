@@ -9,8 +9,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FileDispositionInfo, FileIdInfo, FileRenameInfo, FileRenameInfoEx, GetFileInformationByHandle,
     GetFileInformationByHandleEx, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
     FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
-    FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_ID_INFO,
-    FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ,
+    FILE_GENERIC_WRITE, FILE_ID_INFO, FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
 };
 use windows_sys::Win32::System::WindowsProgramming::{
     FILE_RENAME_FLAG_POSIX_SEMANTICS, FILE_RENAME_FLAG_REPLACE_IF_EXISTS,
@@ -76,6 +76,57 @@ fn object_identity(file: &impl AsRawHandle, directory: bool) -> io::Result<FileI
 /// Sharing is checked in both directions: an already open writer makes acquisition
 /// fail, rather than allowing verification against a file that can still change.
 pub struct GuardedFile(File);
+
+/// Pin a directory itself, without claiming its children cannot change. Every
+/// ancestor must stay pinned while a caller uses a descendant's absolute path.
+pub struct GuardedDirectory(File);
+
+impl GuardedDirectory {
+    pub fn pin(path: &Path) -> io::Result<Self> {
+        Self::open(path, FILE_GENERIC_READ)
+    }
+
+    pub fn deletable(path: &Path) -> io::Result<Self> {
+        Self::open(path, FILE_GENERIC_READ | DELETE)
+    }
+
+    fn open(path: &Path, access: u32) -> io::Result<Self> {
+        let file = OpenOptions::new()
+            .access_mode(access)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        directory_identity(&file)?;
+        Ok(Self(file))
+    }
+
+    pub fn identity(&self) -> io::Result<FileIdentity> {
+        directory_identity(&self.0)
+    }
+
+    /// The filesystem rejects nonempty directories atomically. Never recurse:
+    /// newly inserted or unplanned children must remain with their source.
+    pub fn delete(self) -> io::Result<()> {
+        delete_object(&self.0)
+    }
+}
+
+fn delete_object(file: &File) -> io::Result<()> {
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: the live file owns the handle, and the buffer matches this class.
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            (&disposition as *const FILE_DISPOSITION_INFO).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
 
 impl GuardedFile {
     pub fn reader(&self) -> io::Result<File> {
@@ -217,21 +268,7 @@ impl GuardedFile {
     /// Delete the held file object. Never look the path up again after verifying it.
     /// A failure leaves the file present; dropping an uncommitted guard only unlocks it.
     pub fn delete(self) -> io::Result<()> {
-        let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-        // SAFETY: the handle belongs to the live File; the structure matches the
-        // requested information class and remains valid for the complete call.
-        if unsafe {
-            SetFileInformationByHandle(
-                self.0.as_raw_handle(),
-                FileDispositionInfo,
-                (&disposition as *const FILE_DISPOSITION_INFO).cast(),
-                std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
+        delete_object(&self.0)
     }
 }
 

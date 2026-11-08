@@ -18,6 +18,8 @@ pub mod bandwidth;
 mod batch;
 mod compressed;
 pub mod durable;
+#[cfg(windows)]
+mod local_directory_move;
 pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
@@ -967,6 +969,31 @@ pub(crate) fn start_copy(
     spawn_transfer_inner(app, from, to, false, overwrite, owner)
 }
 
+/// Only the UI's confirmed local rename fallback uses this copy-based move.
+/// Other rename failures must retain their original atomic-rename semantics.
+#[cfg(windows)]
+pub(crate) fn start_local_move(
+    app: AppHandle,
+    from: String,
+    to: String,
+    overwrite: bool,
+) -> AppResult<TransferTask> {
+    spawn_transfer_inner(
+        app,
+        Endpoint {
+            session: None,
+            path: from,
+        },
+        Endpoint {
+            session: None,
+            path: to,
+        },
+        true,
+        overwrite,
+        None,
+    )
+}
+
 fn spawn_transfer_inner(
     app: AppHandle,
     from: Endpoint,
@@ -1023,6 +1050,7 @@ fn spawn_transfer_inner(
                 remove_source,
                 deleting_source: false,
                 move_recovery: None,
+                directory_move_manifest: None,
                 overwrite,
                 transferred: 0,
                 total: 0,
@@ -2711,6 +2739,26 @@ async fn run(
         }
         None => None,
     };
+
+    #[cfg(windows)]
+    if durable && remove_source && from_sftp.is_none() && to_sftp.is_none() {
+        let directory_move = match durable::Journal::get(app, id) {
+            Ok(row) if row.directory_move_manifest.is_some() => Ok(true),
+            Ok(row) if row.deleting_source => Ok(false),
+            Ok(_) => is_dir(from, None).await,
+            Err(error) => Err(error),
+        };
+        match directory_move {
+            Ok(true) => {
+                return local_directory_move::run(
+                    app, from, to, id, name, cancel, overwrite, resuming,
+                )
+                .await
+            }
+            Ok(false) => {}
+            Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+        }
+    }
 
     if durable && resuming && remove_source {
         let recovery = match durable::Journal::get(app, id) {
