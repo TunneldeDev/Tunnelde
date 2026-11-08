@@ -58,6 +58,10 @@ application/file-manager actions in their context menu. Transfer behavior,
 recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.en-us.md).
 
+Changing the interface language keeps an open preview and its existing file
+connection. Audio/video position and player settings, and PDF page and zoom,
+remain in place while the controls and supported error messages are translated.
+
 ## Searching open work
 
 Press F1 and type `> ` to find commands, or `% ` to search file contents. The scope
