@@ -727,7 +727,8 @@
     "moveTasksHint": "拖动或按方向键移动 · 双击恢复默认布局",
     "resetTasksLayout": "恢复传输窗口默认布局",
     "resizeTasksHint": "调整传输窗口大小（方向键调整，Shift 精细调整）",
-    "resizeColumnHint": "拖动调整列宽，双击恢复默认宽度；聚焦后使用方向键调整"
+    "resizeColumnHint": "拖动调整列宽，双击适配内容；聚焦后使用方向键调整",
+    "columnHeaderHint": "单击按此列排序，拖动列名调整列的顺序"
   },
   "processes": {
     "title": "进程",

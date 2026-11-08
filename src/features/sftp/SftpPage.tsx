@@ -31,6 +31,7 @@ import { FilePathBar } from "./FilePathBar";
 import { FileRemoteDialog } from "./FileRemoteDialog";
 import { FileTypeSelect } from "./FileTypeSelect";
 import { FileSplitView } from "./FileSplitView";
+import { fitFileColumn } from "@/lib/files/columnWidth";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
 import { domainEvents, type FilesChanged } from "@/lib/events/domain";
@@ -106,9 +107,7 @@ function columnLayout(view: FileViewPreferences) {
     columns,
     grid: columns
       .map((column, index) =>
-        column === "name"
-          ? `18px ${(widths[index] ?? 56) - 24}px`
-          : `${widths[index]}px`,
+        column === "name" ? `18px ${(widths[index] ?? 56) - 24}px` : `${widths[index]}px`,
       )
       .join(" "),
     minimum: `${widths.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
@@ -2373,6 +2372,7 @@ export function SftpPage({
                         key={sort}
                         className={`sftp-columns__${sort}`}
                         scope="col"
+                        title={t("sftp.columnHeaderHint")}
                         aria-label={t(
                           sort === "name"
                             ? "sftp.sortName"
@@ -2489,7 +2489,7 @@ export function SftpPage({
                             updateView(id, {
                               filesColumnWidths: {
                                 ...view.filesColumnWidths,
-                                [sort]: DEFAULT_COLUMN_WIDTHS[sort],
+                                [sort]: fitFileColumn(event.currentTarget.closest("th")!, sort),
                               },
                             });
                           }}
