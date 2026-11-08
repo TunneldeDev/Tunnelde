@@ -690,6 +690,8 @@
     "reviewTransfer": "需要检查",
     "inspectTransferLocation": "打开{{location}}目录",
     "directoryMoveUnavailable": "为保护源数据，暂不支持跨来源移动文件夹。请改用复制，源文件夹会保留。",
+    "directoryMoveSourceChanged": "已复制的文件已完成移动，但源文件夹中出现了不属于此任务的新项目。这些项目已保留，请检查两侧文件夹后再清除任务。",
+    "namedStreamsMoveUnavailable": "源文件或文件夹含有 Windows 命名数据流，当前复制后移动的流程无法完整保留这些数据，因此已保留源内容。请使用系统原生移动或支持保留数据流的工具。",
     "directoryMergeMoveUnavailable": "为保护源数据，暂不支持将文件夹移动合并到已有文件夹。请改用复制或选择其他名称。",
     "transferAlreadyComplete": "传输已完成",
     "transferNotFound": "传输任务不存在",

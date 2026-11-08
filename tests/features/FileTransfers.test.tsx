@@ -119,6 +119,8 @@ it.each([
   ["sftp.moveRecoverySourcePresent", /an entry now exists at the source path/],
   ["sftp.moveRecoveryUnverified", /saved task cannot verify the current files/],
   ["sftp.moveSourceRetained", /source has been kept/],
+  ["sftp.directoryMoveSourceChanged", /source folder contains new items/],
+  ["sftp.namedStreamsMoveUnavailable", /source has Windows named data streams/],
 ])("explains interrupted source removal without expanding task details: %s", (error, message) => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({

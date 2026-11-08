@@ -108,6 +108,10 @@ review. Newly added source entries are retained; a source directory is removed
 only when it is empty. This is a sequence of verified file moves, rather than an
 atomic transaction for the whole directory.
 
+Copy-based moves detect Windows named data streams on source files and
+directories and retain those sources, since the transfer pipeline does not copy
+these streams. Use a native filesystem move or a stream-preserving tool for them.
+
 This recovery applies to Windows local paths. Remote directory moves that would
 require copying and deleting remain restricted; ordinary moves within one remote
 host still use server-side rename.
