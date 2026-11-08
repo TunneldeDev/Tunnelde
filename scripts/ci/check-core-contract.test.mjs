@@ -18,6 +18,108 @@ const editor = JSON.parse(
     "utf8",
   ),
 );
+const tabBar = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/plugin-compat/tab-bar-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+test("tab-bar command schemas require complete advisory context and preserve nullable fields", () => {
+  const contract = tabBar.methods["tabBar.set"];
+  const validate = ajv.compile(contract.commandContextSchema);
+  const input = {
+    _locale: null,
+    _tabBar: { itemId: "run", tabId: "opaque", tabKind: "future", paneId: "p", value: null },
+  };
+  assert.ok(validate(input));
+  assert.ok(validate({ ...input, _locale: "zh-CN", future: true }));
+  assert.ok(validate({ ...input, _tabBar: { ...input._tabBar, value: "远端", future: true } }));
+  for (const field of ["_locale", "_tabBar"]) {
+    const missing = clone(input);
+    delete missing[field];
+    assert.equal(validate(missing), false, field);
+  }
+  for (const field of Object.keys(input._tabBar)) {
+    const missing = clone(input);
+    delete missing._tabBar[field];
+    assert.equal(validate(missing), false, field);
+  }
+  for (const [field, value] of [
+    ["itemId", "bad/id"],
+    ["paneId", ""],
+    ["tabId", "x\n"],
+    ["value", 1],
+  ]) {
+    assert.equal(
+      validate({ ...input, _tabBar: { ...input._tabBar, [field]: value } }),
+      false,
+      field,
+    );
+  }
+});
+
+test("contract gate rejects missing, failed, malformed and undeclared command samples", () => {
+  const discovery = {
+    methods: Object.entries(tabBar.methods).map(([name, contract]) => ({
+      name,
+      contract,
+      stability: "stable",
+      since: "0.32.0-beta.6",
+      permissions: [],
+    })),
+  };
+  const params = { id: "run", title: "Run", kind: "button", command: "go" };
+  const responses = {
+    samples: [
+      {
+        method: "tabBar.set",
+        params,
+        result: null,
+        commandInput: {
+          _locale: null,
+          _tabBar: { itemId: "run", tabId: "opaque", tabKind: "future", paneId: "p", value: null },
+        },
+      },
+      { method: "tabBar.set", params, error: { code: -32000, message: "plugin.tabBar.limit" } },
+      { method: "tabBar.remove", params: { id: "run" }, result: true },
+      {
+        method: "tabBar.remove",
+        params: { id: "run" },
+        error: { code: -32000, message: "plugin.tabBar.expired" },
+      },
+    ],
+  };
+  const emptyFloor = { version: 1, methods: {} };
+  assert.deepEqual(checkCoreContracts(discovery, responses, emptyFloor), {
+    methods: 2,
+    samples: 4,
+  });
+  for (const mutate of [
+    (r) => {
+      delete r.samples[0].commandInput;
+    },
+    (r) => {
+      delete r.samples[0].commandInput._tabBar.paneId;
+    },
+    (r) => {
+      r.samples[1].commandInput = r.samples[0].commandInput;
+    },
+    (r) => {
+      r.samples[2].commandInput = r.samples[0].commandInput;
+    },
+  ]) {
+    const copy = clone(responses);
+    mutate(copy);
+    assert.throws(() => checkCoreContracts(discovery, copy, emptyFloor));
+  }
+  for (const schema of [undefined, null, { type: "not-a-schema-type" }, false]) {
+    const copy = clone(discovery);
+    if (schema === undefined) delete copy.methods[0].contract.commandContextSchema;
+    else copy.methods[0].contract.commandContextSchema = schema;
+    assert.throws(() => checkCoreContracts(copy, responses, emptyFloor));
+  }
+});
 
 test("editor contract preserves document identity and allows forward-compatible fields", () => {
   const active = ajv.compile(editor.methods["editor.active"].resultSchema);

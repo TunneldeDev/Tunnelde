@@ -41,6 +41,9 @@ The stable surface also includes `statusBar.set`/`statusBar.remove` and
 0.29.0-beta.2; their frozen v1 contract is now explicit. Settings, workspace mutation,
 chat, runner and other panel methods remain experimental. `workspace.snapshot`
 also has a frozen v1 read-only contract; workspace mutation methods remain experimental.
+`tabBar.set`/`tabBar.remove` have a frozen v1 contract, including a separate
+`commandContextSchema` for advisory click input. See the
+[tab-bar guide](plugin-tab-bar.en-us.md) for defaults, lifecycle, scope and errors.
 An incompatible change to a stable contract requires an explicitly versioned migration.
 
 The frozen discovery [request schema](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)

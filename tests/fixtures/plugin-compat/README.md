@@ -16,3 +16,10 @@ frontend bridge to generate response samples, runs them through the Rust fronten
 reply/error encoder, validates their schemas and replays them through the frozen
 SDK. This complements desktop acceptance; mock authorization in the bridge test
 alone does not prove native permission enforcement or cross-platform UI behavior.
+
+`tab-bar-v1.json` freezes registration, removal and advisory command input for
+tab-bar contributions. The host emits samples from the actual runtime registry
+and command serializer. CI validates them against the frozen schemas and replays
+registration/removal responses through the historical SDK. Duplicate option values,
+selection membership, quotas and authorization remain runtime checks. Neither the
+frozen item contract nor the command context exposes internal layout state.

@@ -32,6 +32,8 @@
 `editor.active`/`editor.replace`。编辑器方法自 0.29.0-beta.2 起提供，本次明确冻结
 其 v1 契约。`workspace.snapshot` 也具有冻结的只读 v1 契约；设置、工作区修改、
 聊天、远端运行器及其余面板方法仍为实验接口。
+`tabBar.set`/`tabBar.remove` 也具有冻结的 v1 契约，另以 `commandContextSchema`
+定义提示性的点击输入。默认值、生命周期、匹配范围及错误见[标签栏指南](plugin-tab-bar.zh-cn.md)。
 稳定契约的不兼容变更需要明确的版本化迁移。
 
 冻结的接口发现[请求结构](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
