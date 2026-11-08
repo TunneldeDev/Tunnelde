@@ -58,6 +58,14 @@ application/file-manager actions in their context menu. Transfer behavior,
 recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.en-us.md).
 
+## Moving file panels
+
+To move one side of the file manager into its own group, drag its grip to a
+workspace edge, another group's body, or a position in its tab strip. An edge
+creates a split; the center or tab strip adds a tab to that group. Splitting
+keeps the panel's previous width or height where the available space allows.
+Dragging outside a drop target or pressing Esc leaves the original panel intact.
+
 ## Failed remote moves
 
 Cut/paste within one remote host uses a server-side rename, avoiding a round trip

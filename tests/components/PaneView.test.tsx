@@ -41,6 +41,36 @@ beforeEach(() => {
 });
 
 describe("workspace drop targets", () => {
+  it("accepts a detached file panel in a tab strip and consumes its drag token once", () => {
+    const { container } = render(<PaneLayout />);
+    const strip = container.querySelector('[data-pane-id="second"] .pane__tabs')!;
+    const onMoved = vi.fn();
+    const token = beginFilePaneDrag(
+      { source: { kind: "local" }, path: "C:\\work", ownerSessionId: "session" },
+      "This computer",
+      onMoved,
+    );
+    const dataTransfer = {
+      types: [FILE_PANE_MIME],
+      getData: (type: string) => (type === FILE_PANE_MIME ? token : ""),
+      dropEffect: "none",
+    };
+    const hover = fireEvent.dragOver(strip, { clientX: 200, dataTransfer });
+    expect(hover).toBe(false);
+    expect(dataTransfer.dropEffect).toBe("move");
+    expect(useWorkspace.getState().tabs).toHaveLength(3);
+    fireEvent.drop(strip, { clientX: 200, dataTransfer });
+    const tab = useWorkspace.getState().tabs.find((item) => item.filePane)!;
+    expect(useWorkspace.getState().panes.find((pane) => pane.id === "second")?.tabIds).toEqual([
+      "c",
+      tab.id,
+    ]);
+    expect(onMoved).toHaveBeenCalledOnce();
+    fireEvent.drop(strip, { clientX: 200, dataTransfer });
+    expect(useWorkspace.getState().tabs).toHaveLength(4);
+    expect(onMoved).toHaveBeenCalledOnce();
+  });
+
   it("docks a dragged file panel beside an existing pane", () => {
     const { container } = render(<PaneLayout />);
     const body = container.querySelector('[data-pane-id="first"] .pane__body') as HTMLElement;

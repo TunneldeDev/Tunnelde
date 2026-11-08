@@ -136,6 +136,7 @@ interface WorkspaceStore {
     direction: SplitDirection,
     position?: PanePosition,
     targetPaneId?: string,
+    preferredSize?: LayoutSize,
   ) => void;
   resizeSplit: (id: string, ratio: number) => void;
   moveTab: (tabId: string, targetPaneId: string, beforeTabId?: string | null) => void;
@@ -817,7 +818,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
       }),
 
-    splitTab: (tabId, direction, position = "after", targetPaneId) => {
+    splitTab: (tabId, direction, position = "after", targetPaneId, preferredSize) => {
       useWorkspace.getState().keepTab(tabId);
       const view = sidebarViewOf(tabId);
       if (view) useNavigation.getState().rememberSidebar(view);
@@ -841,13 +842,23 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         };
         const panes = [...dropTab(state.panes, tabId), created];
         let ratio = 0.5;
-        if (view) {
-          const size = measureSidebar(view);
+        {
+          const size = preferredSize
+            ? { ...preferredSize, fromSidebar: false }
+            : view
+              ? measureSidebar(view)
+              : source.id !== target?.id &&
+                  source.tabIds.filter((id) => !state.tabs.find((tab) => tab.id === id)?.hidden)
+                    .length === 1
+                ? measurePane(source.id)
+                : null;
           const workspaceSize = measureWorkspace();
           if (size) {
             const rootSize = workspaceSize
               ? {
-                  width: workspaceSize.width + (size.fromSidebar ? size.width : 0),
+                  width:
+                    workspaceSize.width +
+                    ("fromSidebar" in size && size.fromSidebar ? size.width : 0),
                   height: workspaceSize.height,
                 }
               : null;
@@ -865,7 +876,7 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
                     : null;
             const total = direction === "row" ? targetSize?.width : targetSize?.height;
             const requestedSize = direction === "row" ? size.width : size.height;
-            if (total && total > 4) {
+            if (total && total > 4 && Number.isFinite(requestedSize) && requestedSize > 0) {
               const fraction = Math.max(0.15, Math.min(0.85, requestedSize / (total - 4)));
               ratio = position === "before" ? fraction : 1 - fraction;
             }
