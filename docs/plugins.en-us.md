@@ -416,7 +416,13 @@ are capped near 1 MiB. Local text-file reads/writes are bounded to 512 KiB and r
 binary data. Remote text uses the normal 2 MiB editor limit and the stricter API
 response/request limits still apply. Reads return `{content,size}`.
 Plugin-scoped JSON storage is limited to 256 KiB total and is kept outside package
-directories. Each Node process may have 32 host calls in flight; workspace requests
+directories. Each Node process may have 32 host calls in flight, and the host may
+have 32 command/view requests in flight to that process. Calls above either limit
+fail with `plugin.api.busy` rather than growing an unbounded queue. An async Node
+command does not block another command or view render; plugin authors must handle
+overlapping callbacks and keep synchronous CPU work short. Stop, revocation and
+process exit reject pending requests; a restarted plugin receives new request state.
+Workspace requests
 are additionally capped at 8 per plugin and 64 globally. SSH execution is bounded to
 100–60000 ms and 1 MiB of combined output, and returns `{stdout,stderr,exitCode,signal}`.
 Cancellation closes its dedicated channel; it cannot undo a command that already ran.
