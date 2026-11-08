@@ -103,6 +103,13 @@ CONNECT and SOCKS5 negotiation. Jump routes live under `route:<host-id>` in SQLi
 Each hop checks its actual server key before authenticating; nested SSH channels
 and jump handles stay owned by the destination session.
 
+An explicit disconnect removes the session from discovery, forgets its monitoring
+state and publishes a single `ssh://closed` event. It also requests transport-level
+closure for the target and its private jumps; stopping the terminal task alone does
+not close existing SFTP or exec channels. Disconnect requests run outside the session
+registry lock with a bounded send timeout, and failures are logged with session/hop
+context. Other sessions remain independent.
+
 Durable desktop transfers journal tasks under `transfer:<id>`, per-file checkpoints
 under `transfer-file:<id>:…`, and overwrite recovery intent under
 `transfer-backup:<id>:…`. Stable host IDs and endpoint addresses rebind tasks after

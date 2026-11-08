@@ -216,10 +216,12 @@ impl SshManager {
             .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))
     }
 
-    fn remove(&self, session_id: &str) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            sessions.remove(session_id);
-        }
+    fn remove(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(session_id))
+            .is_some()
     }
 
     pub fn list(&self) -> Vec<SessionInfo> {
@@ -310,12 +312,44 @@ impl SshManager {
         Ok(())
     }
 
-    pub fn disconnect(&self, session_id: &str) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            if let Some(handle) = sessions.remove(session_id) {
-                let _ = handle.writer.try_send(WriterMsg::Close);
-                handle.task.abort();
-            }
+    pub fn disconnect(&self, session_id: &str) -> bool {
+        let removed = self
+            .sessions
+            .lock()
+            .ok()
+            .and_then(|mut sessions| sessions.remove(session_id));
+        if let Some(handle) = removed {
+            let _ = handle.writer.try_send(WriterMsg::Close);
+            handle.task.abort();
+            // Dropping a terminal task or Handle does not close channels that
+            // already hold a sender. Close the entire transport explicitly,
+            // including private jump connections, outside the registry lock.
+            let session_id = session_id.to_owned();
+            tauri::async_runtime::spawn(async move {
+                for (hop, connection) in std::iter::once(&handle.handle)
+                    .chain(handle._jumps.iter().rev())
+                    .enumerate()
+                {
+                    match tokio::time::timeout(
+                        Duration::from_secs(1),
+                        connection.disconnect(russh::Disconnect::ByApplication, "", "en"),
+                    )
+                    .await
+                    {
+                        Ok(Ok(())) => {}
+                        Ok(Err(error)) if !connection.is_closed() => {
+                            tracing::warn!(%session_id, hop, %error, "Cannot send SSH disconnect request");
+                        }
+                        Err(_) => {
+                            tracing::warn!(%session_id, hop, "SSH disconnect request timed out");
+                        }
+                        _ => {}
+                    }
+                }
+            });
+            true
+        } else {
+            false
         }
     }
 }
@@ -797,18 +831,22 @@ async fn connect_for_auth(
             }
         }
 
-        if let Some(state) = task_app.try_state::<AppState>() {
+        let removed = if let Some(state) = task_app.try_state::<AppState>() {
             state.forwards.stop_session(&task_session);
-            state.ssh.remove(&task_session);
             state.monitor.forget(&task_session);
+            state.ssh.remove(&task_session)
+        } else {
+            false
+        };
+        if removed {
+            let _ = task_app.emit(
+                CLOSED_EVENT,
+                ClosedPayload {
+                    session_id: task_session.clone(),
+                    reason: "closed".into(),
+                },
+            );
         }
-        let _ = task_app.emit(
-            CLOSED_EVENT,
-            ClosedPayload {
-                session_id: task_session.clone(),
-                reason: "closed".into(),
-            },
-        );
         if let Some(state) = task_app.try_state::<AppState>() {
             state.mounts.stop_session(&task_session).await;
         }
@@ -845,7 +883,16 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
             .stop_session(&cleanup_session)
             .await;
     });
-    state.ssh.disconnect(session_id);
+    if state.ssh.disconnect(session_id) {
+        state.monitor.forget(session_id);
+        let _ = app.emit(
+            CLOSED_EVENT,
+            ClosedPayload {
+                session_id: session_id.into(),
+                reason: "closed".into(),
+            },
+        );
+    }
     Ok(())
 }
 
@@ -1003,6 +1050,76 @@ mod tests {
             .is_none());
         assert!(requests.lock().unwrap().is_empty());
         server.abort();
+    }
+
+    #[tokio::test]
+    async fn disconnect_closes_owned_transport_and_jumps_even_with_live_channels() {
+        let (client, _, server) = server(false, false).await;
+        let (jump, _, jump_server) = self::server(false, false).await;
+        let (unrelated, _, unrelated_server) = self::server(false, false).await;
+        let client = Arc::new(client);
+        let jump = Arc::new(jump);
+        let mut channel = client.channel_open_session().await.unwrap();
+        channel.data(&b"before disconnect"[..]).await.unwrap();
+        assert!(matches!(
+            channel.wait().await,
+            Some(ChannelMsg::Data { .. })
+        ));
+        let (writer, _receiver) = mpsc::channel(1);
+        // A full terminal queue must not hide a disconnect request.
+        writer.try_send(WriterMsg::Attach).unwrap();
+        let task = tokio::spawn(std::future::pending());
+        let stopped = task.abort_handle();
+        let manager = SshManager::default();
+        manager.insert(SessionHandle {
+            info: SessionInfo {
+                id: "target".into(),
+                host_id: "host".into(),
+                title: "Target".into(),
+                address: "qa@target:22".into(),
+                cols: 80,
+                rows: 24,
+                connected_at: 1,
+                terminal: false,
+                purpose: None,
+            },
+            writer,
+            task,
+            handle: client.clone(),
+            _jumps: vec![jump.clone()],
+            remote_forwards: Arc::default(),
+        });
+        assert!(manager.disconnect("target"));
+        assert!(!manager.disconnect("target"));
+        assert!(manager.handle("target").is_err());
+        assert!(manager.list().is_empty());
+        let closed = tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.is_closed() || !jump.is_closed() || !stopped.is_finished() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await;
+        // Release all test transports even when testing the old implementation.
+        let _ = client
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        let _ = jump
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        assert!(!unrelated.is_closed());
+        let _ = unrelated
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        server.abort();
+        jump_server.abort();
+        unrelated_server.abort();
+        assert!(
+            closed.is_ok(),
+            "disconnect left its transport or jump active"
+        );
+        assert!(tokio::time::timeout(Duration::from_secs(1), channel.wait())
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
