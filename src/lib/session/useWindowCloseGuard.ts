@@ -9,6 +9,7 @@ import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { useSettings } from "@/store/settings";
 import { toast } from "@/store/toasts";
+import { beforeWindowReload } from "./reload";
 
 /** Protect drafts on native X/Alt+F4 as well as the compact close button. */
 export function useWindowCloseGuard(): void {
@@ -80,11 +81,22 @@ export function useWindowCloseGuard(): void {
       });
     }
 
-    void subscribe().catch((error) => {
+    const subscription = subscribe();
+    const removeReloadPreparation = beforeWindowReload(async () => {
+      // A reload does not destroy the native window. Its old listener would
+      // still veto future close events after its JS callback has disappeared.
+      await subscription;
+      const stop = unlisten;
+      if (!stop) return;
+      await stop();
+      unlisten = undefined;
+    });
+    void subscription.catch((error) => {
       if (alive) toast(translateError(error), "error");
     });
     return () => {
       alive = false;
+      removeReloadPreparation();
       void unlisten?.();
     };
   }, []);
