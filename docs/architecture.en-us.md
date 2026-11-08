@@ -68,6 +68,15 @@ does not return a panel to the left sidebar; use **Move to side bar** or drag it
 back explicitly to change its placement. Hidden panel slots are included in saved
 workspace layouts and do not count as visible content.
 
+## Host groups and search
+
+The host tree follows all saved parent levels, with descendant counts and indentation
+at each level. Favorites remain in their own section. Filtering reveals matching
+hosts and their ancestors, without changing the normal collapsed-group state;
+groups can also be collapsed within the current search. Deleting a group removes
+its subgroups while keeping their saved hosts in Ungrouped. Removing a saved host
+does not delete files on the remote machine.
+
 ## Data
 
 - Database: `<app data>/tunnelde.db` (SQLite, WAL).

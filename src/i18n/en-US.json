@@ -141,7 +141,7 @@
     "editTitle": "Edit host",
     "open": "Open host",
     "deleteTitle": "Delete host",
-    "deleteBody": "Delete “{{name}}” and everything inside it? This cannot be undone.",
+    "deleteBody": "Remove saved host “{{name}}”? Its saved connection settings will be deleted. Files on the remote machine are not affected.",
     "details": "Details",
     "emptyTitle": "Nothing selected",
     "emptyBody": "Pick a host from the sidebar.",
@@ -171,7 +171,7 @@
     "namePlaceholder": "Production",
     "open": "Open host",
     "deleteTitle": "Delete group",
-    "deleteBody": "Delete “{{name}}” and everything inside it? Hosts inside stay and move to Ungrouped."
+    "deleteBody": "Delete group “{{name}}” and its subgroups? Saved hosts will be kept and moved to Ungrouped."
   },
   "settings": {
     "transferOptimization": "Optimize file transfers",
