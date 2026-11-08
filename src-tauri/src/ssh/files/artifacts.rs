@@ -12,6 +12,8 @@ enum ArtifactRecord {
         identity: Option<FileIdentity>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         archive: Option<ArchiveWrite>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        publication: Option<Publication>,
     },
     Legacy(String),
 }
@@ -22,6 +24,13 @@ enum ArtifactRecord {
 struct ArchiveWrite {
     generation: Option<String>,
     pending: bool,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Publication {
+    // Persisted before retiring the original path. A restart retries the same
+    // rename pair instead of losing a successfully moved, fully uploaded file.
+    successor: Option<String>,
 }
 
 impl ArtifactRecord {
@@ -84,9 +93,59 @@ pub(super) async fn prepare_staging(
     to: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
-) -> AppResult<Endpoint> {
+) -> AppResult<(Endpoint, bool)> {
     let mut record = artifact_record(app, id, to)?;
     let temp = part_from_record(to, id, record.as_ref())?;
+    let recovering_publication = matches!(
+        record,
+        Some(ArtifactRecord::Current {
+            publication: Some(_),
+            ..
+        })
+    );
+    if recovering_publication {
+        let sftp = sftp.ok_or_else(|| AppError::internal("Remote publication on local staging"))?;
+        let successor = match record.as_mut().unwrap() {
+            ArtifactRecord::Current { publication, .. } => publication
+                .as_mut()
+                .unwrap()
+                .successor
+                .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+                .clone(),
+            ArtifactRecord::Legacy(_) => unreachable!(),
+        };
+        // Record the successor before sending the fencing rename. If it runs
+        // but its acknowledgement is lost, the next attempt finds this path.
+        put(
+            app,
+            &artifact_key(id, to),
+            serde_json::to_string(&record.as_ref().unwrap())?,
+        )?;
+        let next = publication_successor(to, id, &successor)?;
+        if !publication::fence(&temp, &next, sftp, cancel).await? {
+            // Keep the uncertainty record until the published target has been
+            // verified. A failed verification must remain protected on every
+            // later Resume, including after an application restart.
+            return Ok((next, true));
+        }
+        if let Some(ArtifactRecord::Current {
+            archive,
+            publication,
+            ..
+        }) = record.as_mut()
+        {
+            let stage = archive.get_or_insert_with(ArchiveWrite::default);
+            stage.generation = Some(successor);
+            stage.pending = false;
+            *publication = None;
+        }
+        put(
+            app,
+            &artifact_key(id, to),
+            serde_json::to_string(&record.as_ref().unwrap())?,
+        )?;
+        return Ok((next, true));
+    }
     if let Some(ArtifactRecord::Current {
         archive: Some(archive),
         ..
@@ -130,10 +189,52 @@ pub(super) async fn prepare_staging(
                 tx.commit()?;
                 Ok(())
             })?;
-            return part_from_record(to, id, record.as_ref());
+            return Ok((part_from_record(to, id, record.as_ref())?, false));
         }
     }
-    Ok(temp)
+    Ok((temp, false))
+}
+
+fn publication_successor(to: &Endpoint, id: &str, generation: &str) -> AppResult<Endpoint> {
+    let generation = uuid::Uuid::parse_str(generation)
+        .map_err(|_| AppError::internal("Invalid publication staging generation"))?;
+    Ok(staging_endpoint(to, &format!("{id}-{generation}"), "part"))
+}
+
+pub(super) fn begin_publication(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    temp: &Endpoint,
+) -> AppResult<()> {
+    let mut record = artifact_record(app, id, to)?
+        .ok_or_else(|| AppError::internal("Missing publication ownership record"))?;
+    if to.session.is_none() || part_from_record(to, id, Some(&record))?.path != temp.path {
+        return Err(AppError::internal("Publication staging journal mismatch"));
+    }
+    match &mut record {
+        ArtifactRecord::Current { publication, .. } if publication.is_none() => {
+            *publication = Some(Publication::default());
+        }
+        _ => {
+            return Err(AppError::internal(
+                "Unresolved publication ownership record",
+            ))
+        }
+    }
+    put(app, &artifact_key(id, to), serde_json::to_string(&record)?)
+}
+
+pub(super) fn confirm_publication(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> {
+    if let Some(mut record @ ArtifactRecord::Current { .. }) = artifact_record(app, id, to)? {
+        if let ArtifactRecord::Current { publication, .. } = &mut record {
+            if publication.take().is_none() {
+                return Ok(());
+            }
+        }
+        put(app, &artifact_key(id, to), serde_json::to_string(&record)?)?;
+    }
+    Ok(())
 }
 
 /// One transaction covers every member before the first network write. Clear
@@ -241,6 +342,7 @@ pub(super) fn record_local_writer(
                 path: to.path.clone(),
                 identity: Some(current.clone()),
                 archive: None,
+                publication: None,
             })?,
         )?;
         let guard = GuardedFile::pin(Path::new(&temp.path))?;
@@ -372,6 +474,7 @@ pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> 
             path: to.path.clone(),
             identity: None,
             archive: None,
+            publication: None,
         })?,
     )
 }
@@ -490,7 +593,20 @@ async fn cleanup_file(
         backup_checkpoint(app, &key)?.as_ref(),
         artifact.as_ref().and_then(ArtifactRecord::identity),
     )
-    .await
+    .await?;
+    if let Some(ArtifactRecord::Current {
+        publication: Some(Publication {
+            successor: Some(generation),
+        }),
+        ..
+    }) = artifact.as_ref()
+    {
+        let next = publication_successor(to, id, generation)?;
+        if file_length(&next, sftp).await?.is_some() {
+            cleanup_partial(&next, sftp, None).await?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -707,6 +823,7 @@ mod tests {
             path: "/destination".into(),
             identity: Some(id.clone()),
             archive: None,
+            publication: None,
         };
         let restored: ArtifactRecord =
             serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
@@ -739,6 +856,7 @@ mod tests {
                     generation: Some(uuid::Uuid::new_v4().to_string()),
                     pending: true,
                 }),
+                publication: None,
             };
             let restored: ArtifactRecord =
                 serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
@@ -761,8 +879,59 @@ mod tests {
                 generation: Some("../other".into()),
                 pending: true,
             }),
+            publication: None,
         };
         assert!(part_from_record(&to, "task", Some(&invalid)).is_err());
+    }
+
+    #[test]
+    fn publication_recovery_keeps_both_generations_until_confirmation() {
+        let to = Endpoint {
+            session: Some("remote".into()),
+            path: "/home/test/文件.bin".into(),
+        };
+        let previous = uuid::Uuid::new_v4().to_string();
+        let successor = uuid::Uuid::new_v4().to_string();
+        let mut record: ArtifactRecord = serde_json::from_value(serde_json::json!({
+            "path": to.path,
+            "identity": null,
+            "archive": { "generation": previous, "pending": false },
+            "publication": { "successor": successor }
+        }))
+        .unwrap();
+        // A crash before recording a successful fence must find both paths;
+        // retrying uses the same successor, not a third staging generation.
+        for _ in 0..3 {
+            let restored: ArtifactRecord =
+                serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
+            assert_eq!(
+                part_from_record(&to, "task", Some(&restored)).unwrap().path,
+                publication_successor(&to, "task", &previous).unwrap().path
+            );
+            let ArtifactRecord::Current {
+                publication: Some(publication),
+                ..
+            } = &restored
+            else {
+                panic!("Lost publication uncertainty after restart");
+            };
+            assert_eq!(publication.successor.as_deref(), Some(successor.as_str()));
+            assert_ne!(
+                part_from_record(&to, "task", Some(&restored)).unwrap().path,
+                publication_successor(&to, "task", &successor).unwrap().path
+            );
+            record = restored;
+        }
+        assert!(publication_successor(&to, "task", "../other").is_err());
+        let initial: ArtifactRecord =
+            serde_json::from_str(r#"{"path":"/target","identity":null,"publication":{}}"#).unwrap();
+        assert!(matches!(
+            initial,
+            ArtifactRecord::Current {
+                publication: Some(Publication { successor: None }),
+                ..
+            }
+        ));
     }
 
     #[cfg(windows)]

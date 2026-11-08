@@ -22,6 +22,7 @@ pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
 mod move_verification;
+mod publication;
 mod range_io;
 mod remote_commit;
 pub mod remote_editor;
@@ -1880,6 +1881,7 @@ async fn durable_copy_file(
             verify_prefix(&mut source, to, to_sftp, stamp.0, Some(cancel)).await?;
             source.finish_cancellable(cancel).await?;
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+            artifacts::confirm_publication(meter.app, id, to)?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -1889,7 +1891,8 @@ async fn durable_copy_file(
         journal_app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&key,serde_json::to_string(&(stamp.0,stamp.1,completed))?,crate::models::now_ms()])?;Ok(())})
     };
     save(false)?;
-    let temp = artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel).await?;
+    let (temp, recovering_publication) =
+        artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel).await?;
     #[cfg(windows)]
     let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     if resuming {
@@ -1912,10 +1915,15 @@ async fn durable_copy_file(
     if to_sftp.is_none() && partial.is_some() && local_staging.is_none() {
         return Err(AppError::TransferArtifactUnrecognized { path: temp.path });
     }
-    if resuming
-        && partial.is_none()
-        && interruptible(Some(cancel), file_length(to, to_sftp)).await? == Some(stamp.0)
-    {
+    let published_length = if resuming && partial.is_none() {
+        interruptible(Some(cancel), file_length(to, to_sftp)).await?
+    } else {
+        None
+    };
+    if recovering_publication && partial.is_none() && published_length != Some(stamp.0) {
+        return Err(AppError::validation("sftp.resumePrefixMismatch"));
+    }
+    if published_length == Some(stamp.0) {
         phase(meter.app, id, "verifying");
         let mut completed = interruptible(Some(cancel), open_reader(from, from_sftp)).await?;
         let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
@@ -1923,8 +1931,16 @@ async fn durable_copy_file(
         if checked.is_ok() {
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             save(true)?;
+            if recovering_publication {
+                artifacts::confirm_publication(meter.app, id, to)?;
+            }
             meter.add(stamp.0);
             return Ok(());
+        }
+        // A lost publication acknowledgement may have been followed by a user
+        // edit. Never silently overwrite that newer destination on Resume.
+        if recovering_publication {
+            checked?;
         }
     }
     let existing = partial.unwrap_or(0);
@@ -2117,8 +2133,11 @@ async fn durable_copy_file(
         // Only tasks without an earlier backup transaction enter this path.
         // A lost acknowledgement leaves the journal available for full target
         // verification on resume, rather than retrying a destructive fallback.
-        replacement.commit(&temp.path, &to.path).await?;
+        artifacts::begin_publication(meter.app, id, to, &temp)?;
+        tracing::debug!(id, "Publishing transfer staging file");
+        interruptible(Some(cancel), replacement.commit(&temp.path, &to.path)).await?;
         save(true)?;
+        artifacts::confirm_publication(meter.app, id, to)?;
         return Ok(());
     }
     // Persist the old target fingerprint before moving it, so both rename
@@ -2133,7 +2152,9 @@ async fn durable_copy_file(
         rename_endpoint(to, &backup, to_sftp).await?;
         own_backup = true;
     }
-    #[cfg(windows)]
+    if to_sftp.is_some() {
+        artifacts::begin_publication(meter.app, id, to, &temp)?;
+    }
     tracing::debug!(id, "Publishing transfer staging file");
     #[cfg(windows)]
     let committed = match local_staging.as_ref() {
@@ -2146,10 +2167,10 @@ async fn durable_copy_file(
                     AppError::from(error)
                 }
             }),
-        None => rename_endpoint(&temp, to, to_sftp).await,
+        None => publication::commit(&temp, to, to_sftp, cancel).await,
     };
     #[cfg(not(windows))]
-    let committed = rename_endpoint(&temp, to, to_sftp).await;
+    let committed = publication::commit(&temp, to, to_sftp, cancel).await;
     tracing::debug!(id, "Transfer publication returned");
     if let Err(e) = committed {
         if own_backup {
@@ -2166,6 +2187,9 @@ async fn durable_copy_file(
     drop(local_staging);
     cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
     save(true)?;
+    if to_sftp.is_some() {
+        artifacts::confirm_publication(meter.app, id, to)?;
+    }
     Ok(())
 }
 
