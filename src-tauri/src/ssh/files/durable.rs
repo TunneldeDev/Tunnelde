@@ -25,6 +25,9 @@ pub struct MoveRecovery {
 #[serde(rename_all = "camelCase")]
 pub struct DurableTransfer {
     pub id: String,
+    /// Attribution only, never an authorization to resume a former runtime.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
     pub direction: String,
     pub name: String,
     pub from_session: Option<String>,
@@ -56,6 +59,28 @@ pub struct DurableTransfer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub artifact_recovery: Option<String>,
     pub updated_at: i64,
+}
+
+impl DurableTransfer {
+    pub(super) fn require_user_control(&self) -> AppResult<()> {
+        if self.plugin_id.is_some() {
+            return Err(AppError::validation("sftp.pluginTransferNotResumable"));
+        }
+        Ok(())
+    }
+
+    fn retire_plugin_runtime(&mut self, active: bool) -> bool {
+        if self.plugin_id.is_some()
+            && !active
+            && matches!(self.status.as_str(), "running" | "paused" | "cancelling")
+        {
+            self.status = "cleanupPending".into();
+            self.error = Some("sftp.pluginTransferInterrupted".into());
+            self.updated_at = crate::models::now_ms();
+            return true;
+        }
+        false
+    }
 }
 pub struct Journal;
 
@@ -278,6 +303,7 @@ pub fn durable_transfer_list(app: AppHandle) -> AppResult<Vec<DurableTransfer>> 
     let mut rows = Journal::list(&app)?;
     for row in &mut rows {
         let active = app.state::<AppState>().transfers.is_active(&row.id);
+        row.retire_plugin_runtime(active);
         if row.status == "running" && !active {
             row.error = Some("sftp.restartRecovery".into());
         }
@@ -345,6 +371,60 @@ mod tests {
             "total": 3, "status": "running", "error": null, "updatedAt": 1
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn old_user_journals_remain_resumable_but_plugin_journals_never_grant_execution() {
+        let mut row = move_intent();
+        assert!(row.plugin_id.is_none());
+        assert!(row.require_user_control().is_ok());
+        row.plugin_id = Some("formatter".into());
+        let restored: DurableTransfer =
+            serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(restored.plugin_id.as_deref(), Some("formatter"));
+        for status in [
+            "running",
+            "paused",
+            "failed",
+            "cancelled",
+            "done",
+            "cleanupPending",
+        ] {
+            row.status = status.into();
+            assert_eq!(
+                row.require_user_control().unwrap_err().to_string(),
+                "sftp.pluginTransferNotResumable"
+            );
+        }
+    }
+
+    #[test]
+    fn interrupted_plugin_work_is_disposal_only_and_never_retires_live_or_completed_work() {
+        for plugin in [false, true] {
+            for active in [false, true] {
+                for status in [
+                    "running",
+                    "paused",
+                    "failed",
+                    "cancelled",
+                    "done",
+                    "cleanupPending",
+                    "cancelling",
+                ] {
+                    let mut row = move_intent();
+                    row.plugin_id = plugin.then(|| "formatter".into());
+                    row.status = status.into();
+                    let retires =
+                        plugin && !active && matches!(status, "running" | "paused" | "cancelling");
+                    assert_eq!(row.retire_plugin_runtime(active), retires);
+                    assert_eq!(row.status, if retires { "cleanupPending" } else { status });
+                    if retires {
+                        assert_eq!(row.error.as_deref(), Some("sftp.pluginTransferInterrupted"));
+                        assert!(!row.retire_plugin_runtime(false));
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -644,13 +724,14 @@ pub async fn durable_transfer_clear(
 }
 #[tauri::command]
 pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
-    let _ = Journal::get(&app, &id)?;
+    Journal::get(&app, &id)?.require_user_control()?;
     app.state::<AppState>().transfers.pause(&id);
     Ok(())
 }
 #[tauri::command]
 pub fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
     let row = Journal::get(&app, &id)?;
+    row.require_user_control()?;
     if needs_review(row.error.as_deref()) {
         return Err(AppError::validation(row.error.unwrap_or_default()));
     }
@@ -717,6 +798,26 @@ fn select_session(
 pub(crate) async fn on_reconnect(app: &AppHandle) {
     let Ok(rows) = Journal::list(app) else { return };
     for row in rows {
+        let row = if row.plugin_id.is_some() {
+            // Re-read under the registry lock: an old running snapshot must not
+            // retire a just-completed task. New tasks claim this lock before
+            // publishing their journal; plugin tasks can never be resumed.
+            let state = app.state::<AppState>();
+            let Ok(registry) = state.transfers.inner.lock() else {
+                continue;
+            };
+            let Ok(mut current) = Journal::get(app, &row.id) else {
+                continue;
+            };
+            if current.retire_plugin_runtime(registry.active.contains_key(&row.id))
+                && Journal::upsert(app, current.clone()).is_err()
+            {
+                continue;
+            }
+            current
+        } else {
+            row
+        };
         if row.status == "cleanupPending"
             && resolve_session(
                 app,

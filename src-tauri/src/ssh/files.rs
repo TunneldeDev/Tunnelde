@@ -74,6 +74,8 @@ pub enum TransferStatus {
 #[serde(rename_all = "camelCase")]
 pub struct TransferEvent {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
     pub direction: &'static str,
     pub name: String,
     pub transferred: u64,
@@ -215,6 +217,7 @@ impl TransferRegistry {
         }) {
             return Err(AppError::validation("plugin.api.transferBusy"));
         }
+        let plugin_id = owner.as_ref().map(|owner| owner.plugin_id.clone());
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
@@ -222,6 +225,7 @@ impl TransferRegistry {
                 owner,
                 event: TransferEvent {
                     id: id.into(),
+                    plugin_id,
                     direction: "transfer",
                     name: id.into(),
                     transferred: 0,
@@ -237,9 +241,10 @@ impl TransferRegistry {
         Ok(())
     }
 
-    fn update(&self, event: &TransferEvent) {
+    fn update(&self, event: &mut TransferEvent) {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.get_mut(&event.id) {
+                event.plugin_id = transfer.event.plugin_id.clone();
                 transfer.event = event.clone();
             }
         }
@@ -248,6 +253,7 @@ impl TransferRegistry {
     fn complete(&self, mut event: TransferEvent) -> TransferEvent {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.remove(&event.id) {
+                event.plugin_id = transfer.event.plugin_id;
                 self.bandwidth.remove(&event.id);
                 if event.status == TransferStatus::Cancelled {
                     event.transferred = event.transferred.max(transfer.event.transferred);
@@ -670,8 +676,8 @@ pub fn local_delete(path: String, _is_dir: bool) -> AppResult<()> {
     remove_local_entry(&PathBuf::from(path))
 }
 
-fn emit(app: &AppHandle, event: TransferEvent) {
-    app.state::<AppState>().transfers.update(&event);
+fn emit(app: &AppHandle, mut event: TransferEvent) {
+    app.state::<AppState>().transfers.update(&mut event);
     let _ = app.emit(TRANSFER_EVENT, event);
 }
 
@@ -694,6 +700,7 @@ fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64)
         app,
         TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
             transferred,
@@ -758,6 +765,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
             transferred: total,
@@ -768,6 +776,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         },
         Outcome::Cancelled(transferred) => TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
             transferred,
@@ -778,6 +787,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         },
         Outcome::Failed(transferred, error) => TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
             transferred,
@@ -792,13 +802,23 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         event.status = TransferStatus::Paused;
     }
     if let Ok(mut row) = durable::Journal::get(app, id) {
+        event.plugin_id = row.plugin_id.clone();
+        if row.plugin_id.is_some() && event.status == TransferStatus::Paused {
+            event.status = TransferStatus::Cancelled;
+        }
         if let Some(recovery) = recovery {
             row.backup_recovery = Some(recovery);
         }
         if let Some(path) = artifact_recovery {
             row.artifact_recovery = Some(path);
         }
-        if event.status == TransferStatus::Cancelled {
+        if event.status == TransferStatus::Cancelled
+            || (row.plugin_id.is_some() && event.status == TransferStatus::Failed)
+        {
+            if let Some(error) = &event.error {
+                tracing::warn!(transfer_id = id, plugin_id = row.plugin_id, %error,
+                    "Plugin transfer failed; disposing its staging files");
+            }
             row.status = "cancelling".into();
             row.error = Some("sftp.cancelCleanupFailed".into());
             if let Err(error) = durable::Journal::upsert(app, row.clone()) {
@@ -909,7 +929,20 @@ fn spawn_transfer_inner(
     }
 
     let id = uuid::Uuid::new_v4().to_string();
-    if owner.is_none() {
+    let name = file_name_of(&from.path);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
+    let transfer_owner = owner.as_ref().map(|lease| TransferOwner {
+        plugin_id: lease.id.clone(),
+        generation: lease.generation,
+        cancelled: cancel_sender,
+    });
+    // Claim the ID before writing its journal, so reconnect cleanup cannot
+    // mistake a newly queued plugin task for an orphan from a previous process.
+    app.state::<AppState>()
+        .transfers
+        .register(&id, cancel.clone(), transfer_owner)?;
+    let recorded = (|| -> AppResult<()> {
         let sessions = app.state::<AppState>().ssh.list();
         let host = |id: &Option<String>| {
             id.as_ref()
@@ -925,6 +958,7 @@ fn spawn_transfer_inner(
             &app,
             durable::DurableTransfer {
                 id: id.clone(),
+                plugin_id: owner.as_ref().map(|lease| lease.id.clone()),
                 direction: "transfer".into(),
                 name: file_name_of(&from.path),
                 from_session: from.session.clone(),
@@ -950,22 +984,14 @@ fn spawn_transfer_inner(
                 updated_at: crate::models::now_ms(),
             },
         )?;
+        Ok(())
+    })();
+    if let Err(error) = recorded {
+        app.state::<AppState>().transfers.release(&id);
+        return Err(error);
     }
-    let name = file_name_of(&from.path);
-    let cancel = Arc::new(AtomicBool::new(false));
-    let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
-    let transfer_owner = owner.as_ref().map(|lease| TransferOwner {
-        plugin_id: lease.id.clone(),
-        generation: lease.generation,
-        cancelled: cancel_sender,
-    });
-    app.state::<AppState>()
-        .transfers
-        .register(&id, cancel.clone(), transfer_owner)?;
     progress(&app, &id, &name, 0, 0);
-    if owner.is_none() {
-        let _ = app.emit("sftp://changed", ());
-    }
+    let _ = app.emit("sftp://changed", ());
 
     let transfer_id = id.clone();
     tauri::async_runtime::spawn(async move {
@@ -980,13 +1006,20 @@ fn spawn_transfer_inner(
             TransferOptions {
                 remove_source,
                 overwrite,
-                durable: owner.is_none(),
+                durable: true,
                 resuming: false,
             },
         );
         let outcome = if let Some(owner) = owner {
             let state = app_handle.state::<AppState>();
-            guard_plugin_transfer(&state.plugins.security, &owner, &mut cancelled, operation).await
+            guard_plugin_transfer(
+                &state.plugins.security,
+                &owner,
+                &mut cancelled,
+                &cancel,
+                operation,
+            )
+            .await
         } else {
             operation.await
         };
@@ -1003,6 +1036,7 @@ pub(crate) fn resume_transfer(
     to: Endpoint,
     row: durable::DurableTransfer,
 ) -> AppResult<()> {
+    row.require_user_control()?;
     if durable::needs_review(row.error.as_deref()) {
         return Err(AppError::validation(row.error.unwrap_or_default()));
     }
@@ -1082,18 +1116,26 @@ async fn guard_plugin_transfer(
     security: &crate::plugins::security::PluginSecurity,
     owner: &crate::plugins::security::Lease,
     cancelled: &mut tokio::sync::watch::Receiver<bool>,
+    cancel: &AtomicBool,
     operation: impl std::future::Future<Output = Outcome>,
 ) -> Outcome {
     if *cancelled.borrow() {
+        cancel.store(true, Ordering::SeqCst);
         return Outcome::Cancelled(0);
     }
+    tokio::pin!(operation);
     tokio::select! {
         biased;
-        _ = cancelled.changed() => Outcome::Cancelled(0),
-        result = security.guard(owner, async { Ok(operation.await) }) => {
-            result.unwrap_or(Outcome::Cancelled(0))
-        }
+        _ = cancelled.changed() => {},
+        _ = security.guard(owner, std::future::pending::<AppResult<()>>()) => {},
+        outcome = operation.as_mut() => return outcome,
     }
+    // Revoke further work, but let the existing writer settle its IO and
+    // CLOSE before finish() deletes task-owned staging. Watching security
+    // separately also avoids repolling a completed writer if its lease changes
+    // at the same instant as its final result.
+    cancel.store(true, Ordering::SeqCst);
+    operation.await
 }
 
 struct Meter<'a> {
@@ -3924,6 +3966,7 @@ mod tests {
     fn transfer_event(id: &str, status: TransferStatus) -> TransferEvent {
         TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: "file.txt".into(),
             transferred: 42,
@@ -4046,7 +4089,7 @@ mod tests {
             registry.status_owned("owned", "one", 7).unwrap().status,
             TransferStatus::Running
         );
-        registry.update(&transfer_event("owned", TransferStatus::Running));
+        registry.update(&mut transfer_event("owned", TransferStatus::Running));
         assert_eq!(
             registry
                 .status_owned("owned", "one", 7)
@@ -4110,7 +4153,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plugin_transfers_drop_in_flight_work_on_revoke_restricted_mode_and_restart() {
+    async fn plugin_transfers_drain_writers_on_cancel_revoke_restricted_mode_and_restart() {
         use crate::plugins::security::PluginSecurity;
         struct Dropped(Arc<AtomicBool>);
         impl Drop for Dropped {
@@ -4138,14 +4181,24 @@ mod tests {
             let dropped = Arc::new(AtomicBool::new(false));
             let marker = dropped.clone();
             let (ready, started) = tokio::sync::oneshot::channel();
+            let (stopped_sender, stopped) = tokio::sync::oneshot::channel();
+            let (drain, drained) = tokio::sync::oneshot::channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let flag = cancel.clone();
             let operation_security = security.clone();
             let keep_open = sender.clone();
             let task = tokio::spawn(async move {
                 let _keep_open = keep_open;
-                guard_plugin_transfer(&operation_security, &owner, &mut cancelled, async move {
+                guard_plugin_transfer(&operation_security, &owner, &mut cancelled, &flag, async {
                     let _marker = Dropped(marker);
                     let _ = ready.send(());
-                    std::future::pending::<Outcome>().await
+                    while !flag.load(Ordering::SeqCst) {
+                        tokio::task::yield_now().await;
+                    }
+                    let _ = stopped_sender.send(());
+                    // Represent already-issued writes and CLOSE awaiting ACK.
+                    drained.await.unwrap();
+                    Outcome::Cancelled(42)
                 })
                 .await
             });
@@ -4161,15 +4214,84 @@ mod tests {
                 "restart" => security.invalidate_runtime("plugin"),
                 _ => unreachable!(),
             }
-            let result = tokio::time::timeout(std::time::Duration::from_millis(200), task)
+            tokio::time::timeout(std::time::Duration::from_secs(1), stopped)
                 .await
                 .unwrap()
                 .unwrap();
-            assert!(matches!(result, Outcome::Cancelled(0)), "{action}");
+            assert!(cancel.load(Ordering::SeqCst), "{action}");
+            assert!(
+                !dropped.load(Ordering::SeqCst),
+                "writer dropped before CLOSE for {action}"
+            );
+            assert!(
+                !task.is_finished(),
+                "cleanup could run before IO drained for {action}"
+            );
+            drain.send(()).unwrap();
+            let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(result, Outcome::Cancelled(42)), "{action}");
             assert!(
                 dropped.load(Ordering::SeqCst),
                 "in-flight transfer survived {action}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn plugin_transfer_guard_handles_prestart_revocation_and_completed_writers() {
+        use crate::plugins::security::PluginSecurity;
+        for action in [
+            "already-cancelled",
+            "already-revoked",
+            "complete-and-revoke",
+            "complete",
+        ] {
+            let db = crate::db::Database::in_memory().unwrap();
+            let security = PluginSecurity::default();
+            let permissions = vec!["fs.read".to_string(), "sftp.write".to_string()];
+            let digest = "a".repeat(64);
+            security
+                .set_permissions(
+                    &db,
+                    "plugin",
+                    digest.clone(),
+                    &permissions,
+                    Some(permissions.clone()),
+                )
+                .unwrap();
+            let owner = security.lease("plugin", digest, permissions).unwrap();
+            let (_sender, mut cancelled) =
+                tokio::sync::watch::channel(action == "already-cancelled");
+            let cancel = AtomicBool::new(false);
+            let mutated = AtomicBool::new(false);
+            if action == "already-revoked" {
+                security.invalidate_runtime("plugin");
+            }
+            let result = guard_plugin_transfer(&security, &owner, &mut cancelled, &cancel, async {
+                let result = interruptible(Some(&cancel), async {
+                    mutated.store(true, Ordering::SeqCst);
+                    if action == "complete-and-revoke" {
+                        security.invalidate_runtime("plugin");
+                    }
+                    Ok(())
+                })
+                .await;
+                Outcome::from_result(result, 42, &cancel)
+            })
+            .await;
+            if action.starts_with("already") {
+                assert!(cancel.load(Ordering::SeqCst));
+                assert!(!mutated.load(Ordering::SeqCst), "{action}");
+                assert!(matches!(result, Outcome::Cancelled(_)), "{action}");
+            } else {
+                // A committed result remains committed; do not re-poll the
+                // completed operation or claim its destination was cancelled.
+                assert!(mutated.load(Ordering::SeqCst));
+                assert!(matches!(result, Outcome::Done(42)), "{action}");
+            }
         }
     }
 

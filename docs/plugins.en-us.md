@@ -429,8 +429,17 @@ runtime. Revocation, restricted mode, Stop or plugin process exit cancel its act
 transfers; another plugin and a replacement process cannot cancel its work. Existing
 overwrite, symlink and recursive-copy safeguards apply.
 
+Plugin transfers use the same journaled staging and final publication as user transfers.
+Events include an optional `pluginId` for attribution. Cancellation and revocation stop
+new work and drain active writers before cleaning their temporary files. Cleanup that
+requires a disconnected destination remains visible and retries on reconnection. After
+an application restart, unfinished plugin transfers are cleaned up; they never resume
+under an expired runtime's permissions. The task list allows cancellation, speed limits
+and cleanup, but pause/resume belongs to user transfers. Start a fresh transfer from the
+plugin when needed. Completed destination files and source files are retained.
+
 Poll `files.transferStatus({transferId})` to await completion before the next task.
-It returns a transfer event with `running`, `done`, `failed` or `cancelled`, or `null`
+It returns a transfer event with `running`, `done`, `failed`, `cancelled` or `cleanupPending`, or `null`
 for a missing/expired ID or a transfer outside the current plugin runtime. The host
 retains only the latest 256 completed plugin transfers in memory and limits each
 plugin to 8 concurrent background transfers.

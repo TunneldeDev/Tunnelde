@@ -86,6 +86,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
             return {
               ...item,
               durable: true,
+              pluginId: row.pluginId,
               fromSession: item.fromSession ?? row.fromSession,
               toSession: item.toSession ?? row.toSession,
               fromHostId: item.fromHostId ?? row.fromHostId,
@@ -120,7 +121,14 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
   },
   pause: (id) => {
     const item = get().items.find((x) => x.id === id);
-    if (!item || item.status !== "running" || item.pausing || item.cancelling || item.clearing)
+    if (
+      !item ||
+      item.pluginId ||
+      item.status !== "running" ||
+      item.pausing ||
+      item.cancelling ||
+      item.clearing
+    )
       return;
     set((state) => ({
       items: state.items.map((x) => (x.id === id ? { ...x, pausing: true } : x)),
@@ -136,6 +144,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
     const previous = get().items.find((x) => x.id === id);
     if (
       !previous ||
+      previous.pluginId ||
       previous.status === "running" ||
       previous.status === "cancelled" ||
       previous.status === "cleanupPending" ||
@@ -202,6 +211,7 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       const previous = state.items.find((item) => item.id === event.id);
       if (previous && previous.status !== "running" && event.status === "running") return state;
       next.durable = previous?.durable;
+      next.pluginId = event.pluginId ?? previous?.pluginId;
       next.clearing = previous?.clearing;
       next.speedLimitKib = previous?.speedLimitKib;
       next.fromSession = previous?.fromSession;
