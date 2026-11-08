@@ -14,7 +14,8 @@ In **View options**, choose **Details view** or **Column view**. Details view su
 - Dragging a column header to reorder columns.
 - Dragging the separator at a header's edge to resize that column. A focused
   separator also accepts Left/Right in 10-pixel steps, or Shift+Left/Right in
-  50-pixel steps.
+  50-pixel steps. Double-click a separator to fit its column to the header and
+  currently displayed contents, including text hidden by ellipsis.
 - Clicking a header to sort, with another click reversing its direction.
 
 Filtering, grouping, hidden files and folders-first ordering are independent for

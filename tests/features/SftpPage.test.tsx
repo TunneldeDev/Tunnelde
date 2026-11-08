@@ -310,8 +310,16 @@ describe("SftpPage", () => {
     ]);
   });
 
-  it("drops a header on either side and resets an individual column width", async () => {
-    render(<SftpPage sessionId="session-1" />);
+  it("drops a header on either side and fits only that panel's column to its rendered text", async () => {
+    const createRange = document.createRange.bind(document);
+    vi.spyOn(document, "createRange").mockImplementation(() => {
+      const range = createRange();
+      Object.assign(range, {
+        getBoundingClientRect: () => ({ width: range.toString().length * 8 }),
+      });
+      return range;
+    });
+    const rendered = render(<SftpPage sessionId="session-1" />);
     await screen.findByText("notes.txt");
     const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
     const target = pane.querySelector<HTMLElement>(".sftp-columns__modified")!;
@@ -338,7 +346,22 @@ describe("SftpPage", () => {
     fireEvent.keyDown(name, { key: "ArrowRight" });
     expect(name.getAttribute("aria-valuenow")).toBe("230");
     fireEvent.doubleClick(name);
-    expect(name.getAttribute("aria-valuenow")).toBe("220");
+    expect(name.getAttribute("aria-valuenow")).toBe("104");
+    expect(
+      document
+        .querySelectorAll(".sftp-columns__name .sftp-columns__resize")[1]
+        ?.getAttribute("aria-valuenow"),
+    ).toBe("220");
+    fireEvent.click(pane.querySelector(".sftp-columns__name button")!);
+    expect(name.getAttribute("aria-valuenow")).toBe("104");
+    rendered.unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(
+      screen
+        .getAllByRole("separator", { name: "File sorting: Name" })[0]
+        ?.getAttribute("aria-valuenow"),
+    ).toBe("104");
   });
 
   it("includes the icon and gap in the minimum name column width and retains it on reopen", async () => {
