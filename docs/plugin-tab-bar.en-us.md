@@ -8,6 +8,27 @@ not accepted. Core panels use the same tab-bar slot through
 `useTabBarContribution(tabId, id, content, priority)`; registration follows the
 component lifetime and late disposal cannot remove a replacement contribution.
 
+Controls use a single 28 px action size, shared theme tokens and restrained group
+separators. `placement: "leading"` inserts before the tabs; the default
+`"trailing"` inserts after them, before the pane controls. `group` is an ASCII
+identifier scoped to the plugin. Groups stay together and higher-priority groups
+appear first. Use `showLabel: true` for an icon with a visible button title,
+`tooltip` for a plain-text description (up to 512 characters), and `checked`
+for a button's toggle state. A false `checked` remains an accessible unpressed
+toggle. The plugin acknowledges changes by calling `set` again; the host does
+not assume a command succeeded.
+
+Narrow panes move lower-priority controls into **Tab actions** instead of hiding
+them behind a scrollbar. Select options become radio menu entries and toggles
+retain their checked state. Widening the pane restores inline controls. Plugin
+identity remains in accessible labels and menu entries. The host prevents repeat
+execution while a control is busy, including when its registration is replaced.
+
+Core components can pass an optional fifth argument to `useTabBarContribution`:
+`{ placement, group, overflowActions }`. `overflowActions` are equivalent native
+menu actions; custom content without such actions remains inline. Never depend
+on inline geometry for command correctness.
+
 ```js
 await host.tabBar.set({
   id: "execution-target",
@@ -19,8 +40,16 @@ await host.tabBar.set({
     { value: "remote", label: "Remote" },
   ],
   value: "local",
+  placement: "trailing",
+  group: "execution",
 });
 ```
+
+For a labelled toggle, register a button with `icon: "follow"`,
+`showLabel: true`, `checked: true` and a `tooltip`. These optional presentation
+fields extend the experimental API. Inspect the `tabBar.set` parameter descriptor
+in `host.describe()` before relying on them on older hosts. Existing controls keep
+trailing placement and icon-only buttons.
 
 The command must be declared in this plugin's manifest and must not be an editor
 or file-menu command. Buttons require a command; text controls cannot execute

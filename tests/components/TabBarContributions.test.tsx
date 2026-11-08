@@ -74,6 +74,77 @@ it("renders plugin controls with plugin identity and executes the host-issued to
   await act(() => Promise.resolve());
 });
 
+it("places contributions in their requested slots and renders labelled toggles", () => {
+  usePluginTabBar.setState({
+    items: [
+      {
+        ...item,
+        placement: "leading",
+        group: "execution",
+        showLabel: true,
+        checked: true,
+        tooltip: "Run current document",
+      },
+    ],
+  });
+  registerTabBarContent({
+    id: "core",
+    tabId: context.tabId,
+    priority: 0,
+    placement: "leading",
+    content: <button>Core target</button>,
+  });
+  const view = render(<TabBarContributions context={context} />);
+  expect(screen.queryByRole("button", { name: "Sample: Target" })).toBeNull();
+  view.rerender(<TabBarContributions context={context} placement="leading" />);
+  const button = screen.getByRole("button", { name: "Sample: Target" });
+  expect(button.textContent).toBe("Target");
+  expect(button.getAttribute("aria-pressed")).toBe("true");
+  expect(button.title).toBe("Sample: Run current document");
+  expect(screen.getByRole("button", { name: "Core target" })).toBeTruthy();
+});
+
+it("guards duplicate execution across host updates and keeps host-owned toggle state", async () => {
+  let finish!: () => void;
+  vi.mocked(invoke).mockReturnValue(
+    new Promise<void>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  usePluginTabBar.setState({ items: [{ ...item, checked: false }] });
+  render(<TabBarContributions context={context} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sample: Target" }));
+  act(() => usePluginTabBar.setState({ items: [{ ...item, checked: false, token: "new-token" }] }));
+  const button = screen.getByRole("button", { name: "Sample: Target" });
+  fireEvent.click(button);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(button.getAttribute("aria-pressed")).toBe("false");
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  await act(async () => {
+    finish();
+    await Promise.resolve();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Sample: Target" }));
+  expect(invoke).toHaveBeenLastCalledWith(
+    "plugin_tab_bar_execute",
+    expect.objectContaining({ token: "new-token" }),
+  );
+  await act(async () => {
+    finish();
+    await Promise.resolve();
+  });
+});
+
+it("keeps disabled controls distinct from running commands", () => {
+  usePluginTabBar.setState({ items: [{ ...item, disabled: true }] });
+  render(<TabBarContributions context={context} />);
+  const button = screen.getByRole("button", { name: "Sample: Target" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(button.hasAttribute("aria-busy")).toBe(false);
+  fireEvent.click(button);
+  expect(invoke).not.toHaveBeenCalled();
+});
+
 it("dispatches a select value and renders status text without executing it", async () => {
   usePluginTabBar.setState({
     items: [

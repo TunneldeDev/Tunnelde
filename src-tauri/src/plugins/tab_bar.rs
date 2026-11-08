@@ -26,6 +26,14 @@ pub enum ControlKind {
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub enum Placement {
+    Leading,
+    #[default]
+    Trailing,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct When {
     pub tab_kind: Option<String>,
     pub tab_id: Option<String>,
@@ -57,6 +65,16 @@ pub struct TabBarItem {
     pub options: Vec<OptionItem>,
     #[serde(default)]
     pub value: Option<String>,
+    #[serde(default)]
+    pub placement: Placement,
+    #[serde(default)]
+    pub group: Option<String>,
+    #[serde(default)]
+    pub tooltip: Option<String>,
+    #[serde(default)]
+    pub show_label: bool,
+    #[serde(default)]
+    pub checked: Option<bool>,
 }
 
 fn plain(value: &str, max: usize) -> bool {
@@ -98,6 +116,12 @@ impl TabBarItem {
         };
         let valid = valid_id(&item.id)
             && plain(&item.title, 128)
+            && item.group.as_ref().is_none_or(|group| valid_id(group))
+            && item
+                .tooltip
+                .as_ref()
+                .is_none_or(|tooltip| plain(tooltip, 512))
+            && (item.checked.is_none() || matches!(item.kind, ControlKind::Button))
             && (-1000..=1000).contains(&item.priority)
             && item.icon.as_ref().is_none_or(|icon| {
                 [
@@ -356,6 +380,7 @@ mod tests {
             json!({"id":"a","kind":"button","title":"Run","command":"go"}),
             json!({"id":"a","kind":"text","title":"Ready"}),
             json!({"id":"a","kind":"select","title":"Target","command":"go","options":[{"value":"local","label":"Local"}],"value":"local"}),
+            json!({"id":"a","kind":"button","title":"Follow","command":"go","placement":"leading","group":"output.view","tooltip":"Follow latest output","showLabel":true,"checked":false}),
         ] {
             assert!(TabBarItem::parse(params).is_ok());
         }
@@ -367,6 +392,11 @@ mod tests {
             json!({"id":"a","kind":"text","title":"x","when":{"tabKind":"raw"}}),
             json!({"id":"a","kind":"text","title":"x","icon":"html"}),
             json!({"id":"a","kind":"select","title":"x","command":"go","options":[{"value":"a","label":"a"}],"value":"b"}),
+            json!({"id":"a","kind":"button","title":"x","command":"go","placement":"floating"}),
+            json!({"id":"a","kind":"button","title":"x","command":"go","group":"bad/group"}),
+            json!({"id":"a","kind":"button","title":"x","command":"go","tooltip":"bad\nline"}),
+            json!({"id":"a","kind":"text","title":"x","checked":false}),
+            json!({"id":"a","kind":"select","title":"x","command":"go","options":[{"value":"a","label":"a"}],"value":"a","checked":true}),
         ] {
             assert!(TabBarItem::parse(params).is_err());
         }
@@ -408,5 +438,24 @@ mod tests {
             .unwrap(),
             json!(true)
         );
+    }
+
+    #[test]
+    fn old_controls_keep_default_layout_and_new_metadata_round_trips() {
+        let old = TabBarItem::parse(json!({"id":"a","kind":"button","title":"Run","command":"go"}))
+            .unwrap();
+        let old = serde_json::to_value(old).unwrap();
+        assert_eq!(old["placement"], "trailing");
+        assert_eq!(old["showLabel"], false);
+        assert!(old["checked"].is_null());
+        let params = json!({"id":"a","kind":"button","title":"Follow","command":"go","placement":"leading","group":"navigation","tooltip":"Keep newest line visible","showLabel":true,"checked":true});
+        let actual = serde_json::to_value(TabBarItem::parse(params.clone()).unwrap()).unwrap();
+        for (key, expected) in params.as_object().unwrap() {
+            assert_eq!(&actual[key], expected);
+        }
+        assert!(TabBarItem::parse(
+            json!({"id":"a","kind":"text","title":"Ready","tooltip":"x".repeat(513)})
+        )
+        .is_err());
     }
 }

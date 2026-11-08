@@ -10,6 +10,11 @@ export interface PluginTabBarItem {
   when: { tabKind?: string | null; tabId?: string | null } | null;
   options: { value: string; label: string }[];
   value: string | null;
+  placement?: "leading" | "trailing";
+  group?: string | null;
+  tooltip?: string | null;
+  showLabel?: boolean;
+  checked?: boolean | null;
   pluginId: string;
   pluginName: string;
   token: string;

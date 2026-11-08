@@ -221,6 +221,12 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
         reserveTrafficLights && "has-native-window-controls",
       )}
     >
+      {activeTab ? (
+        <TabBarContributions
+          placement="leading"
+          context={{ tabId: activeTab.id, tabKind: activeTab.kind, paneId: pane.id }}
+        />
+      ) : null}
       <div
         ref={strip}
         className="pane__tabs"

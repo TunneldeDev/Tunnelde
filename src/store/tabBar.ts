@@ -4,8 +4,15 @@ import { useLayoutEffect, type ReactNode } from "react";
 import { createSubscriptionGroup } from "@/lib/events/bus";
 import { nativeEvents } from "@/lib/events/native";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
+import type { MenuAction } from "@/components/ui/overlay/menuTypes";
 
-interface LocalContribution {
+export interface TabBarContributionOptions {
+  placement?: "leading" | "trailing";
+  group?: string;
+  /** Equivalent menu actions, used when the tab strip has insufficient room. */
+  overflowActions?: MenuAction[];
+}
+interface LocalContribution extends TabBarContributionOptions {
   tabId: string;
   id: string;
   priority: number;
@@ -21,10 +28,19 @@ export function registerTabBarContent(item: LocalContribution): () => void {
   return () =>
     useTabBarContent.setState((state) => ({ items: state.items.filter((old) => old !== item) }));
 }
-export function useTabBarContribution(tabId: string, id: string, content: ReactNode, priority = 0) {
+export function useTabBarContribution(
+  tabId: string,
+  id: string,
+  content: ReactNode,
+  priority = 0,
+  options?: TabBarContributionOptions,
+) {
   useLayoutEffect(
-    () => (content == null ? undefined : registerTabBarContent({ tabId, id, content, priority })),
-    [tabId, id, content, priority],
+    () =>
+      content == null
+        ? undefined
+        : registerTabBarContent({ tabId, id, content, priority, ...options }),
+    [tabId, id, content, priority, options],
   );
 }
 
