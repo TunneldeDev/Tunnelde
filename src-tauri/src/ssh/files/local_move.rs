@@ -30,7 +30,11 @@ fn check_cancelled(cancel: &AtomicBool) -> AppResult<()> {
 
 impl Source {
     pub(super) fn open(path: &Path) -> AppResult<Self> {
-        Ok(Self(GuardedFile::deletable(path)?))
+        let file = GuardedFile::deletable(path)?;
+        if file.has_named_streams()? {
+            return Err(AppError::validation("sftp.namedStreamsMoveUnavailable"));
+        }
+        Ok(Self(file))
     }
 
     pub(super) fn identity(&self) -> AppResult<crate::platform::file_identity::FileIdentity> {
@@ -106,6 +110,9 @@ impl Verified {
 
     pub(super) fn delete(self, cancel: &AtomicBool) -> AppResult<()> {
         check_cancelled(cancel)?;
+        if self.source.has_named_streams()? {
+            return Err(AppError::validation("sftp.namedStreamsMoveUnavailable"));
+        }
         self.source.delete()?;
         Ok(())
     }
@@ -202,6 +209,35 @@ mod tests {
     impl Drop for Files {
         fn drop(&mut self) {
             std::fs::remove_dir_all(&self.root).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn named_streams_present_before_copy_or_added_after_verification_keep_the_source() {
+        for added_after_verification in [false, true] {
+            let files = Files::new(b"ordinary data");
+            let stream = PathBuf::from(format!("{}:metadata", files.source.display()));
+            let verified = if added_after_verification {
+                Some(
+                    Source::open(&files.source)
+                        .unwrap()
+                        .verify(&files.destination, &AtomicBool::new(false))
+                        .await
+                        .unwrap(),
+                )
+            } else {
+                None
+            };
+            // Stream sharing is independent from the unnamed stream. A normal
+            // write-denying file handle does not freeze the set of stream names.
+            std::fs::write(&stream, b"extra source data").unwrap();
+            let error = match verified {
+                Some(verified) => verified.delete(&AtomicBool::new(false)).err().unwrap(),
+                None => Source::open(&files.source).err().unwrap(),
+            };
+            assert_eq!(error.to_string(), "sftp.namedStreamsMoveUnavailable");
+            assert_eq!(std::fs::read(&stream).unwrap(), b"extra source data");
+            assert_eq!(std::fs::read(&files.source).unwrap(), b"ordinary data");
         }
     }
 

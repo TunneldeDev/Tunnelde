@@ -690,6 +690,8 @@
     "reviewTransfer": "Needs review",
     "inspectTransferLocation": "Open {{location}} folder",
     "directoryMoveUnavailable": "Moving folders between sources is temporarily unavailable to protect source data. Copy the folder instead; the source will be retained.",
+    "directoryMoveSourceChanged": "The copied files were moved, but the source folder contains new items that were not in this task. These items have been kept. Review both folders before clearing the task.",
+    "namedStreamsMoveUnavailable": "The source has Windows named data streams that this copy-based move cannot preserve. The source has been kept. Use a native move or a tool that preserves these streams.",
     "directoryMergeMoveUnavailable": "Moving a folder over an existing folder is temporarily unavailable to protect source data. Copy it instead or choose a different name.",
     "transferAlreadyComplete": "Transfer already complete",
     "transferNotFound": "Transfer not found",

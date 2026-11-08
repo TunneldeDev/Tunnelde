@@ -22,6 +22,8 @@ beforeEach(() => useTransfers.setState({ items: [] }));
 describe("transfer cancellation", () => {
   it.each([
     "sftp.moveSourceRetained",
+    "sftp.directoryMoveSourceChanged",
+    "sftp.namedStreamsMoveUnavailable",
     "sftp.backupPreserved",
     "sftp.moveRecoverySourcePresent",
     "sftp.moveRecoveryUnverified",

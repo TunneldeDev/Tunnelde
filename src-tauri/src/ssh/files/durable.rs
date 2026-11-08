@@ -131,6 +131,8 @@ pub(super) fn needs_review(error: Option<&str>) -> bool {
             "sftp.moveRecoverySourcePresent"
                 | "sftp.moveRecoveryUnverified"
                 | "sftp.moveSourceRetained"
+                | "sftp.directoryMoveSourceChanged"
+                | "sftp.namedStreamsMoveUnavailable"
                 | "sftp.backupPreserved"
                 | "sftp.transferArtifactUnrecognized"
         )
@@ -337,6 +339,8 @@ mod tests {
     fn review_outcomes_cannot_be_retried_as_transfers() {
         for error in [
             "sftp.moveSourceRetained",
+            "sftp.directoryMoveSourceChanged",
+            "sftp.namedStreamsMoveUnavailable",
             "sftp.backupPreserved",
             "sftp.moveRecoverySourcePresent",
             "sftp.moveRecoveryUnverified",

@@ -95,6 +95,18 @@ impl PinnedPath {
             .ok_or_else(unverified)?;
         Ok(guard.identity()?)
     }
+
+    fn check_source_streams(&self, path: &Path) -> AppResult<()> {
+        let (_, guard) = self
+            .0
+            .iter()
+            .find(|(current, _)| current == path)
+            .ok_or_else(unverified)?;
+        if guard.has_named_streams()? {
+            return Err(AppError::validation("sftp.namedStreamsMoveUnavailable"));
+        }
+        Ok(())
+    }
 }
 
 fn join(root: &Path, path: &[String]) -> PathBuf {
@@ -121,6 +133,7 @@ impl Manifest {
             check_cancelled(cancel)?;
             let directory = join(&source, &path);
             let pinned = PinnedPath::open(&directory)?;
+            pinned.check_source_streams(&directory)?;
             directories.push(Directory {
                 path: path.clone(),
                 source: pinned.identity()?,
@@ -140,6 +153,9 @@ impl Manifest {
                     pending.push(child);
                 } else {
                     let file = GuardedFile::read(&item.path())?;
+                    if file.has_named_streams()? {
+                        return Err(AppError::validation("sftp.namedStreamsMoveUnavailable"));
+                    }
                     files.push(Entry {
                         path: child,
                         source: file.identity()?,
@@ -234,6 +250,7 @@ impl Manifest {
             if pinned.identity_at(&join(&self.source, &directory.path))? != directory.source {
                 return Err(unverified());
             }
+            pinned.check_source_streams(&join(&self.source, &directory.path))?;
         }
         Ok(Some(pinned))
     }
@@ -331,11 +348,14 @@ impl Manifest {
             if guard.identity()? != directory.source {
                 return Err(unverified());
             }
+            if guard.has_named_streams()? {
+                return Err(AppError::validation("sftp.namedStreamsMoveUnavailable"));
+            }
             // Mark only this held directory for deletion. New files, including
             // files inserted after enumeration, cause an atomic refusal.
             guard.delete().map_err(|error| {
                 if error.raw_os_error() == Some(ERROR_DIR_NOT_EMPTY as i32) {
-                    AppError::validation("sftp.moveSourceRetained")
+                    AppError::validation("sftp.directoryMoveSourceChanged")
                 } else {
                     error.into()
                 }
@@ -757,7 +777,7 @@ mod tests {
             std::fs::write(&unexpected_file, b"new unrelated data").unwrap();
             assert_eq!(
                 fixture.remove().await.unwrap_err().to_string(),
-                "sftp.moveSourceRetained"
+                "sftp.directoryMoveSourceChanged"
             );
             assert_eq!(
                 std::fs::read(&unexpected_file).unwrap(),
@@ -768,6 +788,32 @@ mod tests {
                 b"original first file"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn directory_named_streams_reject_capture_and_preserve_every_source_after_copy() {
+        let fixture = Fixture::new();
+        fixture.copy().await;
+        let stream = PathBuf::from(format!("{}:metadata", fixture.manifest.source.display()));
+        std::fs::write(&stream, b"directory source data").unwrap();
+        assert_eq!(
+            Manifest::capture(
+                &fixture.manifest.source,
+                &fixture.manifest.destination,
+                &AtomicBool::new(false)
+            )
+            .unwrap_err()
+            .to_string(),
+            "sftp.namedStreamsMoveUnavailable"
+        );
+        assert_eq!(
+            fixture.remove().await.unwrap_err().to_string(),
+            "sftp.namedStreamsMoveUnavailable"
+        );
+        for file in &fixture.manifest.files {
+            assert!(join(&fixture.manifest.source, &file.path).exists());
+        }
+        assert_eq!(std::fs::read(&stream).unwrap(), b"directory source data");
     }
 
     #[tokio::test]

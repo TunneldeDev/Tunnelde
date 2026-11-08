@@ -4,6 +4,8 @@ export function transferNeedsReview(error: string | null | undefined): boolean {
     "sftp.moveRecoverySourcePresent",
     "sftp.moveRecoveryUnverified",
     "sftp.moveSourceRetained",
+    "sftp.directoryMoveSourceChanged",
+    "sftp.namedStreamsMoveUnavailable",
     "sftp.backupPreserved",
     "sftp.transferArtifactUnrecognized",
   ].includes(error ?? "");
