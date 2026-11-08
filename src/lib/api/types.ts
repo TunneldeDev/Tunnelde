@@ -359,6 +359,7 @@ export type TransferStatus =
   "running" | "done" | "failed" | "cancelled" | "paused" | "cleanupPending";
 
 export interface TransferEvent {
+  pluginId?: string | null;
   phase?: "queued" | "preparing" | "verifying" | "cleaning";
   id: string;
   direction: TransferDirection;
