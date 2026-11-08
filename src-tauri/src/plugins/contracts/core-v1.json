@@ -744,6 +744,288 @@
         "plugin.api.frontend:editor.documentChanged"
       ],
       "events": []
+    },
+    "workspace.snapshot": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "title": "Detached plugin workspace snapshot v1",
+        "description": "Live presentation metadata; no file contents, credentials or resource reservation. Ignore unknown fields and string option values.",
+        "type": "object",
+        "required": ["tabs", "panes", "activeId", "activePaneId", "layout"],
+        "properties": {
+          "tabs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "kind", "title", "hostId", "pinned"],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "hostId": {
+                  "type": ["string", "null"]
+                },
+                "pinned": {
+                  "type": "boolean"
+                },
+                "preview": {
+                  "type": "boolean"
+                },
+                "hidden": {
+                  "type": "boolean"
+                },
+                "filePane": {
+                  "type": "object",
+                  "required": ["source", "path", "ownerSessionId"],
+                  "properties": {
+                    "source": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "required": ["kind"],
+                          "properties": {
+                            "kind": {
+                              "const": "local"
+                            }
+                          },
+                          "additionalProperties": true
+                        },
+                        {
+                          "type": "object",
+                          "required": ["kind", "sessionId"],
+                          "properties": {
+                            "kind": {
+                              "const": "remote"
+                            },
+                            "sessionId": {
+                              "type": "string"
+                            }
+                          },
+                          "additionalProperties": true
+                        }
+                      ]
+                    },
+                    "path": {
+                      "type": ["string", "null"]
+                    },
+                    "ownerSessionId": {
+                      "type": "string"
+                    },
+                    "view": {
+                      "type": "object",
+                      "required": [
+                        "filesShowHidden",
+                        "filesFoldersFirst",
+                        "filesSortBy",
+                        "filesSortDirection"
+                      ],
+                      "properties": {
+                        "filesColumns": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "filesColumnWidths": {
+                          "type": "object",
+                          "required": [],
+                          "properties": {
+                            "name": {
+                              "type": "number"
+                            },
+                            "type": {
+                              "type": "number"
+                            },
+                            "size": {
+                              "type": "number"
+                            },
+                            "modified": {
+                              "type": "number"
+                            }
+                          },
+                          "additionalProperties": true
+                        },
+                        "filesLayout": {
+                          "type": "string"
+                        },
+                        "filesShowHidden": {
+                          "type": "boolean"
+                        },
+                        "filesFoldersFirst": {
+                          "type": "boolean"
+                        },
+                        "filesSortBy": {
+                          "type": "string"
+                        },
+                        "filesSortDirection": {
+                          "type": "string"
+                        },
+                        "filesGroupBy": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "remoteIdentity": {
+                      "type": "object",
+                      "required": ["hostId", "address"],
+                      "properties": {
+                        "hostId": {
+                          "type": "string"
+                        },
+                        "address": {
+                          "type": "string"
+                        }
+                      },
+                      "additionalProperties": true
+                    },
+                    "offline": {
+                      "type": "boolean"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                "fileSessionId": {
+                  "type": ["string", "null"]
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "panes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["id", "tabIds", "activeId"],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "tabIds": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "activeId": {
+                  "type": ["string", "null"]
+                },
+                "locked": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "activeId": {
+            "type": ["string", "null"]
+          },
+          "activePaneId": {
+            "type": "string"
+          },
+          "layout": {
+            "$ref": "#/definitions/layout"
+          }
+        },
+        "additionalProperties": true,
+        "definitions": {
+          "layout": {
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["kind", "paneId"],
+                "properties": {
+                  "kind": {
+                    "const": "pane"
+                  },
+                  "paneId": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              {
+                "type": "object",
+                "required": ["kind", "id", "direction", "ratio", "first", "second"],
+                "properties": {
+                  "kind": {
+                    "const": "split"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "direction": {
+                    "enum": ["row", "column"]
+                  },
+                  "ratio": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "first": {
+                    "$ref": "#/definitions/layout"
+                  },
+                  "second": {
+                    "$ref": "#/definitions/layout"
+                  }
+                },
+                "additionalProperties": true
+              }
+            ]
+          }
+        }
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable",
+        "plugin.api.requestExpired",
+        "plugin.api.busy",
+        "plugin.api.frontendTimeout",
+        "plugin.api.frontendClosed"
+      ],
+      "events": []
     }
   }
 }

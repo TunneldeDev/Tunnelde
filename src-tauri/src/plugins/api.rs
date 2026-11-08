@@ -165,7 +165,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("history.record", ["history.write"], "{hostId:string,command:string}", "Record a command for an existing saved host."),
     method!("history.delete", ["history.write"], "{id:number}", "Delete one command-history entry."),
     method!("history.clear", ["history.write"], "{hostId:string}", "Clear a saved host's command history."),
-    method!("workspace.snapshot", ["workspace.read"], "{}", "Read the live tabs, panes, active group and split layout."),
+    stable_method!("workspace.snapshot", ["workspace.read"], "{}", "Read a detached v1 snapshot of live tabs, panes, active IDs and split layout, including hidden panels and file-pane metadata. No file contents, credentials or arbitrary store fields. Tab kinds and file-view option values are open vocabularies; tolerate unfamiliar values. The snapshot neither reserves resources nor grants their permissions.", "0.21.0"),
     method!("workspace.openPage", ["workspace.write"], "{kind:welcome|settings|about|updates|knownHosts}", "Open or focus an existing application page."),
     method!("workspace.openHost", ["workspace.write", "hosts.read"], "{hostId:string}", "Open a saved host's details; never reveal an authentication secret."),
     method!("workspace.openTerminal", ["workspace.write", "sessions.read"], "{sessionId:string}", "Open a terminal tab for an already-connected session."),
@@ -1203,7 +1203,7 @@ mod tests {
         assert_eq!(entry["since"], "0.21.0");
         assert_eq!(entry["deprecated"], Value::Null);
         let experimental =
-            serde_json::to_value(method_info("workspace.snapshot").unwrap()).unwrap();
+            serde_json::to_value(method_info("workspace.openPage").unwrap()).unwrap();
         assert_eq!(experimental["stability"], "experimental");
         assert_eq!(experimental["since"], Value::Null);
     }
