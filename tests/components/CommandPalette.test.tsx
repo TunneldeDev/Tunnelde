@@ -135,6 +135,76 @@ describe("CommandPalette", () => {
     expect(screen.queryByText("disk target")).toBeNull();
   });
 
+  it("uses the Windows editor's parent as the search root without a file panel", async () => {
+    useQuickAccess.setState({ query: "% target" });
+    const tabId = "editor-local:C:\\work\\a.txt";
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: null,
+          path: "C:\\work\\a.txt",
+          name: "a.txt",
+          content: "unsaved target",
+          baseline: "disk",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    const search = vi.spyOn(api, "filesSearch").mockResolvedValue({
+      matches: [
+        { path: "C:/WORK/a.txt", line: 1, column: 1, preview: "stale target" },
+        { path: "C:/work/b.txt", line: 1, column: 1, preview: "sibling target" },
+      ],
+      limited: false,
+      skipped: 0,
+    });
+    vi.spyOn(api, "filesSearchCancel").mockResolvedValue();
+    render(<CommandPalette />);
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(expect.any(String), null, "C:\\work", "target", true),
+    );
+    expect(await screen.findByText("sibling target")).toBeTruthy();
+    expect(screen.getByText("unsaved target")).toBeTruthy();
+    expect(screen.queryByText("stale target")).toBeNull();
+  });
+
+  it("keeps literal backslashes in remote search scopes and excludes similarly named directories", async () => {
+    useQuickAccess.setState({ query: "% target" });
+    useSsh.setState({ sessions: [{ id: "ssh", title: "Remote" } as SshSession] });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "remote", path: "/work\\literal", sessionId: "ssh" }] },
+    });
+    useEditors.setState({
+      entries: Object.fromEntries(
+        [
+          ["inside", "/work\\literal/a.txt", "inside target"],
+          ["outside", "/work/literal/b.txt", "outside target"],
+        ].map(([tabId, path, content]) => [
+          tabId!,
+          {
+            tabId: tabId!,
+            sessionId: "ssh",
+            path: path!,
+            name: "a.txt",
+            content: content!,
+            baseline: "disk",
+            loading: false,
+            saving: false,
+            error: null,
+          },
+        ]),
+      ),
+    });
+    vi.spyOn(api, "filesSearch").mockResolvedValue({ matches: [], limited: false, skipped: 0 });
+    vi.spyOn(api, "filesSearchCancel").mockResolvedValue();
+    render(<CommandPalette />);
+    expect(await screen.findByText("inside target")).toBeTruthy();
+    expect(screen.queryByText("outside target")).toBeNull();
+  });
+
   it("lists plugin metadata without starting a runtime and executes a command into its result page", async () => {
     const plugin = {
       id: "uuid",

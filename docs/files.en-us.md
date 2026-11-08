@@ -58,6 +58,17 @@ application/file-manager actions in their context menu. Transfer behavior,
 recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.en-us.md).
 
+## Searching open work
+
+Press F1 and type `> ` to find commands, or `% ` to search file contents. The scope
+selector offers directories from file panels and open editors, including an
+editor's parent directory when no file panel is open. You can also choose a local
+folder. Content search uses open editor text in place of that file's saved
+contents, so unsaved edits are searchable without saving them. Choosing a matching
+buffer result returns to that editor and line. Local Windows drive and UNC paths
+are compared across slash direction and letter case; remote paths retain case
+and literal backslashes.
+
 ## Moving file panels
 
 To move one side of the file manager into its own group, drag its grip to a

@@ -24,6 +24,7 @@ import { Select } from "@/components/ui/form/Select";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
 import { useFileIconResolver } from "@/lib/files/icons";
 import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
+import { inSearchRoot, searchParent, searchPathKey } from "@/lib/files/searchPaths";
 import "@/styles/shortcuts.css";
 
 interface Command {
@@ -84,14 +85,14 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
         id: `editor:${entry.tabId}`,
         tabId: entry.tabId,
         sessionId: entry.sessionId,
-        path: entry.path.slice(0, entry.path.lastIndexOf("/")) || "/",
+        path: searchParent(entry.path, entry.sessionId),
       })),
       ...(picked ? [picked] : []),
     ];
     candidates.sort((a, b) => Number(b.tabId === activeTabId) - Number(a.tabId === activeTabId));
     const seen = new Set<string>();
     return candidates.filter((root) => {
-      const key = `${root.sessionId ?? "local"}\0${root.path}`;
+      const key = `${root.sessionId ?? "local"}\0${searchPathKey(root.path, root.sessionId)}`;
       if (
         seen.has(key) ||
         (root.sessionId && !sessions.some((session) => session.id === root.sessionId))
@@ -191,27 +192,25 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
             }))
         : [];
     const visible = result?.key === searchKey ? result.matches : [];
-    const inRoot = (file: string) => {
-      if (!path) return false;
-      const normalize = (value: string) => {
-        const normalized = value.replace(/\\/g, "/");
-        return !sessionId && /^[a-z]:\//i.test(normalized)
-          ? normalized.toLocaleLowerCase()
-          : normalized;
-      };
-      const root = normalize(path).replace(/\/+$/, "");
-      const candidate = normalize(file);
-      return candidate === root || candidate.startsWith(`${root}/`);
-    };
     const drafts =
       mode === "content" && needle.length >= 2
         ? Object.values(entries).filter(
             (entry) =>
-              entry.sessionId === sessionId && inRoot(entry.path) && !entry.loading && !entry.error,
+              entry.sessionId === sessionId &&
+              !!path &&
+              inSearchRoot(entry.path, path, sessionId) &&
+              !entry.loading &&
+              !entry.error,
           )
         : [];
     const matches = [
-      ...visible.filter((match) => !drafts.some((entry) => entry.path === match.path)),
+      ...visible.filter(
+        (match) =>
+          !drafts.some(
+            (entry) =>
+              searchPathKey(entry.path, sessionId) === searchPathKey(match.path, sessionId),
+          ),
+      ),
     ];
     const loweredNeedle = needle.toLocaleLowerCase();
     draftMatches: for (const entry of drafts) {
@@ -409,7 +408,9 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
                   .then((folder) => {
                     if (folder) {
                       const existing = roots.find(
-                        (item) => !item.sessionId && item.path === folder,
+                        (item) =>
+                          !item.sessionId &&
+                          searchPathKey(item.path, null) === searchPathKey(folder, null),
                       );
                       if (existing) setRootId(existing.id);
                       else {
