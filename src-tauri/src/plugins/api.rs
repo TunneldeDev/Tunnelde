@@ -483,10 +483,12 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "files.local.rename" => {
-            commands::local_rename(
+            // Plugin rename remains atomic. Copy-based moves require a
+            // separately owned transfer lifecycle, not the UI fallback.
+            crate::ssh::files::local_rename(
                 field(&params, "from")?,
                 field(&params, "to")?,
-                optional(&params, "overwrite")?,
+                optional(&params, "overwrite")?.unwrap_or(false),
             )?;
             Ok(Value::Null)
         }

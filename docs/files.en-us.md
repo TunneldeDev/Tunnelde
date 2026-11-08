@@ -94,6 +94,24 @@ Within the same SSH session, optimized copies use the server's supported
 `copy-data` extension without relaying file data through this computer. Other
 copies use the normal transfer pipeline.
 
+## Copy-based directory moves on Windows
+
+Local directory moves that need copying use the background task engine. The
+source inventory, destination directory identities and verified file copies are
+recorded separately. All files are copied and checked before source removal
+begins, and the recovery journal is flushed before that boundary.
+
+After an interruption, Resume checks the recorded identities and full file
+contents. Once source removal has begun, it continues verification and cleanup
+without restarting the copy phase. Changed or replaced files are retained for
+review. Newly added source entries are retained; a source directory is removed
+only when it is empty. This is a sequence of verified file moves, rather than an
+atomic transaction for the whole directory.
+
+This recovery applies to Windows local paths. Remote directory moves that would
+require copying and deleting remain restricted; ordinary moves within one remote
+host still use server-side rename.
+
 ## Failed remote moves
 
 Cut/paste within one remote host uses a server-side rename, avoiding a round trip

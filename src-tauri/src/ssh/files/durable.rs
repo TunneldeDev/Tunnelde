@@ -45,6 +45,10 @@ pub struct DurableTransfer {
     pub deleting_source: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub move_recovery: Option<MoveRecovery>,
+    /// SHA256 of the immutable Windows directory-move inventory. Its file
+    /// proofs live in separate rows and are synced at the deletion boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub directory_move_manifest: Option<String>,
     pub overwrite: bool,
     pub transferred: u64,
     pub total: u64,
@@ -103,7 +107,10 @@ fn write_row(conn: &rusqlite::Connection, row: &DurableTransfer) -> AppResult<()
 }
 
 fn write_move_intent(conn: &rusqlite::Connection, row: &DurableTransfer) -> AppResult<()> {
-    if !conn.is_autocommit() || !row.deleting_source || row.move_recovery.is_none() {
+    if !conn.is_autocommit()
+        || !row.deleting_source
+        || (row.move_recovery.is_none() && row.directory_move_manifest.is_none())
+    {
         return Err(AppError::internal("Invalid move deletion checkpoint"));
     }
     // Progress uses NORMAL for performance. This single destructive boundary
@@ -231,14 +238,15 @@ impl Journal {
     pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
         app.state::<AppState>().db.with(|conn| {
             conn.execute(
-                "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1 OR instr(key,?4)=1 OR instr(key,?5)=1 OR instr(key,?6)=1",
+                "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1 OR instr(key,?4)=1 OR instr(key,?5)=1 OR instr(key,?6)=1 OR instr(key,?7)=1",
                 rusqlite::params![
                     format!("transfer:{id}"),
                     format!("transfer-file:{id}:"),
                     format!("transfer-backup:{id}:"),
                     format!("transfer-part:{id}:"),
                     format!("transfer-artifact:{id}:"),
-                    format!("transfer-parallel:{id}:")
+                    format!("transfer-parallel:{id}:"),
+                    format!("transfer-directory-move:{id}:")
                 ],
             )?;
             Ok(())
@@ -255,6 +263,7 @@ impl Journal {
                 "transfer-part",
                 "transfer-artifact",
                 "transfer-parallel",
+                "transfer-directory-move",
             ] {
                 conn.execute(
                     "DELETE FROM settings WHERE instr(key,?1)=1",
@@ -353,6 +362,7 @@ mod tests {
         assert!(row.backup_recovery.is_none());
         assert!(row.artifact_recovery.is_none());
         assert!(row.move_recovery.is_none());
+        assert!(row.directory_move_manifest.is_none());
         assert_eq!(row.speed_limit_kib, 0);
     }
 
@@ -484,6 +494,58 @@ mod tests {
         assert!(write_move_intent(&conn, &row).is_err());
         let tx = conn.unchecked_transaction().unwrap();
         assert!(write_move_intent(&tx, &move_intent()).is_err());
+    }
+
+    #[test]
+    fn directory_removal_boundary_syncs_prior_inventory_and_file_proofs() {
+        let root = std::env::temp_dir().join(format!(
+            "tunnelde-directory-journal-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("journal.db");
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL);").unwrap();
+        for key in [
+            "transfer-directory-move:job:manifest",
+            "transfer-directory-move:job:file:verified",
+        ] {
+            conn.execute("INSERT INTO settings VALUES(?1,'verified proof',1)", [key])
+                .unwrap();
+        }
+        conn.execute_batch("CREATE TRIGGER require_directory_sync BEFORE INSERT ON settings WHEN NEW.key='transfer:job' AND (SELECT synchronous FROM pragma_synchronous) < 2 BEGIN SELECT RAISE(ABORT,'checkpoint is not durable'); END;").unwrap();
+        let mut row = move_intent();
+        row.move_recovery = None;
+        row.directory_move_manifest = Some("immutable-manifest-digest".into());
+        assert!(write_row(&conn, &row).is_err());
+        write_move_intent(&conn, &row).unwrap();
+        assert_eq!(
+            conn.pragma_query_value(None, "synchronous", |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        drop(conn);
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT count(*) FROM settings", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 3);
+        let raw: String = conn
+            .query_row(
+                "SELECT value FROM settings WHERE key='transfer:job'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let restored: DurableTransfer = serde_json::from_str(&raw).unwrap();
+        assert!(restored.deleting_source);
+        assert_eq!(
+            restored.directory_move_manifest,
+            row.directory_move_manifest
+        );
+        assert!(restored.move_recovery.is_none());
+        drop(conn);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

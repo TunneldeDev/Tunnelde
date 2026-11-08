@@ -762,8 +762,28 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn local_rename(from: String, to: String, overwrite: Option<bool>) -> AppResult<()> {
-    sftp::local_rename(from, to, overwrite.unwrap_or(false))
+pub async fn local_rename(
+    app: AppHandle,
+    from: String,
+    to: String,
+    overwrite: Option<bool>,
+) -> AppResult<()> {
+    let result = sftp::local_rename(from.clone(), to.clone(), overwrite.unwrap_or(false));
+    #[cfg(windows)]
+    if let Err(error) = &result {
+        // ERROR_NOT_SAME_DEVICE is an explicit OS result. A generic SFTP
+        // Failure, permission error or lost reply never authorizes this fallback.
+        let cross_volume = matches!(error, AppError::Io(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_NOT_SAME_DEVICE as i32));
+        let directory_merge = matches!(error, AppError::Validation(key) if key == "sftp.directoryMergeMoveUnavailable");
+        if cross_volume || directory_merge {
+            return sftp::start_local_move(app, from, to, overwrite.unwrap_or(false))?
+                .wait()
+                .await;
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    result
 }
 
 #[tauri::command]

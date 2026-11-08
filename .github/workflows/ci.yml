@@ -229,6 +229,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
+          cargo test --manifest-path src-tauri/Cargo.toml --lib local_directory_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::guarded_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib guarded_backup
