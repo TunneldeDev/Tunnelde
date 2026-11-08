@@ -92,7 +92,9 @@ copy commits individual files; it is not a transaction for the entire directory.
 
 Within the same SSH session, optimized copies use the server's supported
 `copy-data` extension without relaying file data through this computer. Other
-copies use the normal transfer pipeline.
+copies use the normal transfer pipeline. Global upload and download limits apply
+to bytes relayed through this computer. Local and server-side copies still obey
+their individual task limits without consuming the global network allowance.
 
 ## Copy-based directory moves on Windows
 
