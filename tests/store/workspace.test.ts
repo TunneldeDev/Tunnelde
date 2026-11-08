@@ -8,6 +8,20 @@ import { useNavigation } from "@/store/navigation";
 
 const state = () => useWorkspace.getState();
 
+it("opens output below the workspace and restores its moved layout without creating duplicates", () => {
+  state().openPage("welcome");
+  useNavigation.getState().showOutput();
+  expect(state().layout).toMatchObject({ kind: "split", direction: "column", ratio: 0.68 });
+  const output = state().panes.find((pane) => pane.tabIds.includes("sidebar:output"))!;
+  state().toggleDockedSidebar("output");
+  expect(state().tabs.find((tab) => tab.id === "sidebar:output")?.hidden).toBe(true);
+  useNavigation.getState().showOutput();
+  expect(state().tabs.filter((tab) => tab.id === "sidebar:output")).toHaveLength(1);
+  expect(state().panes.find((pane) => pane.id === output.id)?.activeId).toBe("sidebar:output");
+  expect(state().tabs.find((tab) => tab.id === "sidebar:output")?.hidden).toBe(false);
+  expect(state().layout).toMatchObject({ kind: "split", direction: "column", ratio: 0.68 });
+});
+
 const host = (id: string, name: string): Host => ({
   id,
   groupId: null,

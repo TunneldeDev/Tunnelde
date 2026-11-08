@@ -17,7 +17,8 @@ export type SettingsSection =
   | "updates"
   | "about"
   | "advanced";
-export type BuiltinSidebarView = "hosts" | "knownHosts" | "plugins" | "forwarding" | "tasks";
+export type BuiltinSidebarView =
+  "hosts" | "knownHosts" | "plugins" | "forwarding" | "tasks" | "output";
 export type SidebarView = BuiltinSidebarView | PluginSidebarView;
 
 export const useNavigation = create<{
@@ -29,6 +30,7 @@ export const useNavigation = create<{
   toggleSidebar: () => void;
   selectSidebar: (view: SidebarView) => void;
   showSidebar: (view: SidebarView) => void;
+  showOutput: () => void;
   showForwarding: (hostId: string, sessionId: string) => void;
   rememberSidebar: (view: SidebarView) => void;
   selectSettings: (section: SettingsSection) => void;
@@ -101,6 +103,21 @@ export const useNavigation = create<{
       },
     }));
     useNavigation.getState().showSidebar("forwarding");
+  },
+  showOutput: () => {
+    const navigation = useNavigation.getState();
+    const workspace = useWorkspace.getState();
+    const id = sidebarTabId("output");
+    if (
+      workspace.tabs.some((tab) => tab.id === id) ||
+      navigation.visitedSidebars.includes("output")
+    ) {
+      navigation.showSidebar("output");
+      return;
+    }
+    workspace.splitTab(id, "column", "after", "root");
+    const layout = useWorkspace.getState().layout;
+    if (layout.kind === "split") useWorkspace.getState().resizeSplit(layout.id, 0.68);
   },
   selectSettings: (settingsSection) => set({ settingsSection }),
 }));

@@ -206,13 +206,18 @@ async fn read_loop(
 ) {
     let mut reader = BufReader::new(stdout);
     let mut requests = JoinSet::new();
+    let plugin_id = context
+        .as_ref()
+        .map(|context| context.id.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     loop {
         let line = match bounded_line(&mut reader, 1024 * 1024 + 4096).await {
             Ok(Some(line)) => line,
             Ok(None) => break,
             Err(error) => {
-                tracing::warn!(%error, "plugin stdout closed with an error");
+                tracing::warn!(%error, %plugin_id, "plugin stdout closed with an error");
                 break;
             }
         };
@@ -223,7 +228,7 @@ async fn read_loop(
         let value: Value = match serde_json::from_str(&line) {
             Ok(value) => value,
             Err(error) => {
-                tracing::warn!(%error, line = %line.chars().take(200).collect::<String>(), "plugin sent invalid json");
+                tracing::warn!(%error, %plugin_id, line = %line.chars().take(200).collect::<String>(), "plugin sent invalid json");
                 continue;
             }
         };
@@ -282,7 +287,7 @@ async fn read_loop(
             }
             None => {
                 if let Some(method) = value.get("method").and_then(Value::as_str) {
-                    tracing::debug!(method, "plugin notification");
+                    tracing::debug!(method, %plugin_id, "plugin notification");
                 }
             }
         }

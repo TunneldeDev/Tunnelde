@@ -163,6 +163,7 @@ pub fn run() {
             commands::open_log_dir,
             commands::open_latest_log,
             logs::logs_read,
+            logs::logs_output_read,
             commands::open_local_path,
             commands::reveal_local_path,
             commands::open_external,
