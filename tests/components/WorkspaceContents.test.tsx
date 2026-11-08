@@ -18,6 +18,11 @@ vi.mock("@/features/terminal/TerminalPage", () => ({
     return <textarea aria-label={`terminal ${sessionId}`} defaultValue="scrollback" />;
   },
 }));
+vi.mock("@/features/plugins/PluginViewPage", () => ({
+  PluginViewPage: ({ visible }: { visible: boolean }) => (
+    <div data-testid="plugin-visibility" data-visible={visible} />
+  ),
+}));
 
 beforeEach(() => {
   mounted.mockClear();
@@ -39,6 +44,35 @@ beforeEach(() => {
 });
 
 describe("workspace page ownership", () => {
+  it("keeps a plugin visible in an unfocused group and suspends it only when its own tab is hidden", () => {
+    const id = "plugin:formatter:main";
+    useWorkspace.setState((state) => ({
+      tabs: [
+        ...state.tabs,
+        { id, kind: "pluginView", title: "Plugin", hostId: null, pinned: false },
+      ],
+      panes: [{ ...state.panes[0]!, tabIds: [...state.panes[0]!.tabIds, id] }],
+    }));
+    render(
+      <>
+        <PaneLayout />
+        <WorkspaceContents />
+      </>,
+    );
+    const view = screen.getByTestId("plugin-visibility");
+    expect(view.dataset.visible).toBe("false");
+    act(() => useWorkspace.getState().splitTab(id, "row"));
+    expect(view.dataset.visible).toBe("true");
+    act(() => useWorkspace.getState().activate("terminal:a"));
+    expect(view.dataset.visible).toBe("true");
+    const group = useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(id))!;
+    act(() => useWorkspace.getState().moveTab("terminal:b", group.id));
+    expect(view.dataset.visible).toBe("false");
+    act(() => useWorkspace.getState().activate(id));
+    expect(view.dataset.visible).toBe("true");
+    expect(screen.getByTestId("plugin-visibility")).toBe(view);
+  });
+
   it("keeps a preview before a user edits its form so navigating cannot lose the draft", () => {
     useWorkspace.setState((state) => ({
       tabs: state.tabs.map((tab) => (tab.id === "terminal:a" ? { ...tab, preview: true } : tab)),

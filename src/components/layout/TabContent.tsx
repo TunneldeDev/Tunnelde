@@ -80,7 +80,7 @@ function TabBody({
       const pluginId = separator >= 0 ? rest.slice(0, separator) : rest;
       const viewId = separator >= 0 ? rest.slice(separator + 1) : "default";
       if (viewId === "$command") return <PluginCommandPage pluginId={pluginId} />;
-      return <PluginViewPage pluginId={pluginId} viewId={viewId} />;
+      return <PluginViewPage pluginId={pluginId} viewId={viewId} visible={visible} />;
     }
     case "pluginDetail": {
       const [, sourceId, pluginId] = tab.id.split(":");

@@ -28,6 +28,7 @@ interface PluginViewPageProps {
   pluginId: string;
   viewId: string;
   embedded?: boolean;
+  visible?: boolean;
 }
 
 interface RenderedView {
@@ -35,18 +36,24 @@ interface RenderedView {
   blocks: PluginBlock[];
 }
 
-export function PluginViewPage({ pluginId, viewId, embedded }: PluginViewPageProps) {
+export function PluginViewPage({
+  pluginId,
+  viewId,
+  embedded,
+  visible = true,
+}: PluginViewPageProps) {
   return (
     <PluginViewContent
       key={JSON.stringify([pluginId, viewId])}
       pluginId={pluginId}
       viewId={viewId}
       embedded={embedded}
+      visible={visible}
     />
   );
 }
 
-function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) {
+function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPageProps) {
   const { t, i18n } = useTranslation();
   const [view, setView] = useState<RenderedView | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +155,7 @@ function PluginViewContent({ pluginId, viewId, embedded }: PluginViewPageProps) 
                   pluginId={pluginId}
                   viewId={viewId}
                   block={block}
+                  visible={visible}
                 />
               );
             }

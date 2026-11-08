@@ -68,6 +68,12 @@ does not return a panel to the left sidebar; use **Move to side bar** or drag it
 back explicitly to change its placement. Hidden panel slots are included in saved
 workspace layouts and do not count as visible content.
 
+Hidden plugin chat views retain their event subscription and latest conversation
+state, but stop readiness polling and defer streaming React updates until visible.
+Revealing a view publishes the accumulated state without restarting the plugin or
+discarding its draft. Visibility follows each pane's selected tab, independently
+of which pane has keyboard focus.
+
 ## Host groups and search
 
 The host tree follows all saved parent levels, with descendant counts and indentation
