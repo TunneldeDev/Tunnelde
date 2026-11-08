@@ -8,6 +8,20 @@ import { useNavigation } from "@/store/navigation";
 
 const state = () => useWorkspace.getState();
 
+it("opens output below the workspace and restores its moved layout without creating duplicates", () => {
+  state().openPage("welcome");
+  useNavigation.getState().showOutput();
+  expect(state().layout).toMatchObject({ kind: "split", direction: "column", ratio: 0.68 });
+  const output = state().panes.find((pane) => pane.tabIds.includes("sidebar:output"))!;
+  state().toggleDockedSidebar("output");
+  expect(state().tabs.find((tab) => tab.id === "sidebar:output")?.hidden).toBe(true);
+  useNavigation.getState().showOutput();
+  expect(state().tabs.filter((tab) => tab.id === "sidebar:output")).toHaveLength(1);
+  expect(state().panes.find((pane) => pane.id === output.id)?.activeId).toBe("sidebar:output");
+  expect(state().tabs.find((tab) => tab.id === "sidebar:output")?.hidden).toBe(false);
+  expect(state().layout).toMatchObject({ kind: "split", direction: "column", ratio: 0.68 });
+});
+
 const host = (id: string, name: string): Host => ({
   id,
   groupId: null,
@@ -488,6 +502,63 @@ describe("workspace tabs", () => {
     expect(useNavigation.getState().visitedSidebars).toContain("plugins");
   });
 
+  it.each(["sftp", "terminal", "monitor", "pluginView"] as const)(
+    "preserves the width of a sole %s tab when moving its group to the opposite edge",
+    (kind) => {
+      state().openPage("welcome", { preview: false });
+      state().openPage("settings", { preview: false });
+      state().splitTab("page:settings", "row");
+      const movingPane = state().activePaneId;
+      useWorkspace.setState({
+        tabs: state().tabs.map((tab) =>
+          tab.id === "page:settings" ? { ...tab, kind, title: "Narrow panel" } : tab,
+        ),
+      });
+      const workspace = document.createElement("main");
+      workspace.className = "workspace";
+      const source = document.createElement("section");
+      source.dataset.paneId = movingPane;
+      workspace.append(source);
+      document.body.append(workspace);
+      vi.spyOn(workspace, "getBoundingClientRect").mockReturnValue({
+        width: 1000,
+        height: 700,
+      } as DOMRect);
+      vi.spyOn(source, "getBoundingClientRect").mockReturnValue({
+        width: 260,
+        height: 210,
+      } as DOMRect);
+      try {
+        state().splitTab("page:settings", "row", "before", "pane-1");
+        const layout = state().layout;
+        expect(layout.kind).toBe("split");
+        if (layout.kind === "split") expect(layout.ratio * 996).toBeCloseTo(260);
+        expect(state().panes.some((pane) => pane.id === movingPane)).toBe(false);
+        expect(state().tabs).toHaveLength(2);
+      } finally {
+        workspace.remove();
+      }
+    },
+  );
+
+  it("uses equal halves for an ordinary split of tabs from the same group", () => {
+    state().openPage("welcome", { preview: false });
+    state().openPage("settings", { preview: false });
+    const source = document.createElement("section");
+    source.dataset.paneId = "pane-1";
+    document.body.append(source);
+    vi.spyOn(source, "getBoundingClientRect").mockReturnValue({
+      width: 1000,
+      height: 700,
+    } as DOMRect);
+    try {
+      state().splitTab("page:settings", "row");
+      expect(state().layout).toMatchObject({ kind: "split", ratio: 0.5 });
+    } finally {
+      source.remove();
+    }
+  });
+
   it("saves and restores sidebar panels in nested splits without accepting arbitrary sidebar ids", () => {
     state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:hosts", "row", "before", "pane-1");
@@ -518,16 +589,66 @@ describe("workspace tabs", () => {
     expect(state().tabs.filter((tab) => tab.kind === "sidebar")).toHaveLength(1);
   });
 
-  it("returns a closed sidebar tab to its original side view and prunes the empty group", () => {
+  it("closes a docked sidebar without reopening it on the left and remembers its layout", () => {
+    state().openPage("welcome", { preview: false });
+    state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
+    const layout = state().layout;
+    const owner = state().activePaneId;
+    const navigation = useNavigation.getState();
+    state().close("sidebar:knownHosts");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:knownHosts")?.hidden).toBe(true);
+    expect(useNavigation.getState()).toBe(navigation);
+    expect(state().layout).toEqual(layout);
+    expect(visibleWorkspaceLayout(state().layout, state().panes, state().tabs)).toEqual({
+      kind: "pane",
+      paneId: "pane-1",
+    });
+    state().close("sidebar:knownHosts");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:knownHosts")?.hidden).toBe(true);
+    useNavigation.getState().showSidebar("knownHosts");
+    expect(state().activePaneId).toBe(owner);
+    expect(state().tabs.find((tab) => tab.id === "sidebar:knownHosts")?.hidden).toBe(false);
+    expect(state().layout).toEqual(layout);
+  });
+
+  it("returns a panel to the left only when explicitly requested", () => {
     state().openPage("welcome", { preview: false });
     state().splitTab("sidebar:knownHosts", "column", "after", "pane-1");
     state().close("sidebar:knownHosts");
-    expect(state().panes).toHaveLength(1);
+    state().returnSidebar("knownHosts");
     expect(state().tabs.map((tab) => tab.id)).toEqual(["page:welcome"]);
+    expect(state().panes).toHaveLength(1);
     expect(useNavigation.getState()).toMatchObject({
       activeSidebar: "knownHosts",
       sidebarVisible: true,
     });
+  });
+
+  it("keeps built-in and plugin panels closed across persistence and bulk closes", () => {
+    for (const view of [
+      "hosts",
+      "plugins",
+      "forwarding",
+      "output",
+      "plugin:assistant:chat",
+    ] as const) {
+      state().openSidebar(view);
+      state().close(`sidebar:${view}`);
+      expect(state().tabs.find((tab) => tab.id === `sidebar:${view}`)?.hidden).toBe(true);
+    }
+    state().openPage("welcome", { preview: false });
+    state().hydrate(workspaceRecords());
+    expect(
+      state()
+        .tabs.filter((tab) => tab.kind === "sidebar")
+        .every((tab) => tab.hidden),
+    ).toBe(true);
+    useNavigation.getState().showSidebar("hosts");
+    state().closeOthers("page:welcome");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:hosts")?.hidden).toBe(true);
+    expect(state().tabs.filter((tab) => tab.kind === "sidebar")).toHaveLength(5);
+    useNavigation.getState().showSidebar("hosts");
+    expect(state().tabs.find((tab) => tab.id === "sidebar:hosts")?.hidden).toBe(false);
   });
 
   it("can expose an undocked sidebar with the global sidebar toggle after docking the active one", () => {

@@ -20,6 +20,7 @@ import { useSsh } from "@/store/ssh";
 import { toast, type ToastVariant } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
+import { pluginEditorDocument, pluginEditorWriteResult } from "@/lib/plugins/editor";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -62,7 +63,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const document = workspace.activeId ? editorDocument(workspace.activeId) : null;
       if (document && new TextEncoder().encode(document.content).length > EDITOR_DOCUMENT_MAX_BYTES)
         throw new Error("editor.documentTooLarge");
-      return document;
+      return pluginEditorDocument(document);
     }
     case "editor.replace": {
       const tabId = text(params, "tabId"),
@@ -78,12 +79,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
         { tabId, documentId, version: params.version as number },
         params.text,
       );
-      return {
-        tabId: document.tabId,
-        documentId: document.documentId,
-        version: document.version,
-        dirty: document.dirty,
-      };
+      return pluginEditorWriteResult(document);
     }
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();
@@ -164,8 +160,9 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       const dirty = tab.kind === "editor" && useEditors.getState().isDirty(tabId);
       if (dirty && useDialogs.getState().dialog.kind !== "none") throw new Error("dialog.busy");
       closeTab(tab);
+      const remaining = useWorkspace.getState().tabs.find((item) => item.id === tabId);
       return {
-        closed: !useWorkspace.getState().tabs.some((item) => item.id === tabId),
+        closed: !remaining || remaining.hidden === true,
         pendingConfirmation: dirty,
       };
     }

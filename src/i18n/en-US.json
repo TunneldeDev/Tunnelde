@@ -599,6 +599,10 @@
     "loading": "Loading…",
     "invalidName": "Enter a valid file or folder name",
     "alreadyExists": "An item with this name already exists",
+    "renameFailed": "Could not move or rename {{from}} to {{to}}. {{reason}}",
+    "renameServerFailure": "The server rejected the operation without a specific reason (SFTP 4). Moving across mount points, a destination conflict or server restrictions can cause this. Check both paths and the application log.",
+    "renameStatusReason": "SFTP {{statusCode}}: {{reason}}",
+    "serverUnspecifiedFailure": "The SFTP server rejected the file operation without a specific reason (status 4). Check the paths, permissions and application log.",
     "overwriteUnsupported": "The server does not support safely replacing this item. Choose a different destination name.",
     "overwriteTitle": "Replace existing items?",
     "overwriteBody": "These items already exist in {{path}}: {{names}}. Replace matching files and merge folders?",
@@ -608,6 +612,9 @@
     "samePath": "Cannot copy or move an item into itself",
     "typeConflict": "A file and folder cannot replace one another",
     "symlinkUnsupported": "Copying symbolic links is not supported",
+    "fileTypeUnsupported": "Only regular files and folders can be transferred. Devices, pipes and sockets are not supported.",
+    "fileMetadataMissing": "The server did not provide the file type or size needed to prepare this transfer.",
+    "transferTooLarge": "The combined transfer size exceeds the supported limit.",
     "unsupportedEncoding": "Only UTF-8 text files can be edited",
     "binaryFile": "Binary files cannot be edited as text",
     "absolutePathRequired": "An absolute path is required",
@@ -723,7 +730,9 @@
     "transferTo": "To",
     "moveTasksHint": "Drag to move · Arrow keys to move · Double-click to reset",
     "resetTasksLayout": "Reset transfer window layout",
-    "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)"
+    "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)",
+    "resizeColumnHint": "Drag to resize; double-click to fit contents. Use arrow keys when focused.",
+    "columnHeaderHint": "Click to sort; drag to reorder columns."
   },
   "processes": {
     "title": "Processes",
@@ -967,7 +976,8 @@
     "lockPane": "Lock as the default pane for new pages",
     "unlockPane": "Unlock the default pane for new pages",
     "keepOpen": "Keep open",
-    "previewHint": "Preview · Double-click to keep open"
+    "previewHint": "Preview · Double-click to keep open",
+    "actions": "Tab actions"
   },
   "panel": {
     "system": "This machine",
@@ -1102,7 +1112,10 @@
     "pagination": "Plugin pages",
     "previousPage": "Previous page",
     "nextPage": "Next page",
-    "pageInfo": "{{page}} / {{pages}} · {{count}} plugins"
+    "pageInfo": "{{page}} / {{pages}} · {{count}} plugins",
+    "tlsHandshake": "TLS handshake failed through the selected route. Check the proxy node and rules for GitHub and release-assets.githubusercontent.com, or select another proxy in Network settings.",
+    "connectFailed": "Could not connect through the configured marketplace route. Check Network settings.",
+    "timeout": "Plugin download timed out. Check the selected proxy route and try again."
   },
   "node": {
     "required": "Set up Node to start this plugin.",
@@ -1120,6 +1133,12 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "statusBar": {
+      "invalidItem": "The plugin supplied an invalid status bar item.",
+      "unknownCommand": "The plugin's status bar command is unavailable.",
+      "limit": "The plugin reached the status bar item limit.",
+      "expired": "This status bar action has expired. Try the updated item."
+    },
     "api": {
       "invalidStorage": "The plugin's saved data could not be read. Export or repair its data before retrying; existing data has been preserved.",
       "storageTooLarge": "The plugin's saved data exceeds the supported size. Export or reduce it before retrying; existing data has been preserved."
@@ -1136,6 +1155,13 @@
     },
     "fileIcons": {
       "invalid": "The file icon theme is invalid or exceeds its limits."
+    },
+    "tabBar": {
+      "invalidItem": "The plugin supplied an invalid tab bar control.",
+      "unknownCommand": "This plugin command is unavailable.",
+      "limit": "The plugin reached the tab bar control limit.",
+      "expired": "This tab bar control has expired. Try the updated control.",
+      "invalidContext": "This tab bar control is unavailable for the current tab."
     }
   },
   "themes": {
@@ -1439,7 +1465,17 @@
     "goBack": "Back",
     "goForward": "Forward",
     "selectAll": "Select all",
-    "parent": "Parent folder"
+    "parent": "Parent folder",
+    "filters": {
+      "title": "Filter shortcuts",
+      "hint": "Use the filter button to find conflicts, modified bindings or plugin commands. Filters can be combined with search text.",
+      "conflict": "Conflicting shortcuts",
+      "modified": "Modified shortcuts",
+      "unassigned": "Unassigned commands",
+      "builtin": "Built-in commands",
+      "plugins": "Plugin commands",
+      "clear": "Clear filters"
+    }
   },
   "profiles": {
     "title": "Settings profiles",
@@ -1547,16 +1583,22 @@
     "qualityLatency": "Connection latency (median)",
     "qualityFastest": "Fastest",
     "qualitySlowest": "Slowest",
-    "qualityHint": "Measures up to 3 TCP connections through the selected route, within 15 seconds. Includes DNS and proxy negotiation, not ping RTT or bandwidth. Failures are excluded from timing statistics. Fast ≤100 ms; normal ≤300 ms; higher values are slow.",
+    "qualityHint": "Measures three TCP/proxy connection setup times, not ping RTT or bandwidth. Port 443 also verifies HTTPS. Other ports send no application data; login is not tested.",
     "quality": {
       "fast": "Connection established · low latency",
       "normal": "Connection established · moderate latency",
       "slow": "Connection established · high latency",
       "unstable": "Some connection attempts failed",
       "unreachable": "Connection failed"
-    }
+    },
+    "httpsFailed": "The TCP proxy tunnel works, but HTTPS/TLS failed. Check proxy routing, the node and destination before downloading plugins.",
+    "httpsPassed": "HTTPS responded (HTTP {{status}}, {{ms}}); other download domains may differ.",
+    "testMarketplaceRoute": "Current marketplace route",
+    "testUpdatesRoute": "Current update route"
   },
   "pluginErrors": {
+    "hostVersionMismatch": "This plugin version ({{pluginVersion}}) requires Tunnelde {{required}}; you are running {{hostVersion}}. Update Tunnelde or install a compatible plugin version. Startup stopped before launching a runtime.",
+    "hostVersionUnsupported": "This plugin does not support this Tunnelde version. Check the version requirement in Plugin details, then update Tunnelde or install a compatible plugin version.",
     "startFailed": "Could not start {{name}}: {{error}}",
     "openLog": "Open log",
     "spawn": "Could not launch the plugin process",
@@ -1601,6 +1643,7 @@
     "bindFailed": "Could not listen on that address and port. It may already be in use.",
     "remoteRejected": "The SSH server rejected the remote forward or did not respond. Check its forwarding policy and listen address.",
     "startCancelled": "Port forward startup was cancelled.",
+    "stopFailed": "Could not confirm that the listening port was released. Disconnect this host's forwarding connection before trying again.",
     "localEndpoint": "Local",
     "remoteEndpoint": "Remote",
     "localBindHost": "Local listen address",
@@ -1815,5 +1858,36 @@
     "clearing": "Clearing…",
     "clearHint": "Clear all removable finished, cancelled and failed records, including collapsed groups. Running and paused tasks are kept.",
     "clearFailed": "Could not clear {{count}} task(s): {{error}}. Their records are kept for retry."
+  },
+  "output": {
+    "title": "Output",
+    "show": "Show output",
+    "all": "All output",
+    "runtime": "Runtime information",
+    "domain": "Module",
+    "plugin": "Plugin",
+    "channel": "Output channel",
+    "follow": "Follow latest output",
+    "wrap": "Toggle word wrap",
+    "copy": "Copy displayed output",
+    "clear": "Clear displayed output",
+    "openFile": "Open original log",
+    "search": "Filter output…",
+    "level": "Minimum log level",
+    "allLevels": "All levels",
+    "content": "Output content",
+    "empty": "No output yet. New entries appear automatically.",
+    "noMatches": "No entries match these filters.",
+    "count": "{{count}} entries",
+    "bounded": "Older output omitted · display only",
+    "following": "Following output",
+    "scrollPaused": "Auto-scroll paused",
+    "platform": "Platform",
+    "build": "Build",
+    "debug": "Debug",
+    "release": "Release",
+    "sessions": "Active SSH connections",
+    "plugins": "Running plugins",
+    "actions": "Output actions"
   }
 }

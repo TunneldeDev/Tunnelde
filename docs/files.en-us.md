@@ -14,7 +14,8 @@ In **View options**, choose **Details view** or **Column view**. Details view su
 - Dragging a column header to reorder columns.
 - Dragging the separator at a header's edge to resize that column. A focused
   separator also accepts Left/Right in 10-pixel steps, or Shift+Left/Right in
-  50-pixel steps.
+  50-pixel steps. Double-click a separator to fit its column to the header and
+  currently displayed contents, including text hidden by ellipsis.
 - Clicking a header to sort, with another click reversing its direction.
 
 Filtering, grouping, hidden files and folders-first ordering are independent for
@@ -56,3 +57,36 @@ compatible plugins can add preview formats. Local entries offer explicit native
 application/file-manager actions in their context menu. Transfer behavior,
 recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.en-us.md).
+
+## Searching open work
+
+Press F1 and type `> ` to find commands, or `% ` to search file contents. The scope
+selector offers directories from file panels and open editors, including an
+editor's parent directory when no file panel is open. You can also choose a local
+folder. Content search uses open editor text in place of that file's saved
+contents, so unsaved edits are searchable without saving them. Choosing a matching
+buffer result returns to that editor and line. Local Windows drive and UNC paths
+are compared across slash direction and letter case; remote paths retain case
+and literal backslashes.
+
+## Moving file panels
+
+To move one side of the file manager into its own group, drag its grip to a
+workspace edge, another group's body, or a position in its tab strip. An edge
+creates a split; the center or tab strip adds a tab to that group. Splitting
+keeps the panel's previous width or height where the available space allows.
+Dragging outside a drop target or pressing Esc leaves the original panel intact.
+
+## Failed remote moves
+
+Cut/paste within one remote host uses a server-side rename, avoiding a round trip
+through this computer. A server may reject a rename between different mount points.
+SFTP status 4 (`Failure`) is a general failure and does not identify its cause;
+destination conflicts and server restrictions can also produce it.
+
+Failed moves report both paths and preserve the server's available explanation.
+Use **Open original log** in the error notification for the structured details.
+The failed item remains in the cut selection; successful items in the same batch
+are removed from it. Refresh both locations before retrying after a lost connection,
+because a missing reply cannot prove whether the server completed the operation.
+An unspecified failure does not trigger an automatic copy-and-delete retry.

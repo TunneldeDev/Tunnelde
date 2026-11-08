@@ -138,6 +138,54 @@ pub(super) async fn worthwhile(source: &Endpoint, sftp: Option<&SftpSession>) ->
 }
 
 impl Session {
+    pub async fn read_archive(
+        &self,
+        entries: Vec<super::archive::Entry>,
+        compression: bool,
+    ) -> AppResult<Vec<Vec<u8>>> {
+        let lengths: Vec<_> = entries.iter().map(|entry| entry.length).collect();
+        let (reply, data) = self
+            .request(
+                json!({"op":"archive_read","entries":entries,"compression":compression}),
+                Vec::new(),
+            )
+            .await?;
+        let length = reply.length.ok_or_else(protocol_error)?;
+        tokio::task::spawn_blocking(move || {
+            super::archive::unpack(decode(data, length, reply.compressed)?, &lengths)
+        })
+        .await
+        .map_err(|_| protocol_error())?
+    }
+
+    pub async fn write_archive(
+        &self,
+        entries: Vec<super::archive::Entry>,
+        files: Vec<Vec<u8>>,
+        compression: bool,
+    ) -> AppResult<()> {
+        let (data, length, compressed) = tokio::task::spawn_blocking(move || {
+            let archive = super::archive::pack(files)?;
+            let length = archive.len();
+            let (data, compressed) = if compression {
+                encode(archive)?
+            } else {
+                (archive, false)
+            };
+            Ok::<_, AppError>((data, length, compressed))
+        })
+        .await
+        .map_err(|_| protocol_error())??;
+        let (reply, _) = self.request(
+            json!({"op":"archive_write","entries":entries,"length":length,"compressed":compressed}),
+            data,
+        ).await?;
+        if reply.size != 0 {
+            return Err(protocol_error());
+        }
+        Ok(())
+    }
+
     /// End an interrupted read-only channel without waiting for a peer reply.
     /// Callers must still await CLOSE before treating remote writes as settled.
     pub fn abort(&self) {
@@ -282,6 +330,16 @@ impl Session {
             return Err(AppError::Ssh("sftp.compressionWorker".into()));
         }
         Ok(result)
+    }
+
+    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+        let (reply, _) = self
+            .request(json!({"op":"mkdir_private","path":path}), Vec::new())
+            .await?;
+        if reply.size != 0 {
+            return Err(protocol_error());
+        }
+        Ok(())
     }
 
     pub async fn open(&self, path: &str, write: bool) -> AppResult<String> {

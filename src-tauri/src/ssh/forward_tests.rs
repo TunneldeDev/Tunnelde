@@ -14,12 +14,14 @@ struct Gate {
 struct TestServer {
     listeners: HashMap<(String, u16), JoinHandle<()>>,
     gate: Option<Arc<Gate>>,
+    cancel_gate: Option<Arc<Gate>>,
 }
 impl server::Server for TestServer {
     type Handler = Self;
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self {
         Self {
             gate: self.gate.clone(),
+            cancel_gate: self.cancel_gate.clone(),
             listeners: HashMap::new(),
         }
     }
@@ -107,6 +109,10 @@ impl server::Handler for TestServer {
         port: u32,
         _: &mut Session,
     ) -> Result<bool, Self::Error> {
+        if let Some(gate) = &self.cancel_gate {
+            gate.entered.notify_one();
+            gate.release.notified().await;
+        }
         if let Some(task) = self.listeners.remove(&(address.to_owned(), port as u16)) {
             task.abort();
             Ok(true)
@@ -133,6 +139,12 @@ async fn test_server() -> (std::net::SocketAddr, String, JoinHandle<()>) {
     gated_server(None).await
 }
 async fn gated_server(gate: Option<Arc<Gate>>) -> (std::net::SocketAddr, String, JoinHandle<()>) {
+    server_with_gates(gate, None).await
+}
+async fn server_with_gates(
+    gate: Option<Arc<Gate>>,
+    cancel_gate: Option<Arc<Gate>>,
+) -> (std::net::SocketAddr, String, JoinHandle<()>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let address = listener.local_addr().unwrap();
     let key =
@@ -148,11 +160,230 @@ async fn gated_server(gate: Option<Arc<Gate>>) -> (std::net::SocketAddr, String,
     let task = tokio::spawn(async move {
         let mut server = TestServer {
             gate,
+            cancel_gate,
             listeners: HashMap::new(),
         };
         let _ = server.run_on_socket(Arc::new(config), &listener).await;
     });
     (address, fingerprint, task)
+}
+#[tokio::test]
+async fn explicit_stop_waits_for_remote_release_before_immediate_restart() {
+    let gate = Arc::new(Gate::default());
+    let (address, fingerprint, server) = server_with_gates(None, Some(gate.clone())).await;
+    let socket = TcpStream::connect(address).await.unwrap();
+    let (mut client, _, routes) =
+        super::super::session::handshake(Box::pin(socket), Some(fingerprint))
+            .await
+            .unwrap();
+    assert!(client.authenticate_none("test").await.unwrap().success());
+    let handle = Arc::new(client);
+    let (target_port, echo_task) = echo().await;
+    let port = free_port().await;
+    let rule = ForwardRule {
+        id: "restart".into(),
+        host_id: "h".into(),
+        name: "restart".into(),
+        mode: "remote".into(),
+        bind_host: "127.0.0.1".into(),
+        bind_port: port,
+        target_host: "127.0.0.1".into(),
+        target_port,
+    };
+    let active = open_forward(handle.clone(), routes.clone(), &rule, "session", None)
+        .await
+        .unwrap();
+    let registry = Arc::new(ForwardRegistry::default());
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert(rule.id.clone(), active);
+    drop(roundtrip(port).await);
+    let stop_registry = registry.clone();
+    let stopping = tokio::spawn(async move { stop_registry.stop("restart").await });
+    tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
+        .await
+        .unwrap();
+    assert!(
+        !stopping.is_finished(),
+        "Stop completed before the server released the port"
+    );
+    gate.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), stopping)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    let restarted = open_forward(handle, routes, &rule, "session", None)
+        .await
+        .unwrap();
+    drop(roundtrip(port).await);
+    drop(restarted);
+    server.abort();
+    echo_task.abort();
+}
+
+#[tokio::test]
+async fn detached_cleanup_cannot_cancel_a_new_listener_on_the_same_port() {
+    let gate = Arc::new(Gate::default());
+    let (address, fingerprint, server) = server_with_gates(None, Some(gate.clone())).await;
+    let socket = TcpStream::connect(address).await.unwrap();
+    let (mut client, _, routes) =
+        super::super::session::handshake(Box::pin(socket), Some(fingerprint))
+            .await
+            .unwrap();
+    assert!(client.authenticate_none("test").await.unwrap().success());
+    let handle = Arc::new(client);
+    let (target_port, echo_task) = echo().await;
+    let rule = ForwardRule {
+        id: "restart".into(),
+        host_id: "h".into(),
+        name: "restart".into(),
+        mode: "remote".into(),
+        bind_host: "127.0.0.1".into(),
+        bind_port: free_port().await,
+        target_host: "127.0.0.1".into(),
+        target_port,
+    };
+    drop(
+        open_forward(handle.clone(), routes.clone(), &rule, "session", None)
+            .await
+            .unwrap(),
+    );
+    tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
+        .await
+        .unwrap();
+    let restart_handle = handle.clone();
+    let restart_routes = routes.clone();
+    let restart_rule = rule.clone();
+    let restarting = tokio::spawn(async move {
+        open_forward(
+            restart_handle,
+            restart_routes,
+            &restart_rule,
+            "session",
+            None,
+        )
+        .await
+    });
+    // Let the replacement reach its endpoint reservation wait.
+    tokio::time::sleep(Duration::from_millis(30)).await;
+    assert!(!restarting.is_finished());
+    gate.release.notify_one();
+    let restarted = tokio::time::timeout(Duration::from_secs(3), restarting)
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap();
+    drop(roundtrip(rule.bind_port).await);
+    assert!(!*routes
+        .entries
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .cancel
+        .borrow());
+
+    let registry = Arc::new(ForwardRegistry::default());
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert(rule.id.clone(), restarted);
+    let stop_registry = registry.clone();
+    let stopping = tokio::spawn(async move { stop_registry.stop("restart").await });
+    tokio::time::timeout(Duration::from_secs(3), gate.entered.notified())
+        .await
+        .unwrap();
+    stopping.abort();
+    assert!(stopping.await.unwrap_err().is_cancelled());
+    gate.release.notify_one();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !routes.entries.lock().unwrap().is_empty() {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(TcpStream::connect(("127.0.0.1", rule.bind_port))
+        .await
+        .is_err());
+    server.abort();
+    echo_task.abort();
+}
+
+#[tokio::test]
+async fn uncertain_remote_release_blocks_reuse_until_ssh_disconnects() {
+    let (handle, routes, server) = fixture().await;
+    let port = free_port().await;
+    let rule = ForwardRule {
+        id: "uncertain".into(),
+        host_id: "h".into(),
+        name: "uncertain".into(),
+        mode: "remote".into(),
+        bind_host: "127.0.0.1".into(),
+        bind_port: port,
+        target_host: "127.0.0.1".into(),
+        target_port: 80,
+    };
+    let active = open_forward(handle.clone(), routes.clone(), &rule, "session", None)
+        .await
+        .unwrap();
+    // Make the next cancellation fail while preserving the route reservation.
+    handle
+        .cancel_tcpip_forward("127.0.0.1", port as u32)
+        .await
+        .unwrap();
+    let registry = ForwardRegistry::default();
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert(rule.id.clone(), active);
+    assert!(
+        matches!(registry.stop(&rule.id).await, Err(AppError::Ssh(message)) if message == "forward.stopFailed")
+    );
+    let restart = tokio::time::timeout(
+        Duration::from_secs(1),
+        open_forward(handle, routes, &rule, "session", None),
+    )
+    .await
+    .unwrap();
+    assert!(matches!(restart, Err(AppError::Ssh(message)) if message == "forward.stopFailed"));
+    server.abort();
+}
+
+#[tokio::test]
+async fn local_stop_returns_only_after_port_can_be_rebound() {
+    let (handle, routes, server) = fixture().await;
+    let rule = ForwardRule {
+        id: "local".into(),
+        host_id: "h".into(),
+        name: "local".into(),
+        mode: "local".into(),
+        bind_host: "127.0.0.1".into(),
+        bind_port: free_port().await,
+        target_host: "127.0.0.1".into(),
+        target_port: 80,
+    };
+    let active = open_forward(handle, routes, &rule, "session", None)
+        .await
+        .unwrap();
+    let registry = ForwardRegistry::default();
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert(rule.id.clone(), active);
+    registry.stop(&rule.id).await.unwrap();
+    let rebound = TcpListener::bind(("127.0.0.1", rule.bind_port))
+        .await
+        .unwrap();
+    drop(rebound);
+    server.abort();
 }
 async fn echo() -> (u16, JoinHandle<()>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
@@ -303,7 +534,7 @@ async fn multiple_forwards_share_one_ssh_connection_and_stop_independently() {
     }
     let first_socket = roundtrip(first_port).await;
     let second_socket = roundtrip(second_port).await;
-    registry.stop("first");
+    registry.stop("first").await.unwrap();
     assert_closed(first_socket, first_port).await;
     drop(roundtrip(second_port).await);
     registry.stop_session("shared");
@@ -312,20 +543,20 @@ async fn multiple_forwards_share_one_ssh_connection_and_stop_independently() {
     server.abort();
     echo_task.abort();
 }
-#[test]
-fn in_flight_start_tickets_are_invalidated_by_stop_and_disconnect() {
+#[tokio::test]
+async fn in_flight_start_tickets_are_invalidated_by_stop_and_disconnect() {
     let registry = ForwardRegistry::default();
     let ticket = registry.ticket("r", "s").unwrap();
     assert!(registry.valid_ticket(&ticket));
     registry.stop_session("other");
     assert!(registry.valid_ticket(&ticket));
-    registry.stop("r");
+    registry.stop("r").await.unwrap();
     assert!(!registry.valid_ticket(&ticket));
     let ticket = registry.ticket("r", "s").unwrap();
     registry.stop_session("s");
     assert!(!registry.valid_ticket(&ticket));
     let ticket = registry.ticket("r", "s").unwrap();
-    registry.stop("r");
+    registry.stop("r").await.unwrap();
     assert!(!registry.valid_ticket(&ticket));
     let ticket = registry.ticket("r", "s").unwrap();
     registry.stop_all();
@@ -453,11 +684,21 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
     assert!(!keep_routes.entries.lock().unwrap().is_empty());
     setup.abort();
     assert!(matches!(setup.await, Err(error) if error.is_cancelled()));
-    assert!(keep_routes.entries.lock().unwrap().is_empty());
+    assert!(*keep_routes
+        .entries
+        .lock()
+        .unwrap()
+        .values()
+        .next()
+        .unwrap()
+        .cancel
+        .borrow());
     gate.release.notify_one();
     tokio::time::timeout(Duration::from_secs(3), async {
         loop {
-            if TcpStream::connect(("127.0.0.1", port)).await.is_err() {
+            if TcpStream::connect(("127.0.0.1", port)).await.is_err()
+                && keep_routes.entries.lock().unwrap().is_empty()
+            {
                 break;
             };
             tokio::time::sleep(Duration::from_millis(10)).await;

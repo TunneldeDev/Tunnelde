@@ -1,4 +1,5 @@
 import type { PluginInfo } from "@/lib/api/types";
+import { parseShortcutQuery } from "./query";
 
 export type ShortcutOverrides = Record<string, string[]>;
 export type CommandScope = "workbench" | "files" | "editor" | "terminal";
@@ -39,6 +40,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("sidebar.knownHosts", "settings.knownHosts", "workbench", []),
   command("sidebar.forwarding", "forward.title", "workbench", []),
   command("sidebar.plugins", "settings.plugins", "workbench", []),
+  command("sidebar.output", "output.show", "workbench", ["Mod+Shift+U"], { input: true }),
   command("app.reload", "restart.reload", "workbench", []),
   command("app.restart", "restart.command", "workbench", []),
   command("update.check", "updates.check", "workbench", []),
@@ -344,16 +346,20 @@ export function shortcutFilter(
   definitions: readonly ShortcutCommand[],
   text: string,
 ): boolean {
-  const conflicts = bindingsFor(item.id, overrides, undefined, definitions).flatMap((key) =>
-    shortcutConflicts(item.id, key, overrides, definitions),
-  );
-  const pluginFilter = /@plugins:([^\s&]+)/i.exec(query)?.[1];
-  if (/@is:conflict\b/i.test(query) && !conflicts.length) return false;
-  if (pluginFilter) {
-    const names = pluginFilter
-      .split(",")
-      .map((name) => name.toLocaleLowerCase())
-      .filter(Boolean);
+  const { states, source, plugins, text: needle } = parseShortcutQuery(query);
+  if (states.has("modified") && !Object.hasOwn(overrides, item.id)) return false;
+  if (states.has("unassigned") && bindingsFor(item.id, overrides, undefined, definitions).length)
+    return false;
+  if (source === "plugin" && !item.plugin) return false;
+  if (source === "built-in" && item.plugin) return false;
+  const conflicts = states.has("conflict")
+    ? bindingsFor(item.id, overrides, undefined, definitions).flatMap((key) =>
+        shortcutConflicts(item.id, key, overrides, definitions),
+      )
+    : [];
+  if (states.has("conflict") && !conflicts.length) return false;
+  if (plugins.length) {
+    const names = plugins.map((name) => name.toLocaleLowerCase());
     const related = [item, ...conflicts];
     if (
       !related.some(
@@ -368,13 +374,7 @@ export function shortcutFilter(
     )
       return false;
   }
-  const needle = query
-    .replace(/@is:conflict\b/gi, "")
-    .replace(/@plugins:[^\s&]+/gi, "")
-    .replace(/&/g, " ")
-    .trim()
-    .toLocaleLowerCase();
-  return !needle || text.toLocaleLowerCase().includes(needle);
+  return !needle || text.toLocaleLowerCase().includes(needle.toLocaleLowerCase());
 }
 
 export function isTextTarget(target: EventTarget | null): boolean {

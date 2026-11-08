@@ -334,6 +334,24 @@ describe("plugin workspace bridge authorization and live state", () => {
     expect(useEditors.getState().entries[tabId]).toBeUndefined();
   });
 
+  it("reports a docked panel as closed while keeping its remembered hidden slot", async () => {
+    useWorkspace.getState().openPage("welcome", { preview: false });
+    useWorkspace.getState().splitTab("sidebar:plugins", "row", "after", "pane-1");
+    const layout = useWorkspace.getState().layout;
+    const tabId = "sidebar:plugins";
+    await expect(runPluginWorkspaceRequest(request("workspace.close", { tabId }))).resolves.toEqual(
+      {
+        closed: true,
+        pendingConfirmation: false,
+      },
+    );
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === tabId)?.hidden).toBe(true);
+    expect(useWorkspace.getState().layout).toEqual(layout);
+    await runPluginWorkspaceRequest(request("workspace.openSidebar", { view: "plugins" }));
+    expect(useWorkspace.getState().tabs.find((tab) => tab.id === tabId)?.hidden).toBe(false);
+    expect(useWorkspace.getState().layout).toEqual(layout);
+  });
+
   it("rejects a dirty editor close when another dialog is already open", async () => {
     const tabId = "editor:dirty";
     useWorkspace.setState({

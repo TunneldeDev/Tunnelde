@@ -14,6 +14,8 @@ export function pluginFailure(error: unknown): string {
     return `${i18n.t("pluginErrors.write")}: ${message.slice("plugin.write: ".length)}`;
   if (message === "plugin.timeout") return i18n.t("pluginErrors.timeout");
   if (!message) return translateError(error);
+  if (message === "plugin.engine.unsupported")
+    return translateError(isIpcError(error) ? error : { code: "validation", message });
   // Recreate the structured error for localization keys delivered through status events.
   const translated = translateError({ code: "validation", message });
   return translated === i18n.t("error.validation") ? message : translated;

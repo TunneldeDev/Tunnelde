@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Keep the real pane layout, tab handlers and workspace store. Surrounding
@@ -39,6 +40,7 @@ vi.mock("@/components/layout/TabContent", () => ({
 import { useQuickAccess } from "@/store/quickAccess";
 import { AppShell } from "@/components/layout/AppShell";
 import { TAB_MIME } from "@/components/layout/PaneView";
+import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
 import { useNavigation } from "@/store/navigation";
@@ -103,6 +105,7 @@ function renderWorkspace() {
 }
 
 beforeEach(() => {
+  clearFilePaneDrag();
   useQuickAccess.setState({ query: null });
   usePlugins.setState({ items: [] });
   useDialogs.getState().close();
@@ -136,7 +139,86 @@ beforeEach(() => {
   });
 });
 
+describe("detached file panels at workspace edges", () => {
+  it.each([
+    { x: 110, y: 300, direction: "row", position: "first", fraction: 240 / 796 },
+    { x: 890, y: 300, direction: "row", position: "second", fraction: 240 / 796 },
+    { x: 500, y: 90, direction: "column", position: "first", fraction: 180 / 596 },
+    { x: 500, y: 640, direction: "column", position: "second", fraction: 180 / 596 },
+  ])("docks at $position/$direction with the original file-panel size", (test) => {
+    const { workspace, bodies } = renderWorkspace();
+    const onMoved = vi.fn();
+    const token = beginFilePaneDrag(
+      { source: { kind: "local" }, path: "C:\\work", ownerSessionId: "s1" },
+      "This computer",
+      onMoved,
+      { width: 240, height: 180 },
+    );
+    const transfer = {
+      types: [FILE_PANE_MIME],
+      getData: (format: string) => (format === FILE_PANE_MIME ? token : ""),
+      dropEffect: "none",
+    };
+    const send = (type: string) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      Object.defineProperties(event, {
+        clientX: { value: test.x },
+        clientY: { value: test.y },
+        dataTransfer: { value: transfer },
+      });
+      fireEvent(bodies[0]!, event);
+      return event;
+    };
+    expect(send("dragover").defaultPrevented).toBe(true);
+    expect(useWorkspace.getState().tabs).toHaveLength(3);
+    expect(send("drop").defaultPrevented).toBe(true);
+    const state = useWorkspace.getState();
+    expect(state.tabs).toHaveLength(4);
+    expect(state.layout.kind).toBe("split");
+    if (state.layout.kind !== "split") throw new Error("Expected root split");
+    expect(state.layout.direction).toBe(test.direction);
+    const leaf = test.position === "first" ? state.layout.first : state.layout.second;
+    expect(leaf.kind).toBe("pane");
+    if (leaf.kind !== "pane") throw new Error("Expected file pane");
+    const owner = state.panes.find((pane) => pane.id === leaf.paneId)!;
+    expect(state.tabs.find((tab) => tab.id === owner.activeId)?.filePane?.path).toBe("C:\\work");
+    expect(test.position === "first" ? state.layout.ratio : 1 - state.layout.ratio).toBeCloseTo(
+      test.fraction,
+    );
+    expect(onMoved).toHaveBeenCalledOnce();
+    expect(workspace.querySelectorAll(".pane")).toHaveLength(3);
+  });
+});
+
 describe("file tab remote monitor", () => {
+  it.each(["monitor", "history"] as const)(
+    "keeps the owning remote selected for a %s tab",
+    (kind) => {
+      const session = {
+        id: "remote-qa",
+        hostId: "host-qa",
+        title: "Remote",
+        address: "qa:22",
+        cols: 80,
+        rows: 24,
+        connectedAt: 0,
+      };
+      useSsh.setState({ sessions: [session] });
+      const id = `${kind}:${session.id}`;
+      useWorkspace.setState({
+        tabs: [{ id, kind, title: "Remote", hostId: session.hostId, pinned: false }],
+        activeId: id,
+        panes: [{ id: "pane-1", tabIds: [id], activeId: id }],
+        activePaneId: "pane-1",
+        layout: { kind: "pane", paneId: "pane-1" },
+      });
+      render(<AppShell />);
+      expect(screen.getByTestId("remote-panel").textContent).toBe(session.id);
+      act(() => useSsh.setState({ sessions: [] }));
+      expect(screen.getByTestId("system-panel")).toBeTruthy();
+    },
+  );
+
   it("tracks the selected remote source, duplicate tabs and local panels", () => {
     useSsh.setState({
       sessions: ["a", "b"].map((id) => ({
@@ -165,6 +247,48 @@ describe("file tab remote monitor", () => {
     expect(screen.getByTestId("system-panel")).toBeTruthy();
     act(() => useSsh.setState({ sessions: [] }));
   });
+});
+
+describe("workbench side widths", () => {
+  it.each(["Sidebar width", "Panel width"])(
+    "previews %s without rerendering the shell and persists only on release",
+    (label) => {
+      useSettings.setState({ settings: { ...DEFAULT_SETTINGS, rightPanel: true } });
+      const onRender = vi.fn();
+      const frame = vi.spyOn(window, "requestAnimationFrame").mockReturnValue(42);
+      const view = render(
+        <Profiler id="workbench" onRender={onRender}>
+          <AppShell />
+        </Profiler>,
+      );
+      const handle = screen.getByRole("separator", { name: label });
+      const property = label === "Sidebar width" ? "--td-sidebar-w" : "--td-panel-w";
+      const app = view.container.querySelector<HTMLElement>(".app")!;
+      const before = app.style.getPropertyValue(property);
+      const commits = onRender.mock.calls.length;
+      const pointer = (type: string, x: number) => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          clientX: x,
+          buttons: type === "pointerup" ? 0 : 1,
+        });
+        Object.defineProperty(event, "pointerId", { value: 1 });
+        fireEvent(type === "pointerdown" ? handle : window, event);
+      };
+      pointer("pointerdown", 500);
+      pointer("pointermove", 530);
+      act(() => frame.mock.calls[0]![0](0));
+      expect(app.style.getPropertyValue(property)).not.toBe(before);
+      expect(onRender).toHaveBeenCalledTimes(commits);
+      expect(useSettings.getState().update).not.toHaveBeenCalled();
+      pointer("pointerup", 540);
+      expect(useSettings.getState().update).toHaveBeenCalledExactlyOnceWith(
+        label === "Sidebar width"
+          ? { sidebarWidth: DEFAULT_SETTINGS.sidebarWidth + 40 }
+          : { rightPanelWidth: DEFAULT_SETTINGS.rightPanelWidth - 40 },
+      );
+    },
+  );
 });
 
 describe("scoped plugin shortcut conflicts", () => {

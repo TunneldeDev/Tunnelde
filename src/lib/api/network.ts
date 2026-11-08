@@ -16,6 +16,12 @@ export interface ConnectionRoute {
   jumpHosts: string[];
 }
 export interface NetworkConnectionQuality {
+  https?: {
+    elapsedMs: number;
+    success: boolean;
+    status: number | null;
+    error: { code: string; message: string } | null;
+  };
   attempts: number;
   successful: number;
   samplesMs: (number | null)[];

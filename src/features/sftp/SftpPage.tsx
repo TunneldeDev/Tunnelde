@@ -31,12 +31,14 @@ import { FilePathBar } from "./FilePathBar";
 import { FileRemoteDialog } from "./FileRemoteDialog";
 import { FileTypeSelect } from "./FileTypeSelect";
 import { FileSplitView } from "./FileSplitView";
+import { fitFileColumn } from "@/lib/files/columnWidth";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
 import { domainEvents, type FilesChanged } from "@/lib/events/domain";
 import { translateError } from "@/lib/api/errors";
 import { api, isTauri } from "@/lib/api/ipc";
 import type { FileEntry, FsSource, Listing } from "@/lib/api/types";
+import { isIpcError } from "@/lib/api/types";
 import {
   canPaste,
   clearDragSource,
@@ -106,9 +108,7 @@ function columnLayout(view: FileViewPreferences) {
     columns,
     grid: columns
       .map((column, index) =>
-        column === "name"
-          ? `18px ${Math.max(56, (widths[index] ?? 56) - 24)}px`
-          : `${widths[index]}px`,
+        column === "name" ? `18px ${(widths[index] ?? 56) - 24}px` : `${widths[index]}px`,
       )
       .join(" "),
     minimum: `${widths.reduce((a, b) => a + b, 0) + columns.length * 6 + 16}px`,
@@ -1055,7 +1055,17 @@ export function SftpPage({
         onDone?.(op.from);
       }
     } catch (error) {
-      toast(translateError(error), "error");
+      toast(
+        translateError(error),
+        "error",
+        isIpcError(error) && error.details?.operation === "rename"
+          ? {
+              label: t("output.openFile"),
+              onClick: () =>
+                api.openLatestLog().catch((cause) => toast(translateError(cause), "error")),
+            }
+          : undefined,
+      );
     } finally {
       await refreshSource(source);
     }
@@ -2071,8 +2081,12 @@ export function SftpPage({
                   return;
                 }
                 const detached = filePaneOptions(id);
-                const token = beginFilePaneDrag(detached.pane, detached.title, () =>
-                  retainOtherPane(id),
+                const rect = event.currentTarget.closest(".sftp-pane")?.getBoundingClientRect();
+                const token = beginFilePaneDrag(
+                  detached.pane,
+                  detached.title,
+                  () => retainOtherPane(id),
+                  rect ? { width: rect.width, height: rect.height } : undefined,
                 );
                 event.dataTransfer.setData(FILE_PANE_MIME, token);
                 event.dataTransfer.effectAllowed = "move";
@@ -2373,6 +2387,7 @@ export function SftpPage({
                         key={sort}
                         className={`sftp-columns__${sort}`}
                         scope="col"
+                        title={t("sftp.columnHeaderHint")}
                         aria-label={t(
                           sort === "name"
                             ? "sftp.sortName"
@@ -2391,24 +2406,42 @@ export function SftpPage({
                           event.stopPropagation();
                           event.dataTransfer.setData("application/x-tunnelde-file-column", sort);
                           event.dataTransfer.effectAllowed = "move";
+                          event.currentTarget.dataset.dragging = "true";
                         }}
                         onDragOver={(event) => {
                           if (
-                            event.dataTransfer.types.includes("application/x-tunnelde-file-column")
-                          ) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }
+                            !event.dataTransfer.types.includes("application/x-tunnelde-file-column")
+                          )
+                            return;
+                          event.preventDefault();
+                          event.stopPropagation();
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          event.currentTarget.dataset.columnDrop =
+                            event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+                        }}
+                        onDragLeave={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                            delete event.currentTarget.dataset.columnDrop;
+                        }}
+                        onDragEnd={(event) => {
+                          delete event.currentTarget.dataset.dragging;
+                          for (const header of event.currentTarget
+                            .closest("tr")
+                            ?.querySelectorAll<HTMLElement>("[data-column-drop]") ?? [])
+                            delete header.dataset.columnDrop;
                         }}
                         onDrop={(event) => {
                           const dragged = event.dataTransfer.getData(
                             "application/x-tunnelde-file-column",
                           ) as FileColumn;
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          const after = event.clientX >= bounds.left + bounds.width / 2;
+                          delete event.currentTarget.dataset.columnDrop;
                           if (!columns.includes(dragged) || dragged === sort) return;
                           event.preventDefault();
                           event.stopPropagation();
                           const next = columns.filter((item) => item !== dragged);
-                          next.splice(next.indexOf(sort), 0, dragged);
+                          next.splice(next.indexOf(sort) + Number(after), 0, dragged);
                           updateView(id, { filesColumns: next });
                         }}
                         aria-sort={
@@ -2461,6 +2494,21 @@ export function SftpPage({
                             view.filesColumnWidths?.[sort] ?? DEFAULT_COLUMN_WIDTHS[sort]
                           }
                           aria-label={`${t("sftp.sortColumns")}: ${t(sort === "name" ? "sftp.sortName" : sort === "type" ? "sftp.sortType" : sort === "size" ? "sftp.sortSize" : "sftp.sortModified")}`}
+                          onDragStart={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                          }}
+                          onDoubleClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            updateView(id, {
+                              filesColumnWidths: {
+                                ...view.filesColumnWidths,
+                                [sort]: fitFileColumn(event.currentTarget.closest("th")!, sort),
+                              },
+                            });
+                          }}
+                          title={t("sftp.resizeColumnHint")}
                           onPointerDown={(event) => resizeColumn(sort, event)}
                           onKeyDown={(event) => {
                             if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;

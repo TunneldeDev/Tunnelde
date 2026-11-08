@@ -1,9 +1,15 @@
-import { Keyboard, Pencil, Plus, RotateCcw, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Keyboard, ListFilter, Pencil, Plus, RotateCcw, Search, X } from "lucide-react";
+import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ParseKeys } from "i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
+import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
+import {
+  parseShortcutQuery,
+  toggleShortcutFilter,
+  type ShortcutFilterKey,
+} from "@/lib/keyboard/query";
 import { useSettings } from "@/store/settings";
 import { useDialogs } from "@/store/dialogs";
 import {
@@ -30,31 +36,78 @@ export function KeyboardShortcuts() {
   const saving = useSettings((state) => state.saving);
   const query = useShortcutConflicts((state) => state.query);
   const setQuery = (value: string) => useShortcutConflicts.getState().search(value);
-  const [modifiedOnly, setModifiedOnly] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  const [focusRequest, requestSearchFocus] = useState(0);
+  useLayoutEffect(() => {
+    if (focusRequest) input.current?.focus();
+  }, [focusRequest]);
+  const hintId = useId();
+  const filters = parseShortcutQuery(query);
+  const modifiedOnly = filters.states.has("modified");
+  const hasFilters = !!(filters.states.size || filters.source || filters.plugins.length);
+  const toggleFilter = useCallback((key: ShortcutFilterKey, value: string) => {
+    const state = useShortcutConflicts.getState();
+    state.search(toggleShortcutFilter(state.query, key, value));
+    requestSearchFocus((request) => request + 1);
+  }, []);
+  const filterItems: MenuAction[] = [
+    ...(["conflict", "modified", "unassigned"] as const).map((value) => ({
+      label: t(`shortcuts.filters.${value}`),
+      description: `@is:${value}`,
+      checked: filters.states.has(value),
+      checkable: "checkbox" as const,
+      onSelect: () => toggleFilter("is", value),
+    })),
+    ...(["built-in", "plugin"] as const).map((value, index) => ({
+      label: t(value === "plugin" ? "shortcuts.filters.plugins" : "shortcuts.filters.builtin"),
+      description: `@source:${value}`,
+      checked: filters.source === value,
+      checkable: "radio" as const,
+      separatorBefore: index === 0,
+      onSelect: () => toggleFilter("source", value),
+    })),
+    ...plugins
+      .filter((plugin) => definitions.some((item) => item.plugin?.id === plugin.id))
+      .map((plugin, index) => ({
+        label: plugin.name,
+        description: `@plugins:${plugin.id}`,
+        checked: filters.plugins.some((name) => name.toLowerCase() === plugin.id.toLowerCase()),
+        checkable: "checkbox" as const,
+        separatorBefore: index === 0,
+        onSelect: () => toggleFilter("plugins", plugin.id),
+      })),
+    {
+      label: t("shortcuts.filters.clear"),
+      separatorBefore: true,
+      disabled: !hasFilters,
+      onSelect: () => {
+        setQuery(filters.text);
+        requestSearchFocus((request) => request + 1);
+      },
+    },
+  ];
   const [editing, setEditing] = useState<{ id: string; index: number } | null>(null);
   const [draft, setDraft] = useState("");
   const label = (item: ShortcutCommand) =>
     item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) });
   const filtered = useMemo(() => {
-    return definitions.filter(
-      (item) =>
-        (!modifiedOnly || query.includes("@is:conflict") || Object.hasOwn(overrides, item.id)) &&
-        shortcutFilter(
-          item,
-          query,
-          overrides,
-          definitions,
-          [
-            item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
-            item.id,
-            t(`shortcuts.scope.${item.scope}` as ParseKeys),
-            ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
-              displayShortcut(key),
-            ),
-          ].join(" "),
-        ),
+    return definitions.filter((item) =>
+      shortcutFilter(
+        item,
+        query,
+        overrides,
+        definitions,
+        [
+          item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
+          item.id,
+          t(`shortcuts.scope.${item.scope}` as ParseKeys),
+          ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
+            displayShortcut(key),
+          ),
+        ].join(" "),
+      ),
     );
-  }, [query, modifiedOnly, overrides, t, definitions]);
+  }, [query, overrides, t, definitions]);
   const conflict =
     editing && draft ? shortcutConflict(editing.id, draft, overrides, definitions) : undefined;
   const resetOne = (id: string) => {
@@ -78,25 +131,35 @@ export function KeyboardShortcuts() {
     <section className="shortcuts" aria-label={t("shortcuts.title" as ParseKeys)}>
       <p className="shortcuts__hint">{t("shortcuts.hint" as ParseKeys)}</p>
       <div className="shortcuts__toolbar">
-        <label className="settings-search">
+        <div className="settings-search shortcuts__search" role="search">
           <Search size={14} aria-hidden="true" />
-          <Input
+          <input
+            ref={input}
+            className="td-input"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={t("shortcuts.search" as ParseKeys)}
             aria-label={t("shortcuts.search" as ParseKeys)}
+            aria-describedby={hintId}
           />
           {query && (
             <IconButton size="sm" label={t("common.close")} onClick={() => setQuery("")}>
               <X size={13} />
             </IconButton>
           )}
-        </label>
+          <Menu
+            label={t("shortcuts.filters.title")}
+            trigger={<ListFilter size={15} aria-hidden="true" />}
+            className={hasFilters ? "shortcuts__filter is-active" : "shortcuts__filter"}
+            menuClassName="shortcuts__filter-menu"
+            items={filterItems}
+          />
+        </div>
         <label className="settings-modified-filter">
           <input
             type="checkbox"
             checked={modifiedOnly}
-            onChange={(event) => setModifiedOnly(event.target.checked)}
+            onChange={() => toggleFilter("is", "modified")}
           />
           {t("shortcuts.modified" as ParseKeys)}
         </label>
@@ -119,6 +182,9 @@ export function KeyboardShortcuts() {
           {t("shortcuts.resetAll" as ParseKeys)}
         </Button>
       </div>
+      <p className="shortcuts__filter-hint" id={hintId}>
+        {t("shortcuts.filters.hint")}
+      </p>
       <div className="shortcuts__list" role="list" aria-label={t("shortcuts.title" as ParseKeys)}>
         {filtered.length === 0 && (
           <p className="shortcuts__hint">{t("shortcuts.empty" as ParseKeys)}</p>

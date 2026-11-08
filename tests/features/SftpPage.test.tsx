@@ -45,6 +45,7 @@ import { plugin } from "../fixtures/plugins";
 import * as clipboard from "@/lib/session/clipboard";
 import * as mountedMenu from "@/lib/plugins/mountFileMenu";
 import { domainEvents } from "@/lib/events/domain";
+import { useToasts } from "@/store/toasts";
 
 const session: SshSession = {
   id: "session-1",
@@ -308,6 +309,76 @@ describe("SftpPage", () => {
       "sftp-columns__name",
       "sftp-columns__modified",
     ]);
+  });
+
+  it("drops a header on either side and fits only that panel's column to its rendered text", async () => {
+    const createRange = document.createRange.bind(document);
+    vi.spyOn(document, "createRange").mockImplementation(() => {
+      const range = createRange();
+      Object.assign(range, {
+        getBoundingClientRect: () => ({ width: range.toString().length * 8 }),
+      });
+      return range;
+    });
+    const rendered = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const target = pane.querySelector<HTMLElement>(".sftp-columns__modified")!;
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({ left: 100, width: 150 } as DOMRect);
+    const transfer = {
+      types: ["application/x-tunnelde-file-column"],
+      setData: vi.fn(),
+      getData: () => "name",
+      effectAllowed: "move",
+    };
+    fireEvent.dragOver(target, { dataTransfer: transfer, clientX: 240 });
+    expect(target.dataset.columnDrop).toBe("after");
+    const drop = new MouseEvent("drop", { bubbles: true, clientX: 240 });
+    Object.defineProperty(drop, "dataTransfer", { value: transfer });
+    fireEvent(target, drop);
+    expect([...pane.querySelectorAll("th")].map((node) => node.className)).toEqual([
+      "sftp-columns__type",
+      "sftp-columns__size",
+      "sftp-columns__modified",
+      "sftp-columns__name",
+    ]);
+    expect(target.dataset.columnDrop).toBeUndefined();
+    const name = within(pane).getByRole("separator", { name: "File sorting: Name" });
+    fireEvent.keyDown(name, { key: "ArrowRight" });
+    expect(name.getAttribute("aria-valuenow")).toBe("230");
+    fireEvent.doubleClick(name);
+    expect(name.getAttribute("aria-valuenow")).toBe("104");
+    expect(
+      document
+        .querySelectorAll(".sftp-columns__name .sftp-columns__resize")[1]
+        ?.getAttribute("aria-valuenow"),
+    ).toBe("220");
+    fireEvent.click(pane.querySelector(".sftp-columns__name button")!);
+    expect(name.getAttribute("aria-valuenow")).toBe("104");
+    rendered.unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(
+      screen
+        .getAllByRole("separator", { name: "File sorting: Name" })[0]
+        ?.getAttribute("aria-valuenow"),
+    ).toBe("104");
+  });
+
+  it("includes the icon and gap in the minimum name column width and retains it on reopen", async () => {
+    const view = render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    const pane = document.querySelector<HTMLElement>(".sftp-pane")!;
+    const handle = within(pane).getByRole("separator", { name: "File sorting: Name" });
+    for (let i = 0; i < 5; i++) fireEvent.keyDown(handle, { key: "ArrowLeft", shiftKey: true });
+    expect(handle.getAttribute("aria-valuenow")).toBe("56");
+    expect(pane.style.getPropertyValue("--sftp-columns")).toBe("18px 32px 90px 90px 150px");
+    view.unmount();
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    expect(
+      document.querySelector<HTMLElement>(".sftp-pane")!.style.getPropertyValue("--sftp-columns"),
+    ).toBe("18px 32px 90px 90px 150px");
   });
 
   it("resizes only the owning pointer, keeps concurrent column preferences and persists the release pixel", async () => {
@@ -1649,6 +1720,50 @@ describe("SftpPage source picker", () => {
       ),
     );
     expect(fsMock.transfer).not.toHaveBeenCalled();
+  });
+
+  it("reports same-host move paths and opens its log while keeping the failed cut selection", async () => {
+    const clip = {
+      source: { kind: "remote", sessionId: "session-1" } as FsSource,
+      action: "cut" as const,
+      items: [{ path: "/other/move.txt", name: "move.txt", isDir: false }],
+    };
+    useFileClipboard.setState({ clip });
+    useToasts.setState({ items: [] });
+    fsMock.rename.mockRejectedValue({
+      code: "ssh",
+      message: "Remote move/rename failed",
+      details: {
+        operation: "rename",
+        from: "/other/move.txt",
+        to: "/srv/app/move.txt",
+        statusCode: 4,
+        serverMessage: "Failure",
+        reason: "Failure: Failure",
+      },
+    });
+    const openLog = vi.spyOn(api, "openLatestLog").mockResolvedValueOnce(undefined);
+    try {
+      render(<SftpPage sessionId="session-1" />);
+      await screen.findByText("readme.md");
+      fsMock.list.mockClear();
+      fireEvent.keyDown(screen.getAllByRole("listbox")[1]!, { key: "v", ctrlKey: true });
+      await waitFor(() => expect(useToasts.getState().items).toHaveLength(1));
+      const notice = useToasts.getState().items[0]!;
+      expect(notice.message).toContain("/other/move.txt");
+      expect(notice.message).toContain("/srv/app/move.txt");
+      expect(notice.message).toContain("SFTP 4");
+      expect(notice.message).not.toContain("Failure: Failure");
+      expect(notice.action?.label).toBe("Open original log");
+      await notice.action!.onClick();
+      expect(openLog).toHaveBeenCalledOnce();
+      expect(useFileClipboard.getState().clip).toBe(clip);
+      expect(fsMock.transfer).not.toHaveBeenCalled();
+      expect(fsMock.remove).not.toHaveBeenCalled();
+      await waitFor(() => expect(fsMock.list.mock.calls.length).toBeGreaterThan(1));
+    } finally {
+      openLog.mockRestore();
+    }
   });
 
   it("lists one row per host even when the host has several sessions", () => {

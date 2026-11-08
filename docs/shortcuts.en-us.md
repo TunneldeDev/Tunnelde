@@ -5,8 +5,17 @@ Open **Settings → Keyboard Shortcuts**, use `Ctrl/Cmd+Shift+F12`, or search fo
 context or key. Click a binding to replace it, or **+** to add an alternative;
 press the keys and choose Save. Conflicts are highlighted and can be retained.
 When installing or updating a plugin introduces a conflict, choose a binding to
-keep, retain both, or open the conflict in settings. Use `@is:conflict` and
-`@plugins:plugin-id,another-id` to filter related commands. Escape cancels recording.
+keep, retain both, or open the conflict in settings. Choose the **filter button**
+at the right of the search field to insert filters; each menu item also shows its
+syntax. Filter by conflicting, modified or unassigned bindings, built-in/plugin
+commands, or an installed plugin. Checked filters can be toggled off, and **Clear
+filters** preserves ordinary search text. The Modified checkbox stays in sync
+with `@is:modified` in the search field. Escape cancels recording.
+
+For typed queries, combine `@is:conflict`, `@is:modified`, `@is:unassigned`,
+`@source:built-in` or `@source:plugin` with ordinary text. Select one or more
+plugins with `@plugins:plugin-id,another-id`; when combined with `@is:conflict`,
+both sides of the related conflicts are shown. Menu changes preserve other filters.
 
 Changes save automatically and follow settings profiles, including profile
 imports and exports. Remove every binding to disable a command, reset an

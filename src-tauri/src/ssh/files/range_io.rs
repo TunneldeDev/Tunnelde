@@ -15,6 +15,7 @@ pub(super) struct DataSession {
     backend: Backend,
     read_size: usize,
     write_size: usize,
+    copy_data: bool,
 }
 
 enum Backend {
@@ -23,6 +24,26 @@ enum Backend {
 }
 
 impl DataSession {
+    /// Set private permissions in MKDIR itself; a separate chmod leaves a crash
+    /// window and cannot safely distinguish an interrupted create on restart.
+    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+        match &self.backend {
+            Backend::Sftp(raw) => {
+                raw.mkdir(
+                    path,
+                    russh_sftp::protocol::FileAttributes {
+                        permissions: Some(0o700),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(map_sftp)?;
+                Ok(())
+            }
+            Backend::Compressed(worker) => worker.create_private_directory(path).await,
+        }
+    }
+
     pub async fn new(
         stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     ) -> AppResult<Self> {
@@ -63,6 +84,10 @@ impl DataSession {
             backend: Backend::Sftp(raw),
             read_size,
             write_size,
+            copy_data: version
+                .extensions
+                .get("copy-data")
+                .is_some_and(|v| v == "1"),
         })
     }
 
@@ -84,6 +109,7 @@ impl DataSession {
                     backend: Backend::Compressed(worker),
                     read_size: 256 * 1024,
                     write_size: 256 * 1024,
+                    copy_data: false,
                 });
             }
             tracing::debug!("Compression worker unavailable; using SFTP data channel");
@@ -164,6 +190,37 @@ impl DataSession {
             }
         }
     }
+
+    async fn copy_range(
+        &self,
+        source: &str,
+        target: &str,
+        offset: u64,
+        length: usize,
+    ) -> AppResult<()> {
+        use russh_sftp::protocol::Packet;
+        let Backend::Sftp(raw) = &self.backend else {
+            return Err(AppError::internal("sftp.copyDataUnavailable"));
+        };
+        if !self.copy_data || length == 0 || length > 1024 * 1024 {
+            return Err(AppError::internal("sftp.copyDataRange"));
+        }
+        let mut data = Vec::new();
+        data.extend_from_slice(&(source.len() as u32).to_be_bytes());
+        data.extend_from_slice(source.as_bytes());
+        data.extend_from_slice(&offset.to_be_bytes());
+        data.extend_from_slice(&(length as u64).to_be_bytes());
+        data.extend_from_slice(&(target.len() as u32).to_be_bytes());
+        data.extend_from_slice(target.as_bytes());
+        data.extend_from_slice(&offset.to_be_bytes());
+        match raw.extended("copy-data", data).await.map_err(map_sftp)? {
+            Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
+            Packet::Status(status) => {
+                Err(map_sftp(russh_sftp::client::error::Error::Status(status)))
+            }
+            _ => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
+        }
+    }
 }
 
 #[derive(Clone, Default)]
@@ -173,6 +230,10 @@ pub(super) struct Sessions {
 }
 
 impl Sessions {
+    pub(super) fn server_copy(&self) -> bool {
+        matches!((&self.source, &self.target), (Some(source), Some(target))
+            if source.copy_data && Arc::ptr_eq(source, target))
+    }
     pub async fn open(
         app: &AppHandle,
         source: &Endpoint,
@@ -182,6 +243,32 @@ impl Sessions {
         target_sftp: Option<&SftpSession>,
         total_size: u64,
     ) -> AppResult<Self> {
+        // SFTP handles only belong to their channel. Share one negotiated data
+        // channel for a same-session server copy; never infer identity by address.
+        let candidate = if settings.transfer_optimization
+            && source.session.is_some()
+            && source.session == target.session
+        {
+            let channel = Arc::new(
+                DataSession::connect(
+                    app,
+                    source.session.as_deref().expect("remote source"),
+                    false,
+                    source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                )
+                .await?,
+            );
+            if channel.copy_data {
+                tracing::debug!("Using server-side SFTP copy-data transfer channel");
+                return Ok(Self {
+                    source: Some(channel.clone()),
+                    target: Some(channel),
+                });
+            }
+            Some(channel)
+        } else {
+            None
+        };
         // Directory tasks share the channel and use their combined payload size.
         // Tiny standalone transfers avoid the helper startup entirely.
         let enabled = settings.transfer_optimization
@@ -196,8 +283,9 @@ impl Sessions {
                 .await,
                 Ok(Ok(true))
             );
-        let source = match &source.session {
-            Some(id) => Some(Arc::new(
+        let source = match (&source.session, candidate.filter(|_| !compress)) {
+            (_, Some(channel)) => Some(channel),
+            (Some(id), None) => Some(Arc::new(
                 DataSession::connect(
                     app,
                     id,
@@ -206,7 +294,7 @@ impl Sessions {
                 )
                 .await?,
             )),
-            None => None,
+            (None, None) => None,
         };
         let target = match &target.session {
             Some(id) => Some(Arc::new(
@@ -231,6 +319,22 @@ pub(super) struct Files<'a> {
     source_handle: Option<String>,
     target_handle: Option<String>,
     throttle: Option<bandwidth::Throttle>,
+    unsettled_write: AtomicBool,
+}
+
+/// A dropped request may still run on the server. Drain its handle before
+/// retiring a task; recovery must replay its entire journalled write window.
+struct WriteAttempt<'a> {
+    unsettled: &'a AtomicBool,
+    acknowledged: bool,
+}
+
+impl Drop for WriteAttempt<'_> {
+    fn drop(&mut self) {
+        if !self.acknowledged {
+            self.unsettled.store(true, Ordering::SeqCst);
+        }
+    }
 }
 
 async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>) -> AppResult<()> {
@@ -243,20 +347,27 @@ async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>
 }
 
 async fn complete_packet(
-    result: AppResult<(u64, Vec<u8>)>,
+    result: AppResult<(u64, Vec<u8>, usize)>,
     writer: &mut Option<tokio::fs::File>,
     transferred: &AtomicU64,
 ) -> AppResult<()> {
-    let (offset, bytes) = result?;
+    let (offset, bytes, length) = result?;
     if let Some(writer) = writer {
         writer.seek(std::io::SeekFrom::Start(offset)).await?;
         writer.write_all(&bytes).await?;
     }
-    transferred.fetch_add(bytes.len() as u64, Ordering::Relaxed);
+    transferred.fetch_add(length as u64, Ordering::Relaxed);
     Ok(())
 }
 
 impl<'a> Files<'a> {
+    fn server_copy(&self) -> Option<&DataSession> {
+        let source = self.sessions.source.as_ref()?;
+        (self.sessions.server_copy()
+            && self.source.session.is_some()
+            && self.source.session == self.target.session)
+            .then_some(source.as_ref())
+    }
     pub async fn open(
         sessions: &'a Sessions,
         source: &'a Endpoint,
@@ -303,12 +414,26 @@ impl<'a> Files<'a> {
             source_handle,
             target_handle,
             throttle: None,
+            unsettled_write: AtomicBool::new(false),
         })
     }
 
     pub fn with_throttle(mut self, throttle: bandwidth::Throttle) -> Self {
         self.throttle = Some(throttle);
         self
+    }
+
+    pub async fn finish_cancellable(self, interrupted: bool, cancel: &AtomicBool) -> AppResult<()> {
+        if self.unsettled_write.load(Ordering::SeqCst) {
+            // An interrupted WRITE may still mutate the target. Keep the
+            // existing bounded drain rather than trusting its partial length.
+            self.finish(interrupted).await
+        } else {
+            // Every destination WRITE has acknowledged (or none was sent).
+            // A delayed CLOSE cannot introduce additional bytes. Do not abort
+            // a data channel shared by other files in this directory transfer.
+            interruptible(Some(cancel), self.finish(interrupted)).await
+        }
     }
 
     pub async fn finish(self, interrupted: bool) -> AppResult<()> {
@@ -340,7 +465,26 @@ impl<'a> Files<'a> {
         length: usize,
         input: Option<Vec<u8>>,
         stop: &AtomicBool,
-    ) -> AppResult<(u64, Vec<u8>)> {
+    ) -> AppResult<(u64, Vec<u8>, usize)> {
+        if let Some(session) = self.server_copy() {
+            let mut attempt = WriteAttempt {
+                unsettled: &self.unsettled_write,
+                acknowledged: false,
+            };
+            interruptible(Some(stop), async {
+                session
+                    .copy_range(
+                        self.source_handle.as_deref().expect("source handle"),
+                        self.target_handle.as_deref().expect("target handle"),
+                        offset,
+                        length,
+                    )
+                    .await
+            })
+            .await?;
+            attempt.acknowledged = true;
+            return Ok((offset, Vec::new(), length));
+        }
         let data = if let Some(data) = input {
             data
         } else {
@@ -365,6 +509,10 @@ impl<'a> Files<'a> {
             let mut written = 0;
             while written < data.len() {
                 let size = (data.len() - written).min(session.write_size);
+                let mut attempt = WriteAttempt {
+                    unsettled: &self.unsettled_write,
+                    acknowledged: false,
+                };
                 interruptible(Some(stop), async {
                     session
                         .write(
@@ -376,10 +524,12 @@ impl<'a> Files<'a> {
                     Ok(())
                 })
                 .await?;
+                attempt.acknowledged = true;
                 written += size;
             }
         }
-        Ok((offset, data))
+        let length = data.len();
+        Ok((offset, data, length))
     }
 
     async fn prepare_packet(
@@ -448,11 +598,15 @@ impl<'a> Files<'a> {
                 // Each future should represent one wire request per endpoint.
                 // A 64 KiB logical packet split into acknowledged 32 KiB writes
                 // serializes its halves and underfills a high-latency pipeline.
-                let packet_size = match (&self.sessions.source, &self.sessions.target) {
-                    (Some(source), Some(target)) => source.read_size.min(target.write_size),
-                    (Some(source), None) => source.read_size,
-                    (None, Some(target)) => target.write_size,
-                    (None, None) => CHUNK,
+                let packet_size = if self.server_copy().is_some() {
+                    1024 * 1024
+                } else {
+                    match (&self.sessions.source, &self.sessions.target) {
+                        (Some(source), Some(target)) => source.read_size.min(target.write_size),
+                        (Some(source), None) => source.read_size,
+                        (None, Some(target)) => target.write_size,
+                        (None, None) => CHUNK,
+                    }
                 };
                 let length = (range.end - next).min(packet_size as u64) as usize;
                 let prepared = self.prepare_packet(&mut reader, length, stop);

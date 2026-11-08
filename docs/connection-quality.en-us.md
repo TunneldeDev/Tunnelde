@@ -49,3 +49,15 @@ Use **Cancel** to stop, or close the dialog. Changing the target, route credenti
 trust state also cancels the previous test and discards its results. Tests have a
 25-second overall budget, allow only one active test per host and at most four hosts
 at once. Temporary SSH connections are closed after probing.
+
+## HTTPS and marketplace downloads
+
+The proxy test defaults to the marketplace route, including its feature override.
+You may instead select the update route, inherited default, system, direct, or an
+explicit profile. TCP latency and HTTPS availability are separate results. On port
+443, a verified HTTPS HEAD request also checks TLS/HTTP through the selected route;
+other ports remain TCP-only. A successful CONNECT response alone cannot prove that
+GitHub or its redirected release-asset host is reachable. No certificate validation
+is disabled and a failed proxy route never silently switches to direct access.
+Premature TLS EOF in plugin GET requests is retried at most twice through the same
+route; certificate and proxy authentication failures are not retried.

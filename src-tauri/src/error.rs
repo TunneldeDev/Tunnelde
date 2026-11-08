@@ -7,6 +7,13 @@ use serde::{Serialize, Serializer};
 pub enum AppError {
     #[error("{0}")]
     Validation(String),
+    #[error("plugin.engine.unsupported")]
+    PluginEngineUnsupported {
+        plugin_id: String,
+        plugin_version: String,
+        host_version: String,
+        required: String,
+    },
     #[error("sftp.backupRecoveryRequired")]
     BackupRecovery { backup: String, destination: String },
     #[error("sftp.backupUnrecognized")]
@@ -29,6 +36,14 @@ pub enum AppError {
     Update(String),
     #[error("{0}")]
     Ssh(String),
+    #[error("sftp.error: Remote move/rename failed ({from} -> {to}): {reason}")]
+    RemoteRename {
+        from: String,
+        to: String,
+        reason: String,
+        status_code: Option<u32>,
+        server_message: Option<String>,
+    },
 }
 
 impl AppError {
@@ -43,6 +58,7 @@ impl AppError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Validation(_)
+            | Self::PluginEngineUnsupported { .. }
             | Self::BackupRecovery { .. }
             | Self::BackupUnrecognized { .. }
             | Self::BackupPreserved { .. }
@@ -52,7 +68,7 @@ impl AppError {
             Self::Io(_) => "io",
             Self::Internal(_) => "internal",
             Self::Update(_) => "update",
-            Self::Ssh(_) => "ssh",
+            Self::Ssh(_) | Self::RemoteRename { .. } => "ssh",
         }
     }
 }
@@ -80,11 +96,75 @@ impl Serialize for AppError {
     where
         S: Serializer,
     {
-        let mut state = serializer.serialize_struct("AppError", 2)?;
+        let detailed = matches!(
+            self,
+            Self::PluginEngineUnsupported { .. } | Self::RemoteRename { .. }
+        );
+        let mut state = serializer.serialize_struct("AppError", if detailed { 3 } else { 2 })?;
         state.serialize_field("code", self.code())?;
         state.serialize_field("message", &self.to_string())?;
+        if let Self::PluginEngineUnsupported {
+            plugin_id,
+            plugin_version,
+            host_version,
+            required,
+        } = self
+        {
+            state.serialize_field(
+                "details",
+                &serde_json::json!({
+                    "pluginId": plugin_id, "pluginVersion": plugin_version,
+                    "hostVersion": host_version, "required": required,
+                    "stage": "compatibility"
+                }),
+            )?;
+        }
+        if let Self::RemoteRename {
+            from,
+            to,
+            reason,
+            status_code,
+            server_message,
+        } = self
+        {
+            state.serialize_field(
+                "details",
+                &serde_json::json!({
+                    "operation": "rename", "from": from, "to": to,
+                    "statusCode": status_code, "serverMessage": server_message,
+                    "reason": reason,
+                }),
+            )?;
+        }
         state.end()
     }
 }
 
 pub type AppResult<T> = Result<T, AppError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn engine_mismatch_keeps_error_code_and_supplies_exact_compatibility_context() {
+        let error = AppError::PluginEngineUnsupported {
+            plugin_id: "formatter".into(),
+            plugin_version: "1.8.1".into(),
+            host_version: "0.32.0-beta.6".into(),
+            required: ">=0.33.0".into(),
+        };
+        assert_eq!(error.to_string(), "plugin.engine.unsupported");
+        assert_eq!(
+            serde_json::to_value(error).unwrap(),
+            serde_json::json!({
+                "code":"validation", "message":"plugin.engine.unsupported",
+                "details":{"pluginId":"formatter","pluginVersion":"1.8.1",
+                    "hostVersion":"0.32.0-beta.6","required":">=0.33.0","stage":"compatibility"}
+            })
+        );
+        assert_eq!(
+            serde_json::to_value(AppError::validation("plugin.timeout")).unwrap(),
+            serde_json::json!({"code":"validation","message":"plugin.timeout"})
+        );
+    }
+}

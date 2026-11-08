@@ -888,7 +888,17 @@ pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::Plug
         } else {
             error.code()
         };
-        tracing::warn!(plugin_id = %id, reason, "plugin start failed");
+        if let AppError::PluginEngineUnsupported {
+            plugin_version,
+            host_version,
+            required,
+            ..
+        } = error
+        {
+            tracing::warn!(plugin_id = %id, reason, stage = "compatibility", plugin_version, host_version, required_host = required, action = "update_application_or_install_compatible_plugin", "plugin start failed");
+        } else {
+            tracing::warn!(plugin_id = %id, reason, error_code = error.code(), stage = "startup", "plugin start failed");
+        }
     }
     result
 }

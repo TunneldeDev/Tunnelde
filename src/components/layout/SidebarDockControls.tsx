@@ -34,7 +34,7 @@ export function sidebarMoveActions(view: SidebarView, t: TFunction): MenuAction[
       separatorBefore: index === 0,
       onSelect: () => {
         const state = useWorkspace.getState();
-        state.splitTab(id, direction, position, state.activePaneId);
+        state.splitTab(id, direction, position, "root");
       },
     })),
   ];

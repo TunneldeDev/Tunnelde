@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
 import { FormatterPicker } from "@/features/editor/FormatterPicker";
-import { TAB_MIME } from "@/components/layout/PaneView";
+import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
 import { PaneLayout } from "@/components/layout/PaneLayout";
 import { WorkspaceContents } from "@/components/layout/TabContent";
 import { ActivityBar } from "@/components/layout/ActivityBar";
@@ -40,6 +40,7 @@ import { RestartPrompt } from "@/components/layout/RestartPrompt";
 import { FilePreview } from "@/features/sftp/FilePreview";
 import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
+import { wireTabBarContributions } from "@/store/tabBar";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -49,6 +50,14 @@ const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosi
 ];
 
 export function AppShell() {
+  useEffect(() => {
+    if (!isTauri()) return;
+    const controller = new AbortController();
+    void wireTabBarContributions(controller.signal).catch((error: unknown) =>
+      console.error("Tab bar subscription failed", error),
+    );
+    return () => controller.abort();
+  }, []);
   useInternalDrag();
   useWindowCloseGuard();
   useBackgroundWindow();
@@ -63,20 +72,19 @@ export function AppShell() {
   const activeId = useWorkspace((state) => state.activeId);
   const sessions = useSsh((state) => state.sessions);
 
-  const [sidebarDraft, setSidebarDraft] = useState<number | null>(null);
-  const [panelDraft, setPanelDraft] = useState<number | null>(null);
   const [tabDrag, setTabDrag] = useState(false);
   const [edge, setEdge] = useState<string | null>(null);
   const palette = useQuickAccess((state) => state.query !== null);
   const workspace = useRef<HTMLElement>(null);
-  const sidebarWidth = sidebarDraft ?? settings.sidebarWidth;
-  const panelWidth = panelDraft ?? settings.rightPanelWidth;
+  const app = useRef<HTMLDivElement>(null);
+  const sidebarWidth = settings.sidebarWidth;
+  const panelWidth = settings.rightPanelWidth;
 
   useEffect(() => {
     const element = workspace.current;
     if (!element) return;
     const rootEdge = (event: DragEvent) => {
-      if (!event.dataTransfer?.types.includes(TAB_MIME)) return null;
+      if (!isWorkspaceDrag(event.dataTransfer)) return null;
       if (event.target instanceof Element && event.target.closest(".pane__header")) return null;
       const rect = element.getBoundingClientRect();
       const x = event.clientX - rect.left;
@@ -105,12 +113,16 @@ export function AppShell() {
     };
     const drop = (event: DragEvent) => {
       const target = rootEdge(event);
-      const tabId = event.dataTransfer?.getData(TAB_MIME);
       setEdge(null);
-      if (!target || !tabId) return;
+      if (!target) return;
+      const dropped = readWorkspaceDrop(event.dataTransfer);
+      if (!dropped) return;
       event.preventDefault();
       event.stopPropagation();
-      useWorkspace.getState().splitTab(tabId, target.direction, target.position, "root");
+      useWorkspace
+        .getState()
+        .splitTab(dropped.tabId, target.direction, target.position, "root", dropped.size);
+      dropped.finish();
       setTabDrag(false);
     };
     element.addEventListener("dragover", over, true);
@@ -123,7 +135,7 @@ export function AppShell() {
 
   useEffect(() => {
     const onDragStart = (event: DragEvent) => {
-      if (event.dataTransfer?.types.includes(TAB_MIME)) {
+      if (isWorkspaceDrag(event.dataTransfer)) {
         setTabDrag(true);
       }
     };
@@ -222,8 +234,8 @@ export function AppShell() {
     if (!activeTab) {
       return null;
     }
-    if (activeTab.kind === "terminal") {
-      return sessions.find((session) => activeTab.id === `terminal:${session.id}`) ?? null;
+    if (["terminal", "monitor", "history"].includes(activeTab.kind)) {
+      return sessions.find((session) => activeTab.id === `${activeTab.kind}:${session.id}`) ?? null;
     }
     if (activeTab.kind === "sftp") {
       const id =
@@ -253,6 +265,7 @@ export function AppShell() {
 
   return (
     <div
+      ref={app}
       className={cn(
         "app",
         isTauri() && settings.titleBarStyle === "compact" && "is-compact-chrome",
@@ -275,9 +288,8 @@ export function AppShell() {
             max={420}
             edge="right"
             label="Sidebar width"
-            onChange={setSidebarDraft}
+            onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
             onCommit={(value) => {
-              setSidebarDraft(null);
               void updateSettings({ sidebarWidth: Math.round(value) });
             }}
           />
@@ -303,9 +315,8 @@ export function AppShell() {
             max={460}
             edge="left"
             label="Panel width"
-            onChange={setPanelDraft}
+            onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
             onCommit={(value) => {
-              setPanelDraft(null);
               void updateSettings({ rightPanelWidth: Math.round(value) });
             }}
           />

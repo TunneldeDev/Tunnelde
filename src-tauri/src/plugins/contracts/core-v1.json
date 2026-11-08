@@ -381,6 +381,369 @@
         "plugin.api.storageTooLarge"
       ],
       "events": []
+    },
+    "statusBar.set": {
+      "version": 1,
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.statusBar.invalidItem",
+        "plugin.statusBar.unknownCommand",
+        "plugin.statusBar.limit",
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.api.missing:id",
+        "plugin.api.invalid:id",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": [],
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 128,
+            "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])",
+            "minLength": 1
+          },
+          "alignment": {
+            "enum": ["left", "right"],
+            "default": "left"
+          },
+          "priority": {
+            "type": "integer",
+            "minimum": -1000,
+            "maximum": 1000,
+            "default": 0
+          },
+          "tooltip": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024,
+                "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "icon": {
+            "enum": [
+              "activity",
+              "check",
+              "alert",
+              "info",
+              "sync",
+              "terminal",
+              "cloud",
+              "code",
+              "plug",
+              null
+            ]
+          },
+          "command": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "type": "null"
+      }
+    },
+    "statusBar.remove": {
+      "version": 1,
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.statusBar.invalidItem",
+        "plugin.statusBar.unknownCommand",
+        "plugin.statusBar.limit",
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.api.missing:id",
+        "plugin.api.invalid:id",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": [],
+      "inputSchema": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "type": "boolean"
+      }
+    },
+    "editor.active": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "anyOf": [
+          {
+            "type": "null"
+          },
+          {
+            "type": "object",
+            "required": ["tabId", "documentId", "version", "path", "name", "content", "dirty"],
+            "properties": {
+              "tabId": {
+                "type": "string"
+              },
+              "documentId": {
+                "type": "string"
+              },
+              "version": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "dirty": {
+                "type": "boolean"
+              },
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "content": {
+                "type": "string",
+                "maxLength": 131072
+              }
+            },
+            "additionalProperties": true
+          }
+        ]
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable",
+        "plugin.api.busy",
+        "plugin.api.frontendTimeout",
+        "plugin.api.frontendClosed",
+        "plugin.api.requestExpired",
+        "plugin.api.frontend:editor.documentTooLarge"
+      ],
+      "events": []
+    },
+    "editor.replace": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["tabId", "documentId", "version", "text"],
+        "properties": {
+          "tabId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "not": {
+              "pattern": "\u0000"
+            }
+          },
+          "documentId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1024,
+            "not": {
+              "pattern": "\u0000"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 131072
+          }
+        },
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["tabId", "documentId", "version", "dirty"],
+        "properties": {
+          "tabId": {
+            "type": "string"
+          },
+          "documentId": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "dirty": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.responseTooLarge",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable",
+        "plugin.api.busy",
+        "plugin.api.frontendTimeout",
+        "plugin.api.frontendClosed",
+        "plugin.api.requestExpired",
+        "plugin.api.frontend:invalid:tabId",
+        "plugin.api.frontend:invalid:documentId",
+        "plugin.api.frontend:invalid:version",
+        "plugin.api.frontend:invalid:text",
+        "plugin.api.frontend:editor.documentChanged"
+      ],
+      "events": []
     }
   }
 }

@@ -21,6 +21,7 @@ import "@/i18n/i18n";
 import type { AppInfo } from "@/lib/api/types";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useWindowCloseGuard } from "@/lib/session/useWindowCloseGuard";
+import { prepareWindowReload } from "@/lib/session/reload";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors, type EditorEntry } from "@/store/editors";
 import { useSettings } from "@/store/settings";
@@ -68,6 +69,57 @@ beforeEach(() => {
 });
 
 describe("window close draft protection", () => {
+  it("removes the native close veto before reloading the document", async () => {
+    const rendered = await mount();
+    let finish!: () => void;
+    mocks.stop.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));
+    let ready = false;
+    const preparing = prepareWindowReload().then(() => {
+      ready = true;
+    });
+    await waitFor(() => expect(mocks.stop).toHaveBeenCalledTimes(1));
+    expect(ready).toBe(false);
+    await act(async () => {
+      finish();
+      await preparing;
+    });
+    expect(ready).toBe(true);
+    expect(mocks.close).not.toHaveBeenCalled();
+    rendered.unmount();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks reload when native unsubscription fails and retains close protection", async () => {
+    await mount();
+    mocks.stop.mockRejectedValueOnce(new Error("Native unlisten failed"));
+    await expect(prepareWindowReload()).rejects.toThrow("Native unlisten failed");
+    useEditors.setState({ entries: { draft: draft() } });
+    await requestClose();
+    expect(useDialogs.getState().dialog.kind).toBe("confirm");
+  });
+
+  it("waits for a pending native registration before preparing reload", async () => {
+    let finish!: (stop: () => void) => void;
+    mocks.onCloseRequested.mockReturnValueOnce(
+      new Promise<() => void>((resolve) => (finish = resolve)),
+    );
+    const rendered = renderHook(useWindowCloseGuard);
+    let ready = false;
+    const preparing = prepareWindowReload().then(() => {
+      ready = true;
+    });
+    await act(async () => {});
+    expect(ready).toBe(false);
+    await act(async () => {
+      finish(mocks.stop);
+      await preparing;
+    });
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+    await prepareWindowReload();
+    expect(mocks.stop).toHaveBeenCalledTimes(1);
+  });
+
   it("waits for native unsubscription before closing a clean window", async () => {
     let finish!: () => void;
     mocks.stop.mockReturnValueOnce(new Promise<void>((resolve) => (finish = resolve)));

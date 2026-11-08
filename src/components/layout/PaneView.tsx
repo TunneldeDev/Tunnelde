@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { TabContent } from "@/components/layout/TabContent";
+import { TabBarContributions } from "./TabBarContributions";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
 import { useFileIconResolver } from "@/lib/files/icons";
@@ -35,7 +36,7 @@ import { useSettings } from "@/store/settings";
 import { useNavigation } from "@/store/navigation";
 import { isTauri } from "@/lib/api/ipc";
 import { useEditors } from "@/store/editors";
-import { FILE_PANE_MIME, filePaneDrag } from "@/lib/session/filePaneDrag";
+import { isWorkspaceDrag, readWorkspaceDrop } from "@/lib/session/workspaceDrag";
 import {
   sidebarLabel,
   SIDEBAR_MIME,
@@ -220,12 +221,18 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
         reserveTrafficLights && "has-native-window-controls",
       )}
     >
+      {activeTab ? (
+        <TabBarContributions
+          placement="leading"
+          context={{ tabId: activeTab.id, tabKind: activeTab.kind, paneId: pane.id }}
+        />
+      ) : null}
       <div
         ref={strip}
         className="pane__tabs"
         role="tablist"
         onDragOver={(event) => {
-          if (!event.dataTransfer.types.includes(TAB_MIME)) {
+          if (!isWorkspaceDrag(event.dataTransfer)) {
             return;
           }
           event.preventDefault();
@@ -239,19 +246,20 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setBefore(null);
         }}
         onDrop={(event) => {
-          const tabId = event.dataTransfer.getData(TAB_MIME);
           const target = dropIndex(event);
           setBefore(null);
-          if (!tabId) {
+          const dropped = readWorkspaceDrop(event.dataTransfer);
+          if (!dropped) {
             return;
           }
           event.preventDefault();
           event.stopPropagation();
-          if (pane.tabIds.includes(tabId)) {
-            reorderTab(tabId, target);
+          if (pane.tabIds.includes(dropped.tabId)) {
+            reorderTab(dropped.tabId, target);
           } else {
-            moveTab(tabId, pane.id, target);
+            moveTab(dropped.tabId, pane.id, target);
           }
+          dropped.finish();
         }}
       >
         {items.map((tab) => {
@@ -385,6 +393,11 @@ function TabStrip({ pane }: { pane: WorkspacePane }) {
           );
         })}
       </div>
+      {activeTab ? (
+        <TabBarContributions
+          context={{ tabId: activeTab.id, tabKind: activeTab.kind, paneId: pane.id }}
+        />
+      ) : null}
       <div className="pane__actions">
         <IconButton
           label={t(pane.locked ? "tab.unlockPane" : "tab.lockPane")}
@@ -499,8 +512,7 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
     const element = body.current;
     if (!element) return;
     const over = (event: globalThis.DragEvent) => {
-      if (!event.dataTransfer?.types.some((type) => type === TAB_MIME || type === FILE_PANE_MIME))
-        return;
+      if (!event.dataTransfer || !isWorkspaceDrag(event.dataTransfer)) return;
       event.preventDefault();
       event.dataTransfer.dropEffect = "move";
       setHint(zoneOf(element, event));
@@ -510,25 +522,26 @@ export function PaneView({ pane, active }: { pane: WorkspacePane; active: boolea
         setHint(null);
     };
     const drop = (event: globalThis.DragEvent) => {
-      const token = event.dataTransfer?.getData(FILE_PANE_MIME);
-      const draggedFile = token ? filePaneDrag(token) : null;
-      let tabId = event.dataTransfer?.getData(TAB_MIME);
-      if (!tabId && !draggedFile) return;
+      const dropped = readWorkspaceDrop(event.dataTransfer);
+      if (!dropped) return;
       event.preventDefault();
       event.stopPropagation();
       setHint(null);
       const zone = zoneOf(element, event);
-      if (draggedFile)
-        tabId = useWorkspace.getState().openFilePane(draggedFile.pane, draggedFile.title);
-      if (!tabId) return;
       if (!zone) {
-        moveTab(tabId, pane.id);
-        draggedFile?.onMoved?.();
+        moveTab(dropped.tabId, pane.id);
+        dropped.finish();
         return;
       }
       const direction: SplitDirection = zone === "left" || zone === "right" ? "row" : "column";
-      splitTab(tabId, direction, zone === "left" || zone === "top" ? "before" : "after", pane.id);
-      draggedFile?.onMoved?.();
+      splitTab(
+        dropped.tabId,
+        direction,
+        zone === "left" || zone === "top" ? "before" : "after",
+        pane.id,
+        dropped.size,
+      );
+      dropped.finish();
     };
     // Page contents live in stable portals; native listeners follow their actual
     // group rather than the React tree that owns their component instance.

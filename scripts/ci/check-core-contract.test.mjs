@@ -12,6 +12,55 @@ const floor = JSON.parse(
 );
 const ajv = new Ajv({ allErrors: true });
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const editor = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/plugin-compat/editor-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+test("editor contract preserves document identity and allows forward-compatible fields", () => {
+  const active = ajv.compile(editor.methods["editor.active"].resultSchema);
+  const write = ajv.compile(editor.methods["editor.replace"].resultSchema);
+  const document = {
+    tabId: "editor-one",
+    documentId: "document-one",
+    version: 1,
+    path: "/资料/a.json",
+    name: "a.json",
+    content: "",
+    dirty: false,
+  };
+  assert.ok(active(null));
+  assert.ok(active({ ...document, future: true }));
+  const result = {
+    tabId: document.tabId,
+    documentId: document.documentId,
+    version: 1,
+    dirty: false,
+  };
+  assert.ok(write({ ...result, future: true }));
+  for (const [validate, sample] of [
+    [active, document],
+    [write, result],
+  ]) {
+    for (const key of Object.keys(sample)) {
+      const missing = { ...sample };
+      delete missing[key];
+      assert.equal(validate(missing), false, key);
+    }
+    for (const version of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1])
+      assert.equal(validate({ ...sample, version }), false);
+  }
+  const request = ajv.compile(editor.methods["editor.replace"].inputSchema);
+  const params = { tabId: "e", documentId: "d", version: 0, text: "" };
+  assert.ok(request({ ...params, future: true }));
+  assert.equal(request({ ...params, tabId: "x\0y" }), false);
+  assert.equal(request({ ...params, documentId: "" }), false);
+  assert.equal(request({ ...params, text: null }), false);
+  // Character-count validity cannot establish the independent UTF-8 byte quota.
+  assert.ok(request({ ...params, text: "中".repeat(43691) }));
+});
 
 test("storage schemas match ASCII keys, required fields and arbitrary JSON values", () => {
   const get = ajv.compile(floor.methods["storage.get"].inputSchema);

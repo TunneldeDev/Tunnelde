@@ -6,6 +6,70 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.32.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.31.0...v0.32.0) - 2026-11-08
+
+### 更新概览 | Highlights
+
+- **plugins:** add runtime-owned status bar contributions
+- **files:** batch small files with recoverable memory archives
+- **logs:** add dockable filtered output and incremental log reading
+- **workbench:** expose runtime-owned tab bar controls to plugins
+- **workbench:** add grouped extensible tab bar controls
+
+<details open>
+<summary>详细变更 | Details (33)</summary>
+
+### 新增 | New
+
+- **plugins:** add runtime-owned status bar contributions ([#151](https://github.com/TunneldeDev/Tunnelde/pull/151)) @quyansiyuanwang
+- **files:** batch small files with recoverable memory archives ([#152](https://github.com/TunneldeDev/Tunnelde/pull/152)) @quyansiyuanwang
+- **logs:** add dockable filtered output and incremental log reading ([#158](https://github.com/TunneldeDev/Tunnelde/pull/158), [0f2f13b](https://github.com/TunneldeDev/Tunnelde/commit/0f2f13b99d1f912596cb05bcf8bf4f7c507f7c02)) @quyansiyuanwang
+- **workbench:** expose runtime-owned tab bar controls to plugins ([#158](https://github.com/TunneldeDev/Tunnelde/pull/158)) @quyansiyuanwang
+- **workbench:** add grouped extensible tab bar controls ([#160](https://github.com/TunneldeDev/Tunnelde/pull/160)) @quyansiyuanwang
+- **plugins:** stabilize versioned editor buffer contracts ([#166](https://github.com/TunneldeDev/Tunnelde/pull/166)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **transfers:** reuse validated source metadata at copy dispatch ([#162](https://github.com/TunneldeDev/Tunnelde/pull/162)) @quyansiyuanwang
+- **transfers:** copy same-session files directly on the server ([#173](https://github.com/TunneldeDev/Tunnelde/pull/173)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **editor:** show format action only for matching plugins ([#143](https://github.com/TunneldeDev/Tunnelde/pull/143)) @quyansiyuanwang
+- **transfers:** accelerate source scans and stop on preparation errors ([#145](https://github.com/TunneldeDev/Tunnelde/pull/145)) @quyansiyuanwang
+- **workbench:** preview panel resizing without rerendering views ([#146](https://github.com/TunneldeDev/Tunnelde/pull/146)) @quyansiyuanwang
+- **forwarding:** wait for listener release before restarting ([#147](https://github.com/TunneldeDev/Tunnelde/pull/147)) @quyansiyuanwang
+- **files:** align reordered columns and clarify resize handles ([#149](https://github.com/TunneldeDev/Tunnelde/pull/149)) @quyansiyuanwang
+- **network:** distinguish HTTPS failures from proxy tunnel quality ([#150](https://github.com/TunneldeDev/Tunnelde/pull/150)) @quyansiyuanwang
+- **files:** include icon spacing in minimum column width ([#153](https://github.com/TunneldeDev/Tunnelde/pull/153)) @quyansiyuanwang
+- **transfers:** fence interrupted remote publication ([#154](https://github.com/TunneldeDev/Tunnelde/pull/154)) @quyansiyuanwang
+- **plugins:** report first shipped status bar API version ([#155](https://github.com/TunneldeDev/Tunnelde/pull/155)) @quyansiyuanwang
+- **files:** fit column widths to content and clarify resize controls ([#156](https://github.com/TunneldeDev/Tunnelde/pull/156)) @quyansiyuanwang
+- **transfers:** allow pausing acknowledged writer close waits ([#157](https://github.com/TunneldeDev/Tunnelde/pull/157), [2976e10](https://github.com/TunneldeDev/Tunnelde/commit/2976e10db6a20c362ad15385d5add7972dcc1972)) @quyansiyuanwang
+- **transfers:** retain reconnect cleanup requests while busy ([#157](https://github.com/TunneldeDev/Tunnelde/pull/157)) @quyansiyuanwang
+- **plugins:** accept compatible host beta versions within engine bounds ([#158](https://github.com/TunneldeDev/Tunnelde/pull/158), [2269e1c](https://github.com/TunneldeDev/Tunnelde/commit/2269e1cf6b23135ce86da31cac573e9a8ac4b817)) @quyansiyuanwang
+- **transfers:** fence interrupted remote staging creation ([#159](https://github.com/TunneldeDev/Tunnelde/pull/159)) @quyansiyuanwang
+- **transfers:** replay interrupted windows without truncation ([#161](https://github.com/TunneldeDev/Tunnelde/pull/161)) @quyansiyuanwang
+- **shortcuts:** expose query filters through a searchable toolbar menu ([#163](https://github.com/TunneldeDev/Tunnelde/pull/163)) @quyansiyuanwang
+- **diagnostics:** explain plugin compatibility and update failures ([#164](https://github.com/TunneldeDev/Tunnelde/pull/164)) @quyansiyuanwang
+- **output:** use bottom panel and color structured logs ([#165](https://github.com/TunneldeDev/Tunnelde/pull/165)) @quyansiyuanwang
+- **files:** explain remote move failures with paths and server status ([#167](https://github.com/TunneldeDev/Tunnelde/pull/167)) @quyansiyuanwang
+- **workbench:** route file panel drops consistently and retain dimensions ([#168](https://github.com/TunneldeDev/Tunnelde/pull/168)) @quyansiyuanwang
+- **search:** resolve Windows editor roots and preserve remote paths ([#169](https://github.com/TunneldeDev/Tunnelde/pull/169)) @quyansiyuanwang
+- **transfers:** verify every retained byte before resuming ([#170](https://github.com/TunneldeDev/Tunnelde/pull/170)) @quyansiyuanwang
+- **workbench:** keep closed panels hidden in their remembered layout ([#171](https://github.com/TunneldeDev/Tunnelde/pull/171)) @quyansiyuanwang
+- **workbench:** release close listeners before reloading the window ([#172](https://github.com/TunneldeDev/Tunnelde/pull/172)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- provide bilingual readme guides and canonical settings links ([#148](https://github.com/TunneldeDev/Tunnelde/pull/148)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.31.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.30.7...v0.31.0) - 2026-11-07
 
 ### 更新概览 | Highlights

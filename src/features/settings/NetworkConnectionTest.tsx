@@ -14,7 +14,7 @@ import "./networkConnectionTest.css";
 export function NetworkConnectionTest({ settings }: { settings: NetworkSettings }) {
   const { t, i18n } = useTranslation();
   const id = useId();
-  const [proxy, setProxy] = useState("");
+  const [proxy, setProxy] = useState("feature:marketplace");
   const [host, setHost] = useState("github.com");
   const [port, setPort] = useState("443");
   const [testing, setTesting] = useState(false);
@@ -32,13 +32,17 @@ export function NetworkConnectionTest({ settings }: { settings: NetworkSettings 
       alive.current = false;
     };
   }, []);
-  const selected = proxy || settings.defaultProxy || "system";
+  const feature = proxy.startsWith("feature:") ? proxy.slice("feature:".length) : null;
+  const selected =
+    (feature ? settings.features[feature] : proxy) || settings.defaultProxy || "system";
   const scope = JSON.stringify([selected, settings.profiles, host.trim(), port]);
   const quality = result?.scope === scope ? result.quality : null;
   const error = result?.scope === scope ? result.error : null;
   const valid =
     host.trim().length > 0 && /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
   const choices = [
+    { value: "feature:marketplace", label: t("network.testMarketplaceRoute") },
+    { value: "feature:updates", label: t("network.testUpdatesRoute") },
     { value: "", label: t("network.inherit") },
     { value: "system", label: t("network.system") },
     { value: "direct", label: t("network.direct") },
@@ -130,12 +134,19 @@ export function NetworkConnectionTest({ settings }: { settings: NetworkSettings 
           <p role="status" className="network-settings__result">
             {testing
               ? t("network.qualityRunning")
-              : (error ?? (quality ? t(`network.quality.${quality.quality}`) : ""))}
+              : (error ??
+                (quality
+                  ? t(
+                      quality.https?.success === false
+                        ? "network.httpsFailed"
+                        : `network.quality.${quality.quality}`,
+                    )
+                  : ""))}
           </p>
         </div>
         {quality ? (
           <section
-            className={`network-quality is-${quality.quality}`}
+            className={`network-quality is-${quality.https?.success === false ? "unreachable" : quality.quality}`}
             aria-label={t("connect.testTitle")}
           >
             <div className="network-quality__title">
@@ -164,6 +175,22 @@ export function NetworkConnectionTest({ settings }: { settings: NetworkSettings 
                 ))}
               </ol>
             </details>
+            {quality.https ? (
+              <p
+                className={
+                  quality.https.success ? "network-settings__result" : "network-quality__error"
+                }
+              >
+                {quality.https.success
+                  ? t("network.httpsPassed", {
+                      ms: ms(quality.https.elapsedMs),
+                      status: quality.https.status,
+                    })
+                  : quality.https.error
+                    ? translateError(quality.https.error)
+                    : t("network.httpsFailed")}
+              </p>
+            ) : null}
             {quality.lastError ? (
               <p className="network-quality__error">{translateError(quality.lastError)}</p>
             ) : null}

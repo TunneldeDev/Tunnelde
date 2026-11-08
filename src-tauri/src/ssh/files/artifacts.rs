@@ -4,14 +4,49 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod staging;
+use staging::{
+    missing, prepare_remote_staging, remote_staging, retire_remote_staging, staging_directory,
+};
+
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum ArtifactRecord {
     Current {
         path: String,
         identity: Option<FileIdentity>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        archive: Option<ArchiveWrite>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        publication: Option<Publication>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        staging: Option<RemoteStaging>,
     },
     Legacy(String),
+}
+
+/// Persisted before sending a remote archive. A missing acknowledgement makes
+/// this staging generation disposable, never safe to reuse or publish.
+#[derive(Default, Serialize, Deserialize)]
+struct ArchiveWrite {
+    generation: Option<String>,
+    pending: bool,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct Publication {
+    // Persisted before retiring the original path. A restart retries the same
+    // rename pair instead of losing a successfully moved, fully uploaded file.
+    successor: Option<String>,
+}
+
+/// An acknowledged private directory fences a delayed CREATE: after removing
+/// this directory, an old OPEN cannot recreate its child on a resumed task.
+#[derive(Serialize, Deserialize)]
+struct RemoteStaging {
+    generation: String,
+    prepared: bool,
+    opening: bool,
 }
 
 impl ArtifactRecord {
@@ -40,6 +75,304 @@ fn artifact_record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<Option
     get(app, &artifact_key(id, to))?
         .map(|raw| serde_json::from_str(&raw).map_err(AppError::from))
         .transpose()
+}
+
+fn part_from_record(
+    to: &Endpoint,
+    id: &str,
+    record: Option<&ArtifactRecord>,
+) -> AppResult<Endpoint> {
+    let generation = match record {
+        Some(ArtifactRecord::Current {
+            archive: Some(archive),
+            ..
+        }) => archive.generation.as_deref(),
+        _ => None,
+    };
+    let owner = match generation {
+        Some(value) => format!(
+            "{id}-{}",
+            uuid::Uuid::parse_str(value)
+                .map_err(|_| AppError::internal("Invalid archive staging generation"))?
+        ),
+        None => id.to_owned(),
+    };
+    let part = staging_endpoint(to, &owner, "part");
+    match record {
+        Some(ArtifactRecord::Current {
+            staging: Some(staging),
+            ..
+        }) => {
+            let directory = staging_directory(to, id, staging)?;
+            Ok(to.child(join_remote(&directory.path, &file_name_of(&part.path))))
+        }
+        _ => Ok(part),
+    }
+}
+
+pub(super) fn creation_pending(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    pending: bool,
+) -> AppResult<bool> {
+    let Some(mut record) = artifact_record(app, id, to)? else {
+        return Ok(false);
+    };
+    let ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    } = &mut record
+    else {
+        return Ok(false);
+    };
+    if !staging.prepared {
+        return Err(AppError::internal("Staging directory not acknowledged"));
+    }
+    staging.opening = pending;
+    put(app, &artifact_key(id, to), serde_json::to_string(&record)?)?;
+    Ok(true)
+}
+
+/// Called only after publication is saved. A failed or interrupted RMDIR leaves
+/// the completed-file checkpoint so Resume verifies the target and retries it.
+pub(super) async fn finish_staging(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+) -> AppResult<()> {
+    let record = artifact_record(app, id, to)?;
+    let Some(staging) = remote_staging(record.as_ref()) else {
+        return Ok(());
+    };
+    let sftp = sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?;
+    let directory = staging_directory(to, id, staging)?;
+    interruptible(Some(cancel), async {
+        match sftp.remove_dir(&directory.path).await {
+            Ok(()) => Ok(()),
+            Err(error) if missing(&error) => Ok(()),
+            Err(error) => Err(map_sftp(error)),
+        }
+    })
+    .await
+}
+
+/// Retire an uncertain archive before making another writer. The worker only
+/// opens existing files: a delayed open now fails, and an already-open writer
+/// can only touch the unlinked old inode. The next generation has a fresh path.
+pub(super) async fn prepare_staging<F, Fut>(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: &AtomicBool,
+    create_directory: F,
+) -> AppResult<(Endpoint, bool)>
+where
+    F: FnOnce(Endpoint) -> Fut,
+    Fut: std::future::Future<Output = AppResult<()>>,
+{
+    let mut record = artifact_record(app, id, to)?;
+    prepare_remote_staging(app, id, to, sftp, cancel, &mut record, create_directory).await?;
+    let temp = part_from_record(to, id, record.as_ref())?;
+    let recovering_publication = matches!(
+        record,
+        Some(ArtifactRecord::Current {
+            publication: Some(_),
+            ..
+        })
+    );
+    if recovering_publication {
+        let sftp = sftp.ok_or_else(|| AppError::internal("Remote publication on local staging"))?;
+        let successor = match record.as_mut().unwrap() {
+            ArtifactRecord::Current { publication, .. } => publication
+                .as_mut()
+                .unwrap()
+                .successor
+                .get_or_insert_with(|| uuid::Uuid::new_v4().to_string())
+                .clone(),
+            ArtifactRecord::Legacy(_) => unreachable!(),
+        };
+        // Record the successor before sending the fencing rename. If it runs
+        // but its acknowledgement is lost, the next attempt finds this path.
+        put(
+            app,
+            &artifact_key(id, to),
+            serde_json::to_string(&record.as_ref().unwrap())?,
+        )?;
+        let next = publication_successor(to, id, &successor, record.as_ref())?;
+        if !publication::fence(&temp, &next, sftp, cancel).await? {
+            // Keep the uncertainty record until the published target has been
+            // verified. A failed verification must remain protected on every
+            // later Resume, including after an application restart.
+            return Ok((next, true));
+        }
+        if let Some(ArtifactRecord::Current {
+            archive,
+            publication,
+            ..
+        }) = record.as_mut()
+        {
+            let stage = archive.get_or_insert_with(ArchiveWrite::default);
+            stage.generation = Some(successor);
+            stage.pending = false;
+            *publication = None;
+        }
+        put(
+            app,
+            &artifact_key(id, to),
+            serde_json::to_string(&record.as_ref().unwrap())?,
+        )?;
+        return Ok((next, true));
+    }
+    if let Some(ArtifactRecord::Current {
+        archive: Some(archive),
+        ..
+    }) = record.as_mut()
+    {
+        if archive.pending {
+            if sftp.is_none() {
+                return Err(AppError::internal(
+                    "Remote archive journal on a local staging file",
+                ));
+            }
+            if interruptible(Some(cancel), file_length(&temp, sftp))
+                .await?
+                .is_some()
+            {
+                interruptible(Some(cancel), remove_transfer_file(&temp, sftp)).await?;
+            }
+            archive.generation = Some(uuid::Uuid::new_v4().to_string());
+            archive.pending = false;
+            // Persist the generation and discard checkpoints from the retired
+            // inode together. Cancellation/crash before this commit retries the
+            // old unlink; it can never make the old pathname writable again.
+            app.state::<AppState>().db.with(|conn| {
+                let tx = conn.unchecked_transaction()?;
+                tx.execute(
+                    "UPDATE settings SET value=?1,updated_at=?2 WHERE key=?3",
+                    rusqlite::params![
+                        serde_json::to_string(record.as_ref().unwrap())?,
+                        crate::models::now_ms(),
+                        artifact_key(id, to)
+                    ],
+                )?;
+                let digest = format!("{:x}", Sha256::digest(to.path.as_bytes()));
+                tx.execute(
+                    "DELETE FROM settings WHERE key=?1 OR key=?2",
+                    rusqlite::params![
+                        format!("transfer-part:{id}:{digest}"),
+                        format!("transfer-parallel:{id}:{digest}")
+                    ],
+                )?;
+                tx.commit()?;
+                Ok(())
+            })?;
+            return Ok((part_from_record(to, id, record.as_ref())?, false));
+        }
+    }
+    Ok((temp, false))
+}
+
+fn publication_successor(
+    to: &Endpoint,
+    id: &str,
+    generation: &str,
+    record: Option<&ArtifactRecord>,
+) -> AppResult<Endpoint> {
+    let generation = uuid::Uuid::parse_str(generation)
+        .map_err(|_| AppError::internal("Invalid publication staging generation"))?;
+    let part = staging_endpoint(to, &format!("{id}-{generation}"), "part");
+    match record {
+        Some(ArtifactRecord::Current {
+            staging: Some(staging),
+            ..
+        }) => {
+            let directory = staging_directory(to, id, staging)?;
+            Ok(to.child(join_remote(&directory.path, &file_name_of(&part.path))))
+        }
+        _ => Ok(part),
+    }
+}
+
+pub(super) fn begin_publication(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    temp: &Endpoint,
+) -> AppResult<()> {
+    let mut record = artifact_record(app, id, to)?
+        .ok_or_else(|| AppError::internal("Missing publication ownership record"))?;
+    if to.session.is_none() || part_from_record(to, id, Some(&record))?.path != temp.path {
+        return Err(AppError::internal("Publication staging journal mismatch"));
+    }
+    match &mut record {
+        ArtifactRecord::Current { publication, .. } if publication.is_none() => {
+            *publication = Some(Publication::default());
+        }
+        _ => {
+            return Err(AppError::internal(
+                "Unresolved publication ownership record",
+            ))
+        }
+    }
+    put(app, &artifact_key(id, to), serde_json::to_string(&record)?)
+}
+
+pub(super) fn confirm_publication(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> {
+    if let Some(mut record @ ArtifactRecord::Current { .. }) = artifact_record(app, id, to)? {
+        if let ArtifactRecord::Current { publication, .. } = &mut record {
+            if publication.take().is_none() {
+                return Ok(());
+            }
+        }
+        put(app, &artifact_key(id, to), serde_json::to_string(&record)?)?;
+    }
+    Ok(())
+}
+
+/// One transaction covers every member before the first network write. Clear
+/// it only after the worker acknowledges all writes and has closed its handles.
+pub(super) fn archive_pending(
+    app: &AppHandle,
+    id: &str,
+    files: &[(&Endpoint, &Endpoint)],
+    pending: bool,
+) -> AppResult<()> {
+    app.state::<AppState>().db.with(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        for (to, temp) in files {
+            let key = artifact_key(id, to);
+            let raw: String =
+                tx.query_row("SELECT value FROM settings WHERE key=?1", [&key], |r| {
+                    r.get(0)
+                })?;
+            let mut record: ArtifactRecord = serde_json::from_str(&raw)?;
+            if to.session.is_none() || part_from_record(to, id, Some(&record))?.path != temp.path {
+                return Err(AppError::internal("Archive staging journal mismatch"));
+            }
+            match &mut record {
+                ArtifactRecord::Current { archive, .. } => {
+                    archive.get_or_insert_with(ArchiveWrite::default).pending = pending
+                }
+                ArtifactRecord::Legacy(_) => {
+                    return Err(AppError::internal("Unowned archive staging file"))
+                }
+            }
+            tx.execute(
+                "UPDATE settings SET value=?1,updated_at=?2 WHERE key=?3",
+                rusqlite::params![
+                    serde_json::to_string(&record)?,
+                    crate::models::now_ms(),
+                    key
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
 }
 
 #[cfg(windows)]
@@ -104,6 +437,9 @@ pub(super) fn record_local_writer(
             serde_json::to_string(&ArtifactRecord::Current {
                 path: to.path.clone(),
                 identity: Some(current.clone()),
+                archive: None,
+                publication: None,
+                staging: None,
             })?,
         )?;
         let guard = GuardedFile::pin(Path::new(&temp.path))?;
@@ -125,27 +461,27 @@ pub(super) fn record_local_writer(
 }
 
 #[derive(Serialize, Deserialize)]
-struct ResumeCheckpoint {
-    source: (u64, Option<i64>),
-    partial: (u64, Option<i64>),
-}
-
-#[derive(Serialize, Deserialize)]
 struct ParallelCheckpoint {
     source: (u64, Option<i64>),
     offset: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    end: Option<u64>,
 }
 
 pub(super) fn begin_window(
     app: &AppHandle,
     key: &str,
     source: (u64, Option<i64>),
-    offset: u64,
+    window: std::ops::Range<u64>,
 ) -> AppResult<()> {
     put(
         app,
         &key.replacen("transfer-file:", "transfer-parallel:", 1),
-        serde_json::to_string(&ParallelCheckpoint { source, offset })?,
+        serde_json::to_string(&ParallelCheckpoint {
+            source,
+            offset: window.start,
+            end: Some(window.end),
+        })?,
     )
 }
 
@@ -166,15 +502,20 @@ pub(super) async fn recover_window(
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
+) -> AppResult<Option<std::ops::Range<u64>>> {
     let marker = get(
         app,
         &key.replacen("transfer-file:", "transfer-parallel:", 1),
     )?;
-    let Some(marker) = marker else { return Ok(()) };
+    let Some(marker) = marker else {
+        return Ok(None);
+    };
     let checkpoint: ParallelCheckpoint = serde_json::from_str(&marker)?;
-    restore_window_prefix(checkpoint, source, temp, sftp, cancel).await?;
-    end_window(app, key)
+    // Retain this marker through verification and the first replay. A crash or
+    // another pause must never promote the old sparse tail to a valid prefix.
+    restore_window_prefix(checkpoint, source, temp, sftp, cancel)
+        .await
+        .map(Some)
 }
 
 async fn restore_window_prefix(
@@ -183,25 +524,30 @@ async fn restore_window_prefix(
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: Option<&AtomicBool>,
-) -> AppResult<()> {
-    if checkpoint.source != source || checkpoint.offset > source.0 {
+) -> AppResult<std::ops::Range<u64>> {
+    if checkpoint.source != source
+        || checkpoint.offset > source.0
+        || checkpoint
+            .end
+            .is_some_and(|end| end < checkpoint.offset || end > source.0)
+    {
         return Err(AppError::validation("sftp.resumeSourceChanged"));
     }
     let length = interruptible(cancel, file_length(temp, sftp))
         .await?
         .unwrap_or(0);
-    if length < checkpoint.offset {
+    if length < checkpoint.offset
+        || length > source.0
+        || checkpoint.end.is_some_and(|end| length > end)
+    {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
-    if length > checkpoint.offset {
-        if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
-            return Err(AppError::Ssh(CANCELLED.into()));
-        }
-        // Discard sparse or partially acknowledged writes from the interrupted
-        // window before any prefix can be trusted as resumable data.
-        segments::resize(temp, sftp, checkpoint.offset).await?;
-    }
-    Ok(())
+    // Only bytes before offset are eligible for verification/resume. Rewrite
+    // the entire old window instead of truncating it: SETSTAT can stall and a
+    // late truncate could destroy bytes acknowledged by a later resume.
+    // Legacy markers did not record the submitted end. Conservatively replay
+    // the remaining source: a delayed WRITE can extend the observed length.
+    Ok(checkpoint.offset..checkpoint.end.unwrap_or(source.0))
 }
 
 fn get(app: &AppHandle, key: &str) -> AppResult<Option<String>> {
@@ -222,7 +568,7 @@ fn put(app: &AppHandle, key: &str, value: String) -> AppResult<()> {
     })
 }
 
-pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> {
+pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint, fresh: bool) -> AppResult<()> {
     let key = artifact_key(id, to);
     // A resumed writer must never replace its original ownership record.
     if get(app, &key)?.is_some() {
@@ -234,77 +580,46 @@ pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint) -> AppResult<()> 
         serde_json::to_string(&ArtifactRecord::Current {
             path: to.path.clone(),
             identity: None,
+            archive: None,
+            publication: None,
+            staging: to
+                .session
+                .as_ref()
+                .filter(|_| fresh)
+                .map(|_| RemoteStaging {
+                    generation: uuid::Uuid::new_v4().to_string(),
+                    prepared: false,
+                    opening: false,
+                }),
         })?,
     )
 }
 
-pub(super) async fn checkpoint(
-    app: &AppHandle,
-    key: &str,
-    source: (u64, Option<i64>),
+pub(super) async fn validate_partial_length(
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     submitted: std::ops::RangeInclusive<u64>,
 ) -> AppResult<()> {
-    let partial = source_stamp(temp, sftp).await?;
-    if submitted.contains(&partial.0) && partial.0 <= source.0 {
-        put(
-            app,
-            &key.replacen("transfer-file:", "transfer-part:", 1),
-            serde_json::to_string(&ResumeCheckpoint { source, partial })?,
-        )?;
-    } else {
+    if !file_length(temp, sftp)
+        .await?
+        .is_some_and(|length| submitted.contains(&length))
+    {
         return Err(AppError::validation("sftp.resumePrefixMismatch"));
     }
     Ok(())
 }
 
-#[allow(clippy::too_many_arguments)]
 pub(super) async fn resume_offset(
-    app: &AppHandle,
-    key: &str,
-    source: (u64, Option<i64>),
-    temp: &Endpoint,
-    sftp: Option<&SftpSession>,
-    reader: &mut Reader,
-    existing: u64,
-    cancel: &AtomicBool,
-) -> AppResult<()> {
-    let saved = get(app, &key.replacen("transfer-file:", "transfer-part:", 1))?
-        .and_then(|raw| serde_json::from_str::<ResumeCheckpoint>(&raw).ok());
-    let unchanged = if let Some(saved) = saved {
-        saved.source == source
-            && source.1.is_some()
-            && saved.partial.0 == existing
-            && saved.partial.1.is_some()
-            && saved.partial == interruptible(Some(cancel), source_stamp(temp, sftp)).await?
-    } else {
-        false
-    };
-    verify_resume(reader, temp, sftp, existing, unchanged, cancel).await
-}
-
-async fn verify_resume(
     reader: &mut Reader,
     temp: &Endpoint,
     sftp: Option<&SftpSession>,
     existing: u64,
-    unchanged: bool,
     cancel: &AtomicBool,
 ) -> AppResult<()> {
-    if unchanged {
-        // A cleanly closed staging file is our checkpoint. Check its boundaries
-        // against the unchanged source instead of downloading gigabytes again.
-        let head = existing.min(CHUNK as u64);
-        verify_range(reader, temp, sftp, 0, head, Some(cancel)).await?;
-        let offset = head.max(existing.saturating_sub(CHUNK as u64));
-        verify_range(reader, temp, sftp, offset, existing - offset, Some(cancel)).await?;
-    } else {
-        // Crashes, legacy records and externally changed staging files retain
-        // the complete byte-for-byte verification path.
-        verify_prefix(reader, temp, sftp, existing, Some(cancel)).await?;
-    }
-    reader.seek(existing).await
+    // Size and mtime (including legacy transfer-part checkpoints) cannot prove
+    // that the middle of either file is unchanged. Verify every retained byte;
+    // success leaves the source reader exactly at the continuation offset.
+    verify_prefix(reader, temp, sftp, existing, Some(cancel)).await
 }
 
 fn recorded_paths(app: &AppHandle, id: &str) -> AppResult<Vec<String>> {
@@ -343,16 +658,43 @@ async fn cleanup_file(
         Sha256::digest(to.path.as_bytes())
     );
     let artifact = artifact_record(app, id, to)?;
-    cleanup_owned(
+    if remote_staging(artifact.as_ref()).is_some_and(|staging| staging.opening) {
+        return retire_remote_staging(
+            id,
+            to,
+            sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?,
+            artifact.as_ref().unwrap(),
+            &AtomicBool::new(false),
+        )
+        .await;
+    }
+    let temp = part_from_record(to, id, artifact.as_ref())?;
+    cleanup_at(
         id,
         to,
+        &temp,
         sftp,
         backup_checkpoint(app, &key)?.as_ref(),
         artifact.as_ref().and_then(ArtifactRecord::identity),
     )
-    .await
+    .await?;
+    if let Some(ArtifactRecord::Current {
+        publication: Some(Publication {
+            successor: Some(generation),
+        }),
+        ..
+    }) = artifact.as_ref()
+    {
+        let next = publication_successor(to, id, generation, artifact.as_ref())?;
+        if file_length(&next, sftp).await?.is_some() {
+            cleanup_partial(&next, sftp, None).await?;
+        }
+    }
+    finish_staging(app, id, to, sftp, &AtomicBool::new(false)).await?;
+    Ok(())
 }
 
+#[cfg(test)]
 pub(super) async fn cleanup_owned(
     id: &str,
     to: &Endpoint,
@@ -361,6 +703,17 @@ pub(super) async fn cleanup_owned(
     identity: Option<&FileIdentity>,
 ) -> AppResult<()> {
     let temp = staging_endpoint(to, id, "part");
+    cleanup_at(id, to, &temp, sftp, expected, identity).await
+}
+
+async fn cleanup_at(
+    id: &str,
+    to: &Endpoint,
+    temp: &Endpoint,
+    sftp: Option<&SftpSession>,
+    expected: Option<&BackupFingerprint>,
+    identity: Option<&FileIdentity>,
+) -> AppResult<()> {
     let backup = staging_endpoint(to, id, "backup");
     let cancel = AtomicBool::new(false);
     if file_length(&backup, sftp).await?.is_some() {
@@ -381,8 +734,8 @@ pub(super) async fn cleanup_owned(
         // destination created concurrently by another process or SFTP client.
         return Err(recovery());
     }
-    if file_length(&temp, sftp).await?.is_some() {
-        cleanup_partial(&temp, sftp, identity).await?;
+    if file_length(temp, sftp).await?.is_some() {
+        cleanup_partial(temp, sftp, identity).await?;
     }
     Ok(())
 }
@@ -554,6 +907,9 @@ mod tests {
         let record = ArtifactRecord::Current {
             path: "/destination".into(),
             identity: Some(id.clone()),
+            archive: None,
+            publication: None,
+            staging: None,
         };
         let restored: ArtifactRecord =
             serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
@@ -565,6 +921,109 @@ mod tests {
                 .identity()
                 .is_none()
         );
+    }
+
+    #[test]
+    fn archive_generations_round_trip_and_never_reuse_retired_paths() {
+        let to = Endpoint {
+            session: Some("remote".into()),
+            path: "/home/test/文件.bin".into(),
+        };
+        let legacy: ArtifactRecord =
+            serde_json::from_str(r#"{"path":"/home/test/文件.bin","identity":null}"#).unwrap();
+        let first = part_from_record(&to, "task", Some(&legacy)).unwrap();
+        assert_eq!(first.path, staging_endpoint(&to, "task", "part").path);
+        let mut paths = std::collections::HashSet::from([first.path]);
+        for _ in 0..20 {
+            let record = ArtifactRecord::Current {
+                path: to.path.clone(),
+                identity: None,
+                archive: Some(ArchiveWrite {
+                    generation: Some(uuid::Uuid::new_v4().to_string()),
+                    pending: true,
+                }),
+                publication: None,
+                staging: None,
+            };
+            let restored: ArtifactRecord =
+                serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
+            let part = part_from_record(&to, "task", Some(&restored)).unwrap();
+            assert!(part.path.starts_with("/home/test/.tunnelde-task-"));
+            assert!(part.path.ends_with(".part"));
+            assert!(paths.insert(part.path));
+            assert!(matches!(
+                restored,
+                ArtifactRecord::Current {
+                    archive: Some(ArchiveWrite { pending: true, .. }),
+                    ..
+                }
+            ));
+        }
+        let invalid = ArtifactRecord::Current {
+            path: to.path.clone(),
+            identity: None,
+            archive: Some(ArchiveWrite {
+                generation: Some("../other".into()),
+                pending: true,
+            }),
+            publication: None,
+            staging: None,
+        };
+        assert!(part_from_record(&to, "task", Some(&invalid)).is_err());
+    }
+
+    #[test]
+    fn publication_recovery_keeps_both_generations_until_confirmation() {
+        let to = Endpoint {
+            session: Some("remote".into()),
+            path: "/home/test/文件.bin".into(),
+        };
+        let previous = uuid::Uuid::new_v4().to_string();
+        let successor = uuid::Uuid::new_v4().to_string();
+        let mut record: ArtifactRecord = serde_json::from_value(serde_json::json!({
+            "path": to.path,
+            "identity": null,
+            "archive": { "generation": previous, "pending": false },
+            "publication": { "successor": successor }
+        }))
+        .unwrap();
+        // A crash before recording a successful fence must find both paths;
+        // retrying uses the same successor, not a third staging generation.
+        for _ in 0..3 {
+            let restored: ArtifactRecord =
+                serde_json::from_str(&serde_json::to_string(&record).unwrap()).unwrap();
+            assert_eq!(
+                part_from_record(&to, "task", Some(&restored)).unwrap().path,
+                publication_successor(&to, "task", &previous, Some(&restored))
+                    .unwrap()
+                    .path
+            );
+            let ArtifactRecord::Current {
+                publication: Some(publication),
+                ..
+            } = &restored
+            else {
+                panic!("Lost publication uncertainty after restart");
+            };
+            assert_eq!(publication.successor.as_deref(), Some(successor.as_str()));
+            assert_ne!(
+                part_from_record(&to, "task", Some(&restored)).unwrap().path,
+                publication_successor(&to, "task", &successor, Some(&restored))
+                    .unwrap()
+                    .path
+            );
+            record = restored;
+        }
+        assert!(publication_successor(&to, "task", "../other", None).is_err());
+        let initial: ArtifactRecord =
+            serde_json::from_str(r#"{"path":"/target","identity":null,"publication":{}}"#).unwrap();
+        assert!(matches!(
+            initial,
+            ArtifactRecord::Current {
+                publication: Some(Publication { successor: None }),
+                ..
+            }
+        ));
     }
 
     #[cfg(windows)]
@@ -620,7 +1079,7 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
-    async fn active_writers_prevent_cleanup_and_pins_allow_checkpoint_trimming() {
+    async fn active_writers_and_pins_prevent_cleanup_until_their_handles_close() {
         let root =
             std::env::temp_dir().join(format!("tunnelde-cleanup-writer-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
@@ -639,8 +1098,7 @@ mod tests {
             .await
             .is_err());
         let pin = pin_partial(&part, Some(&expected)).unwrap().unwrap();
-        segments::resize(&part, None, 4).await.unwrap();
-        assert_eq!(file_length(&part, None).await.unwrap(), Some(4));
+        assert_eq!(file_length(&part, None).await.unwrap(), Some(16));
         assert_eq!(pin.identity().unwrap(), expected);
         assert!(tokio::fs::remove_file(&part.path).await.is_err());
         writer.finish().await.unwrap();
@@ -656,7 +1114,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn interrupted_parallel_windows_trim_only_uncommitted_bytes_and_reject_changed_sources() {
+    async fn interrupted_parallel_windows_preserve_the_tail_and_reject_changed_sources() {
         let root = std::env::temp_dir().join(format!("tunnelde-window-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
         let target = Endpoint {
@@ -670,7 +1128,11 @@ mod tests {
         let before = tokio::fs::read(&target.path).await.unwrap();
         assert_eq!(
             restore_window_prefix(
-                ParallelCheckpoint { source, offset: 4 },
+                ParallelCheckpoint {
+                    source,
+                    offset: 4,
+                    end: Some(128)
+                },
                 source,
                 &target,
                 None,
@@ -682,8 +1144,12 @@ mod tests {
             CANCELLED
         );
         assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
-        restore_window_prefix(
-            ParallelCheckpoint { source, offset: 4 },
+        let replay = restore_window_prefix(
+            ParallelCheckpoint {
+                source,
+                offset: 4,
+                end: Some(128),
+            },
             source,
             &target,
             None,
@@ -691,9 +1157,14 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
+        assert_eq!(replay, 4..128);
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
         assert!(restore_window_prefix(
-            ParallelCheckpoint { source, offset: 4 },
+            ParallelCheckpoint {
+                source,
+                offset: 4,
+                end: Some(128)
+            },
             (1024, Some(124)),
             &target,
             None,
@@ -702,7 +1173,11 @@ mod tests {
         .await
         .is_err());
         assert!(restore_window_prefix(
-            ParallelCheckpoint { source, offset: 5 },
+            ParallelCheckpoint {
+                source,
+                offset: before.len() as u64 + 1,
+                end: Some(128)
+            },
             source,
             &target,
             None,
@@ -710,8 +1185,100 @@ mod tests {
         )
         .await
         .is_err());
-        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), b"safe");
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), before);
         tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn recovery_rejects_invalid_extents_and_never_mutates_the_staging_file() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-window-bounds-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let target = Endpoint {
+            session: None,
+            path: display_path(&root.join("owned.part")),
+        };
+        let bytes = b"safe-unconfirmed-tail";
+        tokio::fs::write(&target.path, bytes).await.unwrap();
+        let source = (64, Some(123));
+        for (offset, end) in [
+            (65, Some(65)),
+            (4, Some(3)),
+            (4, Some(65)),
+            (4, Some(8)),
+            (32, Some(64)),
+        ] {
+            assert!(restore_window_prefix(
+                ParallelCheckpoint {
+                    source,
+                    offset,
+                    end
+                },
+                source,
+                &target,
+                None,
+                None
+            )
+            .await
+            .is_err());
+            assert_eq!(tokio::fs::read(&target.path).await.unwrap(), bytes);
+        }
+        let legacy: ParallelCheckpoint =
+            serde_json::from_str(r#"{"source":[64,123],"offset":4}"#).unwrap();
+        assert!(legacy.end.is_none());
+        // An old unacknowledged write could arrive beyond the current length.
+        assert_eq!(
+            restore_window_prefix(legacy, source, &target, None, None)
+                .await
+                .unwrap(),
+            4..64
+        );
+        assert_eq!(tokio::fs::read(&target.path).await.unwrap(), bytes);
+        let small = (8, Some(123));
+        assert!(restore_window_prefix(
+            ParallelCheckpoint {
+                source: small,
+                offset: 4,
+                end: None
+            },
+            small,
+            &target,
+            None,
+            None
+        )
+        .await
+        .is_err());
+        tokio::fs::remove_file(&target.path).await.unwrap();
+        assert_eq!(
+            restore_window_prefix(
+                ParallelCheckpoint {
+                    source,
+                    offset: 0,
+                    end: Some(64)
+                },
+                source,
+                &target,
+                None,
+                None
+            )
+            .await
+            .unwrap(),
+            0..64
+        );
+        assert!(restore_window_prefix(
+            ParallelCheckpoint {
+                source,
+                offset: 4,
+                end: Some(64)
+            },
+            source,
+            &target,
+            None,
+            None
+        )
+        .await
+        .is_err());
+        tokio::fs::remove_dir(root).await.unwrap();
     }
 
     #[tokio::test]
@@ -822,7 +1389,58 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn checkpoint_resume_reads_boundaries_and_positions_at_the_real_offset() {
+    async fn resume_rejects_middle_changes_with_preserved_metadata() {
+        let root = std::env::temp_dir().join(format!("tunnelde-resume-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir(&root).await.unwrap();
+        let source = Endpoint {
+            session: None,
+            path: display_path(&root.join("source")),
+        };
+        let temp = source.child(display_path(&root.join("partial")));
+        let data: Vec<u8> = (0..CHUNK * 5 + 13).map(|i| (i % 251) as u8).collect();
+        let existing = (CHUNK * 4 + 3) as u64;
+        let cancel = AtomicBool::new(false);
+        let mut errors = Vec::new();
+        for changed_source in [false, true] {
+            tokio::fs::write(&source.path, &data).await.unwrap();
+            tokio::fs::write(&temp.path, &data[..existing as usize])
+                .await
+                .unwrap();
+            let changed = if changed_source { &source } else { &temp };
+            let before = source_stamp(changed, None).await.unwrap();
+            let modified = std::fs::metadata(&changed.path)
+                .unwrap()
+                .modified()
+                .unwrap();
+            let mut bytes = tokio::fs::read(&changed.path).await.unwrap();
+            bytes[CHUNK * 2] ^= 1;
+            tokio::fs::write(&changed.path, bytes).await.unwrap();
+            std::fs::OpenOptions::new()
+                .write(true)
+                .open(&changed.path)
+                .unwrap()
+                .set_times(std::fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+            assert_eq!(source_stamp(changed, None).await.unwrap(), before);
+            let mut reader = open_reader(&source, None).await.unwrap();
+            errors.push(
+                resume_offset(&mut reader, &temp, None, existing, &cancel)
+                    .await
+                    .err()
+                    .map(|error| error.to_string()),
+            );
+            reader.finish().await.unwrap();
+        }
+        tokio::fs::remove_dir_all(root).await.unwrap();
+        assert_eq!(
+            errors,
+            vec![Some("sftp.resumePrefixMismatch".into()); 2],
+            "Matching sizes and timestamps must not hide source or staging corruption",
+        );
+    }
+
+    #[tokio::test]
+    async fn resume_verifies_the_prefix_and_positions_at_the_real_offset() {
         let root = std::env::temp_dir().join(format!("tunnelde-resume-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir(&root).await.unwrap();
         let source = Endpoint {
@@ -838,7 +1456,7 @@ mod tests {
             .unwrap();
         let mut reader = open_reader(&source, None).await.unwrap();
         let cancel = AtomicBool::new(false);
-        verify_resume(&mut reader, &temp, None, existing, true, &cancel)
+        resume_offset(&mut reader, &temp, None, existing, &cancel)
             .await
             .unwrap();
         let mut next = [0; 10];
@@ -847,13 +1465,24 @@ mod tests {
         let mut changed = data[..existing as usize].to_vec();
         changed[CHUNK * 2] ^= 1;
         tokio::fs::write(&temp.path, changed).await.unwrap();
-        assert!(
-            verify_resume(&mut reader, &temp, None, existing, false, &cancel)
-                .await
-                .is_err()
-        );
+        assert!(resume_offset(&mut reader, &temp, None, existing, &cancel)
+            .await
+            .is_err());
         reader.finish().await.unwrap();
         tokio::fs::remove_dir_all(root).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn already_cancelled_operations_are_never_polled() {
+        let flag = AtomicBool::new(true);
+        let polled = AtomicBool::new(false);
+        let result = interruptible(Some(&flag), async {
+            polled.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+        assert!(!polled.load(Ordering::SeqCst));
     }
 
     #[tokio::test]
