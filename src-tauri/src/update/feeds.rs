@@ -62,8 +62,7 @@ fn source_failure(source: &'static str, error: AppError) -> UpdateSourceFailure 
     }
 }
 
-fn network_error(error: reqwest::Error) -> AppError {
-    let source = source_kind(error.url());
+fn network_error(error: reqwest::Error, source: &'static str, stage: &'static str) -> AppError {
     let timeout = error.is_timeout();
     let connect = error.is_connect();
     let body = error.is_body();
@@ -78,7 +77,7 @@ fn network_error(error: reqwest::Error) -> AppError {
         crate::network::diagnostics::redact_error_detail(&format!("{:?}", error.without_url()));
     tracing::debug!(
         source,
-        stage = if body { "response-body" } else { "request" },
+        stage,
         timeout,
         connect,
         body,
@@ -96,25 +95,74 @@ fn network_error(error: reqwest::Error) -> AppError {
 }
 
 pub(super) async fn request(client: &reqwest::Client, url: &str) -> AppResult<reqwest::Response> {
-    client
-        .get(url)
-        .timeout(Duration::from_secs(12))
-        .send()
-        .await
-        .map_err(network_error)
+    request_with_timeout(client, url, Duration::from_secs(12), false).await
+}
+
+async fn request_with_timeout(
+    client: &reqwest::Client,
+    url: &str,
+    timeout: Duration,
+    json: bool,
+) -> AppResult<reqwest::Response> {
+    let parsed = reqwest::Url::parse(url).ok();
+    let source = source_kind(parsed.as_ref());
+    // Retry only explicit transient gateway failures, once, inside the original
+    // request budget. Never retry quota/auth/not-found or bypass the chosen proxy.
+    let deadline = tokio::time::Instant::now() + timeout;
+    for attempt in 0..2 {
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() {
+            tracing::debug!(
+                source,
+                stage = "request",
+                reason = "updates.timeout",
+                action = "check_update_proxy_and_retry",
+                "update request deadline exhausted"
+            );
+            return Err(AppError::UpdateRequest(UpdateSourceFailure {
+                source,
+                reason: "updates.timeout".into(),
+                status: None,
+                retry_at: None,
+            }));
+        }
+        let mut request = client.get(url).timeout(remaining);
+        if json {
+            request = request.header(reqwest::header::ACCEPT, "application/json");
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|error| network_error(error, source, "request"))?;
+        if attempt == 0
+            && matches!(response.status().as_u16(), 502..=504)
+            && deadline.saturating_duration_since(tokio::time::Instant::now())
+                > Duration::from_millis(500)
+        {
+            tracing::debug!(
+                source,
+                stage = "http-response",
+                status = response.status().as_u16(),
+                attempt = 1,
+                next_attempt = 2,
+                action = "retry_same_update_source",
+                "transient update gateway failure; retrying within request deadline"
+            );
+            drop(response);
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            continue;
+        }
+        return Ok(response);
+    }
+    unreachable!("the final request attempt always returns")
 }
 
 pub(super) async fn manifest(
     client: &reqwest::Client,
     url: &reqwest::Url,
 ) -> AppResult<Option<serde_json::Value>> {
-    let response = client
-        .get(url.clone())
-        .header(reqwest::header::ACCEPT, "application/json")
-        .timeout(Duration::from_secs(25))
-        .send()
-        .await
-        .map_err(network_error)?;
+    let response =
+        request_with_timeout(client, url.as_str(), Duration::from_secs(25), true).await?;
     if response.status() == reqwest::StatusCode::NO_CONTENT {
         return Ok(None);
     }
@@ -238,12 +286,11 @@ fn status_error(
 }
 
 pub(super) async fn read_response(mut response: reqwest::Response) -> AppResult<Vec<u8>> {
+    // reqwest body/decode errors often carry no URL. Preserve known response
+    // context instead of misclassifying the GitHub API as a custom source.
+    let source = source_kind(Some(response.url()));
     if !response.status().is_success() {
-        return Err(status_error(
-            response.status(),
-            response.headers(),
-            source_kind(Some(response.url())),
-        ));
+        return Err(status_error(response.status(), response.headers(), source));
     }
     if response
         .content_length()
@@ -252,7 +299,11 @@ pub(super) async fn read_response(mut response: reqwest::Response) -> AppResult<
         return Err(AppError::Update("updates.invalidFeed".into()));
     }
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(network_error)? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| network_error(error, source, "response-body"))?
+    {
         if bytes.len().saturating_add(chunk.len()) > MAX_FEED_BYTES {
             return Err(AppError::Update("updates.invalidFeed".into()));
         }
