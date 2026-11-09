@@ -36,6 +36,36 @@
 .settings-update .td-progress {
   margin-top: 12px;
 }
+.settings-update__diagnostics {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--td-border);
+}
+.settings-update__sources {
+  margin: 0;
+}
+.settings-update__sources > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding-bottom: 10px;
+}
+.settings-update__sources dt {
+  flex: 0 1 160px;
+  font-weight: 500;
+}
+.settings-update__sources dd {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.settings-update__diagnostics > p {
+  margin: 0;
+}
 .settings-update .is-indeterminate .td-progress__fill {
   animation: update-progress 1.5s ease-in-out infinite alternate;
 }

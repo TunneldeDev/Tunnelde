@@ -222,6 +222,13 @@ export type UpdatePhase =
   | "unsupported"
   | "error";
 
+export interface UpdateSourceFailure {
+  source: "github-api" | "github-public-feed" | "github-release" | "custom-update-source";
+  reason: string;
+  status: number | null;
+  retryAt: number | null;
+}
+
 export interface UpdateState {
   phase: UpdatePhase;
   currentVersion: string;
@@ -234,6 +241,7 @@ export interface UpdateState {
   progress: number | null;
   contentLength: number | null;
   error: string | null;
+  sourceErrors?: UpdateSourceFailure[] | null;
   lastChecked: number | null;
   available: boolean;
   autoInstall: boolean;

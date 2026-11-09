@@ -3,6 +3,8 @@ import type { ReleaseHistory, Settings, UpdateState } from "@/lib/api/types";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
 import { matchingUpdateState, useUpdates } from "@/store/updates";
 import { useSettings } from "@/store/settings";
+import { useWorkspace } from "@/store/workspace";
+import { useNavigation } from "@/store/navigation";
 
 const mock = vi.hoisted(() => ({
   installUpdate: vi.fn(),
@@ -121,6 +123,34 @@ describe("release history independent of installation", () => {
 });
 
 describe("update operation state", () => {
+  it("offers persistent diagnostic navigation for a structured source failure", async () => {
+    mock.checkUpdates.mockRejectedValueOnce({
+      code: "update",
+      message: "updates.sourcesUnavailable",
+      details: {
+        sourceErrors: [
+          {
+            source: "github-api",
+            reason: "updates.rateLimited",
+            status: 403,
+            retryAt: 1_800_000_000_000,
+          },
+          { source: "github-public-feed", reason: "updates.timeout", status: null, retryAt: null },
+        ],
+      },
+    });
+    await useUpdates.getState().check();
+    expect(useUpdates.getState().busy).toBe(false);
+    expect(mock.toast).toHaveBeenCalledOnce();
+    const action = mock.toast.mock.calls[0]![2];
+    expect(typeof action.onClick).toBe("function");
+    useWorkspace.getState().hydrate([]);
+    useNavigation.setState({ settingsSection: "general" });
+    action.onClick();
+    expect(useNavigation.getState().settingsSection).toBe("updates");
+    expect(useWorkspace.getState().tabs.filter((tab) => tab.kind === "settings")).toHaveLength(1);
+  });
+
   it("retains a newer event when an older status snapshot arrives late", async () => {
     let resolve!: (value: UpdateState) => void;
     mock.updateState.mockReturnValueOnce(

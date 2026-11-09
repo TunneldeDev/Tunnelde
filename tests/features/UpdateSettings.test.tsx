@@ -85,6 +85,69 @@ beforeEach(async () => {
 });
 
 describe("updates inside settings", () => {
+  it("keeps quota and fallback errors separate and opens existing proxy settings and output", () => {
+    useUpdates.setState({
+      state: state({
+        phase: "error",
+        available: false,
+        error: "updates.sourcesUnavailable",
+        sourceErrors: [
+          {
+            source: "github-api",
+            reason: "updates.rateLimited",
+            status: 403,
+            retryAt: 1_800_000_000_000,
+          },
+          { source: "github-public-feed", reason: "updates.timeout", status: null, retryAt: null },
+        ],
+      }),
+    });
+    render(<UpdateStatus />);
+    const details = screen.getByLabelText("Update connection details");
+    expect(within(details).getByText("GitHub API")).toBeTruthy();
+    expect(within(details).getByText("Public release feed")).toBeTruthy();
+    expect(within(details).getByText("HTTP 403")).toBeTruthy();
+    expect(within(details).getByText(/Rate limit retry time:/)).toBeTruthy();
+    expect(within(details).getByText(i18n.t("updates.rateLimited"))).toBeTruthy();
+    expect(within(details).getByText(i18n.t("updates.timeout"))).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Configure update proxy" }));
+    expect(useNavigation.getState().settingsSection).toBe("network");
+    fireEvent.click(screen.getByRole("button", { name: "Open output logs" }));
+    expect(useWorkspace.getState().tabs.some((tab) => tab.id === "sidebar:output")).toBe(true);
+    expect(useWorkspace.getState().layout.kind).toBe("split");
+    expect(
+      (screen.getByRole("button", { name: "Check for updates" }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it("localizes failure details and hides them when the selected channel changes", async () => {
+    await i18n.changeLanguage("zh-CN");
+    useUpdates.setState({
+      state: state({
+        phase: "error",
+        available: false,
+        error: "updates.sourcesUnavailable",
+        sourceErrors: [
+          { source: "github-api", reason: "updates.sourceUnavailable", status: 502, retryAt: null },
+          {
+            source: "github-release",
+            reason: "updates.connectionFailed",
+            status: null,
+            retryAt: null,
+          },
+        ],
+      }),
+    });
+    render(<UpdateStatus />);
+    const details = screen.getByLabelText("更新连接详情");
+    expect(within(details).getByText("发布更新清单")).toBeTruthy();
+    expect(within(details).getByText("HTTP 502")).toBeTruthy();
+    expect(within(details).queryByText(/限流重试时间/)).toBeNull();
+    expect(within(details).getByText(i18n.t("updates.connectionFailed"))).toBeTruthy();
+    act(() => useSettings.setState({ settings: { ...defaults, updateChannel: "beta" } }));
+    expect(screen.queryByLabelText("更新连接详情")).toBeNull();
+  });
+
   it("offers only Stable and Beta channels and persists the selection", async () => {
     render(<SettingsPage />);
     const row = within(document.querySelector('[data-setting="updateChannel"]') as HTMLElement);
