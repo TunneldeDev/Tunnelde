@@ -17,11 +17,12 @@ import {
 import { useHosts } from "@/store/hosts";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
-import { toast, type ToastVariant } from "@/store/toasts";
+import { toast } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
 import { pluginEditorDocument, pluginEditorWriteResult } from "@/lib/plugins/editor";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
+import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -55,8 +56,16 @@ export function pluginWorkspaceSnapshot() {
   return projectPluginWorkspace({ tabs, panes, activeId, activePaneId, layout });
 }
 
-export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest): Promise<unknown> {
-  await authorize(request.requestId);
+export async function runPluginWorkspaceRequest(
+  request: PluginWorkspaceRequest,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const authorizeRequest = async () => {
+    if (signal?.aborted) throw new Error("requestCancelled");
+    await authorize(request.requestId);
+    if (signal?.aborted) throw new Error("requestCancelled");
+  };
+  await authorizeRequest();
   const { method, params } = request;
   const workspace = useWorkspace.getState();
   switch (method) {
@@ -121,7 +130,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
     case "workspace.openHost": {
       const hostId = text(params, "hostId");
       const snapshot = await api.hostsSnapshot();
-      await authorize(request.requestId);
+      await authorizeRequest();
       const host = snapshot.hosts.find((item) => item.id === hostId);
       if (!host) throw new Error("host.notFound");
       useHosts.setState({ ...snapshot, loaded: true });
@@ -132,7 +141,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
     case "workspace.openFiles": {
       const sessionId = text(params, "sessionId");
       const sessions = await api.sshSessions();
-      await authorize(request.requestId);
+      await authorizeRequest();
       const session = sessions.find((item) => item.id === sessionId);
       if (!session) throw new Error("ssh.sessionMissing");
       if (method === "workspace.openTerminal" && session.terminal === false)
@@ -191,21 +200,15 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       break;
     }
     case "ui.showMessage": {
-      const message = text(params, "message", 4000),
-        kind = optionalText(params, "kind") ?? "info";
-      if (!["info", "success", "error"].includes(kind)) throw new Error("invalid:kind");
+      const { message, kind } = pluginMessage(params);
       const name =
         usePlugins.getState().items.find((plugin) => plugin.id === request.pluginId)?.name ??
         request.pluginId;
-      toast(`${i18n.t("pluginApi.messageTitle", { name })}: ${message}`, kind as ToastVariant);
+      toast(`${i18n.t("pluginApi.messageTitle", { name })}: ${message}`, kind);
       return null;
     }
     case "ui.confirm":
-      return confirmPlugin(
-        request.requestId,
-        request.pluginId,
-        text(params, "message", 220 * 1024),
-      );
+      return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params));
     default:
       throw new Error("unknownMethod");
   }
@@ -276,14 +279,19 @@ export async function reconcilePluginWorkspace(signal: AbortSignal): Promise<voi
 
 export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<UnlistenFn> {
   if (signal?.aborted) return () => {};
+  const pendingRequests = new Map<string, AbortController>();
+  let disposed = false;
   const group = createSubscriptionGroup([
     (lifetime) =>
       nativeEvents.on(
         "plugin://workspace-request",
         (payload) => {
+          if (disposed || pendingRequests.has(payload.requestId)) return;
+          const controller = new AbortController();
+          pendingRequests.set(payload.requestId, controller);
           void (async () => {
             try {
-              const result = await runPluginWorkspaceRequest(payload);
+              const result = await runPluginWorkspaceRequest(payload, controller.signal);
               await invoke("plugin_workspace_reply", {
                 requestId: payload.requestId,
                 result,
@@ -296,6 +304,8 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
                 result: null,
                 error: message,
               }).catch(() => {});
+            } finally {
+              pendingRequests.delete(payload.requestId);
             }
           })();
         },
@@ -305,6 +315,7 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
       nativeEvents.on(
         "plugin://workspace-cancelled",
         (payload) => {
+          pendingRequests.get(payload.requestId)?.abort();
           pendingConfirmations.get(payload.requestId)?.();
         },
         lifetime,
@@ -327,12 +338,13 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         lifetime,
       ),
   ]);
-  let disposed = false;
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
     signal?.removeEventListener("abort", cleanup);
     group.dispose();
+    for (const controller of pendingRequests.values()) controller.abort();
+    pendingRequests.clear();
     for (const cancel of pendingConfirmations.values()) cancel();
   };
   signal?.addEventListener("abort", cleanup, { once: true });

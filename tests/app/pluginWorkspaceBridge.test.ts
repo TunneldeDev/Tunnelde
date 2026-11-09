@@ -381,6 +381,72 @@ describe("plugin workspace bridge authorization and live state", () => {
 });
 
 describe("plugin dialog and listener lifecycle", () => {
+  it.each(["ui.confirm", "ui.showMessage", "workspace.showQuickAccess"])(
+    "does not execute %s when cancellation arrives during authorization",
+    async (method) => {
+      cleanup = await wirePluginWorkspaceBridge();
+      const authorization = deferred<void>();
+      mocks.invoke.mockImplementation((name) =>
+        name === "plugin_workspace_authorize" ? authorization.promise : Promise.resolve(),
+      );
+      useQuickAccess.getState().close();
+      emit("plugin://workspace-request", request(method, { message: "Continue?", query: ">" }));
+      emit("plugin://workspace-cancelled", { requestId: "request-one" });
+      authorization.resolve();
+      await settle();
+      expect(useDialogs.getState().dialog.kind).toBe("none");
+      expect(mocks.toast).not.toHaveBeenCalled();
+      expect(useQuickAccess.getState().query).toBe(null);
+      expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+        requestId: "request-one",
+        result: null,
+        error: "requestCancelled",
+      });
+    },
+  );
+
+  it("does not open a late dialog after its bridge is disposed during authorization", async () => {
+    cleanup = await wirePluginWorkspaceBridge();
+    const authorization = deferred<void>();
+    mocks.invoke.mockImplementation((name) =>
+      name === "plugin_workspace_authorize" ? authorization.promise : Promise.resolve(),
+    );
+    emit("plugin://workspace-request", request("ui.confirm", { message: "Continue?" }));
+    cleanup();
+    authorization.resolve();
+    await settle();
+    expect(useDialogs.getState().dialog.kind).toBe("none");
+    expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+      requestId: "request-one",
+      result: null,
+      error: "requestCancelled",
+    });
+  });
+
+  it.each(["workspace.openHost", "workspace.openFiles", "workspace.openTerminal"])(
+    "cancels %s while its metadata lookup is in flight",
+    async (method) => {
+      cleanup = await wirePluginWorkspaceBridge();
+      const metadata = deferred<unknown>();
+      if (method === "workspace.openHost") mocks.hostsSnapshot.mockReturnValue(metadata.promise);
+      else mocks.sshSessions.mockReturnValue(metadata.promise);
+      emit(
+        "plugin://workspace-request",
+        request(method, { hostId: host.id, sessionId: session.id }),
+      );
+      await settle();
+      emit("plugin://workspace-cancelled", { requestId: "request-one" });
+      metadata.resolve(method === "workspace.openHost" ? { hosts: [host], groups: [] } : [session]);
+      await settle();
+      expect(useWorkspace.getState().tabs).toEqual([]);
+      expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+        requestId: "request-one",
+        result: null,
+        error: "requestCancelled",
+      });
+    },
+  );
+
   it("identifies plugin notifications using the installed name", async () => {
     await runPluginWorkspaceRequest(
       request("ui.showMessage", { message: "Done", kind: "success" }),
