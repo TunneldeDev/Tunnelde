@@ -39,14 +39,43 @@ async fn transport_sampling_keeps_incompressible_and_tiny_files_on_sftp() {
     tokio::fs::write(&endpoint.path, vec![b'a'; 32768])
         .await
         .unwrap();
-    assert!(worthwhile(&endpoint, None).await.unwrap());
+    assert!(worthwhile(&endpoint, None, None).await.unwrap());
     tokio::fs::write(&endpoint.path, b"tiny").await.unwrap();
-    assert!(!worthwhile(&endpoint, None).await.unwrap());
+    assert!(!worthwhile(&endpoint, None, None).await.unwrap());
     let bytes: Vec<u8> = (0..32768).map(|_| rand::random()).collect();
     tokio::fs::write(&endpoint.path, &bytes).await.unwrap();
-    assert!(!worthwhile(&endpoint, None).await.unwrap());
+    assert!(!worthwhile(&endpoint, None, None).await.unwrap());
     assert_eq!(tokio::fs::read(&endpoint.path).await.unwrap(), bytes);
     tokio::fs::remove_dir_all(root).await.unwrap();
+}
+
+#[tokio::test]
+async fn transport_sampling_rejects_compressible_headers_and_checks_the_payload() {
+    let path = std::env::temp_dir().join(format!(
+        "tunnelde-compression-header-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let endpoint = Endpoint {
+        session: None,
+        path: display_path(&path),
+    };
+    let mut seed = 0x12345678_u32;
+    let mut bytes: Vec<_> = (0..2 * 1024 * 1024 + 73)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    bytes[..32768].fill(0);
+    tokio::fs::write(&path, &bytes).await.unwrap();
+    let selected = worthwhile(&endpoint, None, None).await.unwrap();
+    tokio::fs::remove_file(path).await.unwrap();
+    assert!(
+        !selected,
+        "a compressible header must not route an incompressible file through the optional worker"
+    );
 }
 
 #[test]

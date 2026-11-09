@@ -25,6 +25,64 @@ enum Backend {
     Compressed(super::compressed::Session),
 }
 
+/// Sampling happens before this source channel is shared with any writers.
+/// If OPEN/READ/CLOSE is interrupted, close the whole channel, including handles
+/// whose OPEN acknowledgement has not arrived yet. A failed sample is discarded.
+pub(super) struct SampleReader<'a> {
+    session: &'a DataSession,
+    handle: Option<String>,
+    finished: bool,
+}
+
+impl Drop for SampleReader<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.session.stop_reading();
+        }
+    }
+}
+
+impl<'a> SampleReader<'a> {
+    pub(super) async fn open(session: &'a DataSession, path: &str) -> AppResult<Self> {
+        let mut reader = Self {
+            session,
+            handle: None,
+            finished: false,
+        };
+        reader.handle = Some(session.open(path, false).await?);
+        Ok(reader)
+    }
+
+    pub(super) async fn region(&self, offset: u64, length: usize) -> AppResult<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(length);
+        while bytes.len() < length {
+            let remaining = length - bytes.len();
+            let requested = remaining.min(self.session.read_size);
+            let chunk = self
+                .session
+                .read(
+                    self.handle.as_deref().expect("sampling handle"),
+                    offset + bytes.len() as u64,
+                    requested,
+                )
+                .await?;
+            if chunk.is_empty() || chunk.len() > requested {
+                return Err(AppError::validation("sftp.resumeSourceChanged"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
+    pub(super) async fn finish(mut self) -> AppResult<()> {
+        self.session
+            .close(self.handle.as_deref().expect("sampling handle"))
+            .await?;
+        self.finished = true;
+        Ok(())
+    }
+}
+
 /// A server rejection is a terminal reply; a transport error is not.
 #[derive(Debug)]
 pub(super) enum DirectoryCreation {
@@ -272,7 +330,7 @@ impl Sessions {
     ) -> AppResult<Self> {
         // SFTP handles only belong to their channel. Share one negotiated data
         // channel for a same-session server copy; never infer identity by address.
-        let candidate = if settings.transfer_optimization
+        let mut candidate = if settings.transfer_optimization
             && source.session.is_some()
             && source.session == target.session
         {
@@ -301,15 +359,35 @@ impl Sessions {
         let enabled = settings.transfer_optimization
             && settings.transfer_compression
             && total_size >= 256 * 1024;
-        let compress = enabled
-            && matches!(
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    super::compressed::worthwhile(source, source_sftp),
+        if enabled && source.session.is_some() && candidate.is_none() {
+            candidate = Some(Arc::new(
+                DataSession::connect(
+                    app,
+                    source.session.as_deref().expect("remote source"),
+                    false,
+                    source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
                 )
-                .await,
-                Ok(Ok(true))
-            );
+                .await?,
+            ));
+        }
+        let compress = if enabled {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                super::compressed::worthwhile(source, source_sftp, candidate.as_deref()),
+            )
+            .await
+            {
+                Ok(Ok(helpful)) => helpful,
+                _ => {
+                    // Cancellation may close a read-only sampling channel.
+                    // Never reuse it after a failed or timed-out probe.
+                    candidate = None;
+                    false
+                }
+            }
+        } else {
+            false
+        };
         let source = match (&source.session, candidate.filter(|_| !compress)) {
             (_, Some(channel)) => Some(channel),
             (Some(id), None) => Some(Arc::new(

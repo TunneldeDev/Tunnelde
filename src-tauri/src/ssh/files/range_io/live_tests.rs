@@ -75,6 +75,103 @@ async fn sequential(source: &Endpoint, target: &Endpoint, sftp: &SftpSession) ->
     result.and(written).and(read)
 }
 
+/// Measure receive-window and packet-pipeline effects with the same source and
+/// byte verification. Changing a window must not be justified by CI timings.
+#[tokio::test]
+#[ignore = "requires disposable SSH host credentials and explicitly trusted fingerprint"]
+async fn live_download_compares_receive_windows_and_pipeline_layouts() {
+    let host = std::env::var("TUNNELDE_TEST_HOST").expect("TUNNELDE_TEST_HOST");
+    let user = std::env::var("TUNNELDE_TEST_USER").expect("TUNNELDE_TEST_USER");
+    let password = std::env::var("TUNNELDE_TEST_PASSWORD").expect("TUNNELDE_TEST_PASSWORD");
+    let fingerprint =
+        std::env::var("TUNNELDE_TEST_FINGERPRINT").expect("TUNNELDE_TEST_FINGERPRINT");
+    let root = std::env::temp_dir().join(format!("tunnelde-download-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir(&root).unwrap();
+    let mut seed = 0x12345678_u32;
+    let bytes: Vec<_> = (0..8 * 1024 * 1024 + 73)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    let mut setup = client::connect(
+        Arc::new(client::Config::default()),
+        (host.as_str(), 22),
+        TrustedServer(fingerprint.clone()),
+    )
+    .await
+    .unwrap();
+    assert!(setup
+        .authenticate_password(&user, &password)
+        .await
+        .unwrap()
+        .success());
+    let channel = setup.channel_open_session().await.unwrap();
+    channel.request_subsystem(true, "sftp").await.unwrap();
+    let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
+    let remote_root = format!("/tmp/tunnelde-download-{}", uuid::Uuid::new_v4());
+    std::fs::write(root.join("remote-root.txt"), &remote_root).unwrap();
+    println!("Disposable download fixture: {remote_root}");
+    sftp.create_dir(&remote_root).await.unwrap();
+    let from = Endpoint {
+        session: Some("download-benchmark".into()),
+        path: format!("{remote_root}/source.bin"),
+    };
+    let target = Endpoint {
+        session: None,
+        path: display_path(&root.join("download.bin")),
+    };
+    let result = async {
+        let mut source = sftp.create(&from.path).await.map_err(map_sftp)?;
+        source.write_all(&bytes).await?;
+        source.shutdown().await?;
+        for (round, window) in [2, 8, 8, 2].into_iter().enumerate() {
+            let config = client::Config {
+                window_size: window * 1024 * 1024,
+                ..Default::default()
+            };
+            let mut handle = client::connect(
+                Arc::new(config), (host.as_str(), 22), TrustedServer(fingerprint.clone())
+            ).await.unwrap();
+            assert!(handle.authenticate_password(&user, &password).await.unwrap().success());
+            let sessions = Sessions {
+                source: Some(configured_data_channel(&handle, false).await), target: None
+            };
+            for workers in if round % 2 == 0 { [4, 1] } else { [1, 4] } {
+                tokio::fs::write(&target.path, []).await?;
+                let files = Files::open(&sessions, &from, &target).await?;
+                let started = Instant::now();
+                super::super::segments::copy_window(
+                    &files,
+                    0..bytes.len() as u64,
+                    super::super::segments::Plan {
+                        workers, chunk: bytes.len().div_ceil(workers) as u64, requests: 32 / workers
+                    },
+                    &AtomicBool::new(false), |_| {}
+                ).await?;
+                files.finish(false).await?;
+                let elapsed = started.elapsed().as_secs_f64();
+                let actual = tokio::fs::read(&target.path).await?;
+                assert_eq!(actual, bytes);
+                println!(
+                    "download-bench round={round} window_mib={window} workers={workers} seconds={elapsed:.6} mib_s={:.3}",
+                    bytes.len() as f64 / 1048576.0 / elapsed
+                );
+            }
+        }
+        Ok::<(), AppError>(())
+    }.await;
+    sftp.remove_file(&from.path).await.unwrap();
+    sftp.remove_dir(&remote_root).await.unwrap();
+    sftp.close().await.unwrap();
+    std::fs::remove_file(&target.path).unwrap();
+    std::fs::remove_file(root.join("remote-root.txt")).unwrap();
+    std::fs::remove_dir(root).unwrap();
+    result.unwrap();
+}
+
 async fn parallel(
     source: &Endpoint,
     target: &Endpoint,
@@ -439,4 +536,70 @@ async fn live_upload_compares_packet_budget_or_tcp_nodelay_with_identical_data()
         directory_removed.unwrap();
     }
     std::fs::remove_dir_all(local_root).unwrap();
+}
+
+/// Verify the actual remote selection path, then reuse its source channel. The
+/// padded header must not determine routing for the rest of an opaque file.
+#[tokio::test]
+#[ignore = "requires disposable SSH host credentials and explicitly trusted fingerprint"]
+async fn live_compression_samples_payload_and_reuses_plain_source_channel() {
+    let host = std::env::var("TUNNELDE_TEST_HOST").expect("TUNNELDE_TEST_HOST");
+    let user = std::env::var("TUNNELDE_TEST_USER").expect("TUNNELDE_TEST_USER");
+    let password = std::env::var("TUNNELDE_TEST_PASSWORD").expect("TUNNELDE_TEST_PASSWORD");
+    let fingerprint =
+        std::env::var("TUNNELDE_TEST_FINGERPRINT").expect("TUNNELDE_TEST_FINGERPRINT");
+    let mut handle = client::connect(
+        Arc::new(client::Config::default()),
+        (host.as_str(), 22),
+        TrustedServer(fingerprint),
+    )
+    .await
+    .unwrap();
+    assert!(handle
+        .authenticate_password(&user, &password)
+        .await
+        .unwrap()
+        .success());
+    let channel = handle.channel_open_session().await.unwrap();
+    channel.request_subsystem(true, "sftp").await.unwrap();
+    let sftp = SftpSession::new(channel.into_stream()).await.unwrap();
+    let root = format!("/tmp/tunnelde-sampling-{}", uuid::Uuid::new_v4());
+    sftp.create_dir(&root).await.unwrap();
+    println!("Disposable sampling fixture: {root}");
+    let source = Endpoint {
+        session: Some("sampling".into()),
+        path: format!("{root}/source.bin"),
+    };
+    let plain = configured_data_channel(&handle, false).await;
+    let mut seed = 0x12345678_u32;
+    let random: Vec<_> = (0..2 * 1024 * 1024 + 73)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    let result = async {
+        for (kind, helpful) in [("random", false), ("padded-header", false), ("text", true)] {
+            let mut bytes = if kind == "text" { vec![b'a'; random.len()] } else { random.clone() };
+            if kind == "padded-header" { bytes[..32768].fill(0); }
+            let mut file = sftp.create(&source.path).await.map_err(map_sftp)?;
+            file.write_all(&bytes).await?;
+            file.shutdown().await?;
+            assert_eq!(super::super::compressed::worthwhile(&source, Some(&sftp), Some(&plain)).await?, helpful, "{kind}");
+            let reader = SampleReader::open(&plain, &source.path).await?;
+            assert_eq!(reader.region(bytes.len() as u64 - 4096, 4096).await?, bytes[bytes.len() - 4096..]);
+            reader.finish().await?;
+            assert_eq!(sftp.read(&source.path).await.map_err(map_sftp)?, bytes);
+            println!("compression-sample kind={kind} selected={helpful} channel_reused=true bytes_verified=true");
+        }
+        Ok::<(), AppError>(())
+    }.await;
+    let removed = sftp.remove_file(&source.path).await;
+    let directory_removed = sftp.remove_dir(&root).await;
+    let _ = sftp.close().await;
+    result.unwrap();
+    removed.unwrap();
+    directory_removed.unwrap();
 }

@@ -115,25 +115,69 @@ fn quote(value: &str) -> String {
 
 /// Select the optional transport before opening it. Incompressible tasks retain
 /// the native SFTP pipeline instead of paying for a Python data relay.
-pub(super) async fn worthwhile(source: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<bool> {
-    let mut reader = open_reader(source, sftp).await?;
+pub(super) async fn worthwhile(
+    source: &Endpoint,
+    sftp: Option<&SftpSession>,
+    channel: Option<&super::range_io::DataSession>,
+) -> AppResult<bool> {
+    let before = source_stamp(source, sftp).await?;
+    let width = before.0.min(16384);
+    if width < 4096 {
+        return Ok(false);
+    }
+    let mut local = if source.session.is_none() {
+        Some(tokio::fs::File::open(&source.path).await?)
+    } else {
+        None
+    };
+    let remote = if source.session.is_some() {
+        Some(
+            super::range_io::SampleReader::open(
+                channel.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                &source.path,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let sampled = async {
-        let mut bytes = vec![0; 16384];
-        let mut length = 0;
-        while length < bytes.len() {
-            let count = reader.read(&mut bytes[length..]).await?;
-            if count == 0 {
-                break;
-            }
-            length += count;
-        }
-        bytes.truncate(length);
-        tokio::task::spawn_blocking(move || encode(bytes).map(|(_, compressed)| compressed))
+        // Explicit-offset SFTP reads avoid AsyncRead's larger speculative reads.
+        // At most three 16 KiB regions; reject on the first unhelpful region.
+        let tail = before.0 - width;
+        let mut offsets = vec![0, tail / 2, tail];
+        offsets.sort_unstable();
+        offsets.dedup();
+        for offset in offsets {
+            let bytes = if let Some(remote) = &remote {
+                remote.region(offset, width as usize).await?
+            } else {
+                let local = local.as_mut().expect("local sample source");
+                local.seek(std::io::SeekFrom::Start(offset)).await?;
+                let mut bytes = vec![0; width as usize];
+                local.read_exact(&mut bytes).await?;
+                bytes
+            };
+            let helpful = tokio::task::spawn_blocking(move || {
+                encode(bytes).map(|(_, compressed)| compressed)
+            })
             .await
-            .map_err(|_| protocol_error())?
+            .map_err(|_| protocol_error())??;
+            if !helpful {
+                return Ok(false);
+            }
+        }
+        if source_stamp(source, sftp).await? != before {
+            return Err(AppError::validation("sftp.resumeSourceChanged"));
+        }
+        Ok(true)
     }
     .await;
-    let closed = reader.finish().await;
+    let closed = if let Some(remote) = remote {
+        remote.finish().await
+    } else {
+        Ok(())
+    };
     sampled.and_then(|worth| closed.map(|_| worth))
 }
 
