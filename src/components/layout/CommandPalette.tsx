@@ -91,7 +91,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
     ? "commands"
     : query.startsWith("%")
       ? "content"
-      : query.startsWith("@")
+      : query.startsWith("@") && !/^@[a-z][\w-]*:/i.test(query)
         ? "hosts"
         : "files";
   const rawNeedle = (mode === "files" ? query : query.slice(1)).trim();
@@ -484,7 +484,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
                     ? ">"
                     : mode === "content"
                       ? "%"
-                      : "@") + value,
+                      : "@ ") + value,
               );
               setIndex(0);
             }}

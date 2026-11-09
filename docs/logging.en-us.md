@@ -75,7 +75,7 @@ structured HTTP/SOCKS URL strings lose user information, query strings and fragm
 free text and URL path components cannot be reliably scrubbed: callers must not include secrets.
 Context keys stay nested and cannot override the host's severity, identity or routing fields.
 
-Output filters support `domain:`, `plugin:`, `level:` and `source:` with funnel presets. Operation
+Output filters support `@domain:`, `@plugin:`, `@level:` and `@source:` with funnel presets. Operation
 and request IDs remain searchable in the message. A write returning `null` means the host accepted
 the event. The configured `TUNNELDE_LOG` filter still applies (default `info,tunnelde_lib=debug`),
 and the bounded nonblocking writer may drop lines under overload. This is diagnostic logging,

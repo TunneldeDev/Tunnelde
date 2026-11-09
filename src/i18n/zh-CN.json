@@ -150,8 +150,8 @@
     "newGroup": "新建分组",
     "empty": "暂无主机",
     "noResults": "无匹配结果",
-    "searchPlaceholder": "搜索主机 · tag:生产环境",
-    "searchHint": "使用 tag:标签 或 is:favorite 筛选，可与主机名、地址组合。",
+    "searchPlaceholder": "搜索主机 · @tag:生产环境",
+    "searchHint": "使用 @tag:标签 或 @is:favorite 筛选，可与主机名、地址组合。",
     "clearSearch": "清空主机搜索"
   },
   "host": {
@@ -1117,7 +1117,7 @@
     "source": "来源",
     "author": "发布者",
     "unknownAuthor": "未知发布者",
-    "queryHint": "搜索插件 · tag:tools,preview",
+    "queryHint": "搜索插件 · @tag:tools,preview",
     "tunneldeVersion": "Tunnelde 版本要求",
     "apiVersion": "插件 API 版本",
     "declarativeRuntime": "声明式（无需 Node.js）",

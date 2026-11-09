@@ -150,8 +150,8 @@
     "newGroup": "New group",
     "empty": "No hosts",
     "noResults": "No matches",
-    "searchPlaceholder": "Search hosts · tag:production",
-    "searchHint": "Filter with tag:name or is:favorite. Combine with a host name or address.",
+    "searchPlaceholder": "Search hosts · @tag:production",
+    "searchHint": "Filter with @tag:name or @is:favorite. Combine with a host name or address.",
     "clearSearch": "Clear host search"
   },
   "host": {
@@ -1117,7 +1117,7 @@
     "source": "Source",
     "author": "Publisher",
     "unknownAuthor": "Unknown publisher",
-    "queryHint": "Search plugins · tag:tools,preview",
+    "queryHint": "Search plugins · @tag:tools,preview",
     "tunneldeVersion": "Tunnelde version",
     "apiVersion": "Plugin API version",
     "declarativeRuntime": "Declarative (no Node.js required)",

@@ -314,13 +314,12 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                       type="button"
                       key={value}
                       aria-label={t("market.filterTag", { tag: value })}
-                      aria-pressed={query
-                        .toLocaleLowerCase()
-                        .split(/\s+/)
-                        .some(
-                          (term) =>
-                            term.startsWith("tag:") && term.slice(4).split(",").includes(value),
-                        )}
+                      aria-pressed={parsed.filters.some(
+                        (filter) =>
+                          filter.key === "tag" &&
+                          !filter.exclude &&
+                          filter.values.includes(value.toLocaleLowerCase()),
+                      )}
                       onClick={() => {
                         useMarketplace.getState().setTag("");
                         setQuery(togglePluginTag(query, value));
