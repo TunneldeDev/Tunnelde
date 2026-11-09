@@ -26,6 +26,32 @@ function Tags({
 const saved = () => JSON.parse(screen.getByLabelText("Saved tags").textContent!) as string[];
 
 describe("Select keyboard and focus", () => {
+  it("ignores a queued focus scroll at the current anchor but closes when the anchor actually moves", () => {
+    render(
+      <div data-testid="scroller">
+        <Select label="Language" value="en" options={options} onChange={() => {}} />
+      </div>,
+    );
+    const trigger = screen.getByRole("button", { name: "Language" });
+    let top = 100;
+    vi.spyOn(trigger, "getBoundingClientRect").mockImplementation(() => ({
+      top,
+      left: 20,
+      bottom: top + 28,
+      right: 220,
+      width: 200,
+      height: 28,
+      x: 20,
+      y: top,
+      toJSON: () => ({}),
+    }));
+    fireEvent.click(trigger);
+    fireEvent.scroll(screen.getByTestId("scroller"));
+    expect(screen.getByRole("listbox")).toBeTruthy();
+    top = 80;
+    fireEvent.scroll(screen.getByTestId("scroller"));
+    expect(screen.queryByRole("listbox")).toBeNull();
+  });
   it("navigates options without changing the value until Space commits", () => {
     const change = vi.fn();
     render(<Select label="Language" value="en" options={options} onChange={change} />);

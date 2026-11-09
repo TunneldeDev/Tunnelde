@@ -6,6 +6,8 @@ import { isIpcError } from "@/lib/api/types";
 export function pluginFailure(error: unknown): string {
   let message = isIpcError(error) ? error.message : error instanceof Error ? error.message : "";
   if (message.startsWith("plugin.error: ")) message = message.slice("plugin.error: ".length);
+  if (message.startsWith("plugin.api.frontend:"))
+    message = message.slice("plugin.api.frontend:".length);
   if (message === "plugin exited" || message === "plugin.exited")
     return i18n.t("pluginErrors.exited");
   if (message.startsWith("plugin.spawn: "))

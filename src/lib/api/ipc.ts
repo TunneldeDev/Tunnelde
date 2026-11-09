@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchQuery } from "@/lib/search/query";
+import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
 import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -67,6 +68,10 @@ export interface OutputSnapshot {
 }
 
 export const api = {
+  hostFields: (pluginId: string, hostId: string) =>
+    invoke<HostFieldsSnapshot>("host_fields_get", { pluginId, hostId }),
+  updateHostFields: (pluginId: string, update: HostFieldsUpdate) =>
+    invoke<HostFieldsSnapshot>("host_fields_update", { pluginId, update }),
   logsRead: () => invoke<LogSnapshot>("logs_read"),
   logsOutputRead: (cursor: OutputCursor | null) =>
     invoke<OutputSnapshot>("logs_output_read", { cursor }),

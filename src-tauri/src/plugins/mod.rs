@@ -8,6 +8,7 @@ mod extensions;
 pub mod file_icons;
 pub mod frontend;
 mod host;
+pub mod host_fields;
 pub mod host_list;
 mod logging;
 pub mod manifest;
@@ -57,6 +58,7 @@ pub struct PluginInfo {
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    pub host_fields: Option<crate::services::host_fields::Schema>,
     pub description: Option<String>,
     pub commands: Vec<PluginCommand>,
     pub views: Vec<PluginView>,
@@ -157,6 +159,7 @@ impl Instance {
             name: self.manifest.name.clone(),
             version: self.manifest.version.clone(),
             api_version: self.manifest.api_version,
+            host_fields: self.manifest.host_fields.clone(),
             description: self.manifest.description.clone(),
             commands: self.manifest.commands.clone(),
             views: self.manifest.views.clone(),
@@ -426,6 +429,31 @@ impl PluginsManager {
             .unwrap_or_else(|error| error.into_inner())
             .get(id)
             .map_or_else(|| id.to_owned(), |item| item.name.clone())
+    }
+
+    pub(super) fn with_host_fields<T>(
+        &self,
+        id: &str,
+        fingerprint: Option<&str>,
+        operation: impl FnOnce(&crate::services::host_fields::Schema) -> AppResult<T>,
+    ) -> AppResult<T> {
+        // Keep the installed schema stable through the bounded DB operation.
+        // Package replacement/removal cannot interleave between validation and commit.
+        let snapshots = self
+            .snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner());
+        let plugin = snapshots
+            .get(id)
+            .ok_or_else(|| AppError::validation("plugin.notFound"))?;
+        if fingerprint.is_some_and(|value| value != plugin.fingerprint) {
+            return Err(AppError::validation("pluginSecurity.changed"));
+        }
+        let schema = plugin
+            .host_fields
+            .as_ref()
+            .ok_or_else(|| AppError::validation("hostFields.notDeclared"))?;
+        operation(schema)
     }
 
     pub(super) fn status_bar_command(&self, id: &str, command: &str) -> bool {

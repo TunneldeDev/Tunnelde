@@ -1,3 +1,4 @@
+import type { HostFieldsSchema } from "@/lib/hosts/fields";
 import type { ShortcutRules } from "@/lib/keyboard/routing";
 import type { NetworkSettings } from "./network";
 export type Language = "system" | "zh-CN" | "en-US";
@@ -513,6 +514,7 @@ export interface NodeRuntimeInfo {
 }
 
 export interface PluginInfo {
+  hostFields?: HostFieldsSchema | null;
   tags?: string[];
   id: string;
   name: string;

@@ -50,6 +50,7 @@ export function Select({
   const search = useRef({ text: "", at: 0 });
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
+  const anchor = useRef<{ top: number; left: number } | null>(null);
   const selectedIndex = Math.max(
     0,
     options.findIndex((option) => option.value === value),
@@ -62,6 +63,7 @@ export function Select({
       return;
     }
     const rect = buttonRef.current.getBoundingClientRect();
+    anchor.current = { top: rect.top, left: rect.left };
     const height = Math.min(POPUP_MAX_HEIGHT, options.length * 28 + 8 + (footerAction ? 37 : 0));
     const flip = rect.bottom + height + 8 > window.innerHeight;
     setPosition({
@@ -85,6 +87,16 @@ export function Select({
     const onWindowChange = () => setOpen(false);
     const onScroll = (event: Event) => {
       if (event.target instanceof Node && popupRef.current?.contains(event.target)) return;
+      const rect = buttonRef.current?.getBoundingClientRect();
+      // A focus/scrollIntoView event can arrive after opening, even though its
+      // scroll already happened. Close only if the actual anchor has moved.
+      if (
+        rect &&
+        anchor.current &&
+        Math.abs(rect.top - anchor.current.top) < 0.5 &&
+        Math.abs(rect.left - anchor.current.left) < 0.5
+      )
+        return;
       setOpen(false);
     };
     window.addEventListener("pointerdown", onPointerDown);

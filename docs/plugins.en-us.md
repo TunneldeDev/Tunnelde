@@ -9,6 +9,8 @@ API compatibility and security: [English](plugin-api.en-us.md) · [简体中文]
 Editor command and formatter contributions:
 [English](editor-plugins.en-us.md) · [简体中文](editor-plugins.zh-cn.md).
 
+Host metadata extensions use a versioned manifest schema and revision-checked storage. See [plugin host fields](plugin-host-fields.en-us.md).
+
 ## Quick access and command results
 
 The plugin browser renders up to 24 matching entries per page, with previous/next

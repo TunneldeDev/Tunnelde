@@ -125,7 +125,8 @@ export function TabContent({ paneId }: { paneId?: string }) {
       if (useWorkspace.getState().activePaneId !== pane.id)
         useWorkspace.getState().activatePane(pane.id);
     };
-    // Promote before edits or actions run, including plugin chat drafts and sends.
+    // Promote after the portal's React handler. Updating controlled inputs from
+    // native capture can reset their DOM value before React reads the edit.
     const keep = (event: Event) => {
       if (
         event.type === "click" &&
@@ -141,15 +142,15 @@ export function TabContent({ paneId }: { paneId?: string }) {
     };
     target.addEventListener("mousedown", focus);
     target.addEventListener("focusin", focus);
-    target.addEventListener("input", keep, true);
-    target.addEventListener("change", keep, true);
-    target.addEventListener("click", keep, true);
+    target.addEventListener("input", keep);
+    target.addEventListener("change", keep);
+    target.addEventListener("click", keep);
     return () => {
       target.removeEventListener("mousedown", focus);
       target.removeEventListener("focusin", focus);
-      target.removeEventListener("input", keep, true);
-      target.removeEventListener("change", keep, true);
-      target.removeEventListener("click", keep, true);
+      target.removeEventListener("input", keep);
+      target.removeEventListener("change", keep);
+      target.removeEventListener("click", keep);
     };
   }, [pane]);
 

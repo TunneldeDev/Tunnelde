@@ -236,6 +236,17 @@ impl PluginSecurity {
         generation: Option<u64>,
     ) -> AppResult<u64> {
         let policy = self.policy();
+        Self::authorize_policy(&policy, id, digest, declared, permission, generation)
+    }
+
+    fn authorize_policy(
+        policy: &Policy,
+        id: &str,
+        digest: &str,
+        declared: &[String],
+        permission: Option<&str>,
+        generation: Option<u64>,
+    ) -> AppResult<u64> {
         if policy.saved.restricted {
             return Err(AppError::validation("pluginSecurity.blocked"));
         }
@@ -258,6 +269,39 @@ impl PluginSecurity {
             return Err(AppError::validation("pluginSecurity.permissionDenied"));
         }
         Ok(grant.generation)
+    }
+
+    /// Linearize bounded synchronous mutations with revocation. Lock order is
+    /// policy -> metadata -> database, matching permission persistence. The
+    /// callback must not reenter security, await, or perform external I/O.
+    pub(super) fn with_authorized<T>(
+        &self,
+        lease: &Lease,
+        permissions: &[&str],
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        let policy = self.policy();
+        Self::authorize_policy(
+            &policy,
+            &lease.id,
+            &lease.fingerprint,
+            &lease.permissions,
+            None,
+            Some(lease.generation),
+        )?;
+        for permission in permissions {
+            Self::authorize_policy(
+                &policy,
+                &lease.id,
+                &lease.fingerprint,
+                &lease.permissions,
+                Some(permission),
+                Some(lease.generation),
+            )?;
+        }
+        let result = operation();
+        drop(policy);
+        result
     }
 
     pub fn lease(&self, id: &str, digest: String, declared: Vec<String>) -> AppResult<Lease> {
@@ -503,6 +547,51 @@ mod tests {
     use std::time::Duration;
 
     const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[test]
+    fn synchronous_mutation_checks_all_permissions_and_serializes_revocation() {
+        let db = Arc::new(Database::in_memory().unwrap());
+        let security = Arc::new(PluginSecurity::default());
+        let lease = grant(&security, &db, "fields", &["hosts.read", "hosts.write"]);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let writer = {
+            let (security, lease) = (security.clone(), lease.clone());
+            std::thread::spawn(move || {
+                security.with_authorized(&lease, &["hosts.read", "hosts.write"], || {
+                    entered_tx.send(()).unwrap();
+                    finish_rx.recv().unwrap();
+                    Ok(())
+                })
+            })
+        };
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (revoked_tx, revoked_rx) = std::sync::mpsc::channel();
+        let revoker = {
+            let (security, db) = (security.clone(), db.clone());
+            std::thread::spawn(move || {
+                security
+                    .set_permissions(&db, "fields", String::new(), &[], None)
+                    .unwrap();
+                revoked_tx.send(()).unwrap();
+            })
+        };
+        assert!(revoked_rx.recv_timeout(Duration::from_millis(20)).is_err());
+        finish_tx.send(()).unwrap();
+        writer.join().unwrap().unwrap();
+        revoker.join().unwrap();
+        assert!(security
+            .with_authorized::<()>(&lease, &["hosts.read"], || panic!(
+                "revoked operation executed"
+            ))
+            .is_err());
+        let readonly = grant(&security, &db, "read", &["hosts.read"]);
+        assert!(security
+            .with_authorized::<()>(&readonly, &["hosts.read", "hosts.write"], || panic!(
+                "ungranted operation executed"
+            ))
+            .is_err());
+    }
 
     pub(super) fn grant(
         security: &PluginSecurity,

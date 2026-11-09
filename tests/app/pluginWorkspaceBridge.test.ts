@@ -381,6 +381,22 @@ describe("plugin workspace bridge authorization and live state", () => {
 });
 
 describe("plugin dialog and listener lifecycle", () => {
+  it("preserves an IPC failure's actual message across the frontend reply", async () => {
+    cleanup = await wirePluginWorkspaceBridge();
+    mocks.invoke.mockImplementation((name) =>
+      name === "plugin_workspace_authorize"
+        ? Promise.reject({ code: "validation", message: "pluginSecurity.permissionDenied" })
+        : Promise.resolve(),
+    );
+    emit("plugin://workspace-request", request("ui.showMessage", { message: "Should not run" }));
+    await settle();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+      requestId: "request-one",
+      result: null,
+      error: "pluginSecurity.permissionDenied",
+    });
+  });
   it.each(["ui.confirm", "ui.showMessage", "workspace.showQuickAccess"])(
     "does not execute %s when cancellation arrives during authorization",
     async (method) => {
