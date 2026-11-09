@@ -63,6 +63,10 @@ responses are not retried automatically. A repeated timeout or gateway failure
 requires checking the application update proxy, retrying later, or selecting a
 trusted custom source. Response-body failures retain the known source and are
 logged as `response-body`, even when the underlying transport error has no URL.
+Release manifests use the same 25-second request budget in direct and public-feed
+checks; slow release-asset redirects no longer inherit the feed's shorter 12-second
+budget. API discovery and public fallback are bounded to 22 and 38 seconds respectively,
+within the existing 65-second overall check deadline.
 
 After a failed check, update settings list each failed source, reason, HTTP status and
 the rate-limit retry time supplied by the server. During an API limit, checking again
