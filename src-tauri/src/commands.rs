@@ -84,13 +84,6 @@ pub struct AppInfo {
     schema: SettingsSchema,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HostsSnapshot {
-    groups: Vec<Group>,
-    hosts: Vec<Host>,
-}
-
 #[tauri::command]
 pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
     let package = app.package_info();
@@ -227,79 +220,70 @@ pub fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) ->
 }
 
 #[tauri::command]
-pub fn hosts_snapshot(state: State<'_, AppState>) -> AppResult<HostsSnapshot> {
-    state.db.with(|conn| {
-        Ok(HostsSnapshot {
-            groups: db::hosts::list_groups(conn)?,
-            hosts: db::hosts::list_hosts(conn)?,
-        })
-    })
+pub fn hosts_snapshot(state: State<'_, AppState>) -> AppResult<crate::services::hosts::Snapshot> {
+    crate::services::hosts::snapshot(&state.db)
 }
 
 #[tauri::command]
-pub fn host_create(state: State<'_, AppState>, input: HostInput) -> AppResult<Host> {
-    let draft = input.validate()?;
-    let host = state.db.with(|conn| db::hosts::create_host(conn, &draft))?;
-    crate::logs::record(&state.db, "host.create", Some(&host.id));
-    Ok(host)
+pub fn host_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: HostInput,
+) -> AppResult<Host> {
+    crate::services::hosts::service(&app, &state).create(input)
 }
 
 #[tauri::command]
-pub fn host_update(state: State<'_, AppState>, id: String, input: HostInput) -> AppResult<Host> {
-    let draft = input.validate()?;
-    let host = state
-        .db
-        .with(|conn| db::hosts::update_host(conn, &id, &draft))?;
-    state.ssh.rename_host(&id, &host.name);
-    crate::logs::record(&state.db, "host.update", Some(&id));
-    Ok(host)
+pub fn host_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    input: HostInput,
+) -> AppResult<Host> {
+    crate::services::hosts::service(&app, &state).update(&id, input)
 }
 
 #[tauri::command]
-pub fn host_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let host = state.db.with(|conn| db::hosts::find_host(conn, &id))?;
-    state.db.with(|conn| {
-        db::hosts::delete_host(conn, &id)?;
-        conn.execute("DELETE FROM settings WHERE key=?1", [format!("route:{id}")])?;
-        Ok(())
-    })?;
-    let _ = crate::vault::forget(&host.id);
-    crate::logs::record(&state.db, "host.delete", Some(&id));
-    Ok(())
+pub fn host_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).delete(&id)
 }
 
 #[tauri::command]
-pub fn host_mark_used(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    state.db.with(|conn| db::hosts::mark_used(conn, &id))
+pub fn host_mark_used(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).mark_used(&id)
 }
 
 #[tauri::command]
-pub fn hosts_reorder(state: State<'_, AppState>, ids: Vec<String>) -> AppResult<()> {
-    if ids.len() > 500 {
-        return Err(AppError::validation("host.orderTooLarge"));
-    }
-    state.db.with(|conn| db::hosts::reorder_hosts(conn, &ids))
+pub fn hosts_reorder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).reorder(&ids)
 }
 
 #[tauri::command]
-pub fn group_create(state: State<'_, AppState>, input: GroupInput) -> AppResult<Group> {
-    let (name, parent_id) = input.validate()?;
-    state
-        .db
-        .with(|conn| db::hosts::create_group(conn, &name, parent_id.as_deref()))
+pub fn group_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: GroupInput,
+) -> AppResult<Group> {
+    crate::services::hosts::service(&app, &state).create_group(input)
 }
 
 #[tauri::command]
-pub fn group_update(state: State<'_, AppState>, id: String, input: GroupInput) -> AppResult<Group> {
-    let (name, parent_id) = input.validate()?;
-    state
-        .db
-        .with(|conn| db::hosts::update_group(conn, &id, &name, parent_id.as_deref()))
+pub fn group_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    input: GroupInput,
+) -> AppResult<Group> {
+    crate::services::hosts::service(&app, &state).update_group(&id, input)
 }
 
 #[tauri::command]
-pub fn group_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    state.db.with(|conn| db::hosts::delete_group(conn, &id))
+pub fn group_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).delete_group(&id)
 }
 
 #[tauri::command]

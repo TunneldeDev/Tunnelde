@@ -393,33 +393,39 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             }
             encode(commands::settings_update(app.clone(), state, patch)?)
         }
-        "hosts.snapshot" => encode(commands::hosts_snapshot(state)?),
-        "hosts.create" => encode(commands::host_create(state, field(&params, "input")?)?),
-        "hosts.update" => encode(commands::host_update(
-            state,
-            field(&params, "id")?,
-            field(&params, "input")?,
-        )?),
+        "hosts.snapshot" => encode(crate::services::hosts::snapshot(&state.db)?),
+        "hosts.create" => {
+            encode(crate::services::hosts::service(app, &state).create(field(&params, "input")?)?)
+        }
+        "hosts.update" => encode(
+            crate::services::hosts::service(app, &state)
+                .update(&field::<String>(&params, "id")?, field(&params, "input")?)?,
+        ),
         "hosts.delete" => {
-            commands::host_delete(state, field(&params, "id")?)?;
+            crate::services::hosts::service(app, &state)
+                .delete(&field::<String>(&params, "id")?)?;
             Ok(Value::Null)
         }
         "hosts.markUsed" => {
-            commands::host_mark_used(state, field(&params, "id")?)?;
+            crate::services::hosts::service(app, &state)
+                .mark_used(&field::<String>(&params, "id")?)?;
             Ok(Value::Null)
         }
         "hosts.reorder" => {
-            commands::hosts_reorder(state, field(&params, "ids")?)?;
+            crate::services::hosts::service(app, &state)
+                .reorder(&field::<Vec<String>>(&params, "ids")?)?;
             Ok(Value::Null)
         }
-        "groups.create" => encode(commands::group_create(state, field(&params, "input")?)?),
-        "groups.update" => encode(commands::group_update(
-            state,
-            field(&params, "id")?,
-            field(&params, "input")?,
-        )?),
+        "groups.create" => encode(
+            crate::services::hosts::service(app, &state).create_group(field(&params, "input")?)?,
+        ),
+        "groups.update" => encode(
+            crate::services::hosts::service(app, &state)
+                .update_group(&field::<String>(&params, "id")?, field(&params, "input")?)?,
+        ),
         "groups.delete" => {
-            commands::group_delete(state, field(&params, "id")?)?;
+            crate::services::hosts::service(app, &state)
+                .delete_group(&field::<String>(&params, "id")?)?;
             Ok(Value::Null)
         }
         "sessions.list" => encode(
@@ -693,8 +699,6 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }?;
     let domain = match method {
-        "hosts.create" | "hosts.update" | "hosts.delete" | "hosts.markUsed" | "hosts.reorder"
-        | "groups.create" | "groups.update" | "groups.delete" => Some("hosts"),
         "sessions.connect" | "sessions.disconnect" => Some("sessions"),
         "history.record" | "history.delete" | "history.clear" => Some("history"),
         name if name.starts_with("files.")
