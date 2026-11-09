@@ -16,6 +16,7 @@ import type { Host } from "@/lib/api/types";
 import { SIDEBAR_MIME, TAB_MIME } from "@/lib/session/sidebarDock";
 import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundTaskPanel } from "@/store/backgroundTaskPanel";
+import { OutputStatusButton } from "@/features/output/OutputStatusButton";
 vi.mock("@/features/terminal/TerminalPage", () => ({ TerminalPage: () => null }));
 
 const { mounted, unmounted } = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn() }));
@@ -196,6 +197,13 @@ describe("sidebar panel docking", () => {
     expect(screen.queryByRole("region", { name: "Background tasks" })).toBeNull();
     expect(screen.getByRole("dialog", { name: "Background tasks" })).toBeTruthy();
     expect(useWorkspace.getState().tabs.some((tab) => tab.id === id)).toBe(false);
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Background tasks" })).getByRole("button", {
+        name: "Close",
+      }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
+    expect(screen.queryByRole("region", { name: "Background tasks" })).toBeNull();
   });
   it("opens a hidden docked task panel through the F1 task action without a duplicate window", async () => {
     render(
@@ -375,6 +383,87 @@ describe("sidebar panel docking", () => {
     expect(useWorkspace.getState().layout).toEqual(layout);
     expect(unmounted).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["left", "row", "before"],
+    ["right", "row", "after"],
+    ["top", "column", "before"],
+    ["bottom", "column", "after"],
+  ] as const)(
+    "closing the %s pane does not reopen its panel in the remaining pane",
+    (_edge, direction, position) => {
+      const rendered = render(<Shell />);
+      const input = screen.getByRole("textbox", { name: "hosts search" });
+      fireEvent.change(input, { target: { value: "Keep this search" } });
+      act(() => useWorkspace.getState().splitTab("sidebar:hosts", direction, position, "root"));
+      act(() => {
+        useWorkspace.getState().togglePaneLock("pane-1");
+        useWorkspace.getState().close("page:welcome");
+      });
+      const { layout, activePaneId: owner } = useWorkspace.getState();
+      const group = rendered.container.querySelector(`[data-pane-id="${owner}"]`)!;
+      fireEvent.click(within(group as HTMLElement).getByRole("button", { name: "More" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Close pane" }));
+      expect(screen.queryByRole("textbox", { name: "hosts search" })).toBeNull();
+      expect(useWorkspace.getState().tabs.find((tab) => tab.id === "sidebar:hosts")?.hidden).toBe(
+        true,
+      );
+      expect(useWorkspace.getState().layout).toEqual(layout);
+      fireEvent.click(screen.getByRole("button", { name: "Hosts" }));
+      expect(screen.getByRole("textbox", { name: "hosts search" })).toBe(input);
+      expect((input as HTMLInputElement).value).toBe("Keep this search");
+      expect(useWorkspace.getState().activePaneId).toBe(owner);
+      expect(useWorkspace.getState().layout).toEqual(layout);
+      expect(unmounted).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    ["tasks", "Background tasks"],
+    ["output", "Output"],
+  ] as const)(
+    "keeps %s closed after closing its pane and restores it through the status bar",
+    (view, title) => {
+      const rendered = render(
+        <>
+          <Shell />
+          <BackgroundTasks />
+          <BackgroundTaskStatusButton />
+          <OutputStatusButton />
+        </>,
+      );
+      act(() => useNavigation.getState().showSidebar(view));
+      act(() => useWorkspace.getState().splitTab(`sidebar:${view}`, "column", "after", "root"));
+      const { layout, activePaneId: owner } = useWorkspace.getState();
+      const panel = document.querySelector(`[data-sidebar-panel="${view}"]`)!;
+      const group = rendered.container.querySelector(`[data-pane-id="${owner}"]`)!;
+      fireEvent.click(
+        within(group as HTMLElement).getByRole("button", { name: "More" }),
+      );
+      fireEvent.click(screen.getByRole("menuitem", { name: "Close pane" }));
+      expect(panel.hasAttribute("hidden")).toBe(true);
+      expect(screen.queryByRole("region", { name: title })).toBeNull();
+      expect(panel.closest(".sidebar-view")).toBeNull();
+      expect(useWorkspace.getState().layout).toEqual(layout);
+      expect(screen.queryByRole("dialog", { name: "Background tasks" })).toBeNull();
+      const status = document.querySelector(
+        view === "tasks" ? "[data-task-trigger]" : ".output-status",
+      )!;
+      expect(status.getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(status);
+      expect(panel.hasAttribute("hidden")).toBe(false);
+      expect(screen.getByRole("region", { name: title })).toBeTruthy();
+      expect(status.getAttribute("aria-expanded")).toBe("true");
+      expect(useWorkspace.getState().activePaneId).toBe(owner);
+      expect(useWorkspace.getState().layout).toEqual(layout);
+      fireEvent.click(
+        within(screen.getByRole("tab", { name: title })).getByRole("button", { name: "Close tab" }),
+      );
+      expect(panel.hasAttribute("hidden")).toBe(true);
+      expect(screen.queryByRole("region", { name: title })).toBeNull();
+      expect(status.getAttribute("aria-expanded")).toBe("false");
+    },
+  );
 
   it("preserves plugin list state through pane moves and a return to the sidebar", () => {
     render(<Shell />);

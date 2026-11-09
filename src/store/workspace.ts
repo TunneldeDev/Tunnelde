@@ -987,17 +987,48 @@ export const useWorkspace = create<WorkspaceStore>((set) => {
         if (!closing) {
           return state;
         }
-        const remaining = state.panes.filter((item) => item.id !== paneId);
         const index = state.panes.findIndex((item) => item.id === paneId);
-        const target = state.panes[index - 1] ?? state.panes[index + 1];
+        const candidates = [
+          ...state.panes.slice(0, index).reverse(),
+          ...state.panes.slice(index + 1),
+        ];
+        const target =
+          candidates.find(
+            (item) =>
+              item.tabIds.length === 0 ||
+              item.tabIds.some((id) => state.tabs.some((tab) => tab.id === id && !tab.hidden)),
+          ) ?? candidates[0];
         if (!target) {
           return state;
         }
-        const panes = remaining.map((item) =>
-          item.id === target.id ? { ...item, tabIds: [...item.tabIds, ...closing.tabIds] } : item,
+        // A panel's close button and Close Pane must both collapse it in its
+        // remembered slot. Moving it with ordinary pages would reopen it in
+        // the neighbouring group and lose its original docking position.
+        const panelIds = new Set(
+          state.tabs
+            .filter((tab) => tab.kind === "sidebar" && closing.tabIds.includes(tab.id))
+            .map((tab) => tab.id),
         );
+        const moved = closing.tabIds.filter((id) => !panelIds.has(id));
+        const panes = state.panes.flatMap((item) => {
+          if (item.id === paneId)
+            return panelIds.size
+              ? [
+                  {
+                    ...item,
+                    tabIds: closing.tabIds.filter((id) => panelIds.has(id)),
+                    activeId: null,
+                  },
+                ]
+              : [];
+          return [item.id === target.id ? { ...item, tabIds: [...item.tabIds, ...moved] } : item];
+        });
         const tabs = state.tabs.map((tab) =>
-          closing.tabIds.includes(tab.id) && tab.preview ? { ...tab, preview: false } : tab,
+          panelIds.has(tab.id)
+            ? { ...tab, hidden: true }
+            : moved.includes(tab.id) && tab.preview
+              ? { ...tab, preview: false }
+              : tab,
         );
         return { tabs, ...settle(panes, target.id, state.split, state.layout, tabs) };
       });
