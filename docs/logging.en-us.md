@@ -10,7 +10,7 @@ The diagnostic log and operation history serve different purposes. Diagnostics r
 domain and technical context. Operation history records bounded actions and opaque object IDs.
 Do not use either for passwords, keys, authorization headers, document contents or terminal input.
 
-`log.file=/Users/runner/...` identifies the dependency source used to build the application. It does
+The `log.file` build-worker source path identifies the dependency used to build the application. It does
 not refer to a directory required on the user's computer. Keep these source locations as useful
 diagnostic metadata; open the local application log to investigate the actual failure.
 
