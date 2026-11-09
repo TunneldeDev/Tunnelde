@@ -997,6 +997,8 @@
     "timeout": "远端监控请求超时。"
   },
   "pluginView": {
+    "hostChanged": "该主机已被修改或删除，请重新打开主机菜单后重试。",
+    "hostRequired": "请先打开主机详情、终端或远端文件标签页，再运行此主机命令。",
     "title": "插件",
     "refresh": "刷新",
     "empty": "暂无内容",

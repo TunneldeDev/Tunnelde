@@ -7,6 +7,8 @@ The experimental UI SDK is versioned separately from RPC `apiVersion: 1`.
 limits. The marketplace SDK publishes `tunnelde-ui.d.mts`; it is generated from
 the host's public contract, not its stores or component source paths.
 
+Frontend commands can also contribute [host menu actions](plugin-host-menu.en-us.md).
+
 ## Manifest and module
 
 A pure frontend plugin needs no Node runtime. Existing Node, WASM and declarative

@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
 import { useHostDecorations } from "@/store/hostDecorations";
+import { usePlugins } from "@/store/plugins";
+import { plugin } from "../fixtures/plugins";
 import { indexHostDecorations } from "@/lib/plugins/hostList";
 import { HostTree } from "@/components/layout/HostTree";
 import type { Group, Host } from "@/lib/api/types";
@@ -46,6 +48,7 @@ const group = (id: string, parentId: string | null = null): Group => ({
 });
 
 beforeEach(() => {
+  usePlugins.setState({ items: [] });
   useHostDecorations.setState({ revision: -1, byHost: new Map() });
   useContextMenu.setState({ menu: null });
   useHosts.setState({ hosts: [host("a", "alpha", 0), host("b", "beta", 1)], groups: [] });
@@ -68,6 +71,29 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("adds attributed plugin actions to both pointer and more menus and removes them on uninstall", () => {
+    const contribution = {
+      ...plugin,
+      commands: [{ id: "inspect", title: "Inspect host", hostMenu: true }],
+      permissions: ["hosts.read"],
+    };
+    usePlugins.setState({ items: [contribution] });
+    render(
+      <>
+        <HostTree />
+        <ContextMenuHost />
+      </>,
+    );
+    const row = screen.getAllByRole("treeitem")[0]!;
+    fireEvent.contextMenu(row);
+    const action = screen.getByRole("menuitem", { name: "Inspect host" });
+    expect(action.textContent).toContain(plugin.name);
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(row.querySelector("button")!);
+    expect(screen.getByRole("menuitem", { name: "Inspect host" })).toBeTruthy();
+    act(() => usePlugins.setState({ items: [] }));
+    expect(screen.queryByRole("menuitem", { name: "Inspect host" })).toBeNull();
+  });
   it("renders hosts at every group depth and counts all descendants", () => {
     useHosts.setState({
       groups: [

@@ -1,6 +1,9 @@
 import { usePlugins } from "@/store/plugins";
 import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
+import { useHosts } from "@/store/hosts";
+import type { Host } from "@/lib/api/types";
+import { hostMenuCommands, runHostMenuCommand } from "./hostMenu";
 import { pluginSidebarId } from "./sidebars";
 import { editorDocument } from "@/store/editors";
 import { runEditorPlugin } from "./formatting";
@@ -22,7 +25,16 @@ export function openPluginAction(
   const original = usePlugins.getState().items.find((item) => item.id === action.id);
   if (!original) return Promise.resolve();
   const isEditor = original.commands.some((item) => item.id === action.command && item.editor);
+  const isHost = original.commands.some((item) => item.id === action.command && item.hostMenu);
   const activeId = useWorkspace.getState().activeId;
+  const hostId = useWorkspace.getState().tabs.find((tab) => tab.id === activeId)?.hostId;
+  const hostTarget = isHost
+    ? useHosts.getState().hosts.find((host) => host.id === hostId)
+    : undefined;
+  if (isHost && !hostTarget) {
+    toast(i18n.t("pluginView.hostRequired"), "info");
+    return Promise.resolve();
+  }
   const target = isEditor
     ? requestedDocument !== undefined
       ? requestedDocument
@@ -45,7 +57,7 @@ export function openPluginAction(
         current.version !== original.version
       )
         return;
-      await invokePluginAction(action, target);
+      await invokePluginAction(action, target, hostTarget);
     });
   actionTails.set(action.id, pending);
   void pending
@@ -56,10 +68,19 @@ export function openPluginAction(
   return pending;
 }
 
-async function invokePluginAction(action: PluginAction, target: ReturnType<typeof editorDocument>) {
+async function invokePluginAction(
+  action: PluginAction,
+  target: ReturnType<typeof editorDocument>,
+  hostTarget?: Host,
+) {
   const store = usePlugins.getState();
   let plugin = store.items.find((item) => item.id === action.id);
   if (!plugin || plugin.runtime === "theme") return;
+  if (hostTarget) {
+    const command = hostMenuCommands([plugin]).find((item) => item.command === action.command);
+    if (command) await runHostMenuCommand(command, hostTarget);
+    return;
+  }
   const editorCommand = action.command
     ? plugin.commands.find((item) => item.id === action.command && item.editor)
     : null;

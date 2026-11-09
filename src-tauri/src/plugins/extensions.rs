@@ -62,7 +62,6 @@ mod tests {
             assert!(points.insert(point["id"].as_str().unwrap()));
             assert!(ids.contains(point["domain"].as_str().unwrap()));
             assert_eq!(point["composition"], "merge");
-            assert_eq!(point["ownership"], "runtime");
             let permissions: Vec<_> = point["permissions"]
                 .as_array()
                 .unwrap()
@@ -72,6 +71,16 @@ mod tests {
             for permission in &permissions {
                 assert!(PERMISSIONS.contains(permission));
             }
+            if point["registration"]["manifest"].is_string() {
+                assert_eq!(point["id"], "hostList.menu");
+                assert_eq!(point["registration"]["manifest"], "commands[].hostMenu");
+                assert_eq!(point["ownership"], "manifest");
+                assert_eq!(permissions, ["hosts.read"]);
+                assert_eq!(point["limits"]["perPlugin"], 16);
+                assert_eq!(point["limits"]["total"], 128);
+                continue;
+            }
+            assert_eq!(point["ownership"], "runtime");
             for action in ["set", "remove"] {
                 let name = point["registration"][action].as_str().unwrap();
                 let method = METHODS

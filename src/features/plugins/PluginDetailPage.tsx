@@ -18,6 +18,7 @@ import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
 import { pluginTags, togglePluginTag } from "@/lib/plugins/discovery";
+import { openPluginAction } from "@/lib/plugins/actions";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -310,7 +311,11 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
             <Button
               key={command.id}
               disabled={!running || busy}
-              onClick={() => void usePlugins.getState().run(pluginId, command.id)}
+              onClick={() =>
+                void (command.hostMenu
+                  ? openPluginAction({ id: pluginId, command: command.id })
+                  : usePlugins.getState().run(pluginId, command.id))
+              }
             >
               {command.title}
             </Button>

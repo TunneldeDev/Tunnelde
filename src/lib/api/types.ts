@@ -431,6 +431,8 @@ export type PluginStatus = "stopped" | "running" | "failed";
 
 export interface PluginCommand {
   frontend?: boolean;
+  /** Offer this command in a saved host's menu; requires hosts.read. */
+  hostMenu?: boolean;
   id: string;
   title: string;
   keybindings?: string[];

@@ -30,6 +30,9 @@ import { useSsh } from "@/store/ssh";
 import type { Group, Host } from "@/lib/api/types";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 import { useHostDecorations } from "@/store/hostDecorations";
+import { usePlugins } from "@/store/plugins";
+import { hostMenuCommands, runHostMenuCommand } from "@/lib/plugins/hostMenu";
+import type { PluginContextCommand } from "@/lib/plugins/contextCommand";
 import {
   HostDecorationBadges,
   HostDecorationDescription,
@@ -65,9 +68,18 @@ interface HostRowProps {
   onFocusRow: () => void;
   depth?: number;
   canReorder: boolean;
+  pluginCommands: readonly PluginContextCommand[];
 }
 
-function HostRow({ host, active, focused, onFocusRow, depth = 0, canReorder }: HostRowProps) {
+function HostRow({
+  host,
+  active,
+  focused,
+  onFocusRow,
+  depth = 0,
+  canReorder,
+  pluginCommands,
+}: HostRowProps) {
   const { t } = useTranslation();
   const openHost = useWorkspace((state) => state.openHost);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -158,6 +170,12 @@ function HostRow({ host, active, focused, onFocusRow, depth = 0, canReorder }: H
       icon: <Star size={13} />,
       onSelect: () => void toggleFavorite(host),
     },
+    ...pluginCommands.map((command) => ({
+      label: command.title,
+      description: command.pluginName,
+      separatorBefore: command.first,
+      onSelect: () => void runHostMenuCommand(command, host),
+    })),
     {
       label: t("menu.delete"),
       separatorBefore: true,
@@ -375,6 +393,8 @@ function GroupRow({
 }
 
 export function HostTree() {
+  const plugins = usePlugins((state) => state.items);
+  const pluginCommands = useMemo(() => hostMenuCommands(plugins), [plugins]);
   const { t } = useTranslation();
   const groups = useHosts((state) => state.groups);
   const hosts = useHosts((state) => state.hosts);
@@ -500,6 +520,7 @@ export function HostTree() {
   const rowProps = (host: Host) => ({
     focused: focusId === host.id,
     canReorder,
+    pluginCommands,
     onFocusRow: () => {
       setFocusId(host.id);
       bodyRef.current?.focus();

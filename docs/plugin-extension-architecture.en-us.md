@@ -10,18 +10,22 @@ not a claim that all domains already implement every extension capability.
 
 Call `api.describe` to inspect available RPC methods, permissions and stable
 contracts. If `extensions.describe` exists, its experimental response describes
-implemented runtime UI extension points. It returns a version, stability, six layer
+implemented UI extension points. It returns a version, stability, six layer
 identifiers, domains with RPC namespaces, and points with IDs, domains, layer,
 stability, combination policy, registration methods, ownership, permissions and
 limits. Treat unfamiliar fields and point types as unknown capabilities.
 
-The directory currently lists host decorations, status items and tab controls.
+The directory currently lists host decorations, host menus, status items and tab controls.
 `composition: "merge"` means registrations from different owners combine according
 to that point's documented ordering. `ownership: "runtime"` means the registration
 is tied to an approved plugin instance, not persisted application data. Domain
 namespaces classify real methods; they do not imply a public dependency injector,
 complete domain services, remote execution availability or a permission grant.
 The host checks directory references against real methods and permissions in tests.
+Manifest contributions use `registration.manifest` and `ownership: "manifest"`;
+their metadata can be displayed before an approved runtime is started.
+[Host menu commands](plugin-host-menu.en-us.md) use the same consent, stale-target
+checks and output handling as file menu commands.
 
 [Host decorations](plugin-host-list.en-us.md), [status items](plugin-status-bar.en-us.md)
 and [tab controls](plugin-tab-bar.en-us.md) use the shared runtime-owned registry.

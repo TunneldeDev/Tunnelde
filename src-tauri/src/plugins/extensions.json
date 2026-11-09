@@ -66,6 +66,17 @@
   ],
   "points": [
     {
+      "id": "hostList.menu",
+      "domain": "hosts",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": { "manifest": "commands[].hostMenu" },
+      "ownership": "manifest",
+      "permissions": ["hosts.read"],
+      "limits": { "perPlugin": 16, "total": 128 }
+    },
+    {
       "id": "hostList.decorations",
       "domain": "hosts",
       "layer": "presentation",
