@@ -704,3 +704,5 @@ not run document scripts or interactive forms. Password-protected PDFs require a
 [Stable plugin status bar API](plugin-status-bar.en-us.md)
 
 [Tab bar contributions](plugin-tab-bar.en-us.md)
+
+[Local logging and plugin diagnostics](logging.en-us.md)

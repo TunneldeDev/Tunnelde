@@ -159,17 +159,27 @@ fn log_from_guest(caller: &mut Caller<'_, GuestState>, level: i32, ptr: i32, len
         return;
     }
     let message = String::from_utf8_lossy(&buffer);
-    let plugin_id = caller
-        .data()
-        .authority
-        .as_ref()
-        .map(|(_, lease)| lease.id.as_str())
-        .unwrap_or("unknown");
-    if level >= 2 {
-        tracing::warn!(plugin_id, message = %message, "plugin log");
-    } else {
-        tracing::info!(plugin_id, message = %message, "plugin log");
-    }
+    let Some((_, lease)) = &caller.data().authority else {
+        return;
+    };
+    // Preserve the existing numeric WASM logging ABI while sharing ownership,
+    // local persistence and filtering with stdio plugins.
+    let _ = crate::diagnostics::write(
+        crate::diagnostics::LogOrigin::Plugin {
+            id: &lease.id,
+            generation: lease.generation,
+        },
+        crate::diagnostics::LogEntry {
+            message: message.into_owned(),
+            domain: Some("wasm".into()),
+            level: if level >= 2 {
+                crate::diagnostics::LogLevel::Warn
+            } else {
+                crate::diagnostics::LogLevel::Info
+            },
+            ..Default::default()
+        },
+    );
 }
 
 #[cfg(test)]
