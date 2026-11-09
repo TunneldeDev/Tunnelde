@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { matchesPlugin, pluginTags } from "@/lib/plugins/discovery";
+import { matchesPlugin, pluginTags, togglePluginTag } from "@/lib/plugins/discovery";
 
 it("combines search words and exact tag filters without executing a plugin", () => {
   const plugin = {
@@ -16,4 +16,12 @@ it("combines search words and exact tag filters without executing a plugin", () 
   expect(matchesPlugin(plugin, "tag:icons,tools preview", "")).toBe(false);
   expect(matchesPlugin(plugin, "", "icons")).toBe(false);
   expect(matchesPlugin({ id: "old", name: "Legacy" }, "legacy", "")).toBe(true);
+});
+
+it("edits quoted plugin tags without corrupting literal text or repeated conditions", () => {
+  const query = togglePluginTag('"tag:literal" tag:tools', "logs, JSON");
+  expect(matchesPlugin({ id: "log", name: "tag:literal", tags: ["logs, json"] }, query, "")).toBe(
+    true,
+  );
+  expect(togglePluginTag(query, "LOGS, json")).toBe('"tag:literal" tag:tools');
 });

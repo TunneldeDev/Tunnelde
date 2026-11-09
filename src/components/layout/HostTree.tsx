@@ -15,7 +15,7 @@ import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { HostSearch } from "@/components/layout/HostSearch";
-import { parseHostQuery, matchesHostQuery } from "@/lib/hosts/query";
+import { buildHostTree, type HostGroupNode } from "@/lib/hosts/tree";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn, hostSubtitle } from "@/lib/text/format";
@@ -51,58 +51,16 @@ function activateHost(host: Host): void {
   }
 }
 
-interface Filtered {
-  favorites: Host[];
-  ungrouped: Host[];
-  groups: Array<{ group: Group; hosts: Host[]; children: Array<{ group: Group; hosts: Host[] }> }>;
-}
-
-function buildTree(groups: Group[], hosts: Host[], query: string): Filtered {
-  const filter = parseHostQuery(query);
-  const visible = hosts.filter((host) => matchesHostQuery(host, filter));
-  const rest = visible.filter((host) => !host.favorite);
-  const byGroup = new Map<string, Host[]>();
-  for (const host of rest) {
-    if (!host.groupId) {
-      continue;
-    }
-    const bucket = byGroup.get(host.groupId) ?? [];
-    bucket.push(host);
-    byGroup.set(host.groupId, bucket);
-  }
-
-  const roots = groups.filter((group) => !group.parentId);
-  const tree = roots
-    .map((group) => {
-      const children = groups
-        .filter((child) => child.parentId === group.id)
-        .map((child) => ({ group: child, hosts: byGroup.get(child.id) ?? [] }))
-        .filter((child) => child.hosts.length > 0 || !query);
-      return {
-        group,
-        hosts: byGroup.get(group.id) ?? [],
-        children,
-      };
-    })
-    .filter((node) => node.hosts.length > 0 || node.children.length > 0 || !query);
-
-  return {
-    favorites: visible.filter((host) => host.favorite),
-    ungrouped: rest.filter((host) => !host.groupId),
-    groups: tree,
-  };
-}
-
 interface HostRowProps {
   host: Host;
   active: boolean;
   focused: boolean;
   onFocusRow: () => void;
-  nested?: boolean;
+  depth?: number;
   canReorder: boolean;
 }
 
-function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder }: HostRowProps) {
+function HostRow({ host, active, focused, onFocusRow, depth = 0, canReorder }: HostRowProps) {
   const { t } = useTranslation();
   const openHost = useWorkspace((state) => state.openHost);
   const openHostDialog = useDialogs((state) => state.openHost);
@@ -202,18 +160,13 @@ function HostRow({ host, active, focused, onFocusRow, nested = false, canReorder
   return (
     <div
       ref={row}
-      className={cn(
-        "host-row",
-        nested && "is-nested",
-        active && "is-active",
-        focused && "is-focused",
-        over && "is-drop",
-      )}
-      style={
-        over
+      className={cn("host-row", active && "is-active", focused && "is-focused", over && "is-drop")}
+      style={{
+        ...(depth > 0 ? { paddingLeft: 15 + depth * 12 } : {}),
+        ...(over
           ? { boxShadow: `inset 0 ${over === "before" ? "2px" : "-2px"} 0 var(--td-accent)` }
-          : undefined
-      }
+          : {}),
+      }}
       draggable={canReorder}
       onDragStart={(event) => {
         if (!canReorder) {
@@ -421,16 +374,26 @@ export function HostTree() {
   const moveToGroup = useHosts((state) => state.moveToGroup);
   const [query, setQuery] = useViewState("hosts:query", "");
   const [collapsed, setCollapsed] = useViewState<Set<string>>("hosts:collapsed", new Set());
+  const [searchCollapse, setSearchCollapse] = useState({ query: "", ids: new Set<string>() });
 
   const tags = useMemo(
     () => Array.from(new Set(hosts.flatMap((host) => host.tags))).sort(),
     [hosts],
   );
-  const tree = useMemo(() => buildTree(groups, hosts, query.trim()), [groups, hosts, query]);
+  const tree = useMemo(() => buildHostTree(groups, hosts, query.trim()), [groups, hosts, query]);
   const searching = query.trim().length > 0;
   const canReorder = !searching;
 
   const toggle = (id: string) => {
+    if (searching) {
+      setSearchCollapse((current) => {
+        const ids = new Set(current.query === query ? current.ids : []);
+        if (ids.has(id)) ids.delete(id);
+        else ids.add(id);
+        return { query, ids };
+      });
+      return;
+    }
     setCollapsed((current) => {
       const next = new Set(current);
       if (next.has(id)) {
@@ -452,7 +415,7 @@ export function HostTree() {
     const row = rows.find((item) => item.dataset.hostId === focusId);
     row?.scrollIntoView?.({ block: "nearest" });
     if (focusId && !row) setFocusId(null);
-  }, [focusId, query, collapsed, hosts]);
+  }, [focusId, query, collapsed, searchCollapse, hosts, groups]);
 
   const dropHandlers = (groupId: string | null, favorite = false) => ({
     onDragOver: (event: React.DragEvent<HTMLElement>) => {
@@ -528,6 +491,55 @@ export function HostTree() {
     },
   });
 
+  const renderGroup = (
+    { group, hosts: members, children, count }: HostGroupNode,
+    depth = 0,
+  ): React.ReactNode => {
+    const isCollapsed = searching
+      ? searchCollapse.query === query && searchCollapse.ids.has(group.id)
+      : collapsed.has(group.id);
+    return (
+      <div key={group.id} role="group">
+        <GroupRow
+          group={group}
+          count={count}
+          depth={depth}
+          collapsed={isCollapsed}
+          onToggle={() => toggle(group.id)}
+          onNewHost={() => openHostDialog(null, group.id)}
+          canReorder={canReorder}
+          onDropHost={(id) => moveToGroup(id, group.id)}
+          onRename={() => openGroupDialog(group)}
+          onDelete={() =>
+            confirm({
+              title: t("group.deleteTitle"),
+              body: t("group.deleteBody", { name: group.name }),
+              confirmLabel: t("common.delete"),
+              danger: true,
+              onConfirm: async () => {
+                await deleteGroup(group.id);
+              },
+            })
+          }
+        />
+        {!isCollapsed ? (
+          <>
+            {members.map((host) => (
+              <HostRow
+                key={host.id}
+                host={host}
+                depth={depth + 1}
+                active={host.id === activeHostId}
+                {...rowProps(host)}
+              />
+            ))}
+            {children.map((child) => renderGroup(child, depth + 1))}
+          </>
+        ) : null}
+      </div>
+    );
+  };
+
   return (
     <div className="sidebar">
       <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
@@ -541,7 +553,14 @@ export function HostTree() {
         <SidebarDockControls view="hosts" />
       </div>
       <div className="sidebar__search">
-        <HostSearch query={query} tags={tags} onChange={setQuery} />
+        <HostSearch
+          query={query}
+          tags={tags}
+          onChange={(value) => {
+            setQuery(value);
+            setSearchCollapse({ query: value, ids: new Set() });
+          }}
+        />
       </div>
 
       <div
@@ -592,87 +611,11 @@ export function HostTree() {
           </section>
         ) : null}
 
-        {tree.groups.map(({ group, hosts: groupHosts, children }) => {
-          const isCollapsed = collapsed.has(group.id);
-          return (
-            <section className="tree-section" key={group.id}>
-              <GroupRow
-                group={group}
-                count={
-                  groupHosts.length +
-                  children.reduce((total, child) => total + child.hosts.length, 0)
-                }
-                collapsed={isCollapsed}
-                onToggle={() => toggle(group.id)}
-                onNewHost={() => openHostDialog(null, group.id)}
-                canReorder={canReorder}
-                onDropHost={(id) => moveToGroup(id, group.id)}
-                onRename={() => openGroupDialog(group)}
-                onDelete={() =>
-                  confirm({
-                    title: t("group.deleteTitle"),
-                    body: t("group.deleteBody", { name: group.name }),
-                    confirmLabel: t("common.delete"),
-                    danger: true,
-                    onConfirm: async () => {
-                      await deleteGroup(group.id);
-                    },
-                  })
-                }
-              />
-              {!isCollapsed
-                ? groupHosts.map((host) => (
-                    <HostRow
-                      key={host.id}
-                      host={host}
-                      nested
-                      active={host.id === activeHostId}
-                      {...rowProps(host)}
-                    />
-                  ))
-                : null}
-              {!isCollapsed
-                ? children.map((child) => (
-                    <div key={child.group.id} role="group">
-                      <GroupRow
-                        group={child.group}
-                        count={child.hosts.length}
-                        depth={1}
-                        collapsed={collapsed.has(child.group.id)}
-                        onToggle={() => toggle(child.group.id)}
-                        onNewHost={() => openHostDialog(null, child.group.id)}
-                        canReorder={canReorder}
-                        onDropHost={(id) => moveToGroup(id, child.group.id)}
-                        onRename={() => openGroupDialog(child.group)}
-                        onDelete={() =>
-                          confirm({
-                            title: t("group.deleteTitle"),
-                            body: t("group.deleteBody", { name: child.group.name }),
-                            confirmLabel: t("common.delete"),
-                            danger: true,
-                            onConfirm: async () => {
-                              await deleteGroup(child.group.id);
-                            },
-                          })
-                        }
-                      />
-                      {!collapsed.has(child.group.id)
-                        ? child.hosts.map((host) => (
-                            <HostRow
-                              key={host.id}
-                              host={host}
-                              nested
-                              active={host.id === activeHostId}
-                              {...rowProps(host)}
-                            />
-                          ))
-                        : null}
-                    </div>
-                  ))
-                : null}
-            </section>
-          );
-        })}
+        {tree.groups.map((node) => (
+          <section className="tree-section" key={node.group.id}>
+            {renderGroup(node)}
+          </section>
+        ))}
 
         {tree.ungrouped.length > 0 || (!isEmpty && !searching) ? (
           <section className="tree-section" role="group" {...dropHandlers(null)}>

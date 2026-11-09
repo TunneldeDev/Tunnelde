@@ -106,7 +106,7 @@ export function TransferTask({
               >
                 <Gauge size={13} />
               </IconButton>
-              {item.durable ? (
+              {item.durable && !item.pluginId ? (
                 <IconButton
                   label={t("sftp.pauseTransfer")}
                   size="sm"
@@ -127,7 +127,10 @@ export function TransferTask({
             </>
           ) : (
             <>
-              {item.durable && !reviewRequired && ["paused", "failed"].includes(item.status) ? (
+              {item.durable &&
+              !item.pluginId &&
+              !reviewRequired &&
+              ["paused", "failed"].includes(item.status) ? (
                 <IconButton
                   label={t("sftp.resumeTransfer")}
                   size="sm"
@@ -221,6 +224,7 @@ export function TransferTask({
       ) : null}
       {expanded ? (
         <div className="transfer-task__details">
+          {item.pluginId ? <p>{t("sftp.pluginTransferOwner", { id: item.pluginId })}</p> : null}
           {!showRecoveryPaths ? <TransferPaths item={item} /> : null}
           {progress.remaining !== null ? (
             <p>{t("sftp.remainingBytes", { value: formatBytes(progress.remaining) })}</p>

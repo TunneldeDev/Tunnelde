@@ -27,6 +27,7 @@ export interface SettingDefinition {
     | "fileIcons"
     | "css"
     | "shortcuts"
+    | "shortcutRules"
     | "network"
     | "updateUrl";
   hint?: MessageKey;
@@ -136,7 +137,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "clipboard",
       label: "settings.groups.clipboard",
-      keys: ["terminalCopyOnSelect", "terminalRightClick"],
+      keys: ["terminalCopyOnSelect", "terminalApplicationClipboard", "terminalRightClick"],
     },
     { id: "history", label: "settings.groups.history", keys: ["recordTerminalHistory"] },
   ],
@@ -250,6 +251,18 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     label: "shortcuts.title",
     hint: "shortcuts.hint",
   },
+  {
+    key: "shortcutRules",
+    section: "shortcuts",
+    kind: "shortcutRules",
+    label: "shortcuts.advanced.title",
+  },
+  {
+    key: "showShortcutDetails",
+    section: "shortcuts",
+    kind: "shortcutRules",
+    label: "shortcuts.advanced.show",
+  },
   select("language", "general", [
     choice("system", "settings.languageSystem"),
     { value: "zh-CN", label: "简体中文", literal: true },
@@ -338,6 +351,7 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   toggle("terminalSmoothScrolling", "terminal", "settings.terminalSmoothScrollingHint"),
   toggle("terminalScrollOnInput", "terminal", "settings.terminalScrollOnInputHint"),
   toggle("terminalCopyOnSelect", "terminal"),
+  toggle("terminalApplicationClipboard", "terminal", "settings.terminalApplicationClipboardHint"),
   select(
     "terminalRightClick",
     "terminal",

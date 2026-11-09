@@ -11,8 +11,11 @@ import { useSettings } from "@/store/settings";
 import { useWorkspace } from "@/store/workspace";
 import { useContextMenu } from "@/store/contextMenu";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
+import { usePluginTabBar, useTabBarContent } from "@/store/tabBar";
 
 beforeEach(() => {
+  usePluginTabBar.setState({ items: [], revision: -1 });
+  useTabBarContent.setState({ items: [] });
   useSettings.setState({ settings: DEFAULT_SETTINGS });
   useWorkspace.setState({
     tabs: ["a", "b", "c"].map((id) => ({
@@ -38,6 +41,44 @@ beforeEach(() => {
       second: { kind: "pane", paneId: "second" },
     },
   });
+});
+
+it("projects real plugin-view tabs to the public plugin kind for both tab-bar slots", () => {
+  useWorkspace.setState({
+    tabs: [
+      {
+        id: "plugin:sample:main",
+        kind: "pluginView",
+        title: "Sample",
+        hostId: null,
+        pinned: false,
+      },
+    ],
+    panes: [{ id: "first", tabIds: ["plugin:sample:main"], activeId: "plugin:sample:main" }],
+    activeId: "plugin:sample:main",
+    layout: { kind: "pane", paneId: "first" },
+  });
+  usePluginTabBar.setState({
+    items: (["leading", "trailing"] as const).map((placement) => ({
+      id: placement,
+      title: placement,
+      kind: "button",
+      command: "run",
+      token: placement,
+      pluginId: "sample",
+      pluginName: "Sample",
+      priority: 0,
+      disabled: false,
+      when: null,
+      options: [],
+      value: null,
+      icon: "play",
+      placement,
+    })),
+  });
+  render(<PaneLayout />);
+  for (const placement of ["leading", "trailing"])
+    expect(screen.getByRole("button", { name: `Sample: ${placement}` })).toBeTruthy();
 });
 
 describe("workspace drop targets", () => {

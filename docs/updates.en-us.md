@@ -46,3 +46,42 @@ download URL or verification key. Installation restarts the application; platfor
 without automatic installation provide a manual download action.
 
 See [release operations](releases.en-us.md) for publishing and mirror requirements.
+
+## Connection failures and rate limits
+
+The Beta channel discovers versions through the GitHub API, then automatically tries
+the public Atom release feed if discovery fails. Stable requests the latest stable
+release manifest directly. All requests use the **Application updates** route in
+**Settings → Network and proxies**. A successful TCP proxy test does not prove that
+every HTTPS release or download endpoint is reachable.
+
+The API and public feed both depend on GitHub; fallback does not provide an
+independent mirror during a GitHub or network outage. An HTTP 502, 503 or 504 is
+retried once on the same source and proxy, if time remains in the original request
+budget. The retry does not extend that budget. Quota, authentication and not-found
+responses are not retried automatically. A repeated timeout or gateway failure
+requires checking the application update proxy, retrying later, or selecting a
+trusted custom source. Response-body failures retain the known source and are
+logged as `response-body`, even when the underlying transport error has no URL.
+Release manifests use the same 25-second request budget in direct and public-feed
+checks; slow release-asset redirects no longer inherit the feed's shorter 12-second
+budget. API discovery and public fallback are bounded to 22 and 38 seconds respectively,
+within the existing 65-second overall check deadline.
+
+After a failed check, update settings list each failed source, reason, HTTP status and
+the rate-limit retry time supplied by the server. During an API limit, checking again
+still retries the public feed and temporarily skips the API on the same proxy route.
+Changing the update proxy permits a fresh API attempt. Backoff is kept only in process
+memory and never changes system proxy settings. An unreachable source is never
+reported as an up-to-date installation.
+
+The error notification offers **View update details**. **Configure update proxy** and
+**Open output logs** provide follow-up actions. Detailed diagnostics are also written
+to local daily logs, including source, request stage, HTTP status, allowlisted quota
+headers and redacted transport causes. Proxy passwords and custom source URLs are
+not logged. A dependency source path in a log can belong to the build machine; users
+do not need to create that path on their computers.
+
+The host reads bounded manifest responses and passes them to Tauri for platform and
+version selection. Packages still require the embedded public key and version-bound
+signatures; network diagnostics do not relax verification.

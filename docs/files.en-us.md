@@ -58,6 +58,10 @@ application/file-manager actions in their context menu. Transfer behavior,
 recovery limits and preview size limits are documented in
 [Network routes, transfers and SSHFS](network-storage.en-us.md).
 
+Changing the interface language keeps an open preview and its existing file
+connection. Audio/video position and player settings, and PDF page and zoom,
+remain in place while the controls and supported error messages are translated.
+
 ## Searching open work
 
 Press F1 and type `> ` to find commands, or `% ` to search file contents. The scope
@@ -77,7 +81,60 @@ creates a split; the center or tab strip adds a tab to that group. Splitting
 keeps the panel's previous width or height where the available space allows.
 Dragging outside a drop target or pressing Esc leaves the original panel intact.
 
+## Copying files
+
+Copies from the file browser and plugin copy commands use the background task
+engine. Open **Background tasks** to see progress, apply a speed limit or cancel.
+Existing destination files remain intact while a new file is staged; publication
+happens after the data and file close have completed. Cancelling cleans unpublished
+staging files and retains the source and any files already committed. A directory
+copy commits individual files; it is not a transaction for the entire directory.
+
+Within the same SSH session, optimized copies use the server's supported
+`copy-data` extension without relaying file data through this computer. Other
+copies use the normal transfer pipeline. Global upload and download limits apply
+to bytes relayed through this computer. Local and server-side copies still obey
+their individual task limits without consuming the global network allowance.
+
+## Copy-based directory moves on Windows
+
+Local directory moves that need copying use the background task engine. The
+source inventory, destination directory identities and verified file copies are
+recorded separately. All files are copied and checked before source removal
+begins, and the recovery journal is flushed before that boundary.
+
+After an interruption, Resume checks the recorded identities and full file
+contents. Once source removal has begun, it continues verification and cleanup
+without restarting the copy phase. Changed or replaced files are retained for
+review. Newly added source entries are retained; a source directory is removed
+only when it is empty. This is a sequence of verified file moves, rather than an
+atomic transaction for the whole directory.
+
+Copy-based moves detect Windows named data streams on source files and
+directories and retain those sources, since the transfer pipeline does not copy
+these streams. Use a native filesystem move or a stream-preserving tool for them.
+
+This recovery applies to Windows local paths. Remote directory moves that would
+require copying and deleting remain restricted; ordinary moves within one remote
+host still use server-side rename.
+
 ## Failed remote moves
+
+When pasting a cut folder over an existing folder on the same host, confirming
+replacement merges their contents using server-side renames. Existing destination
+items with other names remain in place. New subfolders move as a whole; matching
+files are replaced atomically when the server supports OpenSSH's rename extension.
+The extension is checked before any item moves. File/folder type conflicts also
+stop the operation before any mutation.
+
+A merge is a sequence of moves, not a transaction for the whole tree. A failure
+leaves already moved items at the destination and keeps the remaining source
+items in the cut selection. Refresh and paste again to move those remaining items.
+Source folders are removed only when empty, so newly added items are retained.
+Observed directory substitutions and newly appearing destination conflicts stop
+the merge. SFTP cannot lock pathname checks and renames against other writers;
+avoid concurrently renaming the folders involved. Merges are bounded to 100,000
+operations and 128 nested levels.
 
 Cut/paste within one remote host uses a server-side rename, avoiding a round trip
 through this computer. A server may reject a rename between different mount points.

@@ -18,6 +18,8 @@ pub mod bandwidth;
 mod batch;
 mod compressed;
 pub mod durable;
+#[cfg(windows)]
+mod local_directory_move;
 pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
@@ -26,6 +28,7 @@ mod publication;
 mod range_io;
 mod remote_commit;
 pub mod remote_editor;
+mod remote_merge;
 mod rename;
 mod scan;
 mod scheduler;
@@ -74,6 +77,8 @@ pub enum TransferStatus {
 #[serde(rename_all = "camelCase")]
 pub struct TransferEvent {
     pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_id: Option<String>,
     pub direction: &'static str,
     pub name: String,
     pub transferred: u64,
@@ -215,6 +220,7 @@ impl TransferRegistry {
         }) {
             return Err(AppError::validation("plugin.api.transferBusy"));
         }
+        let plugin_id = owner.as_ref().map(|owner| owner.plugin_id.clone());
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
@@ -222,6 +228,7 @@ impl TransferRegistry {
                 owner,
                 event: TransferEvent {
                     id: id.into(),
+                    plugin_id,
                     direction: "transfer",
                     name: id.into(),
                     transferred: 0,
@@ -237,9 +244,10 @@ impl TransferRegistry {
         Ok(())
     }
 
-    fn update(&self, event: &TransferEvent) {
+    fn update(&self, event: &mut TransferEvent) {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.get_mut(&event.id) {
+                event.plugin_id = transfer.event.plugin_id.clone();
                 transfer.event = event.clone();
             }
         }
@@ -248,6 +256,7 @@ impl TransferRegistry {
     fn complete(&self, mut event: TransferEvent) -> TransferEvent {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.remove(&event.id) {
+                event.plugin_id = transfer.event.plugin_id;
                 self.bandwidth.remove(&event.id);
                 if event.status == TransferStatus::Cancelled {
                     event.transferred = event.transferred.max(transfer.event.transferred);
@@ -578,6 +587,25 @@ pub async fn remote_rename(
     let result = async {
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
         if overwrite && remote_exists(&sftp, &to).await? {
+            // Merge real directories using only server-side renames. Resolving
+            // roots once also permits a user's parent directory symlink.
+            if sftp
+                .symlink_metadata(&from)
+                .await
+                .map_err(map_sftp)?
+                .is_dir()
+                && sftp.symlink_metadata(&to).await.map_err(map_sftp)?.is_dir()
+            {
+                let source = sftp.canonicalize(&from).await.map_err(map_sftp)?;
+                let target = sftp.canonicalize(&to).await.map_err(map_sftp)?;
+                let plan = remote_merge::Plan::prepare(&sftp, &source, &target).await?;
+                let replacement = if plan.needs_replacement {
+                    Some(remote_commit::Replacement::connect(app, session_id).await?)
+                } else {
+                    None
+                };
+                return plan.apply(&sftp, replacement.as_ref()).await;
+            }
             return remote_replace(app, session_id, &from, &to).await;
         }
         rename::entry(&sftp, &from, &to).await
@@ -670,8 +698,8 @@ pub fn local_delete(path: String, _is_dir: bool) -> AppResult<()> {
     remove_local_entry(&PathBuf::from(path))
 }
 
-fn emit(app: &AppHandle, event: TransferEvent) {
-    app.state::<AppState>().transfers.update(&event);
+fn emit(app: &AppHandle, mut event: TransferEvent) {
+    app.state::<AppState>().transfers.update(&mut event);
     let _ = app.emit(TRANSFER_EVENT, event);
 }
 
@@ -694,6 +722,7 @@ fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64)
         app,
         TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
             transferred,
@@ -712,6 +741,14 @@ enum Outcome {
 }
 
 impl Outcome {
+    fn into_result(self) -> AppResult<()> {
+        match self {
+            Self::Done(_) => Ok(()),
+            Self::Cancelled(_) => Err(AppError::Ssh(CANCELLED.into())),
+            Self::Failed(_, error) => Err(error),
+        }
+    }
+
     fn from_result(result: AppResult<()>, transferred: u64, cancel: &AtomicBool) -> Self {
         match result {
             Ok(()) => Self::Done(transferred),
@@ -721,9 +758,9 @@ impl Outcome {
     }
 }
 
-async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
+async fn finish(app: &AppHandle, id: &str, name: &str, outcome: &Outcome) {
     let state = app.state::<AppState>();
-    let recovery = match &outcome {
+    let recovery = match outcome {
         Outcome::Failed(
             _,
             AppError::BackupRecovery {
@@ -750,7 +787,7 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         }),
         _ => None,
     };
-    let artifact_recovery = match &outcome {
+    let artifact_recovery = match outcome {
         Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path }) => Some(path.clone()),
         _ => None,
     };
@@ -758,19 +795,21 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
     let event = match outcome {
         Outcome::Done(total) => TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
-            transferred: total,
-            total,
+            transferred: *total,
+            total: *total,
             status: TransferStatus::Done,
             phase: None,
             error: None,
         },
         Outcome::Cancelled(transferred) => TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
-            transferred,
+            transferred: *transferred,
             total: 0,
             status: TransferStatus::Cancelled,
             phase: None,
@@ -778,9 +817,10 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         },
         Outcome::Failed(transferred, error) => TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: name.into(),
-            transferred,
+            transferred: *transferred,
             total: 0,
             status: TransferStatus::Failed,
             phase: None,
@@ -792,13 +832,23 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: Outcome) {
         event.status = TransferStatus::Paused;
     }
     if let Ok(mut row) = durable::Journal::get(app, id) {
+        event.plugin_id = row.plugin_id.clone();
+        if row.plugin_id.is_some() && event.status == TransferStatus::Paused {
+            event.status = TransferStatus::Cancelled;
+        }
         if let Some(recovery) = recovery {
             row.backup_recovery = Some(recovery);
         }
         if let Some(path) = artifact_recovery {
             row.artifact_recovery = Some(path);
         }
-        if event.status == TransferStatus::Cancelled {
+        if event.status == TransferStatus::Cancelled
+            || (row.plugin_id.is_some() && event.status == TransferStatus::Failed)
+        {
+            if let Some(error) = &event.error {
+                tracing::warn!(transfer_id = id, plugin_id = row.plugin_id, %error,
+                    "Plugin transfer failed; disposing its staging files");
+            }
             row.status = "cancelling".into();
             row.error = Some("sftp.cancelCleanupFailed".into());
             if let Err(error) = durable::Journal::upsert(app, row.clone()) {
@@ -881,7 +931,7 @@ pub fn spawn_transfer(
     remove_source: bool,
     overwrite: bool,
 ) -> AppResult<String> {
-    spawn_transfer_inner(app, from, to, remove_source, overwrite, None)
+    spawn_transfer_inner(app, from, to, remove_source, overwrite, None).map(|task| task.id)
 }
 
 pub(crate) fn spawn_plugin_transfer(
@@ -893,7 +943,75 @@ pub(crate) fn spawn_plugin_transfer(
 ) -> AppResult<String> {
     // Plugin transfers copy only; deleting the source requires a separate,
     // explicitly permitted file operation.
-    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner))
+    spawn_transfer_inner(app, from, to, false, overwrite, Some(owner)).map(|task| task.id)
+}
+
+/// Compatibility copy commands wait for the same journaled worker used by
+/// asynchronous transfers. Dropping the reply never aborts a writer mid-IO.
+pub(crate) struct TransferTask {
+    pub id: String,
+    completion: tokio::sync::oneshot::Receiver<AppResult<()>>,
+    app: AppHandle,
+}
+
+struct CopyWaitCancellation {
+    app: AppHandle,
+    id: String,
+}
+
+impl Drop for CopyWaitCancellation {
+    fn drop(&mut self) {
+        // Signal the worker; never drop its future while writes or CLOSE replies
+        // are outstanding. A completed worker has already released this ID.
+        self.app.state::<AppState>().transfers.cancel(&self.id);
+    }
+}
+
+impl TransferTask {
+    pub async fn wait(self) -> AppResult<()> {
+        let _cancellation = CopyWaitCancellation {
+            app: self.app,
+            id: self.id,
+        };
+        self.completion
+            .await
+            .map_err(|_| AppError::internal("sftp.copyInterrupted"))?
+    }
+}
+
+pub(crate) fn start_copy(
+    app: AppHandle,
+    from: Endpoint,
+    to: Endpoint,
+    overwrite: bool,
+    owner: Option<crate::plugins::security::Lease>,
+) -> AppResult<TransferTask> {
+    spawn_transfer_inner(app, from, to, false, overwrite, owner)
+}
+
+/// Only the UI's confirmed local rename fallback uses this copy-based move.
+/// Other rename failures must retain their original atomic-rename semantics.
+#[cfg(windows)]
+pub(crate) fn start_local_move(
+    app: AppHandle,
+    from: String,
+    to: String,
+    overwrite: bool,
+) -> AppResult<TransferTask> {
+    spawn_transfer_inner(
+        app,
+        Endpoint {
+            session: None,
+            path: from,
+        },
+        Endpoint {
+            session: None,
+            path: to,
+        },
+        true,
+        overwrite,
+        None,
+    )
 }
 
 fn spawn_transfer_inner(
@@ -903,13 +1021,26 @@ fn spawn_transfer_inner(
     remove_source: bool,
     overwrite: bool,
     owner: Option<crate::plugins::security::Lease>,
-) -> AppResult<String> {
+) -> AppResult<TransferTask> {
     if from.session == to.session && from.path == to.path {
         return Err(AppError::validation("sftp.samePath"));
     }
 
     let id = uuid::Uuid::new_v4().to_string();
-    if owner.is_none() {
+    let name = file_name_of(&from.path);
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
+    let transfer_owner = owner.as_ref().map(|lease| TransferOwner {
+        plugin_id: lease.id.clone(),
+        generation: lease.generation,
+        cancelled: cancel_sender,
+    });
+    // Claim the ID before writing its journal, so reconnect cleanup cannot
+    // mistake a newly queued plugin task for an orphan from a previous process.
+    app.state::<AppState>()
+        .transfers
+        .register(&id, cancel.clone(), transfer_owner)?;
+    let recorded = (|| -> AppResult<()> {
         let sessions = app.state::<AppState>().ssh.list();
         let host = |id: &Option<String>| {
             id.as_ref()
@@ -925,6 +1056,7 @@ fn spawn_transfer_inner(
             &app,
             durable::DurableTransfer {
                 id: id.clone(),
+                plugin_id: owner.as_ref().map(|lease| lease.id.clone()),
                 direction: "transfer".into(),
                 name: file_name_of(&from.path),
                 from_session: from.session.clone(),
@@ -938,6 +1070,7 @@ fn spawn_transfer_inner(
                 remove_source,
                 deleting_source: false,
                 move_recovery: None,
+                directory_move_manifest: None,
                 overwrite,
                 transferred: 0,
                 total: 0,
@@ -950,24 +1083,18 @@ fn spawn_transfer_inner(
                 updated_at: crate::models::now_ms(),
             },
         )?;
+        Ok(())
+    })();
+    if let Err(error) = recorded {
+        app.state::<AppState>().transfers.release(&id);
+        return Err(error);
     }
-    let name = file_name_of(&from.path);
-    let cancel = Arc::new(AtomicBool::new(false));
-    let (cancel_sender, mut cancelled) = tokio::sync::watch::channel(false);
-    let transfer_owner = owner.as_ref().map(|lease| TransferOwner {
-        plugin_id: lease.id.clone(),
-        generation: lease.generation,
-        cancelled: cancel_sender,
-    });
-    app.state::<AppState>()
-        .transfers
-        .register(&id, cancel.clone(), transfer_owner)?;
     progress(&app, &id, &name, 0, 0);
-    if owner.is_none() {
-        let _ = app.emit("sftp://changed", ());
-    }
+    let _ = app.emit("sftp://changed", ());
 
     let transfer_id = id.clone();
+    let (completed, completion) = tokio::sync::oneshot::channel();
+    let receipt_app = app.clone();
     tauri::async_runtime::spawn(async move {
         let app_handle = app.clone();
         let operation = run(
@@ -980,21 +1107,33 @@ fn spawn_transfer_inner(
             TransferOptions {
                 remove_source,
                 overwrite,
-                durable: owner.is_none(),
+                durable: true,
                 resuming: false,
             },
         );
         let outcome = if let Some(owner) = owner {
             let state = app_handle.state::<AppState>();
-            guard_plugin_transfer(&state.plugins.security, &owner, &mut cancelled, operation).await
+            guard_plugin_transfer(
+                &state.plugins.security,
+                &owner,
+                &mut cancelled,
+                &cancel,
+                operation,
+            )
+            .await
         } else {
             operation.await
         };
-        finish(&app_handle, &transfer_id, &name, outcome).await;
+        finish(&app_handle, &transfer_id, &name, &outcome).await;
         notify_transfer_files(&app_handle, &from, &to, remove_source);
+        let _ = completed.send(outcome.into_result());
     });
 
-    Ok(id)
+    Ok(TransferTask {
+        id,
+        completion,
+        app: receipt_app,
+    })
 }
 
 pub(crate) fn resume_transfer(
@@ -1003,6 +1142,7 @@ pub(crate) fn resume_transfer(
     to: Endpoint,
     row: durable::DurableTransfer,
 ) -> AppResult<()> {
+    row.require_user_control()?;
     if durable::needs_review(row.error.as_deref()) {
         return Err(AppError::validation(row.error.unwrap_or_default()));
     }
@@ -1048,7 +1188,7 @@ pub(crate) fn resume_transfer(
             },
         )
         .await;
-        finish(&app2, &id, &name, out).await;
+        finish(&app2, &id, &name, &out).await;
         notify_transfer_files(&app2, &from, &to, row.remove_source);
     });
     Ok(())
@@ -1082,18 +1222,26 @@ async fn guard_plugin_transfer(
     security: &crate::plugins::security::PluginSecurity,
     owner: &crate::plugins::security::Lease,
     cancelled: &mut tokio::sync::watch::Receiver<bool>,
+    cancel: &AtomicBool,
     operation: impl std::future::Future<Output = Outcome>,
 ) -> Outcome {
     if *cancelled.borrow() {
+        cancel.store(true, Ordering::SeqCst);
         return Outcome::Cancelled(0);
     }
+    tokio::pin!(operation);
     tokio::select! {
         biased;
-        _ = cancelled.changed() => Outcome::Cancelled(0),
-        result = security.guard(owner, async { Ok(operation.await) }) => {
-            result.unwrap_or(Outcome::Cancelled(0))
-        }
+        _ = cancelled.changed() => {},
+        _ = security.guard(owner, std::future::pending::<AppResult<()>>()) => {},
+        outcome = operation.as_mut() => return outcome,
     }
+    // Revoke further work, but let the existing writer settle its IO and
+    // CLOSE before finish() deletes task-owned staging. Watching security
+    // separately also avoids repolling a completed writer if its lease changes
+    // at the same instant as its final result.
+    cancel.store(true, Ordering::SeqCst);
+    operation.await
 }
 
 struct Meter<'a> {
@@ -1607,11 +1755,15 @@ async fn copy_entry(
         let mut writer = open_writer(to, to_sftp, overwrite).await?;
         let copied = async {
             let mut buffer = vec![0_u8; CHUNK];
+            let throttle = meter.throttle();
             loop {
                 if cancel.load(Ordering::SeqCst) {
                     return Err(AppError::Ssh(CANCELLED.into()));
                 }
-                let read = reader.read(&mut buffer).await?;
+                let allowed = throttle
+                    .acquire(bandwidth::Direction::Local, buffer.len(), cancel)
+                    .await?;
+                let read = reader.read(&mut buffer[..allowed]).await?;
                 if read == 0 {
                     break;
                 }
@@ -2208,11 +2360,15 @@ async fn durable_copy_file(
         let mut attempted = existing;
         let result = async {
             let mut buf = vec![0; CHUNK];
+            let throttle = meter.throttle();
             loop {
                 if cancel.load(Ordering::SeqCst) {
                     return Err(AppError::Ssh(CANCELLED.into()));
                 }
-                let n = interruptible(Some(cancel), reader.read(&mut buf)).await?;
+                let allowed = throttle
+                    .acquire(bandwidth::Direction::Local, buf.len(), cancel)
+                    .await?;
+                let n = interruptible(Some(cancel), reader.read(&mut buf[..allowed])).await?;
                 if n == 0 {
                     break;
                 }
@@ -2604,6 +2760,26 @@ async fn run(
         None => None,
     };
 
+    #[cfg(windows)]
+    if durable && remove_source && from_sftp.is_none() && to_sftp.is_none() {
+        let directory_move = match durable::Journal::get(app, id) {
+            Ok(row) if row.directory_move_manifest.is_some() => Ok(true),
+            Ok(row) if row.deleting_source => Ok(false),
+            Ok(_) => is_dir(from, None).await,
+            Err(error) => Err(error),
+        };
+        match directory_move {
+            Ok(true) => {
+                return local_directory_move::run(
+                    app, from, to, id, name, cancel, overwrite, resuming,
+                )
+                .await
+            }
+            Ok(false) => {}
+            Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+        }
+    }
+
     if durable && resuming && remove_source {
         let recovery = match durable::Journal::get(app, id) {
             Ok(row) if row.deleting_source => {
@@ -2916,57 +3092,6 @@ pub async fn write_text(
     result
 }
 
-pub async fn remote_copy(
-    app: &AppHandle,
-    session_id: &str,
-    from: String,
-    to: String,
-    overwrite: bool,
-) -> AppResult<()> {
-    let sftp = session(app, session_id).await?;
-    let result = async {
-        check_remote_destination(&sftp, &from, &to, overwrite).await?;
-        let fast = copy_data_session(app, session_id).await;
-        let result = copy_remote_entry_with(&sftp, fast.as_ref(), &from, &to, overwrite).await;
-        if let Some(raw) = fast {
-            let _ = raw.close_session();
-        }
-        result
-    }
-    .await;
-    let _ = sftp.close().await;
-    result
-}
-
-async fn copy_data_session(
-    app: &AppHandle,
-    session_id: &str,
-) -> Option<russh_sftp::client::RawSftpSession> {
-    tokio::time::timeout(std::time::Duration::from_secs(10), async {
-        let handle = app.state::<AppState>().ssh.handle(session_id).ok()?;
-        let channel = handle.channel_open_session().await.ok()?;
-        channel.request_subsystem(true, "sftp").await.ok()?;
-        let raw = russh_sftp::client::RawSftpSession::new(channel.into_stream());
-        let version = raw.init().await.ok()?;
-        if version.extensions.get("copy-data").map(String::as_str) != Some("1") {
-            let _ = raw.close_session();
-            return None;
-        }
-        raw.set_timeout(3600);
-        Some(raw)
-    })
-    .await
-    .ok()
-    .flatten()
-}
-
-pub fn local_copy(from: String, to: String, overwrite: bool) -> AppResult<()> {
-    let from = PathBuf::from(from);
-    let to = PathBuf::from(to);
-    check_local_destination(&from, &to, overwrite)?;
-    copy_local_entry(&from, &to, overwrite)
-}
-
 fn check_local_destination(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
     let source = std::fs::canonicalize(from)?;
     let destination = if to.exists() {
@@ -3058,170 +3183,6 @@ fn remove_local_entry(path: &Path) -> AppResult<()> {
     Ok(())
 }
 
-fn copy_local_entry(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {
-    let metadata = std::fs::symlink_metadata(from)?;
-    let kind = scan::local_kind(&metadata)?;
-    reject_local_destination_link(to)?;
-    if matches!(kind, scan::Kind::Directory) {
-        std::fs::create_dir_all(to)?;
-        for entry in std::fs::read_dir(from)? {
-            let entry = entry?;
-            copy_local_entry(&entry.path(), &to.join(entry.file_name()), overwrite)?;
-        }
-        return Ok(());
-    }
-    let mut reader = std::fs::File::open(from)?;
-    let mut writer = std::fs::OpenOptions::new()
-        .write(true)
-        .create(overwrite)
-        .create_new(!overwrite)
-        .truncate(overwrite)
-        .open(to)?;
-    std::io::copy(&mut reader, &mut writer)?;
-    Ok(())
-}
-
-#[cfg(test)]
-async fn copy_remote_entry(
-    sftp: &SftpSession,
-    from: &str,
-    to: &str,
-    overwrite: bool,
-) -> AppResult<()> {
-    copy_remote_entry_with(sftp, None, from, to, overwrite).await
-}
-
-async fn copy_remote_entry_with(
-    sftp: &SftpSession,
-    fast: Option<&russh_sftp::client::RawSftpSession>,
-    from: &str,
-    to: &str,
-    overwrite: bool,
-) -> AppResult<()> {
-    let metadata = sftp.symlink_metadata(from).await.map_err(map_sftp)?;
-    let kind = scan::remote_kind(&metadata)?
-        .ok_or_else(|| AppError::validation("sftp.fileMetadataMissing"))?;
-    reject_remote_destination_link(sftp, to).await?;
-    if matches!(kind, scan::Kind::Directory) {
-        if remote_exists(sftp, to).await? {
-            if !overwrite {
-                return Err(AppError::validation("sftp.alreadyExists"));
-            }
-            if !sftp.metadata(to).await.map_err(map_sftp)?.is_dir() {
-                return Err(AppError::validation("sftp.typeConflict"));
-            }
-        } else {
-            sftp.create_dir(to).await.map_err(map_sftp)?;
-        }
-        let children: Vec<String> = sftp
-            .read_dir(from)
-            .await
-            .map_err(map_sftp)?
-            .map(|entry| entry.file_name())
-            .collect();
-        for name in children {
-            let child_from = join_remote(from, &name);
-            let child_to = join_remote(to, &name);
-            Box::pin(copy_remote_entry_with(
-                sftp,
-                fast,
-                &child_from,
-                &child_to,
-                overwrite,
-            ))
-            .await?;
-        }
-        return Ok(());
-    }
-
-    if let Some(raw) = fast {
-        return copy_data_file(raw, from, to, overwrite).await;
-    }
-    let mut reader = sftp.open(from).await.map_err(map_sftp)?;
-    let result = async {
-        let mut writer = sftp
-            .open_with_flags(
-                to,
-                OpenFlags::WRITE
-                    | OpenFlags::CREATE
-                    | if overwrite {
-                        OpenFlags::TRUNCATE
-                    } else {
-                        OpenFlags::EXCLUDE
-                    },
-            )
-            .await
-            .map_err(map_sftp)?;
-        let copied = tokio::io::copy(&mut reader, &mut writer).await;
-        let closed = finish_remote_file(writer).await;
-        copied?;
-        closed
-    }
-    .await;
-    let closed = reader.close().await;
-    result?;
-    closed?;
-    Ok(())
-}
-
-async fn copy_data_file(
-    raw: &russh_sftp::client::RawSftpSession,
-    from: &str,
-    to: &str,
-    overwrite: bool,
-) -> AppResult<()> {
-    use russh_sftp::protocol::{FileAttributes, Packet};
-    let reader = raw
-        .open(from, OpenFlags::READ, FileAttributes::empty())
-        .await
-        .map_err(map_sftp)?
-        .handle;
-    let writer = match raw
-        .open(
-            to,
-            OpenFlags::WRITE
-                | OpenFlags::CREATE
-                | if overwrite {
-                    OpenFlags::TRUNCATE
-                } else {
-                    OpenFlags::EXCLUDE
-                },
-            FileAttributes::empty(),
-        )
-        .await
-    {
-        Ok(handle) => handle.handle,
-        Err(error) => {
-            let _ = raw.close(&reader).await;
-            return Err(map_sftp(error));
-        }
-    };
-    let mut data = Vec::new();
-    let mut append_handle = |handle: &str| {
-        let size = handle.len() as u32;
-        data.extend_from_slice(&size.to_be_bytes());
-        data.extend_from_slice(handle.as_bytes());
-    };
-    append_handle(&reader);
-    data.extend_from_slice(&0u64.to_be_bytes());
-    data.extend_from_slice(&0u64.to_be_bytes());
-    let size = writer.len() as u32;
-    data.extend_from_slice(&size.to_be_bytes());
-    data.extend_from_slice(writer.as_bytes());
-    data.extend_from_slice(&0u64.to_be_bytes());
-    let result = match raw.extended("copy-data", data).await {
-        Ok(Packet::Status(status)) if status.status_code == StatusCode::Ok => Ok(()),
-        Ok(Packet::Status(status)) => {
-            Err(map_sftp(russh_sftp::client::error::Error::Status(status)))
-        }
-        Ok(_) => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
-        Err(error) => Err(map_sftp(error)),
-    };
-    let written = raw.close(&writer).await.map_err(map_sftp);
-    let read = raw.close(&reader).await.map_err(map_sftp);
-    result.and(written.map(|_| ())).and(read.map(|_| ()))
-}
-
 async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
     // Never follow a directory symlink while deleting: only unlink the link.
     let metadata = sftp.symlink_metadata(path).await.map_err(map_sftp)?;
@@ -3244,6 +3205,34 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn copy_completion_preserves_structured_errors_and_cancellation() {
+        assert!(Outcome::Done(7).into_result().is_ok());
+        let cancelled = Outcome::Cancelled(3).into_result().unwrap_err();
+        assert_eq!(cancelled.code(), "ssh");
+        assert_eq!(cancelled.to_string(), CANCELLED);
+        let error = AppError::BackupRecovery {
+            backup: "preserved-backup".into(),
+            destination: "original-target".into(),
+        };
+        let before = serde_json::to_value(&error).unwrap();
+        let returned = Outcome::Failed(3, error).into_result().unwrap_err();
+        assert!(matches!(returned, AppError::BackupRecovery { .. }));
+        assert_eq!(serde_json::to_value(returned).unwrap(), before);
+        let error = AppError::RemoteRename {
+            from: "/source".into(),
+            to: "/target".into(),
+            reason: "denied".into(),
+            status_code: Some(3),
+            server_message: Some("Permission denied".into()),
+        };
+        let before = serde_json::to_value(&error).unwrap();
+        assert_eq!(
+            serde_json::to_value(Outcome::Failed(0, error).into_result().unwrap_err()).unwrap(),
+            before
+        );
+    }
+
     #[test]
     fn transfer_changes_cover_modified_endpoints_without_duplicate_notifications() {
         let local = Endpoint {
@@ -3924,6 +3913,7 @@ mod tests {
     fn transfer_event(id: &str, status: TransferStatus) -> TransferEvent {
         TransferEvent {
             id: id.into(),
+            plugin_id: None,
             direction: "transfer",
             name: "file.txt".into(),
             transferred: 42,
@@ -4046,7 +4036,7 @@ mod tests {
             registry.status_owned("owned", "one", 7).unwrap().status,
             TransferStatus::Running
         );
-        registry.update(&transfer_event("owned", TransferStatus::Running));
+        registry.update(&mut transfer_event("owned", TransferStatus::Running));
         assert_eq!(
             registry
                 .status_owned("owned", "one", 7)
@@ -4110,7 +4100,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn plugin_transfers_drop_in_flight_work_on_revoke_restricted_mode_and_restart() {
+    async fn plugin_transfers_drain_writers_on_cancel_revoke_restricted_mode_and_restart() {
         use crate::plugins::security::PluginSecurity;
         struct Dropped(Arc<AtomicBool>);
         impl Drop for Dropped {
@@ -4138,14 +4128,24 @@ mod tests {
             let dropped = Arc::new(AtomicBool::new(false));
             let marker = dropped.clone();
             let (ready, started) = tokio::sync::oneshot::channel();
+            let (stopped_sender, stopped) = tokio::sync::oneshot::channel();
+            let (drain, drained) = tokio::sync::oneshot::channel();
+            let cancel = Arc::new(AtomicBool::new(false));
+            let flag = cancel.clone();
             let operation_security = security.clone();
             let keep_open = sender.clone();
             let task = tokio::spawn(async move {
                 let _keep_open = keep_open;
-                guard_plugin_transfer(&operation_security, &owner, &mut cancelled, async move {
+                guard_plugin_transfer(&operation_security, &owner, &mut cancelled, &flag, async {
                     let _marker = Dropped(marker);
                     let _ = ready.send(());
-                    std::future::pending::<Outcome>().await
+                    while !flag.load(Ordering::SeqCst) {
+                        tokio::task::yield_now().await;
+                    }
+                    let _ = stopped_sender.send(());
+                    // Represent already-issued writes and CLOSE awaiting ACK.
+                    drained.await.unwrap();
+                    Outcome::Cancelled(42)
                 })
                 .await
             });
@@ -4161,15 +4161,84 @@ mod tests {
                 "restart" => security.invalidate_runtime("plugin"),
                 _ => unreachable!(),
             }
-            let result = tokio::time::timeout(std::time::Duration::from_millis(200), task)
+            tokio::time::timeout(std::time::Duration::from_secs(1), stopped)
                 .await
                 .unwrap()
                 .unwrap();
-            assert!(matches!(result, Outcome::Cancelled(0)), "{action}");
+            assert!(cancel.load(Ordering::SeqCst), "{action}");
+            assert!(
+                !dropped.load(Ordering::SeqCst),
+                "writer dropped before CLOSE for {action}"
+            );
+            assert!(
+                !task.is_finished(),
+                "cleanup could run before IO drained for {action}"
+            );
+            drain.send(()).unwrap();
+            let result = tokio::time::timeout(std::time::Duration::from_secs(1), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(matches!(result, Outcome::Cancelled(42)), "{action}");
             assert!(
                 dropped.load(Ordering::SeqCst),
                 "in-flight transfer survived {action}"
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn plugin_transfer_guard_handles_prestart_revocation_and_completed_writers() {
+        use crate::plugins::security::PluginSecurity;
+        for action in [
+            "already-cancelled",
+            "already-revoked",
+            "complete-and-revoke",
+            "complete",
+        ] {
+            let db = crate::db::Database::in_memory().unwrap();
+            let security = PluginSecurity::default();
+            let permissions = vec!["fs.read".to_string(), "sftp.write".to_string()];
+            let digest = "a".repeat(64);
+            security
+                .set_permissions(
+                    &db,
+                    "plugin",
+                    digest.clone(),
+                    &permissions,
+                    Some(permissions.clone()),
+                )
+                .unwrap();
+            let owner = security.lease("plugin", digest, permissions).unwrap();
+            let (_sender, mut cancelled) =
+                tokio::sync::watch::channel(action == "already-cancelled");
+            let cancel = AtomicBool::new(false);
+            let mutated = AtomicBool::new(false);
+            if action == "already-revoked" {
+                security.invalidate_runtime("plugin");
+            }
+            let result = guard_plugin_transfer(&security, &owner, &mut cancelled, &cancel, async {
+                let result = interruptible(Some(&cancel), async {
+                    mutated.store(true, Ordering::SeqCst);
+                    if action == "complete-and-revoke" {
+                        security.invalidate_runtime("plugin");
+                    }
+                    Ok(())
+                })
+                .await;
+                Outcome::from_result(result, 42, &cancel)
+            })
+            .await;
+            if action.starts_with("already") {
+                assert!(cancel.load(Ordering::SeqCst));
+                assert!(!mutated.load(Ordering::SeqCst), "{action}");
+                assert!(matches!(result, Outcome::Cancelled(_)), "{action}");
+            } else {
+                // A committed result remains committed; do not re-poll the
+                // completed operation or claim its destination was cancelled.
+                assert!(mutated.load(Ordering::SeqCst));
+                assert!(matches!(result, Outcome::Done(42)), "{action}");
+            }
         }
     }
 
@@ -4330,93 +4399,6 @@ mod tests {
         use std::io::{Read, Seek, SeekFrom, Write};
         use std::sync::atomic::AtomicUsize;
         use tokio::sync::Notify;
-
-        #[derive(Default)]
-        struct CopyProbe {
-            opens: std::sync::Mutex<Vec<(String, OpenFlags)>>,
-            calls: std::sync::Mutex<Vec<(String, Vec<u8>)>>,
-            closes: std::sync::Mutex<Vec<String>>,
-            fail_copy: AtomicBool,
-        }
-
-        struct CopyServer(Arc<CopyProbe>);
-        impl russh_sftp::server::Handler for CopyServer {
-            type Error = StatusCode;
-            fn unimplemented(&self) -> StatusCode {
-                StatusCode::OpUnsupported
-            }
-            async fn open(
-                &mut self,
-                id: u32,
-                path: String,
-                flags: OpenFlags,
-                _: FileAttributes,
-            ) -> Result<Handle, StatusCode> {
-                self.0.opens.lock().unwrap().push((path, flags));
-                Ok(Handle {
-                    id,
-                    handle: if flags.contains(OpenFlags::READ) {
-                        "read"
-                    } else {
-                        "write"
-                    }
-                    .into(),
-                })
-            }
-            async fn close(&mut self, id: u32, handle: String) -> Result<Status, StatusCode> {
-                self.0.closes.lock().unwrap().push(handle);
-                Ok(status(id))
-            }
-            async fn extended(
-                &mut self,
-                id: u32,
-                request: String,
-                data: Vec<u8>,
-            ) -> Result<russh_sftp::protocol::Packet, StatusCode> {
-                self.0.calls.lock().unwrap().push((request, data));
-                if self.0.fail_copy.load(Ordering::SeqCst) {
-                    Err(StatusCode::PermissionDenied)
-                } else {
-                    Ok(russh_sftp::protocol::Packet::Status(status(id)))
-                }
-            }
-        }
-
-        #[tokio::test]
-        async fn copy_data_uses_server_handles_and_closes_them_on_success_or_failure() {
-            for failure in [false, true] {
-                let probe = Arc::new(CopyProbe::default());
-                probe.fail_copy.store(failure, Ordering::SeqCst);
-                let (client, server) = tokio::io::duplex(8192);
-                russh_sftp::server::run(server, CopyServer(probe.clone())).await;
-                let raw = russh_sftp::client::RawSftpSession::new(client);
-                raw.init().await.unwrap();
-                assert_eq!(
-                    copy_data_file(&raw, "/source", "/target", true)
-                        .await
-                        .is_err(),
-                    failure
-                );
-                let opens = probe.opens.lock().unwrap();
-                assert_eq!(opens.len(), 2);
-                assert_eq!(opens[0].0, "/source");
-                assert_eq!(opens[1].0, "/target");
-                assert!(opens[1].1.contains(OpenFlags::TRUNCATE));
-                let calls = probe.calls.lock().unwrap();
-                assert_eq!(calls.len(), 1);
-                assert_eq!(calls[0].0, "copy-data");
-                let mut expected = Vec::new();
-                expected.extend_from_slice(&4u32.to_be_bytes());
-                expected.extend_from_slice(b"read");
-                expected.extend_from_slice(&0u64.to_be_bytes());
-                expected.extend_from_slice(&0u64.to_be_bytes());
-                expected.extend_from_slice(&5u32.to_be_bytes());
-                expected.extend_from_slice(b"write");
-                expected.extend_from_slice(&0u64.to_be_bytes());
-                assert_eq!(calls[0].1, expected);
-                assert_eq!(*probe.closes.lock().unwrap(), vec!["write", "read"]);
-            }
-        }
 
         type RecordedRequests = Arc<std::sync::Mutex<Vec<(String, Vec<u8>)>>>;
 
@@ -5720,7 +5702,7 @@ mod tests {
         }
 
         #[tokio::test]
-        async fn sftp_copy_and_transfer_reject_destination_links() {
+        async fn transfer_preparation_rejects_remote_destination_links() {
             let root = temp_root("sftp-destination-link");
             let outside = root.join("outside");
             std::fs::create_dir(&outside).unwrap();
@@ -5729,7 +5711,7 @@ mod tests {
             let link = root.join("link");
             directory_link(&outside, &link);
             let sftp = client(&root, Arc::new(State::default())).await;
-            let error = copy_remote_entry(&sftp, "source.txt", "link", true)
+            let error = reject_remote_destination_link(&sftp, "link")
                 .await
                 .unwrap_err();
             assert!(error.to_string().contains("sftp.symlinkUnsupported"));
@@ -5776,27 +5758,6 @@ mod tests {
             assert_eq!(state.closes.load(Ordering::SeqCst), 1);
             sftp.close().await.unwrap();
             std::fs::remove_dir_all(root).unwrap();
-        }
-
-        #[tokio::test]
-        async fn remote_copy_replaces_shorter_content_and_closes_both_handles() {
-            let root = temp_root("protocol-copy");
-            std::fs::write(root.join("from.txt"), "new").unwrap();
-            std::fs::write(root.join("to.txt"), "long previous destination").unwrap();
-            let state = Arc::new(State::default());
-            let sftp = client(&root, state.clone()).await;
-            copy_remote_entry(&sftp, "from.txt", "to.txt", true)
-                .await
-                .unwrap();
-            assert_eq!(std::fs::read(root.join("to.txt")).unwrap(), b"new");
-            assert_eq!(state.closes.load(Ordering::SeqCst), 2);
-            state.fail_close.store(true, Ordering::SeqCst);
-            assert!(copy_remote_entry(&sftp, "from.txt", "to.txt", true)
-                .await
-                .is_err());
-            assert_eq!(state.closes.load(Ordering::SeqCst), 4);
-            sftp.close().await.unwrap();
-            let _ = std::fs::remove_dir_all(root);
         }
 
         #[tokio::test]
@@ -5923,27 +5884,25 @@ mod tests {
         std::fs::remove_dir_all(root).unwrap();
     }
 
-    #[test]
-    fn recursive_copy_rejects_destination_directory_links_without_touching_outside() {
+    #[tokio::test]
+    async fn transfer_preparation_rejects_nested_destination_directory_links() {
         let root = temp_root("destination-link");
-        let source = root.join("source");
-        let target = root.join("target");
         let outside = root.join("outside");
-        std::fs::create_dir_all(source.join("nested")).unwrap();
-        std::fs::create_dir_all(&target).unwrap();
         std::fs::create_dir_all(&outside).unwrap();
-        std::fs::write(source.join("nested/existing.txt"), "overwrite").unwrap();
-        std::fs::write(source.join("nested/new.txt"), "create").unwrap();
         std::fs::write(outside.join("existing.txt"), "preserve").unwrap();
-        let link = target.join("nested");
+        let link = root.join("link");
         directory_link(&outside, &link);
-        assert!(local_copy(display_path(&source), display_path(&target), true).is_err());
+        let endpoint = Endpoint {
+            session: None,
+            path: display_path(&link),
+        };
+        assert!(make_dir(&endpoint, None).await.is_err());
+        assert!(open_writer(&endpoint, None, true).await.is_err());
+        assert!(scan::measure(&endpoint, None, 1).await.is_err());
         assert_eq!(
             std::fs::read_to_string(outside.join("existing.txt")).unwrap(),
             "preserve"
         );
-        assert!(!outside.join("new.txt").exists());
-        assert!(copy_local_entry(&link, &root.join("copy-of-link"), true).is_err());
         #[cfg(windows)]
         std::fs::remove_dir(link).unwrap();
         #[cfg(unix)]
@@ -5972,27 +5931,6 @@ mod tests {
     }
 
     #[test]
-    fn copies_and_removes_folders_recursively() {
-        let root = temp_root("copy");
-        let source = root.join("source");
-        std::fs::create_dir_all(source.join("nested")).expect("nested");
-        std::fs::write(source.join("a.txt"), "a").expect("a");
-        std::fs::write(source.join("nested").join("b.txt"), "b").expect("b");
-
-        let target = root.join("target");
-        copy_local_entry(&source, &target, false).expect("copy");
-        assert_eq!(std::fs::read_to_string(target.join("a.txt")).unwrap(), "a");
-        assert_eq!(
-            std::fs::read_to_string(target.join("nested").join("b.txt")).unwrap(),
-            "b"
-        );
-
-        remove_local_entry(&target).expect("remove");
-        assert!(!target.exists());
-        let _ = std::fs::remove_dir_all(&root);
-    }
-
-    #[test]
     fn creates_empty_files() {
         let root = temp_root("create");
         let file = root.join("note.txt");
@@ -6006,7 +5944,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unapproved_overwrite_and_recursive_self_copy() {
+    fn validates_overwrite_and_rejects_recursive_self_copy() {
         let root = temp_root("safe-copy");
         let source = root.join("source");
         let target = root.join("target");
@@ -6014,22 +5952,17 @@ mod tests {
         std::fs::write(source.join("a.txt"), "new").unwrap();
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("a.txt"), "old").unwrap();
-        assert!(local_copy(display_path(&source), display_path(&target), false).is_err());
+        assert!(check_local_destination(&source, &target, false).is_err());
         assert_eq!(
             std::fs::read_to_string(target.join("a.txt")).unwrap(),
             "old"
         );
-        assert!(local_copy(
-            display_path(&source),
-            display_path(&source.join("nested")),
-            true
-        )
-        .is_err());
+        assert!(check_local_destination(&source, &source.join("nested"), true).is_err());
         assert!(!source.join("nested").exists());
-        local_copy(display_path(&source), display_path(&target), true).unwrap();
+        check_local_destination(&source, &target, true).unwrap();
         assert_eq!(
             std::fs::read_to_string(target.join("a.txt")).unwrap(),
-            "new"
+            "old"
         );
         assert!(source.join("a.txt").exists());
         let _ = std::fs::remove_dir_all(root);

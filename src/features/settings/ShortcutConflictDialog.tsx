@@ -9,7 +9,9 @@ import { useWorkspace } from "@/store/workspace";
 
 export function ShortcutConflictDialog() {
   const { t } = useTranslation();
-  const conflict = useShortcutConflicts((state) => state.queue[0]);
+  const queue = useShortcutConflicts((state) => state.queue);
+  const conflict = queue[0];
+  const resolving = useShortcutConflicts((state) => state.resolving);
   const plugins = usePlugins((state) => state.items);
   if (!conflict) return null;
   const definitions = shortcutCommands(plugins);
@@ -19,13 +21,20 @@ export function ShortcutConflictDialog() {
   const dismiss = () => useShortcutConflicts.getState().dismiss();
   const resolve = (id: string) => void useShortcutConflicts.getState().resolve(id);
   const showSettings = () => {
-    const ids = [...new Set([incoming?.plugin?.id, existing?.plugin?.id].filter(Boolean))];
+    const commands = new Set(queue.flatMap((item) => [item.incoming, item.existing]));
+    const ids = [
+      ...new Set(
+        definitions
+          .filter((item) => commands.has(item.id))
+          .map((item) => item.plugin?.id)
+          .filter(Boolean),
+      ),
+    ];
     useShortcutConflicts
       .getState()
-      .openSearch(`@is:conflict${ids.length ? ` & @plugins:${ids.join(",")}` : ""}`);
+      .review(`@is:conflict${ids.length ? ` & @plugins:${ids.join(",")}` : ""}`);
     useNavigation.getState().selectSettings("shortcuts");
     useWorkspace.getState().openPage("settings");
-    dismiss();
   };
   return (
     <Dialog
@@ -45,10 +54,10 @@ export function ShortcutConflictDialog() {
     >
       <p>{t("shortcuts.conflictDescription", { key: displayShortcut(conflict.binding) })}</p>
       <div className="shortcuts-conflict-options">
-        <Button onClick={() => resolve(conflict.incoming)}>
+        <Button disabled={resolving} onClick={() => resolve(conflict.incoming)}>
           {t("shortcuts.keepBinding", { command: name(incoming) })}
         </Button>
-        <Button onClick={() => resolve(conflict.existing)}>
+        <Button disabled={resolving} onClick={() => resolve(conflict.existing)}>
           {t("shortcuts.keepBinding", { command: name(existing) })}
         </Button>
       </div>

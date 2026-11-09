@@ -1,4 +1,5 @@
 import type { FsSource } from "@/lib/api/types";
+import { reportError } from "@/lib/diagnostics";
 import { createEventBus, type Handler } from "./bus";
 
 export interface FilesChanged {
@@ -32,7 +33,7 @@ const bus = createEventBus<DomainEvents>(
     window.addEventListener(name, changed);
     return () => window.removeEventListener(name, changed);
   },
-  (name) => console.error(`Domain event handler failed: ${name}`),
+  (name, error) => reportError("events.domain", name, error),
 );
 
 export const domainEvents = {

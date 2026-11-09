@@ -344,6 +344,46 @@ pub(super) fn register_resource(context: &HostContext, id: &str, transfer: bool)
     });
     true
 }
+
+/// A completed synchronous copy no longer needs client-cancellation ownership.
+/// Keep the client's revocation tombstone and resources from other requests.
+fn release_resource(context: &HostContext, id: &str) {
+    let Some(client) = &context.tool_client else {
+        return;
+    };
+    release_client_resource(&context.id, context.generation, client, id);
+}
+
+/// A synchronous copy is still owned by its caller while it awaits the worker.
+/// Dropping a cancelled tool request signals graceful cancellation before
+/// releasing the client record; the worker retains its lease until IO drains.
+pub(super) struct CopyRequest(pub HostContext, pub String);
+
+impl Drop for CopyRequest {
+    fn drop(&mut self) {
+        self.0.app.state::<AppState>().transfers.cancel_owned(
+            &self.1,
+            &self.0.id,
+            self.0.generation,
+        );
+        release_resource(&self.0, &self.1);
+    }
+}
+
+fn release_client_resource(plugin: &str, generation: u64, client: &str, id: &str) {
+    if id.is_empty() {
+        return;
+    }
+    resources()
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .retain(|item| {
+            item.plugin != plugin
+                || item.generation != generation
+                || item.client != client
+                || item.id != id
+        });
+}
 fn pending() -> &'static Mutex<HashMap<String, Pending>> {
     static PENDING: OnceLock<Mutex<HashMap<String, Pending>>> = OnceLock::new();
     PENDING.get_or_init(|| Mutex::new(HashMap::new()))
@@ -790,6 +830,58 @@ mod tests {
             "plugin.tools.targetChanged"
         );
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn completed_copy_releases_only_its_client_resource_and_preserves_revocation() {
+        let plugin = uuid::Uuid::new_v4().to_string();
+        let unrelated = uuid::Uuid::new_v4().to_string();
+        {
+            let mut items = resources().lock().unwrap();
+            for (owner, generation, client, id) in [
+                (plugin.as_str(), 1, "agent", "copy"),
+                (plugin.as_str(), 1, "agent", "other-copy"),
+                (plugin.as_str(), 1, "agent", ""),
+                (plugin.as_str(), 1, "other-agent", "copy"),
+                (plugin.as_str(), 2, "agent", "copy"),
+                (unrelated.as_str(), 1, "agent", "copy"),
+            ] {
+                items.push(Resource {
+                    plugin: owner.into(),
+                    generation,
+                    client: client.into(),
+                    id: id.into(),
+                    transfer: true,
+                });
+            }
+        }
+        release_client_resource(&plugin, 1, "agent", "copy");
+        release_client_resource(&plugin, 1, "agent", "");
+        release_client_resource(&plugin, 1, "agent", "copy");
+        let mut items = resources().lock().unwrap();
+        let remaining: Vec<_> = items
+            .iter()
+            .filter(|item| item.plugin == plugin || item.plugin == unrelated)
+            .map(|item| {
+                (
+                    item.plugin.as_str(),
+                    item.generation,
+                    item.client.as_str(),
+                    item.id.as_str(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            remaining,
+            vec![
+                (plugin.as_str(), 1, "agent", "other-copy"),
+                (plugin.as_str(), 1, "agent", ""),
+                (plugin.as_str(), 1, "other-agent", "copy"),
+                (plugin.as_str(), 2, "agent", "copy"),
+                (unrelated.as_str(), 1, "agent", "copy"),
+            ]
+        );
+        items.retain(|item| item.plugin != plugin && item.plugin != unrelated);
     }
 
     #[test]

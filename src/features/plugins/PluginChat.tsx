@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   ArrowDown,
@@ -43,6 +43,8 @@ import type { Host } from "@/lib/api/types";
 import { hostSubtitle } from "@/lib/text/format";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { PluginChatMessages } from "./PluginChatMessages";
+import { PluginChatTasks } from "./PluginChatTasks";
+import { PluginChatApprovalDetail } from "./PluginChatApprovalDetail";
 import { PluginChatConfigDialog } from "./PluginChatConfig";
 import { PluginExecutionDialog } from "./PluginExecutionDialog";
 import { PluginChatSessions } from "./PluginChatSessions";
@@ -53,14 +55,23 @@ export function PluginChat({
   pluginId,
   viewId,
   block: initial,
+  visible = true,
 }: {
   pluginId: string;
   viewId: string;
   block: PluginChatBlock;
+  visible?: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const [block, setBlock] = useState(initial);
   const current = useRef(block);
+  const viewVisible = useRef(visible);
+  useLayoutEffect(() => {
+    viewVisible.current = visible;
+    // Keep the event subscription alive while hidden, then publish the latest
+    // snapshot once on reveal without remounting drafts or restarting the agent.
+    if (visible) setBlock(current.current);
+  }, [visible]);
   const [drafts, setDrafts] = useViewState<Record<string, string>>(
     `chat:${pluginId}:${viewId}:${initial.id}`,
     {},
@@ -95,7 +106,7 @@ export function PluginChat({
   const update = (next: PluginChatBlock | ((previous: PluginChatBlock) => PluginChatBlock)) => {
     const value = typeof next === "function" ? next(current.current) : next;
     current.current = value;
-    setBlock(value);
+    if (viewVisible.current) setBlock(value);
   };
   useEffect(() => {
     // Refreshes must not replace streaming output with an older render snapshot.
@@ -106,7 +117,7 @@ export function PluginChat({
       (initial.run?.seq ?? 0) >= (previous.run?.seq ?? 0)
     ) {
       current.current = initial;
-      setBlock(initial);
+      if (viewVisible.current) setBlock(initial);
     }
   }, [initial]);
   useEffect(() => {
@@ -127,7 +138,7 @@ export function PluginChat({
           const value = applyChatEvent(current.current, viewId, event.payload);
           if (value !== current.current) {
             current.current = value;
-            setBlock(value);
+            if (viewVisible.current) setBlock(value);
           }
         })
         .then((unlisten) => {
@@ -149,6 +160,7 @@ export function PluginChat({
     };
   }, [pluginId, viewId, streamAttempt]);
   useEffect(() => {
+    if (!visible) return;
     if (visibleSession.current !== block.activeSessionId) {
       visibleSession.current = block.activeSessionId;
       nearBottom.current = true;
@@ -156,12 +168,12 @@ export function PluginChat({
     }
     if (nearBottom.current && viewport.current)
       viewport.current.scrollTop = viewport.current.scrollHeight;
-  }, [block.activeSessionId, block.messages, block.approvals, block.tasks]);
+  }, [visible, block.activeSessionId, block.messages, block.approvals, block.tasks]);
 
   const active = block.run?.status === "running" || block.run?.status === "waiting";
   const preparing = block.readiness?.status === "checking";
   useEffect(() => {
-    if (!preparing || !isTauri()) return;
+    if (!visible || !preparing || !isTauri()) return;
     let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
@@ -187,7 +199,7 @@ export function PluginChat({
           next.execution?.cwd === previous.execution?.cwd
         ) {
           current.current = next;
-          setBlock(next);
+          if (viewVisible.current) setBlock(next);
         }
       } catch {
         // The event stream remains primary; a temporary refresh error is retryable.
@@ -201,7 +213,7 @@ export function PluginChat({
       disposed = true;
       clearTimeout(timer);
     };
-  }, [preparing, pluginId, viewId, i18n.resolvedLanguage, i18n.language]);
+  }, [visible, preparing, pluginId, viewId, i18n.resolvedLanguage, i18n.language]);
   const messages = block.messages.filter(
     (message) =>
       message.role !== "assistant" ||
@@ -723,7 +735,7 @@ export function PluginChat({
               {approval.tool}
               {approval.risk ? ` · ${approval.risk}` : ""}
             </small>
-            {approval.detail ? <p>{approval.detail}</p> : null}
+            <PluginChatApprovalDetail detail={approval.detail} />
             {approval.command ? <pre tabIndex={0}>{approval.command}</pre> : null}
             <div className="plugin-chat__actions">
               <Button
@@ -751,49 +763,26 @@ export function PluginChat({
             </div>
           </article>
         ))}
-        {block.tasks.length ? (
-          <section className="plugin-chat__tasks" aria-label={t("pluginChat.tasks")}>
-            <h4>{t("pluginChat.tasks")}</h4>
-            {block.tasks.map((task) => (
-              <article key={task.id} className="plugin-chat__task">
-                <div className="plugin-chat__task-head">
-                  <strong>{task.title || task.id}</strong>
-                  <span>{t(`pluginChat.taskStates.${task.status}`)}</span>
-                </div>
-                {task.output ? (
-                  <details>
-                    <summary>{t("pluginChat.taskOutput")}</summary>
-                    <pre tabIndex={0}>{task.output}</pre>
-                  </details>
-                ) : null}
-                {task.recoverable && block.commands.recover ? (
-                  <div className="plugin-chat__actions">
-                    <span className="settings-hint">{t("pluginChat.recoveryHint")}</span>
-                    <Button
-                      size="sm"
-                      disabled={!!busy || active || preparing}
-                      onClick={() =>
-                        void command(block.commands.recover, { taskId: task.id, action: "inspect" })
-                      }
-                    >
-                      {t("pluginChat.inspectTask")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={!!busy || active || preparing}
-                      onClick={() =>
-                        void command(block.commands.recover, { taskId: task.id, action: "resume" })
-                      }
-                    >
-                      {t("pluginChat.resumeTask")}
-                    </Button>
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </section>
-        ) : null}
-        {block.run?.status === "interrupted" && block.commands.recover ? (
+        <PluginChatTasks
+          key={`${pluginId}:${viewId}:${block.activeSessionId}`}
+          tasks={block.tasks}
+          currentRunId={block.run?.id}
+          disabled={!!busy || active || preparing}
+          onRecover={
+            block.commands.recover && !active && !preparing
+              ? (task, action) => {
+                  void command(block.commands.recover, {
+                    taskId: task.id,
+                    taskRunId: task.runId,
+                    action,
+                  });
+                }
+              : undefined
+          }
+        />
+        {block.run?.status === "interrupted" &&
+        block.commands.recover &&
+        !block.tasks.some((task) => task.recoverable) ? (
           <article className="plugin-chat__task">
             <strong>{t("pluginChat.taskStates.interrupted")}</strong>
             <p className="settings-hint">{t("pluginChat.recoveryHint")}</p>

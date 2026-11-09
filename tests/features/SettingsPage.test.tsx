@@ -42,6 +42,20 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("clears the typed modified qualifier when unchecking an already-enabled checkbox", () => {
+    useSettings.setState({ settings: { ...defaults, monoFontSize: 18 } });
+    render(<SettingsPage />);
+    const checkbox = screen.getByRole("checkbox", { name: /modified/i });
+    fireEvent.click(checkbox);
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "@is:modified" },
+    });
+    fireEvent.click(checkbox);
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect(
+      (screen.getByRole("textbox", { name: "Search settings" }) as HTMLInputElement).value,
+    ).toBe("");
+  });
   it("defaults bandwidth limits to unlimited and keeps them available without optimization", () => {
     useNavigation.setState({ settingsSection: "files" });
     render(<SettingsPage />);

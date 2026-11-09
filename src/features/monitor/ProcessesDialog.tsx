@@ -1,9 +1,10 @@
-import { ChevronLeft, ChevronRight, Pause, Play, RefreshCw, Search, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Pause, Play, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { Input } from "@/components/ui/form/Field";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { matchesSearch, matchesSearchNumber, parseSearchQuery } from "@/lib/search/query";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { translateError } from "@/lib/api/errors";
 import { formatBytes } from "@/lib/text/format";
@@ -88,10 +89,10 @@ export function ProcessesDialog({ sessionId, onClose }: ProcessesDialogProps) {
   };
 
   const filtered = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
-    const result = (items ?? []).filter(
-      (process) =>
-        !needle ||
+    const search = parseSearchQuery(query, ["name", "pid", "user", "group", "cpu", "memory"]);
+    const result = (items ?? []).filter((process) =>
+      matchesSearch(
+        search,
         [
           process.name,
           process.pid,
@@ -99,11 +100,16 @@ export function ProcessesDialog({ sessionId, onClose }: ProcessesDialogProps) {
           process.groupName,
           process.uid,
           process.gid,
-        ].some((value) =>
-          String(value ?? "")
-            .toLocaleLowerCase()
-            .includes(needle),
-        ),
+        ].join(" "),
+        {
+          name: (value) => process.name.toLocaleLowerCase().includes(value),
+          pid: (value) => matchesSearchNumber(process.pid, value),
+          user: [process.userName, process.uid],
+          group: [process.groupName, process.gid],
+          cpu: (value) => matchesSearchNumber(process.cpuTotal, value),
+          memory: (value) => matchesSearchNumber(process.rss, value),
+        },
+      ),
     );
     return result.sort((left, right) => {
       const a = left[sort.key];
@@ -216,18 +222,24 @@ export function ProcessesDialog({ sessionId, onClose }: ProcessesDialogProps) {
       }
     >
       <div className="process-toolbar">
-        <label className="process-search">
-          <Search size={14} aria-hidden="true" />
-          <Input
-            aria-label={t("processes.search")}
-            placeholder={t("processes.search")}
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setPage(0);
-            }}
-          />
-        </label>
+        <SearchField
+          className="process-search"
+          aria-label={t("processes.search")}
+          placeholder={t("processes.search")}
+          value={query}
+          presets={[
+            { key: "name", value: "", label: t("searchUi.name") },
+            { key: "pid", value: "", label: t("searchUi.pid") },
+            { key: "user", value: "", label: t("searchUi.user") },
+            { key: "group", value: "", label: t("searchUi.group") },
+            { key: "cpu", value: ">10", label: t("searchUi.cpu") },
+            { key: "memory", value: ">100MB", label: t("searchUi.memory") },
+          ]}
+          onChange={(value) => {
+            setQuery(value);
+            setPage(0);
+          }}
+        />
         <span className="process-count">{t("processes.count", { count: filtered.length })}</span>
         <Button
           variant="ghost"

@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import type { SearchQuery } from "@/lib/search/query";
 import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
@@ -260,12 +261,13 @@ export const api = {
     root: string,
     query: string,
     content: boolean,
+    selection?: SearchQuery,
   ) =>
     invoke<{
       matches: { path: string; line: number; column: number; preview: string }[];
       limited: boolean;
       skipped: number;
-    }>("files_search", { requestId, sessionId, root, query, content }),
+    }>("files_search", { requestId, sessionId, root, query, content, selection }),
   filesSearchCancel: (requestId: string) => invoke<void>("files_search_cancel", { requestId }),
   searchPreviewLocal: (path: string) => invoke<string>("search_preview_local", { path }),
   localHome: () => invoke<string>("local_home"),

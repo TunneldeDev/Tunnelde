@@ -132,7 +132,8 @@ jobs:
           TUNNELDE_API_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-api-describe.json" cargo test --manifest-path src-tauri/Cargo.toml emit_discovery_contract_response
           node scripts/ci/check-plugin-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json"
           TUNNELDE_EDITOR_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-editor.json" pnpm exec vitest run tests/app/pluginEditorContract.test.ts
-          TUNNELDE_EDITOR_CONTRACT_INPUT="$RUNNER_TEMP/plugin-editor.json" TUNNELDE_CORE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-core.json" cargo test --manifest-path src-tauri/Cargo.toml emit_core_contract_responses
+          TUNNELDE_WORKSPACE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-workspace.json" pnpm exec vitest run tests/app/pluginWorkspaceContract.test.ts
+          TUNNELDE_EDITOR_CONTRACT_INPUT="$RUNNER_TEMP/plugin-editor.json" TUNNELDE_WORKSPACE_CONTRACT_INPUT="$RUNNER_TEMP/plugin-workspace.json" TUNNELDE_CORE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-core.json" cargo test --manifest-path src-tauri/Cargo.toml emit_core_contract_responses
           node scripts/ci/check-core-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json" "$RUNNER_TEMP/plugin-core.json"
           node scripts/ci/check-legacy-sdk.mjs "$RUNNER_TEMP/plugin-core.json"
 
@@ -185,6 +186,7 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
@@ -225,9 +227,11 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_move
+          cargo test --manifest-path src-tauri/Cargo.toml --lib local_directory_move
           cargo test --manifest-path src-tauri/Cargo.toml --lib move_verification
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::guarded_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib guarded_backup

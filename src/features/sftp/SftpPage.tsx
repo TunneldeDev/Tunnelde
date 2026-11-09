@@ -1,4 +1,5 @@
-import { matchesCommand, isTextTarget } from "@/lib/keyboard/registry";
+import { isTextTarget } from "@/lib/keyboard/registry";
+import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
 import {
   ArrowLeftRight,
   ArrowLeft,
@@ -89,6 +90,7 @@ import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useWorkspace, type FilePaneOptions } from "@/store/workspace";
 import { useSearchRoots } from "@/store/searchRoots";
+import { SearchField } from "@/components/ui/form/SearchField";
 import { useFilePreview } from "@/store/filePreview";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
@@ -1571,6 +1573,102 @@ export function SftpPage({
     }
   };
 
+  useEffect(() => {
+    if (!pageRef.current) return;
+    return bindShortcutProvider(pageRef.current, (event) => {
+      if (!(event.target instanceof Element)) return [];
+      const pane = event.target.closest<HTMLElement>(".sftp-pane");
+      const id = pane?.dataset.pane as PaneId | undefined;
+      if (!id || !pageRef.current?.contains(pane)) return [];
+      const state = panesRef.current[id].state;
+      const columnPath = event.target.closest<HTMLElement>(".sftp-pane__body")?.dataset.columnPath;
+      const ancestorIndex = state.ancestors.findIndex((listing) => listing.path === columnPath);
+      const ancestor = state.ancestors[ancestorIndex];
+      const branch =
+        ancestorIndex >= 0
+          ? (state.ancestors[ancestorIndex + 1] ?? state.listing)?.path
+          : undefined;
+      const primary = ancestor
+        ? (ancestor.entries.find((entry) => entry.path === branch) ?? null)
+        : primaryEntry(id);
+      const selected = ancestor ? (primary ? [primary] : []) : selectedEntries(id);
+      const text =
+        (isTextTarget(event.target) && !event.target.classList.contains("sftp-type-select")) ||
+        !!event.target.closest("button, a, [role=separator]");
+      const actions = [
+        "filter",
+        "path",
+        ...(!text
+          ? [
+              "hidden",
+              "back",
+              "forward",
+              "refresh",
+              ...(!state.busy && state.listing
+                ? [
+                    "parent",
+                    "selectAll",
+                    "paste",
+                    "newFile",
+                    "newFolder",
+                    ...(selected.length ? ["copy", "cut", "delete"] : []),
+                    ...(selected.length === 1 ? ["rename"] : []),
+                    ...(primary ? ["open", "preview"] : []),
+                  ]
+                : []),
+            ]
+          : []),
+      ];
+      return scopedShortcutCandidates(
+        event,
+        actions.map((action) => `files.${action}`),
+        (command) => {
+          const action = command.slice(6);
+          if (ancestor && action !== "filter" && action !== "path") {
+            activateColumn(id, ancestorIndex);
+            if (primary) selectEntry(id, primary, "single");
+          }
+          if (action === "filter") {
+            setActive(id);
+            focusFilter(id);
+          } else if (action === "path") {
+            setActive(id);
+            if (!state.pathEditing) patch(id, { pathEditing: true });
+            else {
+              const input = pane?.querySelector<HTMLInputElement>(".sftp-pane__path input");
+              input?.focus();
+              input?.select();
+            }
+          } else if (action === "hidden") toggleHidden(id);
+          else if (action === "back" || action === "forward")
+            travel(id, action === "back" ? -1 : 1);
+          else if (action === "refresh") void load(id, requested.current[id].path);
+          else if (action === "parent" && state.listing)
+            navigate(id, parentOf(ancestor?.path ?? state.listing.path));
+          else if (action === "selectAll") {
+            const entries = visibleEntries(id);
+            patch(id, {
+              selectedPaths: entries.map((item) => item.path),
+              anchor: entries[0]?.path ?? null,
+              cursor: entries[entries.length - 1]?.path ?? null,
+            });
+          } else if (action === "copy" || action === "cut") clipSelection(id, action);
+          else if (action === "paste") pasteInto(id, ancestor?.path ?? state.listing?.path ?? "");
+          else if (action === "newFile" || action === "newFolder")
+            startCreate(id, action === "newFile" ? "file" : "folder");
+          else if (action === "preview" && primary) previewEntry(id, primary);
+          else if (action === "open" && primary) {
+            if (primary.isDir) navigate(id, primary.path);
+            else applyEntry(id, primary);
+          } else if (action === "rename") startRename(id, selected[0]!);
+          else if (action === "delete") removeSelection(id);
+          else return false;
+          return true;
+        },
+      );
+    });
+  });
+
   const onKeyDown = (event: React.KeyboardEvent, id: PaneId) => {
     if (
       (isTextTarget(event.target) &&
@@ -1583,54 +1681,6 @@ export function SftpPage({
     const entries = visibleEntries(id);
     const primary = primaryEntry(id);
     const index = primary ? entries.findIndex((item) => item.path === primary.path) : -1;
-    const overrides = useSettings.getState().settings.keyboardShortcuts;
-    const matches = (id: string) => matchesCommand(event.nativeEvent, id, overrides);
-    const action = [
-      "hidden",
-      "back",
-      "forward",
-      "parent",
-      "refresh",
-      "selectAll",
-      "copy",
-      "cut",
-      "paste",
-      "newFile",
-      "newFolder",
-      "open",
-      "preview",
-      "rename",
-      "delete",
-    ].find((id) => matches(`files.${id}`));
-    if (action) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (action === "hidden") toggleHidden(id);
-      else if (action === "back" || action === "forward") travel(id, action === "back" ? -1 : 1);
-      else if (action === "refresh") refreshPane(id);
-      else if (!state.busy) {
-        if (action === "parent" && state.listing) navigate(id, parentOf(state.listing.path));
-        else if (action === "selectAll")
-          patch(id, {
-            selectedPaths: entries.map((item) => item.path),
-            anchor: entries[0]?.path ?? null,
-            cursor: entries[entries.length - 1]?.path ?? null,
-          });
-        else if ((action === "copy" || action === "cut") && selectedEntries(id).length > 0)
-          clipSelection(id, action);
-        else if (action === "paste") pasteInto(id, state.listing?.path ?? "");
-        else if (action === "newFile" || action === "newFolder")
-          startCreate(id, action === "newFile" ? "file" : "folder");
-        else if (action === "preview" && primary) previewEntry(id, primary);
-        else if (action === "open" && primary) {
-          if (primary.isDir) navigate(id, primary.path);
-          else applyEntry(id, primary);
-        } else if (action === "rename" && selectedEntries(id).length === 1)
-          startRename(id, selectedEntries(id)[0]!);
-        else if (action === "delete" && selectedEntries(id).length > 0) removeSelection(id);
-      }
-      return;
-    }
     if (state.busy || event.ctrlKey || event.metaKey || event.altKey) return;
     if (
       panesRef.current[id].view.filesLayout === "columns" &&
@@ -2045,28 +2095,6 @@ export function SftpPage({
         data-hide-size={!columns.includes("size") || undefined}
         data-hide-modified={!columns.includes("modified") || undefined}
         onMouseDown={() => setActive(id)}
-        onKeyDownCapture={(event) => {
-          const overrides = useSettings.getState().settings.keyboardShortcuts;
-          if (matchesCommand(event.nativeEvent, "files.filter", overrides)) {
-            event.preventDefault();
-            event.stopPropagation();
-            setActive(id);
-            focusFilter(id);
-            return;
-          }
-          if (matchesCommand(event.nativeEvent, "files.path", overrides)) {
-            event.preventDefault();
-            event.stopPropagation();
-            setActive(id);
-            if (!state.pathEditing) patch(id, { pathEditing: true });
-            else {
-              const path =
-                event.currentTarget.querySelector<HTMLInputElement>(".sftp-pane__path input");
-              path?.focus();
-              path?.select();
-            }
-          }
-        }}
       >
         <header className="sftp-pane__head">
           {!single && (
@@ -2260,12 +2288,22 @@ export function SftpPage({
               }
             }}
           >
-            <Input
+            <SearchField
               aria-label={t("sftp.filterFiles")}
+              filterKeys={["name", "ext", "type", "is", "path", "size", "modified"]}
               placeholder={t("sftp.filterPlaceholder")}
               spellCheck={false}
               value={state.filter}
-              onChange={(event) => updateView(id, {}, { filter: event.target.value })}
+              onChange={(value) => updateView(id, {}, { filter: value })}
+              presets={[
+                { key: "type", value: "file", label: t("searchUi.file"), exclusive: true },
+                { key: "type", value: "folder", label: t("searchUi.folder"), exclusive: true },
+                { key: "ext", value: "", label: t("searchUi.extension") },
+                { key: "size", value: ">10MB", label: t("searchUi.size") },
+                { key: "is", value: "hidden", label: t("searchUi.hidden") },
+                { key: "modified", value: "", label: t("searchUi.date") },
+                { key: "path", value: "", label: t("searchUi.path") },
+              ]}
             />
             <Select
               label={t("sftp.filterKind")}

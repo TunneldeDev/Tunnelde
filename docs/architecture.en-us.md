@@ -68,6 +68,21 @@ does not return a panel to the left sidebar; use **Move to side bar** or drag it
 back explicitly to change its placement. Hidden panel slots are included in saved
 workspace layouts and do not count as visible content.
 
+Hidden plugin chat views retain their event subscription and latest conversation
+state, but stop readiness polling and defer streaming React updates until visible.
+Revealing a view publishes the accumulated state without restarting the plugin or
+discarding its draft. Visibility follows each pane's selected tab, independently
+of which pane has keyboard focus.
+
+## Host groups and search
+
+The host tree follows all saved parent levels, with descendant counts and indentation
+at each level. Favorites remain in their own section. Filtering reveals matching
+hosts and their ancestors, without changing the normal collapsed-group state;
+groups can also be collapsed within the current search. Deleting a group removes
+its subgroups while keeping their saved hosts in Ungrouped. Removing a saved host
+does not delete files on the remote machine.
+
 ## Data
 
 - Database: `<app data>/tunnelde.db` (SQLite, WAL).
@@ -102,6 +117,13 @@ proxy passwords remain in the vault under `proxy:<id>`. SSH supports bounded HTT
 CONNECT and SOCKS5 negotiation. Jump routes live under `route:<host-id>` in SQLite.
 Each hop checks its actual server key before authenticating; nested SSH channels
 and jump handles stay owned by the destination session.
+
+An explicit disconnect removes the session from discovery, forgets its monitoring
+state and publishes a single `ssh://closed` event. It also requests transport-level
+closure for the target and its private jumps; stopping the terminal task alone does
+not close existing SFTP or exec channels. Disconnect requests run outside the session
+registry lock with a bounded send timeout, and failures are logged with session/hop
+context. Other sessions remain independent.
 
 Durable desktop transfers journal tasks under `transfer:<id>`, per-file checkpoints
 under `transfer-file:<id>:…`, and overwrite recovery intent under

@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { Input } from "@/components/ui/form/Field";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { matchesSearch, matchesSearchDate, parseSearchQuery } from "@/lib/search/query";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { encodeBase64 } from "@/lib/text/base64";
 import { notifyHistoryChanged, recordTerminalCommand } from "@/lib/session/history";
@@ -61,8 +62,12 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
     );
   }
 
+  const search = parseSearchQuery(query, ["command", "date"]);
   const filtered = (hostId ? (entries ?? []) : []).filter((entry) =>
-    entry.command.toLowerCase().includes(query.trim().toLowerCase()),
+    matchesSearch(search, entry.command, {
+      command: (value) => entry.command.toLocaleLowerCase().includes(value),
+      date: (value) => matchesSearchDate(entry.executedAt, value),
+    }),
   );
 
   const insert = (entry: HistoryEntry) => {
@@ -101,12 +106,16 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
   return (
     <div className="history-page">
       <header className="history-head">
-        <Input
+        <SearchField
           value={query}
           spellCheck={false}
           placeholder={t("history.search")}
           aria-label={t("history.search")}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={setQuery}
+          presets={[
+            { key: "command", value: "", label: t("searchUi.command") },
+            { key: "date", value: "", label: t("searchUi.date") },
+          ]}
         />
         <span className="history-head__count">
           {t("history.count", { count: filtered.length })}

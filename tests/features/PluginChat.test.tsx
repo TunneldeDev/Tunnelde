@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Profiler } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginEvent } from "@/lib/api/types";
 import { chat } from "../fixtures/pluginChat";
 import { deferred } from "../fixtures/plugins";
@@ -11,12 +12,14 @@ const mock = vi.hoisted(() => ({
   copy: vi.fn(),
   pickExecutable: vi.fn(),
   pickFolder: vi.fn(),
+  renderView: vi.fn(),
 }));
 vi.mock("@/lib/api/ipc", () => ({
   api: {
     pluginRun: mock.run,
     pluginPickExecutable: mock.pickExecutable,
     pluginPickFolder: mock.pickFolder,
+    pluginRenderView: mock.renderView,
   },
   events: { onPluginEvent: mock.listen },
   isTauri: () => true,
@@ -28,7 +31,7 @@ vi.mock("@/store/pluginSecurity", () => ({
 vi.mock("@/lib/session/clipboard", () => ({ copyText: mock.copy }));
 import i18n from "@/i18n/i18n";
 import { PluginChat } from "@/features/plugins/PluginChat";
-import { normalizeChatBlock } from "@/lib/plugins/pluginChat";
+import { normalizeChatBlock, type PluginChatBlock } from "@/lib/plugins/pluginChat";
 import { useDialogs } from "@/store/dialogs";
 let publish: (event: PluginEvent) => void;
 beforeEach(async () => {
@@ -44,10 +47,81 @@ beforeEach(async () => {
   });
   useDialogs.getState().close();
 });
+afterEach(() => vi.useRealTimers());
 const emit = (payload: unknown, pluginId = "assistant", generation = 1) =>
   act(() => publish({ pluginId, generation, event: "chat", payload }));
 
 describe("controlled plugin chat", () => {
+  it("buffers hidden streaming updates without React commits and restores the latest state and draft", async () => {
+    const onRender = vi.fn();
+    const block: PluginChatBlock = { ...chat, run: { id: "run-1", status: "running", seq: 0 } };
+    const content = (visible: boolean) => (
+      <Profiler id="chat" onRender={onRender}>
+        <PluginChat pluginId="assistant" viewId="chat" block={block} visible={visible} />
+      </Profiler>
+    );
+    const view = render(content(true));
+    await act(async () => {});
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "Keep my draft" } });
+    view.rerender(content(false));
+    const commits = onRender.mock.calls.length;
+    const event = {
+      viewId: "chat",
+      sessionId: "session-1",
+      runId: "run-1",
+      messageId: "reply",
+      type: "delta",
+      delta: "x",
+    };
+    for (let seq = 1; seq <= 20; seq++) emit({ ...event, seq }, "assistant", 2);
+    emit({ ...event, seq: 21, delta: "stale" }, "assistant", 1);
+    emit({ ...event, seq: 21, type: "done", status: "done" }, "assistant", 2);
+    expect(onRender).toHaveBeenCalledTimes(commits);
+    expect(screen.queryByText("x".repeat(20))).toBeNull();
+    view.rerender(content(true));
+    expect(screen.getByText("x".repeat(20))).toBeTruthy();
+    expect(screen.queryByText(/stale/)).toBeNull();
+    expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("Keep my draft");
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+    expect(mock.listen).toHaveBeenCalledOnce();
+    expect(mock.unlisten).not.toHaveBeenCalled();
+    expect(mock.run).not.toHaveBeenCalled();
+  });
+
+  it("suspends hidden readiness polling and ignores an in-flight response after hiding", async () => {
+    vi.useFakeTimers();
+    const block: PluginChatBlock = {
+      ...chat,
+      readiness: { status: "checking", profileId: chat.modelId, targetKey: "local", detail: "" },
+    };
+    const response = deferred<unknown>();
+    mock.renderView.mockReturnValueOnce(response.promise).mockResolvedValue({ blocks: [block] });
+    const view = render(
+      <PluginChat pluginId="assistant" viewId="chat" block={block} visible={false} />,
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(mock.renderView).not.toHaveBeenCalled();
+    view.rerender(<PluginChat pluginId="assistant" viewId="chat" block={block} visible />);
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(mock.renderView).toHaveBeenCalledOnce();
+    view.rerender(<PluginChat pluginId="assistant" viewId="chat" block={block} visible={false} />);
+    await act(async () =>
+      response.resolve({
+        blocks: [
+          { ...block, messages: [{ id: "old", role: "assistant", content: "Stale readiness" }] },
+        ],
+      }),
+    );
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(mock.renderView).toHaveBeenCalledOnce();
+    view.rerender(<PluginChat pluginId="assistant" viewId="chat" block={block} visible />);
+    expect(screen.queryByText("Stale readiness")).toBeNull();
+    await act(async () => vi.advanceTimersByTimeAsync(2_000));
+    expect(mock.renderView).toHaveBeenCalledTimes(2);
+    expect(mock.run).not.toHaveBeenCalled();
+    expect(mock.listen).toHaveBeenCalledOnce();
+  });
+
   it("omits empty assistant turns and keeps raw tool output collapsed with an explicit copy action", async () => {
     const output = '{"sha256":"abc","content":"tool result"}';
     const view = render(
@@ -352,9 +426,11 @@ describe("controlled plugin chat", () => {
           tasks: [
             {
               id: "task",
+              runId: "original-run",
               title: "Server check",
               status: "interrupted",
               output: "Saved progress",
+              inspection: "Status: completed\nExit code: 0",
               recoverable: true,
             },
           ],
@@ -363,14 +439,105 @@ describe("controlled plugin chat", () => {
     );
     expect(mock.run).not.toHaveBeenCalled();
     expect(screen.getByText("Saved progress")).toBeTruthy();
+    const inspected = screen.getByText("Status: completed", { exact: false }).closest("details");
+    expect(inspected?.open).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Continue task" }));
     await waitFor(() =>
       expect(mock.run).toHaveBeenCalledWith(
         "assistant",
         "ai.recover",
-        expect.objectContaining({ taskId: "task", action: "resume" }),
+        expect.objectContaining({ taskId: "task", taskRunId: "original-run", action: "resume" }),
       ),
     );
+  });
+
+  it("inspects the task's captured run instead of replacing it with the latest conversation run", async () => {
+    render(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{
+          ...chat,
+          run: { id: "latest-run", status: "failed", seq: 8 },
+          tasks: [
+            {
+              id: "shared-runner",
+              runId: "original-run",
+              title: "Saved task",
+              status: "interrupted",
+              output: "",
+              recoverable: true,
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inspect task" }));
+    await waitFor(() =>
+      expect(mock.run).toHaveBeenCalledWith(
+        "assistant",
+        "ai.recover",
+        expect.objectContaining({
+          taskId: "shared-runner",
+          taskRunId: "original-run",
+          runId: "latest-run",
+          action: "inspect",
+        }),
+      ),
+    );
+  });
+
+  it("offers one recovery entry for an interrupted run with a recoverable task", () => {
+    render(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{
+          ...chat,
+          run: { id: "run", status: "interrupted", seq: 1 },
+          tasks: [
+            {
+              id: "task",
+              runId: "run",
+              title: "Interrupted agent",
+              status: "interrupted",
+              output: "",
+              recoverable: true,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: "Continue task" })).toHaveLength(1);
+    expect(mock.run).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current running task visible without recovery controls until the run stops", () => {
+    const block: PluginChatBlock = {
+      ...chat,
+      run: { id: "run", status: "running", seq: 1 },
+      tasks: [
+        {
+          id: "task",
+          runId: "run",
+          title: "Running agent",
+          status: "running",
+          output: "",
+          recoverable: true,
+        },
+      ],
+    };
+    const view = render(<PluginChat pluginId="assistant" viewId="chat" block={block} />);
+    expect(screen.getByText("Running agent")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue task" })).toBeNull();
+    view.rerender(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{ ...block, run: { id: "run", status: "interrupted", seq: 2 } }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Continue task" })).toBeTruthy();
   });
 
   it("keeps API keys masked, saves them only on explicit configuration and forgets them after closing", async () => {

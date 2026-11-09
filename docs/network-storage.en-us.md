@@ -64,7 +64,8 @@ cover file-transfer payload bytes rather than SSH framing or terminal traffic.
 
 The gauge button on a running transfer opens a task limit. `0` follows
 the global limits; a positive value adds a task ceiling and cannot override the
-global ceiling. The task limit is saved with the transfer and survives pause,
+global ceiling. Local disk copies also honor this task limit, without consuming
+either global network budget. The task limit is saved with the transfer and survives pause,
 reconnection and application restart. Set it to `0` to follow only global limits. Low
 speed transfers continue reporting progress, and pause/cancel can interrupt the
 limiter wait. Requests already dispatched when a limit changes may finish.

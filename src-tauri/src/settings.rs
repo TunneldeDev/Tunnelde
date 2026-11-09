@@ -22,11 +22,29 @@ pub const COLOR_REGIONS: [&str; 11] = [
     "terminalCursor",
 ];
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ShortcutRule {
+    pub priority: i32,
+    pub propagation: ShortcutPropagation,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum ShortcutPropagation {
+    #[default]
+    Consume,
+    Continue,
+    Block,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
     pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
+    pub shortcut_rules: BTreeMap<String, BTreeMap<String, ShortcutRule>>,
+    pub show_shortcut_details: bool,
     /// "system" | "zh-CN" | "en-US"
     pub language: String,
     /// "dark" | "light" | "system"
@@ -79,6 +97,7 @@ pub struct Settings {
     pub terminal_smooth_scrolling: bool,
     pub terminal_scroll_on_input: bool,
     pub terminal_copy_on_select: bool,
+    pub terminal_application_clipboard: bool,
     pub terminal_right_click: String,
     pub terminal_renderer: String,
     pub file_icon_theme: String,
@@ -106,6 +125,8 @@ impl Default for Settings {
         Self {
             network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
+            shortcut_rules: BTreeMap::new(),
+            show_shortcut_details: false,
             language: "system".into(),
             theme: "system".into(),
             accent: "blue".into(),
@@ -152,6 +173,7 @@ impl Default for Settings {
             terminal_smooth_scrolling: false,
             terminal_scroll_on_input: true,
             terminal_copy_on_select: false,
+            terminal_application_clipboard: true,
             terminal_right_click: "menu".into(),
             terminal_renderer: "auto".into(),
             file_icon_theme: "auto".into(),
@@ -231,6 +253,23 @@ impl Settings {
     /// Clamp and whitelist every field so a bad patch can never persist
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
+        let mut rule_count = 0;
+        self.shortcut_rules.retain(|id, bindings| {
+            if id.is_empty()
+                || id.len() > 256
+                || !id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
+            {
+                return false;
+            }
+            bindings.retain(|binding, rule| {
+                rule.priority = rule.priority.clamp(-1000, 1000);
+                rule_count += 1;
+                is_keyboard_shortcut(binding) && rule_count <= 512
+            });
+            !bindings.is_empty()
+        });
         let mut shortcut_count = 0;
         self.keyboard_shortcuts.retain(|id, bindings| {
             let valid = id.len() <= 256
@@ -717,6 +756,7 @@ mod tests {
             "terminalSmoothScrolling",
             "terminalScrollOnInput",
             "terminalCopyOnSelect",
+            "terminalApplicationClipboard",
             "terminalRightClick",
             "terminalRenderer",
             "filesShowHidden",
@@ -743,6 +783,7 @@ mod tests {
             "terminalCursorBlink": false, "terminalInactiveCursorStyle": "none",
             "terminalScrollSensitivity": 5, "terminalSmoothScrolling": true,
             "terminalScrollOnInput": false, "terminalCopyOnSelect": true,
+            "terminalApplicationClipboard": false,
             "terminalRightClick": "copyPaste", "terminalRenderer": "dom",
             "filesShowHidden": true, "filesFoldersFirst": false,
             "filesSortBy": "modified", "filesSortDirection": "desc",
@@ -938,5 +979,57 @@ mod tests {
                 "{input}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod shortcut_rule_tests {
+    use super::*;
+    #[test]
+    fn old_settings_keep_shortcuts_and_default_to_no_advanced_rules() {
+        let settings: Settings = serde_json::from_value(
+            serde_json::json!({ "keyboardShortcuts": { "page.settings": ["Mod+Comma"] } }),
+        )
+        .unwrap();
+        assert!(settings.shortcut_rules.is_empty());
+        assert!(!settings.show_shortcut_details);
+        assert_eq!(settings.keyboard_shortcuts["page.settings"], ["Mod+Comma"]);
+    }
+    #[test]
+    fn rules_roundtrip_and_bound_imported_values() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({ "showShortcutDetails": true, "shortcutRules": {
+            "terminal.paste": { "Mod+V": { "priority": 5000, "propagation": "continue" }, "invalid+key": { "priority": 0 } },
+            "../bad": { "F1": { "priority": 1 } }
+        }})).unwrap();
+        settings.sanitize();
+        assert_eq!(settings.shortcut_rules.len(), 1);
+        assert_eq!(settings.shortcut_rules["terminal.paste"].len(), 1);
+        assert_eq!(
+            settings.shortcut_rules["terminal.paste"]["Mod+V"].priority,
+            1000
+        );
+        let value = serde_json::to_value(&settings).unwrap();
+        assert_eq!(
+            value["shortcutRules"]["terminal.paste"]["Mod+V"]["propagation"],
+            "continue"
+        );
+        assert!(
+            serde_json::from_value::<Settings>(value)
+                .unwrap()
+                .show_shortcut_details
+        );
+    }
+    #[test]
+    fn rejects_unknown_propagation_and_limits_rule_count() {
+        assert!(serde_json::from_value::<Settings>(serde_json::json!({ "shortcutRules": { "page.settings": { "F1": { "propagation": "typo" } } } })).is_err());
+        let mut settings = Settings::default();
+        for index in 0..600 {
+            settings.shortcut_rules.insert(
+                format!("plugin.test{index}"),
+                BTreeMap::from([("F1".into(), ShortcutRule::default())]),
+            );
+        }
+        settings.sanitize();
+        assert_eq!(settings.shortcut_rules.len(), 512);
     }
 }

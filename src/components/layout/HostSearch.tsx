@@ -2,6 +2,7 @@ import { Search, Tag, X } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@/components/ui/form/Button";
+import { SearchFilterMenu } from "@/components/ui/form/SearchField";
 import { completeHostTag, parseHostQuery, tagCompletion } from "@/lib/hosts/query";
 
 export function HostSearch({
@@ -42,7 +43,7 @@ export function HostSearch({
         if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
       }}
     >
-      <div className="sidebar__filter">
+      <div className="sidebar__filter td-search">
         <Search size={13} aria-hidden="true" />
         <input
           className="td-input"
@@ -106,6 +107,20 @@ export function HostSearch({
             <X size={12} />
           </IconButton>
         ) : null}
+        <SearchFilterMenu
+          query={query}
+          onChange={onChange}
+          filterKeys={["tag", "is", "name", "host", "user", "port"]}
+          focusInput={() => input.current?.focus()}
+          presets={[
+            { key: "is", value: "favorite", label: t("searchUi.favorite") },
+            { key: "name", value: "", label: t("searchUi.name") },
+            { key: "host", value: "", label: t("searchUi.host") },
+            { key: "user", value: "", label: t("searchUi.user") },
+            { key: "port", value: "22", label: "SSH · 22" },
+            ...tags.map((tag) => ({ key: "tag", value: tag, label: tag })),
+          ]}
+        />
       </div>
       <span id={`${id}-hint`} className="sr-only">
         {t("sidebar.searchHint")}

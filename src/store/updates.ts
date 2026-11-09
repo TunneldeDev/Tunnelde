@@ -5,6 +5,9 @@ import { api, isTauri } from "@/lib/api/ipc";
 import type { ReleaseHistory, Settings, UpdateState } from "@/lib/api/types";
 import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
+import i18n from "@/i18n/i18n";
+import { isIpcError } from "@/lib/api/types";
+import { useWorkspace } from "@/store/workspace";
 
 interface UpdatesStore {
   state: UpdateState | null;
@@ -119,7 +122,16 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
       set({ state, busy: false });
     } catch (error) {
       set({ busy: false });
-      toast(translateError(error), "error");
+      toast(
+        translateError(error),
+        "error",
+        isIpcError(error) && Array.isArray(error.details?.sourceErrors)
+          ? {
+              label: i18n.t("updates.viewDiagnostics"),
+              onClick: () => useWorkspace.getState().openPage("updates"),
+            }
+          : undefined,
+      );
     }
   },
 

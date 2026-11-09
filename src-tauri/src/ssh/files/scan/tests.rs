@@ -509,9 +509,21 @@ async fn local_socket_is_rejected_without_blocking_on_open() {
     let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
     let target = root.join("copy");
     assert_eq!(
-        copy_local_entry(&path, &target, false)
-            .unwrap_err()
-            .to_string(),
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            measure(
+                &Endpoint {
+                    session: None,
+                    path: display_path(&path),
+                },
+                None,
+                4,
+            ),
+        )
+        .await
+        .expect("socket preflight must not block on opening the socket")
+        .unwrap_err()
+        .to_string(),
         "sftp.fileTypeUnsupported"
     );
     assert!(!target.exists());

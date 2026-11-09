@@ -1,4 +1,6 @@
-import { ArrowDownToLine, ListFilter, Search, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ListFilter, Trash2 } from "lucide-react";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { matchesSearch, parseSearchQuery } from "@/lib/search/query";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
@@ -74,9 +76,13 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
   const options = channels.some((item) => item.value === channel)
     ? channels
     : [...channels, { value: channel, label: channel.replace(/^(domain|plugin):/, "") }];
+  const parsed = useMemo(
+    () => parseSearchQuery(query, ["level", "domain", "plugin", "source"]),
+    [query],
+  );
   const filtered = useMemo(
-    () => output.entries.filter((entry) => matchesOutput(entry, channel, query, minimum)),
-    [output.entries, channel, query, minimum],
+    () => output.entries.filter((entry) => matchesOutput(entry, channel, parsed, minimum)),
+    [output.entries, channel, parsed, minimum],
   );
   const runtime = [
     `${info?.name ?? "Tunnelde"} ${info?.version ?? ""}`.trim(),
@@ -88,7 +94,13 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
       (plugin) =>
         `${plugin.name} ${plugin.version} · ${plugin.status}${plugin.error ? ` · ${plugin.error}` : ""}`,
     ),
-  ].filter((line) => line.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+  ].filter((line, index) =>
+    matchesSearch(parsed, line, {
+      domain: "runtime",
+      source: "runtime",
+      plugin: index >= 5 ? plugins[index - 5]?.id : null,
+    }),
+  );
   const renderedText =
     channel === "runtime" ? runtime.join("\n") : filtered.map(formatOutput).join("\n");
 
@@ -194,16 +206,30 @@ export function OutputPanel({ active, docked = false }: { active: boolean; docke
         </div>
       ) : null}
       <div className="output-panel__filters">
-        <label className="output-panel__search">
-          <Search size={13} aria-hidden="true" />
-          <input
-            className="td-input"
-            aria-label={t("output.search")}
-            placeholder={t("output.search")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-        </label>
+        <SearchField
+          className="output-panel__search"
+          aria-label={t("output.search")}
+          filterKeys={["level", "domain", "plugin", "source"]}
+          placeholder={t("output.search")}
+          value={query}
+          onChange={setQuery}
+          presets={[
+            ...["ERROR", "WARN", "INFO", "DEBUG", "TRACE"].map((level) => ({
+              key: "level",
+              value: level,
+              label: level,
+            })),
+            ...[...new Set(output.entries.map((entry) => entry.domain))].sort().map((domain) => ({
+              key: "domain",
+              value: domain,
+              label: `${t("searchUi.domain")}: ${domain}`,
+            })),
+            ...plugins.map((plugin) => ({ key: "plugin", value: plugin.id, label: plugin.name })),
+            { key: "source", value: "application", label: t("logs.diagnostic") },
+            { key: "source", value: "operations", label: t("logs.operations") },
+            { key: "source", value: "runtime", label: t("output.runtime") },
+          ]}
+        />
         <Select
           label={t("output.level")}
           value={minimum}

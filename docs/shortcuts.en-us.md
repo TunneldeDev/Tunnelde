@@ -1,5 +1,7 @@
 # Shortcuts
 
+See [Search and filter presets](search.en-us.md) for funnel presets and qualifier examples.
+
 Open **Settings → Keyboard Shortcuts**, use `Ctrl/Cmd+Shift+F12`, or search for
 “Keyboard Shortcuts” in the command palette. Search by command name, command id,
 context or key. Click a binding to replace it, or **+** to add an alternative;
@@ -11,6 +13,11 @@ syntax. Filter by conflicting, modified or unassigned bindings, built-in/plugin
 commands, or an installed plugin. Checked filters can be toggled off, and **Clear
 filters** preserves ordinary search text. The Modified checkbox stays in sync
 with `@is:modified` in the search field. Escape cancels recording.
+
+Choosing to resolve in Settings dismisses the pending conflict dialogs together
+and filters all involved plugins, leaving their bindings unchanged for review.
+While a keep-one choice saves, competing choices are disabled; dismissing its
+dialog does not discard the next unresolved conflict. Failed saves remain retryable.
 
 For typed queries, combine `@is:conflict`, `@is:modified`, `@is:unassigned`,
 `@source:built-in` or `@source:plugin` with ordinary text. Select one or more
@@ -27,6 +34,36 @@ also appear here, even before their runtime starts, and can have custom bindings
 Input method composition
 and AltGr are preserved. Widget navigation such as arrow keys, Tab and Escape
 is not remapped by the application shortcut editor.
+
+## Advanced shortcut behavior
+
+Use the settings button at the right of a command to edit each binding separately.
+The normal list stays compact; **Show advanced details** reveals the effective priority
+and propagation below each command. Choose **Priority: high to low** to review the order.
+
+- Higher priorities run first, from −1000 to 1000. Scoped file, editor and terminal
+  commands default to 100; workbench commands to 0. Ties retain their existing order.
+- **Handle key, keep conflicts** suppresses the original key while still dispatching
+  other applicable commands. This preserves shared plugin bindings.
+- **Continue passing through** allows subsequent commands and the original key to reach
+  the focused control or terminal. Any later command may still consume or block it.
+- **Block subsequent handling** stops all remaining commands, including equal priorities,
+  and suppresses the original key after the command accepts the action.
+
+Only commands available in the focused context participate. Defaults retain local
+ownership, such as creating a file with Ctrl+N in the file pane. Explicit advanced
+rules or shared plugin bindings enable priority ordering across that local command
+and overlapping workbench commands. An explicit rule can also opt a workbench binding
+into terminal handling; use this carefully for keys normally sent to the shell.
+A command runs once even if multiple alias bindings match; the highest-priority alias
+chooses its behavior.
+
+Acceptance is synchronous: saving, plugin startup and other async work may fail later.
+The application reports those failures without replaying a key into a terminal.
+Unaccepted actions do not consume keys. IME, dialogs and widget navigation retain
+local behavior. Priority does not grant plugin permissions or change plugin scopes.
+Rules are included in profiles and settings export. Reset a command to reset both
+its bindings and rules; resetting all shortcuts leaves the display preference intact.
 
 The following tables show the default bindings.
 

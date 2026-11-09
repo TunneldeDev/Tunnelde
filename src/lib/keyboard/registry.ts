@@ -79,6 +79,25 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
     ["Mod+V", "Mod+Shift+V", "Shift+Insert"],
     { macDefaults: ["Meta+V", "Meta+Shift+V"] },
   ),
+  command("terminal.lineStart", "terminal.lineStart", "terminal", [], {
+    macDefaults: ["Meta+ArrowLeft"],
+  }),
+  command("terminal.selectAll", "terminal.selectAll", "terminal", [], { macDefaults: ["Meta+A"] }),
+  command("terminal.lineEnd", "terminal.lineEnd", "terminal", [], {
+    macDefaults: ["Meta+ArrowRight"],
+  }),
+  command("terminal.wordLeft", "terminal.wordLeft", "terminal", [], {
+    macDefaults: ["Alt+ArrowLeft"],
+  }),
+  command("terminal.wordRight", "terminal.wordRight", "terminal", [], {
+    macDefaults: ["Alt+ArrowRight"],
+  }),
+  command("terminal.deleteLineStart", "terminal.deleteLineStart", "terminal", [], {
+    macDefaults: ["Meta+Backspace"],
+  }),
+  command("terminal.deleteLineEnd", "terminal.deleteLineEnd", "terminal", [], {
+    macDefaults: ["Meta+Delete"],
+  }),
   command("files.filter", "sftp.filterFiles", "files", ["Mod+F"]),
   command("files.path", "shortcuts.focusPath", "files", ["Mod+L"]),
   command("files.hidden", "sftp.showHidden", "files", ["Mod+H", "Meta+Shift+Period"], {

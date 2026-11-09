@@ -129,6 +129,7 @@ pub fn settings_update(
     let mut base = serde_json::to_value(&previous)?;
     let colors = patch.get("colors").cloned();
     let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
+    let shortcut_rules = patch.get("shortcutRules").cloned();
     let network = patch.get("network").cloned();
     merge_json(&mut base, patch);
     if let Some(colors) = colors {
@@ -136,6 +137,9 @@ pub fn settings_update(
     }
     if let Some(keyboard_shortcuts) = keyboard_shortcuts {
         base["keyboardShortcuts"] = keyboard_shortcuts;
+    }
+    if let Some(shortcut_rules) = shortcut_rules {
+        base["shortcutRules"] = shortcut_rules;
     }
     if let Some(network) = network {
         base["network"] = network;
@@ -692,8 +696,9 @@ pub async fn files_search(
     root: String,
     query: String,
     content: bool,
+    selection: Option<sftp::search::SearchSelection>,
 ) -> AppResult<sftp::search::SearchResult> {
-    sftp::search::search(app, request_id, session_id, root, query, content).await
+    sftp::search::search(app, request_id, session_id, root, query, content, selection).await
 }
 
 #[tauri::command]
@@ -762,8 +767,28 @@ pub fn local_mkdir(path: String) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn local_rename(from: String, to: String, overwrite: Option<bool>) -> AppResult<()> {
-    sftp::local_rename(from, to, overwrite.unwrap_or(false))
+pub async fn local_rename(
+    app: AppHandle,
+    from: String,
+    to: String,
+    overwrite: Option<bool>,
+) -> AppResult<()> {
+    let result = sftp::local_rename(from.clone(), to.clone(), overwrite.unwrap_or(false));
+    #[cfg(windows)]
+    if let Err(error) = &result {
+        // ERROR_NOT_SAME_DEVICE is an explicit OS result. A generic SFTP
+        // Failure, permission error or lost reply never authorizes this fallback.
+        let cross_volume = matches!(error, AppError::Io(error) if error.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_NOT_SAME_DEVICE as i32));
+        let directory_merge = matches!(error, AppError::Validation(key) if key == "sftp.directoryMergeMoveUnavailable");
+        if cross_volume || directory_merge {
+            return sftp::start_local_move(app, from, to, overwrite.unwrap_or(false))?
+                .wait()
+                .await;
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    result
 }
 
 #[tauri::command]
@@ -1274,12 +1299,46 @@ pub async fn sftp_copy(
     to: String,
     overwrite: Option<bool>,
 ) -> AppResult<()> {
-    sftp::remote_copy(&app, &session_id, from, to, overwrite.unwrap_or(false)).await
+    app.state::<AppState>().ssh.handle(&session_id)?;
+    sftp::start_copy(
+        app,
+        sftp::Endpoint {
+            session: Some(session_id.clone()),
+            path: from,
+        },
+        sftp::Endpoint {
+            session: Some(session_id),
+            path: to,
+        },
+        overwrite.unwrap_or(false),
+        None,
+    )?
+    .wait()
+    .await
 }
 
 #[tauri::command]
-pub fn local_copy(from: String, to: String, overwrite: Option<bool>) -> AppResult<()> {
-    sftp::local_copy(from, to, overwrite.unwrap_or(false))
+pub async fn local_copy(
+    app: AppHandle,
+    from: String,
+    to: String,
+    overwrite: Option<bool>,
+) -> AppResult<()> {
+    sftp::start_copy(
+        app,
+        sftp::Endpoint {
+            session: None,
+            path: from,
+        },
+        sftp::Endpoint {
+            session: None,
+            path: to,
+        },
+        overwrite.unwrap_or(false),
+        None,
+    )?
+    .wait()
+    .await
 }
 
 #[tauri::command]

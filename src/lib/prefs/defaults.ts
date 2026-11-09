@@ -9,6 +9,8 @@ export function createDefaultSettings(platform = "unknown"): Settings {
   return {
     network: { profiles: [], defaultProxy: "", features: {} },
     keyboardShortcuts: {},
+    shortcutRules: {},
+    showShortcutDetails: false,
     language: "system",
     theme: "system",
     accent: "blue",
@@ -50,6 +52,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     terminalSmoothScrolling: false,
     terminalScrollOnInput: true,
     terminalCopyOnSelect: false,
+    terminalApplicationClipboard: true,
     terminalRightClick: "menu",
     terminalRenderer: "auto",
     fileIconTheme: "auto",
