@@ -16,7 +16,7 @@ Download a desktop installer from [GitHub Releases](https://github.com/TunneldeD
 | Linux x64                         | AppImage or `.deb`, WebKitGTK 4.1 required | In-app AppImage updates; manual deb updates     |
 
 Press **F1** for Quick Access: `>` lists application and installed plugin commands,
-`%` searches file contents in the selected local/SSH directory, and `@` finds hosts.
+`%` searches file contents in the selected local/SSH directory, and `@ ` (with a space) finds hosts.
 **Ctrl/Cmd+P** opens files and existing tabs. Installed plugin commands can be run
 directly here and assigned keys in Settings → Keyboard Shortcuts.
 Local and remote text results open the editor at the matching line, preserving unsaved
@@ -36,7 +36,7 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
 ## Workbench
 
 - Organize, search, tag, favorite and reorder hosts. Filter inside the search field with
-  `tag:PublicNet`, `@tag PublicNet`, quoted tags or `is:favorite`; choose tag suggestions
+  `@tag:PublicNet`, `@tag:"Production East"` or `@is:favorite`; choose tag suggestions
   with the mouse or arrow keys and Enter. Connect with passwords, key files
   or pasted private keys. Save passwords while editing a host and double click to
   connect directly; unknown or changed server keys still require explicit trust.
