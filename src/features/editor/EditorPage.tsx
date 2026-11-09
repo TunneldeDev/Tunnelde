@@ -7,7 +7,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { EmptyState } from "@/components/ui/display/Misc";
 import { cn } from "@/lib/text/format";
-import { useEditors, undoEditorEdit } from "@/store/editors";
+import { useEditors, undoEditorEdit, editorDocument } from "@/store/editors";
 import { usePlugins } from "@/store/plugins";
 import {
   documentFormatters,
@@ -116,6 +116,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           !!contributed?.editor && editorCommandMatches(entry.path, contributed.editor.extensions)
         );
       });
+      const document = editorDocument(tabId);
       let queue = Promise.resolve();
       return scopedShortcutCandidates(
         event,
@@ -131,7 +132,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
             const action = commands.find((command) => command.id === id)?.plugin;
             if (!action) return false;
             queue = queue.then(async () => {
-              await openPluginAction(action);
+              await openPluginAction(action, document);
             });
           }
           return true;

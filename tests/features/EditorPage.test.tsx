@@ -1,3 +1,4 @@
+import * as keyboardActions from "@/lib/keyboard/actions";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -152,6 +153,21 @@ describe("editor formatting shortcuts", () => {
     fireEvent.keyDown(textarea, { key: "F", ctrlKey: true, shiftKey: true });
     await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(1));
     expect(vi.mocked(api.pluginRun).mock.calls[0]?.[0]).toBe("second");
+  });
+
+  it("keeps a queued formatter bound to the editor when a shared workbench command changes tabs", async () => {
+    const textarea = prepare();
+    const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockImplementation(() => {
+      useWorkspace.setState({ activeId: "other" });
+      return true;
+    });
+    fireEvent.keyDown(textarea, { key: "F", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.pluginRun).mock.calls[0]?.[2]).toMatchObject({
+      document: { tabId: "editor" },
+    });
+    expect(useEditors.getState().entries.editor?.content).toContain('"a": 1');
+    run.mockRestore();
   });
 
   it("runs both matching editor commands contributed by one plugin in sequence", async () => {
