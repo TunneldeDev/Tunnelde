@@ -364,6 +364,13 @@ falls back to human approval; Full skips individual approval. Canonical path che
 hashes protect supported file tools. They do not sandbox arbitrary shell commands or trusted
 Node plugins. Client revocation cancels pending requests and owned tasks/transfers.
 
+`tasks.readOutput` returns `status`, `exitCode` and an optional `error` from the same
+snapshot as its sequenced output. The failure detail remains available after all
+events have been drained. Display it when present instead of replacing SSH channel
+or process errors with generic executable/login advice. Older hosts may omit this
+field; `tasks.status` also exposes failure details. Drain terminal output before
+reporting failure to preserve the agent's final protocol response.
+
 Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity `icon` to
 contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
