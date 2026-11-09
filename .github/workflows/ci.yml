@@ -133,7 +133,8 @@ jobs:
           node scripts/ci/check-plugin-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json"
           TUNNELDE_EDITOR_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-editor.json" pnpm exec vitest run tests/app/pluginEditorContract.test.ts
           TUNNELDE_WORKSPACE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-workspace.json" pnpm exec vitest run tests/app/pluginWorkspaceContract.test.ts
-          TUNNELDE_EDITOR_CONTRACT_INPUT="$RUNNER_TEMP/plugin-editor.json" TUNNELDE_WORKSPACE_CONTRACT_INPUT="$RUNNER_TEMP/plugin-workspace.json" TUNNELDE_CORE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-core.json" cargo test --manifest-path src-tauri/Cargo.toml emit_core_contract_responses
+          TUNNELDE_UI_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-ui.json" pnpm exec vitest run tests/app/pluginUiContract.test.ts
+          TUNNELDE_EDITOR_CONTRACT_INPUT="$RUNNER_TEMP/plugin-editor.json" TUNNELDE_WORKSPACE_CONTRACT_INPUT="$RUNNER_TEMP/plugin-workspace.json" TUNNELDE_UI_CONTRACT_INPUT="$RUNNER_TEMP/plugin-ui.json" TUNNELDE_CORE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-core.json" cargo test --manifest-path src-tauri/Cargo.toml emit_core_contract_responses
           node scripts/ci/check-core-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json" "$RUNNER_TEMP/plugin-core.json"
           node scripts/ci/check-legacy-sdk.mjs "$RUNNER_TEMP/plugin-core.json"
 

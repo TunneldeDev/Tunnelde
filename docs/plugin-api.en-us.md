@@ -154,6 +154,39 @@ authorization still uses `-32001`. Shared frontend bridge failures include
 `plugin.api.requestExpired`. These RPC methods emit no plugin events; they do not
 subscribe the caller to buffer changes.
 
+## Stable notifications and confirmations
+
+The frozen [UI v1 contract](../tests/fixtures/plugin-compat/ui-v1.json) covers
+`ui.showMessage` and `ui.confirm`. Both still require a running, approved plugin,
+even though no extra permission is declared. Requests and replies are checked
+against the runtime generation; a displayed dialog never grants host permissions.
+
+`ui.showMessage({message, kind?})` returns `null` after acceptance for transient
+display. `kind` is `info`, `success` or `error`; omission or `null` defaults to
+`info`. The host prefixes the installed plugin name (or its ID), ignoring forged
+identity fields. Text is literal, nonempty, contains no NUL, and is at most 4,000
+UTF-16 code units. Acceptance does not promise durable logging or that the user
+read the message; notifications expire and can be displaced by newer messages.
+
+`ui.confirm({message})` returns `true` only when the user confirms. Dismissal,
+replacement by another dialog, or the 55-second UI deadline returns `false`.
+Use a call timeout greater than 55 seconds to wait for that UI deadline; a shorter
+SDK timeout can reject first.
+The same text rules apply, with a 220 × 1,024 UTF-16 unit ceiling for multiline
+review. The shared 256 KiB UTF-8 serialized request budget also applies, so that
+character ceiling cannot always be reached. Another open dialog produces
+`plugin.api.frontend:dialog.busy` instead of replacing it. Requests cancelled
+during asynchronous authorization must not create a late dialog or notification.
+Stopping, revoking or restarting the plugin cancels pending requests; callers can
+receive an authorization, expired-request or timeout error instead of a boolean.
+
+Malformed fields use `plugin.api.frontend:invalid:message` or
+`plugin.api.frontend:invalid:kind`; cancelled frontend work can use
+`plugin.api.frontend:requestCancelled`. Shared bridge limits and transport errors
+remain possible. Unknown fields are ignored. These methods expose no actions,
+event subscriptions or internal dialog/toast state. Discover their `contract`
+before relying on stability metadata in older hosts.
+
 ## Compatibility testing
 
 CI loads a frozen v0.28.0 example through the current host's manifest loader and JSON-RPC

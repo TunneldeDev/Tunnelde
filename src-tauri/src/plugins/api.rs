@@ -184,8 +184,8 @@ pub const METHODS: &[ApiMethod] = &[
     stable_method!("storage.get", [], "{key:string}", "Read plugin-scoped JSON data. Keys use 1–128 ASCII letters, digits, dot, hyphen or underscore.", "0.21.0"),
     stable_method!("storage.set", [], "{key:string,value:JSON}", "Persist plugin-scoped JSON data, at most 256KiB total per plugin.", "0.21.0"),
     stable_method!("storage.delete", [], "{key:string}", "Remove a key from plugin-scoped JSON data.", "0.21.0"),
-    method!("ui.showMessage", [], "{message:string,kind?:info|success|error}", "Show a bounded notification prefixed with the installed plugin's identity."),
-    method!("ui.confirm", [], "{message:string}", "Ask the user a plugin-identified confirmation; never replace an existing dialog."),
+    stable_method!("ui.showMessage", [], "{message:string,kind?:info|success|error}", "Show a bounded plain-text notification prefixed with the installed plugin's identity. Returns null on acceptance, not durable delivery. Nonempty message, no NUL, at most 4000 UTF-16 units. Omitted/null kind defaults to info. No events or actions; notifications may expire or be displaced.", "0.21.0"),
+    stable_method!("ui.confirm", [], "{message:string}", "Ask a plugin-identified plain-text confirmation without replacing an existing dialog. Returns true only on confirmation; dismiss, replacement or 55-second UI timeout returns false. Nonempty message, no NUL, at most 220Ki UTF-16 units and the shared 256KiB wire budget. Concurrent dialogs reject as busy; stopped/revoked/cancelled runtimes do not receive approval. No additional permissions are granted.", "0.21.0"),
 ];
 
 pub fn method_info(name: &str) -> Option<&'static ApiMethod> {
