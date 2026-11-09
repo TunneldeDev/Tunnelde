@@ -75,6 +75,9 @@ macro_rules! stable_method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
+    method!("extensions.describe", [], "{}", "Discover implemented extension points, their domain, permissions, registration methods, composition and runtime ownership. The experimental directory is not a completeness or authorization claim; use api.describe for individual method contracts."),
+    method!("hostList.setDecorations", ["hosts.read", "workspace.write"], "{id:string,priority?:number,decorations:{hostId:string,badge?:string,description?:string,tooltip?:string,icon?:server|cloud|container|database|globe|code|terminal|shield|key|activity,tone?:neutral|info|success|warning|error}[]}", "Replace a runtime-owned collection of host-list decorations. Plain text, semantic colors and host-rendered icons; host names, addresses, connection state and actions remain intact. At most 256 distinct existing hosts per collection, 8 collections per plugin and 128 total. Empty decorations clears a collection. Higher priority wins icon/description; badges combine in deterministic order. Removed on stop, crash, revocation or restart; never modifies saved hosts."),
+    method!("hostList.removeDecorations", ["hosts.read", "workspace.write"], "{id:string}", "Remove only this plugin runtime's host decoration collection; returns false if absent. Requires the same permissions as registration."),
     stable_method!("tabBar.set", [], "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string,placement?:leading|trailing,group?:string,tooltip?:string,showLabel?:boolean,checked?:boolean}", "Register or replace a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views and trailing placement; when:{} targets all tabs. Groups are plugin-scoped. showLabel keeps button text alongside its icon; checked is button-only, host-rendered, and acknowledged through set. Narrow panes move controls into an accessible overflow menu. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization.", "0.32.0-beta.6"),
     stable_method!("tabBar.remove", [], "{id:string}", "Remove this runtime's tab-bar control; return false if absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.6"),
     stable_method!("statusBar.set", [], "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}", "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.", "0.32.0-beta.1"),
@@ -375,6 +378,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             super::tools::cancel(context, method, &params).await
         }
         "api.describe" => Ok(describe_api()),
+        "extensions.describe" => Ok(super::extensions::describe()),
         "log" => super::logging::write(&context.id, context.generation, params),
         "app.info" => encode(commands::app_info(app.clone(), state)),
         "app.openExternal" => {
@@ -675,6 +679,9 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "storage.get" | "storage.set" | "storage.delete" => storage(context, method, &params).await,
+        "hostList.setDecorations" | "hostList.removeDecorations" => {
+            super::host_list::call(context, method, params)
+        }
         "statusBar.set" | "statusBar.remove" => super::status_bar::call(context, method, params),
         "tabBar.set" | "tabBar.remove" => super::tab_bar::call(context, method, params),
         name if name.starts_with("workspace.")

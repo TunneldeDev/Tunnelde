@@ -446,6 +446,8 @@
 }
 
 .host-row__name {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 12.5px;
   color: var(--td-text);
   overflow: hidden;
@@ -460,6 +462,71 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.host-row__heading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.host-decoration__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.host-decoration__badges {
+  flex: 0 0 42%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 48%;
+  overflow: hidden;
+}
+
+.host-decoration__badge {
+  min-width: 0;
+  max-width: 8em;
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-decoration__overflow {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: var(--td-muted);
+}
+
+.host-decoration__description {
+  margin-top: 2px;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-decoration--neutral {
+  color: var(--td-muted);
+}
+.host-decoration--info {
+  color: var(--td-accent);
+}
+.host-decoration--success {
+  color: var(--td-green);
+}
+.host-decoration--warning {
+  color: var(--td-orange);
+}
+.host-decoration--error {
+  color: var(--td-red);
 }
 
 .host-row__star {

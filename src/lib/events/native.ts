@@ -16,8 +16,10 @@ import { createEventBus } from "./bus";
 
 import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
+import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
 
 export interface NativeEvents {
+  "plugin://host-list-changed": HostDecorationSnapshot;
   "plugin://tab-bar-changed": TabBarSnapshot;
   "plugin://status-bar-changed": StatusBarSnapshot;
   "plugin://event": PluginEvent;

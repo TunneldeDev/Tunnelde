@@ -1,7 +1,9 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
+import { useHostDecorations } from "@/store/hostDecorations";
+import { indexHostDecorations } from "@/lib/plugins/hostList";
 import { HostTree } from "@/components/layout/HostTree";
 import type { Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
@@ -44,6 +46,7 @@ const group = (id: string, parentId: string | null = null): Group => ({
 });
 
 beforeEach(() => {
+  useHostDecorations.setState({ revision: -1, byHost: new Map() });
   useContextMenu.setState({ menu: null });
   useHosts.setState({ hosts: [host("a", "alpha", 0), host("b", "beta", 1)], groups: [] });
   useDialogs.setState({
@@ -360,4 +363,36 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
   });
+});
+
+it("decorations preserve host identity, address and actions while changes update mounted rows", () => {
+  const source = {
+    id: "health",
+    pluginId: "plugin",
+    pluginName: "Health provider",
+    priority: 10,
+    decorations: [
+      {
+        hostId: "a",
+        badge: "Ready",
+        description: "Healthy",
+        tooltip: null,
+        icon: "server" as const,
+        tone: "success" as const,
+      },
+    ],
+  };
+  useHostDecorations.setState({ revision: 1, byHost: indexHostDecorations([source]) });
+  const { container, rerender } = render(<HostTree />);
+  const row = container.querySelector('[data-host-id="a"]')!;
+  expect(row.querySelector(".host-row__name")!.textContent).toBe("alpha");
+  expect(row.querySelector(".host-row__meta")!.textContent).toContain("a.example.com");
+  expect(row.querySelector(".host-row__actions")).not.toBeNull();
+  expect(row.querySelector(".host-decoration__badge")!.textContent).toBe("Ready");
+  act(() => {
+    useHostDecorations.setState({ revision: 2, byHost: new Map() });
+  });
+  rerender(<HostTree />);
+  expect(row.querySelector(".host-decoration__badge")).toBeNull();
+  expect(row.querySelector(".host-row__name")!.textContent).toBe("alpha");
 });

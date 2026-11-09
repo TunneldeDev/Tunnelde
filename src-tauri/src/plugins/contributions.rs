@@ -7,6 +7,17 @@ use std::sync::Mutex;
 use super::security::Lease;
 use crate::error::{AppError, AppResult};
 
+/// All exit paths share the same contribution cleanup, including transport crashes.
+pub(super) fn remove_runtime(
+    app: &tauri::AppHandle,
+    owner: &str,
+    generation: impl Fn(u64) -> bool,
+) {
+    super::status_bar::remove_runtime(app, owner, &generation);
+    super::tab_bar::remove_runtime(app, owner, &generation);
+    super::host_list::remove_runtime(app, owner, &generation);
+}
+
 #[derive(Clone)]
 pub(super) struct Owned<T> {
     pub lease: Lease,
@@ -19,14 +30,23 @@ struct State<T> {
     items: BTreeMap<(String, String), Owned<T>>,
 }
 
-pub(super) struct Registry<T>(Mutex<State<T>>);
+pub(super) struct Registry<T>(Mutex<State<T>>, &'static str);
 
 impl<T> Default for Registry<T> {
     fn default() -> Self {
-        Self(Mutex::new(State {
-            revision: 0,
-            items: BTreeMap::new(),
-        }))
+        Self::with_limit_error("plugin.statusBar.limit")
+    }
+}
+
+impl<T> Registry<T> {
+    pub fn with_limit_error(error: &'static str) -> Self {
+        Self(
+            Mutex::new(State {
+                revision: 0,
+                items: BTreeMap::new(),
+            }),
+            error,
+        )
     }
 }
 
@@ -54,7 +74,7 @@ impl<T: Clone> Registry<T> {
                     .count()
                     >= 8)
         {
-            return Err(AppError::validation("plugin.statusBar.limit"));
+            return Err(AppError::validation(self.1));
         }
         state.items.insert(
             key,

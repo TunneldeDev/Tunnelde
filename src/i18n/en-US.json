@@ -1228,6 +1228,11 @@
       "limit": "The plugin reached the tab bar control limit.",
       "expired": "This tab bar control has expired. Try the updated control.",
       "invalidContext": "This tab bar control is unavailable for the current tab."
+    },
+    "hostList": {
+      "invalidDecoration": "Invalid host decoration. Check its fields, length and supported icon.",
+      "hostNotFound": "A host referenced by this decoration no longer exists. Refresh the host list.",
+      "limit": "Host decoration limit reached. Remove a collection before adding another."
     }
   },
   "themes": {

@@ -4,8 +4,10 @@ mod contributions;
 mod declarative;
 mod engines;
 mod events;
+mod extensions;
 pub mod file_icons;
 mod host;
+pub mod host_list;
 mod logging;
 pub mod manifest;
 pub mod marketplace;
@@ -189,6 +191,7 @@ pub struct PluginsManager {
     pub(super) security: Arc<security::PluginSecurity>,
     status_bar: contributions::Registry<status_bar::StatusBarItem>,
     tab_bar: contributions::Registry<tab_bar::TabBarItem>,
+    host_list: contributions::Registry<host_list::DecorationSet>,
 }
 
 impl PluginsManager {
@@ -200,8 +203,7 @@ impl PluginsManager {
     }
     fn stop_network_resources(&self, app: &AppHandle, id: &str) {
         let boundary = self.security.cleanup_boundary(id);
-        status_bar::remove_runtime(app, id, |generation| generation < boundary);
-        tab_bar::remove_runtime(app, id, |generation| generation < boundary);
+        contributions::remove_runtime(app, id, |generation| generation < boundary);
         app.state::<crate::state::AppState>()
             .forwards
             .stop_before_generation(id, boundary);
@@ -409,6 +411,7 @@ impl PluginsManager {
             security: Arc::new(security::PluginSecurity::default()),
             status_bar: contributions::Registry::default(),
             tab_bar: contributions::Registry::default(),
+            host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
         }
     }
 
