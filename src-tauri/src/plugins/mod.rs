@@ -5,6 +5,7 @@ mod declarative;
 mod engines;
 pub mod file_icons;
 mod host;
+mod logging;
 pub mod manifest;
 pub mod marketplace;
 pub mod network;

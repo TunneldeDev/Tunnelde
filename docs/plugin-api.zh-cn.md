@@ -35,6 +35,9 @@
 `tabBar.set`/`tabBar.remove` 也具有冻结的 v1 契约，另以 `commandContextSchema`
 定义提示性的点击输入。默认值、生命周期、匹配范围及错误见[标签栏指南](plugin-tab-bar.zh-cn.md)。
 稳定契约的不兼容变更需要明确的版本化迁移。
+`log` 也具有冻结的 v1 契约，保留旧 message/level 调用；结构化日志需要
+0.33.0-beta.5 或更新宿主。返回成功表示接受记录，不表示已持久化。
+配额、错误和过滤规则见[日志说明](logging.zh-cn.md)。
 
 冻结的接口发现[请求结构](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
 和[响应结构](../tests/fixtures/plugin-compat/api-describe-v1.schema.json)定义了其 v1
@@ -139,6 +142,8 @@ CI 使用当前宿主的清单加载器和 JSON-RPC 生命周期运行固定保�
 核心结构检查会校验真实存储结果、会话序列化和 JSON-RPC 错误，并拒绝契约收窄或权限变更。
 编辑器检查执行真实缓冲区状态下的前端桥，将捕获的返回值和错误经过 Rust 回复编码，
 校验冻结结构，再把合并后的响应交给历史 SDK 回放。
+日志样本使用实际协议适配器与本地写入器，覆盖历史 SDK 的 `host.log(message, level)`、
+级别别名、配额、脱敏、身份及过滤行为。
 这些验证覆盖明确的核心范围，并不证明所有方法、权限、事件或存储数据迁移均兼容。
 请在插件声明的最低应用版本及较新宿主上测试，处理方法不可用、授权变化和错误，不要
 依赖未记录字段或固定的方法数量。市场 SDK 目录与 `api.describe` 可能因发布不同步而

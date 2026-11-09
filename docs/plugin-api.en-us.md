@@ -45,6 +45,9 @@ also has a frozen v1 read-only contract; workspace mutation methods remain exper
 `commandContextSchema` for advisory click input. See the
 [tab-bar guide](plugin-tab-bar.en-us.md) for defaults, lifecycle, scope and errors.
 An incompatible change to a stable contract requires an explicitly versioned migration.
+`log` also has a frozen v1 contract: legacy message/level calls remain available, and
+structured logging requires 0.33.0-beta.5 or later. Its result acknowledges acceptance,
+not durable delivery. See [logging](logging.en-us.md) for quotas, errors and filtering.
 
 The frozen discovery [request schema](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
 and [response schema](../tests/fixtures/plugin-compat/api-describe-v1.schema.json) define
@@ -160,7 +163,9 @@ validate real storage results, session serialization and JSON-RPC errors, and re
 narrowed contracts or changed permissions. Editor checks execute the frontend bridge
 against real buffer state, pass its captured results/errors through the Rust reply
 encoder, validate the frozen schemas and replay the combined responses through the
-historical SDK. This exercises a defined core, not every
+historical SDK. Logging samples use the actual wire adapter and local writer, including legacy
+`host.log(message, level)` calls through the frozen SDK, aliases, quotas, redaction,
+identity and filtering. This exercises a defined core, not every
 method, permission, event or stored-data migration. Test a plugin against the oldest
 application version it declares, and again against newer hosts. Check for unavailable
 methods, authorization changes and errors; do not depend on undocumented fields or a

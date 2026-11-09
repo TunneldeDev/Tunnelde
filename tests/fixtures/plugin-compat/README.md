@@ -23,3 +23,10 @@ and command serializer. CI validates them against the frozen schemas and replays
 registration/removal responses through the historical SDK. Duplicate option values,
 selection membership, quotas and authorization remain runtime checks. Neither the
 frozen item contract nor the command context exposes internal layout state.
+
+`logging-v1.json` freezes the `log` input, null result and JSON-RPC error envelope.
+Actual wire-adapter samples include legacy levels, structured options, byte/depth/node
+limits, nullable identifiers and ignored unknown fields. They pass through schema checks
+and the frozen SDK; legacy cases call its unchanged `host.log` helper. Writer tests also
+check severity filtering, trusted identity and structured redaction. No fixture promises
+durable delivery, free-text secret detection or a stable on-disk record layout.

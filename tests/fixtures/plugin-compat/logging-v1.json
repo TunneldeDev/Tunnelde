@@ -1,0 +1,92 @@
+{
+  "version": 1,
+  "methods": {
+    "log": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Structural v1 request. UTF-8 encoded byte, nested field and runtime limits are enforced separately. Unknown top-level fields are ignored. Structured options require host 0.33.0-beta.5 or later.",
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": { "type": "string", "maxLength": 16384 },
+          "level": {
+            "enum": [
+              "trace",
+              "debug",
+              "info",
+              "warn",
+              "error",
+              "TRACE",
+              "DEBUG",
+              "INFO",
+              "WARN",
+              "ERROR",
+              "warning",
+              "WARNING"
+            ]
+          },
+          "domain": { "$ref": "#/definitions/identifier" },
+          "operation": { "$ref": "#/definitions/identifier" },
+          "requestId": { "$ref": "#/definitions/identifier" },
+          "fields": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true,
+        "definitions": {
+          "identifier": {
+            "type": ["string", "null"],
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+          }
+        }
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Accepted for diagnostic logging, subject to level filters and a bounded lossy writer. Not an acknowledgement of durable storage. No event subscription is created.",
+        "type": "null"
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "integer" },
+          "message": { "type": "string" },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": { "code": { "type": "string" } },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.invalid:log",
+        "logs.invalid:message",
+        "logs.invalid:domain",
+        "logs.invalid:operation",
+        "logs.invalid:requestId",
+        "logs.invalid:fields",
+        "plugin.timeout",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": []
+    }
+  }
+}
