@@ -31,6 +31,7 @@ import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
 import { createTerminalOutputDecoder } from "./terminalOutput";
 import { bindTerminalClipboard } from "./terminalClipboard";
+import { terminalEditingSequence } from "./terminalKeyboard";
 import { registerTerminalCheckpoint, takeTerminalCheckpoint } from "./terminalCheckpoint";
 import { captureTerminalState, restoreTerminalState } from "./terminalState";
 
@@ -250,7 +251,10 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       applicationClipboard = bindTerminalClipboard(
         instance,
         element,
-        () => !ended && activeRef.current && useSettings.getState().settings.terminalCopyOnSelect,
+        () =>
+          !ended &&
+          activeRef.current &&
+          useSettings.getState().settings.terminalApplicationClipboard,
         writeClipboard,
         () => toast(t("menu.copyFailed"), "error"),
       );
@@ -317,13 +321,26 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       instance.attachCustomKeyEventHandler((event) => {
         if (
           event.type !== "keydown" ||
+          event.defaultPrevented ||
           event.isComposing ||
-          event.keyCode === 229 ||
-          event.altKey
+          event.keyCode === 229
         ) {
           return true;
         }
         const bindings = useSettings.getState().settings.keyboardShortcuts;
+        if (matchesCommand(event, "terminal.selectAll", bindings)) {
+          if (!disposed) instance.selectAll();
+          event.preventDefault();
+          return false;
+        }
+        const sequence = terminalEditingSequence(event, bindings);
+        if (sequence !== null) {
+          // input() follows the same onData/SSH path as physical keys and retains
+          // xterm's user-input scrolling. paste() would add bracketed-paste markers.
+          if (!disposed && !ended && !checkpointing.current) instance.input(sequence, true);
+          event.preventDefault();
+          return false;
+        }
         if (matchesCommand(event, "terminal.paste", bindings)) {
           event.preventDefault();
           paste();

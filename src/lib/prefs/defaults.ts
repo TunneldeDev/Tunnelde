@@ -50,6 +50,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     terminalSmoothScrolling: false,
     terminalScrollOnInput: true,
     terminalCopyOnSelect: false,
+    terminalApplicationClipboard: true,
     terminalRightClick: "menu",
     terminalRenderer: "auto",
     fileIconTheme: "auto",
