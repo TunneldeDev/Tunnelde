@@ -214,11 +214,9 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
                 .map_err(|_| AppError::internal("plugin.frontend.snapshot"))?
         })
         .await?;
-    let lease = state.plugins.security.lease(
-        &id,
-        snapshot.digest.clone(),
-        instance.manifest.permissions.clone(),
-    )?;
+    if snapshot.digest != lease.fingerprint {
+        return Err(AppError::validation("pluginSecurity.approvalRequired"));
+    }
     authorized(&state.plugins.security, &lease)?;
     if !snapshot
         .assets

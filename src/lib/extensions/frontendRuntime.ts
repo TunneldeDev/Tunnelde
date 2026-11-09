@@ -22,6 +22,7 @@ interface Runtime {
   scope: ResourceScope;
   ready: Promise<void>;
   activated: boolean;
+  retiring: boolean;
   token?: string;
   views: Map<string, ComponentType<FrontendViewProps>>;
   commands: Map<
@@ -78,13 +79,14 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         scope,
         ready: Promise.resolve(),
         activated: false,
+        retiring: false,
         views: new Map(),
         commands: new Map(),
       };
       runtime = current;
       runtimes.set(plugin.id, current);
       const live = () => {
-        if (scope.signal.aborted || runtimes.get(plugin.id) !== current)
+        if (current.retiring || scope.signal.aborted || runtimes.get(plugin.id) !== current)
           throw new ResourceScopeClosed();
       };
       const register = <T>(map: Map<string, T>, id: string, value: T, declared: boolean) => {
@@ -164,6 +166,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           current.activated = true;
           changed();
         } catch (error) {
+          current.retiring = true;
           if (runtimes.get(plugin.id) === current) {
             if (current.token && !(error instanceof ResourceScopeClosed)) {
               try {

@@ -147,6 +147,29 @@ it("rejects SDK mismatch before execution and releases the native session", asyn
   expect(f.transport.close).toHaveBeenCalledExactlyOnceWith("unsupported");
 });
 
+it("rejects registrations during asynchronous failure retirement", async () => {
+  let context!: FrontendContext;
+  let fail!: () => void;
+  const f = fixture((ctx) => {
+    context = ctx;
+    throw new Error("activation failed");
+  });
+  f.transport.fail = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        fail = resolve;
+      }),
+  );
+  const pending = f.runtime.ensure(plugin);
+  const rejected = expect(pending).rejects.toThrow("activation failed");
+  await vi.waitFor(() => expect(f.transport.fail).toHaveBeenCalledOnce());
+  expect(() => context.views.register("main", () => null)).toThrow("extension.scope.closed");
+  expect(() => context.api.call("app.info")).toThrow("extension.scope.closed");
+  fail();
+  await rejected;
+  expect(f.transport.close).toHaveBeenCalledOnce();
+});
+
 it("publishes views only after activation succeeds and preserves them on unrelated approval", async () => {
   let finish!: () => void;
   const f = fixture((ctx) => {
