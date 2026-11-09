@@ -3,6 +3,8 @@ import { create } from "zustand";
 import { api } from "@/lib/api/ipc";
 import type { Host, SshSession, TabKind, TabRecord, FsSource } from "@/lib/api/types";
 import type { FileViewPreferences } from "@/lib/files/view";
+import type { SplitDirection, PanelLayoutNode } from "@/lib/layout/types";
+export type { SplitDirection } from "@/lib/layout/types";
 import { fileName, useEditors } from "@/store/editors";
 import { useDialogs } from "@/store/dialogs";
 import i18n from "@/i18n/i18n";
@@ -48,17 +50,7 @@ export interface WorkspacePane {
   locked?: boolean;
 }
 
-export type SplitDirection = "row" | "column";
-export type WorkspaceLayout =
-  | { kind: "pane"; paneId: string }
-  | {
-      kind: "split";
-      id: string;
-      direction: SplitDirection;
-      ratio: number;
-      first: WorkspaceLayout;
-      second: WorkspaceLayout;
-    };
+export type WorkspaceLayout = PanelLayoutNode;
 /** Where a dragged tab lands relative to the tabs that stay behind. */
 export type PanePosition = "before" | "after";
 
