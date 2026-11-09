@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use russh::ChannelMsg;
 use serde_json::{json, Value};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
@@ -103,9 +103,7 @@ fn publish(
         }
         event
     };
-    if authorize(context, &[]).is_ok() {
-        let _ = context.app.emit("plugin://event", json!({"pluginId":context.id,"generation":context.generation,"event":"task","payload":payload}));
-    }
+    let _ = super::events::emit(context, "task", payload);
 }
 
 pub fn cancel_plugin(plugin: &str, generation: Option<u64>) {

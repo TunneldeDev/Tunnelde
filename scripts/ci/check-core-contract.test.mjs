@@ -33,6 +33,83 @@ const logging = JSON.parse(
 const ui = JSON.parse(
   await readFile(new URL("../../tests/fixtures/plugin-compat/ui-v1.json", import.meta.url), "utf8"),
 );
+const events = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/plugin-compat/events-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+test("event contract accepts legacy null defaults and rejects invalid envelopes and names", () => {
+  const contract = events.methods["events.publish"];
+  const input = ajv.compile(contract.inputSchema);
+  const envelope = ajv.compile(contract.eventSchema);
+  for (const event of ["chat", "._:-AZaz09", "x".repeat(128)]) {
+    assert.ok(input({ event }));
+    assert.ok(input({ event, payload: null, pluginId: "ignored", generation: "ignored" }));
+    assert.ok(envelope({ pluginId: "actual", generation: 1, event, payload: null, future: true }));
+  }
+  for (const event of [
+    "",
+    "x".repeat(129),
+    "chat\n",
+    "chat\r",
+    "chat\u2028",
+    "事件",
+    "a/b",
+    null,
+    1,
+  ])
+    assert.equal(input({ event }), false, JSON.stringify(event));
+  for (const broken of [
+    { generation: 1, event: "chat", payload: null },
+    { pluginId: "actual", generation: -1, event: "chat", payload: null },
+    { pluginId: "actual", generation: 1.5, event: "chat", payload: null },
+    { pluginId: "actual", generation: 1, event: "chat" },
+  ])
+    assert.equal(envelope(broken), false);
+  const discovery = { methods: [{ name: "events.publish", stability: "stable", contract }] };
+  const responses = {
+    samples: [
+      {
+        method: "events.publish",
+        params: { event: "chat" },
+        result: null,
+        emittedEvents: [{ pluginId: "actual", generation: 1, event: "chat", payload: null }],
+      },
+      {
+        method: "events.publish",
+        params: {},
+        inputValid: false,
+        error: { code: -32602, message: "plugin.api.missing:event" },
+        emittedEvents: [],
+      },
+    ],
+  };
+  const emptyFloor = { version: 1, methods: {} };
+  assert.deepEqual(checkCoreContracts(discovery, responses, emptyFloor), {
+    methods: 1,
+    samples: 2,
+  });
+  for (const mutate of [
+    (copy) => {
+      delete copy.samples[0].emittedEvents;
+    },
+    (copy) => {
+      copy.samples[0].emittedEvents = [];
+    },
+    (copy) => {
+      delete copy.samples[0].emittedEvents[0].pluginId;
+    },
+    (copy) => {
+      copy.samples[0].emittedEvents[0].generation = "1";
+    },
+  ]) {
+    const copy = clone(responses);
+    mutate(copy);
+    assert.throws(() => checkCoreContracts(discovery, copy, emptyFloor));
+  }
+});
 
 test("UI schemas allow literal multiline text and reject NUL, malformed fields and results", () => {
   for (const method of ["ui.showMessage", "ui.confirm"]) {
