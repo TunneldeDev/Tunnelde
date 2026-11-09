@@ -371,6 +371,13 @@ The UI preserves drafts when a panel is moved. Secrets belong in `secrets.*`, ne
 or plugin storage. See the hub SDK for the schema and the extension's own documentation
 for its supported controls.
 
+Chat task entries may include a `runId` identifying the operation that owns their
+saved recovery state. Inspect/resume commands receive `taskId` and `taskRunId` from
+that entry, alongside the current conversation `runId`. Plugins must validate all
+provided identities before reading or continuing a process. A task whose saved
+cursor has been replaced must stop offering recovery; its action must never
+silently target a later process or a new operation on a reused runner.
+
 Since 0.25.1, the controlled session picker provides searchable history with row-level
 rename and delete actions. `commands.session` receives `action: "select" | "new" |
 "rename" | "delete"`, a `sessionId` for an existing conversation, and `title` for a rename.

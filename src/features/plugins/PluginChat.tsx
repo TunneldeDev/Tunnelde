@@ -770,7 +770,13 @@ export function PluginChat({
                   <strong>{task.title || task.id}</strong>
                   <span>{t(`pluginChat.taskStates.${task.status}`)}</span>
                 </div>
-                {task.output ? (
+                {task.inspection ? (
+                  <details open>
+                    <summary>{t("pluginChat.taskDetails")}</summary>
+                    <pre tabIndex={0}>{task.inspection}</pre>
+                  </details>
+                ) : null}
+                {task.output && task.output !== task.inspection ? (
                   <details>
                     <summary>{t("pluginChat.taskOutput")}</summary>
                     <pre tabIndex={0}>{task.output}</pre>
@@ -783,7 +789,11 @@ export function PluginChat({
                       size="sm"
                       disabled={!!busy || active || preparing}
                       onClick={() =>
-                        void command(block.commands.recover, { taskId: task.id, action: "inspect" })
+                        void command(block.commands.recover, {
+                          taskId: task.id,
+                          taskRunId: task.runId,
+                          action: "inspect",
+                        })
                       }
                     >
                       {t("pluginChat.inspectTask")}
@@ -792,7 +802,11 @@ export function PluginChat({
                       size="sm"
                       disabled={!!busy || active || preparing}
                       onClick={() =>
-                        void command(block.commands.recover, { taskId: task.id, action: "resume" })
+                        void command(block.commands.recover, {
+                          taskId: task.id,
+                          taskRunId: task.runId,
+                          action: "resume",
+                        })
                       }
                     >
                       {t("pluginChat.resumeTask")}

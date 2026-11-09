@@ -426,9 +426,11 @@ describe("controlled plugin chat", () => {
           tasks: [
             {
               id: "task",
+              runId: "original-run",
               title: "Server check",
               status: "interrupted",
               output: "Saved progress",
+              inspection: "Status: completed\nExit code: 0",
               recoverable: true,
             },
           ],
@@ -437,12 +439,50 @@ describe("controlled plugin chat", () => {
     );
     expect(mock.run).not.toHaveBeenCalled();
     expect(screen.getByText("Saved progress")).toBeTruthy();
+    const inspected = screen.getByText("Status: completed", { exact: false }).closest("details");
+    expect(inspected?.open).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Continue task" }));
     await waitFor(() =>
       expect(mock.run).toHaveBeenCalledWith(
         "assistant",
         "ai.recover",
-        expect.objectContaining({ taskId: "task", action: "resume" }),
+        expect.objectContaining({ taskId: "task", taskRunId: "original-run", action: "resume" }),
+      ),
+    );
+  });
+
+  it("inspects the task's captured run instead of replacing it with the latest conversation run", async () => {
+    render(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{
+          ...chat,
+          run: { id: "latest-run", status: "failed", seq: 8 },
+          tasks: [
+            {
+              id: "shared-runner",
+              runId: "original-run",
+              title: "Saved task",
+              status: "interrupted",
+              output: "",
+              recoverable: true,
+            },
+          ],
+        }}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Inspect task" }));
+    await waitFor(() =>
+      expect(mock.run).toHaveBeenCalledWith(
+        "assistant",
+        "ai.recover",
+        expect.objectContaining({
+          taskId: "shared-runner",
+          taskRunId: "original-run",
+          runId: "latest-run",
+          action: "inspect",
+        }),
       ),
     );
   });

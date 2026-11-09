@@ -1394,6 +1394,7 @@
     "allowOnce": "Allow once",
     "tasks": "Tasks",
     "taskOutput": "Output",
+    "taskDetails": "Task details",
     "recoveryHint": "Review saved output before continuing. Tasks are never restarted automatically.",
     "inspectTask": "Inspect task",
     "resumeTask": "Continue task",
