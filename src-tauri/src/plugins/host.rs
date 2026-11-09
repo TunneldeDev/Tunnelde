@@ -205,10 +205,7 @@ impl PluginConnection {
     }
 
     async fn write(&self, payload: &Value) -> AppResult<()> {
-        let mut line = serde_json::to_string(payload)?;
-        if !line.ends_with('\n') {
-            line.push('\n');
-        }
+        let line = json_line(payload)?;
         let mut stdin = self.stdin.lock().await;
         if *self.closed.borrow() {
             return Err(AppError::validation("plugin.exited"));
@@ -228,6 +225,16 @@ impl PluginConnection {
         write.complete = true;
         Ok(())
     }
+}
+
+/// JSON permits these characters inside strings, but historical Node readline
+/// readers interpret them as frame boundaries. Escaping preserves the JSON value.
+fn json_line(payload: &Value) -> AppResult<String> {
+    let mut line = serde_json::to_string(payload)?
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
+    line.push('\n');
+    Ok(line)
 }
 
 // Node's JS module resolver treats Windows verbatim paths as URL-like input in
@@ -457,7 +464,7 @@ async fn handle_plugin_request(
         return;
     };
     let reply = match result {
-        Ok(result) if result.to_string().len() <= 1024 * 1024 => {
+        Ok(result) if json_line(&result).is_ok_and(|line| line.len() <= 1024 * 1024 - 4096) => {
             json!({"jsonrpc":"2.0","id":id,"result":result})
         }
         Ok(_) => {
@@ -547,6 +554,18 @@ async fn read_limited_line(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unicode_separators_remain_one_frame_for_historical_node_readers() {
+        let value =
+            serde_json::json!({"result":"first\u{2028}第二\u{2029}😀\nlast","literal":"\\u2028"});
+        let line = super::json_line(&value).unwrap();
+        assert_eq!(line.bytes().filter(|byte| *byte == b'\n').count(), 1);
+        assert!(!line.contains(['\u{2028}', '\u{2029}']));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&line).unwrap(),
+            value
+        );
+    }
     use super::*;
     use serde_json::json;
     use sha2::{Digest, Sha256};
