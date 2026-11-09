@@ -12,6 +12,11 @@ commands, or an installed plugin. Checked filters can be toggled off, and **Clea
 filters** preserves ordinary search text. The Modified checkbox stays in sync
 with `@is:modified` in the search field. Escape cancels recording.
 
+Choosing to resolve in Settings dismisses the pending conflict dialogs together
+and filters all involved plugins, leaving their bindings unchanged for review.
+While a keep-one choice saves, competing choices are disabled; dismissing its
+dialog does not discard the next unresolved conflict. Failed saves remain retryable.
+
 For typed queries, combine `@is:conflict`, `@is:modified`, `@is:unassigned`,
 `@source:built-in` or `@source:plugin` with ordinary text. Select one or more
 plugins with `@plugins:plugin-id,another-id`; when combined with `@is:conflict`,

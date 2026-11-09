@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { KeyboardShortcuts } from "@/features/settings/KeyboardShortcuts";
+import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
 import { SHORTCUT_COMMANDS } from "@/lib/keyboard/registry";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { useSettings } from "@/store/settings";
@@ -20,7 +21,7 @@ beforeEach(() => {
   });
   useDialogs.getState().close();
   usePlugins.setState({ items: [] });
-  useShortcutConflicts.setState({ query: "", request: 0, queue: [] });
+  useShortcutConflicts.setState({ query: "", request: 0, queue: [], resolving: false });
 });
 const search = (value: string) =>
   fireEvent.change(screen.getByRole("textbox", { name: "Search commands or shortcuts" }), {
@@ -28,6 +29,59 @@ const search = (value: string) =>
   });
 
 describe("KeyboardShortcuts", () => {
+  it("reviews all queued plugin conflicts in settings without another modal blocking it", () => {
+    const plugin = {
+      id: "formatter",
+      name: "Formatter",
+      runtime: "node",
+      views: [],
+      commands: [{ id: "format", title: "Format", keybindings: ["Mod+Shift+F", "Mod+Alt+J"] }],
+    };
+    usePlugins.setState({ items: [plugin, { ...plugin, id: "other", name: "Other" }] as never });
+    useShortcutConflicts
+      .getState()
+      .enqueue(undefined, plugin as never, usePlugins.getState().items);
+    expect(useShortcutConflicts.getState().queue.length).toBeGreaterThan(1);
+    render(<ShortcutConflictDialog />);
+    fireEvent.click(screen.getByRole("button", { name: "Resolve in settings" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useShortcutConflicts.getState().queue).toEqual([]);
+    expect(useShortcutConflicts.getState().query).toBe("@is:conflict & @plugins:formatter,other");
+    expect(useSettings.getState().settings.keyboardShortcuts).toEqual({});
+  });
+  it("disables competing conflict choices while persisting without trapping the dialog", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "formatter",
+          name: "Formatter",
+          runtime: "node",
+          views: [],
+          commands: [{ id: "format", title: "Format", keybindings: ["Mod+Shift+F"] }],
+        },
+      ] as never,
+    });
+    useShortcutConflicts.setState({
+      resolving: true,
+      queue: [
+        {
+          incoming: "plugin.c.9.formatter.format",
+          existing: "palette.content",
+          binding: "Mod+Shift+F",
+        },
+      ],
+    });
+    render(<ShortcutConflictDialog />);
+    const choices = document.querySelectorAll<HTMLButtonElement>(
+      ".shortcuts-conflict-options button",
+    );
+    expect(choices).toHaveLength(2);
+    expect([...choices].every((button) => button.disabled)).toBe(true);
+    const keep = screen.getByRole("button", { name: "Keep conflict" });
+    expect(keep).toHaveProperty("disabled", false);
+    fireEvent.click(keep);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
   it("inserts and removes conflict filters from a discoverable menu, retaining text and focus", () => {
     render(<KeyboardShortcuts />);
     search("page.settings");
