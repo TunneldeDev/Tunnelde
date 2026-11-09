@@ -153,3 +153,14 @@ The failed item remains in the cut selection; successful items in the same batch
 are removed from it. Refresh both locations before retrying after a lost connection,
 because a missing reply cannot prove whether the server completed the operation.
 An unspecified failure does not trigger an automatic copy-and-delete retry.
+
+## Interrupted temporary-directory creation
+
+Transfers record whether a private remote staging directory was created and
+acknowledged. If its creation reply is lost, the task keeps the recovery record
+and displays the exact staging path for review. A missing or currently empty
+path cannot prove that an already sent request will not create it later.
+Resume and automatic cleanup do not reuse or forget that uncertain directory.
+Previously saved unprepared records without creation state receive the same
+conservative treatment. Acknowledged directories retain normal cleanup and
+resume behavior. Source files and completed destination files are preserved.
