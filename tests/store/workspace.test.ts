@@ -741,6 +741,48 @@ describe("workspace tabs", () => {
     expect(next.panes[0]?.tabIds).toContain("page:welcome");
   });
 
+  it("collapses panels in a closed mixed pane while preserving its pages and saved panel slots", () => {
+    state().openPage("welcome", { preview: false });
+    state().splitTab("sidebar:output", "column", "after", "root");
+    const owner = state().activePaneId;
+    state().openSidebar("tasks");
+    state().openPage("settings");
+    const layout = state().layout;
+    state().closePane(owner);
+    expect(state().tabs.find((tab) => tab.id === "page:settings")).toMatchObject({
+      preview: false,
+    });
+    expect(state().panes.find((pane) => pane.id === "pane-1")?.tabIds).toContain("page:settings");
+    expect(state().panes.find((pane) => pane.id === owner)?.tabIds).toEqual([
+      "sidebar:output",
+      "sidebar:tasks",
+    ]);
+    for (const view of ["output", "tasks"])
+      expect(state().tabs.find((tab) => tab.id === `sidebar:${view}`)?.hidden).toBe(true);
+    expect(state().layout).toEqual(layout);
+    state().hydrate(workspaceRecords());
+    expect(state().layout).toEqual(layout);
+    useNavigation.getState().showOutput();
+    expect(state().activePaneId).toBe(owner);
+    expect(state().tabs.find((tab) => tab.id === "sidebar:output")?.hidden).toBe(false);
+    expect(state().tabs.find((tab) => tab.id === "sidebar:tasks")?.hidden).toBe(true);
+  });
+
+  it("keeps existing hidden panels in place when closing a different pane", () => {
+    state().openPage("welcome", { preview: false });
+    state().splitTab("sidebar:output", "row", "after", "root");
+    const outputPane = state().activePaneId;
+    state().close("sidebar:output");
+    state().openPage("settings", { preview: false });
+    state().splitTab("page:settings", "row", "after", "root");
+    state().closePane(state().activePaneId);
+    expect(state().panes.find((pane) => pane.id === outputPane)?.tabIds).toEqual([
+      "sidebar:output",
+    ]);
+    expect(state().tabs.find((tab) => tab.id === "sidebar:output")?.hidden).toBe(true);
+    expect(state().panes.find((pane) => pane.id === "pane-1")?.tabIds).toContain("page:settings");
+  });
+
   it("drops unsupported kinds when hydrating", () => {
     useWorkspace
       .getState()
