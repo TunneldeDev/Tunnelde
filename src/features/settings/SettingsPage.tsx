@@ -625,6 +625,13 @@ export function SettingsPage() {
                           )
                         ) : definition.kind === "network" ? (
                           <NetworkSettingsSection key={definition.key} />
+                        ) : definition.kind === "shortcutRules" ? (
+                          filtering &&
+                          !group.definitions.some((item) => item.kind === "shortcuts") &&
+                          group.definitions.find((item) => item.kind === "shortcutRules") ===
+                            definition ? (
+                            <KeyboardShortcuts key={definition.key} />
+                          ) : null
                         ) : definition.kind === "shortcuts" ? (
                           <div key={definition.key} data-setting="keyboardShortcuts">
                             <KeyboardShortcuts />

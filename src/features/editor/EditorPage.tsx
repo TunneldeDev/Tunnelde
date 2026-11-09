@@ -1,5 +1,6 @@
 import { Save, WandSparkles } from "lucide-react";
-import { matchesCommand, shortcutCommands } from "@/lib/keyboard/registry";
+import { shortcutCommands } from "@/lib/keyboard/registry";
+import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -15,7 +16,6 @@ import {
   useFormatting,
 } from "@/lib/plugins/formatting";
 import { openPluginAction } from "@/lib/plugins/actions";
-import { runWorkbenchCommand } from "@/lib/keyboard/actions";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { useSettings } from "@/store/settings";
@@ -101,52 +101,43 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
     if (!active) {
       return;
     }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || document.querySelector('[role="dialog"]')) return;
-      if (
-        !(event.target instanceof Element) ||
-        event.target.closest(".editor-page") !== textarea.current?.closest(".editor-page")
-      )
-        return;
-      const definitions = shortcutCommands(usePlugins.getState().items);
+    const element = textarea.current?.closest<HTMLElement>(".editor-page");
+    if (!element) return;
+    return bindShortcutProvider(element, (event) => {
       const plugins = usePlugins.getState().items;
-      const overrides = useSettings.getState().settings.keyboardShortcuts;
-      const editorCommands = definitions.filter((item) => {
-        if (item.scope !== "editor" || !matchesCommand(event, item.id, overrides, definitions))
+      const commands = shortcutCommands(plugins).filter((item) => {
+        if (item.scope !== "editor" || !entry || entry.loading || entry.error || entry.disconnected)
           return false;
         if (!item.plugin?.command) return true;
         const contributed = plugins
           .find((plugin) => plugin.id === item.plugin?.id)
           ?.commands.find((command) => command.id === item.plugin?.command);
         return (
-          !!entry &&
-          !!contributed?.editor &&
-          editorCommandMatches(entry.path, contributed.editor.extensions)
+          !!contributed?.editor && editorCommandMatches(entry.path, contributed.editor.extensions)
         );
       });
-      if (!editorCommands.length) return;
-      // Workbench shortcuts also apply in the editor when explicitly shared with a plugin.
-      const workbenchCommands = definitions.filter(
-        (item) =>
-          item.scope === "workbench" &&
-          item.input &&
-          matchesCommand(event, item.id, overrides, definitions),
+      let queue = Promise.resolve();
+      return scopedShortcutCandidates(
+        event,
+        commands.map((command) => command.id),
+        (id) => {
+          if (id === "editor.save")
+            queue = queue.then(async () => {
+              await save(tabId);
+            });
+          else if (id === "editor.undo" || id === "editor.redo")
+            return undoEditorEdit(tabId, id === "editor.redo");
+          else {
+            const action = commands.find((command) => command.id === id)?.plugin;
+            if (!action) return false;
+            queue = queue.then(async () => {
+              await openPluginAction(action);
+            });
+          }
+          return true;
+        },
       );
-      event.preventDefault();
-      event.stopPropagation();
-      void (async () => {
-        for (const command of editorCommands) {
-          if (command.id === "editor.save") await save(tabId);
-          else if (command.id === "editor.undo" || command.id === "editor.redo")
-            undoEditorEdit(tabId, command.id === "editor.redo");
-          else if (command.plugin) await openPluginAction(command.plugin);
-          else runWorkbenchCommand(command.id);
-        }
-        for (const command of workbenchCommands) runWorkbenchCommand(command.id);
-      })();
-    };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
+    });
   }, [active, save, tabId, entry]);
 
   useEffect(() => {

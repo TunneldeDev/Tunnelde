@@ -730,6 +730,27 @@ describe("SftpPage", () => {
     expect(currentPath()).toBe("C:\\work");
   });
 
+  it("copies the ancestor column branch rather than a selected child file", async () => {
+    fsMock.list.mockImplementation(async (source: FsSource, path?: string | null) => {
+      if (source.kind === "local" && path === "C:\\work\\src")
+        return {
+          path,
+          entries: [{ ...localListing.entries[0], name: "child.ts", path: `${path}\\child.ts` }],
+        };
+      return listingFor(source);
+    });
+    render(<SftpPage sessionId="session-1" />);
+    await screen.findByText("notes.txt");
+    fireEvent.click(screen.getAllByRole("button", { name: "View options" })[0]!);
+    fireEvent.click(await screen.findByRole("menuitemradio", { name: "Column view" }));
+    fireEvent.click(screen.getByText("src"));
+    await screen.findByText("child.ts");
+    const columns = document.querySelectorAll('.sftp-miller__column [role="listbox"]');
+    fireEvent.keyDown(columns[1]!, { key: "Home" });
+    fireEvent.keyDown(columns[0]!, { key: "c", ctrlKey: true });
+    expect(useFileClipboard.getState().clip?.items[0]?.path).toBe("C:\\work\\src");
+    expect(currentPath()).toBe("C:\\work");
+  });
   it("commits Chinese IME input once and selects the matching file", async () => {
     fsMock.list.mockImplementation(async (source: FsSource) =>
       source.kind === "local"

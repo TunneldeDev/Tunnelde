@@ -1048,3 +1048,18 @@ it("keeps forwarding out of the terminal toolbar", () => {
   render(<TerminalPage sessionId="s1" active />);
   expect(screen.queryByRole("button", { name: "Port forwarding" })).toBeNull();
 });
+
+it("allows per-binding terminal passthrough after accepting a paste", async () => {
+  useSettings.setState({
+    settings: {
+      ...DEFAULT_SETTINGS,
+      shortcutRules: { "terminal.paste": { "Mod+V": { priority: 100, propagation: "continue" } } },
+    },
+  });
+  render(<TerminalPage sessionId="s1" active />);
+  await waitFor(() => expect(keyboard).toHaveLength(1));
+  const event = new KeyboardEvent("keydown", { key: "v", ctrlKey: true, cancelable: true });
+  expect(keyboard[0]!(event)).toBe(true);
+  expect(event.defaultPrevented).toBe(false);
+  await waitFor(() => expect(instances[0]!.paste).toHaveBeenCalled());
+});

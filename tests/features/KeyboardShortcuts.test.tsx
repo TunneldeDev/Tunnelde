@@ -204,4 +204,67 @@ describe("KeyboardShortcuts", () => {
       });
     expect(useSettings.getState().settings.keyboardShortcuts).toEqual({});
   });
+  it("saves per-binding advanced behavior and keeps details opt-in", async () => {
+    render(<KeyboardShortcuts />);
+    search("page.settings");
+    fireEvent.click(screen.getByRole("button", { name: "Advanced shortcut settings: Settings" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
+      target: { value: "250" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "After handling Ctrl+," }));
+    fireEvent.click(screen.getByRole("option", { name: "Continue passing through" }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(useSettings.getState().settings.shortcutRules).toEqual({
+      "page.settings": { "Mod+Comma": { priority: 250, propagation: "continue" } },
+    });
+    expect(document.querySelector(".shortcuts__details")).toBeNull();
+    await act(async () =>
+      fireEvent.click(screen.getByRole("switch", { name: "Show advanced details" })),
+    );
+    expect(document.querySelector(".shortcuts__details")?.textContent).toContain("250");
+    expect(document.querySelector(".shortcuts__details")?.textContent).toContain(
+      "Continue passing through",
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Modified" }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(1);
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Reset: Settings" })));
+    expect(useSettings.getState().settings.shortcutRules).toEqual({});
+    expect(useSettings.getState().settings.keyboardShortcuts).toEqual({});
+  });
+  it("validates priority, discards cancel, and retains the dialog after a failed save", async () => {
+    render(<KeyboardShortcuts />);
+    search("page.settings");
+    fireEvent.click(screen.getByRole("button", { name: "Advanced shortcut settings: Settings" }));
+    fireEvent.change(screen.getByRole("spinbutton", { name: "Priority" }), {
+      target: { value: "1001" },
+    });
+    expect(screen.getByRole("button", { name: "Save" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(useSettings.getState().settings.shortcutRules).toEqual({});
+    fireEvent.click(screen.getByRole("button", { name: "Advanced shortcut settings: Settings" }));
+    expect(screen.getByRole("spinbutton", { name: "Priority" })).toHaveProperty("value", "0");
+    act(() => useSettings.setState({ update: vi.fn(async () => false) }));
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+  it("sorts all commands by priority and edits multiple bindings independently", async () => {
+    render(<KeyboardShortcuts />);
+    search("palette.open");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Advanced shortcut settings: Quick Access" }),
+    );
+    const priorities = screen.getAllByRole("spinbutton", { name: "Priority" });
+    expect(priorities).toHaveLength(3);
+    fireEvent.change(priorities[1]!, { target: { value: "700" } });
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+    expect(useSettings.getState().settings.shortcutRules["palette.open"]?.["F1"]?.priority).toBe(0);
+    expect(useSettings.getState().settings.shortcutRules["palette.open"]?.["Mod+K"]?.priority).toBe(
+      700,
+    );
+    search("");
+    fireEvent.click(screen.getByRole("button", { name: "Shortcut order" }));
+    fireEvent.click(screen.getByRole("option", { name: "Priority: high to low" }));
+    expect(screen.getAllByRole("listitem")[0]?.textContent).toContain("palette.open");
+  });
 });

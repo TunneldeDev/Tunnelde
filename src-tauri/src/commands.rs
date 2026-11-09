@@ -129,6 +129,7 @@ pub fn settings_update(
     let mut base = serde_json::to_value(&previous)?;
     let colors = patch.get("colors").cloned();
     let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
+    let shortcut_rules = patch.get("shortcutRules").cloned();
     let network = patch.get("network").cloned();
     merge_json(&mut base, patch);
     if let Some(colors) = colors {
@@ -136,6 +137,9 @@ pub fn settings_update(
     }
     if let Some(keyboard_shortcuts) = keyboard_shortcuts {
         base["keyboardShortcuts"] = keyboard_shortcuts;
+    }
+    if let Some(shortcut_rules) = shortcut_rules {
+        base["shortcutRules"] = shortcut_rules;
     }
     if let Some(network) = network {
         base["network"] = network;

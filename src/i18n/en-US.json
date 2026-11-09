@@ -1545,6 +1545,26 @@
       "builtin": "Built-in commands",
       "plugins": "Plugin commands",
       "clear": "Clear filters"
+    },
+    "advanced": {
+      "title": "Advanced shortcut settings",
+      "show": "Show advanced details",
+      "priority": "Priority",
+      "priorityHint": "Higher numbers run first. Range: −1000 to 1000. Context commands default to 100; workbench commands to 0.",
+      "invalidPriority": "Enter an integer from −1000 to 1000.",
+      "propagation": "After handling",
+      "consume": "Handle key, keep conflicts",
+      "consumeHint": "Suppress the original key. Other matching commands still run in priority order.",
+      "continue": "Continue passing through",
+      "continueHint": "Run this command and allow subsequent commands and the original key to reach the focused control or terminal. A later command can still block it.",
+      "block": "Block subsequent handling",
+      "blockHint": "After this command accepts the key, stop all remaining commands (including equal priorities) and suppress the original key.",
+      "hint": "Rules apply separately to each binding, within its active context. Equal priorities keep the existing command order.",
+      "acceptance": "Handled means the command accepted the action. Async failures are shown normally; keys are never replayed after a network error. IME, dialogs and normal widget navigation keep their own behavior.",
+      "unassigned": "Assign a shortcut before configuring its advanced behavior.",
+      "sort": "Shortcut order",
+      "sortDefault": "Command order",
+      "sortPriority": "Priority: high to low"
     }
   },
   "profiles": {
