@@ -161,8 +161,7 @@ pub(super) async fn manifest(
     client: &reqwest::Client,
     url: &reqwest::Url,
 ) -> AppResult<Option<serde_json::Value>> {
-    let response =
-        request_with_timeout(client, url.as_str(), Duration::from_secs(25), true).await?;
+    let response = manifest_response(client, url).await?;
     if response.status() == reqwest::StatusCode::NO_CONTENT {
         return Ok(None);
     }
@@ -173,6 +172,13 @@ pub(super) async fn manifest(
     serde_json::from_slice(&bytes)
         .map(Some)
         .map_err(|_| manifest_error(url, "updates.invalidFeed"))
+}
+
+pub(super) async fn manifest_response(
+    client: &reqwest::Client,
+    url: &reqwest::Url,
+) -> AppResult<reqwest::Response> {
+    request_with_timeout(client, url.as_str(), Duration::from_secs(25), true).await
 }
 
 pub(super) fn manifest_error(url: &reqwest::Url, reason: &'static str) -> AppError {
@@ -465,7 +471,10 @@ where
             let primary = source_failure("github-api", primary);
             backoff.record(proxy, &primary);
             tracing::info!(reason = %primary, channel, source = "github-api", next_source = "github-public-feed", action = "automatic_fallback", "GitHub update API unavailable; checking recent public releases");
-            let fallback = tokio::time::timeout(Duration::from_secs(28), public())
+            // A feed request (12s) plus a slow release-asset redirect/body (25s)
+            // must fit. Leave five seconds inside the overall 65s check budget
+            // after the 22s API attempt and 38s fallback.
+            let fallback = tokio::time::timeout(Duration::from_secs(38), public())
                 .await
                 .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
             match fallback {
