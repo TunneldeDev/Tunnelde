@@ -1,0 +1,18 @@
+.td-split-panels__child {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.td-split-panels__separator {
+  position: relative;
+  background: var(--td-border);
+}
+.td-split-panels__separator:hover,
+.td-split-panels__separator:focus-visible {
+  background: var(--td-accent);
+}
+.td-split-panels__separator:focus-visible {
+  outline: 1px solid var(--td-accent);
+  outline-offset: -1px;
+}
