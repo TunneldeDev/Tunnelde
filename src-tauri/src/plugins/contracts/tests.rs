@@ -44,6 +44,16 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
         );
     }
     let response = describe_api();
+    let logging_floor: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/plugin-compat/logging-v1.json"
+    ))
+    .unwrap();
+    for (name, contract) in logging_floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen logging contract changed: {name}"
+        );
+    }
     let tab_bar_floor: Value = serde_json::from_str(include_str!(
         "../../../../tests/fixtures/plugin-compat/tab-bar-v1.json"
     ))
@@ -85,6 +95,8 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
                 &["editor.write"][..]
             } else if name == "workspace.snapshot" {
                 &["workspace.read"][..]
+            } else if name == "log" {
+                &["log"][..]
             } else {
                 &[][..]
             }
@@ -134,6 +146,7 @@ async fn emit_core_contract_responses() {
     }
     samples.extend(super::super::status_bar::contract_samples());
     samples.extend(super::super::tab_bar::contract_samples());
+    samples.extend(super::super::logging::tests::contract_samples());
     for (variable, methods) in [
         (
             "TUNNELDE_EDITOR_CONTRACT_INPUT",

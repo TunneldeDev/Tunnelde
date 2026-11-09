@@ -47,8 +47,12 @@ await host.log("Connection failed", {
 });
 ```
 
-The extended options are experimental. Check `host.describe()` for the running host's parameters
-before depending on them; older hosts accept message and level but may ignore added options.
+The `log` method has a [frozen v1 contract](../tests/fixtures/plugin-compat/logging-v1.json),
+available through `host.describe()`. Message/level calls have existed since 0.21.0;
+structured options and requested-severity handling require 0.33.0-beta.5 or later. Older hosts
+may ignore added options. Discover the contract before depending on these semantics, or set
+an appropriate `engines.tunnelde` range. The `since` metadata records method availability,
+not the introduction of every option or the stability commitment.
 Levels are `trace`, `debug`, `info` (default), `warn`, `error`; uppercase equivalents and `warning`
 are accepted. Invalid levels are rejected. Requested severity is the event's actual severity,
 including native filtering. WASM's existing numeric log ABI is unchanged.
@@ -61,7 +65,11 @@ select log file paths or read arbitrary application logs through this API.
 Message text is limited to 16 KiB in UTF-8. `domain`, `operation` and `requestId` are optional,
 nonempty ASCII identifiers of at most 128 bytes using letters, digits, `.`, `_`, `-`, `:`.
 `fields` is a JSON object of at most 16 KiB before redaction, at most 256 visited nodes and four
-container levels below its root. Keys use the same identifier alphabet with a 64-byte limit.
+levels below its root (the root counts as one visited node). Keys use the same identifier
+alphabet with a 64-byte limit, including nested object keys. `domain`, `operation` and
+`requestId` also accept `null` as absent; `message`, `level` and `fields` do not accept `null`.
+Unknown top-level properties are ignored. The schema checks structure and character counts;
+UTF-8 byte quotas, nested keys, depth and visited nodes are additional runtime checks.
 Control characters are replaced with spaces. Credential-like keys are recursively redacted;
 structured HTTP/SOCKS URL strings lose user information, query strings and fragments. Arbitrary
 free text and URL path components cannot be reliably scrubbed: callers must not include secrets.
@@ -72,3 +80,8 @@ and request IDs remain searchable in the message. A write returning `null` means
 the event. The configured `TUNNELDE_LOG` filter still applies (default `info,tunnelde_lib=debug`),
 and the bounded nonblocking writer may drop lines under overload. This is diagnostic logging,
 not a durable audit transaction or a promise that every accepted event has reached disk.
+The method does not subscribe the caller to events or expose the local JSONL record layout as
+a stable protocol. Malformed entries report `plugin.api.invalid:log`; byte, identifier or
+context limits report `logs.invalid:<field>`. These use JSON-RPC `-32000`, while common
+parameter-object/total-request validation uses `-32602` and authorization uses `-32001`.
+Handle unknown errors as well as the contract's `knownErrors` list.

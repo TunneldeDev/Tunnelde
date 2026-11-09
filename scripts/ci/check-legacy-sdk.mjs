@@ -13,6 +13,7 @@ const lines = createInterface({ input: output });
 const plugin = createPlugin({}, { input, output });
 let roundtrips = 0;
 let rejections = 0;
+let legacyLogCalls = 0;
 try {
   for (const sample of samples) {
     if (
@@ -26,7 +27,14 @@ try {
       continue;
     }
     const frame = once(lines, "line");
-    const settled = plugin.host.call(sample.method, sample.params).then(
+    const pending = sample.legacySdkLog
+      ? plugin.host.log(sample.params.message, sample.params.level)
+      : plugin.host.call(sample.method, sample.params);
+    if (sample.legacySdkLog) {
+      assert.equal(sample.method, "log");
+      legacyLogCalls++;
+    }
+    const settled = pending.then(
       (result) => ({ result }),
       (error) => ({ error }),
     );
@@ -61,5 +69,5 @@ try {
   output.destroy();
 }
 console.log(
-  `Frozen pre-contract SDK: ${roundtrips} host-result roundtrips and ${rejections} request rejections passed.`,
+  `Frozen pre-contract SDK: ${roundtrips} host-result roundtrips (${legacyLogCalls} legacy log helpers) and ${rejections} request rejections passed.`,
 );

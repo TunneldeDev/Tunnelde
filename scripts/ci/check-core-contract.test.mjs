@@ -24,6 +24,49 @@ const tabBar = JSON.parse(
     "utf8",
   ),
 );
+const logging = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/plugin-compat/logging-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+test("logging schema preserves legacy calls, nullable identifiers and open structured values", () => {
+  const validate = ajv.compile(logging.methods.log.inputSchema);
+  for (const params of [
+    { message: "" },
+    { message: "hello", level: "WARNING" },
+    { message: "hello", domain: null, operation: null, requestId: null, future: true },
+    { message: "hello", fields: { password: { "unvalidated/secret": [[[[[1]]]]] } } },
+    { message: "hello", domain: "x".repeat(128), fields: { ["x".repeat(64)]: null } },
+  ])
+    assert.ok(validate(params), JSON.stringify(validate.errors));
+  for (const params of [
+    {},
+    { message: null },
+    { message: "x".repeat(16385) },
+    { message: "ok", level: "Info" },
+    { message: "ok", level: null },
+    { message: "ok", fields: [] },
+    { message: "ok", fields: null },
+    { message: "ok", fields: { "bad/key": 1 } },
+    { message: "ok", fields: { ["x".repeat(65)]: 1 } },
+    ...["domain", "operation", "requestId"].flatMap((name) =>
+      ["", "a\n", "a\r", "a\u2028", "x".repeat(129), "路径", 1].map((value) => ({
+        message: "ok",
+        [name]: value,
+      })),
+    ),
+  ])
+    assert.equal(validate(params), false, JSON.stringify(params));
+  // Structurally valid can still fail byte/depth/node quotas on the host.
+  assert.ok(validate({ message: "文".repeat(5462) }));
+  assert.ok(validate({ message: "ok", fields: { a: [[[[1]]]] } }));
+  const result = ajv.compile(logging.methods.log.resultSchema);
+  assert.ok(result(null));
+  assert.equal(result(true), false);
+  assert.equal(result({ accepted: true }), false);
+});
 
 test("tab-bar command schemas require complete advisory context and preserve nullable fields", () => {
   const contract = tabBar.methods["tabBar.set"];

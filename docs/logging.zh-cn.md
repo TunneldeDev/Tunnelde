@@ -44,8 +44,11 @@ await host.log("Connection failed", {
 });
 ```
 
-扩展选项仍为实验接口。依赖这些字段前，应通过 `host.describe()` 检查当前宿主的参数；
-旧宿主接受 message 和 level，但可能忽略新增选项。级别包括 `trace`、`debug`、`info`（默认）、
+`log` 方法具有[冻结的 v1 契约](../tests/fixtures/plugin-compat/logging-v1.json)，
+可通过 `host.describe()` 发现。message/level 调用自 0.21.0 起提供；结构化选项及按指定级别
+写入的行为需要 0.33.0-beta.5 或更新宿主。旧宿主可能忽略新增选项；依赖这些语义前应检查
+契约，或设置相应的 `engines.tunnelde` 版本范围。`since` 表示方法首次可用版本，
+不表示所有选项或稳定承诺的引入时间。级别包括 `trace`、`debug`、`info`（默认）、
 `warn`、`error`，同时接受对应大写和 `warning`。无效级别会被拒绝。
 指定级别就是事件实际写入和原生过滤使用的级别。WASM 现有数字日志 ABI 保持不变。
 
@@ -55,7 +58,10 @@ await host.log("Connection failed", {
 
 message 的 UTF-8 长度最多 16 KiB。domain、operation、requestId 为可选的非空 ASCII 标识符，
 最多 128 字节，仅允许字母、数字、`.`、`_`、`-`、`:`。fields 是 JSON 对象，脱敏前最多 16 KiB、
-最多访问 256 个节点、根节点下最多四层嵌套；键使用同样的字符范围，最多 64 字节。
+最多访问 256 个节点（包括根节点）、根节点下最多四层嵌套；包括嵌套对象在内的键使用
+同样的字符范围，最多 64 字节。domain、operation、requestId 也接受 null，表示未提供；
+message、level、fields 不接受 null。未知的顶层字段会被忽略。结构描述检查类型与字符数，
+UTF-8 字节配额、嵌套键、深度和节点数由运行时另外校验。
 控制字符被替换为空格。系统递归隐藏类似凭据的字段值，并移除结构化 HTTP/SOCKS URL 字符串的
 用户信息、查询串和片段。任意文本和 URL 路径中的秘密无法可靠识别，调用方必须避免写入。
 上下文字段保留在嵌套区域，不能覆盖宿主级别、身份或分类。
@@ -65,3 +71,7 @@ message 的 UTF-8 长度最多 16 KiB。domain、operation、requestId 为可选
 仍受 `TUNNELDE_LOG` 过滤影响，默认值为 `info,tunnelde_lib=debug`。
 有界非阻塞写入器在过载时可能丢弃日志；这是诊断记录接口，不能用作持久审计事务，
 也不保证返回成功时事件已经同步到磁盘。
+该方法不为调用方订阅事件，也不将本地 JSONL 记录布局承诺为稳定协议。格式错误返回
+`plugin.api.invalid:log`；字节、标识符或上下文限制返回 `logs.invalid:<字段>`，
+两者的 JSON-RPC 代码均为 `-32000`。公共参数对象或总请求大小校验使用 `-32602`，
+授权错误使用 `-32001`。除契约列出的 `knownErrors` 外，调用方也必须处理未知错误。
