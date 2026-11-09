@@ -48,7 +48,7 @@
     "pdfjs-dist": "6.5.438",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-i18next": "17.1.9",
+    "react-i18next": "17.1.13",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
     "zustand": "5.0.16"
