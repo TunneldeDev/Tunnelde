@@ -4,6 +4,8 @@ use russh_sftp::client::{rawsession::Limits, RawSftpSession};
 use std::ops::Range;
 use std::sync::atomic::AtomicU64;
 
+mod local_io;
+
 #[cfg(test)]
 mod live_tests;
 #[cfg(test)]
@@ -373,13 +375,12 @@ async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>
 
 async fn complete_packet(
     result: AppResult<(u64, Vec<u8>, usize)>,
-    writer: &mut Option<tokio::fs::File>,
+    writer: &mut Option<local_io::Writer>,
     transferred: &AtomicU64,
 ) -> AppResult<()> {
     let (offset, bytes, length) = result?;
     if let Some(writer) = writer {
-        writer.seek(std::io::SeekFrom::Start(offset)).await?;
-        writer.write_all(&bytes).await?;
+        writer.write(offset, &bytes).await?;
     }
     transferred.fetch_add(length as u64, Ordering::Relaxed);
     Ok(())
@@ -562,7 +563,7 @@ impl<'a> Files<'a> {
 
     async fn prepare_packet(
         &self,
-        reader: &mut Option<tokio::fs::File>,
+        reader: &mut Option<local_io::Reader>,
         length: usize,
         stop: &AtomicBool,
     ) -> AppResult<(usize, Option<Vec<u8>>)> {
@@ -602,19 +603,12 @@ impl<'a> Files<'a> {
         transferred: &AtomicU64,
     ) -> AppResult<()> {
         let mut reader = if self.sessions.source.is_none() {
-            let mut file = tokio::fs::File::open(&self.source.path).await?;
-            file.seek(std::io::SeekFrom::Start(range.start)).await?;
-            Some(file)
+            Some(local_io::reader(&self.source.path, &range).await?)
         } else {
             None
         };
         let mut writer = if self.sessions.target.is_none() {
-            Some(
-                tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&self.target.path)
-                    .await?,
-            )
+            Some(local_io::Writer::open(&self.target.path).await?)
         } else {
             None
         };
@@ -681,7 +675,7 @@ impl<'a> Files<'a> {
         }
         if let Some(writer) = &mut writer {
             if let Err(failure) = writer.flush().await {
-                error.get_or_insert(failure.into());
+                error.get_or_insert(failure);
             }
         }
         if stop.load(Ordering::SeqCst) {

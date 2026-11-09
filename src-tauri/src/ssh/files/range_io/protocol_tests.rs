@@ -8,6 +8,7 @@ struct Observed {
     data: Vec<u8>,
     writes: Vec<usize>,
     reads: Vec<usize>,
+    read_gates: std::collections::BTreeMap<u64, Arc<tokio::sync::Semaphore>>,
     pending: usize,
     peak: usize,
     closes: usize,
@@ -107,6 +108,7 @@ async fn stream_with_copy(
             let id = &request[1..5];
             let mut reply = Vec::new();
             let mut delayed = false;
+            let mut read_gate = None;
             match kind {
                 1 => {
                     reply.push(2);
@@ -213,6 +215,7 @@ async fn stream_with_copy(
                         u32::from_be_bytes(request[pos..pos + 4].try_into().unwrap()) as usize;
                     let mut state = state.lock().unwrap();
                     assert!(offset < state.data.len());
+                    read_gate = state.read_gates.get(&(offset as u64)).cloned();
                     let end = (offset + length).min(state.data.len());
                     reply.push(103);
                     reply.extend_from_slice(id);
@@ -271,7 +274,13 @@ async fn stream_with_copy(
             if delayed {
                 let send = send.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(delay).await;
+                    let _permit = match read_gate.as_ref() {
+                        Some(gate) => Some(gate.acquire().await.unwrap()),
+                        None => None,
+                    };
+                    if !delay.is_zero() {
+                        tokio::time::sleep(delay).await;
+                    }
                     let _ = send.send((reply, true));
                 });
             } else if send.send((reply, false)).is_err() {
@@ -281,6 +290,134 @@ async fn stream_with_copy(
         state.lock().unwrap().disconnected = true;
     });
     (client, observed)
+}
+
+/// An opt-in wire-level benchmark isolates local IO from WAN variability. It
+/// uses the real range pipeline and verifies every byte outside the timed span.
+#[tokio::test]
+#[ignore = "local throughput measurement; run explicitly without other compilation or tests"]
+async fn local_disk_pipeline_throughput() {
+    let root = std::env::temp_dir().join(format!("tunnelde-disk-bench-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir(&root).await.unwrap();
+    let bytes: Vec<_> = (0..32 * 1024 * 1024 + 73)
+        .map(|n| (n % 251) as u8)
+        .collect();
+    let local = Endpoint {
+        session: None,
+        path: display_path(&root.join("local.bin")),
+    };
+    let remote = remote("benchmark");
+    for advertised in [None, Some(131072)] {
+        for upload in [true, false] {
+            let (channel, observed) = server(advertised, Duration::ZERO).await;
+            if !upload {
+                observed.lock().unwrap().data = bytes.clone();
+            }
+            let sessions = Sessions {
+                source: (!upload).then(|| channel.clone()),
+                target: upload.then_some(channel),
+            };
+            for run in 0..4 {
+                tokio::fs::write(&local.path, if upload { bytes.as_slice() } else { &[] })
+                    .await
+                    .unwrap();
+                let (source, target) = if upload {
+                    (&local, &remote)
+                } else {
+                    (&remote, &local)
+                };
+                let files = Files::open(&sessions, source, target).await.unwrap();
+                let transferred = AtomicU64::new(0);
+                let started = std::time::Instant::now();
+                files
+                    .segment(
+                        0..bytes.len() as u64,
+                        8,
+                        &AtomicBool::new(false),
+                        &transferred,
+                    )
+                    .await
+                    .unwrap();
+                files.finish(false).await.unwrap();
+                let seconds = started.elapsed().as_secs_f64();
+                assert_eq!(transferred.load(Ordering::Relaxed), bytes.len() as u64);
+                if upload {
+                    assert_eq!(observed.lock().unwrap().data, bytes);
+                } else {
+                    assert_eq!(tokio::fs::read(&local.path).await.unwrap(), bytes);
+                }
+                println!("disk-bench upload={upload} advertised={advertised:?} run={run} seconds={seconds:.6} mib_s={:.3}", bytes.len() as f64 / 1048576.0 / seconds);
+            }
+        }
+    }
+    tokio::fs::remove_file(&local.path).await.unwrap();
+    tokio::fs::remove_dir(root).await.unwrap();
+}
+
+#[tokio::test]
+async fn buffered_download_handles_reordered_replies_and_replays_a_cancelled_window() {
+    let root = std::env::temp_dir().join(format!("tunnelde-reordered-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir(&root).await.unwrap();
+    let path = root.join("partial.bin");
+    let bytes: Vec<_> = (0..2 * 1024 * 1024 + 71).map(|n| (n % 251) as u8).collect();
+    let prefix = 19;
+    let end = bytes.len() - 23;
+    let mut expected = vec![255; bytes.len()];
+    expected[..prefix].copy_from_slice(&bytes[..prefix]);
+    tokio::fs::write(&path, &expected).await.unwrap();
+    let (session, state) = server(Some(131072), Duration::ZERO).await;
+    let gate = Arc::new(tokio::sync::Semaphore::new(0));
+    {
+        let mut state = state.lock().unwrap();
+        state.data = bytes.clone();
+        state.read_gates.insert(prefix as u64, gate.clone());
+    }
+    let sessions = Sessions {
+        source: Some(session),
+        target: None,
+    };
+    let from = remote("source");
+    let to = Endpoint {
+        session: None,
+        path: display_path(&path),
+    };
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    let count = AtomicU64::new(0);
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(
+            files.segment(prefix as u64..end as u64, 8, &cancel, &count),
+            async {
+                wait_for(|| count.load(Ordering::Relaxed) > 0).await;
+                // A later packet completed while the first remains gated. Cancelling
+                // must flush completed data without claiming the window committed.
+                cancel.store(true, Ordering::SeqCst);
+            }
+        )
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert!(count.load(Ordering::Relaxed) > 0);
+    assert!(count.load(Ordering::Relaxed) < (end - prefix) as u64);
+    gate.add_permits(1);
+    files.finish(false).await.unwrap();
+    state.lock().unwrap().read_gates.clear();
+    let files = Files::open(&sessions, &from, &to).await.unwrap();
+    files
+        .segment(
+            prefix as u64..end as u64,
+            3,
+            &AtomicBool::new(false),
+            &AtomicU64::new(0),
+        )
+        .await
+        .unwrap();
+    files.finish(false).await.unwrap();
+    expected[prefix..end].copy_from_slice(&bytes[prefix..end]);
+    assert_eq!(tokio::fs::read(&path).await.unwrap(), expected);
+    tokio::fs::remove_file(path).await.unwrap();
+    tokio::fs::remove_dir(root).await.unwrap();
 }
 
 async fn wait_for(mut ready: impl FnMut() -> bool) {

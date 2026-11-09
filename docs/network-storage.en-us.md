@@ -82,6 +82,13 @@ Segment size can be automatic or 256 KiB, 1 MiB, 4 MiB or 16 MiB. Request depth 
 automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight requests.
 Changes apply on start/resume and travel with settings profiles.
 
+Local reads and writes use bounded 1 MiB buffers per segment to avoid issuing
+disk operations for every network packet. Read-ahead stops at the segment end;
+out-of-order download replies retain their explicit file offsets. Each window
+flushes its local writes before its resumable prefix is committed. A flush failure
+keeps the window uncommitted so recovery rewrites it. These buffers do not change
+bandwidth limits or guarantee a particular network speed.
+
 For directory copies without replacement, optimization also overlaps file preparation,
 data transfer and publication on the existing channels. Automatic mode processes up to
 four directory entries at once; manual concurrency selects 1, 2, 4 or 8. Nested trees
