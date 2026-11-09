@@ -6,6 +6,8 @@
 `extensions.describe().frontend` 返回其版本、信任模型、组件和限制。
 市场 SDK 提供 `tunnelde-ui.d.mts`，从宿主公开契约生成，不暴露内部状态仓库或组件源码路径。
 
+前端命令也可以贡献[主机菜单操作](plugin-host-menu.zh-cn.md)。
+
 ## 清单和模块
 
 纯前端插件不需要 Node。既有 Node、WASM 和声明式插件也可以增加相同的 `frontend`

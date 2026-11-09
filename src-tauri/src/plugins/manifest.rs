@@ -23,6 +23,8 @@ pub struct PluginCommand {
     pub editor: Option<EditorCommand>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_menu: Option<FileMenuCommand>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub host_menu: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,10 +269,28 @@ impl PluginManifest {
             return Err(AppError::validation("plugin.engine.invalidRange"));
         }
         let mut command_ids = std::collections::HashSet::new();
+        if self
+            .commands
+            .iter()
+            .filter(|command| command.host_menu)
+            .count()
+            > 16
+        {
+            return Err(AppError::validation("plugin.command.invalid"));
+        }
         for command in &self.commands {
             if !valid_command_id(&command.id)
                 || command.title.trim().is_empty()
                 || !command_ids.insert(&command.id)
+                || (command.host_menu
+                    && (command.title.chars().count() > 120
+                        || command.title.chars().any(char::is_control)
+                        || command.editor.is_some()
+                        || command.file_menu.is_some()
+                        || !self
+                            .permissions
+                            .iter()
+                            .any(|permission| permission == "hosts.read")))
                 || !valid_keybindings(&command.keybindings)
                 || command
                     .mac_keybindings
@@ -481,6 +501,59 @@ pub fn valid_command_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn host_menu_requires_read_permission_and_one_bounded_context() {
+        let dir = temp_dir("host-menu");
+        std::fs::write(dir.join("index.js"), "").unwrap();
+        let base = serde_json::json!({"id":"host-tool","name":"Host tool","version":"1.0.0",
+            "apiVersion":1,"main":"index.js","permissions":["hosts.read"],
+            "commands":[{"id":"inspect","title":"Inspect host","hostMenu":true}]});
+        let save = |value: &serde_json::Value| {
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(value).unwrap()).unwrap();
+            load(&dir)
+        };
+        let loaded = save(&base).unwrap();
+        assert!(loaded.commands[0].host_menu);
+        let mut legacy = base.clone();
+        legacy["commands"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("hostMenu");
+        assert!(!save(&legacy).unwrap().commands[0].host_menu);
+        assert!(serde_json::to_value(&save(&legacy).unwrap().commands[0])
+            .unwrap()
+            .get("hostMenu")
+            .is_none());
+        let mut invalid = base.clone();
+        invalid["permissions"] = serde_json::json!([]);
+        assert!(save(&invalid).is_err());
+        for field in ["editor", "fileMenu"] {
+            let mut invalid = base.clone();
+            invalid["permissions"] =
+                serde_json::json!(["hosts.read", "editor.read", "editor.write", "fs.read"]);
+            invalid["commands"][0][field] = if field == "editor" {
+                serde_json::json!({"extensions":["json"]})
+            } else {
+                serde_json::json!({"sources":["local"],"kinds":["file"]})
+            };
+            assert!(save(&invalid).is_err());
+        }
+        for title in ["x".repeat(121), "Inspect\nhost".to_owned()] {
+            let mut invalid = base.clone();
+            invalid["commands"][0]["title"] = title.into();
+            assert!(save(&invalid).is_err());
+        }
+        let mut maximum = base.clone();
+        maximum["commands"] = (0..16).map(|i| serde_json::json!({"id":format!("inspect-{i}"),"title":"Inspect","hostMenu":true})).collect();
+        assert!(save(&maximum).is_ok());
+        maximum["commands"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"id":"overflow","title":"Overflow","hostMenu":true}));
+        assert!(save(&maximum).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     #[test]
     fn frontend_entry_requires_explicit_trust_and_supports_pure_and_combined_runtimes() {
         let root = temp_dir("trusted-frontend");

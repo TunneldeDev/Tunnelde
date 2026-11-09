@@ -997,6 +997,8 @@
     "timeout": "Remote monitoring timed out."
   },
   "pluginView": {
+    "hostChanged": "This host was changed or removed. Reopen its menu and try again.",
+    "hostRequired": "Open a host, terminal or remote file tab before running this host command.",
     "title": "Plugin",
     "refresh": "Refresh",
     "empty": "No content",

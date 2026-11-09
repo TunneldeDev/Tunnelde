@@ -435,7 +435,10 @@ impl PluginsManager {
             .get(id)
             .is_some_and(|item| {
                 item.commands.iter().any(|entry| {
-                    entry.id == command && entry.editor.is_none() && entry.file_menu.is_none()
+                    entry.id == command
+                        && entry.editor.is_none()
+                        && entry.file_menu.is_none()
+                        && !entry.host_menu
                 })
             })
     }

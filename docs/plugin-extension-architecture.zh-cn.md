@@ -8,15 +8,17 @@
 ## 发现已实现能力
 
 通过 `api.describe` 查询实际 RPC 方法、权限及稳定契约。该目录包含
-`extensions.describe` 时，可调用其实验接口查询已实现的运行时 UI 扩展点。
+`extensions.describe` 时，可调用其实验接口查询已实现的 UI 扩展点。
 结果包含版本、稳定性、六层标识、领域及 RPC 命名空间，以及扩展点的 ID、领域、
 层级、稳定性、组合规则、注册方法、所有权、权限和配额。未知字段和类型应视为
 未知能力，不应据此推断授权。
 
-当前扩展目录列出主机装饰、底栏项目和标签栏控件。`composition: "merge"` 表示
+当前扩展目录列出主机装饰、主机菜单、底栏项目和标签栏控件。`composition: "merge"` 表示
 多个所有者按该扩展点规定的顺序组合；`ownership: "runtime"` 表示贡献绑定插件的
 已批准运行实例，不是持久化应用数据。领域命名空间分类实际方法，不表示已开放
 公共依赖注入、完整领域服务、远端执行或相应权限。测试会核对目录引用与实际方法、权限。
+清单贡献使用 `registration.manifest` 和 `ownership: "manifest"`，可在启动获准的运行时前显示元数据。
+[主机菜单命令](plugin-host-menu.zh-cn.md)与文件菜单共用授权、目标失效检查和输出处理。
 
 [主机装饰](plugin-host-list.zh-cn.md)、[底栏](plugin-status-bar.zh-cn.md)和
 [标签栏](plugin-tab-bar.zh-cn.md)使用共享运行时所有权注册表。前端先订阅再读快照，
