@@ -338,6 +338,15 @@ The stable core now also includes `sessions.list` and plugin-scoped `storage.get
 with input, result and error JSON Schemas. See [API compatibility](plugin-api.en-us.md)
 for field contracts, quotas, errors and the frozen pre-contract SDK regression probe.
 
+`sessions.connect` is experimental and creates a temporary connection owned by the
+calling runtime generation. Stop, crash, permission revocation and runtime replacement
+close that connection and its private jump transports; opening a terminal or file tab
+does not transfer ownership. Both pending and live connections count toward eight per
+plugin and 64 across plugins, with a 120-second setup deadline. Normal host-key and proxy
+checks still apply. Use an existing user-created session when work needs an independent
+lifetime; explicit ownership handoff is not available yet. `sessions.list` keeps its
+stable response shape and still lists all active sessions visible to the authorized plugin.
+
 | Permission                          | Available operations                                                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |

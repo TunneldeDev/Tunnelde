@@ -1231,6 +1231,9 @@
       "expired": "This tab bar control has expired. Try the updated control.",
       "invalidContext": "This tab bar control is unavailable for the current tab."
     },
+    "resources": {
+      "limit": "Plugin connection limit reached (8 per plugin, 64 total, including pending requests). Disconnect unused connections before retrying."
+    },
     "hostList": {
       "invalidDecoration": "Invalid host decoration. Check its fields, length and supported icon.",
       "hostNotFound": "A host referenced by this contribution no longer exists. Refresh the host list.",

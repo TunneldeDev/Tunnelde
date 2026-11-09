@@ -16,8 +16,10 @@ pub mod manifest;
 pub mod marketplace;
 pub mod network;
 pub mod node;
+mod resources;
 pub mod runners;
 pub mod security;
+mod sessions;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod tasks;
@@ -201,9 +203,14 @@ pub struct PluginsManager {
     tab_bar: contributions::Registry<tab_bar::TabBarItem>,
     host_list: contributions::Registry<host_list::DecorationSet>,
     host_columns: contributions::Registry<host_columns::Column>,
+    sessions: Arc<resources::Registry<String>>,
 }
 
 impl PluginsManager {
+    pub(crate) fn forget_connection(&self, session_id: &str) {
+        self.sessions.forget(|id| id == session_id);
+    }
+
     pub fn revoke_background(&self, app: &AppHandle, id: &str) {
         self.security.invalidate_runtime(id);
         tasks::cancel_plugin(id, None);
@@ -213,6 +220,7 @@ impl PluginsManager {
     fn stop_network_resources(&self, app: &AppHandle, id: &str) {
         let boundary = self.security.cleanup_boundary(id);
         contributions::remove_runtime(app, id, |generation| generation < boundary);
+        sessions::remove_runtime(app, id, |generation| generation < boundary);
         app.state::<crate::state::AppState>()
             .forwards
             .stop_before_generation(id, boundary);
@@ -423,6 +431,7 @@ impl PluginsManager {
             tab_bar: contributions::Registry::default(),
             host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
+            sessions: resources::Registry::new(8, 64),
         }
     }
 

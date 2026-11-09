@@ -548,6 +548,29 @@ mod tests {
 
     const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
+    #[tokio::test]
+    async fn authorization_failure_after_ready_result_disposes_that_resource() {
+        struct Resource(Arc<std::sync::atomic::AtomicUsize>);
+        impl Drop for Resource {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let db = Database::in_memory().unwrap();
+        let security = PluginSecurity::default();
+        let lease = grant(&security, &db, "resource", &["ssh.exec"]);
+        let disposed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let result = security
+            .guard(&lease, async {
+                let resource = Resource(disposed.clone());
+                security.invalidate_runtime("resource");
+                Ok(resource)
+            })
+            .await;
+        assert!(result.is_err());
+        assert_eq!(disposed.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
     #[test]
     fn synchronous_mutation_checks_all_permissions_and_serializes_revocation() {
         let db = Arc::new(Database::in_memory().unwrap());
