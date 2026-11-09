@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::io::Read;
 use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 
@@ -14,10 +12,14 @@ use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod package;
 mod restart;
+
+pub(super) use package::{frontend_snapshot, FrontendSnapshot};
 
 pub const EVENT: &str = "plugin:security-changed";
 pub const PERMISSIONS: &[&str] = &[
+    "ui.trusted",
     "log",
     "app.read",
     "settings.read",
@@ -438,73 +440,7 @@ impl PluginSecurity {
 /// Hash paths and every installed byte, with the same resource bounds as ZIP
 /// installation. Symlinks and special files cannot be silently trusted.
 pub fn fingerprint(root: &Path) -> AppResult<String> {
-    fn visit(
-        root: &Path,
-        directory: &Path,
-        hasher: &mut Sha256,
-        files: &mut usize,
-        bytes: &mut u64,
-        depth: usize,
-    ) -> AppResult<()> {
-        if depth > 32 {
-            return Err(AppError::validation("pluginSecurity.packageInvalid"));
-        }
-        let mut entries = Vec::new();
-        for entry in std::fs::read_dir(directory)? {
-            if entries.len() >= 2000usize.saturating_sub(*files) {
-                return Err(AppError::validation("pluginSecurity.packageInvalid"));
-            }
-            entries.push(entry?);
-        }
-        entries.sort_by_key(|entry| entry.file_name());
-        for entry in entries {
-            *files += 1;
-            if *files > 2000 {
-                return Err(AppError::validation("pluginSecurity.packageInvalid"));
-            }
-            let kind = entry.file_type()?;
-            let path = entry.path();
-            let relative = path
-                .strip_prefix(root)
-                .map_err(|_| AppError::validation("pluginSecurity.packageInvalid"))?;
-            let name = relative
-                .to_str()
-                .ok_or_else(|| AppError::validation("pluginSecurity.packageInvalid"))?
-                .replace('\\', "/");
-            hasher.update((name.len() as u64).to_le_bytes());
-            hasher.update(name.as_bytes());
-            if kind.is_dir() {
-                hasher.update(b"directory");
-                visit(root, &path, hasher, files, bytes, depth + 1)?;
-            } else if kind.is_file() {
-                hasher.update(b"file");
-                let mut file = std::fs::File::open(path)?;
-                let size = file.metadata()?.len();
-                hasher.update(size.to_le_bytes());
-                let mut buffer = [0_u8; 64 * 1024];
-                loop {
-                    let read = file.read(&mut buffer)?;
-                    if read == 0 {
-                        break;
-                    }
-                    *bytes += read as u64;
-                    if *bytes > 64 * 1024 * 1024 {
-                        return Err(AppError::validation("pluginSecurity.packageInvalid"));
-                    }
-                    hasher.update(&buffer[..read]);
-                }
-            } else {
-                return Err(AppError::validation("pluginSecurity.packageInvalid"));
-            }
-        }
-        Ok(())
-    }
-    if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
-        return Err(AppError::validation("pluginSecurity.packageInvalid"));
-    }
-    let mut hasher = Sha256::new();
-    visit(root, root, &mut hasher, &mut 0, &mut 0, 0)?;
-    Ok(format!("{:x}", hasher.finalize()))
+    package::fingerprint(root)
 }
 
 pub async fn fingerprint_async(root: std::path::PathBuf) -> AppResult<String> {

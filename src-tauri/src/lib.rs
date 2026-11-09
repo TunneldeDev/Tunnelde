@@ -25,6 +25,38 @@ pub fn run() {
         .manage(window::StartupWindow::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
+        .manage(plugins::frontend::Registry::default())
+        .register_asynchronous_uri_scheme_protocol("tunnelde-ui", |context, request, responder| {
+            let app = context.app_handle().clone();
+            use tauri::Manager;
+            let Some(capacity) = app.state::<plugins::frontend::Registry>().request() else {
+                responder.respond(
+                    tauri::http::Response::builder()
+                        .status(429)
+                        .header("Cache-Control", "no-store")
+                        .body(Vec::<u8>::new())
+                        .unwrap(),
+                );
+                return;
+            };
+            let origin = if cfg!(dev) {
+                "http://localhost:1420"
+            } else if cfg!(target_os = "windows") {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            };
+            tauri::async_runtime::spawn(async move {
+                let _capacity = capacity;
+                let state = app.state::<state::AppState>();
+                responder.respond(plugins::frontend::serve(
+                    &app.state::<plugins::frontend::Registry>(),
+                    &state.plugins.security,
+                    request,
+                    origin,
+                ));
+            });
+        })
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
             let origin = if cfg!(dev) {
@@ -55,6 +87,7 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
                 window.state::<preview::Registry>().clear();
+                window.state::<plugins::frontend::Registry>().clear();
                 platform::background::destroyed(window.app_handle());
             }
         })
@@ -130,6 +163,10 @@ pub fn run() {
             plugins::host_list::plugin_host_list_snapshot,
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
+            plugins::frontend::plugin_frontend_open,
+            plugins::frontend::plugin_frontend_close,
+            plugins::frontend::plugin_frontend_failed,
+            plugins::frontend::plugin_frontend_call,
             commands::app_info,
             storage::storage_status,
             storage::storage_restart_pending,

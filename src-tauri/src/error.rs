@@ -30,6 +30,8 @@ pub enum AppError {
         host_version: String,
         required: String,
     },
+    #[error("plugin.frontend.sdkUnsupported")]
+    PluginUiSdkUnsupported { required: String, available: String },
     #[error("sftp.backupRecoveryRequired")]
     BackupRecovery { backup: String, destination: String },
     #[error("sftp.backupUnrecognized")]
@@ -81,6 +83,7 @@ impl AppError {
         match self {
             Self::Validation(_)
             | Self::PluginEngineUnsupported { .. }
+            | Self::PluginUiSdkUnsupported { .. }
             | Self::BackupRecovery { .. }
             | Self::BackupUnrecognized { .. }
             | Self::BackupPreserved { .. }
@@ -130,6 +133,7 @@ impl Serialize for AppError {
         let detailed = matches!(
             self,
             Self::PluginEngineUnsupported { .. }
+                | Self::PluginUiSdkUnsupported { .. }
                 | Self::RemoteRename { .. }
                 | Self::UpdateRequest(_)
                 | Self::UpdateSources(_)
@@ -137,6 +141,18 @@ impl Serialize for AppError {
         let mut state = serializer.serialize_struct("AppError", if detailed { 3 } else { 2 })?;
         state.serialize_field("code", self.code())?;
         state.serialize_field("message", &self.to_string())?;
+        if let Self::PluginUiSdkUnsupported {
+            required,
+            available,
+        } = self
+        {
+            state.serialize_field(
+                "details",
+                &serde_json::json!({
+                    "required": required, "available": available, "stage": "ui-sdk-compatibility"
+                }),
+            )?;
+        }
         if let Some(failures) = self.update_source_errors() {
             state.serialize_field("details", &serde_json::json!({ "sourceErrors": failures }))?;
         }

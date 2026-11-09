@@ -122,10 +122,12 @@ impl MarketEntry {
             && self.description.as_ref().is_none_or(|s| s.len() <= 4000)
             && self.readme.as_ref().is_none_or(|s| s.len() <= 100_000)
             && self.author.as_ref().is_none_or(|s| s.len() <= 160)
-            && self
-                .runtime
-                .as_deref()
-                .is_none_or(|runtime| matches!(runtime, "node" | "wasm" | "theme" | "declarative"))
+            && self.runtime.as_deref().is_none_or(|runtime| {
+                matches!(
+                    runtime,
+                    "node" | "wasm" | "theme" | "declarative" | "frontend"
+                )
+            })
             && self.engines.len() <= 8
             && self
                 .engines

@@ -13,6 +13,8 @@ pub const MANIFEST_FILE: &str = "tunnelde-plugin.json";
 pub struct PluginCommand {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub frontend: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keybindings: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -167,6 +169,8 @@ pub struct PluginManifest {
     pub file_previews: Vec<crate::preview::providers::Provider>,
     #[serde(default)]
     pub mounted_file_reveal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frontend: Option<super::frontend::FrontendManifest>,
 }
 
 pub(super) fn valid_tags(tags: &[String]) -> bool {
@@ -200,6 +204,17 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if let Some(frontend) = &self.frontend {
+            frontend.validate(dir)?;
+            if self.runtime.as_deref() == Some("theme")
+                || !self.permissions.iter().any(|p| p == "ui.trusted")
+            {
+                return Err(AppError::validation("plugin.frontend.invalid"));
+            }
+        }
+        if self.commands.iter().any(|command| command.frontend) && self.frontend.is_none() {
+            return Err(AppError::validation("plugin.frontend.invalid"));
+        }
         if self.mounted_file_reveal
             && (!self.permissions.iter().any(|p| p == "mounts.read")
                 || !self.permissions.iter().any(|p| p == "mounts.write")
@@ -328,7 +343,8 @@ impl PluginManifest {
                 || view
                     .kind
                     .as_deref()
-                    .is_some_and(|v| !matches!(v, "chat" | "blocks"))
+                    .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
+                || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
                 || view.icon.as_deref().is_some_and(|v| {
                     !matches!(
                         v,
@@ -360,6 +376,19 @@ impl PluginManifest {
         }
         match self.runtime.as_deref() {
             None | Some("node") => {}
+            Some("frontend") => {
+                if self.frontend.is_none()
+                    || !self.main.is_empty()
+                    || self.engines.contains_key("node")
+                    || self
+                        .views
+                        .iter()
+                        .any(|view| view.kind.as_deref() != Some("component"))
+                {
+                    return Err(AppError::validation("plugin.frontend.invalid"));
+                }
+                return Ok(());
+            }
             Some("declarative") => {
                 if self.main.is_empty() || self.views.is_empty() || !self.commands.is_empty() {
                     return Err(AppError::validation("plugin.runtime.invalid"));
@@ -452,6 +481,45 @@ pub fn valid_command_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn frontend_entry_requires_explicit_trust_and_supports_pure_and_combined_runtimes() {
+        let root = temp_dir("trusted-frontend");
+        std::fs::create_dir(root.join("ui")).unwrap();
+        std::fs::write(root.join("ui/index.mjs"), "export function activate(){}").unwrap();
+        std::fs::write(root.join("backend.mjs"), "backend").unwrap();
+        let mut value = serde_json::json!({"id":"custom-ui","name":"UI","version":"1.0.0","apiVersion":1,
+            "runtime":"frontend","frontend":{"entry":"ui/index.mjs","sdk":"^0.1.0"},
+            "permissions":["ui.trusted"],"commands":[{"id":"hello","title":"Hello","frontend":true}],
+            "views":[{"id":"main","title":"Main","kind":"component"}]});
+        let save = |value: &serde_json::Value| {
+            std::fs::write(root.join(MANIFEST_FILE), serde_json::to_vec(value).unwrap()).unwrap();
+            load(&root)
+        };
+        assert!(save(&value).is_ok());
+        value["permissions"] = serde_json::json!([]);
+        assert!(save(&value).is_err());
+        value["permissions"] = serde_json::json!(["ui.trusted"]);
+        value["runtime"] = "node".into();
+        value["main"] = "backend.mjs".into();
+        assert!(save(&value).is_ok());
+        for entry in [
+            "../ui/index.mjs",
+            "ui/../backend.mjs",
+            "ui//index.mjs",
+            "ui/index.mjs?x",
+            "ui/./index.mjs",
+        ] {
+            value["frontend"]["entry"] = entry.into();
+            assert!(save(&value).is_err(), "{entry}");
+        }
+        value["frontend"]["entry"] = "ui/index.mjs".into();
+        value["frontend"]["sdk"] = "not a range".into();
+        assert!(save(&value).is_err());
+        value["frontend"]["sdk"] = "^2.0.0".into();
+        let manifest = save(&value).unwrap();
+        assert!(manifest.frontend.unwrap().require_sdk().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::*;
 
     #[test]
