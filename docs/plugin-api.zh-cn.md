@@ -191,3 +191,7 @@ WASM 插件运行，并阻止其宿主 API 请求；它无法撤销任意代码�
 会持久保存，仅移除参数不会自动重新启动插件。主机和会话快照不会返回已保存的 SSH 密码
 或私钥；插件授权也不能替代 SSH 主机密钥验证。恢复行为、资源限制、WASM 限制及各平台
 的启动方式请参阅详细指南。
+
+## 扩展点
+
+实验性的 `extensions.describe` 目录见[扩展架构](plugin-extension-architecture.zh-cn.md)；主机样式扩展见[主机列表装饰](plugin-host-list.zh-cn.md)。既有稳定 API 契约保持兼容。

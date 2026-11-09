@@ -229,3 +229,7 @@ The setting persists; removing the argument alone does not restart plugins. Host
 snapshots do not return saved SSH passwords or private keys, and plugin approval does not
 replace SSH host-key verification. See the detailed guide for recovery behavior, limits,
 WASM restrictions and platform-specific invocation.
+
+## Extension points
+
+See [extension architecture](plugin-extension-architecture.en-us.md) for the experimental `extensions.describe` directory and [host-list decorations](plugin-host-list.en-us.md). Existing stable API contracts remain unchanged.

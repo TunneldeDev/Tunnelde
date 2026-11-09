@@ -34,6 +34,7 @@ import { FilePreview } from "@/features/sftp/FilePreview";
 import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/BackgroundTasks";
 import { useBackgroundWindow } from "@/app/backgroundWindow";
 import { wireTabBarContributions } from "@/store/tabBar";
+import { wireHostDecorations } from "@/store/hostDecorations";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -48,6 +49,9 @@ export function AppShell() {
     const controller = new AbortController();
     void wireTabBarContributions(controller.signal).catch((error: unknown) =>
       console.error("Tab bar subscription failed", error),
+    );
+    void wireHostDecorations(controller.signal).catch((error: unknown) =>
+      console.error("Host decorations subscription failed", error),
     );
     return () => controller.abort();
   }, []);

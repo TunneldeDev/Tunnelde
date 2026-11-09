@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "stability": "experimental",
+  "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
+  "domains": [
+    {
+      "id": "platform",
+      "namespaces": ["api", "extensions", "app"]
+    },
+    {
+      "id": "hosts",
+      "namespaces": ["hosts", "groups", "hostList", "sessions"]
+    },
+    {
+      "id": "files",
+      "namespaces": ["files", "editor", "clipboard"]
+    },
+    {
+      "id": "terminal",
+      "namespaces": ["terminal", "history"]
+    },
+    {
+      "id": "remote",
+      "namespaces": ["forwards", "mounts", "runners", "tools"]
+    },
+    {
+      "id": "tasks",
+      "namespaces": ["tasks"]
+    },
+    {
+      "id": "monitor",
+      "namespaces": ["monitor"]
+    },
+    {
+      "id": "workbench",
+      "namespaces": ["workspace", "ui", "statusBar", "tabBar"]
+    },
+    {
+      "id": "preferences",
+      "namespaces": ["settings", "storage"]
+    },
+    {
+      "id": "governance",
+      "namespaces": ["events", "log", "secrets"]
+    }
+  ],
+  "points": [
+    {
+      "id": "hostList.decorations",
+      "domain": "hosts",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "set": "hostList.setDecorations",
+        "remove": "hostList.removeDecorations"
+      },
+      "ownership": "runtime",
+      "permissions": ["hosts.read", "workspace.write"],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "entriesPerCollection": 256
+      }
+    },
+    {
+      "id": "statusBar.items",
+      "domain": "workbench",
+      "layer": "presentation",
+      "stability": "stable",
+      "composition": "merge",
+      "registration": {
+        "set": "statusBar.set",
+        "remove": "statusBar.remove"
+      },
+      "ownership": "runtime",
+      "permissions": [],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128
+      }
+    },
+    {
+      "id": "tabBar.items",
+      "domain": "workbench",
+      "layer": "presentation",
+      "stability": "stable",
+      "composition": "merge",
+      "registration": {
+        "set": "tabBar.set",
+        "remove": "tabBar.remove"
+      },
+      "ownership": "runtime",
+      "permissions": [],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128
+      }
+    }
+  ]
+}

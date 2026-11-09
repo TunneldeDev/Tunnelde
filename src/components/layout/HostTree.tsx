@@ -29,6 +29,13 @@ import { useSettings } from "@/store/settings";
 import { useSsh } from "@/store/ssh";
 import type { Group, Host } from "@/lib/api/types";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
+import { useHostDecorations } from "@/store/hostDecorations";
+import {
+  HostDecorationBadges,
+  HostDecorationDescription,
+  HostDecorationIcon,
+  NO_HOST_DECORATIONS,
+} from "./HostDecorations";
 
 const HOST_MIME = "application/x-tunnelde-host";
 
@@ -75,6 +82,9 @@ function HostRow({ host, active, focused, onFocusRow, depth = 0, canReorder }: H
   const moveToGroup = useHosts((state) => state.moveToGroup);
   const os = useSettings((state) => state.info?.os);
   const connecting = useSsh((state) => state.connectingHostIds.includes(host.id));
+  const decorations = useHostDecorations(
+    (state) => state.byHost.get(host.id) ?? NO_HOST_DECORATIONS,
+  );
   const [over, setOver] = useState<"before" | "after" | null>(null);
   const row = useRef<HTMLDivElement>(null);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -243,8 +253,13 @@ function HostRow({ host, active, focused, onFocusRow, depth = 0, canReorder }: H
         aria-hidden="true"
       />
       <span className="host-row__text">
-        <span className="host-row__name">{host.name}</span>
+        <span className="host-row__heading">
+          <HostDecorationIcon items={decorations} />
+          <span className="host-row__name">{host.name}</span>
+          <HostDecorationBadges items={decorations} />
+        </span>
         <span className="host-row__meta">{hostSubtitle(host.username, host.host, host.port)}</span>
+        <HostDecorationDescription items={decorations} />
       </span>
       {connecting ? (
         <LoaderCircle

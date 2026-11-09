@@ -396,10 +396,7 @@ async fn read_loop(
     // otherwise complete just after cleanup and leave a crashed plugin's item.
     while requests.join_next().await.is_some() {}
     if let Some(context) = &context {
-        super::status_bar::remove_runtime(&context.app, &context.id, |generation| {
-            generation == context.generation
-        });
-        super::tab_bar::remove_runtime(&context.app, &context.id, |generation| {
+        super::contributions::remove_runtime(&context.app, &context.id, |generation| {
             generation == context.generation
         });
         super::tasks::cancel_plugin(&context.id, Some(context.generation));
