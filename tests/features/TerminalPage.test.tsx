@@ -32,6 +32,7 @@ const {
     write: ReturnType<typeof vi.fn>;
     dispose: ReturnType<typeof vi.fn>;
     paste: ReturnType<typeof vi.fn>;
+    input: ReturnType<typeof vi.fn>;
     selectAll: ReturnType<typeof vi.fn>;
     hasSelection: ReturnType<typeof vi.fn>;
     getSelection: ReturnType<typeof vi.fn>;
@@ -95,6 +96,7 @@ vi.mock("@xterm/xterm", () => ({
     write = vi.fn();
     dispose = vi.fn();
     paste = vi.fn();
+    input = vi.fn((data: string) => inputs[instances.indexOf(this)]?.(data));
     selectAll = vi.fn();
     hasSelection = vi.fn(() => false);
     getSelection = vi.fn(() => "selected text");
@@ -735,8 +737,8 @@ describe("terminal clipboard", () => {
     expect(terminal.focus).not.toHaveBeenCalled();
   });
 
-  it("accepts Pi-style OSC 52 copies after a selection gesture in an active opted-in terminal", async () => {
-    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } });
+  it("accepts application OSC 52 independently of xterm copy-on-select and supports opting out", async () => {
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: false } });
     const view = render(<TerminalPage sessionId="s1" active />);
     await waitFor(() => expect(oscHandlers).toHaveLength(1));
     const surface = view.container.querySelector(".terminal-surface")!;
@@ -751,6 +753,14 @@ describe("terminal clipboard", () => {
     expect(apiMock.clipboardWriteText).toHaveBeenCalledWith("Pi 中文 selection 👩‍💻");
     oscHandlers[0]!(data);
     expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, terminalApplicationClipboard: false },
+    });
+    fireEvent.mouseDown(surface, { button: 0 });
+    fireEvent.mouseUp(surface, { button: 0 });
+    oscHandlers[0]!(data);
+    expect(apiMock.clipboardWriteText).toHaveBeenCalledOnce();
+    useSettings.setState({ settings: { ...DEFAULT_SETTINGS } });
     view.rerender(<TerminalPage sessionId="s1" active={false} />);
     fireEvent.mouseDown(surface, { button: 0 });
     fireEvent.mouseUp(surface, { button: 0 });
@@ -911,6 +921,8 @@ describe("terminal clipboard", () => {
       instances[0]!.hasSelection.mockReturnValue(true);
       expect(keyboard[0]!(new KeyboardEvent("keydown", { key: "c", metaKey: true }))).toBe(false);
       expect(copyMock).toHaveBeenCalledWith("selected text");
+      expect(keyboard[0]!(new KeyboardEvent("keydown", { key: "a", metaKey: true }))).toBe(false);
+      expect(instances[0]!.selectAll).toHaveBeenCalledOnce();
       expect(
         keyboard[0]!(new KeyboardEvent("keydown", { key: "v", metaKey: true, shiftKey: true })),
       ).toBe(false);
@@ -921,6 +933,40 @@ describe("terminal clipboard", () => {
       } else {
         Reflect.deleteProperty(navigator, "platform");
       }
+    }
+  });
+
+  it("sends macOS editing commands as input through the real SSH callback, never paste", async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "platform");
+    Object.defineProperty(navigator, "platform", { configurable: true, value: "MacIntel" });
+    try {
+      render(<TerminalPage sessionId="s1" active />);
+      await waitFor(() => expect(keyboard).toHaveLength(1));
+      for (const [key, expected, modifier] of [
+        ["ArrowLeft", "\x01", "metaKey"],
+        ["ArrowRight", "\x05", "metaKey"],
+        ["ArrowLeft", "\x1bb", "altKey"],
+        ["ArrowRight", "\x1bf", "altKey"],
+        ["Backspace", "\x15", "metaKey"],
+        ["Delete", "\x0b", "metaKey"],
+      ] as const) {
+        const event = new KeyboardEvent("keydown", { key, [modifier]: true, cancelable: true });
+        expect(keyboard[0]!(event)).toBe(false);
+        expect(event.defaultPrevented).toBe(true);
+        expect(apiMock.sshWrite).toHaveBeenLastCalledWith("s1", encodeBase64(expected));
+      }
+      expect(instances[0]!.paste).not.toHaveBeenCalled();
+      const composing = new KeyboardEvent("keydown", {
+        key: "ArrowLeft",
+        metaKey: true,
+        isComposing: true,
+      });
+      const before = apiMock.sshWrite.mock.calls.length;
+      expect(keyboard[0]!(composing)).toBe(true);
+      expect(apiMock.sshWrite).toHaveBeenCalledTimes(before);
+    } finally {
+      if (original) Object.defineProperty(navigator, "platform", original);
+      else Reflect.deleteProperty(navigator, "platform");
     }
   });
 

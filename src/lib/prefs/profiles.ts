@@ -42,6 +42,7 @@ export const PORTABLE_SETTING_KEYS = [
   "terminalSmoothScrolling",
   "terminalScrollOnInput",
   "terminalCopyOnSelect",
+  "terminalApplicationClipboard",
   "terminalRightClick",
   "terminalRenderer",
   "fileIconTheme",

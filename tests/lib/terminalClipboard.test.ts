@@ -7,6 +7,35 @@ import { encodeBase64 } from "@/lib/text/base64";
 afterEach(() => vi.restoreAllMocks());
 
 describe("application clipboard writes", () => {
+  it("accepts OSC 52 during a TUI selection before mouseup without granting reads", () => {
+    let handler!: (data: string) => boolean;
+    const terminal = {
+      hasSelection: () => false,
+      modes: { mouseTrackingMode: "none" },
+      parser: {
+        registerOscHandler: (_: number, callback: typeof handler) => {
+          handler = callback;
+          return { dispose: vi.fn() };
+        },
+      },
+    } as unknown as Terminal;
+    const element = document.createElement("div");
+    document.body.append(element);
+    const write = vi.fn().mockResolvedValue(undefined);
+    const binding = bindTerminalClipboard(terminal, element, () => true, write, vi.fn());
+    handler(`c;${encodeBase64("not user initiated")}`);
+    expect(write).not.toHaveBeenCalled();
+    fireEvent.keyDown(element, { key: "c", ctrlKey: true });
+    handler(`c;${encodeBase64("after interrupt")}`);
+    expect(write).not.toHaveBeenCalled();
+    fireEvent.mouseDown(element, { button: 0 });
+    handler(`c;${encodeBase64("copied before release")}`);
+    expect(write).toHaveBeenCalledWith("copied before release");
+    handler("c;?");
+    expect(write).toHaveBeenCalledOnce();
+    binding.dispose();
+    element.remove();
+  });
   it("rejects disabled, expired, malformed, oversized and clipboard-read requests", async () => {
     let handler!: (data: string) => boolean;
     const release = vi.fn();

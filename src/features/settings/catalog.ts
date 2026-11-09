@@ -136,7 +136,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "clipboard",
       label: "settings.groups.clipboard",
-      keys: ["terminalCopyOnSelect", "terminalRightClick"],
+      keys: ["terminalCopyOnSelect", "terminalApplicationClipboard", "terminalRightClick"],
     },
     { id: "history", label: "settings.groups.history", keys: ["recordTerminalHistory"] },
   ],
@@ -338,6 +338,7 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
   toggle("terminalSmoothScrolling", "terminal", "settings.terminalSmoothScrollingHint"),
   toggle("terminalScrollOnInput", "terminal", "settings.terminalScrollOnInputHint"),
   toggle("terminalCopyOnSelect", "terminal"),
+  toggle("terminalApplicationClipboard", "terminal", "settings.terminalApplicationClipboardHint"),
   select(
     "terminalRightClick",
     "terminal",

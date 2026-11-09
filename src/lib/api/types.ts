@@ -71,6 +71,7 @@ export interface Settings {
   terminalSmoothScrolling: boolean;
   terminalScrollOnInput: boolean;
   terminalCopyOnSelect: boolean;
+  terminalApplicationClipboard: boolean;
   terminalRightClick: TerminalRightClick;
   terminalRenderer: TerminalRenderer;
   fileIconTheme: string;

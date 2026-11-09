@@ -13,13 +13,20 @@ export function bindTerminalClipboard(
   let copyGestureAt = -Infinity;
   const mouseDown = (event: MouseEvent) => {
     pressed = event.button === 0;
+    // Some TUIs publish OSC 52 while selecting, before the final mouse release.
+    if (pressed) copyGestureAt = performance.now();
   };
   const mouseUp = (event: MouseEvent) => {
     if (pressed && event.button === 0) copyGestureAt = performance.now();
     pressed = false;
   };
   const keyDown = (event: KeyboardEvent) => {
-    if (!event.isComposing && (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
+    if (
+      !event.isComposing &&
+      (event.ctrlKey || event.metaKey) &&
+      event.key.toLowerCase() === "c" &&
+      (terminal.hasSelection() || terminal.modes.mouseTrackingMode !== "none")
+    ) {
       copyGestureAt = performance.now();
     }
   };
