@@ -10,6 +10,7 @@ struct Entry<T> {
     lease: Lease,
     scope: Option<Scope>,
     value: Option<T>,
+    accepted: bool,
 }
 
 /// Server-assigned request identity prevents reused public IDs from sharing ownership.
@@ -17,6 +18,13 @@ struct Entry<T> {
 pub(super) struct Scope {
     pub client: String,
     pub request: uuid::Uuid,
+}
+
+/// Private snapshot, never a caller-supplied resource token.
+pub(super) struct Ownership {
+    token: String,
+    pub scope: Option<Scope>,
+    pub accepted: bool,
 }
 
 pub(super) struct Registry<T> {
@@ -55,6 +63,7 @@ impl<T> Registry<T> {
             token.clone(),
             Entry {
                 lease,
+                accepted: scope.is_none(),
                 scope,
                 value: None,
             },
@@ -84,6 +93,55 @@ impl<T> Registry<T> {
             |value| value == generation,
             |scope| scope.is_some_and(|scope| scope.request == request),
         )
+    }
+
+    pub fn ownership(
+        &self,
+        owner: &str,
+        generation: u64,
+        matches: impl Fn(&T) -> bool,
+    ) -> Option<Ownership> {
+        let entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        entries.iter().find_map(|(token, entry)| {
+            (entry.lease.id == owner
+                && entry.lease.generation == generation
+                && entry.value.as_ref().is_some_and(&matches))
+            .then(|| Ownership {
+                token: token.clone(),
+                scope: entry.scope.clone(),
+                accepted: entry.accepted,
+            })
+        })
+    }
+
+    pub fn accept_request(&self, owner: &str, generation: u64, request: uuid::Uuid) {
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        for entry in entries.values_mut() {
+            if entry.lease.id == owner
+                && entry.lease.generation == generation
+                && entry
+                    .scope
+                    .as_ref()
+                    .is_some_and(|scope| scope.request == request)
+            {
+                entry.accepted = true;
+            }
+        }
+    }
+
+    /// Transfer a confirmed live resource out of plugin ownership. The exact
+    /// reservation token prevents stale consent from touching a replacement.
+    pub fn handoff(&self, owner: &str, generation: u64, ownership: &Ownership) -> Option<T> {
+        let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = entries.get(&ownership.token)?;
+        if entry.lease.id != owner
+            || entry.lease.generation != generation
+            || entry.value.is_none()
+            || !entry.accepted
+        {
+            return None;
+        }
+        entries.remove(&ownership.token)?.value
     }
 
     fn remove_scoped(
@@ -315,5 +373,81 @@ mod tests {
         drop(old);
         new.commit("new").unwrap();
         assert_eq!(registry.remove_client("one", 1, "b"), ["new"]);
+    }
+
+    #[test]
+    fn handoff_requires_exact_live_owner_and_accepted_result_and_releases_quota() {
+        let registry = Registry::new(1, 1);
+        let request = uuid::Uuid::new_v4();
+        let pending = registry
+            .reserve(lease("one", 1), scope("agent", request))
+            .unwrap();
+        assert!(registry.ownership("one", 1, |_| true).is_none());
+        pending.commit("session").unwrap();
+        let receipt = registry.ownership("one", 1, |_| true).unwrap();
+        assert!(!receipt.accepted);
+        assert!(registry.handoff("one", 1, &receipt).is_none());
+        registry.accept_request("other", 1, request);
+        registry.accept_request("one", 2, request);
+        assert!(!registry.ownership("one", 1, |_| true).unwrap().accepted);
+        registry.accept_request("one", 1, request);
+        let receipt = registry.ownership("one", 1, |_| true).unwrap();
+        assert!(receipt.accepted);
+        assert!(registry.handoff("other", 1, &receipt).is_none());
+        assert!(registry.handoff("one", 2, &receipt).is_none());
+        assert_eq!(registry.handoff("one", 1, &receipt), Some("session"));
+        assert!(registry.remove_client("one", 1, "agent").is_empty());
+        assert!(registry.remove_request("one", 1, request).is_empty());
+        assert!(registry.remove_runtime("one", |_| true).is_empty());
+        let replacement = registry.reserve(lease("one", 1), None).unwrap();
+        replacement.commit("session").unwrap();
+        assert!(registry.handoff("one", 1, &receipt).is_none());
+        assert_eq!(registry.remove_runtime("one", |_| true), ["session"]);
+    }
+
+    #[test]
+    fn stale_consent_cannot_adopt_a_revoked_or_replaced_resource() {
+        let registry = Registry::new(8, 64);
+        registry
+            .reserve(lease("one", 1), None)
+            .unwrap()
+            .commit("old")
+            .unwrap();
+        let receipt = registry
+            .ownership("one", 1, |value| value == &"old")
+            .unwrap();
+        assert!(receipt.accepted);
+        assert_eq!(registry.remove_runtime("one", |_| true), ["old"]);
+        registry
+            .reserve(lease("one", 2), None)
+            .unwrap()
+            .commit("old")
+            .unwrap();
+        assert!(registry.handoff("one", 2, &receipt).is_none());
+        assert_eq!(registry.remove_runtime("one", |_| true), ["old"]);
+    }
+
+    #[test]
+    fn handoff_and_runtime_cleanup_have_only_one_winner() {
+        for _ in 0..64 {
+            let registry = Registry::new(8, 64);
+            registry
+                .reserve(lease("one", 1), None)
+                .unwrap()
+                .commit("session")
+                .unwrap();
+            let receipt = registry.ownership("one", 1, |_| true).unwrap();
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|threads| {
+                let worker = threads.spawn(|| {
+                    barrier.wait();
+                    registry.handoff("one", 1, &receipt)
+                });
+                barrier.wait();
+                let closed = registry.remove_runtime("one", |_| true);
+                let adopted = worker.join().unwrap();
+                assert_eq!(closed.len() + usize::from(adopted.is_some()), 1);
+            });
+        }
     }
 }

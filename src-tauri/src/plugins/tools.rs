@@ -1125,6 +1125,7 @@ mod tests {
             "sessions.exec",
             "tasks.start",
             "terminal.write",
+            "sessions.requestHandoff",
             "files.local.delete",
             "files.upload",
         ] {
@@ -1145,6 +1146,7 @@ mod tests {
             "settings.update",
             "clipboard.readText",
             "terminal.write",
+            "sessions.requestHandoff",
         ] {
             assert!(!allowed(method));
         }

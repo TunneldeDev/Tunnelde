@@ -344,7 +344,17 @@ close that connection and its private jump transports; opening a terminal or fil
 does not transfer ownership. Both pending and live connections count toward eight per
 plugin and 64 across plugins, with a 120-second setup deadline. Normal host-key and proxy
 checks still apply. Use an existing user-created session when work needs an independent
-lifetime; explicit ownership handoff is not available yet. `sessions.list` keeps its
+lifetime. `sessions.requestHandoff({sessionId})` asks in a native confirmation dialog to
+transfer a live connection owned by the calling runtime to the user. It returns `true`
+after transfer or `false` on decline; timeout, revocation, disconnection and foreign
+resources fail. Only a completed tool request's accepted connection can be transferred.
+One confirmation can be outstanding application-wide; close an old dialog before retrying.
+An expired or cancelled caller cannot transfer by answering its stale dialog.
+After consent, stopping/revoking the plugin or client, and restricted mode leave this
+connection active; the user can disconnect it, and app exit still closes it. This does
+not open a tab, persist a transport, transfer dependent tasks or grant new permissions.
+It is not exposed through `tools.invoke`; opening tabs alone still transfers no ownership.
+`sessions.list` keeps its
 stable response shape and still lists all active sessions visible to the authorized plugin.
 
 Connections created through `tools.invoke` also belong to its `clientId` (default `agent`).
