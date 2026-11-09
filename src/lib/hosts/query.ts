@@ -3,6 +3,7 @@ import {
   matchesSearch,
   matchesSearchNumber,
   parseSearchQuery,
+  searchFilterCompletion,
   searchText,
   type SearchQuery,
 } from "@/lib/search/query";
@@ -12,18 +13,9 @@ export interface HostQuery extends SearchQuery {
   favorite: boolean;
 }
 
-const unquote = (value: string) => value.replace(/^"|"$/g, "").replace(/\\(["\\])/g, "$1");
-
 /** Keep quoted tags together, including an unfinished quote while the user types. */
 export function parseHostQuery(query: string): HostQuery {
-  const parsed = parseSearchQuery(query.replace(/(^|\s)@tag\s+/gi, "$1tag:"), [
-    "tag",
-    "is",
-    "name",
-    "host",
-    "user",
-    "port",
-  ]);
+  const parsed = parseSearchQuery(query, ["tag", "is", "name", "host", "user", "port"]);
   return {
     ...parsed,
     tags: parsed.filters
@@ -51,14 +43,12 @@ export function matchesHostQuery(host: Host, query: HostQuery): boolean {
 }
 
 export function tagCompletion(query: string): { start: number; value: string } | null {
-  const match = /(?:^|\s)(?:tag:|@tag\s*)("(?:[^"\\]|\\.)*"?|[^\s]*)$/i.exec(query);
-  if (!match) return null;
-  return { start: match.index + (/^\s/.test(match[0]) ? 1 : 0), value: unquote(match[1] ?? "") };
+  return searchFilterCompletion(query, "tag");
 }
 
 export function completeHostTag(query: string, tag: string): string {
   const completion = tagCompletion(query);
   const prefix = completion ? query.slice(0, completion.start) : query.trimEnd();
-  const value = /[\s"\\]/.test(tag) ? JSON.stringify(tag) : tag;
-  return `${prefix}${prefix && !/\s$/.test(prefix) ? " " : ""}tag:${value} `;
+  const value = /[\s,"\\]/.test(tag) ? JSON.stringify(tag) : tag;
+  return `${prefix}${prefix && !/\s$/.test(prefix) ? " " : ""}@tag:${value} `;
 }

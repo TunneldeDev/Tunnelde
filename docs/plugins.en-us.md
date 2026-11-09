@@ -12,9 +12,9 @@ Editor command and formatter contributions:
 ## Quick access and command results
 
 The plugin browser renders up to 24 matching entries per page, with previous/next
-navigation and a result count. Search accepts multiple words and exact `tag:pdf`
-filters; comma-separated tags such as `tag:pdf,image` match any listed tag.
-Separate terms such as `tag:pdf tag:preview` must all match.
+navigation and a result count. Search accepts multiple words and exact `@tag:pdf`
+filters; comma-separated tags such as `@tag:pdf,image` match any listed tag.
+Separate terms such as `@tag:pdf @tag:preview` must all match.
 Clicking a tag updates the search expression rather than adding another filter bar.
 The current query, tag and page
 survive opening a detail tab. Clicking a tag in details reveals the plugin browser.

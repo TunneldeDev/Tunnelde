@@ -42,6 +42,18 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("shows and inserts @section presets and treats bare section fields as literal text", () => {
+    render(<SettingsPage />);
+    const input = screen.getByRole("textbox", { name: "Search settings" }) as HTMLInputElement;
+    fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
+    expect(screen.getByText("@section:network")).toBeTruthy();
+    expect(screen.queryByText("section:network")).toBeNull();
+    fireEvent.click(screen.getByText("@section:network").closest("button")!);
+    expect(input.value).toBe("@section:network");
+    expect(screen.getByRole("region", { name: "Network & proxies" })).toBeTruthy();
+    fireEvent.change(input, { target: { value: "section:network" } });
+    expect(screen.queryByRole("region", { name: "Network & proxies" })).toBeNull();
+  });
   it("clears the typed modified qualifier when unchecking an already-enabled checkbox", () => {
     useSettings.setState({ settings: { ...defaults, monoFontSize: 18 } });
     render(<SettingsPage />);

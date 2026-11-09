@@ -36,10 +36,10 @@ describe("file list views", () => {
     ];
     const filter = (query: string) =>
       names(visibleFiles(entries, preferences, collator, [], { query, kind: "all" }));
-    expect(filter("ext:json size:>=4KiB modified:2026-11-09")).toEqual(["report.json"]);
-    expect(filter("is:hidden")).toEqual([".env"]);
-    expect(filter("type:folder")).toEqual(["folder"]);
-    expect(filter("-ext:json")).toEqual(["folder"]);
+    expect(filter("@ext:json @size:>=4KiB @modified:2026-11-09")).toEqual(["report.json"]);
+    expect(filter("@is:hidden")).toEqual([".env"]);
+    expect(filter("@type:folder")).toEqual(["folder"]);
+    expect(filter("-@ext:json")).toEqual(["folder"]);
   });
   it("hides dotfiles and platform hidden attributes without mutating raw metadata", () => {
     const entries = [entry("visible"), entry(".env"), entry("system", { isHidden: true })];

@@ -5,13 +5,46 @@ import {
   matchesSearchDate,
   matchesSearchNumber,
   parseSearchQuery,
+  searchFilterCompletion,
   searchQueryText,
   toggleSearchFilter,
 } from "@/lib/search/query";
 
 describe("shared search qualifiers", () => {
+  it("requires @ for every recognized field and preserves bare fields as search text", () => {
+    const keys = ["tag", "section", "name", "id", "level", "plugin", "ext", "path", "is", "repo"];
+    for (const key of keys) {
+      expect(parseSearchQuery(`${key}:value -${key}:other`, [key])).toEqual({
+        text: [`${key}:value`, `-${key}:other`],
+        filters: [],
+      });
+      expect(parseSearchQuery(`@${key}:value -@${key}:other`, [key]).filters).toHaveLength(2);
+      expect(clearSearchFilters(`${key}:literal @${key}:value`, [key])).toBe(`${key}:literal`);
+      expect(searchQueryText(`${key}:Literal @${key}:value`, [key])).toBe(`${key}:Literal`);
+    }
+    expect(parseSearchQuery("mail@tag:value @@tag:value", keys).filters).toEqual([]);
+    expect(toggleSearchFilter("section:network", "section", "network", true)).toBe(
+      "section:network @section:network",
+    );
+    expect(toggleSearchFilter("", "@section", "network")).toBe("@section:network");
+    expect(toggleSearchFilter("@SECTION:", "section", "")).toBe("@SECTION:");
+  });
+
+  it("completes only a final explicit unquoted field and preserves quoted literals", () => {
+    expect(searchFilterCompletion("edge @tag:Pub", "tag")).toEqual({ start: 5, value: "Pub" });
+    expect(searchFilterCompletion('edge @tag:"生产 东', "tag")?.value).toBe("生产 东");
+    for (const query of [
+      "tag:Pub",
+      '"hello @tag:Pub"',
+      '"hello @tag:Pub',
+      "@tag:Pub ",
+      "-@tag:Pub",
+      "mail@tag:Pub",
+    ])
+      expect(searchFilterCompletion(query, "tag")).toBeNull();
+  });
   it("intersects repeated fields and words, with comma alternatives and exclusions", () => {
-    const query = parseSearchQuery('上海 tag:prod,dev tag:"生产 环境" -is:hidden & name:api', [
+    const query = parseSearchQuery('上海 @tag:prod,dev @tag:"生产 环境" -@is:hidden & @name:api', [
       "tag",
       "is",
       "name",
@@ -25,11 +58,11 @@ describe("shared search qualifiers", () => {
 
   it("keeps commas, quotes, backslashes and unfinished quoted values together", () => {
     const value = 'a "quoted" \\ tag,one';
-    expect(parseSearchQuery(`tag:${JSON.stringify(value)}`, ["tag"]).filters[0]?.values).toEqual([
+    expect(parseSearchQuery(`@tag:${JSON.stringify(value)}`, ["tag"]).filters[0]?.values).toEqual([
       value,
     ]);
-    expect(parseSearchQuery('tag:"生产 环境', ["tag"]).filters[0]?.values).toEqual(["生产 环境"]);
-    expect(parseSearchQuery('tag:a,"b,c",d', ["tag"]).filters[0]?.values).toEqual([
+    expect(parseSearchQuery('@tag:"生产 环境', ["tag"]).filters[0]?.values).toEqual(["生产 环境"]);
+    expect(parseSearchQuery('@tag:a,"b,c",d', ["tag"]).filters[0]?.values).toEqual([
       "a",
       "b,c",
       "d",
@@ -38,48 +71,48 @@ describe("shared search qualifiers", () => {
   });
 
   it("retains unknown, empty and quoted qualifiers as literal words", () => {
-    const query = parseSearchQuery('repo:owner/app tag: tag:"" "tag:prod"', ["tag"]);
+    const query = parseSearchQuery('@repo:owner/app @tag: @tag:"" "@tag:prod"', ["tag"]);
     expect(query.filters).toEqual([]);
-    expect(query.text).toEqual(["repo:owner/app", "tag:", "tag:", "tag:prod"]);
-    expect(clearSearchFilters('"tag:prod" tag:dev repo:a', ["tag"])).toBe('"tag:prod" repo:a');
+    expect(query.text).toEqual(["@repo:owner/app", "@tag:", "@tag:", "@tag:prod"]);
+    expect(clearSearchFilters('"@tag:prod" @tag:dev @repo:a', ["tag"])).toBe('"@tag:prod" @repo:a');
   });
 
   it("normalizes Unicode and aliases and matches false/zero without matching missing fields", () => {
-    const query = parseSearchQuery("@NAME:ＦＯＯ port:0 is:false", ["name", "port", "is"]);
+    const query = parseSearchQuery("@NAME:ＦＯＯ @port:0 @is:false", ["name", "port", "is"]);
     expect(matchesSearch(query, "", { name: "foo", port: 0, is: false })).toBe(true);
-    expect(matchesSearch(parseSearchQuery("name:null", ["name"]), "", {})).toBe(false);
+    expect(matchesSearch(parseSearchQuery("@name:null", ["name"]), "", {})).toBe(false);
   });
 
   it("does not collapse repeated AND groups while editing menu alternatives", () => {
-    expect(toggleSearchFilter('hello tag:Prod tag:"生产 环境" -tag:archive', "tag", "dev")).toBe(
-      'hello tag:Prod tag:"生产 环境",dev -tag:archive',
+    expect(toggleSearchFilter('hello @tag:Prod @tag:"生产 环境" -@tag:archive', "tag", "dev")).toBe(
+      'hello @tag:Prod @tag:"生产 环境",dev -@tag:archive',
     );
-    expect(toggleSearchFilter('tag:Prod tag:"生产 环境",dev -tag:archive', "tag", "DEV")).toBe(
-      'tag:Prod tag:"生产 环境" -tag:archive',
+    expect(toggleSearchFilter('@tag:Prod @tag:"生产 环境",dev -@tag:archive', "tag", "DEV")).toBe(
+      '@tag:Prod @tag:"生产 环境" -@tag:archive',
     );
-    expect(toggleSearchFilter('tag:a,b tag:a -tag:a "tag:a"', "tag", "a")).toBe(
-      'tag:b -tag:a "tag:a"',
+    expect(toggleSearchFilter('@tag:a,b @tag:a -@tag:a "@tag:a"', "tag", "a")).toBe(
+      '@tag:b -@tag:a "@tag:a"',
     );
   });
 
   it("replaces an exclusive selection, preserves other fields, and avoids duplicate prefixes", () => {
-    expect(toggleSearchFilter("file type:folder type:file -type:link", "type", "file", true)).toBe(
-      "file -type:link",
+    expect(
+      toggleSearchFilter("file @type:folder @type:file -@type:link", "type", "file", true),
+    ).toBe("file -@type:link");
+    expect(toggleSearchFilter("file @type:folder @tag:a", "type", "file", true)).toBe(
+      "file @tag:a @type:file",
     );
-    expect(toggleSearchFilter("file type:folder tag:a", "type", "file", true)).toBe(
-      "file tag:a type:file",
-    );
-    expect(toggleSearchFilter("file ext:", "ext", "")).toBe("file ext:");
-    const next = toggleSearchFilter('"tag:literal"', "tag", 'a,b "c"');
+    expect(toggleSearchFilter("file @ext:", "ext", "")).toBe("file @ext:");
+    const next = toggleSearchFilter('"@tag:literal"', "tag", 'a,b "c"');
     expect(parseSearchQuery(next, ["tag"]).filters[0]?.values).toEqual(['a,b "c"']);
   });
 
   it("preserves literal content case and consecutive whitespace when stripping qualifiers", () => {
-    expect(toggleSearchFilter("Foo  Bar", "ext", "ts")).toBe("Foo  Bar ext:ts");
-    expect(clearSearchFilters("Foo  Bar ext:ts", ["ext"])).toBe("Foo  Bar");
-    expect(searchQueryText("Foo  Bar ext:ts", ["ext"])).toBe("Foo  Bar");
-    expect(searchQueryText('ext:ts "Foo  Bar"', ["ext"])).toBe("Foo  Bar");
-    expect(searchQueryText('"ext:ts" repo:a', ["ext"])).toBe("ext:ts repo:a");
+    expect(toggleSearchFilter("Foo  Bar", "ext", "ts")).toBe("Foo  Bar @ext:ts");
+    expect(clearSearchFilters("Foo  Bar @ext:ts", ["ext"])).toBe("Foo  Bar");
+    expect(searchQueryText("Foo  Bar @ext:ts", ["ext"])).toBe("Foo  Bar");
+    expect(searchQueryText('@ext:ts "Foo  Bar"', ["ext"])).toBe("Foo  Bar");
+    expect(searchQueryText('"@ext:ts" @repo:a', ["ext"])).toBe("@ext:ts @repo:a");
   });
 
   it("compares finite numbers and decimal/binary units without accepting expressions", () => {

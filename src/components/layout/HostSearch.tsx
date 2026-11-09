@@ -147,7 +147,7 @@ export function HostSearch({
               >
                 <Tag size={13} aria-hidden="true" />
                 <span>{tag}</span>
-                <code>tag:</code>
+                <code>@tag:</code>
               </div>
             ))}
           </div>

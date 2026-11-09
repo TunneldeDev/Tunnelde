@@ -105,7 +105,7 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Root / }));
     expect(screen.queryByRole("treeitem")).toBeNull();
     const search = screen.getByRole("combobox");
-    fireEvent.change(search, { target: { value: "tag:production" } });
+    fireEvent.change(search, { target: { value: "@tag:production" } });
     expect(screen.getByRole("treeitem").textContent).toContain("Deep host");
     expect(screen.queryByRole("button", { name: /^Unrelated / })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Child / }));
@@ -119,7 +119,7 @@ describe("HostTree keyboard navigation", () => {
     expect(screen.queryByRole("treeitem")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Root / }));
     expect(screen.getByRole("treeitem")).toBeTruthy();
-    fireEvent.change(search, { target: { value: "tag:production" } });
+    fireEvent.change(search, { target: { value: "@tag:production" } });
     expect(screen.getByRole("treeitem")).toBeTruthy();
   });
 
@@ -176,7 +176,7 @@ describe("HostTree keyboard navigation", () => {
     const input = screen.getByRole("combobox", { name: "Search hosts" });
     fireEvent.focus(input);
     expect(screen.getAllByRole("option")).toHaveLength(2);
-    fireEvent.change(input, { target: { value: "@tag PublicNet" } });
+    fireEvent.change(input, { target: { value: "@tag:PublicNet" } });
     expect(screen.getAllByRole("treeitem")).toHaveLength(1);
     expect(screen.getByRole("treeitem").textContent).toContain("alpha");
     fireEvent.click(screen.getByRole("button", { name: "Clear host search" }));
@@ -192,16 +192,16 @@ describe("HostTree keyboard navigation", () => {
     });
     render(<HostTree />);
     const input = screen.getByRole("combobox");
-    fireEvent.change(input, { target: { value: "alpha tag:Pub" } });
+    fireEvent.change(input, { target: { value: "alpha @tag:Pub" } });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect((input as HTMLInputElement).value).toBe("alpha tag:PublicNet ");
+    expect((input as HTMLInputElement).value).toBe("alpha @tag:PublicNet ");
     expect(screen.getAllByRole("treeitem")).toHaveLength(1);
-    fireEvent.change(input, { target: { value: "tag:Pub" } });
+    fireEvent.change(input, { target: { value: "@tag:Pub" } });
     expect(screen.getByRole("listbox")).toBeTruthy();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
-    expect((input as HTMLInputElement).value).toBe("tag:Pub");
+    expect((input as HTMLInputElement).value).toBe("@tag:Pub");
   });
 
   it("keeps creation actions in the header and search below without repeating app branding", () => {
