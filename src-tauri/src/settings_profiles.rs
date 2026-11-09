@@ -48,6 +48,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "motion",
     "showStatusBar",
     "uiProviders",
+    "hostList",
     "restoreWorkspace",
     "hostActivation",
     "hostDirectConnect",
@@ -361,6 +362,10 @@ mod tests {
         assert!(value.get("password").is_none());
         assert_eq!(value["transferCompression"], false);
         assert_eq!(normalize(value.clone()).unwrap(), value);
+        let preferences = serde_json::json!({"view":"table","order":["name","plugin/inventory/cost"],"hidden":["port"],"widths":{"plugin/inventory/cost":195},"sort":{"key":"plugin/inventory/cost","direction":"desc"}});
+        let imported = normalize(serde_json::json!({"hostList":preferences})).unwrap();
+        assert_eq!(imported["hostList"], preferences);
+        assert_eq!(normalize(imported.clone()).unwrap(), imported);
     }
 
     #[test]

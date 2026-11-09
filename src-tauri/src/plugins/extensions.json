@@ -76,6 +76,24 @@
   ],
   "points": [
     {
+      "id": "hostList.columns",
+      "domain": "hosts",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "ownership": "runtime",
+      "registration": { "set": "hostList.setColumn", "remove": "hostList.removeColumn" },
+      "permissions": ["hosts.read", "workspace.write"],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "cellsPerColumn": 256,
+        "textCodePoints": 512,
+        "serializedBytesPerPlugin": 524288,
+        "serializedBytesTotal": 4194304
+      }
+    },
+    {
       "id": "hosts.fields",
       "domain": "hosts",
       "layer": "data",

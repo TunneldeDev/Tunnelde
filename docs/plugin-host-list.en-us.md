@@ -54,6 +54,4 @@ runtime registration is independent of a mounted frontend; a recreated WebView
 retrieves current contributions. Security changes clear visible contributions
 before an authoritative refresh, ignoring queued pre-change snapshots.
 
-This API is one implemented presentation extension. Dynamic host sources, extra
-columns, full view providers and workbench replacement are separate capabilities;
-the existence of decorations does not imply those capabilities are available.
+For typed table columns and their display preferences, see [host columns](plugin-host-columns.en-us.md). Dynamic host sources and connection ownership remain separate capabilities. Workbench providers are described in the [UI provider guide](plugin-ui-providers.en-us.md).

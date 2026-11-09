@@ -38,6 +38,7 @@ import { BackgroundTasks, BackgroundTaskStatusButton } from "@/features/tasks/Ba
 import { useBackgroundWindow } from "@/app/backgroundWindow";
 import { wireTabBarContributions } from "@/store/tabBar";
 import { wireHostDecorations } from "@/store/hostDecorations";
+import { wireHostColumns } from "@/store/hostColumns";
 
 const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosition }> = [
   { edge: "left", direction: "row", position: "before" },
@@ -51,6 +52,9 @@ export function AppShell() {
   useEffect(() => {
     if (!isTauri()) return;
     const controller = new AbortController();
+    void wireHostColumns(controller.signal).catch((error: unknown) =>
+      console.error("Host columns subscription failed", error),
+    );
     void wireTabBarContributions(controller.signal).catch((error: unknown) =>
       console.error("Tab bar subscription failed", error),
     );

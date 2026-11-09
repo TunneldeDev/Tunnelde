@@ -82,6 +82,7 @@ function FieldForm({ hostId, plugin }: { hostId: string; plugin: PluginInfo }) {
   }, [hostId, plugin.id]);
   useEffect(() => {
     live.current = true;
+    const sequence = request;
     const controller = new AbortController();
     void nativeEvents
       .on(
@@ -105,7 +106,7 @@ function FieldForm({ hostId, plugin }: { hostId: string; plugin: PluginInfo }) {
       });
     return () => {
       live.current = false;
-      request.current++;
+      sequence.current++;
       controller.abort();
     };
   }, [hostId, plugin.id, plugin.fingerprint, load]);

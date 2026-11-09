@@ -710,3 +710,5 @@ not run document scripts or interactive forms. Password-protected PDFs require a
 [Local logging and plugin diagnostics](logging.en-us.md)
 
 [Trusted frontend UI SDK](plugin-ui.en-us.md).
+
+The built-in host table accepts runtime-owned [typed plugin columns](plugin-host-columns.en-us.md), with user-controlled visibility, width, order and sorting.

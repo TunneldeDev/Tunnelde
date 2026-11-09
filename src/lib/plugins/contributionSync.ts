@@ -102,7 +102,10 @@ export async function synchronizeContributions<T extends { revision: number }>(
 /** Reusable native transport, keeping the synchronization protocol testable without Tauri. */
 export function nativeContributionSource<
   K extends
-    "plugin://status-bar-changed" | "plugin://tab-bar-changed" | "plugin://host-list-changed",
+    | "plugin://status-bar-changed"
+    | "plugin://tab-bar-changed"
+    | "plugin://host-list-changed"
+    | "plugin://host-columns-changed",
 >(
   event: K,
   options: Pick<ContributionSource<NativeEvents[K]>, "read" | "apply" | "clear" | "report">,

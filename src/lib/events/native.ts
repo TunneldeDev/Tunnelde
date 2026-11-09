@@ -17,8 +17,10 @@ import { createEventBus } from "./bus";
 import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
 import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
+import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
 
 export interface NativeEvents {
+  "plugin://host-columns-changed": HostColumnsSnapshot;
   "hosts://fields-changed": { pluginId: string; hostId: string; revision: number };
   "plugin://host-list-changed": HostDecorationSnapshot;
   "plugin://tab-bar-changed": TabBarSnapshot;

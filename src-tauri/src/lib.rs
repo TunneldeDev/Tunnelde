@@ -161,6 +161,7 @@ pub fn run() {
             plugins::tab_bar::plugin_tab_bar_snapshot,
             plugins::tab_bar::plugin_tab_bar_execute,
             plugins::host_list::plugin_host_list_snapshot,
+            plugins::host_columns::plugin_host_columns_snapshot,
             plugins::host_fields::host_fields_get,
             plugins::host_fields::host_fields_update,
             plugins::api::plugin_workspace_reply,

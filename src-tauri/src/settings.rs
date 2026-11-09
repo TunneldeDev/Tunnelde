@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+pub mod host_list;
 
 pub const LANGUAGES: [&str; 3] = ["system", "zh-CN", "en-US"];
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];
@@ -48,6 +49,7 @@ pub struct UiProviderSelection {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub host_list: host_list::HostListPreferences,
     pub ui_providers: BTreeMap<String, UiProviderSelection>,
     pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
@@ -131,6 +133,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            host_list: host_list::HostListPreferences::default(),
             ui_providers: BTreeMap::new(),
             network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
@@ -262,6 +265,7 @@ impl Settings {
     /// Clamp and whitelist every field so a bad patch can never persist
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
+        self.host_list.sanitize();
         self.ui_providers.retain(|target, selection| {
             matches!(target.as_str(), "hostList" | "workbench")
                 && [&selection.plugin_id, &selection.view_id].iter().all(|id| {

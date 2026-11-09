@@ -1,4 +1,5 @@
 import type { MonoFont, Settings } from "../api/types";
+import { defaultHostListPreferences } from "@/lib/hosts/columns";
 
 export const MONO_FONT_SIZE_MIN = 10;
 export const MONO_FONT_SIZE_MAX = 32;
@@ -7,6 +8,7 @@ export const UI_FONT_SIZE_MAX = 20;
 
 export function createDefaultSettings(platform = "unknown"): Settings {
   return {
+    hostList: defaultHostListPreferences(),
     network: { profiles: [], defaultProxy: "", features: {} },
     keyboardShortcuts: {},
     shortcutRules: {},

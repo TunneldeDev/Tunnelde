@@ -124,6 +124,8 @@ pub const METHODS: &[ApiMethod] = &[
     method!("settings.get", ["settings.read"], "{}", "Read application preferences."),
     method!("settings.update", ["settings.write"], "{patch:object}", "Update and sanitize preferences through the normal settings service."),
     method!("hosts.snapshot", ["hosts.read"], "{}", "Read saved host and group metadata; authentication secrets are never returned."),
+    method!("hostList.setColumn", ["hosts.read", "workspace.write"], "{id:string,label:string,type:text|number|boolean,width?:number,cells:array}", "Replace one runtime-owned host table column. Each cell is {hostId,value,tooltip?}; at most 256 distinct existing hosts, 512 code points per text value, finite numbers and booleans. At most 8 columns and 512 KiB serialized JSON per plugin, 128 columns and 4 MiB total. Width defaults to 140, range 64..480. Empty cells retain the column; missing cells display unset. Host identity and connection behavior stay host-owned. Stop, crash, replacement and revocation remove contributions; user display preferences remain."),
+    method!("hostList.removeColumn", ["hosts.read", "workspace.write"], "{id:string}", "Remove this runtime's host table column. Returns whether the current generation owned a matching column."),
     method!("hosts.getFields", ["hosts.read"], "{hostId:string}", "Read this plugin's manifest hostFields schema and revisioned values for one existing host. Returns {schema,document}; document includes hostId, revision, schemaDigest, schemaVersion, storedSchemaVersion, schemaChanged and values. Retains values after schema changes; does not execute migration or expose another plugin's data. Nonsecret metadata only."),
     method!("hosts.setFields", ["hosts.read", "hosts.write"], "{hostId:string,expectedRevision:number,schemaDigest:string,values:object}", "Atomically replace this plugin's host fields against the current schema digest and revision. Declared text, number, boolean and select values only; missing keys unset values. No merge, implicit migration or secret storage. Returns {schema,document}; stale revisions/schemas fail without mutation. 32KiB per document, 4MiB values per plugin, 32MiB total. Host deletion cascades, uninstall retains data. Revocation is serialized with commit."),
     method!("hosts.create", ["hosts.write"], "{input:HostInput}", "Create a validated saved host."),
@@ -401,6 +403,9 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             encode(commands::settings_update(app.clone(), state, patch)?)
         }
         "hosts.snapshot" => encode(crate::services::hosts::snapshot(&state.db)?),
+        "hostList.setColumn" | "hostList.removeColumn" => {
+            super::host_columns::call(context, method, params)
+        }
         "hosts.getFields" | "hosts.setFields" => super::host_fields::call(context, method, params),
         "hosts.create" => {
             encode(crate::services::hosts::service(app, &state).create(field(&params, "input")?)?)

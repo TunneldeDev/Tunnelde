@@ -1,4 +1,5 @@
 import type { HostFieldsSchema } from "@/lib/hosts/fields";
+import type { HostListPreferences } from "@/lib/hosts/columns";
 import type { ShortcutRules } from "@/lib/keyboard/routing";
 import type { NetworkSettings } from "./network";
 export type Language = "system" | "zh-CN" | "en-US";
@@ -30,6 +31,7 @@ export type ColorRegion =
 export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 
 export interface Settings {
+  hostList: HostListPreferences;
   network: NetworkSettings;
   keyboardShortcuts: Record<string, string[]>;
   shortcutRules: ShortcutRules;

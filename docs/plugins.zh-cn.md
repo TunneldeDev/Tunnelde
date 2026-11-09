@@ -520,3 +520,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 [本地日志与插件诊断](logging.zh-cn.md)
 
 [可信前端 UI SDK](plugin-ui.zh-cn.md)。
+
+内置主机表格支持运行时归属的[插件数据列](plugin-host-columns.zh-cn.md)，用户可控制显隐、宽度、顺序和排序。
