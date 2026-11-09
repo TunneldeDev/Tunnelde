@@ -44,6 +44,23 @@ describe("shared search field", () => {
     expect(input.value).toBe("");
   });
 
+  it("does not mark bare fields as active and preserves them when selecting and clearing presets", () => {
+    render(<Fixture />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'tag:"a,b"' } });
+    const funnel = screen.getByRole("button", { name: "Filter presets" });
+    expect(funnel.classList.contains("is-active")).toBe(false);
+    fireEvent.click(funnel);
+    expect(
+      screen.getByRole("menuitemcheckbox", { name: /Comma tag/ }).getAttribute("aria-checked"),
+    ).toBe("false");
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Comma tag/ }));
+    expect(input.value).toBe('tag:"a,b" @tag:"a,b"');
+    fireEvent.click(funnel);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clear filters, keep search text" }));
+    expect(input.value).toBe('tag:"a,b"');
+  });
+
   it("disables presets and clear actions along with the input", () => {
     render(<Fixture disabled />);
     expect((screen.getByRole("textbox") as HTMLInputElement).disabled).toBe(true);

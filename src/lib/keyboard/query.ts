@@ -1,3 +1,5 @@
+import { rewriteSearchFilters, searchQueryText, type SearchFilter } from "@/lib/search/query";
+
 export type ShortcutFilterKey = "is" | "source" | "plugins";
 interface ShortcutQuery {
   text: string;
@@ -6,33 +8,46 @@ interface ShortcutQuery {
   plugins: string[];
 }
 
-/** One parser for typed queries, menu state, and non-destructive filter edits. */
+function consumeShortcutFilters(query: string, consume: (filter: SearchFilter) => void): string {
+  return rewriteSearchFilters(query, ["is", "source", "plugins"], (filter, raw) => {
+    if (filter.exclude) return raw;
+    const values = filter.values.map((value) => value.toLowerCase());
+    if (
+      (filter.key === "is" &&
+        (values.length !== 1 || !["conflict", "modified", "unassigned"].includes(values[0]!))) ||
+      (filter.key === "source" &&
+        (values.length !== 1 || !["built-in", "plugin"].includes(values[0]!)))
+    )
+      return raw;
+    consume(filter);
+    return null;
+  });
+}
+
+/** Remove only supported, explicit qualifiers; keep quoted search text quoted. */
+export function clearShortcutFilters(query: string): string {
+  return consumeShortcutFilters(query, () => {});
+}
+
+/** Typed queries and menu edits use the same mandatory-@, quote-aware tokenizer. */
 export function parseShortcutQuery(query: string): ShortcutQuery {
   const states = new Set<string>();
   const plugins = new Map<string, string>();
   let source: string | null = null;
-  const text = query
-    .replace(/(^|[\s&])@(is|source|plugins):([^\s&]+)/gi, (token, prefix, key, value) => {
-      const normalized = value.toLowerCase();
-      switch (key.toLowerCase()) {
-        case "is":
-          if (!["conflict", "modified", "unassigned"].includes(normalized)) return token;
-          states.add(normalized);
-          break;
-        case "source":
-          if (!["built-in", "plugin"].includes(normalized)) return token;
-          source = normalized;
-          break;
-        case "plugins":
-          for (const name of value.split(",").filter(Boolean))
-            plugins.set(name.toLowerCase(), name);
-          break;
-      }
-      return prefix;
-    })
-    .replace(/&/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  const literal = consumeShortcutFilters(query, (filter) => {
+    switch (filter.key) {
+      case "is":
+        states.add(filter.values[0]!.toLowerCase());
+        break;
+      case "source":
+        source = filter.values[0]!.toLowerCase();
+        break;
+      case "plugins":
+        for (const name of filter.values) plugins.set(name.toLowerCase(), name);
+        break;
+    }
+  });
+  const text = searchQueryText(literal, []);
   return { text, states, source, plugins: [...plugins.values()] };
 }
 
@@ -51,10 +66,12 @@ export function toggleShortcutFilter(query: string, key: ShortcutFilterKey, valu
     if (parsed.source === "built-in") parsed.source = null;
   }
   return [
-    parsed.text,
+    clearShortcutFilters(query),
     ...[...parsed.states].map((state) => `@is:${state}`),
     parsed.source ? `@source:${parsed.source}` : "",
-    parsed.plugins.length ? `@plugins:${parsed.plugins.join(",")}` : "",
+    parsed.plugins.length
+      ? `@plugins:${parsed.plugins.map((name) => (/[\s,"\\]/.test(name) ? JSON.stringify(name) : name)).join(",")}`
+      : "",
   ]
     .filter(Boolean)
     .join(" ");

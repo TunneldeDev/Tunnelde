@@ -12,6 +12,9 @@ it("combines search words and exact tag filters without executing a plugin", () 
   expect(matchesPlugin(plugin, "remote preview", "pdf")).toBe(true);
   expect(matchesPlugin(plugin, "@tag:pdf file", "media")).toBe(true);
   expect(matchesPlugin(plugin, "@tag:pd", "")).toBe(false);
+  expect(matchesPlugin(plugin, "tag:pdf", "")).toBe(false);
+  expect(matchesPlugin(plugin, "name:File Preview", "")).toBe(false);
+  expect(matchesPlugin({ ...plugin, name: "tag:pdf" }, "tag:pdf", "")).toBe(true);
   expect(matchesPlugin(plugin, "@tag:icons,pdf preview", "")).toBe(true);
   expect(matchesPlugin(plugin, "@tag:icons,tools preview", "")).toBe(false);
   expect(matchesPlugin(plugin, "", "icons")).toBe(false);

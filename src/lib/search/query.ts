@@ -96,6 +96,20 @@ export function clearSearchFilters(query: string, keys: readonly string[]): stri
   return rewriteTokens(query, (token) => (qualifier(token, allowed) ? null : token));
 }
 
+/** Specialized filters share token boundaries and preserve every unconsumed literal. */
+export function rewriteSearchFilters(
+  query: string,
+  keys: readonly string[],
+  rewrite: (filter: SearchFilter, raw: string) => string | null,
+): string {
+  const allowed = new Set(keys.map(normalizedKey));
+  return rewriteTokens(query, (token) => {
+    if (token === "&") return null;
+    const filter = qualifier(token, allowed);
+    return filter ? rewrite(filter, token) : token;
+  });
+}
+
 /** Complete only a final, unquoted @field: token; quoted literals stay untouched. */
 export function searchFilterCompletion(
   query: string,
