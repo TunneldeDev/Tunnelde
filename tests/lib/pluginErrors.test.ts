@@ -7,6 +7,19 @@ afterEach(async () => {
 });
 
 describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
+  it("preserves structured UI SDK version requirements", async () => {
+    await i18n.changeLanguage(language);
+    const message = pluginFailure({
+      code: "validation",
+      message: "plugin.frontend.sdkUnsupported",
+      details: { required: "^2.0.0", available: "0.1.0" },
+    });
+    expect(message).toContain("^2.0.0");
+    expect(message).toContain("0.1.0");
+    expect(pluginFailure(new Error("plugin.frontend.sdkUnsupported"))).toBe(
+      i18n.t("plugin.frontend.sdkUnsupported"),
+    );
+  });
   it("explains exact version requirements and supports errors from older hosts", async () => {
     await i18n.changeLanguage(language);
     const details = { pluginVersion: "1.8.1", hostVersion: "0.32.0-beta.6", required: ">=0.33.0" };

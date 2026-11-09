@@ -1233,6 +1233,24 @@
       "invalidDecoration": "主机装饰无效，请检查字段、长度和支持的图标。",
       "hostNotFound": "装饰引用的主机已不存在，请刷新主机列表。",
       "limit": "主机装饰数量已达上限，请移除一组装饰后重试。"
+    },
+    "frontend": {
+      "invalid": "可信界面声明无效。请使用插件内的 ui/*.mjs 入口、兼容的 SDK 版本范围，并声明 ui.trusted 权限。",
+      "invalidSdkRange": "插件声明的界面 SDK 版本范围无效。",
+      "sdkUnsupported": "此插件需要其他版本的界面 SDK。请检查兼容的插件或应用更新。",
+      "sdkUnsupportedDetails": "此插件需要界面 SDK {{required}}，当前应用提供 {{available}}。",
+      "sdkMismatch": "界面会话与当前应用或插件不匹配，请重启插件。",
+      "busy": "正在处理的插件界面操作过多，请稍后重试。",
+      "expired": "此插件界面会话已失效，请重启插件。",
+      "unavailable": "此插件没有可用的前端模块。",
+      "snapshot": "无法加载已批准的插件界面资源，请查看软件日志。",
+      "assetsTooLarge": "插件界面资源超过每个插件 8 MiB 的限制。",
+      "undeclaredContribution": "插件前端尝试注册清单中未声明的视图或命令。",
+      "duplicateContribution": "插件前端重复注册了同一视图或命令。",
+      "missingActivate": "插件前端模块必须导出 activate 函数。",
+      "viewUnavailable": "插件已启动，但未注册此视图。请刷新或查看软件日志。",
+      "commandUnavailable": "插件尚未注册此前端命令。",
+      "activationFailed": "插件界面激活失败，请查看软件日志并重启插件。"
     }
   },
   "themes": {
@@ -1318,7 +1336,8 @@
       "forwardsRead": "查看已保存的端口转发规则",
       "forwardsWrite": "管理、启动本地或远程端口转发",
       "editorRead": "读取已打开编辑器中的文档",
-      "editorWrite": "修改编辑器缓冲区（不会自动保存）"
+      "editorWrite": "修改编辑器缓冲区（不会自动保存）",
+      "trustedUi": "在应用界面中加载受信任代码。"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -1328,7 +1347,8 @@
       "workspace": "工作区与剪贴板",
       "application": "应用设置",
       "other": "其他能力"
-    }
+    },
+    "trustedUiWarning": "此插件与 Tunnelde 共享 JavaScript 上下文，能够超出所声明的 API 权限访问界面和原生桥。请只批准信任的代码与发布者。受限模式会阻止加载；停止不能撤销已有副作用或中断正在执行的代码。"
   },
   "pluginChat": {
     "chooseSession": "选择已连接的 SSH 会话",

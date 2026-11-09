@@ -55,8 +55,8 @@ Host decoration, status item and tab control synchronization use this ownership
 mechanism. Listener initialization and each snapshot read have a 30-second deadline.
 A read timeout leaves subscriptions available for a later refresh; expired reads
 cannot replace current content. An initialization failure releases partial and late
-listeners. This is internal lifecycle infrastructure, not a published UI SDK or a
-sandbox for directly loaded frontend code.
+listeners. These scopes also support the experimental UI SDK; they do not sandbox directly
+loaded frontend code.
 
 ## Domain boundaries
 
@@ -80,22 +80,19 @@ provider or replace a view. Priority alone does not resolve all conflicts. User
 choices govern view/workbench providers and existing shortcut conflict behavior.
 Plugin storage and additional data fields require plugin namespaces and schemas.
 
-## Trusted frontend components: planned boundary
+## Trusted frontend components
 
-The intended UI SDK will allow trusted frontend modules to compose public host
-components and provide views or a complete workbench. Modules will share a supported
-React runtime, declare UI SDK compatibility and use public service accessors.
-This loader and complete workbench replacement are not implemented by this directory.
-Do not import internal source paths or assume a component ABI exists yet.
+The experimental [UI SDK](plugin-ui.en-us.md) loads explicitly approved local ESM
+modules with the host React runtime and public components. Modules declare their
+SDK range and register manifest-declared component views and commands. Approval
+binds the package snapshot and runtime generation; stopping or revoking a plugin
+removes owned contributions and rejects old transport URLs and calls.
 
-Code loaded directly in the host frontend shares its JavaScript context. It is not
-an operating-system, DOM or native-bridge sandbox; error boundaries cannot stop
-infinite loops or undo arbitrary side effects. Such modules require explicit trust,
-a host-owned recovery path and an option to start without frontend extensions.
-Credentials, host-key trust and permission decisions remain host-owned flows.
-Existing executable Node permission checks likewise do not sandbox Node itself.
+Frontend code shares the host JavaScript context and native bridge. It is trusted,
+not sandboxed; error boundaries cannot interrupt loops or undo arbitrary effects.
+The host retains its authorization, credential and recovery interfaces. Complete
+workbench replacement and the remaining domain migrations are still pending.
 
-Stable RPC contracts remain supported during migration. New directory and host-list
-methods are experimental. SDK synchronization, historical plugin compatibility,
-real lifecycle/permission tests and platform validation are required before widening
-the stable surface. Full migration alone does not establish v1.0 readiness.
+Existing stable RPC contracts remain compatible. New extension discovery, host
+annotations and the UI SDK are experimental. Extending stability requires SDK
+synchronization, old-plugin regression tests and real platform acceptance.

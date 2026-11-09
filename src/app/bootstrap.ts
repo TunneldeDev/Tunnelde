@@ -19,6 +19,7 @@ import type { Dispose } from "@/lib/events/bus";
 import { reconcilePluginWorkspace, wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
 import { restoreBackgroundSnapshot } from "./backgroundWindow";
 import { registerBackgroundTaskSources } from "./backgroundTaskSources";
+import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -64,7 +65,10 @@ async function start(signal: AbortSignal): Promise<void> {
   const initialTabs = useWorkspace.getState().tabs;
   window.addEventListener("contextmenu", (event) => event.preventDefault(), { signal });
 
-  if (isTauri()) await wireEvents();
+  if (isTauri()) {
+    cleanups.push(() => frontendRuntime.dispose());
+    await wireEvents();
+  }
   if (signal.aborted) return;
 
   await useSettings.getState().load();
@@ -196,6 +200,7 @@ async function wireEvents(): Promise<void> {
     {
       register: (signal) =>
         events.onPluginState((payload) => {
+          if (payload.status !== "running") frontendRuntime.stop(payload.id);
           usePlugins.getState().apply(payload);
           if (payload.status === "failed" && payload.error)
             reportPluginExecutionFailure({ code: "validation", message: payload.error });
@@ -204,7 +209,10 @@ async function wireEvents(): Promise<void> {
     },
     {
       register: (signal) =>
-        events.onPluginSecurity((payload) => usePluginSecurity.getState().apply(payload), signal),
+        events.onPluginSecurity((payload) => {
+          frontendRuntime.reconcileSecurity(payload);
+          usePluginSecurity.getState().apply(payload);
+        }, signal),
       recover: () => usePluginSecurity.getState().load(true),
     },
     {

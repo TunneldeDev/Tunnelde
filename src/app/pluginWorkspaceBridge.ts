@@ -69,6 +69,17 @@ export async function runPluginWorkspaceRequest(
   const { method, params } = request;
   const workspace = useWorkspace.getState();
   switch (method) {
+    case "__frontend.command": {
+      const plugin = usePlugins.getState().items.find((item) => item.id === request.pluginId);
+      if (!plugin) throw new Error("plugin.notFound");
+      const { frontendRuntime } = await import("@/lib/extensions/frontendRuntime");
+      return frontendRuntime.run(
+        plugin,
+        text(params, "command"),
+        (params.input ?? {}) as Record<string, unknown>,
+        signal,
+      );
+    }
     case "editor.active": {
       const document = workspace.activeId ? editorDocument(workspace.activeId) : null;
       if (document && new TextEncoder().encode(document.content).length > EDITOR_DOCUMENT_MAX_BYTES)

@@ -2,10 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PluginInfo } from "@/lib/api/types";
 
-const { apiMock, native, ensureNode, ensurePermission } = vi.hoisted(() => ({
+const { apiMock, native, ensureNode, ensurePermission, frontend } = vi.hoisted(() => ({
   native: vi.fn(() => false),
   ensureNode: vi.fn(),
   ensurePermission: vi.fn(),
+  frontend: { ensure: vi.fn(), stop: vi.fn() },
   apiMock: {
     pluginsList: vi.fn(),
     pluginReload: vi.fn(),
@@ -20,8 +21,12 @@ const { apiMock, native, ensureNode, ensurePermission } = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock, isTauri: native }));
 vi.mock("@/features/plugins/NodeRuntimeSection", () => ({ ensureNodeRuntime: ensureNode }));
-vi.mock("@/store/pluginSecurity", () => ({ ensurePluginPermission: ensurePermission }));
+vi.mock("@/store/pluginSecurity", () => ({
+  ensurePluginPermission: ensurePermission,
+  reportPluginExecutionFailure: vi.fn(),
+}));
 vi.mock("@/store/toasts", () => ({ toast: vi.fn() }));
+vi.mock("@/lib/extensions/frontendRuntime", () => ({ frontendRuntime: frontend }));
 
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";
@@ -62,6 +67,28 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("starts a pure frontend without Node and stops its backend if activation fails", async () => {
+    native.mockReturnValue(true);
+    const ui = {
+      ...plugin,
+      runtime: "frontend" as const,
+      frontend: { entry: "ui/index.mjs", sdk: "^0.1.0" },
+    };
+    usePlugins.setState({ items: [ui] });
+    apiMock.pluginStart.mockResolvedValueOnce({ ...ui, status: "running" });
+    apiMock.pluginsList.mockResolvedValueOnce([{ ...ui, status: "failed" }]);
+    frontend.ensure.mockRejectedValueOnce(new Error("plugin.frontend.missingActivate"));
+    await usePlugins.getState().start(plugin.id);
+    expect(ensurePermission).toHaveBeenCalledWith(ui);
+    expect(ensureNode).not.toHaveBeenCalled();
+    expect(apiMock.pluginStop).not.toHaveBeenCalled();
+    expect(apiMock.pluginsList).toHaveBeenCalledOnce();
+    expect(toast).toHaveBeenCalledWith(
+      expect.stringContaining("activate"),
+      "error",
+      expect.any(Object),
+    );
+  });
   it("reports an unknown plugin startup validation error and offers the log", async () => {
     apiMock.pluginStart.mockRejectedValueOnce({
       code: "validation",
