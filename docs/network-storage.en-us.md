@@ -168,7 +168,10 @@ safe source removal retain the source and report the limitation.
 
 **Compress transfer data automatically** is enabled by default with transfer
 optimization. For ordinary block transfers, tasks totaling less than 256 KiB keep
-the standard SFTP path. Larger tasks first sample up to 16 KiB from the first source file. When it is compressible,
+the standard SFTP path. Larger tasks sample up to 16 KiB each from the beginning, middle and end of the first source file.
+Sampling stops at the first region that cannot save at least 10%. Remote samples use
+explicit-offset reads without speculative prefetch, up to 48 KiB of payload overall.
+Interrupted sampling closes its read-only channel before falling back to SFTP. When all regions are compressible,
 they try a temporary Python 3 worker over the existing authenticated SSH connection.
 Incompressible tasks retain the SFTP pipeline. Directory tasks reuse that initial
 transport choice; each subsequent block still decides whether compression helps.

@@ -8,6 +8,9 @@ struct Observed {
     data: Vec<u8>,
     writes: Vec<usize>,
     reads: Vec<usize>,
+    read_offsets: Vec<u64>,
+    short_read: Option<usize>,
+    read_status: Option<u32>,
     read_gates: std::collections::BTreeMap<u64, Arc<tokio::sync::Semaphore>>,
     pending: usize,
     peak: usize,
@@ -216,11 +219,23 @@ async fn stream_with_copy(
                     let mut state = state.lock().unwrap();
                     assert!(offset < state.data.len());
                     read_gate = state.read_gates.get(&(offset as u64)).cloned();
-                    let end = (offset + length).min(state.data.len());
+                    if let Some(status) = state.read_status {
+                        reply.push(101);
+                        reply.extend_from_slice(id);
+                        reply.extend_from_slice(&status.to_be_bytes());
+                        field(&mut reply, b"sampling read rejected");
+                        field(&mut reply, b"");
+                        drop(state);
+                        let _ = send.send((reply, false));
+                        continue;
+                    }
+                    let end = (offset + length.min(state.short_read.unwrap_or(length)))
+                        .min(state.data.len());
                     reply.push(103);
                     reply.extend_from_slice(id);
                     field(&mut reply, &state.data[offset..end]);
                     state.reads.push(length);
+                    state.read_offsets.push(offset as u64);
                     state.pending += 1;
                     state.peak = state.peak.max(state.pending);
                     delayed = true;
@@ -1616,4 +1631,150 @@ async fn changing_a_limit_during_io_keeps_remote_copy_offsets_and_bytes() {
     assert_eq!(count.load(Ordering::Relaxed), bytes.len() as u64);
     assert!(input.lock().unwrap().peak > 1);
     assert!(output.lock().unwrap().peak <= 8);
+}
+
+#[tokio::test]
+async fn sampling_reads_only_requested_regions_and_closes_before_reuse() {
+    let (channel, observed) = server(None, Duration::ZERO).await;
+    let data: Vec<_> = (0..2 * 1024 * 1024 + 73).map(|n| (n % 251) as u8).collect();
+    observed.lock().unwrap().data = data.clone();
+    let reader = SampleReader::open(&channel, "/source").await.unwrap();
+    for offset in [0, (data.len() - 16384) / 2, data.len() - 16384] {
+        assert_eq!(
+            reader.region(offset as u64, 16384).await.unwrap(),
+            data[offset..offset + 16384]
+        );
+    }
+    reader.finish().await.unwrap();
+    {
+        let state = observed.lock().unwrap();
+        assert_eq!(state.reads, [16384; 3]);
+        assert_eq!(
+            state.read_offsets,
+            [
+                0,
+                ((data.len() - 16384) / 2) as u64,
+                (data.len() - 16384) as u64
+            ]
+        );
+        assert_eq!(state.closes, 1);
+        assert!(!state.disconnected);
+        assert_eq!(state.open_flags, [OpenFlags::READ.bits()]);
+    }
+    let next = channel.open("/source", false).await.unwrap();
+    channel.close(&next).await.unwrap();
+}
+
+#[tokio::test]
+async fn sampling_handles_short_reads_without_prefetching_or_exceeding_region() {
+    let (channel, observed) = server(None, Duration::ZERO).await;
+    {
+        let mut state = observed.lock().unwrap();
+        state.data = vec![7; 65536];
+        state.short_read = Some(997);
+    }
+    let reader = SampleReader::open(&channel, "/source").await.unwrap();
+    assert_eq!(reader.region(123, 16384).await.unwrap(), vec![7; 16384]);
+    reader.finish().await.unwrap();
+    let state = observed.lock().unwrap();
+    for (&offset, &length) in state.read_offsets.iter().zip(&state.reads) {
+        assert_eq!(offset + length as u64, 123 + 16384);
+    }
+    assert_eq!(state.closes, 1);
+}
+
+#[tokio::test]
+async fn sampling_rejected_reads_close_the_read_handle() {
+    let (channel, observed) = server(None, Duration::ZERO).await;
+    {
+        let mut state = observed.lock().unwrap();
+        state.data = vec![7; 65536];
+        state.read_status = Some(3);
+    }
+    let reader = SampleReader::open(&channel, "/source").await.unwrap();
+    assert!(reader.region(0, 16384).await.is_err());
+    reader.finish().await.unwrap();
+    assert_eq!(observed.lock().unwrap().closes, 1);
+}
+
+#[tokio::test]
+async fn sampling_cancellation_closes_channel_during_open_read_and_close() {
+    for stage in ["open", "read", "close"] {
+        let gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let (channel, observed) = server_with_close(
+            None,
+            Duration::ZERO,
+            CloseReply {
+                gate: (stage == "close").then(|| gate.clone()),
+                status: 0,
+            },
+        )
+        .await;
+        {
+            let mut state = observed.lock().unwrap();
+            state.data = vec![7; 65536];
+            if stage == "open" {
+                state.open_gate = Some(gate.clone());
+            }
+            if stage == "read" {
+                state.read_gates.insert(0, gate.clone());
+            }
+        }
+        let source = channel.clone();
+        let task = tokio::spawn(async move {
+            let reader = SampleReader::open(&source, "/source").await.unwrap();
+            reader.region(0, 16384).await.unwrap();
+            reader.finish().await.unwrap();
+        });
+        tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let ready = {
+                    let state = observed.lock().unwrap();
+                    match stage {
+                        "open" => state.opens == 1,
+                        "read" => !state.reads.is_empty(),
+                        _ => state.closes == 1,
+                    }
+                };
+                if ready {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        task.abort();
+        assert!(task.await.unwrap_err().is_cancelled());
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !observed.lock().unwrap().disconnected {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        gate.add_permits(1);
+    }
+}
+
+#[tokio::test]
+async fn sampling_rejected_close_discards_channel_instead_of_reusing_handle() {
+    let (channel, observed) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: None,
+            status: 4,
+        },
+    )
+    .await;
+    let reader = SampleReader::open(&channel, "/source").await.unwrap();
+    assert!(reader.finish().await.is_err());
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !observed.lock().unwrap().disconnected {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
 }
