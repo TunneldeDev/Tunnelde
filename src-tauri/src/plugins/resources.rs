@@ -8,7 +8,15 @@ use crate::error::{AppError, AppResult};
 
 struct Entry<T> {
     lease: Lease,
+    scope: Option<Scope>,
     value: Option<T>,
+}
+
+/// Server-assigned request identity prevents reused public IDs from sharing ownership.
+#[derive(Clone)]
+pub(super) struct Scope {
+    pub client: String,
+    pub request: uuid::Uuid,
 }
 
 pub(super) struct Registry<T> {
@@ -27,7 +35,11 @@ impl<T> Registry<T> {
     }
 
     /// Caller serializes admission and completion with permission revocation.
-    pub fn reserve(self: &Arc<Self>, lease: Lease) -> AppResult<Reservation<T>> {
+    pub fn reserve(
+        self: &Arc<Self>,
+        lease: Lease,
+        scope: Option<Scope>,
+    ) -> AppResult<Reservation<T>> {
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         if entries.len() >= self.total
             || entries
@@ -39,7 +51,14 @@ impl<T> Registry<T> {
             return Err(AppError::validation("plugin.resources.limit"));
         }
         let token = uuid::Uuid::new_v4().to_string();
-        entries.insert(token.clone(), Entry { lease, value: None });
+        entries.insert(
+            token.clone(),
+            Entry {
+                lease,
+                scope,
+                value: None,
+            },
+        );
         Ok(Reservation {
             registry: self.clone(),
             token,
@@ -48,10 +67,39 @@ impl<T> Registry<T> {
     }
 
     pub fn remove_runtime(&self, owner: &str, generation: impl Fn(u64) -> bool) -> Vec<T> {
+        self.remove_scoped(owner, generation, |_| true)
+    }
+
+    pub fn remove_client(&self, owner: &str, generation: u64, client: &str) -> Vec<T> {
+        self.remove_scoped(
+            owner,
+            |value| value == generation,
+            |scope| scope.is_some_and(|scope| scope.client == client),
+        )
+    }
+
+    pub fn remove_request(&self, owner: &str, generation: u64, request: uuid::Uuid) -> Vec<T> {
+        self.remove_scoped(
+            owner,
+            |value| value == generation,
+            |scope| scope.is_some_and(|scope| scope.request == request),
+        )
+    }
+
+    fn remove_scoped(
+        &self,
+        owner: &str,
+        generation: impl Fn(u64) -> bool,
+        scope: impl Fn(Option<&Scope>) -> bool,
+    ) -> Vec<T> {
         let mut entries = self.entries.lock().unwrap_or_else(|e| e.into_inner());
         let keys: Vec<_> = entries
             .iter()
-            .filter(|(_, entry)| entry.lease.id == owner && generation(entry.lease.generation))
+            .filter(|(_, entry)| {
+                entry.lease.id == owner
+                    && generation(entry.lease.generation)
+                    && scope(entry.scope.as_ref())
+            })
             .map(|(key, _)| key.clone())
             .collect();
         keys.into_iter()
@@ -123,17 +171,17 @@ mod tests {
     #[test]
     fn pending_and_live_resources_share_bounded_budgets() {
         let registry = Registry::new(2, 3);
-        let pending = registry.reserve(lease("one", 1)).unwrap();
+        let pending = registry.reserve(lease("one", 1), None).unwrap();
         registry
-            .reserve(lease("one", 1))
+            .reserve(lease("one", 1), None)
             .unwrap()
             .commit("live")
             .unwrap();
-        assert!(registry.reserve(lease("one", 2)).is_err());
-        let other = registry.reserve(lease("two", 1)).unwrap();
-        assert!(registry.reserve(lease("three", 1)).is_err());
+        assert!(registry.reserve(lease("one", 2), None).is_err());
+        let other = registry.reserve(lease("two", 1), None).unwrap();
+        assert!(registry.reserve(lease("three", 1), None).is_err());
         drop(pending);
-        let replacement = registry.reserve(lease("one", 2)).unwrap();
+        let replacement = registry.reserve(lease("one", 2), None).unwrap();
         drop(other);
         drop(replacement);
         registry.forget(|value| value == &"live");
@@ -143,19 +191,19 @@ mod tests {
     #[test]
     fn cleanup_rejects_late_completion_without_touching_new_generation_or_other_owner() {
         let registry = Registry::new(8, 64);
-        let pending = registry.reserve(lease("one", 1)).unwrap();
+        let pending = registry.reserve(lease("one", 1), None).unwrap();
         registry
-            .reserve(lease("one", 1))
+            .reserve(lease("one", 1), None)
             .unwrap()
             .commit("old")
             .unwrap();
         registry
-            .reserve(lease("one", 2))
+            .reserve(lease("one", 2), None)
             .unwrap()
             .commit("new")
             .unwrap();
         registry
-            .reserve(lease("two", 1))
+            .reserve(lease("two", 1), None)
             .unwrap()
             .commit("other")
             .unwrap();
@@ -169,11 +217,103 @@ mod tests {
     #[test]
     fn cancelled_reservation_cannot_remove_a_later_reservation() {
         let registry = Registry::<String>::new(1, 1);
-        let old = registry.reserve(lease("one", 1)).unwrap();
+        let old = registry.reserve(lease("one", 1), None).unwrap();
         registry.remove_runtime("one", |_| true);
-        let new = registry.reserve(lease("one", 2)).unwrap();
+        let new = registry.reserve(lease("one", 2), None).unwrap();
         drop(old);
         new.commit("new".into()).unwrap();
         assert_eq!(registry.remove_runtime("one", |_| true), ["new"]);
+    }
+
+    fn scope(client: &str, request: uuid::Uuid) -> Option<Scope> {
+        Some(Scope {
+            client: client.into(),
+            request,
+        })
+    }
+
+    #[test]
+    fn client_cleanup_releases_pending_and_live_without_crossing_ownership_boundaries() {
+        let registry = Registry::new(8, 16);
+        let request = uuid::Uuid::new_v4();
+        let pending = registry
+            .reserve(lease("one", 1), scope("a", request))
+            .unwrap();
+        for (owner, generation, client, value) in [
+            ("one", 1, Some("a"), "revoked"),
+            ("one", 1, Some("b"), "other-client"),
+            ("one", 1, None, "direct-plugin"),
+            ("one", 2, Some("a"), "replacement"),
+            ("two", 1, Some("a"), "other-plugin"),
+        ] {
+            registry
+                .reserve(
+                    lease(owner, generation),
+                    client.and_then(|c| scope(c, request)),
+                )
+                .unwrap()
+                .commit(value)
+                .unwrap();
+        }
+        assert_eq!(registry.remove_client("one", 1, "a"), ["revoked"]);
+        assert_eq!(pending.commit("late"), Err("late"));
+        assert!(registry.remove_client("one", 1, "a").is_empty());
+        assert_eq!(registry.remove_client("one", 1, "b"), ["other-client"]);
+        assert_eq!(registry.remove_client("one", 2, "a"), ["replacement"]);
+        assert_eq!(registry.remove_client("two", 1, "a"), ["other-plugin"]);
+        assert_eq!(registry.remove_runtime("one", |_| true), ["direct-plugin"]);
+    }
+
+    #[test]
+    fn abandoned_request_cleanup_cannot_remove_a_reused_public_request_id() {
+        let registry = Registry::new(8, 16);
+        let old = uuid::Uuid::new_v4();
+        let replacement = uuid::Uuid::new_v4();
+        let pending = registry.reserve(lease("one", 1), scope("a", old)).unwrap();
+        registry
+            .reserve(lease("one", 1), scope("a", old))
+            .unwrap()
+            .commit("old-live")
+            .unwrap();
+        registry
+            .reserve(lease("one", 1), scope("a", replacement))
+            .unwrap()
+            .commit("new-live")
+            .unwrap();
+        registry
+            .reserve(lease("one", 2), scope("a", old))
+            .unwrap()
+            .commit("new-runtime")
+            .unwrap();
+        registry
+            .reserve(lease("two", 1), scope("a", old))
+            .unwrap()
+            .commit("other-plugin")
+            .unwrap();
+        assert_eq!(registry.remove_request("one", 1, old), ["old-live"]);
+        assert_eq!(pending.commit("late"), Err("late"));
+        assert!(registry.remove_request("one", 1, old).is_empty());
+        assert_eq!(registry.remove_request("one", 1, replacement), ["new-live"]);
+        assert_eq!(registry.remove_request("one", 2, old), ["new-runtime"]);
+        assert_eq!(registry.remove_request("two", 1, old), ["other-plugin"]);
+    }
+
+    #[test]
+    fn revoked_pending_reservations_release_capacity_before_their_futures_finish() {
+        let registry = Registry::<&str>::new(1, 1);
+        let request = uuid::Uuid::new_v4();
+        let old = registry
+            .reserve(lease("one", 1), scope("a", request))
+            .unwrap();
+        assert!(registry
+            .reserve(lease("one", 1), scope("b", request))
+            .is_err());
+        registry.remove_client("one", 1, "a");
+        let new = registry
+            .reserve(lease("one", 1), scope("b", request))
+            .unwrap();
+        drop(old);
+        new.commit("new").unwrap();
+        assert_eq!(registry.remove_client("one", 1, "b"), ["new"]);
     }
 }

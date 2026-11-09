@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use tauri::{AppHandle, Manager};
 
-use super::{api::HostContext, security::Lease};
+use super::{api::HostContext, resources::Scope, security::Lease};
 use crate::{
     error::{AppError, AppResult},
     ssh::{SessionInfo, SshConnectRequest},
@@ -40,10 +40,30 @@ pub(super) async fn connect(
         .plugins
         .security
         .with_authorized(&lease, &["ssh.exec"], || {
-            // Background transports observe closure periodically. Admission must
-            // not wait for their polling task to forget an already-dead ID.
-            state.plugins.sessions.forget(|id| !state.ssh.is_active(id));
-            state.plugins.sessions.reserve(lease.clone())
+            super::tools::with_client_authorized(
+                &context.id,
+                context.generation,
+                context.tool_client.as_deref(),
+                || {
+                    // Background transports observe closure periodically. Admission must
+                    // not wait for their polling task to forget an already-dead ID.
+                    state.plugins.sessions.forget(|id| !state.ssh.is_active(id));
+                    let scope = context
+                        .tool_client
+                        .as_ref()
+                        .map(|client| {
+                            context
+                                .tool_request
+                                .map(|request| Scope {
+                                    client: client.clone(),
+                                    request,
+                                })
+                                .ok_or_else(|| AppError::validation("plugin.tools.invalidIdentity"))
+                        })
+                        .transpose()?;
+                    state.plugins.sessions.reserve(lease.clone(), scope)
+                },
+            )
         })?;
     let mut pending = state
         .plugins
@@ -66,9 +86,16 @@ pub(super) async fn connect(
         .plugins
         .security
         .with_authorized(&lease, &["ssh.exec"], || {
-            reservation
-                .commit(session.id.clone())
-                .map_err(|_| AppError::validation("pluginSecurity.changed"))
+            super::tools::with_client_authorized(
+                &context.id,
+                context.generation,
+                context.tool_client.as_deref(),
+                || {
+                    reservation
+                        .commit(session.id.clone())
+                        .map_err(|_| AppError::validation("pluginSecurity.changed"))
+                },
+            )
         })?;
     // A server can close between returning from connect and accepting ownership.
     // Natural closure forgets live IDs; rechecking also covers closure before commit.
@@ -83,5 +110,51 @@ pub(super) fn remove_runtime(app: &AppHandle, owner: &str, generation: impl Fn(u
     let sessions = state.plugins.sessions.remove_runtime(owner, generation);
     for session_id in sessions {
         let _ = crate::ssh::disconnect(app, &session_id);
+    }
+}
+
+pub(super) fn remove_client(context: &HostContext, client: &str) {
+    let state = context.app.state::<AppState>();
+    let sessions = state
+        .plugins
+        .sessions
+        .remove_client(&context.id, context.generation, client);
+    for id in sessions {
+        let _ = crate::ssh::disconnect(&context.app, &id);
+    }
+}
+
+/// Own newly-created connections until the whole tool invocation accepts its
+/// result. Cancellation, errors and dropped transport futures dispose them.
+pub(super) struct Request {
+    context: HostContext,
+    request: uuid::Uuid,
+    accepted: bool,
+}
+impl Request {
+    pub fn new(context: &HostContext, request: uuid::Uuid) -> Self {
+        Self {
+            context: context.clone(),
+            request,
+            accepted: false,
+        }
+    }
+    pub fn accept(&mut self) {
+        self.accepted = true;
+    }
+}
+impl Drop for Request {
+    fn drop(&mut self) {
+        if !self.accepted {
+            let state = self.context.app.state::<AppState>();
+            let sessions = state.plugins.sessions.remove_request(
+                &self.context.id,
+                self.context.generation,
+                self.request,
+            );
+            for id in sessions {
+                let _ = crate::ssh::disconnect(&self.context.app, &id);
+            }
+        }
     }
 }

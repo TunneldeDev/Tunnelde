@@ -347,6 +347,15 @@ checks still apply. Use an existing user-created session when work needs an inde
 lifetime; explicit ownership handoff is not available yet. `sessions.list` keeps its
 stable response shape and still lists all active sessions visible to the authorized plugin.
 
+Connections created through `tools.invoke` also belong to its `clientId` (default `agent`).
+`tools.revokeClient` permanently revokes that identity for the current runtime generation,
+cancels its pending invocations and releases its tasks, transfers and SSH connections.
+Other clients, direct plugin calls, user-created connections and replacement generations
+are preserved. Resume with a new client identity. `tools.cancel` cancels a pending request
+and closes connections whose result has not been accepted; cancelling a completed request
+does not close an already delivered connection. Reusing a public `requestId` cannot make
+old cancellation cleanup affect a newer request. Completed remote effects are not rolled back.
+
 | Permission                          | Available operations                                                                                                           |
 | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `app.read`, `app.openExternal`      | App/platform metadata; validated HTTP(S) browser links                                                                         |
