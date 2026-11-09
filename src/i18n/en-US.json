@@ -1231,6 +1231,13 @@
       "expired": "This tab bar control has expired. Try the updated control.",
       "invalidContext": "This tab bar control is unavailable for the current tab."
     },
+    "sessions": {
+      "notOwned": "This connection is no longer owned by this plugin runtime. It may have closed or already been kept by you.",
+      "resultPending": "This connection is still being delivered to its client. Wait for the connection request to finish before keeping it.",
+      "confirmationBusy": "A connection ownership confirmation is already open. Close it before requesting another.",
+      "confirmationExpired": "The connection ownership request expired. Close its confirmation and try again.",
+      "confirmationClosed": "The connection ownership confirmation closed without a decision. The connection remains managed by its plugin."
+    },
     "resources": {
       "limit": "Plugin connection limit reached (8 per plugin, 64 total, including pending requests). Disconnect unused connections before retrying."
     },
