@@ -28,6 +28,19 @@ const entry = (name: string, extra: Partial<FileEntry> = {}): FileEntry => ({
 const names = (entries: FileEntry[]) => entries.map((item) => item.name);
 
 describe("file list views", () => {
+  it("combines qualifiers with local millisecond timestamps and explicit hidden-file requests", () => {
+    const entries = [
+      entry("report.json", { size: 4096, modified: new Date(2026, 10, 9, 12).getTime() }),
+      entry(".env"),
+      entry("folder", { isDir: true }),
+    ];
+    const filter = (query: string) =>
+      names(visibleFiles(entries, preferences, collator, [], { query, kind: "all" }));
+    expect(filter("ext:json size:>=4KiB modified:2026-11-09")).toEqual(["report.json"]);
+    expect(filter("is:hidden")).toEqual([".env"]);
+    expect(filter("type:folder")).toEqual(["folder"]);
+    expect(filter("-ext:json")).toEqual(["folder"]);
+  });
   it("hides dotfiles and platform hidden attributes without mutating raw metadata", () => {
     const entries = [entry("visible"), entry(".env"), entry("system", { isHidden: true })];
     expect(names(visibleFiles(entries, preferences, collator))).toEqual(["visible"]);

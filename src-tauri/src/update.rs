@@ -8,7 +8,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
 use crate::db;
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, UpdateSourceFailure};
 use crate::models::now_ms;
 use crate::settings::Settings;
 use crate::state::AppState;
@@ -51,6 +51,7 @@ pub struct UpdateState {
     pub progress: Option<u64>,
     pub content_length: Option<u64>,
     pub error: Option<String>,
+    pub source_errors: Option<Vec<UpdateSourceFailure>>,
     pub last_checked: Option<i64>,
     pub available: bool,
     pub auto_install: bool,
@@ -73,6 +74,7 @@ impl UpdateState {
             progress: None,
             content_length: None,
             error: None,
+            source_errors: None,
             last_checked: None,
             available: false,
             auto_install: false,
@@ -109,6 +111,7 @@ pub struct UpdateService {
     // Retain the exact signed package selected by Check, rather than checking again at Install.
     pending: Mutex<Option<Update>>,
     busy: AtomicBool,
+    github_api_backoff: feeds::ApiBackoff,
 }
 
 impl UpdateService {
@@ -117,6 +120,7 @@ impl UpdateService {
             state: RwLock::new(UpdateState::new(current_version, &Settings::default())),
             pending: Mutex::new(None),
             busy: AtomicBool::new(false),
+            github_api_backoff: feeds::ApiBackoff::default(),
         }
     }
 
@@ -149,10 +153,18 @@ impl UpdateService {
     }
 
     fn fail(&self, app: &AppHandle, error: &AppError) {
+        let failures = error.update_source_errors();
+        tracing::warn!(
+            reason = %error,
+            source_errors = ?failures,
+            action = "open_update_details_or_output",
+            "application update failed"
+        );
         {
             let mut guard = self.write();
             guard.phase = Phase::Error;
             guard.error = Some(error.to_string());
+            guard.source_errors = failures;
         }
         self.publish(app);
     }
@@ -276,6 +288,30 @@ fn configured_updater(
         .map_err(|error| AppError::Update(error.to_string()))
 }
 
+async fn check_manifest(
+    client: &reqwest::Client,
+    updater: &tauri_plugin_updater::Updater,
+    feed: &Feed,
+) -> AppResult<Option<Update>> {
+    let raw = if let Some(raw) = &feed.manifest {
+        Some(raw.clone())
+    } else {
+        feeds::manifest(client, &feed.url).await?
+    };
+    let Some(raw) = raw else { return Ok(None) };
+    // Keep Tauri's platform selection, comparator, runtime public key and signed-version
+    // verification. Only HTTP transport is owned here, so status and bounded-body
+    // diagnostics are not lost inside Updater::check().
+    updater.restore_update(raw).map_err(|error| {
+        let reason = match error {
+            tauri_plugin_updater::Error::TargetNotFound(_)
+            | tauri_plugin_updater::Error::TargetsNotFound(_) => "updates.platformUnavailable",
+            _ => "updates.invalidFeed",
+        };
+        feeds::manifest_error(&feed.url, reason)
+    })
+}
+
 pub async fn check(app: AppHandle, force: bool) -> AppResult<UpdateState> {
     let service = app.state::<AppState>();
     let Some(_busy) = service.update.acquire() else {
@@ -312,18 +348,19 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
             .iter()
             .map(|feed| configured_updater(app, &settings, feed))
             .collect::<AppResult<Vec<_>>>()?;
+        let client = crate::network::http_client(app, "updates")?;
         let (first, second, third) = tokio::join!(
-            checks[0].check(),
+            check_manifest(&client, &checks[0], &feeds[0]),
             async {
                 if checks.len() > 1 {
-                    checks[1].check().await
+                    check_manifest(&client, &checks[1], &feeds[1]).await
                 } else {
                     Ok(None)
                 }
             },
             async {
                 if checks.len() > 2 {
-                    checks[2].check().await
+                    check_manifest(&client, &checks[2], &feeds[2]).await
                 } else {
                     Ok(None)
                 }

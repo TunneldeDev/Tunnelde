@@ -9,6 +9,21 @@ import { normalizeBlocks } from "@/lib/plugins/pluginView";
 import { chat } from "../fixtures/pluginChat";
 
 describe("controlled plugin chat payloads", () => {
+  it("retains task run identities in snapshots and live task updates", () => {
+    const task = { id: "runner", runId: "original-run", status: "interrupted", recoverable: true };
+    const normalized = normalizeChatBlock({ ...chat, tasks: [task] })!;
+    expect(normalized.tasks[0]?.runId).toBe("original-run");
+    const running = { ...chat, run: { id: "current-run", status: "running" as const, seq: 0 } };
+    const updated = applyChatEvent(running, "chat", {
+      viewId: "chat",
+      sessionId: chat.activeSessionId,
+      runId: "current-run",
+      seq: 1,
+      type: "task",
+      task,
+    });
+    expect(updated.tasks[0]?.runId).toBe("original-run");
+  });
   it("marks a background session finished without replacing the current conversation or accepting another run", () => {
     const block = {
       ...chat,

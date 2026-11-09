@@ -13,6 +13,10 @@ describe("portable settings snapshots", () => {
       transferCompression: false,
       colors: { background: "#123456" },
       keyboardShortcuts: { "app.settings": ["Mod+Comma"] },
+      shortcutRules: {
+        "terminal.paste": { "Mod+V": { priority: 300, propagation: "continue" as const } },
+      },
+      showShortcutDetails: true,
       password: "should never be exported",
       pluginConfig: { token: "private" },
     };
@@ -25,6 +29,10 @@ describe("portable settings snapshots", () => {
     expect(snapshot.fileIconTheme).toBe("file-icons:common");
     expect(snapshot.transferCompression).toBe(false);
     expect(snapshot.keyboardShortcuts).toEqual(settings.keyboardShortcuts);
+    expect(snapshot.shortcutRules).toEqual(settings.shortcutRules);
+    expect(snapshot.showShortcutDetails).toBe(true);
+    snapshot.shortcutRules!["terminal.paste"]!["Mod+V"]!.priority = 1;
+    expect(settings.shortcutRules["terminal.paste"]["Mod+V"].priority).toBe(300);
     snapshot.colors!.background = "#ffffff";
     snapshot.keyboardShortcuts!["app.settings"]!.push("F2");
     expect(settings.colors.background).toBe("#123456");

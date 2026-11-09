@@ -18,6 +18,151 @@ const editor = JSON.parse(
     "utf8",
   ),
 );
+const tabBar = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/plugin-compat/tab-bar-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+const logging = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/plugin-compat/logging-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+test("logging schema preserves legacy calls, nullable identifiers and open structured values", () => {
+  const validate = ajv.compile(logging.methods.log.inputSchema);
+  for (const params of [
+    { message: "" },
+    { message: "hello", level: "WARNING" },
+    { message: "hello", domain: null, operation: null, requestId: null, future: true },
+    { message: "hello", fields: { password: { "unvalidated/secret": [[[[[1]]]]] } } },
+    { message: "hello", domain: "x".repeat(128), fields: { ["x".repeat(64)]: null } },
+  ])
+    assert.ok(validate(params), JSON.stringify(validate.errors));
+  for (const params of [
+    {},
+    { message: null },
+    { message: "x".repeat(16385) },
+    { message: "ok", level: "Info" },
+    { message: "ok", level: null },
+    { message: "ok", fields: [] },
+    { message: "ok", fields: null },
+    { message: "ok", fields: { "bad/key": 1 } },
+    { message: "ok", fields: { ["x".repeat(65)]: 1 } },
+    ...["domain", "operation", "requestId"].flatMap((name) =>
+      ["", "a\n", "a\r", "a\u2028", "x".repeat(129), "路径", 1].map((value) => ({
+        message: "ok",
+        [name]: value,
+      })),
+    ),
+  ])
+    assert.equal(validate(params), false, JSON.stringify(params));
+  // Structurally valid can still fail byte/depth/node quotas on the host.
+  assert.ok(validate({ message: "文".repeat(5462) }));
+  assert.ok(validate({ message: "ok", fields: { a: [[[[1]]]] } }));
+  const result = ajv.compile(logging.methods.log.resultSchema);
+  assert.ok(result(null));
+  assert.equal(result(true), false);
+  assert.equal(result({ accepted: true }), false);
+});
+
+test("tab-bar command schemas require complete advisory context and preserve nullable fields", () => {
+  const contract = tabBar.methods["tabBar.set"];
+  const validate = ajv.compile(contract.commandContextSchema);
+  const input = {
+    _locale: null,
+    _tabBar: { itemId: "run", tabId: "opaque", tabKind: "future", paneId: "p", value: null },
+  };
+  assert.ok(validate(input));
+  assert.ok(validate({ ...input, _locale: "zh-CN", future: true }));
+  assert.ok(validate({ ...input, _tabBar: { ...input._tabBar, value: "远端", future: true } }));
+  for (const field of ["_locale", "_tabBar"]) {
+    const missing = clone(input);
+    delete missing[field];
+    assert.equal(validate(missing), false, field);
+  }
+  for (const field of Object.keys(input._tabBar)) {
+    const missing = clone(input);
+    delete missing._tabBar[field];
+    assert.equal(validate(missing), false, field);
+  }
+  for (const [field, value] of [
+    ["itemId", "bad/id"],
+    ["paneId", ""],
+    ["tabId", "x\n"],
+    ["value", 1],
+  ]) {
+    assert.equal(
+      validate({ ...input, _tabBar: { ...input._tabBar, [field]: value } }),
+      false,
+      field,
+    );
+  }
+});
+
+test("contract gate rejects missing, failed, malformed and undeclared command samples", () => {
+  const discovery = {
+    methods: Object.entries(tabBar.methods).map(([name, contract]) => ({
+      name,
+      contract,
+      stability: "stable",
+      since: "0.32.0-beta.6",
+      permissions: [],
+    })),
+  };
+  const params = { id: "run", title: "Run", kind: "button", command: "go" };
+  const responses = {
+    samples: [
+      {
+        method: "tabBar.set",
+        params,
+        result: null,
+        commandInput: {
+          _locale: null,
+          _tabBar: { itemId: "run", tabId: "opaque", tabKind: "future", paneId: "p", value: null },
+        },
+      },
+      { method: "tabBar.set", params, error: { code: -32000, message: "plugin.tabBar.limit" } },
+      { method: "tabBar.remove", params: { id: "run" }, result: true },
+      {
+        method: "tabBar.remove",
+        params: { id: "run" },
+        error: { code: -32000, message: "plugin.tabBar.expired" },
+      },
+    ],
+  };
+  const emptyFloor = { version: 1, methods: {} };
+  assert.deepEqual(checkCoreContracts(discovery, responses, emptyFloor), {
+    methods: 2,
+    samples: 4,
+  });
+  for (const mutate of [
+    (r) => {
+      delete r.samples[0].commandInput;
+    },
+    (r) => {
+      delete r.samples[0].commandInput._tabBar.paneId;
+    },
+    (r) => {
+      r.samples[1].commandInput = r.samples[0].commandInput;
+    },
+    (r) => {
+      r.samples[2].commandInput = r.samples[0].commandInput;
+    },
+  ]) {
+    const copy = clone(responses);
+    mutate(copy);
+    assert.throws(() => checkCoreContracts(discovery, copy, emptyFloor));
+  }
+  for (const schema of [undefined, null, { type: "not-a-schema-type" }, false]) {
+    const copy = clone(discovery);
+    if (schema === undefined) delete copy.methods[0].contract.commandContextSchema;
+    else copy.methods[0].contract.commandContextSchema = schema;
+    assert.throws(() => checkCoreContracts(copy, responses, emptyFloor));
+  }
+});
 
 test("editor contract preserves document identity and allows forward-compatible fields", () => {
   const active = ajv.compile(editor.methods["editor.active"].resultSchema);

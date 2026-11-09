@@ -315,6 +315,99 @@ fn copy_supported() -> CopyReply {
 }
 
 #[tokio::test]
+async fn server_copy_ignores_network_limits_and_keeps_live_task_limits() {
+    for limited in [false, true] {
+        let (sessions, observed, from, to) =
+            copy_server(copy_supported(), CloseReply::default()).await;
+        let bytes: Vec<_> = (0..64 * 1024 + 17).map(|n| (n % 239) as u8).collect();
+        observed.lock().unwrap().data = bytes.clone();
+        let controller = Arc::new(bandwidth::Controller::default());
+        controller.configure(1, 1);
+        controller.register("copy");
+        if limited {
+            controller.set_task("copy", 1).unwrap();
+        }
+        let files = Files::open(&sessions, &from, &to)
+            .await
+            .unwrap()
+            .with_throttle(bandwidth::Throttle {
+                controller: controller.clone(),
+                id: "copy".into(),
+            });
+        let stop = AtomicBool::new(false);
+        let count = AtomicU64::new(0);
+        let (copied, ()) = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(
+                files.segment(0..bytes.len() as u64, 3, &stop, &count),
+                async {
+                    if limited {
+                        wait_for(|| !observed.lock().unwrap().copies.is_empty()).await;
+                        let copied = observed.lock().unwrap().copied.len();
+                        assert!(copied > 0 && copied < bytes.len());
+                        // A live task limit must throttle server-side disk IO,
+                        // but removing it must not leave the network limit active.
+                        controller.set_task("copy", 0).unwrap();
+                    }
+                }
+            )
+        })
+        .await
+        .expect("server-side copy was throttled by a network bandwidth limit");
+        copied.unwrap();
+        files.finish(false).await.unwrap();
+        let state = observed.lock().unwrap();
+        assert_eq!(state.copied, bytes);
+        assert_eq!(count.load(Ordering::Relaxed), bytes.len() as u64);
+        assert!(state.reads.is_empty() && state.writes.is_empty());
+        assert_eq!(state.closes, 2);
+    }
+}
+
+#[tokio::test]
+async fn relayed_remote_copy_still_obeys_each_network_limit() {
+    for (upload, download) in [(1, 0), (0, 1)] {
+        let (sessions, observed, from, to) =
+            copy_server(CopyReply::default(), CloseReply::default()).await;
+        let bytes: Vec<_> = (0..64 * 1024 + 17).map(|n| (n % 239) as u8).collect();
+        observed.lock().unwrap().data = bytes.clone();
+        let controller = Arc::new(bandwidth::Controller::default());
+        controller.configure(upload, download);
+        controller.register("relay");
+        let files = Files::open(&sessions, &from, &to)
+            .await
+            .unwrap()
+            .with_throttle(bandwidth::Throttle {
+                controller: controller.clone(),
+                id: "relay".into(),
+            });
+        let stop = AtomicBool::new(false);
+        let count = AtomicU64::new(0);
+        let (copied, ()) = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(
+                files.segment(0..bytes.len() as u64, 3, &stop, &count),
+                async {
+                    wait_for(|| !observed.lock().unwrap().reads.is_empty()).await;
+                    // The same session without copy-data still relays bytes
+                    // through the client, so either network limit must apply.
+                    assert!(observed.lock().unwrap().reads[0] <= 103);
+                    controller.configure(0, 0);
+                }
+            )
+        })
+        .await
+        .unwrap();
+        copied.unwrap();
+        files.finish(false).await.unwrap();
+        let state = observed.lock().unwrap();
+        assert_eq!(state.copied, bytes);
+        assert_eq!(count.load(Ordering::Relaxed), bytes.len() as u64);
+        assert!(state.copies.is_empty());
+        assert!(!state.reads.is_empty() && !state.writes.is_empty());
+        assert_eq!(state.closes, 2);
+    }
+}
+
+#[tokio::test]
 async fn same_channel_copy_uses_bounded_server_ranges_and_preserves_resume_prefix() {
     let (sessions, state, from, to) = copy_server(copy_supported(), CloseReply::default()).await;
     let bytes: Vec<_> = (0..3 * 1024 * 1024 + 51).map(|n| (n % 239) as u8).collect();

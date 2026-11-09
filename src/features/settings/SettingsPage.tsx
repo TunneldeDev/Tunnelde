@@ -1,6 +1,8 @@
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
-import { FileCode2, RotateCcw, Search, X } from "lucide-react";
+import { FileCode2, RotateCcw, Search } from "lucide-react";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { matchesSearch, parseSearchQuery, toggleSearchFilter } from "@/lib/search/query";
 import {
   Fragment,
   lazy,
@@ -14,7 +16,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { Input, Switch, Textarea } from "@/components/ui/form/Field";
+import { Switch, Textarea } from "@/components/ui/form/Field";
 import { Select } from "@/components/ui/form/Select";
 import { ColorPicker } from "@/components/ui/form/ColorPicker";
 import { validateUserCss } from "@/lib/prefs/appearance";
@@ -358,7 +360,12 @@ export function SettingsPage() {
   const isModified = (item: SettingDefinition) =>
     !samePreference(settings[item.key], defaults[item.key]) ||
     (item.key === "userCss" && cssDraft !== null && cssDraft !== settings.userCss);
-  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const search = parseSearchQuery(query, ["is", "section", "id"]);
+  const modifiedRequested =
+    modifiedOnly ||
+    search.filters.some(
+      (term) => !term.exclude && term.key === "is" && term.values.includes("modified"),
+    );
   const storageText = [
     "storage",
     "migration",
@@ -374,8 +381,10 @@ export function SettingsPage() {
     .join(" ")
     .toLocaleLowerCase();
   const showStorage =
-    !modifiedOnly &&
-    (!filtering ? section === "advanced" : words.every((word) => storageText.includes(word)));
+    !modifiedRequested &&
+    (!filtering
+      ? section === "advanced"
+      : matchesSearch(search, storageText, { section: "advanced", id: "storage", is: [] }));
   const visible = definitions.filter((item) => {
     if (!filtering && item.section !== section) return false;
     if (modifiedOnly && !isModified(item)) return false;
@@ -401,7 +410,11 @@ export function SettingsPage() {
     ]
       .join(" ")
       .toLocaleLowerCase();
-    return words.every((word) => text.includes(word));
+    return matchesSearch(search, text, {
+      section: item.section,
+      id: item.key,
+      is: isModified(item) ? ["modified"] : [],
+    });
   });
   const resetOne = (definition: SettingDefinition) => {
     clearNumberDrafts([definition.key]);
@@ -441,25 +454,37 @@ export function SettingsPage() {
         }}
       />
       <div className="settings-toolbar">
-        <div className="settings-search">
-          <Search size={15} aria-hidden="true" />
-          <Input
-            aria-label={t("settings.search")}
-            placeholder={t("settings.search")}
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
-          {query ? (
-            <IconButton size="sm" label={t("settings.clearSearch")} onClick={() => setQuery("")}>
-              <X size={13} />
-            </IconButton>
-          ) : null}
-        </div>
+        <SearchField
+          className="settings-search"
+          aria-label={t("settings.search")}
+          placeholder={t("settings.search")}
+          value={query}
+          onChange={setQuery}
+          presets={[
+            { key: "@is", value: "modified", label: t("searchUi.modified") },
+            ...SETTINGS_SECTIONS.map((section) => ({
+              key: "section",
+              value: section,
+              label: t(SECTION_LABELS[section]),
+              exclusive: true,
+            })),
+            { key: "id", value: "", label: t("searchUi.id") },
+          ]}
+        />
         <label className="settings-modified-filter">
           <input
             type="checkbox"
-            checked={modifiedOnly}
-            onChange={(event) => setModifiedOnly(event.target.checked)}
+            checked={modifiedRequested}
+            onChange={(event) => {
+              setModifiedOnly(event.target.checked);
+              if (
+                !event.target.checked &&
+                search.filters.some(
+                  (term) => !term.exclude && term.key === "is" && term.values.includes("modified"),
+                )
+              )
+                setQuery(toggleSearchFilter(query, "@is", "modified", true));
+            }}
           />
           {t("settings.modifiedOnly")}
           <span>{definitions.filter(isModified).length}</span>
@@ -600,6 +625,13 @@ export function SettingsPage() {
                           )
                         ) : definition.kind === "network" ? (
                           <NetworkSettingsSection key={definition.key} />
+                        ) : definition.kind === "shortcutRules" ? (
+                          filtering &&
+                          !group.definitions.some((item) => item.kind === "shortcuts") &&
+                          group.definitions.find((item) => item.kind === "shortcutRules") ===
+                            definition ? (
+                            <KeyboardShortcuts key={definition.key} />
+                          ) : null
                         ) : definition.kind === "shortcuts" ? (
                           <div key={definition.key} data-setting="keyboardShortcuts">
                             <KeyboardShortcuts />

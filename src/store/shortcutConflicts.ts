@@ -15,6 +15,7 @@ export interface PendingShortcutConflict {
 }
 interface State {
   queue: PendingShortcutConflict[];
+  resolving: boolean;
   query: string;
   request: number;
   enqueue: (previous: PluginInfo | undefined, plugin: PluginInfo, plugins: PluginInfo[]) => void;
@@ -22,9 +23,11 @@ interface State {
   resolve: (keep: string) => Promise<void>;
   search: (query: string) => void;
   openSearch: (query: string) => void;
+  review: (query: string) => void;
 }
 export const useShortcutConflicts = create<State>((set, get) => ({
   queue: [],
+  resolving: false,
   query: "",
   request: 0,
   enqueue: (previous, plugin, plugins) => {
@@ -63,33 +66,42 @@ export const useShortcutConflicts = create<State>((set, get) => ({
   dismiss: () => set((state) => ({ queue: state.queue.slice(1) })),
   resolve: async (keep) => {
     const conflict = get().queue[0];
-    if (!conflict) return;
-    const definitions = shortcutCommands(
-      (await import("@/store/plugins")).usePlugins.getState().items,
-    );
-    const remove = keep === conflict.incoming ? conflict.existing : conflict.incoming;
-    const settings = useSettings.getState();
-    const overrides = settings.settings.keyboardShortcuts ?? {};
-    const remaining = bindingsFor(remove, overrides, undefined, definitions).filter(
-      (key) => displayShortcut(key) !== displayShortcut(conflict.binding),
-    );
-    const next = { ...overrides, [remove]: remaining };
-    if (await settings.update({ keyboardShortcuts: next })) {
-      set((state) => ({
-        queue: state.queue
-          .slice(1)
-          .filter((item) =>
-            bindingsFor(item.incoming, next, undefined, definitions).some(
-              (binding) =>
-                displayShortcut(binding) === displayShortcut(item.binding) &&
-                shortcutConflicts(item.incoming, binding, next, definitions).some(
-                  (other) => other.id === item.existing,
-                ),
-            ),
+    if (!conflict || get().resolving || ![conflict.incoming, conflict.existing].includes(keep))
+      return;
+    set({ resolving: true });
+    try {
+      const { usePlugins } = await import("@/store/plugins");
+      const definitions = shortcutCommands(usePlugins.getState().items);
+      const remove = keep === conflict.incoming ? conflict.existing : conflict.incoming;
+      const settings = useSettings.getState();
+      const overrides = settings.settings.keyboardShortcuts ?? {};
+      const remaining = bindingsFor(remove, overrides, undefined, definitions).filter(
+        (key) => displayShortcut(key) !== displayShortcut(conflict.binding),
+      );
+      const next = { ...overrides, [remove]: remaining };
+      if (await settings.update({ keyboardShortcuts: next })) {
+        const current = shortcutCommands(usePlugins.getState().items);
+        set((state) => ({
+          // The user may have dismissed this dialog while persistence was pending.
+          // Remove only its captured pair, never whichever dialog is first now.
+          queue: state.queue.filter(
+            (item) =>
+              item !== conflict &&
+              bindingsFor(item.incoming, next, undefined, current).some(
+                (binding) =>
+                  displayShortcut(binding) === displayShortcut(item.binding) &&
+                  shortcutConflicts(item.incoming, binding, next, current).some(
+                    (other) => other.id === item.existing,
+                  ),
+              ),
           ),
-      }));
+        }));
+      }
+    } finally {
+      set({ resolving: false });
     }
   },
   search: (query) => set({ query }),
   openSearch: (query) => set((state) => ({ query, request: state.request + 1 })),
+  review: (query) => set((state) => ({ queue: [], query, request: state.request + 1 })),
 }));

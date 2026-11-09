@@ -5,12 +5,16 @@ use std::os::windows::ffi::OsStrExt;
 use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
 use std::os::windows::io::AsRawHandle;
 use std::path::Path;
+use windows_sys::Win32::Foundation::{
+    ERROR_HANDLE_EOF, ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA,
+};
 use windows_sys::Win32::Storage::FileSystem::{
-    FileDispositionInfo, FileIdInfo, FileRenameInfo, FileRenameInfoEx, GetFileInformationByHandle,
-    GetFileInformationByHandleEx, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
-    FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_DISPOSITION_INFO,
-    FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_ID_INFO,
-    FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FileDispositionInfo, FileIdInfo, FileRenameInfo, FileRenameInfoEx, FileStreamInfo,
+    GetFileInformationByHandle, GetFileInformationByHandleEx, SetFileInformationByHandle,
+    BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
+    FILE_DISPOSITION_INFO, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+    FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_ID_INFO, FILE_RENAME_INFO, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FILE_STREAM_INFO,
 };
 use windows_sys::Win32::System::WindowsProgramming::{
     FILE_RENAME_FLAG_POSIX_SEMANTICS, FILE_RENAME_FLAG_REPLACE_IF_EXISTS,
@@ -77,6 +81,95 @@ fn object_identity(file: &impl AsRawHandle, directory: bool) -> io::Result<FileI
 /// fail, rather than allowing verification against a file that can still change.
 pub struct GuardedFile(File);
 
+/// Pin a directory itself, without claiming its children cannot change. Every
+/// ancestor must stay pinned while a caller uses a descendant's absolute path.
+pub struct GuardedDirectory(File);
+
+fn has_named_streams(file: &File) -> io::Result<bool> {
+    // A default ::$DATA entry fits easily. An overflowing list necessarily
+    // contains another stream; no unbounded enumeration/allocation is needed.
+    let mut storage = [0u64; 64];
+    // SAFETY: the live handle and aligned, initialized output buffer are valid
+    // for the requested information class and its variable-length structure.
+    if unsafe {
+        GetFileInformationByHandleEx(
+            file.as_raw_handle(),
+            FileStreamInfo,
+            storage.as_mut_ptr().cast(),
+            std::mem::size_of_val(&storage) as u32,
+        )
+    } == 0
+    {
+        let error = io::Error::last_os_error();
+        return match error.raw_os_error().map(|code| code as u32) {
+            Some(ERROR_HANDLE_EOF) => Ok(false),
+            Some(ERROR_MORE_DATA | ERROR_INSUFFICIENT_BUFFER) => Ok(true),
+            _ => Err(error),
+        };
+    }
+    // SAFETY: a successful call initialized this header; storage has its
+    // required alignment and more than enough space for the default name.
+    let info = unsafe { &*storage.as_ptr().cast::<FILE_STREAM_INFO>() };
+    let default: [u16; 7] = [58, 58, 36, 68, 65, 84, 65]; // ::$DATA
+    if info.NextEntryOffset != 0 || info.StreamNameLength as usize != default.len() * 2 {
+        return Ok(true);
+    }
+    // SAFETY: the checked default length is within the fixed output buffer.
+    let name = unsafe { std::slice::from_raw_parts(info.StreamName.as_ptr(), default.len()) };
+    Ok(name != default)
+}
+
+impl GuardedDirectory {
+    pub fn pin(path: &Path) -> io::Result<Self> {
+        Self::open(path, FILE_GENERIC_READ)
+    }
+
+    pub fn deletable(path: &Path) -> io::Result<Self> {
+        Self::open(path, FILE_GENERIC_READ | DELETE)
+    }
+
+    fn open(path: &Path, access: u32) -> io::Result<Self> {
+        let file = OpenOptions::new()
+            .access_mode(access)
+            .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)?;
+        directory_identity(&file)?;
+        Ok(Self(file))
+    }
+
+    pub fn identity(&self) -> io::Result<FileIdentity> {
+        directory_identity(&self.0)
+    }
+
+    pub fn has_named_streams(&self) -> io::Result<bool> {
+        has_named_streams(&self.0)
+    }
+
+    /// The filesystem rejects nonempty directories atomically. Never recurse:
+    /// newly inserted or unplanned children must remain with their source.
+    pub fn delete(self) -> io::Result<()> {
+        delete_object(&self.0)
+    }
+}
+
+fn delete_object(file: &File) -> io::Result<()> {
+    let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
+    // SAFETY: the live file owns the handle, and the buffer matches this class.
+    if unsafe {
+        SetFileInformationByHandle(
+            file.as_raw_handle(),
+            FileDispositionInfo,
+            (&disposition as *const FILE_DISPOSITION_INFO).cast(),
+            std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
+        )
+    } == 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
 impl GuardedFile {
     pub fn reader(&self) -> io::Result<File> {
         self.0.try_clone()
@@ -108,6 +201,10 @@ impl GuardedFile {
 
     pub fn identity(&self) -> io::Result<FileIdentity> {
         identity(&self.0)
+    }
+
+    pub fn has_named_streams(&self) -> io::Result<bool> {
+        has_named_streams(&self.0)
     }
 
     fn open(path: &Path, access: u32) -> io::Result<Self> {
@@ -217,21 +314,7 @@ impl GuardedFile {
     /// Delete the held file object. Never look the path up again after verifying it.
     /// A failure leaves the file present; dropping an uncommitted guard only unlocks it.
     pub fn delete(self) -> io::Result<()> {
-        let disposition = FILE_DISPOSITION_INFO { DeleteFile: true };
-        // SAFETY: the handle belongs to the live File; the structure matches the
-        // requested information class and remains valid for the complete call.
-        if unsafe {
-            SetFileInformationByHandle(
-                self.0.as_raw_handle(),
-                FileDispositionInfo,
-                (&disposition as *const FILE_DISPOSITION_INFO).cast(),
-                std::mem::size_of::<FILE_DISPOSITION_INFO>() as u32,
-            )
-        } == 0
-        {
-            return Err(io::Error::last_os_error());
-        }
-        Ok(())
+        delete_object(&self.0)
     }
 }
 

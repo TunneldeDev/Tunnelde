@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { matchesSearch, matchesSearchDate, parseSearchQuery } from "@/lib/search/query";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { chatSessionTitle, type ChatSession } from "@/lib/plugins/pluginChat";
 
@@ -36,11 +38,17 @@ export function PluginChatSessions({
   const [deleting, setDeleting] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
   const title = (session: ChatSession) => chatSessionTitle(session, t("pluginChat.untitled"));
+  const search = parseSearchQuery(query, ["name", "id", "is", "date"]);
   const matches = [...sessions]
     .reverse()
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .filter((session) =>
-      title(session).toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()),
+      matchesSearch(search, title(session), {
+        name: (value) => title(session).toLocaleLowerCase().includes(value),
+        id: session.id,
+        is: session.id === activeId ? ["active"] : [],
+        date: (value) => matchesSearchDate(session.updatedAt, value),
+      }),
     );
   const reset = (id: string) => {
     setEditing(null);
@@ -62,15 +70,21 @@ export function PluginChatSessions({
       className="plugin-chat-history"
       dismissible={!busy}
     >
-      <Input
+      <SearchField
         autoFocus
         type="search"
         aria-label={t("pluginChat.searchSessions")}
+        filterKeys={["name", "id", "is", "date"]}
         placeholder={t("pluginChat.searchSessions")}
         value={query}
         disabled={busy}
-        onChange={(event) => {
-          setQuery(event.target.value);
+        presets={[
+          { key: "is", value: "active", label: t("searchUi.active") },
+          { key: "name", value: "", label: t("searchUi.name") },
+          { key: "date", value: "", label: t("searchUi.date") },
+        ]}
+        onChange={(value) => {
+          setQuery(value);
           setEditing(null);
           setDeleting(null);
         }}

@@ -21,6 +21,7 @@ import { toast, type ToastVariant } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
 import { pluginEditorDocument, pluginEditorWriteResult } from "@/lib/plugins/editor";
+import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -51,7 +52,7 @@ const pendingConfirmations = new Map<string, () => void>();
 /** Read current state; never use the persisted, potentially delayed tab snapshot. */
 export function pluginWorkspaceSnapshot() {
   const { tabs, panes, activeId, activePaneId, layout } = useWorkspace.getState();
-  return { tabs, panes, activeId, activePaneId, layout };
+  return projectPluginWorkspace({ tabs, panes, activeId, activePaneId, layout });
 }
 
 export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest): Promise<unknown> {

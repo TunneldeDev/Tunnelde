@@ -6,6 +6,72 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.33.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.32.0...v0.33.0) - 2026-11-09
+
+### 更新概览 | Highlights
+
+- **plugins:** stabilize detached workspace snapshots
+- **files:** resume guarded local directory moves
+- **plugins:** freeze tab bar contribution v1 contracts
+- **search:** unify workbench qualifiers and filter presets
+- **logging:** share structured local diagnostics with plugins and features
+
+<details open>
+<summary>详细变更 | Details (32)</summary>
+
+### 新增 | New
+
+- **plugins:** stabilize detached workspace snapshots ([#181](https://github.com/TunneldeDev/Tunnelde/pull/181)) @quyansiyuanwang
+- **files:** resume guarded local directory moves ([#183](https://github.com/TunneldeDev/Tunnelde/pull/183), [0983814](https://github.com/TunneldeDev/Tunnelde/commit/098381401dc72be9d5e094cc328a67bd15d370af)) @quyansiyuanwang
+- **plugins:** freeze tab bar contribution v1 contracts ([#185](https://github.com/TunneldeDev/Tunnelde/pull/185)) @quyansiyuanwang
+- **search:** unify workbench qualifiers and filter presets ([#193](https://github.com/TunneldeDev/Tunnelde/pull/193)) @quyansiyuanwang
+- **logging:** share structured local diagnostics with plugins and features ([#196](https://github.com/TunneldeDev/Tunnelde/pull/196), [c5a44c2](https://github.com/TunneldeDev/Tunnelde/commit/c5a44c2371f0ec6a88be5775f18a6c286a5a9353)) @quyansiyuanwang
+- **shortcuts:** add ordered dispatch and per-binding propagation ([#199](https://github.com/TunneldeDev/Tunnelde/pull/199), [5039b9c](https://github.com/TunneldeDev/Tunnelde/commit/5039b9cd0a94fbcddad4d0ce49c7e1044c5f6e87)) @quyansiyuanwang
+- **plugins:** freeze the structured logging v1 contract ([#200](https://github.com/TunneldeDev/Tunnelde/pull/200)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **plugins:** suspend hidden chat polling and rendering ([#180](https://github.com/TunneldeDev/Tunnelde/pull/180)) @quyansiyuanwang
+- **workspace:** share controlled panel layouts and splitters ([#194](https://github.com/TunneldeDev/Tunnelde/pull/194)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **plugins:** drain and clean journaled background transfers ([#174](https://github.com/TunneldeDev/Tunnelde/pull/174)) @quyansiyuanwang
+- **ssh:** close active channels when disconnecting sessions ([#176](https://github.com/TunneldeDev/Tunnelde/pull/176)) @quyansiyuanwang
+- **hosts:** show nested groups and reveal matching hosts ([#177](https://github.com/TunneldeDev/Tunnelde/pull/177)) @quyansiyuanwang
+- **files:** protect copy commands with journaled background tasks ([#178](https://github.com/TunneldeDev/Tunnelde/pull/178)) @quyansiyuanwang
+- **plugins:** keep commands and views responsive during async work ([#179](https://github.com/TunneldeDev/Tunnelde/pull/179)) @quyansiyuanwang
+- **preview:** preserve open documents when changing language ([#182](https://github.com/TunneldeDev/Tunnelde/pull/182)) @quyansiyuanwang
+- **files:** retain sources with Windows named streams ([#183](https://github.com/TunneldeDev/Tunnelde/pull/183)) @quyansiyuanwang
+- **transfer:** separate server copy from network limits ([#184](https://github.com/TunneldeDev/Tunnelde/pull/184)) @quyansiyuanwang
+- **plugins:** project plugin tabs to public contribution kinds ([#185](https://github.com/TunneldeDev/Tunnelde/pull/185), [66152c3](https://github.com/TunneldeDev/Tunnelde/commit/66152c3e556db36d1d6f6d0759b4add5d12008e7)) @quyansiyuanwang
+- **settings:** preserve exports when writing profiles fails ([#186](https://github.com/TunneldeDev/Tunnelde/pull/186)) @quyansiyuanwang
+- **shortcuts:** preserve queued conflicts during resolution ([#187](https://github.com/TunneldeDev/Tunnelde/pull/187)) @quyansiyuanwang
+- **plugins:** bind chat task recovery to its original run ([#188](https://github.com/TunneldeDev/Tunnelde/pull/188)) @quyansiyuanwang
+- **plugins:** compact chat task history and readable approvals ([#189](https://github.com/TunneldeDev/Tunnelde/pull/189)) @quyansiyuanwang
+- **plugins:** retain task failure details in output snapshots ([#190](https://github.com/TunneldeDev/Tunnelde/pull/190)) @quyansiyuanwang
+- **files:** merge remote directories with server-side moves ([#191](https://github.com/TunneldeDev/Tunnelde/pull/191)) @quyansiyuanwang
+- **workspace:** keep docked panels collapsed when closing panes ([#192](https://github.com/TunneldeDev/Tunnelde/pull/192)) @quyansiyuanwang
+- **updates:** preserve source failures and respect API rate limits ([#195](https://github.com/TunneldeDev/Tunnelde/pull/195)) @quyansiyuanwang
+- **terminal:** adapt macOS editing and application clipboard input ([#197](https://github.com/TunneldeDev/Tunnelde/pull/197)) @quyansiyuanwang
+- **shortcuts:** retain editor target across shared async actions ([#199](https://github.com/TunneldeDev/Tunnelde/pull/199)) @quyansiyuanwang
+- **updates:** retain response context and bound gateway retries ([#201](https://github.com/TunneldeDev/Tunnelde/pull/201), [90c361e](https://github.com/TunneldeDev/Tunnelde/commit/90c361e0ad2d62bf9140c703ff6c3108b0c399f6)) @quyansiyuanwang
+- **updates:** give public release manifests their full timeout budget ([#201](https://github.com/TunneldeDev/Tunnelde/pull/201)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **logging:** describe build source locations without local paths ([#196](https://github.com/TunneldeDev/Tunnelde/pull/196)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **release:** retry transient bundler downloads and uploads ([#198](https://github.com/TunneldeDev/Tunnelde/pull/198)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.32.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.31.0...v0.32.0) - 2026-11-08
 
 ### 更新概览 | Highlights

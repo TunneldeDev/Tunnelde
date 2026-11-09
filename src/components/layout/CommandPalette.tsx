@@ -21,6 +21,14 @@ import { useFilePreview } from "@/store/filePreview";
 import { toast } from "@/store/toasts";
 import { IconButton } from "@/components/ui/form/Button";
 import { Select } from "@/components/ui/form/Select";
+import { SearchFilterMenu } from "@/components/ui/form/SearchField";
+import {
+  matchesSearch,
+  matchesSearchNumber,
+  parseSearchQuery,
+  searchQueryText,
+  searchText,
+} from "@/lib/search/query";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
 import { useFileIconResolver } from "@/lib/files/icons";
 import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
@@ -32,9 +40,19 @@ interface Command {
   title: string;
   detail?: string;
   fileName?: string;
+  filePath?: string;
   run: () => void;
 }
 type Match = Awaited<ReturnType<typeof api.filesSearch>>["matches"][number];
+
+function fileSearchFields(path: string, name = fileName(path)) {
+  const dot = name.lastIndexOf(".");
+  return {
+    name: (value: string) => searchText(name).includes(value),
+    ext: dot > 0 ? name.slice(dot + 1) : "",
+    path: (value: string) => searchText(path).includes(value),
+  };
+}
 
 export function CommandPalette() {
   const query = useQuickAccess((state) => state.query);
@@ -62,8 +80,8 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
     limited: boolean;
     skipped: number;
   } | null>(null);
-  const [searching, setSearching] = useState(false);
-  const [error, setError] = useState("");
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+  const [failure, setFailure] = useState<{ key: string; message: string } | null>(null);
   const input = useRef<HTMLInputElement>(null);
   const panel = useRef<HTMLDivElement>(null);
   const [previous] = useState(() => document.activeElement as HTMLElement | null);
@@ -76,7 +94,39 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
       : query.startsWith("@")
         ? "hosts"
         : "files";
-  const needle = (mode === "files" ? query : query.slice(1)).trim();
+  const rawNeedle = (mode === "files" ? query : query.slice(1)).trim();
+  const parsedQuery = useMemo(
+    () =>
+      parseSearchQuery(
+        rawNeedle,
+        mode === "commands"
+          ? ["id", "category", "plugin"]
+          : mode === "hosts"
+            ? ["name", "host", "user", "tag", "is", "port"]
+            : ["name", "path", "ext"],
+      ),
+    [rawNeedle, mode],
+  );
+  const needle = searchQueryText(
+    rawNeedle,
+    mode === "commands"
+      ? ["id", "category", "plugin"]
+      : mode === "hosts"
+        ? ["name", "host", "user", "tag", "is", "port"]
+        : ["name", "path", "ext"],
+  );
+  const selection = useMemo(
+    () =>
+      mode === "content"
+        ? parsedQuery.filters.length
+          ? { text: [], filters: parsedQuery.filters }
+          : undefined
+        : mode === "files" && (parsedQuery.filters.length || parsedQuery.text.length > 1)
+          ? parsedQuery
+          : undefined,
+    [mode, parsedQuery],
+  );
+  const canSearch = Array.from(needle).length >= 2 || (mode === "files" && !!selection);
   const definitions = useMemo(() => shortcutCommands(plugins), [plugins]);
   const roots = useMemo(() => {
     const candidates = [
@@ -105,7 +155,9 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
   const root = rootId ? roots.find((item) => item.id === rootId) : roots[0];
   const path = root?.path;
   const sessionId = root?.sessionId ?? null;
-  const searchKey = `${mode}\0${sessionId}\0${path}\0${needle}`;
+  const searchKey = `${mode}\0${sessionId}\0${path}\0${needle}\0${JSON.stringify(selection)}`;
+  const searching = pendingKey === searchKey;
+  const error = failure?.key === searchKey ? failure.message : "";
 
   useEffect(() => {
     input.current?.focus();
@@ -114,14 +166,21 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
     };
   }, [previous]);
   useEffect(() => {
-    if (!["files", "content"].includes(mode) || !path || Array.from(needle).length < 2) return;
+    if (!["files", "content"].includes(mode) || !path || !canSearch) return;
     let disposed = false;
     const requestId = crypto.randomUUID();
     const timer = window.setTimeout(() => {
-      setSearching(true);
-      setError("");
+      setPendingKey(searchKey);
+      setFailure(null);
       void api
-        .filesSearch(requestId, sessionId, path, needle, mode === "content")
+        .filesSearch(
+          requestId,
+          sessionId,
+          path,
+          needle,
+          mode === "content",
+          ...(selection ? ([selection] as const) : []),
+        )
         .then((response) => {
           if (!disposed) {
             setResult({ ...response, key: searchKey });
@@ -129,10 +188,10 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
           }
         })
         .catch((cause) => {
-          if (!disposed) setError(translateError(cause));
+          if (!disposed) setFailure({ key: searchKey, message: translateError(cause) });
         })
         .finally(() => {
-          if (!disposed) setSearching(false);
+          if (!disposed) setPendingKey(null);
         });
     }, 300);
     return () => {
@@ -140,7 +199,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
       window.clearTimeout(timer);
       void api.filesSearchCancel(requestId).catch(() => {});
     };
-  }, [mode, needle, path, sessionId, searchKey]);
+  }, [mode, needle, path, sessionId, searchKey, canSearch, selection]);
 
   const commands = useMemo<Command[]>(() => {
     if (mode === "commands")
@@ -187,6 +246,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
               id: `tab:${tab.id}`,
               title: tab.title,
               fileName: tab.kind === "editor" ? tab.title : undefined,
+              filePath: entries[tab.id]?.path,
               detail: t("palette.openTab"),
               run: () => useWorkspace.getState().activate(tab.id),
             }))
@@ -200,7 +260,12 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
               !!path &&
               inSearchRoot(entry.path, path, sessionId) &&
               !entry.loading &&
-              !entry.error,
+              !entry.error &&
+              matchesSearch(
+                { text: [], filters: parsedQuery.filters },
+                "",
+                fileSearchFields(entry.path),
+              ),
           )
         : [];
     const matches = [
@@ -231,6 +296,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
         id: `file:${match.path}:${match.line}`,
         title: mode === "content" ? match.preview : fileName(match.path),
         fileName: fileName(match.path),
+        filePath: match.path,
         detail: `${match.path}${match.line ? `:${match.line}:${match.column}` : ""}`,
         run: () => {
           const provider = previewProviders(usePlugins.getState().items).find((item) =>
@@ -283,22 +349,40 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
     activeTabId,
     needle,
     sessionId,
+    parsedQuery,
   ]);
 
   const filtered = useMemo(() => {
-    const words = needle.toLocaleLowerCase().split(/\s+/).filter(Boolean);
     return commands
-      .filter(
-        (command) =>
-          mode === "content" ||
-          words.every((word) =>
-            `${command.title} ${command.detail ?? ""} ${command.id}`
-              .toLocaleLowerCase()
-              .includes(word),
-          ),
-      )
+      .filter((command) => {
+        const host =
+          mode === "hosts"
+            ? hosts.find(
+                (host) =>
+                  command.id === `host.connect.${host.id}` || command.id === `host.open.${host.id}`,
+              )
+            : null;
+        return matchesSearch(
+          mode === "content" ? { ...parsedQuery, text: [] } : parsedQuery,
+          `${command.title} ${command.detail ?? ""} ${command.id}`,
+          {
+            id: command.id,
+            category: command.detail?.replace(/^Category: /, ""),
+            plugin: definitions.find((item) => item.id === command.id)?.plugin?.id,
+            name: (value) =>
+              searchText(host?.name ?? command.fileName ?? command.title).includes(value),
+            host: (value) => !!host && searchText(host.host).includes(value),
+            user: host?.username,
+            tag: host?.tags,
+            is: host?.favorite ? ["favorite"] : [],
+            port: (value) => matchesSearchNumber(host?.port, value),
+            ext: fileSearchFields(command.filePath ?? "", command.fileName ?? "").ext,
+            path: (value) => !!command.filePath && searchText(command.filePath).includes(value),
+          },
+        );
+      })
       .slice(0, 100);
-  }, [commands, needle, mode]);
+  }, [commands, parsedQuery, mode, hosts, definitions]);
   const current = Math.min(index, Math.max(0, filtered.length - 1));
   useEffect(() => {
     panel.current
@@ -363,8 +447,8 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
             onChange={(event) => {
               setQuery(event.target.value);
               setIndex(0);
-              setError("");
-              setSearching(false);
+              setFailure(null);
+              setPendingKey(null);
             }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
@@ -382,6 +466,70 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
                 run(filtered[current]);
               }
             }}
+          />
+          <SearchFilterMenu
+            query={rawNeedle}
+            filterKeys={
+              mode === "commands"
+                ? ["id", "category", "plugin"]
+                : mode === "hosts"
+                  ? ["name", "host", "user", "tag", "is", "port"]
+                  : ["name", "path", "ext"]
+            }
+            onChange={(value) => {
+              setQuery(
+                (mode === "files"
+                  ? ""
+                  : mode === "commands"
+                    ? ">"
+                    : mode === "content"
+                      ? "%"
+                      : "@") + value,
+              );
+              setIndex(0);
+            }}
+            focusInput={() => input.current?.focus()}
+            presets={
+              mode === "commands"
+                ? [
+                    { key: "id", value: "", label: t("searchUi.id") },
+                    ...[
+                      "Application",
+                      "View",
+                      "Preferences",
+                      "Hosts",
+                      "Editor",
+                      "Plugins",
+                      "Port Forwarding",
+                    ].map((category) => ({
+                      key: "category",
+                      value: category,
+                      label: category,
+                      exclusive: true,
+                    })),
+                    ...plugins.map((plugin) => ({
+                      key: "plugin",
+                      value: plugin.id,
+                      label: plugin.name,
+                    })),
+                  ]
+                : mode === "hosts"
+                  ? [
+                      { key: "is", value: "favorite", label: t("searchUi.favorite") },
+                      { key: "host", value: "", label: t("searchUi.host") },
+                      { key: "user", value: "", label: t("searchUi.user") },
+                      ...[...new Set(hosts.flatMap((host) => host.tags))].map((tag) => ({
+                        key: "tag",
+                        value: tag,
+                        label: tag,
+                      })),
+                    ]
+                  : [
+                      { key: "ext", value: "", label: t("searchUi.extension") },
+                      { key: "path", value: "", label: t("searchUi.path") },
+                      { key: "name", value: "", label: t("searchUi.name") },
+                    ]
+            }
           />
         </div>
         <div className="td-palette__hint">{t("palette.modes")}</div>
@@ -419,7 +567,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
                       }
                     }
                   })
-                  .catch((cause) => setError(translateError(cause)));
+                  .catch((cause) => setFailure({ key: searchKey, message: translateError(cause) }));
               }}
             >
               <FolderOpen size={15} />
@@ -445,7 +593,7 @@ function QuickAccess({ initialQuery }: { initialQuery: string }) {
                 : mode === "files" || mode === "content"
                   ? !root
                     ? t("palette.noRoot")
-                    : Array.from(needle).length < 2
+                    : !canSearch
                       ? t("palette.typeMore")
                       : t("palette.empty")
                   : t("palette.empty")}

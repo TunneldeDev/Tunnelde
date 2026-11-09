@@ -22,6 +22,8 @@ beforeEach(() => useTransfers.setState({ items: [] }));
 describe("transfer cancellation", () => {
   it.each([
     "sftp.moveSourceRetained",
+    "sftp.directoryMoveSourceChanged",
+    "sftp.namedStreamsMoveUnavailable",
     "sftp.backupPreserved",
     "sftp.moveRecoverySourcePresent",
     "sftp.moveRecoveryUnverified",
@@ -62,6 +64,29 @@ describe("transfer cancellation", () => {
 });
 
 describe("durable transfer controls", () => {
+  it("retains plugin ownership across events and snapshots and refuses user resume or pause", async () => {
+    vi.spyOn(ipc, "isTauri").mockReturnValue(true);
+    const pause = vi.spyOn(transferApi, "pause").mockResolvedValue(undefined);
+    const resume = vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
+    useTransfers.getState().apply({ ...running, pluginId: "uploader" });
+    useTransfers.getState().apply({ ...running, transferred: 25 });
+    vi.spyOn(transferApi, "list").mockResolvedValue([
+      { ...running, pluginId: "uploader", updatedAt: 1, fromHostId: null, toHostId: "host" },
+    ]);
+    await useTransfers.getState().hydrate();
+    expect(useTransfers.getState().items[0]).toMatchObject({
+      durable: true,
+      pluginId: "uploader",
+      transferred: 25,
+    });
+    useTransfers.getState().pause(running.id);
+    useTransfers.setState((state) => ({
+      items: state.items.map((item) => ({ ...item, status: "failed" })),
+    }));
+    useTransfers.getState().resume(running.id);
+    expect(pause).not.toHaveBeenCalled();
+    expect(resume).not.toHaveBeenCalled();
+  });
   it("retains a task limit while resuming instead of silently removing it", () => {
     vi.spyOn(transferApi, "resume").mockResolvedValue(undefined);
     useTransfers.setState({

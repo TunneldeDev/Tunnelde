@@ -1,4 +1,10 @@
 import type { FileEntry } from "@/lib/api/types";
+import {
+  matchesSearch,
+  matchesSearchNumber,
+  matchesSearchDate,
+  parseSearchQuery,
+} from "@/lib/search/query";
 
 export const FILE_COLUMNS = ["name", "type", "size", "modified"] as const;
 export type FileColumn = (typeof FILE_COLUMNS)[number];
@@ -60,14 +66,35 @@ export function visibleFiles(
     (left.name < right.name ? -1 : left.name > right.name ? 1 : 0) ||
     (left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
   const locale = collator.resolvedOptions().locale;
-  const query = filter.query.normalize("NFKC").toLocaleLowerCase(locale);
+  const query = parseSearchQuery(filter.query, [
+    "name",
+    "ext",
+    "type",
+    "is",
+    "path",
+    "size",
+    "modified",
+  ]);
+  const hiddenRequested = query.filters.some(
+    (term) => !term.exclude && term.key === "is" && term.values.includes("hidden"),
+  );
   return entries
     .filter(
       (entry) =>
         forced.has(entry.path) ||
-        ((preferences.filesShowHidden || !(entry.isHidden || entry.name.startsWith("."))) &&
+        ((preferences.filesShowHidden ||
+          hiddenRequested ||
+          !(entry.isHidden || entry.name.startsWith("."))) &&
           (filter.kind === "all" || entry.isDir === (filter.kind === "folders")) &&
-          entry.name.normalize("NFKC").toLocaleLowerCase(locale).includes(query)),
+          matchesSearch(query, entry.name, {
+            name: (value) => entry.name.normalize("NFKC").toLocaleLowerCase(locale).includes(value),
+            ext: fileExtension(entry),
+            type: entry.isDir ? ["folder", "directory"] : ["file"],
+            is: entry.isHidden || entry.name.startsWith(".") ? ["hidden"] : [],
+            path: (value) => entry.path.normalize("NFKC").toLocaleLowerCase(locale).includes(value),
+            size: (value) => !entry.isDir && matchesSearchNumber(entry.size, value),
+            modified: (value) => matchesSearchDate(entry.modified, value),
+          })),
     )
     .sort((left, right) => {
       if (preferences.filesFoldersFirst && left.isDir !== right.isDir) return left.isDir ? -1 : 1;

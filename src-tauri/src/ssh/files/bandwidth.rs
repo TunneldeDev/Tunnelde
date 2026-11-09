@@ -10,6 +10,7 @@ pub(super) enum Direction {
     Upload = 0,
     Download = 1,
     Both = 2,
+    Local = 3,
 }
 
 struct Bucket {
@@ -107,6 +108,7 @@ impl Controller {
             Direction::Upload => [Some(upload), task_upload, None, None],
             Direction::Download => [Some(download), task_download, None, None],
             Direction::Both => [Some(upload), Some(download), task_upload, task_download],
+            Direction::Local => [task_upload, None, None, None],
         };
         let mut allowed = requested as f64;
         let mut minimum = requested as f64;
@@ -191,6 +193,18 @@ pub fn transfer_set_speed_limit(app: AppHandle, id: String, kib: u32) -> AppResu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_copy_uses_its_task_limit_without_consuming_network_budgets() {
+        let control = Controller::default();
+        control.register("local");
+        control.configure(1, 1);
+        assert_eq!(control.claim("local", Direction::Local, 65536).0, 65536);
+        control.set_task("local", 1).unwrap();
+        assert_eq!(control.claim("local", Direction::Local, 65536).0, 0);
+        control.set_task("local", 0).unwrap();
+        assert_eq!(control.claim("local", Direction::Local, 65536).0, 65536);
+    }
 
     #[test]
     fn durable_speed_limit_is_applied_before_a_resumed_task_can_run() {

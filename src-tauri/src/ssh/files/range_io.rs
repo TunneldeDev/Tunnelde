@@ -539,9 +539,13 @@ impl<'a> Files<'a> {
         stop: &AtomicBool,
     ) -> AppResult<(usize, Option<Vec<u8>>)> {
         let direction = match (&self.sessions.source, &self.sessions.target) {
+            // copy-data sends only control requests over SSH. Its file bytes
+            // consume the task's disk-copy budget, never global network credit.
+            (Some(_), Some(_)) if self.server_copy().is_some() => bandwidth::Direction::Local,
             (Some(_), Some(_)) => bandwidth::Direction::Both,
             (Some(_), None) => bandwidth::Direction::Download,
-            _ => bandwidth::Direction::Upload,
+            (None, Some(_)) => bandwidth::Direction::Upload,
+            (None, None) => bandwidth::Direction::Local,
         };
         let length = match &self.throttle {
             Some(throttle) => throttle.acquire(direction, length, stop).await?,

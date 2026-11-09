@@ -97,6 +97,36 @@ it("bounds retained content and merges operation records in timestamp order", ()
   );
 });
 
+it("uses explicit shared-log domains for source and plugin filtering", () => {
+  const entry = {
+    ...parseDiagnostic(
+      JSON.stringify({
+        level: "ERROR",
+        target: "tunnelde_lib::diagnostics",
+        fields: {
+          message: "Connection failed",
+          domain: "plugins.example.connection",
+          plugin_id: "example",
+          operation: "connect",
+          request_id: "req-1",
+          context: '{"status":403}',
+        },
+      }),
+    ),
+    id: 1,
+  };
+  expect(entry).toMatchObject({
+    level: "ERROR",
+    domain: "plugins.example.connection",
+    plugin: "example",
+  });
+  expect(
+    matchesOutput(entry, "domain:plugins.example.connection", "plugin:example level:ERROR", "WARN"),
+  ).toBe(true);
+  expect(entry.message).toContain("request_id=req-1");
+  expect(entry.message).not.toContain("domain=");
+});
+
 it("renders readable output, filters plugin channels, copies and clears without deleting logs", async () => {
   render(<OutputPanel active />);
   expect(await screen.findByText(/plugin start failed · reason=/)).toBeTruthy();

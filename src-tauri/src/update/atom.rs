@@ -2,7 +2,7 @@ use quick_xml::{events::Event, Reader};
 use semver::Version;
 
 use super::channels::channel_accepts;
-use super::feeds::{read_response, request, Feed};
+use super::feeds::{manifest_response, read_response, request, Feed};
 use crate::error::{AppError, AppResult};
 
 const RELEASES: &str = "https://github.com/TunneldeDev/Tunnelde/releases";
@@ -90,17 +90,19 @@ fn candidates(bytes: &[u8], channel: &str) -> AppResult<Vec<Feed>> {
             page: format!("{RELEASES}/tag/v{version}"),
             version: Some(version),
             notes: None,
+            manifest: None,
         })
         .collect())
 }
 
-fn validate_manifest(bytes: &[u8], expected: &Version) -> AppResult<()> {
+fn validate_manifest(bytes: &[u8], expected: &Version) -> AppResult<serde_json::Value> {
+    let raw: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| invalid())?;
     let manifest: tauri_plugin_updater::RemoteRelease =
-        serde_json::from_slice(bytes).map_err(|_| invalid())?;
+        serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
     if &manifest.version != expected {
         return Err(invalid());
     }
-    Ok(())
+    Ok(raw)
 }
 
 pub(super) async fn fallback(client: &reqwest::Client, channel: &str) -> AppResult<Feed> {
@@ -111,15 +113,18 @@ pub(super) async fn fallback(client: &reqwest::Client, channel: &str) -> AppResu
 }
 
 async fn first_available(client: &reqwest::Client, feeds: Vec<Feed>) -> AppResult<Feed> {
-    for feed in feeds {
-        let response = request(client, feed.url.as_str()).await?;
+    for mut feed in feeds {
+        let response = manifest_response(client, &feed.url).await?;
         // GitHub's Atom cache can retain a recently deleted release. An absent
         // manifest is ineligible, but a network failure must not mean up-to-date.
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             continue;
         }
         let bytes = read_response(response).await?;
-        validate_manifest(&bytes, feed.version.as_ref().unwrap())?;
+        feed.manifest = Some(
+            validate_manifest(&bytes, feed.version.as_ref().unwrap())
+                .map_err(|_| super::feeds::manifest_error(&feed.url, "updates.invalidFeed"))?,
+        );
         return Ok(feed);
     }
     Err(AppError::Update("updates.noFeed".into()))
@@ -283,7 +288,8 @@ mod tests {
             ("200 OK", manifest, "updates.invalidFeed"), // Different version than first candidate.
             ("200 OK", "broken JSON", "updates.invalidFeed"),
         ] {
-            let (base, task) = server(vec![response(status, body)]).await;
+            let attempts = if status.starts_with("503") { 2 } else { 1 };
+            let (base, task) = server(vec![response(status, body); attempts]).await;
             assert_eq!(
                 first_available(&client, local_feeds(&base))
                     .await
@@ -307,6 +313,42 @@ mod tests {
                 .to_string(),
             "updates.noFeed"
         );
+        task.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn public_fallback_allows_slow_release_manifests_beyond_the_feed_timeout() {
+        use std::time::Duration;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            // Release redirects were observed taking 12–17s while the Atom feed
+            // itself was fast. This must use the 25s manifest budget, not 12s.
+            tokio::time::sleep(Duration::from_secs(13)).await;
+            socket
+                .write_all(
+                    response("200 OK", r#"{"version":"0.28.0-beta.2","platforms":{}}"#).as_bytes(),
+                )
+                .await
+                .unwrap();
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let feed = tokio::time::timeout(
+            Duration::from_secs(24),
+            first_available(&client, local_feeds(&base)),
+        )
+        .await
+        .expect("slow manifests must remain bounded")
+        .unwrap();
+        assert_eq!(
+            feed.version.unwrap(),
+            Version::parse("0.28.0-beta.2").unwrap()
+        );
+        assert!(feed.manifest.is_some());
         task.await.unwrap();
     }
 }

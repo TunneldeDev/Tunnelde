@@ -8,11 +8,11 @@ import {
   Palette,
   Plus,
   RefreshCw,
-  Search,
   Settings2,
 } from "lucide-react";
 import { Button, IconButton } from "@/components/ui/form/Button";
-import { Input } from "@/components/ui/form/Field";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { parseSearchQuery } from "@/lib/search/query";
 import { OverlayScrollArea } from "@/components/ui/display/OverlayScrollArea";
 import {
   matchesPlugin,
@@ -72,7 +72,8 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
     ),
   );
   const search = query.trim();
-  const matches = (p: Parameters<typeof matchesPlugin>[0]) => matchesPlugin(p, query, tag);
+  const parsed = parseSearchQuery(query, ["tag", "name", "id", "author"]);
+  const matches = (p: Parameters<typeof matchesPlugin>[0]) => matchesPlugin(p, parsed, tag);
   const rows =
     scope === "installed"
       ? items.filter(matches).map((p) => ({
@@ -141,15 +142,21 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
         <SidebarDockControls view="plugins" />
       </header>
       <div className="sidebar__search">
-        <div className="sidebar__filter">
-          <Search size={13} aria-hidden="true" />
-          <Input
-            aria-label={t("plugins.search")}
-            placeholder={t("market.queryHint")}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
+        <SearchField
+          aria-label={t("plugins.search")}
+          filterKeys={["tag", "name", "id", "author"]}
+          placeholder={t("market.queryHint")}
+          value={query}
+          onChange={setQuery}
+          presets={[
+            { key: "name", value: "", label: t("searchUi.name") },
+            { key: "id", value: "", label: t("searchUi.id") },
+            { key: "author", value: "", label: t("searchUi.author") },
+            ...[...new Set([...entries.map(({ entry }) => entry), ...items].flatMap(pluginTags))]
+              .sort()
+              .map((tag) => ({ key: "tag", value: tag, label: tag })),
+          ]}
+        />
       </div>
       <div
         className="plugins-sidebar__tabs"

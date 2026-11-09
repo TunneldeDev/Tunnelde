@@ -55,6 +55,24 @@ it("applies a task limit and retains it across progress events", async () => {
   expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(128);
 });
 
+it("shows plugin attribution and cancellation without offering pause or unauthorized retry", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({ ...item, pluginId: "uploader" })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.queryByRole("button", { name: "Pause transfer" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Cancel transfer" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "file" }));
+  expect(screen.getByText("Started by plugin: uploader")).toBeTruthy();
+  act(() =>
+    useTransfers.getState().apply({ ...useTransfers.getState().items[0]!, status: "failed" }),
+  );
+  expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Remove transfer and clean temporary files" }),
+  ).toBeTruthy();
+});
+
 it("Escape discards a draft without changing the active limit", () => {
   const save = vi.spyOn(transferApi, "setSpeedLimit").mockResolvedValue(undefined);
   render(<FileTransfers />);
@@ -101,6 +119,8 @@ it.each([
   ["sftp.moveRecoverySourcePresent", /an entry now exists at the source path/],
   ["sftp.moveRecoveryUnverified", /saved task cannot verify the current files/],
   ["sftp.moveSourceRetained", /source has been kept/],
+  ["sftp.directoryMoveSourceChanged", /source folder contains new items/],
+  ["sftp.namedStreamsMoveUnavailable", /source has Windows named data streams/],
 ])("explains interrupted source removal without expanding task details: %s", (error, message) => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({

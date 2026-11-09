@@ -75,8 +75,8 @@ macro_rules! stable_method {
 }
 
 pub const METHODS: &[ApiMethod] = &[
-    method!("tabBar.set", [], "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string,placement?:leading|trailing,group?:string,tooltip?:string,showLabel?:boolean,checked?:boolean}", "Register a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views and trailing placement; when:{} targets all tabs. Groups are plugin-scoped. showLabel keeps button text alongside its icon; checked is button-only, host-rendered, and acknowledged through set. Narrow panes move controls into an accessible overflow menu. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization."),
-    method!("tabBar.remove", [], "{id:string}", "Remove this runtime's tab-bar control; return false if absent."),
+    stable_method!("tabBar.set", [], "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string,placement?:leading|trailing,group?:string,tooltip?:string,showLabel?:boolean,checked?:boolean}", "Register or replace a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views and trailing placement; when:{} targets all tabs. Groups are plugin-scoped. showLabel keeps button text alongside its icon; checked is button-only, host-rendered, and acknowledged through set. Narrow panes move controls into an accessible overflow menu. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization.", "0.32.0-beta.6"),
+    stable_method!("tabBar.remove", [], "{id:string}", "Remove this runtime's tab-bar control; return false if absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.6"),
     stable_method!("statusBar.set", [], "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}", "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.", "0.32.0-beta.1"),
     stable_method!("statusBar.remove", [], "{id:string}", "Remove this runtime's status item; return false when absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.1"),
     stable_method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk.", "0.29.0-beta.2"),
@@ -115,7 +115,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation; already completed operations cannot be rolled back."),
     method!("tools.revokeClient", [], "{clientId:string}", "Cancel pending tool invocations owned by this plugin runtime's client."),
     stable_method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization.", "0.21.0"),
-    method!("log", ["log"], "{message:string,level?:string}", "Write a bounded plugin-tagged log message."),
+    stable_method!("log", ["log"], "{message:string,level?:string,domain?:string,operation?:string,requestId?:string,fields?:object}", "Write a bounded local log at its requested severity; return null on acceptance, not durable delivery. Host supplies plugin identity and runtime generation; domain is plugin-scoped. Optional structured fields redact credential keys and URL credentials/query/fragment. Existing message/level calls remain supported; structured options require 0.33.0-beta.5 or later. Subject to configured log filter and nonblocking writer; never include secrets in message text.", "0.21.0"),
     method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
     method!("app.openExternal", ["app.openExternal"], "{url:string}", "Open an http/https URL with the system browser."),
     method!("settings.get", ["settings.read"], "{}", "Read application preferences."),
@@ -165,7 +165,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("history.record", ["history.write"], "{hostId:string,command:string}", "Record a command for an existing saved host."),
     method!("history.delete", ["history.write"], "{id:number}", "Delete one command-history entry."),
     method!("history.clear", ["history.write"], "{hostId:string}", "Clear a saved host's command history."),
-    method!("workspace.snapshot", ["workspace.read"], "{}", "Read the live tabs, panes, active group and split layout."),
+    stable_method!("workspace.snapshot", ["workspace.read"], "{}", "Read a detached v1 snapshot of live tabs, panes, active IDs and split layout, including hidden panels and file-pane metadata. No file contents, credentials or arbitrary store fields. Tab kinds and file-view option values are open vocabularies; tolerate unfamiliar values. The snapshot neither reserves resources nor grants their permissions.", "0.21.0"),
     method!("workspace.openPage", ["workspace.write"], "{kind:welcome|settings|about|updates|knownHosts}", "Open or focus an existing application page."),
     method!("workspace.openHost", ["workspace.write", "hosts.read"], "{hostId:string}", "Open a saved host's details; never reveal an authentication secret."),
     method!("workspace.openTerminal", ["workspace.write", "sessions.read"], "{sessionId:string}", "Open a terminal tab for an already-connected session."),
@@ -387,15 +387,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             super::tools::cancel(context, method, &params).await
         }
         "api.describe" => Ok(describe_api()),
-        "log" => {
-            let message: String = field(&params, "message")?;
-            let level: String = optional(&params, "level")?.unwrap_or_else(|| "info".into());
-            if message.len() > 16 * 1024 || level.len() > 16 {
-                return Err(AppError::validation("plugin.api.logTooLarge"));
-            }
-            tracing::info!(plugin = %context.id, level = %level, message = %message, "plugin log");
-            Ok(Value::Null)
-        }
+        "log" => super::logging::write(&context.id, context.generation, params),
         "app.info" => encode(commands::app_info(app.clone(), state)),
         "app.openExternal" => {
             commands::open_external(app.clone(), field(&params, "url")?)?;
@@ -483,19 +475,50 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "files.local.rename" => {
-            commands::local_rename(
+            // Plugin rename remains atomic. Copy-based moves require a
+            // separately owned transfer lifecycle, not the UI fallback.
+            crate::ssh::files::local_rename(
                 field(&params, "from")?,
                 field(&params, "to")?,
-                optional(&params, "overwrite")?,
+                optional(&params, "overwrite")?.unwrap_or(false),
             )?;
             Ok(Value::Null)
         }
-        "files.local.copy" => {
-            commands::local_copy(
-                field(&params, "from")?,
-                field(&params, "to")?,
-                optional(&params, "overwrite")?,
+        "files.local.copy" | "files.sftp.copy" => {
+            let session: Option<String> = if method == "files.sftp.copy" {
+                let session: String = field(&params, "sessionId")?;
+                state.ssh.handle(&session)?;
+                Some(session)
+            } else {
+                None
+            };
+            let task = crate::ssh::files::start_copy(
+                app.clone(),
+                crate::ssh::files::Endpoint {
+                    session: session.clone(),
+                    path: field(&params, "from")?,
+                },
+                crate::ssh::files::Endpoint {
+                    session,
+                    path: field(&params, "to")?,
+                },
+                optional::<bool>(&params, "overwrite")?.unwrap_or(false),
+                Some(super::security::Lease {
+                    id: context.id.clone(),
+                    fingerprint: context.fingerprint.clone(),
+                    permissions: context.permissions.clone(),
+                    generation: context.generation,
+                }),
             )?;
+            let id = task.id.clone();
+            if !super::tools::register_resource(context, &id, true) {
+                state
+                    .transfers
+                    .cancel_owned(&id, &context.id, context.generation);
+                return Err(AppError::validation("plugin.tools.cancelled"));
+            }
+            let _request = super::tools::CopyRequest(context.clone(), id);
+            task.wait().await?;
             Ok(Value::Null)
         }
         "files.local.delete" => {
@@ -557,17 +580,6 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         }
         "files.sftp.rename" => {
             commands::sftp_rename(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "from")?,
-                field(&params, "to")?,
-                optional(&params, "overwrite")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
-        "files.sftp.copy" => {
-            commands::sftp_copy(
                 app.clone(),
                 field(&params, "sessionId")?,
                 field(&params, "from")?,
@@ -698,6 +710,8 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                     | "files.cancelTransfer"
                     | "files.transferStatus"
                     | "files.local.writeText"
+                    | "files.local.copy"
+                    | "files.sftp.copy"
             )
             && !name.ends_with(".readText")
             && !name.ends_with(".list")
@@ -1183,7 +1197,7 @@ mod tests {
         assert_eq!(entry["since"], "0.21.0");
         assert_eq!(entry["deprecated"], Value::Null);
         let experimental =
-            serde_json::to_value(method_info("workspace.snapshot").unwrap()).unwrap();
+            serde_json::to_value(method_info("workspace.openPage").unwrap()).unwrap();
         assert_eq!(experimental["stability"], "experimental");
         assert_eq!(experimental["since"], Value::Null);
     }

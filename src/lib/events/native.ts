@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { reportError } from "@/lib/diagnostics";
 import type {
   PluginConfig,
   PluginDownload,
@@ -46,7 +47,7 @@ export interface NativeEvents {
 
 export const nativeEvents = createEventBus<NativeEvents>(
   (name, receive) => listen(name, ({ payload }) => receive(payload)),
-  (name) => console.error(`Event handler failed: ${name}`),
+  (name, error) => reportError("events.native", name, error),
 );
 
 if (import.meta.hot) import.meta.hot.dispose(() => nativeEvents.dispose());

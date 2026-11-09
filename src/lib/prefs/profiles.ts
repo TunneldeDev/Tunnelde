@@ -42,6 +42,7 @@ export const PORTABLE_SETTING_KEYS = [
   "terminalSmoothScrolling",
   "terminalScrollOnInput",
   "terminalCopyOnSelect",
+  "terminalApplicationClipboard",
   "terminalRightClick",
   "terminalRenderer",
   "fileIconTheme",
@@ -61,6 +62,8 @@ export const PORTABLE_SETTING_KEYS = [
   "editorSpellCheck",
   "monitorIntervalMs",
   "keyboardShortcuts",
+  "shortcutRules",
+  "showShortcutDetails",
 ] as const;
 
 export type PortableSettings = SettingsPatch;

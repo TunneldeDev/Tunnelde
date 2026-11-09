@@ -30,6 +30,13 @@ export function checkCoreContracts(discovery, responses, floor) {
       assert.ok(ajv.validateSchema(method.contract[kind]), `${method.name}: invalid ${kind}`);
       compiled[kind] = ajv.compile(method.contract[kind]);
     }
+    if (Object.hasOwn(method.contract, "commandContextSchema")) {
+      assert.ok(
+        ajv.validateSchema(method.contract.commandContextSchema),
+        `${method.name}: invalid commandContextSchema`,
+      );
+      compiled.commandContextSchema = ajv.compile(method.contract.commandContextSchema);
+    }
     validators.set(method.name, compiled);
   }
   const coverage = new Map();
@@ -56,12 +63,20 @@ export function checkCoreContracts(discovery, responses, floor) {
     if (!failed) assert.ok(inputValid, `${sample.method}: successful input rejected by schema`);
     const kinds = coverage.get(sample.method) ?? new Set();
     kinds.add(failed ? "error" : "result");
+    if (Object.hasOwn(sample, "commandInput")) {
+      assert.ok(!failed && compiled.commandContextSchema, `${sample.method}: unexpected command`);
+      assert.ok(
+        compiled.commandContextSchema(sample.commandInput),
+        `${sample.method}: ${JSON.stringify(compiled.commandContextSchema.errors)}`,
+      );
+      kinds.add("command");
+    }
     coverage.set(sample.method, kinds);
   }
-  for (const name of validators.keys()) {
+  for (const [name, compiled] of validators) {
     assert.deepEqual(
       coverage.get(name),
-      new Set(["result", "error"]),
+      new Set(["result", "error", ...(compiled.commandContextSchema ? ["command"] : [])]),
       `${name}: missing real result/error samples`,
     );
   }

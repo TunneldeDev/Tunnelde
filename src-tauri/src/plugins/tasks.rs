@@ -54,6 +54,25 @@ fn owns(task: &Task, context: &HostContext) -> bool {
 fn snapshot(id: &str, task: &Task) -> Value {
     json!({"taskId":id,"status":task.status,"exitCode":task.exit_code,"error":task.error,"seq":task.seq})
 }
+fn output_snapshot(id: &str, task: &Task, after: u64) -> Value {
+    let mut bytes = 0usize;
+    let events: Vec<Value> = task
+        .events
+        .iter()
+        .filter(|event| event["seq"].as_u64().is_some_and(|seq| seq > after))
+        .take_while(|event| {
+            bytes += event["data"].as_str().map_or(0, str::len);
+            bytes <= 512 * 1024
+        })
+        .take(128)
+        .cloned()
+        .collect();
+    let next = events
+        .last()
+        .and_then(|event| event["seq"].as_u64())
+        .unwrap_or(after);
+    json!({"taskId":id,"events":events,"nextSeq":next,"status":task.status,"exitCode":task.exit_code,"error":task.error,"truncated":task.events.front().and_then(|event| event["seq"].as_u64()).is_some_and(|first| after.saturating_add(1) < first)})
+}
 fn publish(
     context: &HostContext,
     id: &str,
@@ -125,25 +144,7 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
             }
             "tasks.readOutput" => {
                 let after = optional::<u64>(&params, "afterSeq")?.unwrap_or(0);
-                let mut bytes = 0usize;
-                let events: Vec<Value> = task
-                    .events
-                    .iter()
-                    .filter(|event| event["seq"].as_u64().is_some_and(|seq| seq > after))
-                    .take_while(|event| {
-                        bytes += event["data"].as_str().map_or(0, str::len);
-                        bytes <= 512 * 1024
-                    })
-                    .take(128)
-                    .cloned()
-                    .collect();
-                let next = events
-                    .last()
-                    .and_then(|event| event["seq"].as_u64())
-                    .unwrap_or(after);
-                return Ok(
-                    json!({"taskId":id,"events":events,"nextSeq":next,"status":task.status,"exitCode":task.exit_code,"truncated":task.events.front().and_then(|event| event["seq"].as_u64()).is_some_and(|first| after.saturating_add(1) < first)}),
-                );
+                return Ok(output_snapshot(&id, task, after));
             }
             _ => task.input.clone(),
         }
@@ -726,6 +727,34 @@ async fn run_remote(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn output_keeps_failure_detail_after_the_last_event_is_drained() {
+        let (input, _receiver) = mpsc::channel(1);
+        let (cancel, _cancellation) = watch::channel(false);
+        let task = Task {
+            plugin: "owned-plugin".into(),
+            generation: 1,
+            status: "failed".into(),
+            exit_code: None,
+            error: Some("SSH channel closed without an exit status".into()),
+            seq: 1,
+            bytes: 0,
+            events: VecDeque::from([json!({"seq":1,"stream":"status","data":""})]),
+            input,
+            cancel,
+        };
+        for after in [0, 1] {
+            let output = output_snapshot("owned-task", &task, after);
+            assert_eq!(output["error"], snapshot("owned-task", &task)["error"]);
+            assert_eq!(output["status"], "failed");
+            assert!(output["exitCode"].is_null());
+            assert_eq!(output["nextSeq"], 1);
+            assert_eq!(
+                output["events"].as_array().unwrap().len(),
+                usize::from(after == 0)
+            );
+        }
+    }
     #[tokio::test]
     async fn blocked_stdin_and_full_queue_do_not_block_cancellation() {
         let (writer, _reader) = tokio::io::duplex(1);

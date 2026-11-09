@@ -1,3 +1,4 @@
+import type { ShortcutRules } from "@/lib/keyboard/routing";
 import type { NetworkSettings } from "./network";
 export type Language = "system" | "zh-CN" | "en-US";
 export type ThemeMode = "dark" | "light" | "system";
@@ -30,6 +31,8 @@ export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 export interface Settings {
   network: NetworkSettings;
   keyboardShortcuts: Record<string, string[]>;
+  shortcutRules: ShortcutRules;
+  showShortcutDetails: boolean;
   language: Language;
   theme: ThemeMode;
   accent: Accent | string;
@@ -71,6 +74,7 @@ export interface Settings {
   terminalSmoothScrolling: boolean;
   terminalScrollOnInput: boolean;
   terminalCopyOnSelect: boolean;
+  terminalApplicationClipboard: boolean;
   terminalRightClick: TerminalRightClick;
   terminalRenderer: TerminalRenderer;
   fileIconTheme: string;
@@ -222,6 +226,13 @@ export type UpdatePhase =
   | "unsupported"
   | "error";
 
+export interface UpdateSourceFailure {
+  source: "github-api" | "github-public-feed" | "github-release" | "custom-update-source";
+  reason: string;
+  status: number | null;
+  retryAt: number | null;
+}
+
 export interface UpdateState {
   phase: UpdatePhase;
   currentVersion: string;
@@ -234,6 +245,7 @@ export interface UpdateState {
   progress: number | null;
   contentLength: number | null;
   error: string | null;
+  sourceErrors?: UpdateSourceFailure[] | null;
   lastChecked: number | null;
   available: boolean;
   autoInstall: boolean;
@@ -359,6 +371,7 @@ export type TransferStatus =
   "running" | "done" | "failed" | "cancelled" | "paused" | "cleanupPending";
 
 export interface TransferEvent {
+  pluginId?: string | null;
   phase?: "queued" | "preparing" | "verifying" | "cleaning";
   id: string;
   direction: TransferDirection;

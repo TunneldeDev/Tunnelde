@@ -3,7 +3,8 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
-import { Input } from "@/components/ui/form/Field";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { parseHostQuery, matchesHostQuery } from "@/lib/hosts/query";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import type { Host, SshSession } from "@/lib/api/types";
@@ -33,17 +34,13 @@ export function FileRemoteDialog({
   const [query, setQuery] = useState("");
   const [connecting, setConnecting] = useState<Host | null>(null);
   const matches = useMemo(() => {
-    const needle = query.trim().toLocaleLowerCase();
+    const search = parseHostQuery(query);
     const collator = new Intl.Collator(i18n.resolvedLanguage, {
       numeric: true,
       sensitivity: "base",
     });
     return hosts
-      .filter((host) =>
-        [host.name, host.host, host.username, ...host.tags].some((value) =>
-          value.toLocaleLowerCase().includes(needle),
-        ),
-      )
+      .filter((host) => matchesHostQuery(host, search))
       .sort((a, b) => Number(b.favorite) - Number(a.favorite) || collator.compare(a.name, b.name));
   }, [hosts, query, i18n.resolvedLanguage]);
   if (connecting)
@@ -69,12 +66,23 @@ export function FileRemoteDialog({
         </Button>
       }
     >
-      <Input
+      <SearchField
         autoFocus
         aria-label={t("sftp.searchRemote")}
+        filterKeys={["tag", "is", "name", "host", "user", "port"]}
         placeholder={t("sftp.searchRemote")}
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={setQuery}
+        presets={[
+          { key: "is", value: "favorite", label: t("searchUi.favorite") },
+          { key: "host", value: "", label: t("searchUi.host") },
+          { key: "user", value: "", label: t("searchUi.user") },
+          ...[...new Set(hosts.flatMap((host) => host.tags))].map((tag) => ({
+            key: "tag",
+            value: tag,
+            label: tag,
+          })),
+        ]}
       />
       <div className="sftp-remotes">
         {matches.map((host) => (

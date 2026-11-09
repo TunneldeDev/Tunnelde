@@ -15,12 +15,21 @@ type PluginAction = { id: string; view?: string; command?: string };
 const actionTails = new Map<string, Promise<void>>();
 
 /** Metadata can be searched without starting code. Runtime consent happens on invocation. */
-export function openPluginAction(action: PluginAction): Promise<void> {
+export function openPluginAction(
+  action: PluginAction,
+  requestedDocument?: ReturnType<typeof editorDocument>,
+): Promise<void> {
   const original = usePlugins.getState().items.find((item) => item.id === action.id);
   if (!original) return Promise.resolve();
   const isEditor = original.commands.some((item) => item.id === action.command && item.editor);
   const activeId = useWorkspace.getState().activeId;
-  const target = isEditor && activeId ? editorDocument(activeId) : null;
+  const target = isEditor
+    ? requestedDocument !== undefined
+      ? requestedDocument
+      : activeId
+        ? editorDocument(activeId)
+        : null
+    : null;
   if (isEditor && !target) {
     toast(i18n.t("editor.noDocument"), "info");
     return Promise.resolve();

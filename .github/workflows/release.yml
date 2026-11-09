@@ -226,6 +226,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           releaseId: ${{ needs.prepare.outputs.release_id }}
+          # Retry transient bundler-tool downloads and asset uploads without
+          # repeating successful matrix jobs or changing the immutable tag.
+          retryAttempts: 2
           tagName: ${{ needs.prepare.outputs.tag }}
           releaseName: ${{ needs.prepare.outputs.tag }}
           releaseBody: ${{ needs.prepare.outputs.body }}

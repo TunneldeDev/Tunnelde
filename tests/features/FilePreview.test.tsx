@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import "@/i18n/i18n";
+import i18n from "@/i18n/i18n";
 import { FilePreview } from "@/features/sftp/FilePreview";
 import { useFilePreview } from "@/store/filePreview";
 import { api } from "@/lib/api/ipc";
@@ -23,7 +23,8 @@ vi.mock("@/lib/api/ipc", () => ({
   },
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
+  await i18n.changeLanguage("en-US");
   useFilePreview.setState({ file: null });
   usePlugins.setState({ items: [] });
   vi.clearAllMocks();
@@ -159,5 +160,44 @@ describe("file preview", () => {
     await act(async () => finish());
     expect(screen.queryByRole("img")).toBeNull();
     expect(api.filePreviewClose).toHaveBeenCalledTimes(2);
+  });
+
+  it("retains its remote media ticket when language changes and translates a later playback error", async () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          filePreviews: [{ id: "video", name: "Video", renderer: "video", extensions: ["mp4"] }],
+        },
+      ],
+    });
+    vi.mocked(api.filePreviewOpen).mockImplementation(async (id) => ({
+      id,
+      size: 123,
+      renderer: "video",
+    }));
+    vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(() => {});
+    vi.spyOn(HTMLMediaElement.prototype, "load").mockImplementation(() => {});
+    useFilePreview.getState().show("/movie.mp4", 0, 0, { kind: "remote", sessionId: "ssh-media" });
+    render(<FilePreview />);
+    const player = await screen.findByLabelText("movie.mp4");
+    const src = player.getAttribute("src");
+    await act(async () => {
+      await i18n.changeLanguage("zh-CN");
+    });
+    expect(screen.getByLabelText("movie.mp4")).toBe(player);
+    expect(player.getAttribute("src")).toBe(src);
+    expect(api.filePreviewOpen).toHaveBeenCalledTimes(1);
+    expect(api.filePreviewClose).not.toHaveBeenCalled();
+    fireEvent.error(player);
+    expect(screen.getByRole("alert").textContent).toBe(i18n.t("preview.mediaError"));
+    await act(async () => {
+      await i18n.changeLanguage("en-US");
+    });
+    expect(screen.getByRole("alert").textContent).toBe(i18n.t("preview.mediaError"));
+    expect(api.filePreviewOpen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await screen.findByLabelText("movie.mp4");
+    expect(api.filePreviewOpen).toHaveBeenCalledTimes(2);
   });
 });

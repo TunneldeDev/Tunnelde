@@ -364,12 +364,32 @@ falls back to human approval; Full skips individual approval. Canonical path che
 hashes protect supported file tools. They do not sandbox arbitrary shell commands or trusted
 Node plugins. Client revocation cancels pending requests and owned tasks/transfers.
 
+`tasks.readOutput` returns `status`, `exitCode` and an optional `error` from the same
+snapshot as its sequenced output. The failure detail remains available after all
+events have been drained. Display it when present instead of replacing SSH channel
+or process errors with generic executable/login advice. Older hosts may omit this
+field; `tasks.status` also exposes failure details. Drain terminal output before
+reporting failure to preserve the agent's final protocol response.
+
 Views may declare `location: "sidebar"`, `kind: "chat"` and an approved activity `icon` to
 contribute a dockable controlled chat panel. `view.render` returns a `chat` block with session,
 model and approval controls; subsequent `events.publish` messages carry sequenced chat updates.
 The UI preserves drafts when a panel is moved. Secrets belong in `secrets.*`, never view data
 or plugin storage. See the hub SDK for the schema and the extension's own documentation
 for its supported controls.
+
+Chat task entries may include a `runId` identifying the operation that owns their
+saved recovery state. Live tasks, recoverable tasks and the current run's failures
+remain visible; other terminal tasks appear in a collapsed history with a count
+and failure indicator. Expanding history does not resume any task. Tool approval
+details accept plain text or JSON; the host formats JSON for reading without
+changing the approval request or decision.
+
+Inspect/resume commands receive `taskId` and `taskRunId` from
+that entry, alongside the current conversation `runId`. Plugins must validate all
+provided identities before reading or continuing a process. A task whose saved
+cursor has been replaced must stop offering recovery; its action must never
+silently target a later process or a new operation on a reused runner.
 
 Since 0.25.1, the controlled session picker provides searchable history with row-level
 rename and delete actions. `commands.session` receives `action: "select" | "new" |
@@ -416,7 +436,13 @@ are capped near 1 MiB. Local text-file reads/writes are bounded to 512 KiB and r
 binary data. Remote text uses the normal 2 MiB editor limit and the stricter API
 response/request limits still apply. Reads return `{content,size}`.
 Plugin-scoped JSON storage is limited to 256 KiB total and is kept outside package
-directories. Each Node process may have 32 host calls in flight; workspace requests
+directories. Each Node process may have 32 host calls in flight, and the host may
+have 32 command/view requests in flight to that process. Calls above either limit
+fail with `plugin.api.busy` rather than growing an unbounded queue. An async Node
+command does not block another command or view render; plugin authors must handle
+overlapping callbacks and keep synchronous CPU work short. Stop, revocation and
+process exit reject pending requests; a restarted plugin receives new request state.
+Workspace requests
 are additionally capped at 8 per plugin and 64 globally. SSH execution is bounded to
 100–60000 ms and 1 MiB of combined output, and returns `{stdout,stderr,exitCode,signal}`.
 Cancellation closes its dedicated channel; it cannot undo a command that already ran.
@@ -429,8 +455,28 @@ runtime. Revocation, restricted mode, Stop or plugin process exit cancel its act
 transfers; another plugin and a replacement process cannot cancel its work. Existing
 overwrite, symlink and recursive-copy safeguards apply.
 
+Plugin transfers use the same journaled staging and final publication as user transfers.
+Events include an optional `pluginId` for attribution. Cancellation and revocation stop
+new work and drain active writers before cleaning their temporary files. Cleanup that
+requires a disconnected destination remains visible and retries on reconnection. After
+an application restart, unfinished plugin transfers are cleaned up; they never resume
+under an expired runtime's permissions. The task list allows cancellation, speed limits
+and cleanup, but pause/resume belongs to user transfers. Start a fresh transfer from the
+plugin when needed. Completed destination files and source files are retained.
+
+`files.local.copy({from,to,overwrite?})` and
+`files.sftp.copy({sessionId,from,to,overwrite?})` also use the journaled task
+engine, with the same lease, cancellation, staging and publication rules. They
+retain their existing completion contract: return `null` only after the worker
+finishes, and reject on cancellation or failure. Directory copies commit each file
+independently; files already committed are retained on failure. Cancelling a
+pending `tools.invoke` copy signals cancellation and drains outstanding IO before
+staging cleanup. Do not interpret a caller-side RPC timeout as proof of rollback.
+For long transfers, prefer upload/download and poll their returned task IDs rather
+than holding a copy RPC open beyond the SDK call timeout.
+
 Poll `files.transferStatus({transferId})` to await completion before the next task.
-It returns a transfer event with `running`, `done`, `failed` or `cancelled`, or `null`
+It returns a transfer event with `running`, `done`, `failed`, `cancelled` or `cleanupPending`, or `null`
 for a missing/expired ID or a transfer outside the current plugin runtime. The host
 retains only the latest 256 completed plugin transfers in memory and limits each
 plugin to 8 concurrent background transfers.
@@ -658,3 +704,5 @@ not run document scripts or interactive forms. Password-protected PDFs require a
 [Stable plugin status bar API](plugin-status-bar.en-us.md)
 
 [Tab bar contributions](plugin-tab-bar.en-us.md)
+
+[Local logging and plugin diagnostics](logging.en-us.md)

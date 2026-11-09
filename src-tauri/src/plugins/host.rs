@@ -23,6 +23,21 @@ struct PendingRequest {
     id: u64,
 }
 
+struct RequestWrite<'a> {
+    connection: &'a PluginConnection,
+    complete: bool,
+}
+
+impl Drop for RequestWrite<'_> {
+    fn drop(&mut self) {
+        if !self.complete {
+            // A partial JSON line cannot be followed by another request. Closing
+            // fails all waiting calls instead of silently corrupting the stream.
+            self.connection.close();
+        }
+    }
+}
+
 impl Drop for PendingRequest {
     fn drop(&mut self) {
         self.pending
@@ -34,9 +49,16 @@ impl Drop for PendingRequest {
 
 pub struct PluginHost {
     child: Child,
+    connection: Arc<PluginConnection>,
+}
+
+/// Cloneable request transport, without ownership of the plugin process.
+/// The manager alone owns/kills Child; in-flight calls cannot keep it alive.
+pub(super) struct PluginConnection {
     stdin: Arc<Mutex<ChildStdin>>,
     pending: Pending,
     next_id: AtomicU64,
+    closed: tokio::sync::watch::Sender<bool>,
 }
 
 impl PluginHost {
@@ -74,20 +96,59 @@ impl PluginHost {
             .ok_or_else(|| AppError::internal("plugin.stdout"))?;
         let stderr = child.stderr.take();
         let stdin = Arc::new(Mutex::new(stdin));
-        let pending: Pending = Arc::new(StdMutex::new(HashMap::new()));
+        let connection = Arc::new(PluginConnection::new(stdin));
 
         let plugin_id = context.as_ref().map(|context| context.id.clone());
-        tokio::spawn(read_loop(stdout, stdin.clone(), pending.clone(), context));
+        tokio::spawn(read_loop(stdout, connection.clone(), context));
         if let Some(stderr) = stderr {
             tokio::spawn(stderr_loop(stderr, plugin_id));
         }
 
-        Ok(Self {
-            child,
+        Ok(Self { child, connection })
+    }
+
+    pub(super) fn connection(&self) -> Arc<PluginConnection> {
+        self.connection.clone()
+    }
+
+    pub async fn request(
+        &self,
+        method: &str,
+        params: Value,
+        timeout: Duration,
+    ) -> AppResult<Value> {
+        self.connection.request(method, params, timeout).await
+    }
+
+    pub fn kill(&mut self) {
+        self.connection.close();
+        let _ = self.child.start_kill();
+    }
+}
+
+impl Drop for PluginHost {
+    fn drop(&mut self) {
+        self.connection.close();
+    }
+}
+
+impl PluginConnection {
+    fn new(stdin: Arc<Mutex<ChildStdin>>) -> Self {
+        Self {
             stdin,
-            pending,
+            pending: Arc::new(StdMutex::new(HashMap::new())),
             next_id: AtomicU64::new(1),
-        })
+            closed: tokio::sync::watch::channel(false).0,
+        }
+    }
+
+    fn close(&self) {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
+        self.closed.send_replace(true);
+        pending.clear();
     }
 
     pub async fn request(
@@ -98,10 +159,19 @@ impl PluginHost {
     ) -> AppResult<Value> {
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
         let (sender, receiver) = oneshot::channel();
-        self.pending
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .insert(id, sender);
+        {
+            let mut pending = self
+                .pending
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if *self.closed.borrow() {
+                return Err(AppError::validation("plugin.exited"));
+            }
+            if pending.len() >= 32 {
+                return Err(AppError::validation("plugin.api.busy"));
+            }
+            pending.insert(id, sender);
+        }
         let _request = PendingRequest {
             pending: self.pending.clone(),
             id,
@@ -121,6 +191,14 @@ impl PluginHost {
                 Ok(Err(message)) => Err(AppError::validation(format!("plugin.error: {message}"))),
             }
         };
+        let mut closed = self.closed.subscribe();
+        let exchange = async {
+            tokio::select! {
+                biased;
+                _ = closed.wait_for(|closed| *closed) => Err(AppError::validation("plugin.exited")),
+                result = exchange => result,
+            }
+        };
         tokio::time::timeout(timeout, exchange)
             .await
             .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")))
@@ -132,6 +210,13 @@ impl PluginHost {
             line.push('\n');
         }
         let mut stdin = self.stdin.lock().await;
+        if *self.closed.borrow() {
+            return Err(AppError::validation("plugin.exited"));
+        }
+        let mut write = RequestWrite {
+            connection: self,
+            complete: false,
+        };
         stdin
             .write_all(line.as_bytes())
             .await
@@ -139,11 +224,9 @@ impl PluginHost {
         stdin
             .flush()
             .await
-            .map_err(|error| AppError::Validation(format!("plugin.write: {error}")))
-    }
-
-    pub fn kill(&mut self) {
-        let _ = self.child.start_kill();
+            .map_err(|error| AppError::Validation(format!("plugin.write: {error}")))?;
+        write.complete = true;
+        Ok(())
     }
 }
 
@@ -200,10 +283,11 @@ mod path_tests {
 
 async fn read_loop(
     stdout: ChildStdout,
-    stdin: Arc<Mutex<ChildStdin>>,
-    pending: Pending,
+    connection: Arc<PluginConnection>,
     context: Option<HostContext>,
 ) {
+    let pending = &connection.pending;
+    let mut closed = connection.closed.subscribe();
     let mut reader = BufReader::new(stdout);
     let mut requests = JoinSet::new();
     let plugin_id = context
@@ -213,7 +297,12 @@ async fn read_loop(
         .to_string();
 
     loop {
-        let line = match bounded_line(&mut reader, 1024 * 1024 + 4096).await {
+        let line = tokio::select! {
+            biased;
+            _ = closed.wait_for(|closed| *closed) => break,
+            line = bounded_line(&mut reader, 1024 * 1024 + 4096) => line,
+        };
+        let line = match line {
             Ok(Some(line)) => line,
             Ok(None) => break,
             Err(error) => {
@@ -244,7 +333,7 @@ async fn read_loop(
                 if requests.len() >= 32 {
                     if let Some(id) = request_id {
                         if write_reply(
-                            &stdin,
+                            &connection,
                             json!({"jsonrpc":"2.0","id":id,
                             "error":{"code":-32002,"message":"plugin.api.busy"}}),
                         )
@@ -256,10 +345,10 @@ async fn read_loop(
                     }
                     continue;
                 }
-                let stdin = stdin.clone();
+                let connection = connection.clone();
                 let context = context.clone();
                 requests.spawn(async move {
-                    handle_plugin_request(value, &stdin, context).await;
+                    handle_plugin_request(value, &connection, context).await;
                 });
             }
             continue;
@@ -293,6 +382,7 @@ async fn read_loop(
         }
     }
 
+    connection.close();
     requests.abort_all();
     // Cancellation is cooperative. Wait for in-flight host calls to finish
     // before removing their contributions, or a synchronous registration could
@@ -323,16 +413,11 @@ async fn read_loop(
             .transfers
             .cancel_plugin(&context.id, context.generation);
     }
-
-    let mut pending = pending.lock().unwrap_or_else(|error| error.into_inner());
-    for (_, sender) in pending.drain() {
-        let _ = sender.send(Err("plugin exited".into()));
-    }
 }
 
 async fn handle_plugin_request(
     value: Value,
-    stdin: &Arc<Mutex<ChildStdin>>,
+    connection: &PluginConnection,
     context: Option<HostContext>,
 ) {
     let id = value.get("id").cloned();
@@ -380,7 +465,7 @@ async fn handle_plugin_request(
         }
         Err(error) => json!({"jsonrpc":"2.0","id":id,"error":error_payload(&error)}),
     };
-    let _ = write_reply(stdin, reply).await;
+    let _ = write_reply(connection, reply).await;
 }
 
 pub(super) fn error_payload(error: &AppError) -> Value {
@@ -395,17 +480,10 @@ pub(super) fn error_payload(error: &AppError) -> Value {
     json!({"code":code,"message":message,"data":{"code":error.code()}})
 }
 
-async fn write_reply(stdin: &Arc<Mutex<ChildStdin>>, reply: Value) -> AppResult<()> {
-    let mut line = reply.to_string();
-    line.push('\n');
-    tokio::time::timeout(Duration::from_secs(2), async {
-        let mut writer = stdin.lock().await;
-        writer.write_all(line.as_bytes()).await?;
-        writer.flush().await
-    })
-    .await
-    .map_err(|_| AppError::validation("plugin.timeout"))??;
-    Ok(())
+async fn write_reply(connection: &PluginConnection, reply: Value) -> AppResult<()> {
+    tokio::time::timeout(Duration::from_secs(2), connection.write(&reply))
+        .await
+        .map_err(|_| AppError::validation("plugin.timeout"))?
 }
 
 async fn stderr_loop(stderr: ChildStderr, plugin_id: Option<String>) {
@@ -550,8 +628,7 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn request_timeout_includes_writing_to_a_non_reading_process() {
+    fn non_reading_host() -> PluginHost {
         #[cfg(windows)]
         let mut cmd = {
             let root = std::env::var_os("SystemRoot").unwrap();
@@ -574,12 +651,15 @@ mod tests {
             .spawn()
             .unwrap();
         let stdin = child.stdin.take().unwrap();
-        let mut host = PluginHost {
+        PluginHost {
             child,
-            stdin: Arc::new(Mutex::new(stdin)),
-            pending: Arc::new(StdMutex::new(HashMap::new())),
-            next_id: AtomicU64::new(1),
-        };
+            connection: Arc::new(PluginConnection::new(Arc::new(Mutex::new(stdin)))),
+        }
+    }
+
+    #[tokio::test]
+    async fn request_timeout_includes_writing_to_a_non_reading_process() {
+        let mut host = non_reading_host();
         let result = host
             .request(
                 "blocked",
@@ -588,44 +668,28 @@ mod tests {
             )
             .await;
         assert!(result.unwrap_err().to_string().contains("plugin.timeout"));
-        assert!(host.pending.lock().unwrap().is_empty());
+        assert!(host.connection.pending.lock().unwrap().is_empty());
+        assert!(*host.connection.closed.borrow());
+        assert_eq!(
+            host.request("after-partial-line", json!({}), Duration::from_secs(5))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "plugin.exited"
+        );
         host.kill();
         let _ = host.child.wait().await;
     }
 
     #[tokio::test]
     async fn cancelled_request_removes_its_pending_response() {
-        #[cfg(windows)]
-        let mut command = {
-            let root = std::env::var_os("SystemRoot").unwrap();
-            let mut command = Command::new(PathBuf::from(root).join("System32/PING.EXE"));
-            command
-                .args(["-n", "5", "127.0.0.1"])
-                .creation_flags(0x08000000);
-            command
-        };
-        #[cfg(not(windows))]
-        let mut command = {
-            let mut command = Command::new("/bin/sleep");
-            command.arg("5");
-            command
-        };
-        let mut child = command
-            .stdin(Stdio::piped())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .unwrap();
-        let stdin = child.stdin.take().unwrap();
-        let mut host = PluginHost {
-            child,
-            stdin: Arc::new(Mutex::new(stdin)),
-            pending: Arc::new(StdMutex::new(HashMap::new())),
-            next_id: AtomicU64::new(1),
-        };
+        let mut host = non_reading_host();
         let (other_sender, mut other_receiver) = oneshot::channel();
-        host.pending.lock().unwrap().insert(99, other_sender);
+        host.connection
+            .pending
+            .lock()
+            .unwrap()
+            .insert(99, other_sender);
         let result = tokio::time::timeout(
             Duration::from_millis(100),
             host.request("unanswered", json!({}), Duration::from_secs(5)),
@@ -633,15 +697,85 @@ mod tests {
         .await;
         assert!(result.is_err());
         let other = host
+            .connection
             .pending
             .lock()
             .unwrap()
             .remove(&99)
             .expect("another request stays registered");
-        assert!(host.pending.lock().unwrap().is_empty());
+        assert!(host.connection.pending.lock().unwrap().is_empty());
+        assert!(!*host.connection.closed.borrow());
         other.send(Ok(json!("answer"))).unwrap();
         assert_eq!(other_receiver.try_recv().unwrap().unwrap(), json!("answer"));
         host.kill();
+        let _ = host.child.wait().await;
+    }
+
+    #[tokio::test]
+    async fn retained_connection_cannot_keep_a_stopped_process_or_request_alive() {
+        let host = non_reading_host();
+        let connection = host.connection();
+        // Also cover a request blocked behind an in-flight writer, before it
+        // has acquired stdin. Closing must not wait for the request timeout.
+        let writing = connection.stdin.lock().await;
+        let call = connection.request("blocked", json!({}), Duration::from_secs(30));
+        tokio::pin!(call);
+        assert!(futures_util::poll!(&mut call).is_pending());
+        assert_eq!(connection.pending.lock().unwrap().len(), 1);
+        drop(host);
+        let error = tokio::time::timeout(Duration::from_millis(200), &mut call)
+            .await
+            .expect("process shutdown must interrupt the stdin lock wait")
+            .unwrap_err();
+        assert_eq!(error.to_string(), "plugin.exited");
+        assert!(connection.pending.lock().unwrap().is_empty());
+        drop(writing);
+        assert_eq!(
+            connection
+                .request("stale", json!({}), Duration::from_secs(30))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "plugin.exited"
+        );
+    }
+
+    #[tokio::test]
+    async fn concurrent_request_limit_is_bounded_and_released_after_cancellation() {
+        let mut host = non_reading_host();
+        let connection = host.connection();
+        let writing = connection.stdin.lock().await;
+        let mut calls = Vec::new();
+        for _ in 0..32 {
+            let mut call =
+                Box::pin(connection.request("queued", json!({}), Duration::from_secs(30)));
+            assert!(futures_util::poll!(&mut call).is_pending());
+            calls.push(call);
+        }
+        assert_eq!(connection.pending.lock().unwrap().len(), 32);
+        assert_eq!(
+            connection
+                .request("excess", json!({}), Duration::from_secs(30))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "plugin.api.busy"
+        );
+        drop(calls.pop());
+        assert_eq!(connection.pending.lock().unwrap().len(), 31);
+        let mut replacement =
+            Box::pin(connection.request("replacement", json!({}), Duration::from_secs(30)));
+        assert!(futures_util::poll!(&mut replacement).is_pending());
+        assert_eq!(connection.pending.lock().unwrap().len(), 32);
+        // Closing the process also settles all registered requests, including
+        // those that had not written any bytes; replies cannot cross runtimes.
+        host.kill();
+        for call in calls {
+            assert_eq!(call.await.unwrap_err().to_string(), "plugin.exited");
+        }
+        assert_eq!(replacement.await.unwrap_err().to_string(), "plugin.exited");
+        assert!(connection.pending.lock().unwrap().is_empty());
+        drop(writing);
         let _ = host.child.wait().await;
     }
 

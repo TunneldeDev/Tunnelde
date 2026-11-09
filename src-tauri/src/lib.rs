@@ -1,5 +1,6 @@
 mod commands;
 mod db;
+mod diagnostics;
 mod error;
 mod logs;
 mod models;
@@ -166,6 +167,7 @@ pub fn run() {
             commands::open_latest_log,
             logs::logs_read,
             logs::logs_output_read,
+            diagnostics::logs_write,
             commands::open_local_path,
             commands::reveal_local_path,
             commands::open_external,

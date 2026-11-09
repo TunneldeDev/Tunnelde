@@ -18,7 +18,9 @@ vi.mock("@/store/pluginSecurity", async (original) => ({
 }));
 vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
 vi.mock("@/features/plugins/PluginChat", () => ({
-  PluginChat: () => <div data-testid="plugin-chat" />,
+  PluginChat: ({ visible }: { visible: boolean }) => (
+    <div data-testid="plugin-chat" data-visible={visible} />
+  ),
 }));
 
 import "@/i18n/i18n";
@@ -29,6 +31,18 @@ beforeEach(() => {
 });
 
 describe("PluginViewPage", () => {
+  it("passes visibility to mounted chats without reloading their view", async () => {
+    apiMock.pluginRenderView.mockClear().mockResolvedValue({
+      blocks: [{ type: "chat", id: "chat", commands: { send: "send", stop: "stop" } }],
+    });
+    const view = render(<PluginViewPage pluginId="ai" viewId="chat" visible={false} />);
+    const chat = await screen.findByTestId("plugin-chat");
+    expect(chat.dataset.visible).toBe("false");
+    view.rerender(<PluginViewPage pluginId="ai" viewId="chat" visible />);
+    expect(chat.dataset.visible).toBe("true");
+    expect(apiMock.pluginRenderView).toHaveBeenCalledOnce();
+  });
+
   it("omits the redundant refresh header for chat-only views but keeps it for mixed tools", async () => {
     const chat = { type: "chat", id: "chat", commands: { send: "send", stop: "stop" } };
     apiMock.pluginRenderView.mockResolvedValueOnce({ title: "AI", blocks: [chat] });
