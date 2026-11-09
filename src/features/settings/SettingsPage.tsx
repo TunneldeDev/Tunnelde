@@ -47,6 +47,7 @@ import { COLOR_REGIONS, previewColors, resolveAccent } from "@/lib/prefs/colors"
 import type { ResolvedTheme } from "@/lib/prefs/appearance";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
+import { UiProviderSettings } from "@/features/plugins/UiProviderSettings";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
 import { NetworkSettingsSection } from "./NetworkSettings";
@@ -623,6 +624,8 @@ export function SettingsPage() {
                               onReset={() => resetOne(definition)}
                             />
                           )
+                        ) : definition.kind === "uiProviders" ? (
+                          <UiProviderSettings key={definition.key} />
                         ) : definition.kind === "network" ? (
                           <NetworkSettingsSection key={definition.key} />
                         ) : definition.kind === "shortcutRules" ? (

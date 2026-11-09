@@ -391,6 +391,11 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             if !patch.is_object() {
                 return Err(AppError::validation("plugin.api.invalid:patch"));
             }
+            if patch.get("uiProviders").is_some() {
+                return Err(AppError::validation(
+                    "plugin.frontend.userSelectionRequired",
+                ));
+            }
             encode(commands::settings_update(app.clone(), state, patch)?)
         }
         "hosts.snapshot" => encode(crate::services::hosts::snapshot(&state.db)?),

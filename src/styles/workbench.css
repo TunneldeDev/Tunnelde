@@ -5,6 +5,44 @@
 .app__body {
   flex: 1 1 0;
 }
+.provider-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.provider-content[hidden] {
+  display: none;
+}
+.provider-recovery {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--td-border);
+  background: var(--td-panel);
+  font-size: 12px;
+}
+.provider-recovery > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-recovery > button {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.is-compact-chrome:not(.is-macos) > .provider-recovery {
+  padding-right: 190px;
+  min-height: 40px;
+}
+.is-compact-chrome.is-macos > .provider-recovery {
+  padding-left: 84px;
+  min-height: 40px;
+}
 .statusbar {
   flex: 0 0 var(--td-statusbar-h);
 }
@@ -1175,6 +1213,14 @@
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.ui-provider-settings {
+  display: grid;
+  gap: 16px;
+}
+.ui-provider-settings > .settings-subtitle {
+  margin-bottom: 0;
 }
 
 .sftp-pane__drag {

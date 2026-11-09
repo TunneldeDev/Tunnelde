@@ -93,6 +93,22 @@ export interface FrontendViewProps {
   pluginId: string;
   viewId: string;
   visible: boolean;
+  /** Present only for a user-selected workbench provider. Mount Workspace synchronously
+   * exactly once and keep it mounted. Omitting other surfaces is allowed.
+   */
+  workbench?: FrontendWorkbenchSlots;
+}
+/** Movable host-owned surfaces. Their contents stay mounted when a provider changes. */
+export interface FrontendWorkbenchSlots {
+  Workspace: React.ComponentType;
+  Navigation: React.ComponentType;
+  Inspector: React.ComponentType;
+  StatusBar: React.ComponentType;
+}
+export type FrontendProviderTarget = "hostList" | "workbench";
+/** Optional manifest view field; requires kind: component and a trusted frontend. */
+export interface FrontendProviderContribution {
+  provider?: FrontendProviderTarget;
 }
 export interface FrontendContext {
   readonly sdk: UiSdk;

@@ -1,5 +1,8 @@
 import { ShortcutConflictDialog } from "@/features/settings/ShortcutConflictDialog";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
+import { createWorkbenchSurfaces } from "./WorkbenchSurfaces";
+import { ProviderSurface } from "./ProviderSurface";
 
 import { SidebarArea, SidebarContents } from "@/components/layout/SidebarDock";
 import { CommandPalette } from "@/components/layout/CommandPalette";
@@ -44,6 +47,7 @@ const EDGES: Array<{ edge: string; direction: SplitDirection; position: PanePosi
 ];
 
 export function AppShell() {
+  const [surfaces] = useState(createWorkbenchSurfaces);
   useEffect(() => {
     if (!isTauri()) return;
     const controller = new AbortController();
@@ -206,26 +210,44 @@ export function AppShell() {
       style={style}
     >
       <WindowTitleBar />
-      <div className="app__body">
-        <ActivityBar />
-        <SidebarArea />
-        <SidebarContents />
-        {sidebarVisible ? (
-          <Resizer
-            value={sidebarWidth}
-            min={220}
-            max={420}
-            edge="right"
-            label="Sidebar width"
-            onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
-            onCommit={(value) => {
-              void updateSettings({ sidebarWidth: Math.round(value) });
-            }}
-          />
-        ) : null}
+      <ProviderSurface
+        target="workbench"
+        slots={surfaces.slots}
+        validate={surfaces.hasWorkspace}
+        subscribe={surfaces.subscribe}
+      >
+        <div className="app__body">
+          <surfaces.slots.Navigation />
+          <surfaces.slots.Workspace />
+          <surfaces.slots.Inspector />
+        </div>
+        <surfaces.slots.StatusBar />
+      </ProviderSurface>
+      <SidebarContents />
+      <WorkspaceContents />
+      {createPortal(
+        <>
+          <ActivityBar />
+          <SidebarArea />
+          {sidebarVisible ? (
+            <Resizer
+              value={sidebarWidth}
+              min={220}
+              max={420}
+              edge="right"
+              label="Sidebar width"
+              onChange={(value) => app.current?.style.setProperty("--td-sidebar-w", `${value}px`)}
+              onCommit={(value) => {
+                void updateSettings({ sidebarWidth: Math.round(value) });
+              }}
+            />
+          ) : null}
+        </>,
+        surfaces.container("navigation"),
+      )}
+      {createPortal(
         <main className="workspace" ref={workspace}>
           <PaneLayout />
-          <WorkspaceContents />
           {tabDrag ? (
             <div className="pane-edges">
               {EDGES.map((item) => (
@@ -236,41 +258,50 @@ export function AppShell() {
               ))}
             </div>
           ) : null}
-        </main>
-        {settings.rightPanel ? (
-          <Resizer
-            value={panelWidth}
-            min={240}
-            max={460}
-            edge="left"
-            label="Panel width"
-            onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
-            onCommit={(value) => {
-              void updateSettings({ rightPanelWidth: Math.round(value) });
-            }}
+        </main>,
+        surfaces.container("workspace"),
+      )}
+      {createPortal(
+        <>
+          {settings.rightPanel ? (
+            <Resizer
+              value={panelWidth}
+              min={240}
+              max={460}
+              edge="left"
+              label="Panel width"
+              onChange={(value) => app.current?.style.setProperty("--td-panel-w", `${value}px`)}
+              onCommit={(value) => {
+                void updateSettings({ rightPanelWidth: Math.round(value) });
+              }}
+            />
+          ) : null}
+          {activeSession ? (
+            <RemotePanel
+              sessionId={activeSession.id}
+              width={panelWidth}
+              hidden={!settings.rightPanel}
+              onHide={() => void updateSettings({ rightPanel: false })}
+            />
+          ) : (
+            <SystemPanel
+              width={panelWidth}
+              hidden={!settings.rightPanel}
+              onHide={() => void updateSettings({ rightPanel: false })}
+            />
+          )}
+        </>,
+        surfaces.container("inspector"),
+      )}
+      {createPortal(
+        settings.showStatusBar ? (
+          <StatusBar
+            panelOpen={settings.rightPanel}
+            onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
           />
-        ) : null}
-        {activeSession ? (
-          <RemotePanel
-            sessionId={activeSession.id}
-            width={panelWidth}
-            hidden={!settings.rightPanel}
-            onHide={() => void updateSettings({ rightPanel: false })}
-          />
-        ) : (
-          <SystemPanel
-            width={panelWidth}
-            hidden={!settings.rightPanel}
-            onHide={() => void updateSettings({ rightPanel: false })}
-          />
-        )}
-      </div>
-      {settings.showStatusBar ? (
-        <StatusBar
-          panelOpen={settings.rightPanel}
-          onTogglePanel={() => void updateSettings({ rightPanel: !settings.rightPanel })}
-        />
-      ) : null}
+        ) : null,
+        surfaces.container("statusbar"),
+      )}
       <ToastHost />
       <DialogHost />
       <ShortcutConflictDialog />

@@ -1252,7 +1252,10 @@
       "missingActivate": "The frontend module must export an activate function.",
       "viewUnavailable": "The plugin finished starting but did not register this view. Refresh it or check the software log.",
       "commandUnavailable": "The plugin has not registered this frontend command.",
-      "activationFailed": "The plugin UI failed to activate. Check the software log and restart the plugin."
+      "activationFailed": "The plugin UI failed to activate. Check the software log and restart the plugin.",
+      "missingWorkspace": "The workbench provider did not keep its workspace mounted. The built-in interface has been restored.",
+      "duplicateSurface": "The workbench provider mounted a host surface more than once.",
+      "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API."
     }
   },
   "themes": {
@@ -2009,5 +2012,15 @@
     "sessions": "Active SSH connections",
     "plugins": "Running plugins",
     "actions": "Output actions"
+  },
+  "providers": {
+    "title": "Interface providers",
+    "hint": "Choose installed extensions for host navigation or the workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
+    "hostList": "Host list",
+    "workbench": "Workbench",
+    "builtin": "Built-in",
+    "unavailable": "Unavailable",
+    "fallback": "Using the built-in interface: the selected provider is unavailable.",
+    "restore": "Restore built-in interface"
   }
 }

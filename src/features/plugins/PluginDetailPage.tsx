@@ -287,21 +287,23 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           </div>
         </section>
       ) : null}
-      {own && !themeOnly && installed.views.length ? (
+      {own && !themeOnly && installed.views.some((view) => !view.provider) ? (
         <section className="plugin-detail__tools">
           <h2>{t("market.openTool")}</h2>
           <div className="settings-actions">
-            {installed.views.map((view) => (
-              <Button
-                key={view.id}
-                variant="primary"
-                disabled={busy || !!task}
-                leading={<ExternalLink size={13} />}
-                onClick={() => void openView(view)}
-              >
-                {view.title}
-              </Button>
-            ))}
+            {installed.views
+              .filter((view) => !view.provider)
+              .map((view) => (
+                <Button
+                  key={view.id}
+                  variant="primary"
+                  disabled={busy || !!task}
+                  leading={<ExternalLink size={13} />}
+                  onClick={() => void openView(view)}
+                >
+                  {view.title}
+                </Button>
+              ))}
           </div>
         </section>
       ) : null}

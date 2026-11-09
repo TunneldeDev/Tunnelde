@@ -25,12 +25,29 @@ vi.mock("@/features/plugins/PluginChat", () => ({
 
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
+import { usePlugins } from "@/store/plugins";
 beforeEach(() => {
   nativeMock.mockReturnValue(false);
   authorizeMock.mockReset().mockResolvedValue(true);
+  usePlugins.setState({ items: [] });
 });
 
 describe("PluginViewPage", () => {
+  it("does not mount a workbench provider as an ordinary plugin view", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "layout",
+          views: [{ id: "desktop", kind: "component", provider: "workbench" }],
+        },
+      ] as never,
+    });
+    apiMock.pluginRenderView.mockClear();
+    render(<PluginViewPage pluginId="layout" viewId="desktop" />);
+    expect(screen.getByText("Interface providers")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
+    expect(apiMock.pluginRenderView).not.toHaveBeenCalled();
+  });
   it("passes visibility to mounted chats without reloading their view", async () => {
     apiMock.pluginRenderView.mockClear().mockResolvedValue({
       blocks: [{ type: "chat", id: "chat", commands: { send: "send", stop: "stop" } }],

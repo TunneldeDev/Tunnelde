@@ -47,6 +47,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "preloadCount",
     "motion",
     "showStatusBar",
+    "uiProviders",
     "restoreWorkspace",
     "hostActivation",
     "hostDirectConnect",

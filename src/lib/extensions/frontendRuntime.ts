@@ -207,9 +207,14 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         timeoutMs: 60_000,
       });
     },
-    view: (id: string, viewId: string) => {
+    view: (id: string, viewId: string, fingerprint?: string) => {
       const runtime = runtimes.get(id);
-      return runtime?.activated ? runtime.views.get(viewId) : undefined;
+      return runtime?.activated &&
+        !runtime.retiring &&
+        !runtime.scope.signal.aborted &&
+        (fingerprint === undefined || runtime.plugin.fingerprint === fingerprint)
+        ? runtime.views.get(viewId)
+        : undefined;
     },
     token: (id: string) => runtimes.get(id)?.token,
     stop,

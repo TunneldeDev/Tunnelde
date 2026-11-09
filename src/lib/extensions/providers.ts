@@ -1,0 +1,30 @@
+import type { PluginInfo, Settings } from "@/lib/api/types";
+import type { FrontendProviderTarget } from "./uiSdkContract";
+
+export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProviderTarget) {
+  return [...plugins]
+    .sort((a, b) => a.id.localeCompare(b.id))
+    .flatMap((plugin) =>
+      plugin.frontend &&
+      plugin.permissions.includes("ui.trusted") &&
+      (target !== "hostList" || plugin.permissions.includes("hosts.read"))
+        ? plugin.views
+            .filter((view) => view.kind === "component" && view.provider === target)
+            .map((view) => ({ plugin, view }))
+        : [],
+    );
+}
+
+export function selectedUiProvider(
+  plugins: readonly PluginInfo[],
+  selections: Settings["uiProviders"],
+  target: FrontendProviderTarget,
+) {
+  const selected = selections?.[target];
+  return (
+    selected &&
+    uiProviders(plugins, target).find(
+      ({ plugin, view }) => plugin.id === selected.pluginId && view.id === selected.viewId,
+    )
+  );
+}

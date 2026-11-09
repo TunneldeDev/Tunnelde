@@ -48,6 +48,19 @@ beforeEach(async () => {
   });
 });
 describe("plugin workspace details", () => {
+  it("does not render an empty Open tool section for provider-only packages", () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          views: [{ id: "desktop", title: "Desktop", kind: "component", provider: "workbench" }],
+        },
+      ],
+    });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    expect(screen.queryByRole("heading", { name: "Open tool" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
+  });
   it("shows declared application and API requirements without relying on README text", () => {
     usePlugins.setState({
       items: [

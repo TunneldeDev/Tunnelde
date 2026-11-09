@@ -62,6 +62,7 @@ export interface Settings {
   preloadCount: number;
   motion: MotionPreference;
   showStatusBar: boolean;
+  uiProviders: Partial<Record<"hostList" | "workbench", { pluginId: string; viewId: string }>>;
   restoreWorkspace: boolean;
   hostActivation: HostActivation;
   hostDirectConnect: boolean;
@@ -452,6 +453,7 @@ export interface PluginView {
   location?: "sidebar" | "workspace";
   kind?: "chat" | "blocks" | "component";
   icon?: string;
+  provider?: "hostList" | "workbench";
 }
 
 export interface PluginEvent {

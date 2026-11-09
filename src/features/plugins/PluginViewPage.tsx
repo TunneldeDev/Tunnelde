@@ -25,6 +25,8 @@ import "@/styles/pluginTools.css";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { usePlugins } from "@/store/plugins";
 import { PluginComponentView } from "./PluginComponentView";
+import { useNavigation } from "@/store/navigation";
+import { useWorkspace } from "@/store/workspace";
 
 interface PluginViewPageProps {
   pluginId: string;
@@ -44,17 +46,30 @@ export function PluginViewPage({
   embedded,
   visible = true,
 }: PluginViewPageProps) {
-  const component = usePlugins((state) =>
-    state.items.find(
-      (plugin) =>
-        plugin.id === pluginId &&
-        plugin.views.some((view) => view.id === viewId && view.kind === "component"),
-    ),
-  );
-  if (component)
+  const { t } = useTranslation();
+  const plugin = usePlugins((state) => state.items.find((item) => item.id === pluginId));
+  const view = plugin?.views.find((item) => item.id === viewId);
+  if (view?.provider)
+    return (
+      <EmptyState
+        title={t("providers.title")}
+        body={t("providers.hint")}
+        action={
+          <Button
+            onClick={() => {
+              useNavigation.getState().selectSettings("plugins");
+              useWorkspace.getState().openPage("settings");
+            }}
+          >
+            {t("settings.title")}
+          </Button>
+        }
+      />
+    );
+  if (plugin && view?.kind === "component")
     return (
       <PluginComponentView
-        key={`${pluginId}:${viewId}:${component.fingerprint ?? ""}`}
+        key={`${pluginId}:${viewId}:${plugin.fingerprint ?? ""}`}
         pluginId={pluginId}
         viewId={viewId}
         visible={visible}
