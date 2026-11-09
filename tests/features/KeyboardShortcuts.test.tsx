@@ -116,6 +116,25 @@ describe("KeyboardShortcuts", () => {
       screen.getAllByRole("listitem").every((row) => within(row).queryByText("Unassigned")),
     ).toBe(true);
   });
+  it("requires @ in typed filters and preserves quoted fields when clearing menu presets", () => {
+    render(<KeyboardShortcuts />);
+    search("is:modified");
+    expect(screen.getByRole("checkbox", { name: "Modified" })).toHaveProperty("checked", false);
+    expect(screen.queryAllByRole("listitem")).toHaveLength(0);
+    search('"@is:modified" @source:built-in');
+    expect(screen.getByRole("checkbox", { name: "Modified" })).toHaveProperty("checked", false);
+    fireEvent.click(screen.getByRole("button", { name: "Filter shortcuts" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clear filters" }));
+    expect(screen.getByRole("textbox", { name: "Search commands or shortcuts" })).toHaveProperty(
+      "value",
+      '"@is:modified"',
+    );
+    fireEvent.click(screen.getByRole("checkbox", { name: "Modified" }));
+    expect(screen.getByRole("textbox", { name: "Search commands or shortcuts" })).toHaveProperty(
+      "value",
+      '"@is:modified" @is:modified',
+    );
+  });
   it("offers installed plugins and combines their selection with related conflicts", () => {
     usePlugins.setState({
       items: [

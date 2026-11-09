@@ -1,5 +1,9 @@
 import { expect, it } from "vitest";
-import { parseShortcutQuery, toggleShortcutFilter } from "@/lib/keyboard/query";
+import {
+  clearShortcutFilters,
+  parseShortcutQuery,
+  toggleShortcutFilter,
+} from "@/lib/keyboard/query";
 import { shortcutCommands, shortcutFilter } from "@/lib/keyboard/registry";
 
 it("toggles discoverable filters without losing text, other filters or duplicate plugin selections", () => {
@@ -27,6 +31,40 @@ it("keeps unknown syntax and embedded operator-like text searchable", () => {
     "mail@is:conflict @is:unknown @source:unknown",
   );
   expect(parseShortcutQuery("@plugins:Alpha,alpha,beta").plugins).toEqual(["alpha", "beta"]);
+});
+
+it("requires @ for each shortcut filter and treats bare fields as ordinary text", () => {
+  expect(parseShortcutQuery("is:conflict source:plugin plugins:Alpha")).toEqual({
+    text: "is:conflict source:plugin plugins:Alpha",
+    states: new Set(),
+    source: null,
+    plugins: [],
+  });
+  expect(parseShortcutQuery("is:conflict @is:modified").states).toEqual(new Set(["modified"]));
+});
+
+it("never activates quoted, excluded or embedded filters while editing presets", () => {
+  const literal = '"search @is:conflict" "@source:plugin" -@is:modified mail@plugins:Alpha';
+  const parsed = parseShortcutQuery(literal);
+  expect(parsed.states.size).toBe(0);
+  expect(parsed.source).toBeNull();
+  expect(parsed.plugins).toEqual([]);
+  const changed = toggleShortcutFilter(literal, "is", "unassigned");
+  expect(changed).toBe(`${literal} @is:unassigned`);
+  expect(parseShortcutQuery(changed).states).toEqual(new Set(["unassigned"]));
+  expect(clearShortcutFilters(changed)).toBe(literal);
+});
+
+it("preserves ampersands and quoted plugin names through filter edits", () => {
+  expect(clearShortcutFilters('"A & B" @is:conflict & @plugins:One')).toBe('"A & B"');
+  const query = toggleShortcutFilter("Find&Replace @is:modified", "plugins", "Plugin One");
+  expect(parseShortcutQuery(query)).toEqual({
+    text: "Find&Replace",
+    states: new Set(["modified"]),
+    source: null,
+    plugins: ["Plugin One"],
+  });
+  expect(toggleShortcutFilter(query, "plugins", "plugin one")).toBe("Find&Replace @is:modified");
 });
 
 it("combines modified, disabled bindings and source filters with ordinary text", () => {

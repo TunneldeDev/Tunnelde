@@ -11,6 +11,13 @@ const host = {
 } as Host;
 
 describe("host search", () => {
+  it("does not interpret bare fields as filters even when metadata matches", () => {
+    for (const query of ["tag:PublicNet", "is:favorite", "host:192.168.5.206", "user:deploy"])
+      expect(matchesHostQuery(host, parseHostQuery(query))).toBe(false);
+    expect(
+      matchesHostQuery({ ...host, name: "tag:PublicNet" }, parseHostQuery("tag:PublicNet")),
+    ).toBe(true);
+  });
   it("accepts the requested @tag syntax and GitHub-style exact tag qualifiers", () => {
     for (const query of [
       "@tag:PublicNet",
