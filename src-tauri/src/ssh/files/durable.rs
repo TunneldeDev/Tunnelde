@@ -141,6 +141,10 @@ pub(super) fn needs_review(error: Option<&str>) -> bool {
 
 pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<AppError>) {
     row.error = Some(match error {
+        Some(AppError::TransferCreationUnconfirmed { path }) => {
+            row.artifact_recovery = Some(path);
+            "sftp.transferCreationUnconfirmed".into()
+        }
         Some(AppError::TransferArtifactUnrecognized { path }) => {
             row.artifact_recovery = Some(path);
             "sftp.transferArtifactUnrecognized".into()
@@ -577,6 +581,35 @@ mod tests {
                 Some("C:\\downloads\\owned.part")
             );
         }
+    }
+
+    #[test]
+    fn unconfirmed_creation_keeps_its_path_without_becoming_a_permanent_review_lock() {
+        let mut row: DurableTransfer = serde_json::from_value(serde_json::json!({
+            "id":"job","direction":"transfer","name":"file","fromSession":null,
+            "fromHostId":null,"fromPath":"/source","toSession":"remote",
+            "toHostId":"host","toPath":"/destination","removeSource":false,
+            "overwrite":false,"transferred":0,"total":0,"status":"cleanupPending",
+            "error":null,"updatedAt":1
+        }))
+        .unwrap();
+        record_cleanup_failure(
+            &mut row,
+            Some(AppError::TransferCreationUnconfirmed {
+                path: "/private-stage".into(),
+            }),
+        );
+        let restored: DurableTransfer =
+            serde_json::from_str(&serde_json::to_string(&row).unwrap()).unwrap();
+        assert_eq!(
+            restored.error.as_deref(),
+            Some("sftp.transferCreationUnconfirmed")
+        );
+        assert_eq!(
+            restored.artifact_recovery.as_deref(),
+            Some("/private-stage")
+        );
+        assert!(!needs_review(restored.error.as_deref()));
     }
 
     #[test]

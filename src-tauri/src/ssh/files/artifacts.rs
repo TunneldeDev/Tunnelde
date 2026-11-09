@@ -5,10 +5,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod staging;
-pub(super) use staging::{
-    creation_rejected as directory_creation_rejected,
-    creation_started as directory_creation_started,
-};
+pub(super) use staging::create_directory;
 use staging::{prepare_remote_staging, remote_staging, retire_remote_staging, staging_directory};
 
 #[derive(Serialize, Deserialize)]
