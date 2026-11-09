@@ -400,6 +400,9 @@ async fn read_loop(
             generation == context.generation
         });
         super::tasks::cancel_plugin(&context.id, Some(context.generation));
+        super::sessions::remove_runtime(&context.app, &context.id, |generation| {
+            generation == context.generation
+        });
         context
             .app
             .state::<crate::state::AppState>()
