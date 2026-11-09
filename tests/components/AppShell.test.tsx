@@ -1,3 +1,4 @@
+import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { Profiler } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -318,12 +319,22 @@ describe("scoped plugin shortcut conflicts", () => {
         event.preventDefault();
         event.stopPropagation();
       });
-      local.addEventListener("keydown", handler);
+      const unbind = bindShortcutProvider(local, (event) =>
+        scopedShortcutCandidates(
+          event,
+          [scope === "sftp-pane" ? "files.filter" : "terminal.copy"],
+          () => {
+            handler(new Event("accepted"));
+            return true;
+          },
+        ),
+      );
       fireEvent.keyDown(local, { key, ctrlKey: true, shiftKey });
       await act(async () => {});
       expect(handler).toHaveBeenCalledTimes(1);
       expect(run).toHaveBeenCalledTimes(1);
       expect(run).toHaveBeenCalledWith("plugin.c.4.test.run");
+      unbind();
       run.mockRestore();
     },
   );
@@ -573,4 +584,67 @@ describe("AppShell workspace drag routing", () => {
     ]);
     expect(state.layout).toMatchObject({ id: "initial-split", direction: "row" });
   });
+});
+
+describe("advanced cross-scope shortcut rules", () => {
+  it.each(["continue", "block"] as const)(
+    "applies plugin priority and %s to local handlers and raw input",
+    (propagation) => {
+      usePlugins.setState({
+        items: [
+          {
+            id: "test",
+            name: "Test",
+            runtime: "node",
+            views: [],
+            commands: [{ id: "run", title: "Run", keybindings: ["Mod+F"] }],
+          } as unknown as PluginInfo,
+        ],
+      });
+      useSettings.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          shortcutRules: {
+            "plugin.c.4.test.run": { "Mod+F": { priority: 500, propagation } },
+            "files.filter": { "Mod+F": { priority: 100, propagation: "continue" } },
+          },
+        },
+      });
+      const run = vi.spyOn(keyboardActions, "runWorkbenchCommand").mockReturnValue(true);
+      const { container } = render(<AppShell />);
+      const element = document.createElement("div");
+      element.className = "sftp-pane";
+      container.append(element);
+      const local = vi.fn(() => true),
+        raw = vi.fn();
+      const unbind = bindShortcutProvider(element, (event) =>
+        scopedShortcutCandidates(event, ["files.filter"], local),
+      );
+      element.addEventListener("keydown", raw);
+      fireEvent.keyDown(element, { key: "f", ctrlKey: true });
+      expect(run).toHaveBeenCalledExactlyOnceWith("plugin.c.4.test.run");
+      expect(local).toHaveBeenCalledTimes(propagation === "block" ? 0 : 1);
+      expect(raw).toHaveBeenCalledTimes(propagation === "block" ? 0 : 1);
+      unbind();
+      run.mockRestore();
+    },
+  );
+});
+
+it("allows explicit workbench rules to override automatic shell ownership", () => {
+  useSettings.setState({
+    settings: {
+      ...DEFAULT_SETTINGS,
+      shortcutRules: { "sidebar.toggle": { "Mod+B": { priority: 500, propagation: "block" } } },
+    },
+  });
+  const { container } = render(<AppShell />);
+  const host = document.createElement("div");
+  host.className = "terminal-host";
+  container.append(host);
+  const raw = vi.fn();
+  host.addEventListener("keydown", raw);
+  fireEvent.keyDown(host, { key: "b", ctrlKey: true });
+  expect(useNavigation.getState().sidebarVisible).toBe(false);
+  expect(raw).not.toHaveBeenCalled();
 });

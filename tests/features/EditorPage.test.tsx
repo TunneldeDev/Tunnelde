@@ -134,6 +134,26 @@ describe("editor formatting shortcuts", () => {
     ]);
   });
 
+  it("blocks lower-priority editor plugins after accepting the preferred formatter", async () => {
+    const textarea = prepare();
+    act(() => {
+      usePlugins.setState((state) => ({
+        items: [...state.items, { ...state.items[0]!, id: "second", name: "Second" }],
+      }));
+      useSettings.setState({
+        settings: {
+          ...DEFAULT_SETTINGS,
+          shortcutRules: {
+            "plugin.c.6.second.pretty": { "Mod+Shift+F": { priority: 500, propagation: "block" } },
+          },
+        },
+      });
+    });
+    fireEvent.keyDown(textarea, { key: "F", ctrlKey: true, shiftKey: true });
+    await waitFor(() => expect(api.pluginRun).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(api.pluginRun).mock.calls[0]?.[0]).toBe("second");
+  });
+
   it("runs both matching editor commands contributed by one plugin in sequence", async () => {
     const textarea = prepare();
     act(() =>

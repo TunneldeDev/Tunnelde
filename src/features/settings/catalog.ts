@@ -27,6 +27,7 @@ export interface SettingDefinition {
     | "fileIcons"
     | "css"
     | "shortcuts"
+    | "shortcutRules"
     | "network"
     | "updateUrl";
   hint?: MessageKey;
@@ -249,6 +250,18 @@ export const SETTINGS_CATALOG: SettingDefinition[] = [
     kind: "shortcuts",
     label: "shortcuts.title",
     hint: "shortcuts.hint",
+  },
+  {
+    key: "shortcutRules",
+    section: "shortcuts",
+    kind: "shortcutRules",
+    label: "shortcuts.advanced.title",
+  },
+  {
+    key: "showShortcutDetails",
+    section: "shortcuts",
+    kind: "shortcutRules",
+    label: "shortcuts.advanced.show",
   },
   select("language", "general", [
     choice("system", "settings.languageSystem"),

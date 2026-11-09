@@ -9,6 +9,8 @@ export function createDefaultSettings(platform = "unknown"): Settings {
   return {
     network: { profiles: [], defaultProxy: "", features: {} },
     keyboardShortcuts: {},
+    shortcutRules: {},
+    showShortcutDetails: false,
     language: "system",
     theme: "system",
     accent: "blue",

@@ -1,4 +1,9 @@
-import { matchesCommand } from "@/lib/keyboard/registry";
+import {
+  bindShortcutProvider,
+  dispatchShortcuts,
+  executeShortcutCandidates,
+  scopedShortcutCandidates,
+} from "@/lib/keyboard/routing";
 import { FitAddon } from "@xterm/addon-fit";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { Terminal } from "@xterm/xterm";
@@ -31,7 +36,7 @@ import { useContextMenu } from "@/store/contextMenu";
 import { toast } from "@/store/toasts";
 import { createTerminalOutputDecoder } from "./terminalOutput";
 import { bindTerminalClipboard } from "./terminalClipboard";
-import { terminalEditingSequence } from "./terminalKeyboard";
+import { terminalSequenceFor } from "./terminalKeyboard";
 import { registerTerminalCheckpoint, takeTerminalCheckpoint } from "./terminalCheckpoint";
 import { captureTerminalState, restoreTerminalState } from "./terminalState";
 
@@ -123,6 +128,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       return;
     }
 
+    let unregisterShortcuts: (() => void) | undefined;
     let disposed = false;
     let ended = false;
     let registrationFailed = false;
@@ -318,47 +324,70 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         }, 150);
       });
       const mac = /Mac|iPhone|iPad/.test(navigator.platform);
+      const terminalCandidates = (event: KeyboardEvent) =>
+        scopedShortcutCandidates(
+          event,
+          [
+            "terminal.selectAll",
+            "terminal.paste",
+            "terminal.copy",
+            "terminal.lineStart",
+            "terminal.lineEnd",
+            "terminal.wordLeft",
+            "terminal.wordRight",
+            "terminal.deleteLineStart",
+            "terminal.deleteLineEnd",
+          ],
+          (id) => {
+            if (disposed) return false;
+            if (id === "terminal.selectAll") {
+              instance.selectAll();
+              return true;
+            }
+            if (id === "terminal.copy") {
+              const plainControlC =
+                event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey &&
+                event.key.toLowerCase() === "c";
+              if (
+                (plainControlC && !mac && !instance.hasSelection()) ||
+                (!instance.hasSelection() && instance.modes.mouseTrackingMode !== "none")
+              )
+                return false;
+              copy();
+              return true;
+            }
+            if (ended || checkpointing.current) return false;
+            if (id === "terminal.paste") {
+              paste();
+              return true;
+            }
+            const sequence = terminalSequenceFor(id);
+            if (sequence === null) return false;
+            instance.input(sequence, true);
+            return true;
+          },
+        );
+      unregisterShortcuts = bindShortcutProvider(element, terminalCandidates);
       instance.attachCustomKeyEventHandler((event) => {
         if (
           event.type !== "keydown" ||
           event.defaultPrevented ||
           event.isComposing ||
-          event.keyCode === 229
-        ) {
+          event.keyCode === 229 ||
+          event.getModifierState("AltGraph")
+        )
           return true;
-        }
-        const bindings = useSettings.getState().settings.keyboardShortcuts;
-        if (matchesCommand(event, "terminal.selectAll", bindings)) {
-          if (!disposed) instance.selectAll();
-          event.preventDefault();
-          return false;
-        }
-        const sequence = terminalEditingSequence(event, bindings);
-        if (sequence !== null) {
-          // input() follows the same onData/SSH path as physical keys and retains
-          // xterm's user-input scrolling. paste() would add bracketed-paste markers.
-          if (!disposed && !ended && !checkpointing.current) instance.input(sequence, true);
-          event.preventDefault();
-          return false;
-        }
-        if (matchesCommand(event, "terminal.paste", bindings)) {
-          event.preventDefault();
-          paste();
-          return false;
-        }
-        // Keep the shell's SIGINT on ordinary Ctrl+C when nothing is selected.
-        const plainControlC =
-          event.ctrlKey && !event.metaKey && !event.shiftKey && event.key.toLowerCase() === "c";
-        if (
-          matchesCommand(event, "terminal.copy", bindings) &&
-          (!plainControlC || mac || instance.hasSelection()) &&
-          (instance.hasSelection() || instance.modes.mouseTrackingMode === "none")
-        ) {
-          event.preventDefault();
-          copy();
-          return false;
-        }
-        return true;
+        const result =
+          event.target instanceof Element
+            ? dispatchShortcuts(event)
+            : executeShortcutCandidates(
+                event,
+                terminalCandidates(event),
+                useSettings.getState().settings.shortcutRules,
+              );
+        return !result.consumed;
       });
       fit();
       instance.refresh(0, Math.max(0, instance.rows - 1));
@@ -477,6 +506,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
 
     return () => {
       disposed = true;
+      unregisterShortcuts?.();
       checkpointing.current = false;
       unregisterCheckpoint?.();
       sequenceWaiters.forEach((check) => check());

@@ -1,3 +1,4 @@
+import type { ShortcutRules } from "@/lib/keyboard/routing";
 import type { NetworkSettings } from "./network";
 export type Language = "system" | "zh-CN" | "en-US";
 export type ThemeMode = "dark" | "light" | "system";
@@ -30,6 +31,8 @@ export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 export interface Settings {
   network: NetworkSettings;
   keyboardShortcuts: Record<string, string[]>;
+  shortcutRules: ShortcutRules;
+  showShortcutDetails: boolean;
   language: Language;
   theme: ThemeMode;
   accent: Accent | string;

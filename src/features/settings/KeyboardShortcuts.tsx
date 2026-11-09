@@ -1,9 +1,13 @@
-import { Keyboard, Pencil, Plus, RotateCcw, X } from "lucide-react";
+import { Keyboard, Pencil, Plus, RotateCcw, Settings2, X } from "lucide-react";
 import { SearchField } from "@/components/ui/form/SearchField";
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ParseKeys } from "i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
+import { Switch } from "@/components/ui/form/Field";
+import { Select } from "@/components/ui/form/Select";
+import { ShortcutAdvancedDialog } from "./ShortcutAdvancedDialog";
+import { shortcutRule } from "@/lib/keyboard/routing";
 import { Input } from "@/components/ui/form/Field";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import {
@@ -33,6 +37,10 @@ export function KeyboardShortcuts() {
   const plugins = usePlugins((state) => state.items);
   const definitions = useMemo(() => shortcutCommands(plugins), [plugins]);
   const overrides = useSettings((state) => state.settings.keyboardShortcuts) ?? EMPTY_SHORTCUTS;
+  const rules = useSettings((state) => state.settings.shortcutRules) ?? EMPTY_SHORTCUTS;
+  const showDetails = useSettings((state) => state.settings.showShortcutDetails) ?? false;
+  const [advanced, setAdvanced] = useState<ShortcutCommand | null>(null);
+  const [sort, setSort] = useState("default");
   const update = useSettings((state) => state.update);
   const saving = useSettings((state) => state.saving);
   const query = useShortcutConflicts((state) => state.query);
@@ -92,29 +100,56 @@ export function KeyboardShortcuts() {
   const label = (item: ShortcutCommand) =>
     item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) });
   const filtered = useMemo(() => {
-    return definitions.filter((item) =>
-      shortcutFilter(
-        item,
-        query,
-        overrides,
-        definitions,
-        [
-          item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
-          item.id,
-          t(`shortcuts.scope.${item.scope}` as ParseKeys),
-          ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
-            displayShortcut(key),
-          ),
-        ].join(" "),
-      ),
-    );
-  }, [query, overrides, t, definitions]);
+    return definitions
+      .filter((item) =>
+        shortcutFilter(
+          item,
+          query,
+          {
+            ...overrides,
+            ...Object.fromEntries(
+              Object.keys(rules).map((id) => [
+                id,
+                bindingsFor(id, overrides, undefined, definitions),
+              ]),
+            ),
+          },
+          definitions,
+          [
+            item.title ?? t(item.label as ParseKeys, { number: item.id.slice(-1) }),
+            item.id,
+            t(`shortcuts.scope.${item.scope}` as ParseKeys),
+            ...bindingsFor(item.id, overrides, undefined, definitions).map((key) =>
+              displayShortcut(key),
+            ),
+          ].join(" "),
+        ),
+      )
+      .sort((a, b) =>
+        sort === "priority"
+          ? Math.max(
+              -1000,
+              ...bindingsFor(b.id, overrides, undefined, definitions).map(
+                (key) => shortcutRule(b, key, rules).priority,
+              ),
+            ) -
+            Math.max(
+              -1000,
+              ...bindingsFor(a.id, overrides, undefined, definitions).map(
+                (key) => shortcutRule(a, key, rules).priority,
+              ),
+            )
+          : 0,
+      );
+  }, [query, overrides, rules, sort, t, definitions]);
   const conflict =
     editing && draft ? shortcutConflict(editing.id, draft, overrides, definitions) : undefined;
   const resetOne = (id: string) => {
     const next = { ...overrides };
     delete next[id];
-    void update({ keyboardShortcuts: next });
+    const nextRules = { ...rules };
+    delete nextRules[id];
+    void update({ keyboardShortcuts: next, shortcutRules: nextRules });
     setEditing(null);
   };
   const begin = (id: string, index: number) => {
@@ -124,8 +159,19 @@ export function KeyboardShortcuts() {
   const save = () => {
     if (!editing || !draft) return;
     const next = [...bindingsFor(editing.id, overrides, undefined, definitions)];
+    const previous = next[editing.index];
     next.splice(editing.index, editing.index < next.length ? 1 : 0, draft);
-    void update({ keyboardShortcuts: { ...overrides, [editing.id]: [...new Set(next)] } });
+    const nextRules = { ...rules };
+    if (previous && previous !== draft && rules[editing.id]?.[previous]) {
+      const commandRules = { ...rules[editing.id] };
+      commandRules[draft] ??= commandRules[previous]!;
+      delete commandRules[previous];
+      nextRules[editing.id] = commandRules;
+    }
+    void update({
+      keyboardShortcuts: { ...overrides, [editing.id]: [...new Set(next)] },
+      shortcutRules: nextRules,
+    });
     setEditing(null);
   };
   return (
@@ -153,7 +199,7 @@ export function KeyboardShortcuts() {
         </label>
         <Button
           size="sm"
-          disabled={saving || !Object.keys(overrides).length}
+          disabled={saving || (!Object.keys(overrides).length && !Object.keys(rules).length)}
           leading={<RotateCcw size={13} />}
           onClick={() =>
             useDialogs.getState().confirm({
@@ -162,13 +208,32 @@ export function KeyboardShortcuts() {
               confirmLabel: t("common.reset" as ParseKeys),
               onConfirm: () => {
                 setEditing(null);
-                void update({ keyboardShortcuts: {} });
+                void update({ keyboardShortcuts: {}, shortcutRules: {} });
               },
             })
           }
         >
           {t("shortcuts.resetAll" as ParseKeys)}
         </Button>
+      </div>
+      <div className="shortcuts__options">
+        <label className="shortcuts__details-toggle">
+          <Switch
+            checked={showDetails}
+            onChange={(value) => void update({ showShortcutDetails: value })}
+            label={t("shortcuts.advanced.show")}
+          />
+          <span>{t("shortcuts.advanced.show")}</span>
+        </label>
+        <Select
+          value={sort}
+          onChange={setSort}
+          label={t("shortcuts.advanced.sort")}
+          options={[
+            { value: "default", label: t("shortcuts.advanced.sortDefault") },
+            { value: "priority", label: t("shortcuts.advanced.sortPriority") },
+          ]}
+        />
       </div>
       <p className="shortcuts__filter-hint" id={hintId}>
         {t("shortcuts.filters.hint")}
@@ -187,7 +252,7 @@ export function KeyboardShortcuts() {
                 <code>{item.id}</code>
                 <span>
                   {t(`shortcuts.scope.${item.scope}` as ParseKeys)}
-                  {Object.hasOwn(overrides, item.id) &&
+                  {(Object.hasOwn(overrides, item.id) || Object.hasOwn(rules, item.id)) &&
                     ` · ${t("shortcuts.modified" as ParseKeys)}`}
                 </span>
               </div>
@@ -216,7 +281,13 @@ export function KeyboardShortcuts() {
                       label={`${t("common.delete")}: ${label(item)} ${displayShortcut(key)}`}
                       disabled={saving}
                       onClick={() => {
+                        const nextRules = { ...rules };
+                        const commandRules = { ...nextRules[item.id] };
+                        delete commandRules[key];
+                        if (Object.keys(commandRules).length) nextRules[item.id] = commandRules;
+                        else delete nextRules[item.id];
                         void update({
+                          shortcutRules: nextRules,
                           keyboardShortcuts: {
                             ...overrides,
                             [item.id]: keys.filter((_, i) => i !== index),
@@ -245,14 +316,35 @@ export function KeyboardShortcuts() {
                   </IconButton>
                 )}
               </div>
-              <IconButton
-                size="sm"
-                label={`${t("common.reset" as ParseKeys)}: ${label(item)}`}
-                disabled={saving || !Object.hasOwn(overrides, item.id)}
-                onClick={() => resetOne(item.id)}
-              >
-                <RotateCcw size={13} />
-              </IconButton>
+              <div className="shortcuts__actions">
+                <IconButton
+                  size="sm"
+                  label={`${t("shortcuts.advanced.title")}: ${label(item)}`}
+                  onClick={() => setAdvanced(item)}
+                >
+                  <Settings2 size={14} />
+                </IconButton>
+                <IconButton
+                  size="sm"
+                  label={`${t("common.reset" as ParseKeys)}: ${label(item)}`}
+                  disabled={
+                    saving || (!Object.hasOwn(overrides, item.id) && !Object.hasOwn(rules, item.id))
+                  }
+                  onClick={() => resetOne(item.id)}
+                >
+                  <RotateCcw size={13} />
+                </IconButton>
+              </div>
+              {showDetails && keys.length > 0 && (
+                <p className="shortcuts__details">
+                  {keys
+                    .map((key) => {
+                      const rule = shortcutRule(item, key, rules);
+                      return `${displayShortcut(key)} · ${t("shortcuts.advanced.priority")} ${rule.priority} · ${t(`shortcuts.advanced.${rule.propagation}`)}`;
+                    })
+                    .join(" / ")}
+                </p>
+              )}
               {active && (
                 <div className="shortcuts__recorder">
                   <Keyboard size={15} aria-hidden="true" />
@@ -292,6 +384,22 @@ export function KeyboardShortcuts() {
           );
         })}
       </div>
+      {advanced && (
+        <ShortcutAdvancedDialog
+          command={advanced}
+          label={label(advanced)}
+          bindings={bindingsFor(advanced.id, overrides, undefined, definitions)}
+          rules={rules}
+          saving={saving}
+          onClose={() => setAdvanced(null)}
+          onSave={(value) => {
+            const next = { ...useSettings.getState().settings.shortcutRules };
+            if (Object.keys(value).length) next[advanced.id] = value;
+            else delete next[advanced.id];
+            return update({ shortcutRules: next });
+          }}
+        />
+      )}
     </section>
   );
 }
