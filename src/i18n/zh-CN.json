@@ -1517,6 +1517,8 @@
     "invalidName": "方案名称须为 1–64 个字符，且不能包含控制字符。",
     "duplicateName": "已存在同名方案。",
     "invalidFile": "请选择有效的 Tunnelde 设置 JSON 文件。",
+    "notRegularFile": "请选择普通设置文件，不能导入或替换文件夹及特殊文件；导出时请选择文件本身，不要选择符号链接。",
+    "readOnlyFile": "所选设置文件为只读，请选择其他位置，或先允许写入该文件。",
     "unknownSetting": "文件包含不支持的设置，未更改任何偏好。",
     "invalidValue": "文件中有超出支持范围的设置值，未更改任何偏好。",
     "unsupportedVersion": "不支持此设置文件的格式或版本。",

@@ -1,6 +1,4 @@
 //! Portable preferences and named snapshots. No host, credential, workspace or plugin data.
-use std::io::Read;
-
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -16,6 +14,8 @@ const KEY: &str = "settings.profiles.v1";
 const FORMAT: &str = "tunnelde-settings";
 const MAX_FILE_BYTES: usize = 512_000;
 const MAX_PROFILES: usize = 32;
+
+mod files;
 
 // Deliberately explicit: newly added settings never become portable by accident.
 const PORTABLE_KEYS: &[&str] = &[
@@ -278,12 +278,11 @@ pub async fn settings_file_import(app: AppHandle) -> AppResult<Option<SettingsDo
     let Some(path) = picked else {
         return Ok(None);
     };
-    // Bound reads, even if the selected file grows or is a special filesystem entry.
-    let mut text = String::new();
-    std::fs::File::open(std::path::PathBuf::from(path.to_string()))?
-        .take((MAX_FILE_BYTES + 1) as u64)
-        .read_to_string(&mut text)?;
-    Ok(Some(parse_document(&text)?))
+    let path = std::path::PathBuf::from(path.to_string());
+    let document = tauri::async_runtime::spawn_blocking(move || files::read(&path))
+        .await
+        .map_err(|error| AppError::internal(error.to_string()))??;
+    Ok(Some(document))
 }
 
 #[tauri::command]
@@ -317,8 +316,13 @@ pub async fn settings_file_export(
         return Ok(None);
     };
     let target = std::path::PathBuf::from(path.to_string());
-    std::fs::write(&target, text)?;
-    Ok(Some(target.to_string_lossy().into_owned()))
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        files::write(&target, text.as_bytes())?;
+        Ok::<_, AppError>(target.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|error| AppError::internal(error.to_string()))??;
+    Ok(Some(saved))
 }
 
 #[cfg(test)]
