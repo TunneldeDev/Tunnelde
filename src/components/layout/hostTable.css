@@ -1,0 +1,75 @@
+.host-table {
+  overflow: auto;
+  padding: 0 8px 8px;
+}
+.host-table__header,
+.host-table .host-row {
+  display: grid;
+  grid-template-columns: var(--host-columns);
+  gap: 0;
+  min-width: var(--host-table-width);
+  width: max-content;
+}
+.host-table__header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--td-color-sidebar, var(--td-panel));
+  border-bottom: 1px solid var(--td-border);
+  font-size: 11px;
+}
+.host-table .host-row {
+  padding: 0;
+  min-height: 36px;
+}
+.host-table__cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 7px 12px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--td-muted);
+}
+.host-table__cell > span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.host-table__cell--name {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  gap: 7px;
+  color: var(--td-text);
+  background: var(--td-color-sidebar, var(--td-panel));
+  border-right: 1px solid var(--td-border);
+}
+.host-table .host-row:hover .host-table__cell--name {
+  background-image: linear-gradient(var(--td-hover), var(--td-hover));
+}
+.host-table .host-row.is-active .host-table__cell--name {
+  background-image: linear-gradient(var(--td-accent-soft), var(--td-accent-soft));
+}
+.host-table__header > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--td-color-sidebar, var(--td-panel));
+  border-right: 1px solid var(--td-border);
+}
+.host-table__cell--name .host-row__text {
+  flex-direction: row;
+}
+.host-table__cell--number {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+.host-table__cell .host-row__name {
+  font-size: 12px;
+}
+.host-table__cell .host-row__actions {
+  margin-left: auto;
+}

@@ -37,6 +37,11 @@ describe("portable settings snapshots", () => {
     snapshot.keyboardShortcuts!["app.settings"]!.push("F2");
     expect(settings.colors.background).toBe("#123456");
     expect(settings.keyboardShortcuts["app.settings"]).toEqual(["Mod+Comma"]);
+    expect(snapshot.hostList).toEqual(settings.hostList);
+    snapshot.hostList!.order.push("plugin/inventory/cost");
+    snapshot.hostList!.widths.name = 240;
+    expect(settings.hostList.order).not.toContain("plugin/inventory/cost");
+    expect(settings.hostList.widths.name).toBeUndefined();
   });
 
   it("ignores JSON object ordering and runtime changes when matching a profile", () => {

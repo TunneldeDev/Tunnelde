@@ -1233,8 +1233,9 @@
     },
     "hostList": {
       "invalidDecoration": "主机装饰无效，请检查字段、长度和支持的图标。",
-      "hostNotFound": "装饰引用的主机已不存在，请刷新主机列表。",
-      "limit": "主机装饰数量已达上限，请移除一组装饰后重试。"
+      "hostNotFound": "贡献引用的主机已不存在，请刷新主机列表。",
+      "limit": "主机贡献配额已达上限，请移除不再使用的贡献或减少数据后重试。",
+      "invalidColumn": "插件提供的主机表格列无效，请检查字段类型、主机 ID 和列数据限制。"
     },
     "frontend": {
       "invalid": "可信界面声明无效。请使用插件内的 ui/*.mjs 入口、兼容的 SDK 版本范围，并声明 ui.trusted 权限。",
@@ -2048,5 +2049,14 @@
     "notDeclared": "此插件已不再声明主机字段。",
     "invalidValue": "字段“{{field}}”的值不符合类型或范围限制。",
     "permissionRequired": "声明主机字段需要 hosts.read 权限。"
+  },
+  "hostColumns": {
+    "view": "主机视图与列",
+    "tree": "树形视图",
+    "table": "表格视图",
+    "reset": "重置列",
+    "moveHint": "单击排序，拖动调整顺序；Alt+左/右移动此列。",
+    "resize": "调整 {{name}} 列宽",
+    "settingsHint": "选择主机视图；在主机面板的列菜单中选择显示列，拖动列名调整顺序、拖动分隔线调整宽度。"
   }
 }

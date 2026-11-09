@@ -6,6 +6,8 @@ import { useHostDecorations } from "@/store/hostDecorations";
 import { usePlugins } from "@/store/plugins";
 import { plugin } from "../fixtures/plugins";
 import { indexHostDecorations } from "@/lib/plugins/hostList";
+import { useHostColumns } from "@/store/hostColumns";
+import { defaultHostListPreferences, indexHostColumns } from "@/lib/hosts/columns";
 import { HostTree } from "@/components/layout/HostTree";
 import type { Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
@@ -50,6 +52,7 @@ const group = (id: string, parentId: string | null = null): Group => ({
 beforeEach(() => {
   usePlugins.setState({ items: [] });
   useHostDecorations.setState({ revision: -1, byHost: new Map() });
+  useHostColumns.setState({ revision: -1, columns: [] });
   useContextMenu.setState({ menu: null });
   useHosts.setState({ hosts: [host("a", "alpha", 0), host("b", "beta", 1)], groups: [] });
   useDialogs.setState({
@@ -71,6 +74,70 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("renders typed plugin table cells, follows sorting with keyboard navigation and keeps the same host actions", async () => {
+    const preferences = defaultHostListPreferences();
+    preferences.view = "table";
+    preferences.sort = { key: "plugin/inventory/cost", direction: "asc" };
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, hostDirectConnect: false, hostList: preferences },
+    });
+    useHostColumns.setState({
+      columns: indexHostColumns([
+        {
+          pluginId: "inventory",
+          pluginName: "Inventory",
+          id: "cost",
+          label: "Budget",
+          type: "number",
+          cells: [
+            { hostId: "a", value: 10 },
+            { hostId: "b", value: 0 },
+          ],
+        },
+      ]),
+    });
+    render(<HostTree />);
+    const grid = screen.getByRole("treegrid");
+    expect(
+      Array.from(grid.querySelectorAll("[data-host-id]")).map((row) =>
+        row.getAttribute("data-host-id"),
+      ),
+    ).toEqual(["b", "a"]);
+    expect(screen.getByRole("columnheader", { name: /Budget/ }).getAttribute("aria-sort")).toBe(
+      "ascending",
+    );
+    expect(screen.getByRole("gridcell", { name: "0" })).toBeTruthy();
+    fireEvent.keyDown(grid, { key: "Home" });
+    fireEvent.keyDown(grid, { key: "Enter" });
+    expect(useWorkspace.getState().tabs.some((tab) => tab.hostId === "b")).toBe(true);
+    fireEvent.doubleClick(grid.querySelector('[data-host-id="a"]')!);
+    expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a" }),
+      "terminal",
+    );
+    act(() => useHostColumns.setState({ columns: [] }));
+    expect(screen.queryByRole("columnheader", { name: /Budget/ })).toBeNull();
+    expect(useSettings.getState().settings.hostList.sort).toEqual(preferences.sort);
+    expect(screen.getAllByRole("row")).toHaveLength(3);
+  });
+  it("uses the same mandatory-@ search rules in the table and retains an empty-state add action", () => {
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        hostList: { ...defaultHostListPreferences(), view: "table" },
+      },
+    });
+    useHosts.setState({
+      hosts: [{ ...host("a", "alpha", 0), tags: ["production"] }, host("b", "beta", 1)],
+    });
+    render(<HostTree />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "tag:production" } });
+    expect(document.querySelectorAll("[data-host-id]")).toHaveLength(0);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "@tag:production" } });
+    expect(document.querySelectorAll("[data-host-id]")).toHaveLength(1);
+    act(() => useHosts.setState({ hosts: [] }));
+    expect(screen.getAllByRole("button", { name: "New host" }).length).toBeGreaterThan(1);
+  });
   it("adds attributed plugin actions to both pointer and more menus and removes them on uninstall", () => {
     const contribution = {
       ...plugin,

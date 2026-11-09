@@ -31,6 +31,15 @@ import type { Group, Host } from "@/lib/api/types";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 import { useHostDecorations } from "@/store/hostDecorations";
 import { usePlugins } from "@/store/plugins";
+import { useHostColumns } from "@/store/hostColumns";
+import {
+  builtinHostColumns,
+  visibleHostColumns,
+  sortHostRows,
+  type DisplayHostColumn,
+} from "@/lib/hosts/columns";
+import { matchesHostQuery, parseHostQuery } from "@/lib/hosts/query";
+import { HostListViewMenu, HostTableHeader } from "./HostTable";
 import { hostMenuCommands, runHostMenuCommand } from "@/lib/plugins/hostMenu";
 import type { PluginContextCommand } from "@/lib/plugins/contextCommand";
 import {
@@ -69,6 +78,7 @@ interface HostRowProps {
   depth?: number;
   canReorder: boolean;
   pluginCommands: readonly PluginContextCommand[];
+  columns?: readonly DisplayHostColumn[];
 }
 
 function HostRow({
@@ -79,6 +89,7 @@ function HostRow({
   depth = 0,
   canReorder,
   pluginCommands,
+  columns,
 }: HostRowProps) {
   const { t } = useTranslation();
   const openHost = useWorkspace((state) => state.openHost);
@@ -258,41 +269,95 @@ function HostRow({
         onFocusRow();
         openMenu(event.clientX, event.clientY, menuItems);
       }}
-      role="treeitem"
+      role={columns ? "row" : "treeitem"}
       aria-busy={connecting || undefined}
       aria-selected={focused}
       id={`host-${host.id}`}
       data-host-id={host.id}
       tabIndex={-1}
     >
-      <span
-        className="host-row__dot"
-        style={host.color ? { background: host.color } : undefined}
-        aria-hidden="true"
-      />
-      <span className="host-row__text">
-        <span className="host-row__heading">
-          <HostDecorationIcon items={decorations} />
-          <span className="host-row__name">{host.name}</span>
-          <HostDecorationBadges items={decorations} />
-        </span>
-        <span className="host-row__meta">{hostSubtitle(host.username, host.host, host.port)}</span>
-        <HostDecorationDescription items={decorations} />
-      </span>
-      {connecting ? (
-        <LoaderCircle
-          size={13}
-          className="host-row__connecting"
-          aria-label={t("connect.connecting")}
-          role="status"
-        />
-      ) : null}
-      {host.favorite ? (
-        <Star size={11} className="host-row__star" fill="currentColor" aria-hidden="true" />
-      ) : null}
-      <span className="host-row__actions">
-        <Menu label={t("common.more")} items={menuItems} />
-      </span>
+      {columns ? (
+        columns.map((column) => (
+          <span
+            key={column.key}
+            role="gridcell"
+            className={cn(
+              "host-table__cell",
+              column.key === "name" && "host-table__cell--name",
+              column.type === "number" && "host-table__cell--number",
+            )}
+            title={
+              column.values.get(host.id)?.tooltip ?? String(column.values.get(host.id)?.value ?? "")
+            }
+          >
+            {column.key === "name" ? (
+              <>
+                <HostDecorationIcon items={decorations} />
+                <span className="host-row__name">{host.name}</span>
+                <HostDecorationBadges items={decorations} />
+                {connecting ? (
+                  <LoaderCircle
+                    size={13}
+                    className="host-row__connecting"
+                    aria-label={t("connect.connecting")}
+                    role="status"
+                  />
+                ) : null}
+                {host.favorite ? (
+                  <Star
+                    size={11}
+                    className="host-row__star"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  />
+                ) : null}
+                <span className="host-row__actions">
+                  <Menu label={t("common.more")} items={menuItems} />
+                </span>
+              </>
+            ) : (
+              <span>
+                {typeof column.values.get(host.id)?.value === "boolean"
+                  ? t(column.values.get(host.id)?.value ? "hostFields.yes" : "hostFields.no")
+                  : String(column.values.get(host.id)?.value ?? "—")}
+              </span>
+            )}
+          </span>
+        ))
+      ) : (
+        <>
+          <span
+            className="host-row__dot"
+            style={host.color ? { background: host.color } : undefined}
+            aria-hidden="true"
+          />
+          <span className="host-row__text">
+            <span className="host-row__heading">
+              <HostDecorationIcon items={decorations} />
+              <span className="host-row__name">{host.name}</span>
+              <HostDecorationBadges items={decorations} />
+            </span>
+            <span className="host-row__meta">
+              {hostSubtitle(host.username, host.host, host.port)}
+            </span>
+            <HostDecorationDescription items={decorations} />
+          </span>
+          {connecting ? (
+            <LoaderCircle
+              size={13}
+              className="host-row__connecting"
+              aria-label={t("connect.connecting")}
+              role="status"
+            />
+          ) : null}
+          {host.favorite ? (
+            <Star size={11} className="host-row__star" fill="currentColor" aria-hidden="true" />
+          ) : null}
+          <span className="host-row__actions">
+            <Menu label={t("common.more")} items={menuItems} />
+          </span>
+        </>
+      )}
     </div>
   );
 }
@@ -398,6 +463,26 @@ export function HostTree() {
   const { t } = useTranslation();
   const groups = useHosts((state) => state.groups);
   const hosts = useHosts((state) => state.hosts);
+  const pluginColumns = useHostColumns((state) => state.columns);
+  const preferences = useSettings((state) => state.settings.hostList);
+  const table = preferences.view === "table";
+  const allColumns = useMemo(
+    () => [
+      ...builtinHostColumns(hosts, groups, {
+        name: t("host.name"),
+        address: t("host.address"),
+        user: t("host.username"),
+        port: t("host.port"),
+        group: t("host.group"),
+      }),
+      ...pluginColumns,
+    ],
+    [hosts, groups, pluginColumns, t],
+  );
+  const columns = useMemo(
+    () => visibleHostColumns(allColumns, preferences),
+    [allColumns, preferences],
+  );
   const activeHostId = useWorkspace((state) => {
     const tab = state.tabs.find((item) => item.id === state.activeId);
     return tab?.kind === "host" ? tab.hostId : null;
@@ -417,7 +502,15 @@ export function HostTree() {
   );
   const tree = useMemo(() => buildHostTree(groups, hosts, query.trim()), [groups, hosts, query]);
   const searching = query.trim().length > 0;
-  const canReorder = !searching;
+  const canReorder = !searching && !table;
+  const tableHosts = useMemo(() => {
+    const parsed = parseHostQuery(query);
+    return sortHostRows(
+      hosts.filter((host) => matchesHostQuery(host, parsed)),
+      allColumns,
+      preferences.sort,
+    );
+  }, [hosts, query, allColumns, preferences.sort]);
 
   const toggle = (id: string) => {
     if (searching) {
@@ -450,7 +543,7 @@ export function HostTree() {
     const row = rows.find((item) => item.dataset.hostId === focusId);
     row?.scrollIntoView?.({ block: "nearest" });
     if (focusId && !row) setFocusId(null);
-  }, [focusId, query, collapsed, searchCollapse, hosts, groups]);
+  }, [focusId, query, collapsed, searchCollapse, hosts, groups, table, tableHosts]);
 
   const dropHandlers = (groupId: string | null, favorite = false) => ({
     onDragOver: (event: React.DragEvent<HTMLElement>) => {
@@ -587,6 +680,7 @@ export function HostTree() {
           <FolderPlus size={15} />
         </IconButton>
         <SidebarDockControls view="hosts" />
+        <HostListViewMenu columns={allColumns} />
       </div>
       <div className="sidebar__search">
         <HostSearch
@@ -601,73 +695,118 @@ export function HostTree() {
 
       <div
         ref={bodyRef}
-        className="sidebar__body"
-        role="tree"
+        className={cn("sidebar__body", table && "host-table")}
+        style={
+          table
+            ? ({
+                "--host-columns": columns.map((column) => `${column.width}px`).join(" "),
+                "--host-table-width": `${columns.reduce((sum, column) => sum + column.width, 0)}px`,
+              } as React.CSSProperties)
+            : undefined
+        }
+        role={table ? "treegrid" : "tree"}
+        aria-colcount={table ? columns.length : undefined}
+        aria-rowcount={table ? tableHosts.length + 1 : undefined}
         aria-label={t("sidebar.hosts")}
         tabIndex={0}
         aria-activedescendant={focusId ? `host-${focusId}` : undefined}
         onKeyDown={onTreeKeyDown}
       >
-        {isEmpty ? (
-          <EmptyState
-            icon={<Server size={22} />}
-            title={t("sidebar.empty")}
-            action={
-              <Button
-                variant="secondary"
-                size="sm"
-                leading={<Plus size={13} />}
-                onClick={() => openHostDialog()}
-              >
-                {t("sidebar.newHost")}
-              </Button>
-            }
-          />
-        ) : null}
-
-        {!isEmpty &&
-        searching &&
-        tree.favorites.length === 0 &&
-        tree.ungrouped.length === 0 &&
-        tree.groups.length === 0 ? (
-          <p className="sidebar__note">{t("sidebar.noResults")}</p>
-        ) : null}
-
-        {tree.favorites.length > 0 || (!isEmpty && !searching) ? (
-          <section className="tree-section" role="group" {...dropHandlers(null, true)}>
-            <h2 className="tree-section__title">{t("sidebar.favorites")}</h2>
-            {tree.favorites.map((host) => (
-              <HostRow
-                key={`fav-${host.id}`}
-                host={host}
-                active={host.id === activeHostId}
-                {...rowProps(host)}
-              />
-            ))}
-          </section>
-        ) : null}
-
-        {tree.groups.map((node) => (
-          <section className="tree-section" key={node.group.id}>
-            {renderGroup(node)}
-          </section>
-        ))}
-
-        {tree.ungrouped.length > 0 || (!isEmpty && !searching) ? (
-          <section className="tree-section" role="group" {...dropHandlers(null)}>
-            {tree.groups.length > 0 || !searching ? (
-              <h2 className="tree-section__title">{t("sidebar.ungrouped")}</h2>
-            ) : null}
-            {tree.ungrouped.map((host) => (
+        {table ? (
+          <>
+            <HostTableHeader columns={columns} allColumns={allColumns} />
+            {tableHosts.map((host) => (
               <HostRow
                 key={host.id}
                 host={host}
                 active={host.id === activeHostId}
+                columns={columns}
                 {...rowProps(host)}
               />
             ))}
-          </section>
-        ) : null}
+            {isEmpty ? (
+              <EmptyState
+                icon={<Server size={22} />}
+                title={t("sidebar.empty")}
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leading={<Plus size={13} />}
+                    onClick={() => openHostDialog()}
+                  >
+                    {t("sidebar.newHost")}
+                  </Button>
+                }
+              />
+            ) : !tableHosts.length ? (
+              <p className="sidebar__note">{t(isEmpty ? "sidebar.empty" : "sidebar.noResults")}</p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            {isEmpty ? (
+              <EmptyState
+                icon={<Server size={22} />}
+                title={t("sidebar.empty")}
+                action={
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    leading={<Plus size={13} />}
+                    onClick={() => openHostDialog()}
+                  >
+                    {t("sidebar.newHost")}
+                  </Button>
+                }
+              />
+            ) : null}
+
+            {!isEmpty &&
+            searching &&
+            tree.favorites.length === 0 &&
+            tree.ungrouped.length === 0 &&
+            tree.groups.length === 0 ? (
+              <p className="sidebar__note">{t("sidebar.noResults")}</p>
+            ) : null}
+
+            {tree.favorites.length > 0 || (!isEmpty && !searching) ? (
+              <section className="tree-section" role="group" {...dropHandlers(null, true)}>
+                <h2 className="tree-section__title">{t("sidebar.favorites")}</h2>
+                {tree.favorites.map((host) => (
+                  <HostRow
+                    key={`fav-${host.id}`}
+                    host={host}
+                    active={host.id === activeHostId}
+                    {...rowProps(host)}
+                  />
+                ))}
+              </section>
+            ) : null}
+
+            {tree.groups.map((node) => (
+              <section className="tree-section" key={node.group.id}>
+                {renderGroup(node)}
+              </section>
+            ))}
+
+            {tree.ungrouped.length > 0 || (!isEmpty && !searching) ? (
+              <section className="tree-section" role="group" {...dropHandlers(null)}>
+                {tree.groups.length > 0 || !searching ? (
+                  <h2 className="tree-section__title">{t("sidebar.ungrouped")}</h2>
+                ) : null}
+                {tree.ungrouped.map((host) => (
+                  <HostRow
+                    key={host.id}
+                    host={host}
+                    active={host.id === activeHostId}
+                    {...rowProps(host)}
+                  />
+                ))}
+              </section>
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );

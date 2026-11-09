@@ -1233,8 +1233,9 @@
     },
     "hostList": {
       "invalidDecoration": "Invalid host decoration. Check its fields, length and supported icon.",
-      "hostNotFound": "A host referenced by this decoration no longer exists. Refresh the host list.",
-      "limit": "Host decoration limit reached. Remove a collection before adding another."
+      "hostNotFound": "A host referenced by this contribution no longer exists. Refresh the host list.",
+      "limit": "Host contribution quota reached. Remove unused contributions or reduce their data before retrying.",
+      "invalidColumn": "The plugin supplied an invalid host table column. Check its field type, host IDs and column limits."
     },
     "frontend": {
       "invalid": "Invalid trusted UI declaration. Use a local ui/*.mjs entry, a compatible SDK range and the ui.trusted permission.",
@@ -2048,5 +2049,14 @@
     "notDeclared": "This plugin no longer declares host fields.",
     "invalidValue": "The value for field “{{field}}” does not match its type or limits.",
     "permissionRequired": "Host field declarations require the hosts.read permission."
+  },
+  "hostColumns": {
+    "view": "Host view and columns",
+    "tree": "Tree view",
+    "table": "Table view",
+    "reset": "Reset columns",
+    "moveHint": "Click to sort; drag to reorder. Alt+Left/Right moves this column.",
+    "resize": "Resize {{name}} column",
+    "settingsHint": "Choose a view here; use the column menu in the host panel to show columns, drag headers to reorder, and drag dividers to resize."
   }
 }

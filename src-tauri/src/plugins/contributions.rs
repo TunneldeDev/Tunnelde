@@ -19,6 +19,7 @@ pub(super) fn remove_runtime(
     super::status_bar::remove_runtime(app, owner, &generation);
     super::tab_bar::remove_runtime(app, owner, &generation);
     super::host_list::remove_runtime(app, owner, &generation);
+    super::host_columns::remove_runtime(app, owner, &generation);
 }
 
 #[derive(Clone)]
@@ -61,12 +62,29 @@ impl<T: Clone> Registry<T> {
         value: T,
         valid: impl Fn(&Lease) -> AppResult<()>,
     ) -> AppResult<()> {
+        self.upsert_checked(lease, id, value, valid, |_| Ok(()))
+    }
+
+    /// Validate aggregate resources under the same lock as replacement. The
+    /// predicate must not reenter this registry or security and cannot mutate it.
+    pub fn upsert_checked(
+        &self,
+        lease: Lease,
+        id: String,
+        value: T,
+        valid: impl Fn(&Lease) -> AppResult<()>,
+        quota: impl FnOnce(Vec<(&str, &T)>) -> AppResult<()>,
+    ) -> AppResult<()> {
         let mut state = self.0.lock().unwrap_or_else(|error| error.into_inner());
         // Validate under the registry lock. Invalidation releases its policy
         // lock before cleanup takes this lock, so a late registration is either
         // rejected here or removed by that cleanup.
         valid(&lease)?;
+        let previous = state.items.len();
         state.items.retain(|_, item| valid(&item.lease).is_ok());
+        if state.items.len() != previous {
+            state.revision += 1;
+        }
         let key = (lease.id.clone(), id);
         if !state.items.contains_key(&key)
             && (state.items.len() >= 128
@@ -79,6 +97,14 @@ impl<T: Clone> Registry<T> {
         {
             return Err(AppError::validation(self.1));
         }
+        let mut proposed: Vec<_> = state
+            .items
+            .iter()
+            .filter(|(existing, _)| **existing != key)
+            .map(|((owner, _), item)| (owner.as_str(), &item.value))
+            .collect();
+        proposed.push((&lease.id, &value));
+        quota(proposed)?;
         state.items.insert(
             key,
             Owned {
@@ -191,5 +217,30 @@ mod tests {
             ))
             .is_err());
         assert_eq!(registry.snapshot(|_| true).1[0].token, original);
+    }
+
+    #[test]
+    fn pruning_revoked_items_advances_revision_even_when_new_quota_check_fails() {
+        let registry = Registry::default();
+        registry
+            .upsert(lease("revoked", 1), "old".into(), 1, |_| Ok(()))
+            .unwrap();
+        let before = registry.snapshot(|_| true).0;
+        assert!(registry
+            .upsert_checked(
+                lease("valid", 1),
+                "new".into(),
+                2,
+                |lease| if lease.id == "revoked" {
+                    Err(AppError::validation("revoked"))
+                } else {
+                    Ok(())
+                },
+                |_| Err(AppError::validation("quota"))
+            )
+            .is_err());
+        let (revision, items) = registry.snapshot(|_| true);
+        assert_eq!(revision, before + 1);
+        assert!(items.is_empty());
     }
 }
