@@ -132,3 +132,87 @@ it("a stale or duplicate event cannot cancel a newer reconciliation read", async
   );
   dispose();
 });
+
+it("finishes initialization on abort without waiting for an unresponsive snapshot", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const wiring = synchronizeContributions(f.source, controller.signal);
+  await vi.waitFor(() => expect(f.pending).toHaveLength(1));
+  const lifetime = vi.mocked(f.source.read).mock.calls[0]![0];
+  controller.abort();
+  const dispose = await wiring;
+  expect(lifetime.aborted).toBe(true);
+  expect(f.events.size).toBe(0);
+  expect(f.source.report).not.toHaveBeenCalled();
+  dispose();
+});
+
+it("times out initialization, keeps subscriptions usable and fences the late snapshot", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  const dispose = await synchronizeContributions(f.source, controller.signal, { timeoutMs: 25 });
+  expect(f.source.report).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ code: "extension.scope.timeout" }),
+  );
+  expect(f.events.size).toBe(3);
+  f.pending[0]!.resolve(snapshot(1, "expired"));
+  await Promise.resolve();
+  expect(f.source.apply).not.toHaveBeenCalled();
+  f.emit("resumed");
+  expect(f.pending).toHaveLength(2);
+  f.pending[1]!.resolve(snapshot(2, "recovered"));
+  await vi.waitFor(() => expect(f.source.apply).toHaveBeenLastCalledWith(snapshot(2, "recovered")));
+  dispose();
+});
+
+it("aborts pending listener initialization and cleans registrations that arrive later", async () => {
+  const f = fixture();
+  const controller = new AbortController();
+  let finish!: (dispose: () => void) => void;
+  const stop = vi.fn();
+  f.source.resumed = vi.fn(
+    () =>
+      new Promise<() => void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const wiring = synchronizeContributions(f.source, controller.signal);
+  await vi.waitFor(() => expect(f.source.resumed).toHaveBeenCalledOnce());
+  controller.abort();
+  await wiring;
+  expect(f.events.size).toBe(0);
+  finish(stop);
+  await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+  expect(f.source.read).not.toHaveBeenCalled();
+});
+
+it("bounds listener initialization and releases partial and late subscriptions after timeout", async () => {
+  const f = fixture();
+  let finish!: (dispose: () => void) => void;
+  const stop = vi.fn();
+  f.source.resumed = vi.fn(
+    () =>
+      new Promise<() => void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await expect(
+    synchronizeContributions(f.source, new AbortController().signal, { timeoutMs: 25 }),
+  ).rejects.toMatchObject({ code: "extension.scope.timeout" });
+  expect(f.events.size).toBe(0);
+  finish(stop);
+  await vi.waitFor(() => expect(stop).toHaveBeenCalledOnce());
+  expect(f.source.read).not.toHaveBeenCalled();
+});
+
+it("a failing error reporter does not leave initialization stuck or prevent disposal", async () => {
+  const f = fixture();
+  f.source.read = vi.fn().mockRejectedValue(new Error("snapshot failed"));
+  f.source.report = vi.fn(() => {
+    throw new Error("report failed");
+  });
+  const dispose = await synchronizeContributions(f.source, new AbortController().signal);
+  expect(f.source.report).toHaveBeenCalledOnce();
+  dispose();
+  expect(f.events.size).toBe(0);
+});

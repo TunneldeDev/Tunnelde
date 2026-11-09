@@ -29,6 +29,35 @@ Frontends subscribe before requesting a snapshot, reconcile revisions, release
 listeners on unmount and fence queued reads/events after authorization changes.
 This mechanism is independent of a particular view or Zustand store.
 
+## Runtime resource ownership
+
+The frontend's internal resource scope owns subscriptions and asynchronous work.
+`use` registers an existing cleanup; `acquire` reserves capacity before opening a
+resource and retains its cleanup; `run` releases its reservation when work finishes.
+Acquisition/work can have a caller cancellation signal and a deadline. Parent abort
+or scope disposal promptly rejects outstanding callers even if their underlying
+operation ignores cancellation. A late acquired resource is cleaned up instead of
+being delivered. Cancellation does not roll back native or remote side effects.
+
+Cancelled work keeps its quota reservation until the underlying operation settles.
+Pending asynchronous cleanup also consumes capacity, preventing repeated retries
+from accumulating work outside the limit. A successful acquisition belongs to the
+scope: its acquisition deadline and caller signal no longer close that resource.
+Its acquisition signal is aborted when the scope releases it.
+
+Disposal is idempotent, aborts the lifetime and starts registered cleanup in reverse
+order. It observes and reports synchronous/asynchronous cleanup failures but does
+not wait for asynchronous cleanup or force uncooperative work to finish. The default
+scope limit is 128. Invalid limits and deadlines are rejected before work starts.
+Closed, caller-cancelled and timed-out operations have distinct error codes.
+
+Host decoration, status item and tab control synchronization use this ownership
+mechanism. Listener initialization and each snapshot read have a 30-second deadline.
+A read timeout leaves subscriptions available for a later refresh; expired reads
+cannot replace current content. An initialization failure releases partial and late
+listeners. This is internal lifecycle infrastructure, not a published UI SDK or a
+sandbox for directly loaded frontend code.
+
 ## Domain boundaries
 
 Public data must use protocol DTOs, not expose arbitrary internal state. Operations
