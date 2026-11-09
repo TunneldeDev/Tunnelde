@@ -1,0 +1,71 @@
+.host-fields__hint {
+  margin: 0 0 12px;
+  color: var(--td-muted);
+  font-size: 12px;
+}
+.host-fields__plugin {
+  border-top: 1px solid var(--td-border);
+}
+.host-fields__plugin > summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  cursor: pointer;
+}
+.host-fields__plugin > summary::before {
+  content: "›";
+  font-size: 18px;
+  transform-origin: center;
+}
+.host-fields__plugin[open] > summary::before {
+  transform: rotate(90deg);
+}
+.host-fields__plugin > summary small {
+  color: var(--td-muted);
+  overflow-wrap: anywhere;
+}
+.host-fields__body {
+  padding: 0 0 16px 18px;
+  display: grid;
+  gap: 12px;
+}
+.host-fields__fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.host-fields__control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.host-fields__control > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.host-fields__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.host-fields__warning {
+  border-left: 2px solid var(--td-orange);
+  padding-left: 12px;
+  display: grid;
+  gap: 10px;
+}
+.host-fields__warning p {
+  margin: 0;
+}
+.host-fields__warning pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

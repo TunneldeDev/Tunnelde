@@ -2022,5 +2022,31 @@
     "unavailable": "Unavailable",
     "fallback": "Using the built-in interface: the selected provider is unavailable.",
     "restore": "Restore built-in interface"
+  },
+  "hostFields": {
+    "title": "Plugin host fields",
+    "hint": "Optional metadata grouped by plugin. Saved locally; never enter passwords or secrets. Editing fields does not start a plugin.",
+    "reloadTitle": "Reload saved fields?",
+    "reloadBody": "Discard your unsaved changes and load the latest saved values.",
+    "reload": "Reload",
+    "outdated": "Saved values changed elsewhere. Your draft is retained; reload before retrying if saving reports a conflict.",
+    "schemaChanged": "This plugin changed its field structure. Existing values are preserved. Review them before preparing a draft for the current fields.",
+    "storedValues": "Previously saved values",
+    "reconcile": "Prepare updated fields",
+    "reconcileBody": "Keep values valid under the current field structure and remove incompatible or removed fields from the draft. Saved data changes only after you click Save.",
+    "unset": "Not set",
+    "unsetValue": "Unset",
+    "yes": "Yes",
+    "no": "No",
+    "invalidField": "Enter a value that matches this field’s type and limits.",
+    "saved": "Saved",
+    "invalid": "The host field schema or request is invalid.",
+    "limit": "The host field storage limit was reached.",
+    "revisionLimit": "This metadata document reached its revision limit.",
+    "hostNotFound": "This host no longer exists.",
+    "conflict": "These fields changed elsewhere. Your draft is retained. Reload the saved values before trying again.",
+    "notDeclared": "This plugin no longer declares host fields.",
+    "invalidValue": "The value for field “{{field}}” does not match its type or limits.",
+    "permissionRequired": "Host field declarations require the hosts.read permission."
   }
 }

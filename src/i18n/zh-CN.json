@@ -2022,5 +2022,31 @@
     "unavailable": "不可用",
     "fallback": "所选提供者不可用，已使用内置界面。",
     "restore": "恢复内置界面"
+  },
+  "hostFields": {
+    "title": "插件主机字段",
+    "hint": "按插件分组的可选元数据，保存在本机。请勿填写密码或密钥。编辑字段不会启动插件。",
+    "reloadTitle": "重新加载已保存字段？",
+    "reloadBody": "放弃尚未保存的修改，并读取最新保存值。",
+    "reload": "重新加载",
+    "outdated": "已保存的值在其他位置发生了变化。当前草稿已保留；若保存提示冲突，请重新加载后再修改。",
+    "schemaChanged": "此插件修改了字段结构，原有值已保留。请先检查原值，再为当前字段准备草稿。",
+    "storedValues": "原先保存的值",
+    "reconcile": "准备更新字段",
+    "reconcileBody": "保留符合当前结构的值，从草稿中移除不兼容或已删除的字段。只有点击保存后才会修改已存数据。",
+    "unset": "未设置",
+    "unsetValue": "取消设置",
+    "yes": "是",
+    "no": "否",
+    "invalidField": "请输入符合字段类型和限制的值。",
+    "saved": "已保存",
+    "invalid": "主机字段结构或请求无效。",
+    "limit": "主机字段存储已达到上限。",
+    "revisionLimit": "此元数据文档已达到修订次数上限。",
+    "hostNotFound": "此主机已不存在。",
+    "conflict": "字段已在其他位置修改，当前草稿已保留。请重新加载保存值后再修改。",
+    "notDeclared": "此插件已不再声明主机字段。",
+    "invalidValue": "字段“{{field}}”的值不符合类型或范围限制。",
+    "permissionRequired": "声明主机字段需要 hosts.read 权限。"
   }
 }

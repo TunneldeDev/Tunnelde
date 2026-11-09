@@ -144,6 +144,8 @@ pub struct PluginManifest {
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_fields: Option<crate::services::host_fields::Schema>,
     #[serde(default)]
     pub main: String,
     /// `theme` packages contribute data without an executable entry point.
@@ -208,6 +210,16 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if let Some(schema) = &self.host_fields {
+            schema.validate()?;
+            if !self
+                .permissions
+                .iter()
+                .any(|permission| permission == "hosts.read")
+            {
+                return Err(AppError::validation("hostFields.permissionRequired"));
+            }
+        }
         if let Some(frontend) = &self.frontend {
             frontend.validate(dir)?;
             if self.runtime.as_deref() == Some("theme")
@@ -777,6 +789,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    #[test]
+    fn host_fields_require_read_permission_and_validate_the_entire_schema() {
+        let dir = temp_dir("host-fields");
+        std::fs::write(dir.join("main.js"), "").unwrap();
+        let valid = serde_json::json!({"id":"metadata","name":"Metadata","version":"1.0.0","apiVersion":1,"main":"main.js","permissions":["hosts.read"],"hostFields":{"version":1,"fields":[{"id":"owner","label":"Owner","type":"text"}]}});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(load(&dir).unwrap().host_fields.is_some());
+        let mut bad = valid.clone();
+        bad["permissions"] = serde_json::json!([]);
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&bad).unwrap()).unwrap();
+        assert!(load(&dir)
+            .unwrap_err()
+            .to_string()
+            .contains("permissionRequired"));
+        let mut bad = valid;
+        bad["hostFields"]["fields"][0]["secret"] = true.into();
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&bad).unwrap()).unwrap();
+        assert!(load(&dir).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn theme_manifest() -> serde_json::Value {

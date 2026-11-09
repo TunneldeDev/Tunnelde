@@ -76,6 +76,32 @@
   ],
   "points": [
     {
+      "id": "hosts.fields",
+      "domain": "hosts",
+      "layer": "data",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "manifest": "hostFields",
+        "read": "hosts.getFields",
+        "replace": "hosts.setFields"
+      },
+      "ownership": "manifest",
+      "permissions": ["hosts.read"],
+      "writePermissions": ["hosts.read", "hosts.write"],
+      "limits": {
+        "fieldsPerPlugin": 32,
+        "documentBytes": 32768,
+        "pluginBytes": 4194304,
+        "totalBytes": 33554432,
+        "pluginDocuments": 2048,
+        "totalDocuments": 16384
+      },
+      "persistence": "plugin-host",
+      "concurrency": "revision-and-schema-digest",
+      "secrets": false
+    },
+    {
       "id": "hostList.menu",
       "domain": "hosts",
       "layer": "presentation",

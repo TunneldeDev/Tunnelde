@@ -82,6 +82,28 @@ mod tests {
                 assert!(PERMISSIONS.contains(permission));
             }
             if point["registration"]["manifest"].is_string() {
+                if point["id"] == "hosts.fields" {
+                    assert_eq!(point["registration"]["manifest"], "hostFields");
+                    assert_eq!(point["ownership"], "manifest");
+                    assert_eq!(point["concurrency"], "revision-and-schema-digest");
+                    for (key, permission_key) in
+                        [("read", "permissions"), ("replace", "writePermissions")]
+                    {
+                        let method = METHODS
+                            .iter()
+                            .find(|method| Some(method.name) == point["registration"][key].as_str())
+                            .unwrap();
+                        let declared: Vec<_> = point[permission_key]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .map(|value| value.as_str().unwrap())
+                            .collect();
+                        assert_eq!(method.permissions, declared);
+                        assert_eq!(method.stability, "experimental");
+                    }
+                    continue;
+                }
                 assert_eq!(point["id"], "hostList.menu");
                 assert_eq!(point["registration"]["manifest"], "commands[].hostMenu");
                 assert_eq!(point["ownership"], "manifest");

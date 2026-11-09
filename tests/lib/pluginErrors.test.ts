@@ -52,6 +52,9 @@ describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
       expect(pluginFailure(new Error(message))).toBe(i18n.t(message));
       expect(pluginFailure({ code: "validation", message })).toBe(i18n.t(message));
       expect(pluginFailure(new Error(`plugin.error: ${message}`))).toBe(i18n.t(message));
+      expect(pluginFailure({ code: "validation", message: `plugin.api.frontend:${message}` })).toBe(
+        i18n.t(message),
+      );
     }
   });
 

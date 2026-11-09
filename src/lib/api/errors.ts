@@ -23,6 +23,11 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    if (error.message.startsWith("hostFields.invalidValue:")) {
+      return translate("hostFields.invalidValue", {
+        field: error.message.slice("hostFields.invalidValue:".length),
+      });
+    }
     if (
       error.message === "plugin.frontend.sdkUnsupported" &&
       typeof error.details?.required === "string" &&

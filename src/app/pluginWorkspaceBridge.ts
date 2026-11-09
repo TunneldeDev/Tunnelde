@@ -23,6 +23,7 @@ import { useQuickAccess } from "@/store/quickAccess";
 import { pluginEditorDocument, pluginEditorWriteResult } from "@/lib/plugins/editor";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
+import { isIpcError } from "@/lib/api/types";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -317,7 +318,11 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
                 error: null,
               });
             } catch (error) {
-              const message = error instanceof Error ? error.message : "requestFailed";
+              const message = isIpcError(error)
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : "requestFailed";
               await invoke("plugin_workspace_reply", {
                 requestId: payload.requestId,
                 result: null,

@@ -19,6 +19,7 @@ import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
 import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
 
 export interface NativeEvents {
+  "hosts://fields-changed": { pluginId: string; hostId: string; revision: number };
   "plugin://host-list-changed": HostDecorationSnapshot;
   "plugin://tab-bar-changed": TabBarSnapshot;
   "plugin://status-bar-changed": StatusBarSnapshot;
