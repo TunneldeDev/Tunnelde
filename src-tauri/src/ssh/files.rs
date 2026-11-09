@@ -28,6 +28,7 @@ mod publication;
 mod range_io;
 mod remote_commit;
 pub mod remote_editor;
+mod remote_merge;
 mod rename;
 mod scan;
 mod scheduler;
@@ -586,6 +587,25 @@ pub async fn remote_rename(
     let result = async {
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
         if overwrite && remote_exists(&sftp, &to).await? {
+            // Merge real directories using only server-side renames. Resolving
+            // roots once also permits a user's parent directory symlink.
+            if sftp
+                .symlink_metadata(&from)
+                .await
+                .map_err(map_sftp)?
+                .is_dir()
+                && sftp.symlink_metadata(&to).await.map_err(map_sftp)?.is_dir()
+            {
+                let source = sftp.canonicalize(&from).await.map_err(map_sftp)?;
+                let target = sftp.canonicalize(&to).await.map_err(map_sftp)?;
+                let plan = remote_merge::Plan::prepare(&sftp, &source, &target).await?;
+                let replacement = if plan.needs_replacement {
+                    Some(remote_commit::Replacement::connect(app, session_id).await?)
+                } else {
+                    None
+                };
+                return plan.apply(&sftp, replacement.as_ref()).await;
+            }
             return remote_replace(app, session_id, &from, &to).await;
         }
         rename::entry(&sftp, &from, &to).await
