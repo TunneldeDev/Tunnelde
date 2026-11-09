@@ -401,7 +401,10 @@ impl<'a> Files<'a> {
             Some(session) => match interruptible(cancel, session.open(&target.path, true)).await {
                 Ok(handle) => Some(handle),
                 Err(error) => {
-                    let _ = close_handle(&sessions.source, source_handle).await;
+                    // No writes have started. Do not hold up cancellation for
+                    // a read handle's CLOSE or abort other shared-channel users.
+                    let _ =
+                        interruptible(cancel, close_handle(&sessions.source, source_handle)).await;
                     return Err(error);
                 }
             },
