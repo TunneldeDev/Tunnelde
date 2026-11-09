@@ -1,6 +1,22 @@
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateSourceFailure {
+    // Only fixed source labels and localized reason keys cross the IPC boundary.
+    pub source: &'static str,
+    pub reason: String,
+    pub status: Option<u16>,
+    pub retry_at: Option<i64>,
+}
+
+impl std::fmt::Display for UpdateSourceFailure {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.reason)
+    }
+}
+
 /// Errors surfaced to the webview. Each variant maps to a stable `code`
 /// so the frontend can localize messages instead of showing raw strings.
 #[derive(Debug, thiserror::Error)]
@@ -35,6 +51,10 @@ pub enum AppError {
     #[error("{0}")]
     Update(String),
     #[error("{0}")]
+    UpdateRequest(UpdateSourceFailure),
+    #[error("updates.sourcesUnavailable")]
+    UpdateSources(Vec<UpdateSourceFailure>),
+    #[error("{0}")]
     Ssh(String),
     #[error("sftp.error: Remote move/rename failed ({from} -> {to}): {reason}")]
     RemoteRename {
@@ -67,8 +87,16 @@ impl AppError {
             Self::Db(_) => "database",
             Self::Io(_) => "io",
             Self::Internal(_) => "internal",
-            Self::Update(_) => "update",
+            Self::Update(_) | Self::UpdateRequest(_) | Self::UpdateSources(_) => "update",
             Self::Ssh(_) | Self::RemoteRename { .. } => "ssh",
+        }
+    }
+
+    pub fn update_source_errors(&self) -> Option<Vec<UpdateSourceFailure>> {
+        match self {
+            Self::UpdateRequest(failure) => Some(vec![failure.clone()]),
+            Self::UpdateSources(failures) => Some(failures.clone()),
+            _ => None,
         }
     }
 }
@@ -98,11 +126,17 @@ impl Serialize for AppError {
     {
         let detailed = matches!(
             self,
-            Self::PluginEngineUnsupported { .. } | Self::RemoteRename { .. }
+            Self::PluginEngineUnsupported { .. }
+                | Self::RemoteRename { .. }
+                | Self::UpdateRequest(_)
+                | Self::UpdateSources(_)
         );
         let mut state = serializer.serialize_struct("AppError", if detailed { 3 } else { 2 })?;
         state.serialize_field("code", self.code())?;
         state.serialize_field("message", &self.to_string())?;
+        if let Some(failures) = self.update_source_errors() {
+            state.serialize_field("details", &serde_json::json!({ "sourceErrors": failures }))?;
+        }
         if let Self::PluginEngineUnsupported {
             plugin_id,
             plugin_version,

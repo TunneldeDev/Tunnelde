@@ -1,18 +1,66 @@
+use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use semver::Version;
 use serde::Deserialize;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 use super::channels::{channel_accepts, source_channels};
 use super::{validate_preferences, RELEASES_PAGE};
-use crate::error::{AppError, AppResult};
+use crate::error::{AppError, AppResult, UpdateSourceFailure};
+use crate::models::now_ms;
 use crate::settings::Settings;
+use crate::state::AppState;
 
 const RELEASES_API: &str =
     "https://api.github.com/repos/TunneldeDev/Tunnelde/releases?per_page=100";
 
 const MAX_FEED_BYTES: usize = 4 * 1024 * 1024;
+
+#[derive(Default)]
+pub(super) struct ApiBackoff(Mutex<Option<(u64, UpdateSourceFailure)>>);
+
+impl ApiBackoff {
+    fn active(&self, proxy: u64, now: i64) -> Option<UpdateSourceFailure> {
+        self.0
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .as_ref()
+            .filter(|(key, failure)| *key == proxy && failure.retry_at.is_some_and(|at| at > now))
+            .map(|(_, failure)| failure.clone())
+    }
+
+    fn record(&self, proxy: u64, failure: &UpdateSourceFailure) {
+        if failure.reason == "updates.rateLimited" {
+            *self.0.lock().unwrap_or_else(|error| error.into_inner()) =
+                Some((proxy, failure.clone()));
+        }
+    }
+}
+
+fn proxy_fingerprint(settings: &Settings) -> AppResult<u64> {
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    // Never store or log a proxy URL, password, or serialized network settings.
+    crate::network::proxy_url(&settings.network, "updates", None)?.hash(&mut hasher);
+    for name in ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY"] {
+        std::env::var_os(name).hash(&mut hasher);
+    }
+    Ok(hasher.finish())
+}
+
+fn source_failure(source: &'static str, error: AppError) -> UpdateSourceFailure {
+    if let AppError::UpdateRequest(failure) = error {
+        failure
+    } else {
+        UpdateSourceFailure {
+            source,
+            reason: error.to_string(),
+            status: None,
+            retry_at: None,
+        }
+    }
+}
 
 fn network_error(error: reqwest::Error) -> AppError {
     let source = source_kind(error.url());
@@ -39,7 +87,12 @@ fn network_error(error: reqwest::Error) -> AppError {
         action = "check_update_proxy_and_retry",
         "update request failed"
     );
-    AppError::Update(key.into())
+    AppError::UpdateRequest(UpdateSourceFailure {
+        source,
+        reason: key.into(),
+        status: None,
+        retry_at: None,
+    })
 }
 
 pub(super) async fn request(client: &reqwest::Client, url: &str) -> AppResult<reqwest::Response> {
@@ -49,6 +102,46 @@ pub(super) async fn request(client: &reqwest::Client, url: &str) -> AppResult<re
         .send()
         .await
         .map_err(network_error)
+}
+
+pub(super) async fn manifest(
+    client: &reqwest::Client,
+    url: &reqwest::Url,
+) -> AppResult<Option<serde_json::Value>> {
+    let response = client
+        .get(url.clone())
+        .header(reqwest::header::ACCEPT, "application/json")
+        .timeout(Duration::from_secs(25))
+        .send()
+        .await
+        .map_err(network_error)?;
+    if response.status() == reqwest::StatusCode::NO_CONTENT {
+        return Ok(None);
+    }
+    let bytes = read_response(response).await.map_err(|error| match error {
+        AppError::UpdateRequest(_) => error,
+        _ => manifest_error(url, "updates.invalidFeed"),
+    })?;
+    serde_json::from_slice(&bytes)
+        .map(Some)
+        .map_err(|_| manifest_error(url, "updates.invalidFeed"))
+}
+
+pub(super) fn manifest_error(url: &reqwest::Url, reason: &'static str) -> AppError {
+    let source = source_kind(Some(url));
+    tracing::debug!(
+        source,
+        stage = "manifest-validation",
+        reason,
+        action = "check_update_source_and_proxy",
+        "update manifest could not be used"
+    );
+    AppError::UpdateRequest(UpdateSourceFailure {
+        source,
+        reason: reason.into(),
+        status: None,
+        retry_at: None,
+    })
 }
 
 fn source_kind(url: Option<&reqwest::Url>) -> &'static str {
@@ -68,10 +161,36 @@ fn header_number(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64
     headers.get(name)?.to_str().ok()?.parse().ok()
 }
 
+fn retry_at(headers: &reqwest::header::HeaderMap, now: i64) -> i64 {
+    let after = headers.get(reqwest::header::RETRY_AFTER).and_then(|value| {
+        let value = value.to_str().ok()?;
+        value
+            .parse::<u64>()
+            .ok()
+            .and_then(|seconds| i64::try_from(seconds).ok())
+            .and_then(|seconds| seconds.checked_mul(1000))
+            .and_then(|milliseconds| now.checked_add(milliseconds))
+            .or_else(|| {
+                chrono::DateTime::parse_from_rfc2822(value)
+                    .ok()
+                    .map(|date| date.timestamp_millis())
+            })
+    });
+    let reset = header_number(headers, "x-ratelimit-reset")
+        .and_then(|seconds| i64::try_from(seconds).ok())
+        .and_then(|seconds| seconds.checked_mul(1000));
+    [after, reset]
+        .into_iter()
+        .flatten()
+        .filter(|time| *time > now && *time <= now.saturating_add(7 * 86_400_000))
+        .max()
+        .unwrap_or_else(|| now.saturating_add(60_000))
+}
+
 fn status_error(
     status: reqwest::StatusCode,
     headers: &reqwest::header::HeaderMap,
-    source: &str,
+    source: &'static str,
 ) -> AppError {
     let limited = status == reqwest::StatusCode::TOO_MANY_REQUESTS
         || (status == reqwest::StatusCode::FORBIDDEN
@@ -105,14 +224,17 @@ fn status_error(
         },
         "update source returned an error"
     );
-    AppError::Update(
-        if limited {
+    AppError::UpdateRequest(UpdateSourceFailure {
+        source,
+        reason: if limited {
             "updates.rateLimited"
         } else {
             "updates.sourceUnavailable"
         }
         .into(),
-    )
+        status: Some(status.as_u16()),
+        retry_at: limited.then(|| retry_at(headers, now_ms())),
+    })
 }
 
 pub(super) async fn read_response(mut response: reqwest::Response) -> AppResult<Vec<u8>> {
@@ -160,6 +282,7 @@ pub(super) struct Feed {
     pub(super) version: Option<Version>,
     pub(super) page: String,
     pub(super) notes: Option<String>,
+    pub(super) manifest: Option<serde_json::Value>,
 }
 
 pub(super) fn github_channel_feed(releases: &[GitHubRelease], channel: &str) -> AppResult<Feed> {
@@ -183,6 +306,7 @@ pub(super) fn github_channel_feed(releases: &[GitHubRelease], channel: &str) -> 
         version: Some(version),
         page: format!("https://github.com/TunneldeDev/Tunnelde/releases/tag/{tag}"),
         notes: release.body.clone(),
+        manifest: None,
     })
 }
 
@@ -205,6 +329,7 @@ pub(super) async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec
                     channel: settings.update_channel.clone(),
                     version: None,
                     notes: None,
+                    manifest: None,
                     page: if *channel == "stable" {
                         RELEASES_PAGE.into()
                     } else {
@@ -222,31 +347,76 @@ pub(super) async fn feeds(app: &AppHandle, settings: &Settings) -> AppResult<Vec
             channel: "stable".into(),
             version: None,
             notes: None,
+            manifest: None,
             page: RELEASES_PAGE.into(),
         }]);
     }
     let client = crate::network::http_client(app, "updates")?;
+    let service = app.state::<AppState>();
     Ok(vec![
-        discover_github_feed(&client, &settings.update_channel).await?,
+        discover_github_feed(
+            &client,
+            &settings.update_channel,
+            &service.update.github_api_backoff,
+            proxy_fingerprint(settings)?,
+        )
+        .await?,
     ])
 }
 
-async fn discover_github_feed(client: &reqwest::Client, channel: &str) -> AppResult<Feed> {
+async fn discover_github_feed(
+    client: &reqwest::Client,
+    channel: &str,
+    backoff: &ApiBackoff,
+    proxy: u64,
+) -> AppResult<Feed> {
+    discover_sources(
+        channel,
+        backoff,
+        proxy,
+        || api_feed(client, channel),
+        || super::atom::fallback(client, channel),
+    )
+    .await
+}
+
+async fn discover_sources<A, B, AF, BF>(
+    channel: &str,
+    backoff: &ApiBackoff,
+    proxy: u64,
+    api: A,
+    public: B,
+) -> AppResult<Feed>
+where
+    A: FnOnce() -> AF,
+    B: FnOnce() -> BF,
+    AF: std::future::Future<Output = AppResult<Feed>>,
+    BF: std::future::Future<Output = AppResult<Feed>>,
+{
     // Reserve time for a public-feed fallback within the overall check deadline.
     // Both routes use the exact same configured update proxy.
-    let primary = tokio::time::timeout(Duration::from_secs(22), api_feed(client, channel))
-        .await
-        .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
+    let primary = if let Some(failure) = backoff.active(proxy, now_ms()) {
+        tracing::debug!(
+            source = "github-api",
+            retry_at = failure.retry_at,
+            action = "respect_rate_limit",
+            "skipping rate-limited update API; public feed remains available"
+        );
+        Err(AppError::UpdateRequest(failure))
+    } else {
+        tokio::time::timeout(Duration::from_secs(22), api())
+            .await
+            .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())))
+    };
     match primary {
         Ok(feed) => Ok(feed),
         Err(primary) => {
+            let primary = source_failure("github-api", primary);
+            backoff.record(proxy, &primary);
             tracing::info!(reason = %primary, channel, source = "github-api", next_source = "github-public-feed", action = "automatic_fallback", "GitHub update API unavailable; checking recent public releases");
-            let fallback = tokio::time::timeout(
-                Duration::from_secs(28),
-                super::atom::fallback(client, channel),
-            )
-            .await
-            .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
+            let fallback = tokio::time::timeout(Duration::from_secs(28), public())
+                .await
+                .unwrap_or_else(|_| Err(AppError::Update("updates.timeout".into())));
             match fallback {
                 Ok(feed) => {
                     tracing::info!(
@@ -259,13 +429,10 @@ async fn discover_github_feed(client: &reqwest::Client, channel: &str) -> AppRes
                 }
                 Err(fallback) => {
                     tracing::debug!(reason = %fallback, primary_reason = %primary, channel, source = "github-public-feed", action = "check_update_proxy_or_retry_later", "public release feed fallback failed");
-                    if primary.to_string() == "updates.rateLimited"
-                        && fallback.to_string() == "updates.sourceUnavailable"
-                    {
-                        Err(primary)
-                    } else {
-                        Err(fallback)
-                    }
+                    Err(AppError::UpdateSources(vec![
+                        primary,
+                        source_failure("github-public-feed", fallback),
+                    ]))
                 }
             }
         }
@@ -295,278 +462,4 @@ async fn api_feed(client: &reqwest::Client, channel: &str) -> AppResult<Feed> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn source_labels_never_expose_custom_urls_or_credentials() {
-        for (url, expected) in [
-            (
-                "https://api.github.com/repos/TunneldeDev/Tunnelde/releases?secret=hidden",
-                "github-api",
-            ),
-            (
-                "https://github.com/TunneldeDev/Tunnelde/releases.atom",
-                "github-public-feed",
-            ),
-            (
-                "https://github.com/TunneldeDev/Tunnelde/releases/download/v1/latest.json",
-                "github-release",
-            ),
-            (
-                "https://user:secret@private.example/feed?token=hidden",
-                "custom-update-source",
-            ),
-        ] {
-            assert_eq!(source_kind(Some(&url.parse().unwrap())), expected);
-        }
-    }
-
-    #[test]
-    fn quota_log_includes_actionable_allowlisted_response_context() {
-        use std::{
-            io::Write,
-            sync::{Arc, Mutex},
-        };
-        #[derive(Clone)]
-        struct Buffer(Arc<Mutex<Vec<u8>>>);
-        impl Write for Buffer {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(bytes);
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-        let bytes = Arc::new(Mutex::new(Vec::new()));
-        let buffer = Buffer(bytes.clone());
-        let subscriber = tracing_subscriber::fmt()
-            .json()
-            .with_max_level(tracing::Level::DEBUG)
-            .with_writer(move || buffer.clone())
-            .finish();
-        let mut headers = reqwest::header::HeaderMap::new();
-        for (key, value) in [
-            ("x-ratelimit-remaining", "0"),
-            ("x-ratelimit-limit", "60"),
-            ("x-ratelimit-reset", "1800000000"),
-            ("retry-after", "120"),
-            ("x-github-request-id", "ABCD:1234"),
-            ("authorization", "Bearer secret-token"),
-        ] {
-            headers.insert(
-                reqwest::header::HeaderName::from_static(key),
-                value.parse().unwrap(),
-            );
-        }
-        tracing::subscriber::with_default(subscriber, || {
-            let _ = status_error(reqwest::StatusCode::FORBIDDEN, &headers, "github-api");
-        });
-        let output = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
-        assert!(!output.contains("secret-token"));
-        let event: serde_json::Value = serde_json::from_str(output.trim()).unwrap();
-        let fields = &event["fields"];
-        assert_eq!(fields["source"], "github-api");
-        assert_eq!(fields["stage"], "http-response");
-        assert_eq!(fields["status"], 403);
-        assert_eq!(fields["limited"], true);
-        assert_eq!(fields["request_id"], "ABCD:1234");
-        assert_eq!(fields["rate_limit_remaining"], 0);
-        assert_eq!(fields["rate_limit_limit"], 60);
-        assert_eq!(fields["rate_limit_reset_unix"], 1800000000);
-        assert_eq!(fields["retry_after_seconds"], 120);
-        assert_eq!(fields["action"], "try_public_feed_then_retry_later");
-    }
-
-    #[test]
-    fn github_lexical_beta_order_never_controls_update_selection() {
-        // Captured ordering from GitHub on 2026-11-04: beta.9 precedes .11 and .10.
-        let tags = [
-            "v0.28.0-beta.9",
-            "v0.28.0-beta.8",
-            "v0.28.0-beta.2",
-            "v0.28.0-beta.11",
-            "v0.28.0-beta.10",
-            "v0.28.0-beta.1",
-            "v0.27.1",
-        ];
-        let mut releases: Vec<GitHubRelease> = tags
-            .iter()
-            .map(|tag| GitHubRelease {
-                tag_name: (*tag).into(),
-                draft: false,
-                prerelease: tag.contains('-'),
-                assets: vec![ReleaseAsset {
-                    name: "latest.json".into(),
-                }],
-                body: Some(format!("Notes for {tag}")),
-            })
-            .collect();
-        for channel in ["beta", "nightly"] {
-            let feed = github_channel_feed(&releases, channel).unwrap();
-            assert_eq!(
-                feed.version.unwrap(),
-                Version::parse("0.28.0-beta.11").unwrap()
-            );
-            assert!(feed.url.as_str().ends_with("/v0.28.0-beta.11/latest.json"));
-            assert_eq!(feed.notes.as_deref(), Some("Notes for v0.28.0-beta.11"));
-        }
-        assert_eq!(
-            github_channel_feed(&releases, "stable")
-                .unwrap()
-                .version
-                .unwrap(),
-            Version::parse("0.27.1").unwrap()
-        );
-        for tag in ["v0.28.0-beta.99", "v0.28.0-beta.100", "v0.29.0-beta.1"] {
-            releases.push(GitHubRelease {
-                tag_name: tag.into(),
-                draft: false,
-                prerelease: true,
-                assets: vec![ReleaseAsset {
-                    name: "latest.json".into(),
-                }],
-                body: None,
-            });
-            assert_eq!(
-                github_channel_feed(&releases, "beta")
-                    .unwrap()
-                    .version
-                    .unwrap(),
-                Version::parse(&tag[1..]).unwrap()
-            );
-        }
-        // Incomplete or mismarked releases never supersede verified channel packages.
-        releases.push(GitHubRelease {
-            tag_name: "v0.29.0-beta.2".into(),
-            draft: true,
-            prerelease: true,
-            assets: vec![ReleaseAsset {
-                name: "latest.json".into(),
-            }],
-            body: None,
-        });
-        releases.push(GitHubRelease {
-            tag_name: "v0.29.0-beta.3".into(),
-            draft: false,
-            prerelease: true,
-            assets: vec![],
-            body: None,
-        });
-        releases.push(GitHubRelease {
-            tag_name: "v0.29.0-beta.4".into(),
-            draft: false,
-            prerelease: false,
-            assets: vec![ReleaseAsset {
-                name: "latest.json".into(),
-            }],
-            body: None,
-        });
-        releases.reverse();
-        assert_eq!(
-            github_channel_feed(&releases, "beta")
-                .unwrap()
-                .version
-                .unwrap(),
-            Version::parse("0.29.0-beta.1").unwrap()
-        );
-    }
-
-    #[tokio::test]
-    #[ignore = "requires a reachable explicit proxy and live GitHub releases"]
-    async fn live_channels_through_configured_proxy() {
-        let proxy = std::env::var("TUNNELDE_UPDATE_TEST_PROXY").expect("explicit test proxy");
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .proxy(reqwest::Proxy::all(proxy).unwrap())
-            .user_agent("Tunnelde-update-regression")
-            .build()
-            .unwrap();
-        for channel in ["beta", "nightly"] {
-            let feed = discover_github_feed(&client, channel).await.unwrap();
-            let expected = feed.version.as_ref().unwrap();
-            assert!(channel_accepts(expected, channel));
-            let bytes = read_response(request(&client, feed.url.as_str()).await.unwrap())
-                .await
-                .unwrap();
-            let manifest: tauri_plugin_updater::RemoteRelease =
-                serde_json::from_slice(&bytes).unwrap();
-            assert_eq!(&manifest.version, expected);
-            println!("{channel}: {expected}; manifest verified");
-        }
-        // Exercise the quota-independent path even if the proxy's API quota reset.
-        let feed = super::super::atom::fallback(&client, "nightly")
-            .await
-            .unwrap();
-        println!("public-feed fallback: {}", feed.version.unwrap());
-    }
-
-    #[test]
-    fn identifies_rate_limits_without_mistaking_all_forbidden_responses_for_quota() {
-        use reqwest::{header::HeaderMap, StatusCode};
-        let mut headers = HeaderMap::new();
-        assert_eq!(
-            status_error(StatusCode::FORBIDDEN, &headers, "github-api").to_string(),
-            "updates.sourceUnavailable"
-        );
-        headers.insert("x-ratelimit-remaining", "0".parse().unwrap());
-        assert_eq!(
-            status_error(StatusCode::FORBIDDEN, &headers, "github-api").to_string(),
-            "updates.rateLimited"
-        );
-        assert_eq!(
-            status_error(
-                StatusCode::TOO_MANY_REQUESTS,
-                &HeaderMap::new(),
-                "github-api"
-            )
-            .to_string(),
-            "updates.rateLimited"
-        );
-    }
-
-    #[tokio::test]
-    async fn rejects_oversized_and_chunked_feeds() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        for chunked in [false, true] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let url = format!("http://{}", listener.local_addr().unwrap());
-            let task = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut request = [0; 1024];
-                assert!(stream.read(&mut request).await.unwrap() > 0);
-                if chunked {
-                    let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").await;
-                    let data = vec![b'x'; 1024 * 1024];
-                    for _ in 0..5 {
-                        if stream.write_all(b"100000\r\n").await.is_err() {
-                            break;
-                        }
-                        if stream.write_all(&data).await.is_err() {
-                            break;
-                        }
-                        if stream.write_all(b"\r\n").await.is_err() {
-                            break;
-                        }
-                    }
-                    let _ = stream.write_all(b"0\r\n\r\n").await;
-                } else {
-                    let _ = stream
-                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 99999999\r\n\r\n")
-                        .await;
-                }
-            });
-            let client = reqwest::Client::builder().no_proxy().build().unwrap();
-            assert_eq!(
-                read_response(request(&client, &url).await.unwrap())
-                    .await
-                    .err()
-                    .unwrap()
-                    .to_string(),
-                "updates.invalidFeed"
-            );
-            task.await.unwrap();
-        }
-    }
-}
+mod tests;

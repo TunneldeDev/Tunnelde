@@ -90,17 +90,19 @@ fn candidates(bytes: &[u8], channel: &str) -> AppResult<Vec<Feed>> {
             page: format!("{RELEASES}/tag/v{version}"),
             version: Some(version),
             notes: None,
+            manifest: None,
         })
         .collect())
 }
 
-fn validate_manifest(bytes: &[u8], expected: &Version) -> AppResult<()> {
+fn validate_manifest(bytes: &[u8], expected: &Version) -> AppResult<serde_json::Value> {
+    let raw: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| invalid())?;
     let manifest: tauri_plugin_updater::RemoteRelease =
-        serde_json::from_slice(bytes).map_err(|_| invalid())?;
+        serde_json::from_value(raw.clone()).map_err(|_| invalid())?;
     if &manifest.version != expected {
         return Err(invalid());
     }
-    Ok(())
+    Ok(raw)
 }
 
 pub(super) async fn fallback(client: &reqwest::Client, channel: &str) -> AppResult<Feed> {
@@ -111,7 +113,7 @@ pub(super) async fn fallback(client: &reqwest::Client, channel: &str) -> AppResu
 }
 
 async fn first_available(client: &reqwest::Client, feeds: Vec<Feed>) -> AppResult<Feed> {
-    for feed in feeds {
+    for mut feed in feeds {
         let response = request(client, feed.url.as_str()).await?;
         // GitHub's Atom cache can retain a recently deleted release. An absent
         // manifest is ineligible, but a network failure must not mean up-to-date.
@@ -119,7 +121,10 @@ async fn first_available(client: &reqwest::Client, feeds: Vec<Feed>) -> AppResul
             continue;
         }
         let bytes = read_response(response).await?;
-        validate_manifest(&bytes, feed.version.as_ref().unwrap())?;
+        feed.manifest = Some(
+            validate_manifest(&bytes, feed.version.as_ref().unwrap())
+                .map_err(|_| super::feeds::manifest_error(&feed.url, "updates.invalidFeed"))?,
+        );
         return Ok(feed);
     }
     Err(AppError::Update("updates.noFeed".into()))

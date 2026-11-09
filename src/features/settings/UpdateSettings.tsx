@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
 import { UpdateNotes } from "@/features/settings/UpdateNotes";
+import { UpdateDiagnostics } from "./UpdateDiagnostics";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { formatBytes, formatDateTime } from "@/lib/text/format";
@@ -204,6 +205,9 @@ export function UpdateStatus() {
       <p className={`updates__status${state?.available ? " is-available" : ""}`} role="status">
         {status}
       </p>
+      {phase === "error" && state?.sourceErrors?.length ? (
+        <UpdateDiagnostics failures={state.sourceErrors} />
+      ) : null}
       {downloading ? (
         <div
           className={`td-progress${percent === undefined ? " is-indeterminate" : ""}`}
