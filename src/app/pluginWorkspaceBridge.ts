@@ -256,6 +256,14 @@ async function refreshPluginHosts(signal?: AbortSignal): Promise<void> {
   const loaded = await useHosts.getState().load();
   if (!loaded || signal?.aborted) return;
   const current = useHosts.getState().hosts;
+  for (const host of current) {
+    if (
+      useSsh
+        .getState()
+        .sessions.some((session) => session.hostId === host.id && session.title !== host.name)
+    )
+      useSsh.getState().renameHost(host.id, host.name);
+  }
   for (const tab of useWorkspace.getState().tabs) {
     if (tab.kind !== "host" || !tab.hostId) continue;
     const host = current.find((item) => item.id === tab.hostId);

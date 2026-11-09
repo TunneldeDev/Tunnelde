@@ -558,11 +558,15 @@ describe("plugin dialog and listener lifecycle", () => {
 
   it("refreshes host names and forwards file and history changes to open views", async () => {
     cleanup = await wirePluginWorkspaceBridge();
+    useSsh.setState({ sessions: [session] });
     useWorkspace.getState().openHost(host);
     mocks.hostsSnapshot.mockResolvedValue({ hosts: [{ ...host, name: "Renamed" }], groups: [] });
     emit("plugin://domain-changed", { domain: "hosts" });
     await settle();
     expect(useWorkspace.getState().tabs[0]?.title).toBe("Renamed");
+    expect(useSsh.getState().sessions.find((item) => item.hostId === host.id)?.title).toBe(
+      "Renamed",
+    );
     const files = vi.fn();
     const history = vi.fn();
     window.addEventListener("tunnelde:files-changed", files);

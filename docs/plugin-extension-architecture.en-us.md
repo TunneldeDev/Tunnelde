@@ -37,6 +37,15 @@ An execution location is distinct from the location of the target resource.
 Cancellation, undo, compensation and atomic transactions require different contracts;
 a cancelled remote operation may already have produced effects.
 
+Saved hosts and groups now use one native domain service from both application
+commands and plugin RPC. It owns input normalization, persistence, session-name
+updates, credential cleanup, audit records and post-commit invalidation. Host
+removal and its saved connection route are deleted in one database transaction;
+reordering is also atomic. Failed writes do not publish success notifications or
+forget credentials. The existing RPC request and result shapes remain unchanged.
+This is the first extracted domain, not a claim that all native commands have
+already been migrated.
+
 Each implemented extension point must state whether contributions merge, select a
 provider or replace a view. Priority alone does not resolve all conflicts. User
 choices govern view/workbench providers and existing shortcut conflict behavior.

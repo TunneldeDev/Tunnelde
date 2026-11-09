@@ -9,6 +9,7 @@ mod network;
 mod platform;
 mod plugins;
 mod preview;
+mod services;
 mod settings;
 mod settings_profiles;
 mod ssh;
