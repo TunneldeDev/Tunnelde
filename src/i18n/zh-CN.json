@@ -1394,6 +1394,7 @@
     "allowOnce": "允许一次",
     "tasks": "任务",
     "taskOutput": "输出",
+    "taskDetails": "任务详情",
     "recoveryHint": "请先检查已保存的输出，再决定是否继续。任务不会自动重启。",
     "inspectTask": "检查任务",
     "resumeTask": "继续任务",

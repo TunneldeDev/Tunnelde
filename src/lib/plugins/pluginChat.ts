@@ -120,9 +120,11 @@ export interface ChatApproval {
 }
 export interface ChatTask {
   id: string;
+  runId?: string;
   title: string;
   status: "queued" | "running" | "done" | "failed" | "cancelled" | "interrupted";
   output: string;
+  inspection?: string;
   recoverable: boolean;
 }
 export interface PluginChatBlock {
@@ -448,9 +450,11 @@ export function normalizeChatBlock(value: unknown): PluginChatBlock | null {
             ? [
                 {
                   id: id(task.id),
+                  ...(id(task.runId) ? { runId: id(task.runId) } : {}),
                   title: text(task.title),
                   status: taskStatus,
                   output: text(task.output, 65536),
+                  ...(text(task.inspection) ? { inspection: text(task.inspection) } : {}),
                   recoverable: task.recoverable === true,
                 },
               ]
