@@ -6,6 +6,7 @@ mod engines;
 mod events;
 mod extensions;
 pub mod file_icons;
+pub mod frontend;
 mod host;
 pub mod host_list;
 mod logging;
@@ -75,6 +76,7 @@ pub struct PluginInfo {
     pub file_previews: Vec<crate::preview::providers::Provider>,
     pub mounted_file_reveal: bool,
     pub fingerprint: String,
+    pub frontend: Option<frontend::FrontendManifest>,
 }
 
 struct Instance {
@@ -178,11 +180,13 @@ impl Instance {
             mounted_file_reveal: self.manifest.mounted_file_reveal,
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
+            frontend: self.manifest.frontend.clone(),
         }
     }
 }
 
 pub struct PluginsManager {
+    frontend_app: std::sync::OnceLock<AppHandle>,
     dir: PathBuf,
     plugins: Mutex<HashMap<String, Arc<Mutex<Instance>>>>,
     mutations: Mutex<()>,
@@ -403,6 +407,7 @@ impl PluginsManager {
             }
         }
         Self {
+            frontend_app: std::sync::OnceLock::new(),
             dir,
             plugins: Mutex::new(plugins),
             mutations: Mutex::new(()),
@@ -488,6 +493,10 @@ impl PluginsManager {
             return Err(AppError::NotFound("plugin.notFound".into()));
         }
         instance.require_runtime()?;
+        if let Some(frontend) = &instance.manifest.frontend {
+            frontend.require_sdk()?;
+            let _ = self.frontend_app.set(app.clone());
+        }
         let lease = self.security.lease(
             id,
             security::fingerprint_async(instance.dir.clone()).await?,
@@ -496,7 +505,10 @@ impl PluginsManager {
         let state = app.state::<crate::state::AppState>();
         self.security.mark_running(&state.db)?;
 
-        if instance.manifest.runtime.as_deref() == Some("declarative") {
+        if matches!(
+            instance.manifest.runtime.as_deref(),
+            Some("declarative" | "frontend")
+        ) {
             instance.status = PluginStatus::Running;
             instance.error = None;
             let info = instance.info();
@@ -834,6 +846,48 @@ impl PluginsManager {
         )?;
         if expected_generation.is_some_and(|generation| generation != lease.generation) {
             return Err(AppError::validation("plugin.statusBar.expired"));
+        }
+        if instance.manifest.runtime.as_deref() == Some("frontend")
+            || instance
+                .manifest
+                .commands
+                .iter()
+                .any(|item| item.id == command && item.frontend)
+        {
+            if instance.status != PluginStatus::Running
+                || !instance
+                    .manifest
+                    .commands
+                    .iter()
+                    .any(|item| item.id == command)
+            {
+                return Err(AppError::validation("plugin.notRunning"));
+            }
+            let app = self
+                .frontend_app
+                .get()
+                .cloned()
+                .ok_or_else(|| AppError::validation("plugin.frontend.unavailable"))?;
+            drop(instance);
+            let context = api::HostContext {
+                app,
+                id: id.into(),
+                fingerprint: lease.fingerprint.clone(),
+                permissions: lease.permissions.clone(),
+                generation: lease.generation,
+                tool_client: None,
+            };
+            return self
+                .security
+                .guard(
+                    &lease,
+                    api::frontend_request(
+                        &context,
+                        "__frontend.command",
+                        json!({"command":command,"input":input.unwrap_or_else(|| json!({}))}),
+                    ),
+                )
+                .await;
         }
         if instance.is_wasm() {
             let result = wasm_call(

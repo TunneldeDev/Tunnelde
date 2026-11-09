@@ -1018,8 +1018,14 @@ pub(super) async fn frontend_request(
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
-    let entry =
-        method_info(method).ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?;
+    // Internal frontend command delivery is not a public RPC capability.
+    let permissions: &'static [&'static str] = if method == "__frontend.command" {
+        &["ui.trusted"]
+    } else {
+        method_info(method)
+            .ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?
+            .permissions
+    };
     let request_id = uuid::Uuid::new_v4().to_string();
     let (sender, receiver) = oneshot::channel();
     {
@@ -1039,7 +1045,7 @@ pub(super) async fn frontend_request(
             request_id.clone(),
             PendingFrontend {
                 context: context.clone(),
-                permissions: entry.permissions,
+                permissions,
                 reply: sender,
             },
         );
@@ -1054,7 +1060,11 @@ pub(super) async fn frontend_request(
             json!({"requestId":request_id,"pluginId":context.id,"method":method,"params":params}),
         )?;
         tokio::time::timeout(
-            Duration::from_secs(if method == "ui.confirm" { 60 } else { 15 }),
+            Duration::from_secs(if matches!(method, "ui.confirm" | "__frontend.command") {
+                60
+            } else {
+                15
+            }),
             receiver,
         )
         .await

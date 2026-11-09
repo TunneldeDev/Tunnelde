@@ -905,6 +905,12 @@ pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::Plug
         } = error
         {
             tracing::warn!(plugin_id = %id, reason, stage = "compatibility", plugin_version, host_version, required_host = required, action = "update_application_or_install_compatible_plugin", "plugin start failed");
+        } else if let AppError::PluginUiSdkUnsupported {
+            required,
+            available,
+        } = error
+        {
+            tracing::warn!(plugin_id = %id, reason, stage = "ui-sdk-compatibility", required_sdk = required, available_sdk = available, action = "update_application_or_install_compatible_plugin", "plugin start failed");
         } else {
             tracing::warn!(plugin_id = %id, reason, error_code = error.code(), stage = "startup", "plugin start failed");
         }

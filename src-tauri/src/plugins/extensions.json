@@ -1,6 +1,26 @@
 {
   "version": 1,
   "stability": "experimental",
+  "frontend": {
+    "sdkVersion": "0.1.0",
+    "stability": "experimental",
+    "trust": "host-context",
+    "permission": "ui.trusted",
+    "manifest": "frontend",
+    "runtime": "frontend",
+    "viewKind": "component",
+    "components": [
+      "Button",
+      "IconButton",
+      "Field",
+      "Input",
+      "Textarea",
+      "Switch",
+      "SearchField",
+      "EmptyState"
+    ],
+    "limits": { "moduleBytes": 8388608, "totalBytes": 33554432, "owners": 16 }
+  },
   "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
   "domains": [
     {
