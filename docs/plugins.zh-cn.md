@@ -514,3 +514,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 [稳定的插件底栏 API](plugin-status-bar.zh-cn.md)
 
 [标签栏扩展](plugin-tab-bar.zh-cn.md)
+
+[本地日志与插件诊断](logging.zh-cn.md)

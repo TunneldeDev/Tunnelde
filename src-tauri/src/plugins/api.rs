@@ -115,7 +115,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation; already completed operations cannot be rolled back."),
     method!("tools.revokeClient", [], "{clientId:string}", "Cancel pending tool invocations owned by this plugin runtime's client."),
     stable_method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization.", "0.21.0"),
-    method!("log", ["log"], "{message:string,level?:string}", "Write a bounded plugin-tagged log message."),
+    method!("log", ["log"], "{message:string,level?:string,domain?:string,operation?:string,requestId?:string,fields?:object}", "Write a bounded local log at its requested severity. Host supplies plugin identity and runtime generation; domain is plugin-scoped. Optional structured fields redact credential keys and URL credentials/query/fragment. Existing message/level calls remain supported. Subject to configured log filter and nonblocking writer; never include secrets in message text."),
     method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
     method!("app.openExternal", ["app.openExternal"], "{url:string}", "Open an http/https URL with the system browser."),
     method!("settings.get", ["settings.read"], "{}", "Read application preferences."),
@@ -388,12 +388,15 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
         }
         "api.describe" => Ok(describe_api()),
         "log" => {
-            let message: String = field(&params, "message")?;
-            let level: String = optional(&params, "level")?.unwrap_or_else(|| "info".into());
-            if message.len() > 16 * 1024 || level.len() > 16 {
-                return Err(AppError::validation("plugin.api.logTooLarge"));
-            }
-            tracing::info!(plugin = %context.id, level = %level, message = %message, "plugin log");
+            let entry = serde_json::from_value(params)
+                .map_err(|_| AppError::validation("plugin.api.invalid:log"))?;
+            crate::diagnostics::write(
+                crate::diagnostics::LogOrigin::Plugin {
+                    id: &context.id,
+                    generation: context.generation,
+                },
+                entry,
+            )?;
             Ok(Value::Null)
         }
         "app.info" => encode(commands::app_info(app.clone(), state)),

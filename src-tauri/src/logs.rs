@@ -137,7 +137,16 @@ pub fn record(db: &Database, action: &'static str, target: Option<&str>) {
         tx.commit()?;
         Ok(())
     }) {
-        tracing::warn!(%error, "Could not record operation");
+        let _ = crate::diagnostics::write(
+            crate::diagnostics::LogOrigin::Native,
+            crate::diagnostics::LogEntry {
+                level: crate::diagnostics::LogLevel::Warn,
+                domain: Some("operations".into()),
+                operation: Some(action.into()),
+                message: format!("Could not record operation: {error}"),
+                ..Default::default()
+            },
+        );
     }
 }
 
