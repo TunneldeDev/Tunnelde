@@ -43,6 +43,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("sidebar.output", "output.show", "workbench", ["Mod+Shift+U"], { input: true }),
   command("app.reload", "restart.reload", "workbench", []),
   command("app.restart", "restart.command", "workbench", []),
+  command("panel.restoreWorkbench", "providers.restore", "workbench", [], { input: true }),
   command("update.check", "updates.check", "workbench", []),
   command("panel.toggle", "shortcuts.togglePanel", "workbench", []),
   command("transfers.show", "tasks.title", "workbench", [], { input: true }),
@@ -138,15 +139,17 @@ export function shortcutCommands(plugins: readonly PluginInfo[] = []): ShortcutC
     ...plugins
       .filter((plugin) => plugin.runtime !== "theme")
       .flatMap((plugin) => [
-        ...plugin.views.map((view) => ({
-          id: `plugin.v.${plugin.id.length}.${plugin.id}.${view.id}`,
-          label: "pluginView.title",
-          title: `${plugin.name}: ${view.title}`,
-          scope: "workbench" as const,
-          input: true,
-          defaults: [],
-          plugin: { id: plugin.id, view: view.id },
-        })),
+        ...plugin.views
+          .filter((view) => !view.provider)
+          .map((view) => ({
+            id: `plugin.v.${plugin.id.length}.${plugin.id}.${view.id}`,
+            label: "pluginView.title",
+            title: `${plugin.name}: ${view.title}`,
+            scope: "workbench" as const,
+            input: true,
+            defaults: [],
+            plugin: { id: plugin.id, view: view.id },
+          })),
         ...plugin.commands.map((item) => ({
           id: `plugin.c.${plugin.id.length}.${plugin.id}.${item.id}`,
           label: "pluginView.run",

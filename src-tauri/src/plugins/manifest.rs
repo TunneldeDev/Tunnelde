@@ -102,6 +102,8 @@ pub struct PluginView {
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -352,6 +354,15 @@ impl PluginManifest {
             }
         }
         let mut view_ids = std::collections::HashSet::new();
+        if self
+            .views
+            .iter()
+            .filter(|view| view.provider.is_some())
+            .count()
+            > 8
+        {
+            return Err(AppError::validation("plugin.view.invalid"));
+        }
         for view in &self.views {
             if !valid_id(&view.id)
                 || view.title.trim().is_empty()
@@ -365,6 +376,15 @@ impl PluginManifest {
                     .as_deref()
                     .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
                 || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
+                || view.provider.as_deref().is_some_and(|target| {
+                    !matches!(target, "hostList" | "workbench")
+                        || view.kind.as_deref() != Some("component")
+                        || view.location.is_some()
+                        || view.title.chars().count() > 120
+                        || view.title.chars().any(char::is_control)
+                        || (target == "hostList"
+                            && !self.permissions.iter().any(|p| p == "hosts.read"))
+                })
                 || view.icon.as_deref().is_some_and(|v| {
                     !matches!(
                         v,
@@ -569,6 +589,24 @@ mod tests {
             load(&root)
         };
         assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "workbench".into();
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "hostList".into();
+        assert!(save(&value).is_err());
+        value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["location"] = "sidebar".into();
+        assert!(save(&value).is_err());
+        value["views"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("location");
+        value["views"][0]["provider"] = "unknown".into();
+        assert!(save(&value).is_err());
+        value["views"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("provider");
         value["permissions"] = serde_json::json!([]);
         assert!(save(&value).is_err());
         value["permissions"] = serde_json::json!(["ui.trusted"]);

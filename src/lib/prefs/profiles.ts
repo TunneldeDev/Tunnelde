@@ -30,6 +30,7 @@ export const PORTABLE_SETTING_KEYS = [
   "preloadCount",
   "motion",
   "showStatusBar",
+  "uiProviders",
   "restoreWorkspace",
   "hostActivation",
   "hostDirectConnect",

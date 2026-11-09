@@ -46,7 +46,9 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "sidebar.plugins") useNavigation.getState().showSidebar("plugins");
   else if (id === "sidebar.output") useNavigation.getState().showOutput();
   else if (id === "transfers.show") useTransferPanel.getState().show();
-  else if (id === "app.reload" || id === "app.restart")
+  else if (id === "panel.restoreWorkbench") {
+    void settings.update({ uiProviders: {} });
+  } else if (id === "app.reload" || id === "app.restart")
     requestApplicationAction(id === "app.reload" ? "reload" : "restart");
   else if (id === "update.check") {
     workspace.openPage("updates");

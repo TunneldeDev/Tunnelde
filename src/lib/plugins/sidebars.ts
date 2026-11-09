@@ -13,7 +13,7 @@ export function pluginSidebars(plugins: PluginInfo[]) {
     plugin.runtime === "theme"
       ? []
       : plugin.views
-          .filter((view) => view.location === "sidebar")
+          .filter((view) => !view.provider && view.location === "sidebar")
           .map((view) => ({
             ...view,
             view: pluginSidebarId(plugin.id, view.id),

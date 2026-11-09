@@ -29,6 +29,7 @@ export interface SettingDefinition {
     | "shortcuts"
     | "shortcutRules"
     | "network"
+    | "uiProviders"
     | "updateUrl";
   hint?: MessageKey;
   options?: SettingOption[];
@@ -237,6 +238,13 @@ const cursorOptions = [
 
 /** Every editable preference appears here once: rendering, search and scoped reset share it. */
 export const SETTINGS_CATALOG: SettingDefinition[] = [
+  {
+    key: "uiProviders",
+    section: "plugins",
+    label: "providers.title",
+    hint: "providers.hint",
+    kind: "uiProviders",
+  },
   {
     key: "network",
     section: "network",

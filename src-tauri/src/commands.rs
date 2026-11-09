@@ -124,6 +124,7 @@ pub fn settings_update(
     let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
     let shortcut_rules = patch.get("shortcutRules").cloned();
     let network = patch.get("network").cloned();
+    let ui_providers = patch.get("uiProviders").cloned();
     merge_json(&mut base, patch);
     if let Some(colors) = colors {
         base["colors"] = colors;
@@ -136,6 +137,11 @@ pub fn settings_update(
     }
     if let Some(network) = network {
         base["network"] = network;
+    }
+    // A selection map is a replacement. Deep-merging an empty map would retain
+    // the previous provider and undo the user's recovery after the save completes.
+    if let Some(ui_providers) = ui_providers {
+        base["uiProviders"] = ui_providers;
     }
     let mut next: Settings = serde_json::from_value(base)
         .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;

@@ -29,6 +29,16 @@ mod tests {
         );
         assert_eq!(catalogue["frontend"]["permission"], "ui.trusted");
         assert!(PERMISSIONS.contains(&"ui.trusted"));
+        let providers = &catalogue["frontend"]["providers"];
+        assert_eq!(providers["manifest"], "views[].provider");
+        assert_eq!(
+            providers["targets"],
+            serde_json::json!(["hostList", "workbench"])
+        );
+        assert_eq!(providers["selection"], "explicit-user");
+        assert_eq!(providers["requiredSlot"], "Workspace");
+        assert_eq!(providers["fallback"], "built-in");
+        assert_eq!(providers["limits"]["perPlugin"], 8);
         let domains = catalogue["domains"].as_array().unwrap();
         let mut ids = HashSet::new();
         let mut namespaces = HashSet::new();

@@ -40,6 +40,7 @@ export function createDefaultSettings(platform = "unknown"): Settings {
     preloadCount: 4,
     motion: "system",
     showStatusBar: true,
+    uiProviders: {},
     restoreWorkspace: true,
     hostActivation: "details",
     hostDirectConnect: true,

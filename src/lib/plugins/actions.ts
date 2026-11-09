@@ -99,7 +99,9 @@ async function invokePluginAction(
   if (plugin.status !== "running") await store.start(plugin.id);
   plugin = usePlugins.getState().items.find((item) => item.id === action.id);
   if (plugin?.status !== "running") return;
-  const view = action.view ? plugin.views.find((item) => item.id === action.view) : undefined;
+  const view = action.view
+    ? plugin.views.find((item) => item.id === action.view && !item.provider)
+    : undefined;
   if (view) {
     if (view.location === "sidebar")
       useNavigation.getState().showSidebar(pluginSidebarId(plugin.id, view.id));

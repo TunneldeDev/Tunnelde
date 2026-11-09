@@ -1252,7 +1252,10 @@
       "missingActivate": "插件前端模块必须导出 activate 函数。",
       "viewUnavailable": "插件已启动，但未注册此视图。请刷新或查看软件日志。",
       "commandUnavailable": "插件尚未注册此前端命令。",
-      "activationFailed": "插件界面激活失败，请查看软件日志并重启插件。"
+      "activationFailed": "插件界面激活失败，请查看软件日志并重启插件。",
+      "missingWorkspace": "工作台提供者未保留工作区挂载，已恢复内置界面。",
+      "duplicateSurface": "工作台提供者重复挂载了宿主界面区域。",
+      "userSelectionRequired": "请在设置中选择界面提供者。插件不能通过设置 API 修改该选择。"
     }
   },
   "themes": {
@@ -2009,5 +2012,15 @@
     "sessions": "活动 SSH 连接",
     "plugins": "运行中的插件",
     "actions": "输出操作"
+  },
+  "providers": {
+    "title": "界面提供者",
+    "hint": "选择已安装的扩展来呈现主机列表或工作台。切换时保留已打开的页面和会话；可通过此处、F1 命令或恢复栏还原内置界面。",
+    "hostList": "主机列表",
+    "workbench": "工作台",
+    "builtin": "内置",
+    "unavailable": "不可用",
+    "fallback": "所选提供者不可用，已使用内置界面。",
+    "restore": "恢复内置界面"
   }
 }

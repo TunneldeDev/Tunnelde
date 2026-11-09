@@ -9,6 +9,16 @@
     "manifest": "frontend",
     "runtime": "frontend",
     "viewKind": "component",
+    "providers": {
+      "manifest": "views[].provider",
+      "targets": ["hostList", "workbench"],
+      "selection": "explicit-user",
+      "hostListPermission": "hosts.read",
+      "slots": ["Workspace", "Navigation", "Inspector", "StatusBar"],
+      "requiredSlot": "Workspace",
+      "limits": { "perPlugin": 8 },
+      "fallback": "built-in"
+    },
     "components": [
       "Button",
       "IconButton",
