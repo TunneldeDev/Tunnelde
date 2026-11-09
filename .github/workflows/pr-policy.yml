@@ -7,6 +7,11 @@ on:
   release:
     types: [published, deleted]
   workflow_dispatch:
+    inputs:
+      pull_request:
+        description: 'PR number to validate; leave empty to refresh release PRs'
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -28,11 +33,18 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref || 'dev' }}
           persist-credentials: false
       - uses: actions/github-script@v7
+        env:
+          POLICY_PULL_REQUEST: ${{ inputs.pull_request }}
         with:
           script: |
             const {checkPullRequest, refreshReleasePolicy} = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/planning/policy.mjs`);
             if (context.eventName === 'pull_request_target') {
               await checkPullRequest({github, context, number: context.issue.number});
+            } else if (context.eventName === 'workflow_dispatch' && process.env.POLICY_PULL_REQUEST) {
+              const input = process.env.POLICY_PULL_REQUEST;
+              if (!/^[1-9]\d*$/.test(input) || !Number.isSafeInteger(Number(input)))
+                throw new Error('Provide a positive integer PR number');
+              await checkPullRequest({github, context, number: Number(input)});
             } else {
               await refreshReleasePolicy({github, context});
             }
