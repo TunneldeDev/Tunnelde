@@ -19,6 +19,177 @@ struct Gate {
     finished: tokio::sync::Semaphore,
 }
 
+fn acknowledgement_db(to: &Endpoint) -> (rusqlite::Connection, ArtifactRecord, Endpoint) {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)").unwrap();
+    let mut saved = record(to);
+    if let ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    } = &mut saved
+    {
+        staging.prepared = false;
+        staging.opening = false;
+        staging.creating = true;
+    }
+    let directory = staging_directory(to, "job", remote_staging(Some(&saved)).unwrap()).unwrap();
+    conn.execute(
+        "INSERT INTO settings VALUES(?1,?2,0)",
+        rusqlite::params![
+            artifact_key("job", to),
+            serde_json::to_string(&saved).unwrap()
+        ],
+    )
+    .unwrap();
+    (conn, saved, directory)
+}
+
+#[tokio::test]
+async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
+    for before_create in [true, false] {
+        let to = Endpoint {
+            session: Some("remote".into()),
+            path: "/target".into(),
+        };
+        let (conn, _, directory) = acknowledgement_db(&to);
+        let conn = Arc::new(Mutex::new(conn));
+        let tree = Arc::new(Mutex::new(Tree::default()));
+        let gate = Arc::new(Gate {
+            before_create,
+            arrived: tokio::sync::Semaphore::new(0),
+            release: tokio::sync::Semaphore::new(0),
+            finished: tokio::sync::Semaphore::new(0),
+        });
+        let data = directory_client(tree.clone(), Some(gate.clone())).await;
+        let observer = client(tree.clone(), None).await;
+        let cancel = AtomicBool::new(false);
+        let done = Arc::new(tokio::sync::Semaphore::new(0));
+        let operation = {
+            let conn = conn.clone();
+            let to = to.clone();
+            let directory = directory.clone();
+            let done = done.clone();
+            async move {
+                let result = data.create_private_directory(&directory.path).await?;
+                assert!(settle_creation(
+                    &conn.lock().unwrap(),
+                    "job",
+                    &to,
+                    &directory
+                )?);
+                done.add_permits(1);
+                result.into_result()
+            }
+        };
+        let result = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(await_creation(&cancel, || Ok(operation)), async {
+                gate.arrived.acquire().await.unwrap().forget();
+                cancel.store(true, Ordering::SeqCst);
+            })
+            .0
+        })
+        .await
+        .unwrap();
+        assert!(matches!(result,Err(AppError::Ssh(ref error)) if error == CANCELLED));
+        assert!(matches!(
+            cleanup_directory(&observer, &directory, true).await,
+            Err(AppError::TransferCreationUnconfirmed { .. })
+        ));
+        assert_eq!(
+            tree.lock().unwrap().directories.contains(&directory.path),
+            !before_create
+        );
+        gate.release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(1), done.acquire())
+            .await
+            .unwrap()
+            .unwrap()
+            .forget();
+        let raw: String = conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT value FROM settings WHERE key=?1",
+                [artifact_key("job", &to)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let settled: ArtifactRecord = serde_json::from_str(&raw).unwrap();
+        require_creation_settled("job", &to, Some(&settled)).unwrap();
+        cleanup_directory(&observer, &directory, false)
+            .await
+            .unwrap();
+        assert!(!tree.lock().unwrap().directories.contains(&directory.path));
+        observer.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn precancelled_creation_never_polls_or_spawns_the_mutation() {
+    let polled = Arc::new(AtomicBool::new(false));
+    let observed = polled.clone();
+    assert!(await_creation(&AtomicBool::new(true), || {
+        observed.store(true, Ordering::SeqCst);
+        Ok(async { Ok(()) })
+    })
+    .await
+    .is_err());
+    tokio::task::yield_now().await;
+    assert!(!polled.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn transport_failure_never_settles_the_creation_journal() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    let (conn, saved, _) = acknowledgement_db(&to);
+    let cancel = AtomicBool::new(false);
+    assert!(await_creation(&cancel, || Ok(async {
+        Err(AppError::Ssh("connection lost".into()))
+    }))
+    .await
+    .is_err());
+    let raw: String = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key=?1",
+            [artifact_key("job", &to)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(raw, serde_json::to_string(&saved).unwrap());
+    assert!(matches!(
+        require_creation_settled("job", &to, Some(&saved)),
+        Err(AppError::TransferCreationUnconfirmed { .. })
+    ));
+}
+
+#[test]
+fn late_acknowledgement_cannot_replace_a_new_generation_or_recreate_deleted_journals() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    let (conn, saved, directory) = acknowledgement_db(&to);
+    let (_, replacement, _) = acknowledgement_db(&to);
+    let raw = serde_json::to_string(&replacement).unwrap();
+    conn.execute("UPDATE settings SET value=?1", [&raw])
+        .unwrap();
+    assert!(!settle_creation(&conn, "job", &to, &directory).unwrap());
+    let actual: String = conn
+        .query_row("SELECT value FROM settings", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(actual, raw);
+    conn.execute("DELETE FROM settings", []).unwrap();
+    assert!(!settle_creation(&conn, "job", &to, &directory).unwrap());
+    assert!(require_creation_settled("job", &to, Some(&saved)).is_err());
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
 struct Server {
     tree: Arc<Mutex<Tree>>,
     gate: Option<Arc<Gate>>,
@@ -344,7 +515,7 @@ async fn lost_mkdir_reply_keeps_the_uncertain_creation_for_review() {
     assert_eq!(tree.lock().unwrap().modes[&directory.path], 0o40700);
     assert!(matches!(
         require_creation_settled("job", &to, Some(&restored)),
-        Err(AppError::TransferArtifactUnrecognized { ref path }) if path == &directory.path
+        Err(AppError::TransferCreationUnconfirmed { ref path }) if path == &directory.path
     ));
     assert!(cleanup_directory(&observer, &directory, true)
         .await
@@ -638,7 +809,7 @@ async fn cleanup_cannot_forget_a_directory_created_after_its_missing_path_check(
     assert!(!tree.lock().unwrap().directories.contains(&directory.path));
     observer.close().await.unwrap();
     assert!(
-        matches!(result, Err(AppError::TransferArtifactUnrecognized {ref path}) if path == &directory.path),
+        matches!(result, Err(AppError::TransferCreationUnconfirmed {ref path}) if path == &directory.path),
         "Unacknowledged MKDIR must keep its recovery journal: {result:?}"
     );
 }

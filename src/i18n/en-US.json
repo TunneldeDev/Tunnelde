@@ -765,6 +765,7 @@
     "backupDestination": "Original destination",
     "backupLastKnownHint": "Last detected recovery location; check that the files are still there.",
     "transferArtifactUnrecognized": "The file at the temporary path cannot be identified as this task's original file. It was preserved. Inspect it, remove it yourself only if no longer needed, then retry cleanup.",
+    "transferCreationUnconfirmed": "The server has not confirmed creation of the temporary directory. Cleanup will retry if confirmation arrives while Tunnelde is running. After a connection loss or restart, the outcome may remain unknown; removing the directory yourself does not confirm that the old request has finished. The recovery record and path are preserved.",
     "transferArtifactPath": "Temporary file to inspect",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",

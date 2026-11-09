@@ -232,7 +232,7 @@ pub(super) async fn cleanup_directory(
     creation_pending: bool,
 ) -> AppResult<()> {
     if creation_pending {
-        return Err(AppError::TransferArtifactUnrecognized {
+        return Err(AppError::TransferCreationUnconfirmed {
             path: directory.path.clone(),
         });
     }
@@ -254,12 +254,115 @@ pub(super) fn require_creation_settled(
 ) -> AppResult<()> {
     if let Some(staging) = remote_staging(record) {
         if !staging.prepared && staging.creating {
-            return Err(AppError::TransferArtifactUnrecognized {
+            return Err(AppError::TransferCreationUnconfirmed {
                 path: staging_directory(to, id, staging)?.path,
             });
         }
     }
     Ok(())
+}
+
+/// Keep polling an already-submitted mutation after its caller pauses. Dropping
+/// a JoinHandle detaches its task; it must never abort the operation or its journal.
+async fn await_creation<Fut>(
+    cancel: &AtomicBool,
+    prepare: impl FnOnce() -> AppResult<Fut>,
+) -> AppResult<()>
+where
+    Fut: std::future::Future<Output = AppResult<()>> + Send + 'static,
+{
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    // Persist intent before spawning or observing cancellation again. Otherwise
+    // Resume could see an unsent record while the old task is about to send.
+    let task = tauri::async_runtime::spawn(prepare()?);
+    interruptible(Some(cancel), async {
+        task.await
+            .map_err(|error| AppError::internal(format!("Staging acknowledgement task: {error}")))?
+    })
+    .await
+}
+
+/// Clear only the acknowledgement intent for this exact generation. An old
+/// observer must not recreate a removed checkpoint or acknowledge a replacement.
+fn settle_creation(
+    conn: &rusqlite::Connection,
+    id: &str,
+    to: &Endpoint,
+    directory: &Endpoint,
+) -> AppResult<bool> {
+    let key = artifact_key(id, to);
+    let saved: Option<String> = conn
+        .query_row("SELECT value FROM settings WHERE key=?1", [&key], |row| {
+            row.get(0)
+        })
+        .optional()?;
+    let Some(saved) = saved else { return Ok(false) };
+    let mut record: ArtifactRecord = serde_json::from_str(&saved)?;
+    let Some(staging) = remote_staging(Some(&record)) else {
+        return Ok(false);
+    };
+    if staging.prepared
+        || !staging.creating
+        || staging_directory(to, id, staging)?.path != directory.path
+    {
+        return Ok(false);
+    }
+    if let ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    } = &mut record
+    {
+        staging.creating = false;
+    }
+    conn.execute(
+        "UPDATE settings SET value=?1,updated_at=?2 WHERE key=?3 AND value=?4",
+        rusqlite::params![
+            serde_json::to_string(&record)?,
+            crate::models::now_ms(),
+            key,
+            saved
+        ],
+    )
+    .map(|changed| changed == 1)
+    .map_err(Into::into)
+}
+
+pub(in crate::ssh::files) async fn create_directory(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    directory: Endpoint,
+    target: Arc<range_io::DataSession>,
+    cancel: &Arc<AtomicBool>,
+) -> AppResult<()> {
+    let app = app.clone();
+    let id = id.to_owned();
+    let to = to.clone();
+    let cancelled = cancel.clone();
+    await_creation(cancel, || {
+        creation_started(&app, &id, &to)?;
+        Ok(async move {
+            let reply = target.create_private_directory(&directory.path).await.map_err(|error| {
+                tracing::warn!(transfer_id = id, %error, "Staging directory creation remains unconfirmed");
+                AppError::TransferCreationUnconfirmed { path: directory.path.clone() }
+            })?;
+            // Both success and an explicit server rejection settle the mutation.
+            app.state::<AppState>()
+                .db
+                .with(|conn| settle_creation(conn, &id, &to, &directory))?;
+            if cancelled.load(Ordering::SeqCst) {
+                let _ = app.emit("sftp://changed", ());
+                let cleanup_app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    durable::on_reconnect(&cleanup_app).await;
+                });
+            }
+            reply.into_result()
+        })
+    })
+    .await
 }
 
 pub(in crate::ssh::files) fn creation_started(
@@ -269,15 +372,6 @@ pub(in crate::ssh::files) fn creation_started(
 ) -> AppResult<()> {
     let mut record = artifact_record(app, id, to)?;
     set_creating(app, id, to, &mut record, true)
-}
-
-pub(in crate::ssh::files) fn creation_rejected(
-    app: &AppHandle,
-    id: &str,
-    to: &Endpoint,
-) -> AppResult<()> {
-    let mut record = artifact_record(app, id, to)?;
-    set_creating(app, id, to, &mut record, false)
 }
 
 fn set_creating(

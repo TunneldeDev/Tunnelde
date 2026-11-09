@@ -92,9 +92,10 @@ copy commits individual files; it is not a transaction for the entire directory.
 
 Pause and cancel interrupt read-only metadata waits during directory preparation
 and do not wait for a source handle to close before any writes have started.
-Already sent directory creation and write requests still need their results
-settled before stopping safely. An unresponsive connection can therefore leave
-a task temporarily preparing or stopping.
+Already sent directory creation requests continue waiting for confirmation in
+the background, without holding up Pause or Cancel. Write requests still need
+their results settled before stopping safely; an unresponsive connection can
+therefore leave a writing task temporarily stopping.
 
 Within the same SSH session, optimized copies use the server's supported
 `copy-data` extension without relaying file data through this computer. Other
@@ -164,3 +165,10 @@ Resume and automatic cleanup do not reuse or forget that uncertain directory.
 Previously saved unprepared records without creation state receive the same
 conservative treatment. Acknowledged directories retain normal cleanup and
 resume behavior. Source files and completed destination files are preserved.
+
+While the application remains running, Pause and Cancel return without discarding
+the pending creation reply. Success or an explicit rejection updates the matching
+directory's recovery record. Cancelled tasks automatically retry cleanup; paused
+tasks can be resumed. After connection loss or application exit, the old request's
+outcome may remain unknown. The task explicitly reports unconfirmed directory
+creation; manually removing the directory does not prove the old request has ended.

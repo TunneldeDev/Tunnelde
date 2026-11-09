@@ -788,7 +788,8 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: &Outcome) {
         _ => None,
     };
     let artifact_recovery = match outcome {
-        Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path }) => Some(path.clone()),
+        Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path })
+        | Outcome::Failed(_, AppError::TransferCreationUnconfirmed { path }) => Some(path.clone()),
         _ => None,
     };
     let has_recovery = recovery.is_some() || artifact_recovery.is_some();
@@ -2175,12 +2176,15 @@ async fn durable_copy_file(
             if cancel.load(Ordering::SeqCst) {
                 return Err(AppError::Ssh(CANCELLED.into()));
             }
-            artifacts::directory_creation_started(preparation_meter.app, id, to)?;
-            let reply = target.create_private_directory(&directory.path).await?;
-            if matches!(&reply, range_io::DirectoryCreation::Rejected(_)) {
-                artifacts::directory_creation_rejected(preparation_meter.app, id, to)?;
-            }
-            reply.into_result()
+            artifacts::create_directory(
+                preparation_meter.app,
+                id,
+                to,
+                directory,
+                target.clone(),
+                cancel,
+            )
+            .await
         })
         .await?;
     #[cfg(windows)]

@@ -40,6 +40,8 @@ pub enum AppError {
     // Recovery records are shared, but production identity checks are Windows-only.
     #[cfg_attr(not(windows), allow(dead_code))]
     TransferArtifactUnrecognized { path: String },
+    #[error("sftp.transferCreationUnconfirmed")]
+    TransferCreationUnconfirmed { path: String },
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -82,7 +84,8 @@ impl AppError {
             | Self::BackupRecovery { .. }
             | Self::BackupUnrecognized { .. }
             | Self::BackupPreserved { .. }
-            | Self::TransferArtifactUnrecognized { .. } => "validation",
+            | Self::TransferArtifactUnrecognized { .. }
+            | Self::TransferCreationUnconfirmed { .. } => "validation",
             Self::NotFound(_) => "notFound",
             Self::Db(_) => "database",
             Self::Io(_) => "io",
