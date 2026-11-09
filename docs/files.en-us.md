@@ -90,6 +90,12 @@ happens after the data and file close have completed. Cancelling cleans unpublis
 staging files and retains the source and any files already committed. A directory
 copy commits individual files; it is not a transaction for the entire directory.
 
+Pause and cancel interrupt read-only metadata waits during directory preparation
+and do not wait for a source handle to close before any writes have started.
+Already sent directory creation and write requests still need their results
+settled before stopping safely. An unresponsive connection can therefore leave
+a task temporarily preparing or stopping.
+
 Within the same SSH session, optimized copies use the server's supported
 `copy-data` extension without relaying file data through this computer. Other
 copies use the normal transfer pipeline. Global upload and download limits apply

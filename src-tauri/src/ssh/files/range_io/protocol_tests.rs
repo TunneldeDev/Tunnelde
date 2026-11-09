@@ -13,6 +13,7 @@ struct Observed {
     closes: usize,
     disconnected: bool,
     open_gate: Option<Arc<tokio::sync::Semaphore>>,
+    reject_open: bool,
     opens: usize,
     open_flags: Vec<u32>,
     copies: Vec<(u64, u64, u64)>,
@@ -170,6 +171,17 @@ async fn stream_with_copy(
                     }
                 }
                 3 => {
+                    if state.lock().unwrap().reject_open {
+                        reply.push(101);
+                        reply.extend_from_slice(id);
+                        reply.extend_from_slice(&3_u32.to_be_bytes());
+                        field(&mut reply, b"target open denied");
+                        field(&mut reply, b"");
+                        if send.send((reply, false)).is_err() {
+                            break;
+                        }
+                        continue;
+                    }
                     reply.push(102);
                     reply.extend_from_slice(id);
                     let mut pos = 5;
@@ -714,6 +726,105 @@ fn remote(name: &str) -> Endpoint {
         session: Some(name.into()),
         path: format!("/{name}"),
     }
+}
+
+#[tokio::test]
+async fn failed_target_open_closes_source_and_preserves_error_when_cleanup_is_cancelled() {
+    for cancel_cleanup in [false, true] {
+        let close_gate = Arc::new(tokio::sync::Semaphore::new(0));
+        let (source, input) = server_with_close(
+            None,
+            Duration::ZERO,
+            CloseReply {
+                gate: Some(close_gate.clone()),
+                ..Default::default()
+            },
+        )
+        .await;
+        let (target, output) = server(None, Duration::ZERO).await;
+        output.lock().unwrap().reject_open = true;
+        let expected = target.open("/target", true).await.unwrap_err().to_string();
+        let sessions = Sessions {
+            source: Some(source),
+            target: Some(target),
+        };
+        let from = remote("source");
+        let to = remote("target");
+        let cancel = AtomicBool::new(false);
+        let operation = Files::open_cancellable(&sessions, &from, &to, &cancel);
+        tokio::pin!(operation);
+        tokio::select! {
+            result = &mut operation => panic!("source CLOSE was not awaited: {:?}", result.err()),
+            () = wait_for(|| input.lock().unwrap().closes == 1) => {}
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), &mut operation)
+                .await
+                .is_err()
+        );
+        if cancel_cleanup {
+            cancel.store(true, Ordering::SeqCst);
+        } else {
+            close_gate.add_permits(1);
+        }
+        let error = tokio::time::timeout(Duration::from_millis(500), &mut operation)
+            .await
+            .expect("source cleanup ignored cancellation")
+            .err()
+            .unwrap();
+        assert_eq!(error.to_string(), expected);
+        assert!(!input.lock().unwrap().disconnected);
+        assert!(input.lock().unwrap().writes.is_empty());
+        close_gate.add_permits(1);
+    }
+}
+
+#[tokio::test]
+async fn cancelled_target_open_does_not_wait_for_source_close_or_abort_shared_channels() {
+    let close_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    let (source, input) = server_with_close(
+        None,
+        Duration::ZERO,
+        CloseReply {
+            gate: Some(close_gate.clone()),
+            ..Default::default()
+        },
+    )
+    .await;
+    let (target, output) = server(None, Duration::ZERO).await;
+    let open_gate = Arc::new(tokio::sync::Semaphore::new(0));
+    output.lock().unwrap().open_gate = Some(open_gate.clone());
+    let sessions = Sessions {
+        source: Some(source),
+        target: Some(target),
+    };
+    let from = remote("source");
+    let to = remote("target");
+    let cancel = AtomicBool::new(false);
+    let (result, ()) = tokio::time::timeout(Duration::from_millis(500), async {
+        tokio::join!(
+            Files::open_cancellable(&sessions, &from, &to, &cancel),
+            async {
+                wait_for(|| output.lock().unwrap().opens == 1).await;
+                assert_eq!(input.lock().unwrap().opens, 1);
+                cancel.store(true, Ordering::SeqCst);
+            }
+        )
+    })
+    .await
+    .expect("pause waited for source CLOSE after cancelling target OPEN");
+    assert_eq!(result.err().unwrap().to_string(), CANCELLED);
+    assert!(!input.lock().unwrap().disconnected);
+    assert!(!output.lock().unwrap().disconnected);
+    assert!(input.lock().unwrap().writes.is_empty());
+    assert!(output.lock().unwrap().writes.is_empty());
+    // Neither the cancelled read-only open nor its late reply can create or
+    // truncate data. Other directory workers keep their shared channels.
+    open_gate.add_permits(1);
+    output.lock().unwrap().open_gate = None;
+    close_gate.add_permits(2);
+    let next = Files::open(&sessions, &from, &to).await.unwrap();
+    next.finish(false).await.unwrap();
 }
 
 #[tokio::test]
