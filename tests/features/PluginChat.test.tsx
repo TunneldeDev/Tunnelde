@@ -487,6 +487,59 @@ describe("controlled plugin chat", () => {
     );
   });
 
+  it("offers one recovery entry for an interrupted run with a recoverable task", () => {
+    render(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{
+          ...chat,
+          run: { id: "run", status: "interrupted", seq: 1 },
+          tasks: [
+            {
+              id: "task",
+              runId: "run",
+              title: "Interrupted agent",
+              status: "interrupted",
+              output: "",
+              recoverable: true,
+            },
+          ],
+        }}
+      />,
+    );
+    expect(screen.getAllByRole("button", { name: "Continue task" })).toHaveLength(1);
+    expect(mock.run).not.toHaveBeenCalled();
+  });
+
+  it("keeps the current running task visible without recovery controls until the run stops", () => {
+    const block: PluginChatBlock = {
+      ...chat,
+      run: { id: "run", status: "running", seq: 1 },
+      tasks: [
+        {
+          id: "task",
+          runId: "run",
+          title: "Running agent",
+          status: "running",
+          output: "",
+          recoverable: true,
+        },
+      ],
+    };
+    const view = render(<PluginChat pluginId="assistant" viewId="chat" block={block} />);
+    expect(screen.getByText("Running agent")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Continue task" })).toBeNull();
+    view.rerender(
+      <PluginChat
+        pluginId="assistant"
+        viewId="chat"
+        block={{ ...block, run: { id: "run", status: "interrupted", seq: 2 } }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Continue task" })).toBeTruthy();
+  });
+
   it("keeps API keys masked, saves them only on explicit configuration and forgets them after closing", async () => {
     render(<PluginChat pluginId="assistant" viewId="chat" block={chat} />);
     fireEvent.click(screen.getByRole("button", { name: "Configure assistant" }));

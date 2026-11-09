@@ -372,7 +372,13 @@ or plugin storage. See the hub SDK for the schema and the extension's own docume
 for its supported controls.
 
 Chat task entries may include a `runId` identifying the operation that owns their
-saved recovery state. Inspect/resume commands receive `taskId` and `taskRunId` from
+saved recovery state. Live tasks, recoverable tasks and the current run's failures
+remain visible; other terminal tasks appear in a collapsed history with a count
+and failure indicator. Expanding history does not resume any task. Tool approval
+details accept plain text or JSON; the host formats JSON for reading without
+changing the approval request or decision.
+
+Inspect/resume commands receive `taskId` and `taskRunId` from
 that entry, alongside the current conversation `runId`. Plugins must validate all
 provided identities before reading or continuing a process. A task whose saved
 cursor has been replaced must stop offering recovery; its action must never

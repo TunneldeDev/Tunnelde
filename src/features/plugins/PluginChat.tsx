@@ -43,6 +43,8 @@ import type { Host } from "@/lib/api/types";
 import { hostSubtitle } from "@/lib/text/format";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
 import { PluginChatMessages } from "./PluginChatMessages";
+import { PluginChatTasks } from "./PluginChatTasks";
+import { PluginChatApprovalDetail } from "./PluginChatApprovalDetail";
 import { PluginChatConfigDialog } from "./PluginChatConfig";
 import { PluginExecutionDialog } from "./PluginExecutionDialog";
 import { PluginChatSessions } from "./PluginChatSessions";
@@ -733,7 +735,7 @@ export function PluginChat({
               {approval.tool}
               {approval.risk ? ` · ${approval.risk}` : ""}
             </small>
-            {approval.detail ? <p>{approval.detail}</p> : null}
+            <PluginChatApprovalDetail detail={approval.detail} />
             {approval.command ? <pre tabIndex={0}>{approval.command}</pre> : null}
             <div className="plugin-chat__actions">
               <Button
@@ -761,63 +763,26 @@ export function PluginChat({
             </div>
           </article>
         ))}
-        {block.tasks.length ? (
-          <section className="plugin-chat__tasks" aria-label={t("pluginChat.tasks")}>
-            <h4>{t("pluginChat.tasks")}</h4>
-            {block.tasks.map((task) => (
-              <article key={task.id} className="plugin-chat__task">
-                <div className="plugin-chat__task-head">
-                  <strong>{task.title || task.id}</strong>
-                  <span>{t(`pluginChat.taskStates.${task.status}`)}</span>
-                </div>
-                {task.inspection ? (
-                  <details open>
-                    <summary>{t("pluginChat.taskDetails")}</summary>
-                    <pre tabIndex={0}>{task.inspection}</pre>
-                  </details>
-                ) : null}
-                {task.output && task.output !== task.inspection ? (
-                  <details>
-                    <summary>{t("pluginChat.taskOutput")}</summary>
-                    <pre tabIndex={0}>{task.output}</pre>
-                  </details>
-                ) : null}
-                {task.recoverable && block.commands.recover ? (
-                  <div className="plugin-chat__actions">
-                    <span className="settings-hint">{t("pluginChat.recoveryHint")}</span>
-                    <Button
-                      size="sm"
-                      disabled={!!busy || active || preparing}
-                      onClick={() =>
-                        void command(block.commands.recover, {
-                          taskId: task.id,
-                          taskRunId: task.runId,
-                          action: "inspect",
-                        })
-                      }
-                    >
-                      {t("pluginChat.inspectTask")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={!!busy || active || preparing}
-                      onClick={() =>
-                        void command(block.commands.recover, {
-                          taskId: task.id,
-                          taskRunId: task.runId,
-                          action: "resume",
-                        })
-                      }
-                    >
-                      {t("pluginChat.resumeTask")}
-                    </Button>
-                  </div>
-                ) : null}
-              </article>
-            ))}
-          </section>
-        ) : null}
-        {block.run?.status === "interrupted" && block.commands.recover ? (
+        <PluginChatTasks
+          key={`${pluginId}:${viewId}:${block.activeSessionId}`}
+          tasks={block.tasks}
+          currentRunId={block.run?.id}
+          disabled={!!busy || active || preparing}
+          onRecover={
+            block.commands.recover && !active && !preparing
+              ? (task, action) => {
+                  void command(block.commands.recover, {
+                    taskId: task.id,
+                    taskRunId: task.runId,
+                    action,
+                  });
+                }
+              : undefined
+          }
+        />
+        {block.run?.status === "interrupted" &&
+        block.commands.recover &&
+        !block.tasks.some((task) => task.recoverable) ? (
           <article className="plugin-chat__task">
             <strong>{t("pluginChat.taskStates.interrupted")}</strong>
             <p className="settings-hint">{t("pluginChat.recoveryHint")}</p>
