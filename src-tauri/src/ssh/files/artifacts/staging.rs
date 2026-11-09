@@ -41,6 +41,7 @@ where
     F: FnOnce(Endpoint) -> Fut,
     Fut: std::future::Future<Output = AppResult<()>>,
 {
+    require_creation_settled(id, to, record.as_ref())?;
     let Some(staging) = remote_staging(record.as_ref()) else {
         return Ok(());
     };
@@ -58,6 +59,7 @@ where
                 generation: uuid::Uuid::new_v4().to_string(),
                 prepared: false,
                 opening: false,
+                creating: false,
             };
         }
         put(
@@ -71,7 +73,14 @@ where
         return Ok(());
     }
     let directory = staging_directory(to, id, staging)?;
-    ensure_private_directory(sftp, &directory, cancel, create_directory).await?;
+    ensure_private_directory(sftp, &directory, cancel, |directory| async {
+        // The caller persists its creation intent only after channel setup and
+        // immediately before submitting MKDIR. Do not mark connection failures
+        // as uncertain mutations.
+        create_directory(directory).await?;
+        set_creating(app, id, to, record, false)
+    })
+    .await?;
     if let Some(ArtifactRecord::Current {
         staging: Some(staging),
         ..
@@ -127,8 +136,8 @@ where
     Ok(())
 }
 
-/// A restart may have lost MKDIR's reply. Only adopt an empty private directory,
-/// never files, links, broad permissions or foreign contents at the reserved path.
+/// Validate an acknowledged or unsent directory before recording it prepared.
+/// Unacknowledged creations are rejected before reaching this metadata check.
 async fn validate_directory(
     sftp: &SftpSession,
     path: &str,
@@ -214,3 +223,81 @@ pub(super) async fn retire_remote_staging(
 
 #[cfg(test)]
 mod tests;
+
+/// Remove only a staging directory whose creation has a terminal acknowledgement.
+/// A missing path cannot fence a MKDIR still queued on another connection.
+pub(super) async fn cleanup_directory(
+    sftp: &SftpSession,
+    directory: &Endpoint,
+    creation_pending: bool,
+) -> AppResult<()> {
+    if creation_pending {
+        return Err(AppError::TransferArtifactUnrecognized {
+            path: directory.path.clone(),
+        });
+    }
+    match sftp.remove_dir(&directory.path).await {
+        Ok(()) => Ok(()),
+        Err(error) if missing(&error) => Ok(()),
+        Err(error) => Err(map_sftp(error)),
+    }
+}
+
+pub(super) fn unacknowledged_creation() -> bool {
+    true
+}
+
+pub(super) fn require_creation_settled(
+    id: &str,
+    to: &Endpoint,
+    record: Option<&ArtifactRecord>,
+) -> AppResult<()> {
+    if let Some(staging) = remote_staging(record) {
+        if !staging.prepared && staging.creating {
+            return Err(AppError::TransferArtifactUnrecognized {
+                path: staging_directory(to, id, staging)?.path,
+            });
+        }
+    }
+    Ok(())
+}
+
+pub(in crate::ssh::files) fn creation_started(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+) -> AppResult<()> {
+    let mut record = artifact_record(app, id, to)?;
+    set_creating(app, id, to, &mut record, true)
+}
+
+pub(in crate::ssh::files) fn creation_rejected(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+) -> AppResult<()> {
+    let mut record = artifact_record(app, id, to)?;
+    set_creating(app, id, to, &mut record, false)
+}
+
+fn set_creating(
+    app: &AppHandle,
+    id: &str,
+    to: &Endpoint,
+    record: &mut Option<ArtifactRecord>,
+    creating: bool,
+) -> AppResult<()> {
+    let Some(ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    }) = record
+    else {
+        return Err(AppError::internal("Missing staging creation checkpoint"));
+    };
+    staging.creating = creating;
+    put(
+        app,
+        &artifact_key(id, to),
+        serde_json::to_string(record.as_ref().unwrap())?,
+    )
+}

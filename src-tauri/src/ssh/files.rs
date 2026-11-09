@@ -2165,14 +2165,22 @@ async fn durable_copy_file(
     let preparation_meter = &*meter;
     let (temp, recovering_publication) =
         artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel, |directory| async move {
-            preparation_meter
+            let sessions = preparation_meter
                 .data_sessions(from, to, from_sftp, to_sftp, cancel)
-                .await?
+                .await?;
+            let target = sessions
                 .target
                 .as_ref()
-                .ok_or_else(|| AppError::internal("Missing staging data channel"))?
-                .create_private_directory(&directory.path)
-                .await
+                .ok_or_else(|| AppError::internal("Missing staging data channel"))?;
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::Ssh(CANCELLED.into()));
+            }
+            artifacts::directory_creation_started(preparation_meter.app, id, to)?;
+            let reply = target.create_private_directory(&directory.path).await?;
+            if matches!(&reply, range_io::DirectoryCreation::Rejected(_)) {
+                artifacts::directory_creation_rejected(preparation_meter.app, id, to)?;
+            }
+            reply.into_result()
         })
         .await?;
     #[cfg(windows)]

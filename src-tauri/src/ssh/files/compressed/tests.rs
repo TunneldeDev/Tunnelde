@@ -360,3 +360,32 @@ async fn archive_download_rejects_wrong_member_lengths_from_peer() {
     drop(session);
     fixture.await.unwrap();
 }
+
+#[tokio::test]
+async fn directory_creation_keeps_worker_rejections_distinct_from_lost_replies() {
+    let (client, server) = duplex(4096);
+    let fixture = tokio::spawn(async move {
+        let (input, mut output) = tokio::io::split(server);
+        let mut input = BufReader::new(input);
+        output.write_all(MAGIC).await.unwrap();
+        for rejected in [true, false] {
+            let request = header(&mut input).await;
+            assert_eq!(request["op"], "mkdir_private");
+            let response = json!({"id":request["id"],"size":0,"error":rejected.then_some("permission denied")});
+            output
+                .write_all(format!("{response}\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+    let session = Session::new(client).await.unwrap();
+    assert!(matches!(
+        session.create_private_directory("/denied").await.unwrap(),
+        range_io::DirectoryCreation::Rejected(_)
+    ));
+    assert!(matches!(
+        session.create_private_directory("/allowed").await.unwrap(),
+        range_io::DirectoryCreation::Created
+    ));
+    fixture.await.unwrap();
+}

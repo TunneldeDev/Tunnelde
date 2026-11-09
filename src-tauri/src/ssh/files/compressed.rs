@@ -293,7 +293,7 @@ impl Session {
         })
     }
 
-    async fn request(&self, mut header: Value, data: Vec<u8>) -> Response {
+    async fn exchange(&self, mut header: Value, data: Vec<u8>) -> Response {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         header["id"] = id.into();
         header["size"] = data.len().into();
@@ -325,6 +325,11 @@ impl Session {
                 return Err(AppError::Ssh("sftp.transferTimedOut".into()));
             }
         };
+        Ok(result)
+    }
+
+    async fn request(&self, header: Value, data: Vec<u8>) -> Response {
+        let result = self.exchange(header, data).await?;
         if let Some(error) = &result.0.error {
             tracing::debug!(%error, "Compressed transfer worker rejected a request");
             return Err(AppError::Ssh("sftp.compressionWorker".into()));
@@ -332,14 +337,23 @@ impl Session {
         Ok(result)
     }
 
-    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+    pub(super) async fn create_private_directory(
+        &self,
+        path: &str,
+    ) -> AppResult<range_io::DirectoryCreation> {
         let (reply, _) = self
-            .request(json!({"op":"mkdir_private","path":path}), Vec::new())
+            .exchange(json!({"op":"mkdir_private","path":path}), Vec::new())
             .await?;
         if reply.size != 0 {
             return Err(protocol_error());
         }
-        Ok(())
+        if let Some(error) = reply.error {
+            tracing::debug!(%error, "Compressed transfer worker rejected directory creation");
+            return Ok(range_io::DirectoryCreation::Rejected(AppError::Ssh(
+                "sftp.compressionWorker".into(),
+            )));
+        }
+        Ok(range_io::DirectoryCreation::Created)
     }
 
     pub async fn open(&self, path: &str, write: bool) -> AppResult<String> {

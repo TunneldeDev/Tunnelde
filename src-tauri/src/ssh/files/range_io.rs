@@ -23,22 +23,47 @@ enum Backend {
     Compressed(super::compressed::Session),
 }
 
+/// A server rejection is a terminal reply; a transport error is not.
+#[derive(Debug)]
+pub(super) enum DirectoryCreation {
+    Created,
+    Rejected(AppError),
+}
+
+impl DirectoryCreation {
+    pub(super) fn into_result(self) -> AppResult<()> {
+        match self {
+            Self::Created => Ok(()),
+            Self::Rejected(error) => Err(error),
+        }
+    }
+}
+
 impl DataSession {
     /// Set private permissions in MKDIR itself; a separate chmod leaves a crash
     /// window and cannot safely distinguish an interrupted create on restart.
-    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+    pub(super) async fn create_private_directory(
+        &self,
+        path: &str,
+    ) -> AppResult<DirectoryCreation> {
         match &self.backend {
             Backend::Sftp(raw) => {
-                raw.mkdir(
-                    path,
-                    russh_sftp::protocol::FileAttributes {
-                        permissions: Some(0o700),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(map_sftp)?;
-                Ok(())
+                match raw
+                    .mkdir(
+                        path,
+                        russh_sftp::protocol::FileAttributes {
+                            permissions: Some(0o700),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(_) => Ok(DirectoryCreation::Created),
+                    Err(error @ russh_sftp::client::error::Error::Status(_)) => {
+                        Ok(DirectoryCreation::Rejected(map_sftp(error)))
+                    }
+                    Err(error) => Err(map_sftp(error)),
+                }
             }
             Backend::Compressed(worker) => worker.create_private_directory(path).await,
         }
