@@ -1,10 +1,11 @@
-import { Keyboard, ListFilter, Pencil, Plus, RotateCcw, Search, X } from "lucide-react";
+import { Keyboard, Pencil, Plus, RotateCcw, X } from "lucide-react";
+import { SearchField } from "@/components/ui/form/SearchField";
 import { useCallback, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ParseKeys } from "i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
-import { Menu, type MenuAction } from "@/components/ui/overlay/Menu";
+import type { MenuAction } from "@/components/ui/overlay/Menu";
 import {
   parseShortcutQuery,
   toggleShortcutFilter,
@@ -131,30 +132,17 @@ export function KeyboardShortcuts() {
     <section className="shortcuts" aria-label={t("shortcuts.title" as ParseKeys)}>
       <p className="shortcuts__hint">{t("shortcuts.hint" as ParseKeys)}</p>
       <div className="shortcuts__toolbar">
-        <div className="settings-search shortcuts__search" role="search">
-          <Search size={14} aria-hidden="true" />
-          <input
-            ref={input}
-            className="td-input"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("shortcuts.search" as ParseKeys)}
-            aria-label={t("shortcuts.search" as ParseKeys)}
-            aria-describedby={hintId}
-          />
-          {query && (
-            <IconButton size="sm" label={t("common.close")} onClick={() => setQuery("")}>
-              <X size={13} />
-            </IconButton>
-          )}
-          <Menu
-            label={t("shortcuts.filters.title")}
-            trigger={<ListFilter size={15} aria-hidden="true" />}
-            className={hasFilters ? "shortcuts__filter is-active" : "shortcuts__filter"}
-            menuClassName="shortcuts__filter-menu"
-            items={filterItems}
-          />
-        </div>
+        <SearchField
+          className="settings-search shortcuts__search"
+          inputRef={input}
+          value={query}
+          onChange={setQuery}
+          placeholder={t("shortcuts.search" as ParseKeys)}
+          aria-label={t("shortcuts.search" as ParseKeys)}
+          aria-describedby={hintId}
+          filterItems={filterItems}
+          filterLabel={t("shortcuts.filters.title")}
+        />
         <label className="settings-modified-filter">
           <input
             type="checkbox"

@@ -221,31 +221,8 @@
   position: relative;
 }
 
-.sidebar__filter > svg {
-  position: absolute;
-  left: 7px;
-  pointer-events: none;
-  color: var(--td-muted);
-}
-
-.sidebar__filter .td-input {
-  min-width: 0;
-  height: 28px;
-  padding-left: 26px;
-  border-radius: 4px;
-  font-size: 12px;
-  background: var(--td-bg);
-}
-
 .host-search {
   position: relative;
-}
-.host-search .td-input {
-  padding-right: 28px;
-}
-.host-search__clear {
-  position: absolute;
-  right: 3px;
 }
 .host-search .sr-only {
   position: absolute;

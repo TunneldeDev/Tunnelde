@@ -1,5 +1,7 @@
 # Shortcuts
 
+See [Search and filter presets](search.en-us.md) for funnel presets and qualifier examples.
+
 Open **Settings → Keyboard Shortcuts**, use `Ctrl/Cmd+Shift+F12`, or search for
 “Keyboard Shortcuts” in the command palette. Search by command name, command id,
 context or key. Click a binding to replace it, or **+** to add an alternative;

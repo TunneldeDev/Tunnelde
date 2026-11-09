@@ -1,4 +1,6 @@
-import { RefreshCw, Search, Trash2 } from "lucide-react";
+import { RefreshCw, Trash2 } from "lucide-react";
+import { SearchField } from "@/components/ui/form/SearchField";
+import { matchesSearch, matchesSearchNumber, parseSearchQuery } from "@/lib/search/query";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -80,20 +82,32 @@ export function KnownHostsList({
   };
 
   const search = query.trim().toLocaleLowerCase();
+  const parsed = parseSearchQuery(query, ["host", "port", "algorithm"]);
   const visible = (entries ?? []).filter((entry) =>
-    `${entry.host}:${entry.port} ${entry.algorithm} ${entry.fingerprint}`
-      .toLocaleLowerCase()
-      .includes(search),
+    matchesSearch(parsed, `${entry.host}:${entry.port} ${entry.algorithm} ${entry.fingerprint}`, {
+      host: (value) => entry.host.toLocaleLowerCase().includes(value),
+      port: (value) => matchesSearchNumber(entry.port, value),
+      algorithm: entry.algorithm,
+    }),
   );
   const sidebar = variant === "sidebar";
   const searchInput = (
-    <input
-      className="td-input"
+    <SearchField
       type="search"
       aria-label={t("settings.knownHostsSearch")}
+      filterKeys={["host", "port", "algorithm"]}
       placeholder={t("settings.knownHostsSearch")}
       value={query}
-      onChange={(event) => setQuery(event.target.value)}
+      onChange={setQuery}
+      presets={[
+        { key: "host", value: "", label: t("searchUi.host") },
+        { key: "port", value: "22", label: "SSH · 22" },
+        ...[...new Set((entries ?? []).map((entry) => entry.algorithm))].map((value) => ({
+          key: "algorithm",
+          value,
+          label: value,
+        })),
+      ]}
     />
   );
   const refresh = (
@@ -157,14 +171,7 @@ export function KnownHostsList({
         </div>
       ) : null}
       <div className={sidebar ? "sidebar__search" : "known-hosts-toolbar"}>
-        {sidebar ? (
-          <div className="sidebar__filter">
-            <Search size={13} aria-hidden="true" />
-            {searchInput}
-          </div>
-        ) : (
-          searchInput
-        )}
+        {searchInput}
         {!sidebar ? refresh : null}
       </div>
       {sidebar ? <div className="sidebar__body">{content}</div> : content}

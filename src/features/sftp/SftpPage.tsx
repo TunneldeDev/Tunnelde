@@ -89,6 +89,7 @@ import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useWorkspace, type FilePaneOptions } from "@/store/workspace";
 import { useSearchRoots } from "@/store/searchRoots";
+import { SearchField } from "@/components/ui/form/SearchField";
 import { useFilePreview } from "@/store/filePreview";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
 import { beginFilePaneDrag, clearFilePaneDrag, FILE_PANE_MIME } from "@/lib/session/filePaneDrag";
@@ -2260,12 +2261,22 @@ export function SftpPage({
               }
             }}
           >
-            <Input
+            <SearchField
               aria-label={t("sftp.filterFiles")}
+              filterKeys={["name", "ext", "type", "is", "path", "size", "modified"]}
               placeholder={t("sftp.filterPlaceholder")}
               spellCheck={false}
               value={state.filter}
-              onChange={(event) => updateView(id, {}, { filter: event.target.value })}
+              onChange={(value) => updateView(id, {}, { filter: value })}
+              presets={[
+                { key: "type", value: "file", label: t("searchUi.file"), exclusive: true },
+                { key: "type", value: "folder", label: t("searchUi.folder"), exclusive: true },
+                { key: "ext", value: "", label: t("searchUi.extension") },
+                { key: "size", value: ">10MB", label: t("searchUi.size") },
+                { key: "is", value: "hidden", label: t("searchUi.hidden") },
+                { key: "modified", value: "", label: t("searchUi.date") },
+                { key: "path", value: "", label: t("searchUi.path") },
+              ]}
             />
             <Select
               label={t("sftp.filterKind")}
