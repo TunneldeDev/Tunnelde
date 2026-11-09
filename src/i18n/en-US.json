@@ -1233,6 +1233,24 @@
       "invalidDecoration": "Invalid host decoration. Check its fields, length and supported icon.",
       "hostNotFound": "A host referenced by this decoration no longer exists. Refresh the host list.",
       "limit": "Host decoration limit reached. Remove a collection before adding another."
+    },
+    "frontend": {
+      "invalid": "Invalid trusted UI declaration. Use a local ui/*.mjs entry, a compatible SDK range and the ui.trusted permission.",
+      "invalidSdkRange": "The plugin declares an invalid UI SDK version range.",
+      "sdkUnsupported": "This plugin requires another UI SDK version. Check for a compatible plugin or application update.",
+      "sdkUnsupportedDetails": "This plugin requires UI SDK {{required}}; this application provides {{available}}.",
+      "sdkMismatch": "The frontend session does not match this application or plugin. Restart the plugin.",
+      "busy": "Too many plugin UI operations are in progress. Wait for them to finish, then retry.",
+      "expired": "This plugin UI session has expired. Restart the plugin.",
+      "unavailable": "This plugin has no available frontend module.",
+      "snapshot": "The approved plugin UI assets could not be loaded. Check the software log.",
+      "assetsTooLarge": "The plugin UI assets exceed the 8 MiB package limit.",
+      "undeclaredContribution": "The frontend tried to register a view or command absent from its manifest.",
+      "duplicateContribution": "The frontend registered the same view or command more than once.",
+      "missingActivate": "The frontend module must export an activate function.",
+      "viewUnavailable": "The plugin finished starting but did not register this view. Refresh it or check the software log.",
+      "commandUnavailable": "The plugin has not registered this frontend command.",
+      "activationFailed": "The plugin UI failed to activate. Check the software log and restart the plugin."
     }
   },
   "themes": {
@@ -1318,7 +1336,8 @@
       "forwardsRead": "View saved port forwarding rules",
       "forwardsWrite": "Manage and start local or remote port forwarding",
       "editorRead": "Read documents in open editors",
-      "editorWrite": "Modify editor buffers (without saving automatically)"
+      "editorWrite": "Modify editor buffers (without saving automatically)",
+      "trustedUi": "Load trusted code into the application interface."
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -1328,7 +1347,8 @@
       "workspace": "Workspace and clipboard",
       "application": "Application settings",
       "other": "Other capabilities"
-    }
+    },
+    "trustedUiWarning": "This plugin runs in the same JavaScript context as Tunnelde. It can access the interface and native bridge beyond declared API permissions. Only approve code and publishers you trust. Restricted mode prevents loading; stopping cannot undo side effects or interrupt already executing code."
   },
   "pluginChat": {
     "chooseSession": "Choose a connected SSH session",

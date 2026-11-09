@@ -23,6 +23,8 @@ import { PluginChat } from "./PluginChat";
 import { PluginMounts } from "./PluginMounts";
 import "@/styles/pluginTools.css";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
+import { usePlugins } from "@/store/plugins";
+import { PluginComponentView } from "./PluginComponentView";
 
 interface PluginViewPageProps {
   pluginId: string;
@@ -42,6 +44,22 @@ export function PluginViewPage({
   embedded,
   visible = true,
 }: PluginViewPageProps) {
+  const component = usePlugins((state) =>
+    state.items.find(
+      (plugin) =>
+        plugin.id === pluginId &&
+        plugin.views.some((view) => view.id === viewId && view.kind === "component"),
+    ),
+  );
+  if (component)
+    return (
+      <PluginComponentView
+        key={`${pluginId}:${viewId}:${component.fingerprint ?? ""}`}
+        pluginId={pluginId}
+        viewId={viewId}
+        visible={visible}
+      />
+    );
   return (
     <PluginViewContent
       key={JSON.stringify([pluginId, viewId])}

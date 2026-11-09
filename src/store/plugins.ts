@@ -210,11 +210,23 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             const { ensurePluginPermission } = await import("@/store/pluginSecurity");
             if (!(await ensurePluginPermission(info))) return null;
           }
-          if (isTauri() && !["wasm", "declarative"].includes(info?.runtime ?? "node")) {
+          if (isTauri() && !["wasm", "declarative", "frontend"].includes(info?.runtime ?? "node")) {
             const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
             if (!(await ensureNodeRuntime())) return null;
           }
-          return api.pluginStart(id);
+          const started = await api.pluginStart(id);
+          if (started.frontend && started.status === "running") {
+            const { frontendRuntime } = await import("@/lib/extensions/frontendRuntime");
+            try {
+              await frontendRuntime.ensure(started);
+            } catch (error) {
+              // The runtime retires failures by lease, never by an unbound ID.
+              // Re-read authoritative status while preserving the activation cause.
+              await readList(api.pluginsList);
+              throw error;
+            }
+          }
+          return started;
         },
         true,
       ),

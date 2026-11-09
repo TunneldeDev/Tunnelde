@@ -706,3 +706,5 @@ not run document scripts or interactive forms. Password-protected PDFs require a
 [Tab bar contributions](plugin-tab-bar.en-us.md)
 
 [Local logging and plugin diagnostics](logging.en-us.md)
+
+[Trusted frontend UI SDK](plugin-ui.en-us.md).

@@ -23,6 +23,13 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    if (
+      error.message === "plugin.frontend.sdkUnsupported" &&
+      typeof error.details?.required === "string" &&
+      typeof error.details.available === "string"
+    ) {
+      return translate("plugin.frontend.sdkUnsupportedDetails", error.details);
+    }
     if (error.code === "ssh" && error.details?.operation === "rename") {
       const details = error.details;
       if (["from", "to", "reason"].every((key) => typeof details[key] === "string")) {
@@ -83,7 +90,7 @@ export function translateError(error: unknown): string {
     return error.message;
   }
   if (error instanceof Error) {
-    return error.message;
+    return translateKey(error.message) ?? error.message;
   }
   return translate("error.generic");
 }

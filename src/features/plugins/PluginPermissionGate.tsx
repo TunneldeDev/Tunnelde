@@ -10,6 +10,7 @@ import { useNavigation } from "@/store/navigation";
 export function PluginPermissionList({ permissions }: { permissions: string[] }) {
   const { t } = useTranslation();
   const descriptions = {
+    "ui.trusted": "pluginSecurity.permission.trustedUi",
     log: "pluginSecurity.permission.log",
     "app.read": "pluginSecurity.permission.appRead",
     "settings.read": "pluginSecurity.permission.settingsRead",
@@ -98,7 +99,12 @@ export function PluginPermissionGate() {
         {plugin.sourceUrl ?? plugin.path}
       </p>
       <PluginPermissionList permissions={plugin.permissions} />
-      {plugin.runtime !== "declarative" && (
+      {plugin.frontend && (
+        <p role="note" className="panel__error">
+          {t("pluginSecurity.trustedUiWarning")}
+        </p>
+      )}
+      {!["declarative", "frontend"].includes(plugin.runtime ?? "node") && (
         <p className="settings-hint">
           {t(
             plugin.runtime === "wasm" ? "pluginSecurity.wasmWarning" : "pluginSecurity.nodeWarning",

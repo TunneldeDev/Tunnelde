@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
-vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key } }));
+vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key, exists: () => false } }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: "en-US" } }),
 }));

@@ -430,6 +430,7 @@ export interface TextFile {
 export type PluginStatus = "stopped" | "running" | "failed";
 
 export interface PluginCommand {
+  frontend?: boolean;
   id: string;
   title: string;
   keybindings?: string[];
@@ -447,7 +448,7 @@ export interface PluginView {
   id: string;
   title: string;
   location?: "sidebar" | "workspace";
-  kind?: "chat" | "blocks";
+  kind?: "chat" | "blocks" | "component";
   icon?: string;
 }
 
@@ -468,7 +469,7 @@ export interface MarketEntry {
   sha256: string;
   author?: string | null;
   readme?: string | null;
-  runtime?: "node" | "wasm" | "theme" | "declarative" | null;
+  runtime?: "node" | "wasm" | "theme" | "declarative" | "frontend" | null;
   apiVersion?: number | null;
   engines?: Record<string, string>;
   sourceId?: string;
@@ -521,7 +522,8 @@ export interface PluginInfo {
   error: string | null;
   path: string;
   fingerprint?: string;
-  runtime?: "node" | "wasm" | "theme" | "declarative";
+  runtime?: "node" | "wasm" | "theme" | "declarative" | "frontend";
+  frontend?: { entry: string; sdk: string } | null;
   themes?: PluginTheme[];
   fileIconThemes?: PluginFileIconTheme[];
   filePreviews?: PluginFilePreview[];
