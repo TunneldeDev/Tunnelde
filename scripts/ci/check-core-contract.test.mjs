@@ -30,6 +30,37 @@ const logging = JSON.parse(
     "utf8",
   ),
 );
+const ui = JSON.parse(
+  await readFile(new URL("../../tests/fixtures/plugin-compat/ui-v1.json", import.meta.url), "utf8"),
+);
+
+test("UI schemas allow literal multiline text and reject NUL, malformed fields and results", () => {
+  for (const method of ["ui.showMessage", "ui.confirm"]) {
+    const validate = ajv.compile(ui.methods[method].inputSchema);
+    for (const message of ["user 0000", "\\path\\file", "<b>literal</b>\n下一行\r\n", "😀"])
+      assert.ok(validate({ message, future: true }), JSON.stringify(validate.errors));
+    for (const message of [null, "", "\0", "text\0\n", false, 1])
+      assert.equal(validate({ message }), false, JSON.stringify(message));
+    assert.equal(validate({}), false);
+    const limit = method === "ui.confirm" ? 220 * 1024 : 4000;
+    assert.ok(validate({ message: "x".repeat(limit) }));
+    assert.equal(validate({ message: "x".repeat(limit + 1) }), false);
+    // JSON Schema counts code points; UTF-16 and UTF-8 wire quotas are separate.
+    assert.ok(validate({ message: "😀".repeat(limit) }));
+  }
+  const notification = ajv.compile(ui.methods["ui.showMessage"].inputSchema);
+  for (const kind of [null, "info", "success", "error"])
+    assert.ok(notification({ message: "ok", kind }));
+  for (const kind of ["", "warn", "INFO", false, 1])
+    assert.equal(notification({ message: "ok", kind }), false);
+  const shown = ajv.compile(ui.methods["ui.showMessage"].resultSchema);
+  const confirmed = ajv.compile(ui.methods["ui.confirm"].resultSchema);
+  assert.ok(shown(null));
+  for (const value of [true, false, {}]) assert.equal(shown(value), false);
+  assert.ok(confirmed(true));
+  assert.ok(confirmed(false));
+  for (const value of [null, 1, "true", {}]) assert.equal(confirmed(value), false);
+});
 
 test("logging schema preserves legacy calls, nullable identifiers and open structured values", () => {
   const validate = ajv.compile(logging.methods.log.inputSchema);

@@ -1565,6 +1565,135 @@
         "pluginSecurity.unavailable"
       ],
       "events": []
+    },
+    "ui.showMessage": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Nonempty plain text without NUL. Runtime limits count UTF-16 code units; the shared 256KiB UTF-8 request budget also applies. Additional fields are ignored.",
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4000,
+            "pattern": "^[^\\u0000]*$(?![\\s\\S])"
+          },
+          "kind": {
+            "enum": ["info", "success", "error", null]
+          }
+        },
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "null",
+        "description": "Accepted for transient display, not durable delivery; no actions or events."
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.frontend:invalid:message",
+        "plugin.api.frontend:invalid:kind",
+        "plugin.api.frontend:requestCancelled",
+        "plugin.api.requestExpired",
+        "plugin.api.frontendTimeout",
+        "plugin.api.frontendClosed",
+        "plugin.api.busy",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": []
+    },
+    "ui.confirm": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "description": "Nonempty plain text without NUL. Runtime limits count UTF-16 code units; the shared 256KiB UTF-8 request budget also applies. Additional fields are ignored.",
+        "type": "object",
+        "required": ["message"],
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 225280,
+            "pattern": "^[^\\u0000]*$(?![\\s\\S])"
+          }
+        },
+        "additionalProperties": true
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "boolean",
+        "description": "True only on confirmation; false on dismissal, replacement or 55-second UI expiry. Runtime expiry/revocation can instead reject."
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.frontend:invalid:message",
+        "plugin.api.frontend:dialog.busy",
+        "plugin.api.frontend:requestCancelled",
+        "plugin.api.requestExpired",
+        "plugin.api.frontendTimeout",
+        "plugin.api.frontendClosed",
+        "plugin.api.busy",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": []
     }
   }
 }

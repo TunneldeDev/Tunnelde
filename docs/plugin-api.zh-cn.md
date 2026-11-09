@@ -135,6 +135,30 @@ CI 将真实前端响应交给 Rust 响应编码器，再用冻结结构和历�
 `plugin.api.frontendTimeout`、`plugin.api.frontendClosed` 和 `plugin.api.requestExpired`。
 这两个 RPC 不产生插件事件，也不会自动订阅缓冲区变化。
 
+## 稳定的通知与确认接口
+
+冻结的 [UI v1 契约](../tests/fixtures/plugin-compat/ui-v1.json)覆盖
+`ui.showMessage` 和 `ui.confirm`。虽然不声明额外权限，仍须是已批准且正在运行的插件，
+请求和回复均校验运行代次。展示确认弹窗不会授予宿主操作权限。
+
+`ui.showMessage({message, kind?})` 接受临时通知后返回 `null`。kind 为 `info`、
+`success` 或 `error`，省略或 null 时使用 info。宿主添加已安装插件名称或 ID 前缀，
+忽略伪造身份字段。message 是原样显示的非空文本，不含 NUL，最多 4,000 个 UTF-16
+码元。返回成功不代表已持久记录或用户已读；通知会到期，也可能被后来的通知替换。
+
+`ui.confirm({message})` 仅在用户确认时返回 true；关闭、被其他弹窗替换或达到
+55 秒界面时限时返回 false。同样采用原样文本，最多 220 × 1,024 个 UTF-16 码元，
+要等待上述界面时限，应将调用超时设为大于 55 秒；较短的 SDK 时限可能先报错。
+支持多行审阅。同时仍受序列化请求 256 KiB UTF-8 字节限制，因此不一定能达到字符上限。
+已有其他弹窗时报告 `plugin.api.frontend:dialog.busy`，不会替换用户正在操作的弹窗。
+异步授权期间取消的请求不得在稍后打开弹窗或通知。停止插件、撤销授权或重启插件会
+取消等待中的请求；调用方可能收到授权、请求过期或超时错误，而非布尔值。
+
+字段错误为 `plugin.api.frontend:invalid:message` 或 `plugin.api.frontend:invalid:kind`；
+取消的前端操作可报告 `plugin.api.frontend:requestCancelled`，仍可能发生共享桥接配额与
+通信错误。忽略未知参数，不暴露操作按钮、事件订阅或内部弹窗与通知存储状态。
+旧宿主可能缺少稳定性元数据，应先发现其 contract 再依赖稳定承诺。
+
 ## 兼容性测试
 
 CI 使用当前宿主的清单加载器和 JSON-RPC 生命周期运行固定保存的 v0.28.0 示例。
