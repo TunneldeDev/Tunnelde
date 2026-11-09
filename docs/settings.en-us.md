@@ -123,6 +123,10 @@ It excludes hosts, passwords, SSH keys,
 plugin configuration and credentials, history, open tabs and update records. Import checks the
 format/version, size (512 KB maximum), setting names, types and supported ranges, then previews
 the profile name and number of changed preferences before Apply. Cancellation changes nothing.
+File reads and writes run in the background. Exports are written completely to a temporary file
+beside the selected destination, then replace it; write failures keep the previous export intact.
+Imports accept regular files, with bounded reads even if a file grows. Exporting to a folder,
+symbolic link or read-only file is rejected.
 Applying uses the same ordered save and cross-window synchronization as ordinary settings,
 including native title bars, live terminal appearance and custom shortcuts. Existing update
 records remain intact. An unapplied CSS draft requires confirmation before being discarded;

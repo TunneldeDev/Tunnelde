@@ -1517,6 +1517,8 @@
     "invalidName": "Use a profile name of 1–64 characters without control characters.",
     "duplicateName": "A profile with this name already exists.",
     "invalidFile": "Choose a valid Tunnelde settings JSON file.",
+    "notRegularFile": "Choose a regular settings file. Folders and special files cannot be imported or replaced; export to a file rather than a symbolic link.",
+    "readOnlyFile": "The selected settings file is read-only. Choose another destination or make the file writable.",
     "unknownSetting": "The file contains unsupported settings. No preferences were changed.",
     "invalidValue": "The file contains a preference outside its supported range. No preferences were changed.",
     "unsupportedVersion": "This settings file format or version is not supported.",
