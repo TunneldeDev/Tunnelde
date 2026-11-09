@@ -288,7 +288,8 @@ mod tests {
             ("200 OK", manifest, "updates.invalidFeed"), // Different version than first candidate.
             ("200 OK", "broken JSON", "updates.invalidFeed"),
         ] {
-            let (base, task) = server(vec![response(status, body)]).await;
+            let attempts = if status.starts_with("503") { 2 } else { 1 };
+            let (base, task) = server(vec![response(status, body); attempts]).await;
             assert_eq!(
                 first_available(&client, local_feeds(&base))
                     .await

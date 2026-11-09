@@ -155,14 +155,16 @@ async fn manifest_transport_keeps_http_status_and_retry_context_and_accepts_no_c
             .parse()
             .unwrap();
         let task = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut bytes = [0; 4096];
-            let size = socket.read(&mut bytes).await.unwrap();
-            let request = String::from_utf8_lossy(&bytes[..size]);
-            assert!(request
-                .to_ascii_lowercase()
-                .contains("accept: application/json"));
-            socket.write_all(format!("HTTP/1.1 {status}\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            for _ in 0..if status.starts_with("502") { 2 } else { 1 } {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut bytes = [0; 4096];
+                let size = socket.read(&mut bytes).await.unwrap();
+                let request = String::from_utf8_lossy(&bytes[..size]);
+                assert!(request
+                    .to_ascii_lowercase()
+                    .contains("accept: application/json"));
+                socket.write_all(format!("HTTP/1.1 {status}\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            }
         });
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let result = manifest(&client, &url).await;
@@ -182,6 +184,185 @@ async fn manifest_transport_keeps_http_status_and_retry_context_and_accepts_no_c
             assert_eq!(result.unwrap().is_none(), status.starts_with("204"));
         }
         task.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn gateway_retry_recovers_once_and_preserves_final_status_without_retrying_other_errors() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    for statuses in [
+        vec![502, 200],
+        vec![503, 200],
+        vec![504, 200],
+        vec![504, 504],
+        vec![401],
+        vec![403],
+        vec![404],
+        vec![429],
+        vec![500],
+    ] {
+        let expected = *statuses.last().unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/latest.json", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            for status in statuses {
+                let (mut socket, _) = listener.accept().await.unwrap();
+                let mut request = [0; 4096];
+                assert!(socket.read(&mut request).await.unwrap() > 0);
+                socket.write_all(format!("HTTP/1.1 {status} Test\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}" ).as_bytes()).await.unwrap();
+            }
+        });
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let response = tokio::time::timeout(
+            Duration::from_secs(3),
+            request_with_timeout(&client, &url, Duration::from_secs(2), false),
+        )
+        .await
+        .expect("retry must be bounded")
+        .unwrap();
+        assert_eq!(response.status().as_u16(), expected);
+        if expected == 200 {
+            assert_eq!(read_response(response).await.unwrap(), b"{}");
+        } else {
+            assert_eq!(
+                read_response(response)
+                    .await
+                    .unwrap_err()
+                    .update_source_errors()
+                    .unwrap()[0]
+                    .status,
+                Some(expected)
+            );
+        }
+        server.await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn retry_wait_and_response_body_share_the_original_request_deadline() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}/latest.json", listener.local_addr().unwrap());
+    let server = tokio::spawn(async move {
+        for status in [504, 200] {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            if status == 504 {
+                socket.write_all(b"HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").await.unwrap();
+            } else {
+                socket
+                    .write_all(
+                        b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{",
+                    )
+                    .await
+                    .unwrap();
+                // A retry must not reset the budget once headers arrive.
+                std::future::pending::<()>().await;
+            }
+        }
+    });
+    let client = reqwest::Client::builder().no_proxy().build().unwrap();
+    let started = tokio::time::Instant::now();
+    let result = tokio::time::timeout(Duration::from_millis(1100), async {
+        let response =
+            request_with_timeout(&client, &url, Duration::from_millis(700), false).await?;
+        read_response(response).await
+    })
+    .await
+    .expect("headers, retry wait and body must share the 700ms budget");
+    assert_eq!(result.unwrap_err().to_string(), "updates.timeout");
+    assert!(started.elapsed() >= Duration::from_millis(600));
+    server.abort();
+    assert!(server.await.unwrap_err().is_cancelled());
+}
+
+#[tokio::test]
+async fn body_timeouts_keep_known_github_source_and_response_body_stage() {
+    use std::{
+        io::Write,
+        sync::{Arc, Mutex},
+    };
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tracing::instrument::WithSubscriber;
+    #[derive(Clone)]
+    struct Buffer(Arc<Mutex<Vec<u8>>>);
+    impl Write for Buffer {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    for (host, path, source) in [
+        (
+            "api.github.com",
+            "/repos/TunneldeDev/Tunnelde/releases",
+            "github-api",
+        ),
+        (
+            "github.com",
+            "/TunneldeDev/Tunnelde/releases.atom",
+            "github-public-feed",
+        ),
+        (
+            "github.com",
+            "/TunneldeDev/Tunnelde/releases/download/v1/latest.json",
+            "github-release",
+        ),
+    ] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!(
+            "http://{host}:{}{path}?token=secret-test-token",
+            addr.port()
+        );
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            socket
+                .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{")
+                .await
+                .unwrap();
+            std::future::pending::<()>().await;
+        });
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .resolve(host, addr)
+            .build()
+            .unwrap();
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let buffer = Buffer(bytes.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .json()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_writer(move || buffer.clone())
+            .finish();
+        let error = async {
+            let response = request_with_timeout(&client, &url, Duration::from_millis(250), false)
+                .await
+                .unwrap();
+            read_response(response).await.unwrap_err()
+        }
+        .with_subscriber(subscriber)
+        .await;
+        assert_eq!(error.to_string(), "updates.timeout");
+        assert_eq!(error.update_source_errors().unwrap()[0].source, source);
+        let output = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+        let entry: serde_json::Value = output
+            .lines()
+            .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+            .find(|entry| entry["fields"]["message"] == "update request failed")
+            .expect("body failure diagnostic");
+        assert_eq!(entry["fields"]["source"], source);
+        assert_eq!(entry["fields"]["stage"], "response-body");
+        assert_eq!(entry["fields"]["timeout"], true);
+        assert!(!output.contains("secret-test-token"));
+        server.abort();
+        assert!(server.await.unwrap_err().is_cancelled());
     }
 }
 

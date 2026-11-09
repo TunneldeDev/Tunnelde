@@ -55,6 +55,15 @@ release manifest directly. All requests use the **Application updates** route in
 **Settings → Network and proxies**. A successful TCP proxy test does not prove that
 every HTTPS release or download endpoint is reachable.
 
+The API and public feed both depend on GitHub; fallback does not provide an
+independent mirror during a GitHub or network outage. An HTTP 502, 503 or 504 is
+retried once on the same source and proxy, if time remains in the original request
+budget. The retry does not extend that budget. Quota, authentication and not-found
+responses are not retried automatically. A repeated timeout or gateway failure
+requires checking the application update proxy, retrying later, or selecting a
+trusted custom source. Response-body failures retain the known source and are
+logged as `response-body`, even when the underlying transport error has no URL.
+
 After a failed check, update settings list each failed source, reason, HTTP status and
 the rate-limit retry time supplied by the server. During an API limit, checking again
 still retries the public feed and temporarily skips the API on the same proxy route.
