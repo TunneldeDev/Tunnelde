@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 use tokio::io::AsyncReadExt;
 
@@ -37,8 +37,81 @@ pub struct SearchMatch {
     pub preview: String,
 }
 
+/// Search qualifiers are applied during traversal, before the result limit or file reads.
+#[derive(Default, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchSelection {
+    pub text: Vec<String>,
+    pub filters: Vec<SearchFilter>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchFilter {
+    pub key: String,
+    pub values: Vec<String>,
+    pub exclude: bool,
+}
+
+impl SearchSelection {
+    fn valid(&self) -> bool {
+        self.text.len() <= 32
+            && self.filters.len() <= 32
+            && self
+                .text
+                .iter()
+                .all(|value| !value.is_empty() && value.len() <= 256 && !value.contains('\0'))
+            && self.filters.iter().all(|filter| {
+                matches!(filter.key.as_str(), "name" | "path" | "ext")
+                    && !filter.values.is_empty()
+                    && filter.values.len() <= 32
+                    && filter.values.iter().all(|value| {
+                        !value.is_empty() && value.len() <= 256 && !value.contains('\0')
+                    })
+            })
+            && self.text.iter().map(String::len).sum::<usize>()
+                + self
+                    .filters
+                    .iter()
+                    .flat_map(|filter| &filter.values)
+                    .map(String::len)
+                    .sum::<usize>()
+                <= 4096
+    }
+
+    fn active(&self) -> bool {
+        !self.text.is_empty() || !self.filters.is_empty()
+    }
+
+    fn matches(&self, path: &str, name: &str) -> bool {
+        let path = path.to_lowercase();
+        let name = name.to_lowercase();
+        let extension = name
+            .rsplit_once('.')
+            .filter(|(stem, ext)| !stem.is_empty() && !ext.is_empty())
+            .map(|(_, ext)| ext)
+            .unwrap_or("");
+        self.text
+            .iter()
+            .all(|word| name.contains(&word.to_lowercase()))
+            && self.filters.iter().all(|filter| {
+                let matched = filter.values.iter().any(|value| {
+                    let value = value.to_lowercase();
+                    match filter.key.as_str() {
+                        "name" => name.contains(&value),
+                        "path" => path.contains(&value),
+                        "ext" => extension == value,
+                        _ => false,
+                    }
+                });
+                matched != filter.exclude
+            })
+    }
+}
+
 struct Search {
     needle: String,
+    selection: Option<SearchSelection>,
     content: bool,
     cancel: Arc<AtomicBool>,
     started: Instant,
@@ -184,6 +257,13 @@ fn local(mut search: Search, root: String) -> AppResult<SearchResult> {
                 continue;
             }
             let path = super::display_path(&entry.path());
+            if search
+                .selection
+                .as_ref()
+                .is_some_and(|selection| !selection.matches(&path, &name))
+            {
+                continue;
+            }
             search.name(&path, &name);
             if search.content {
                 if meta.len() > MAX_FILE {
@@ -277,6 +357,13 @@ async fn remote(
                         continue;
                     }
                     let path = entry.path();
+                    if search
+                        .selection
+                        .as_ref()
+                        .is_some_and(|selection| !selection.matches(&path, &name))
+                    {
+                        continue;
+                    }
                     search.name(&path, &name);
                     if search.content {
                         if meta.len() > MAX_FILE {
@@ -325,13 +412,19 @@ pub async fn search(
     root: String,
     query: String,
     content: bool,
+    selection: Option<SearchSelection>,
 ) -> AppResult<SearchResult> {
     if !valid_id(&request_id)
         || root.is_empty()
         || root.len() > 32768
         || root.contains('\0')
-        || query.chars().count() < 2
+        || (query.chars().count() < 2
+            && (content || !selection.as_ref().is_some_and(SearchSelection::active)))
         || query.len() > 256
+        || query.contains('\0')
+        || selection
+            .as_ref()
+            .is_some_and(|selection| !selection.valid() || (content && !selection.text.is_empty()))
     {
         return Err(AppError::validation("search.invalidQuery"));
     }
@@ -362,7 +455,12 @@ pub async fn search(
         flag
     };
     let state = Search {
-        needle: query.to_lowercase(),
+        needle: if !content && selection.is_some() {
+            String::new()
+        } else {
+            query.to_lowercase()
+        },
+        selection,
         content,
         cancel: flag,
         started: Instant::now(),
@@ -386,9 +484,80 @@ pub async fn search(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn qualifiers_preserve_and_or_exclusion_and_validate_untrusted_structure() {
+        let selection: SearchSelection = serde_json::from_value(serde_json::json!({
+            "text": ["report"], "filters": [
+                {"key":"ext", "values":["json", "md"], "exclude":false},
+                {"key":"path", "values":["docs"], "exclude":false},
+                {"key":"name", "values":["secret"], "exclude":true}
+            ]
+        }))
+        .unwrap();
+        assert!(selection.valid());
+        assert!(selection.matches("/docs/Report.JSON", "Report.JSON"));
+        assert!(!selection.matches("/other/report.json", "report.json"));
+        assert!(!selection.matches("/docs/secret-report.md", "secret-report.md"));
+        assert!(!selection.matches("/docs/report.txt", "report.txt"));
+        for key in ["unknown", "name"] {
+            let invalid: SearchSelection = serde_json::from_value(serde_json::json!({
+                "text":[], "filters":[{"key":key, "values":[], "exclude":false}]
+            }))
+            .unwrap();
+            assert!(!invalid.valid());
+        }
+        assert!(!SearchSelection {
+            text: vec!["x".repeat(257)],
+            filters: vec![]
+        }
+        .valid());
+        assert!(serde_json::from_value::<SearchSelection>(
+            serde_json::json!({"text":[], "filters":[], "root":"/"})
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn local_qualifiers_apply_before_result_limits_and_content_reads() {
+        let root = std::env::temp_dir().join(format!("tunnelde-search-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&root).unwrap();
+        for index in 0..120 {
+            std::fs::write(
+                root.join(format!("unrelated-{index}.bin")),
+                b"match\0binary",
+            )
+            .unwrap();
+        }
+        std::fs::write(root.join("wanted.json"), b"match  spacing").unwrap();
+        std::fs::write(root.join("wanted.md"), b"match  spacing").unwrap();
+        let selection = || {
+            serde_json::from_value(serde_json::json!({"text":[], "filters":[
+                {"key":"ext", "values":["json", "md"], "exclude":false}
+            ]}))
+            .unwrap()
+        };
+        let mut names = state("");
+        names.content = false;
+        names.selection = Some(selection());
+        let found = local(names, root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(found.matches.len(), 2);
+        assert!(!found.limited);
+        let mut content = state("match  spacing");
+        content.selection = Some(selection());
+        let found = local(content, root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(found.matches.len(), 2);
+        assert_eq!(
+            found.skipped, 0,
+            "excluded binary files must never be opened"
+        );
+        assert!(!found.limited);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn state(query: &str) -> Search {
         Search {
             needle: query.to_lowercase(),
+            selection: None,
             content: true,
             cancel: Arc::new(AtomicBool::new(false)),
             started: Instant::now(),

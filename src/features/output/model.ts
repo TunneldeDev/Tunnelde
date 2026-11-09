@@ -1,4 +1,5 @@
 import type { OutputSnapshot } from "@/lib/api/ipc";
+import { matchesSearch, parseSearchQuery, type SearchQuery } from "@/lib/search/query";
 
 export interface OutputEntry {
   id: number;
@@ -82,7 +83,7 @@ export function snapshotEntries(snapshot: OutputSnapshot, nextId: () => number):
 export function matchesOutput(
   entry: OutputEntry,
   channel: string,
-  query: string,
+  query: string | SearchQuery,
   minimum: string,
 ): boolean {
   const levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR"];
@@ -91,11 +92,17 @@ export function matchesOutput(
   if (channel === "operations" && entry.kind !== "operations") return false;
   if (channel.startsWith("domain:") && entry.domain !== channel.slice(7)) return false;
   if (channel.startsWith("plugin:") && entry.plugin !== channel.slice(7)) return false;
-  return (
-    !query.trim() ||
-    `${entry.message} ${entry.domain} ${entry.plugin ?? ""} ${entry.level}`
-      .toLocaleLowerCase()
-      .includes(query.trim().toLocaleLowerCase())
+  return matchesSearch(
+    typeof query === "string"
+      ? parseSearchQuery(query, ["level", "domain", "plugin", "source"])
+      : query,
+    `${entry.message} ${entry.domain} ${entry.plugin ?? ""} ${entry.level}`,
+    {
+      level: entry.level,
+      domain: entry.domain,
+      plugin: entry.plugin,
+      source: entry.kind,
+    },
   );
 }
 

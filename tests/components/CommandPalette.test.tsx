@@ -41,6 +41,89 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it("applies file qualifiers to unsaved content without losing eligible draft results", async () => {
+    useQuickAccess.setState({ query: "% match ext:json" });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "root", path: "C:/work", sessionId: null }] },
+    });
+    const entries = Object.fromEntries(
+      ["one.json", "two.md"].map((name) => {
+        const tabId = `editor-local:C:/work/${name}`;
+        return [
+          tabId,
+          {
+            tabId,
+            sessionId: null,
+            path: `C:/work/${name}`,
+            name,
+            content: "draft match",
+            baseline: "old",
+            loading: false,
+            saving: false,
+            error: null,
+          },
+        ];
+      }),
+    );
+    useEditors.setState({ entries });
+    vi.spyOn(api, "filesSearch").mockResolvedValue({ matches: [], limited: false, skipped: 0 });
+    render(<CommandPalette />);
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option").textContent).toContain("one.json");
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "% match ext:md" } });
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    expect(screen.getByRole("option").textContent).toContain("two.md");
+  });
+
+  it("keeps literal content whitespace and sends path/extension qualifiers to the traversal", async () => {
+    useQuickAccess.setState({ query: "% Foo  Bar ext:json,md -path:vendor" });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "root", path: "C:/work", sessionId: null }] },
+    });
+    const search = vi
+      .spyOn(api, "filesSearch")
+      .mockResolvedValue({ matches: [], limited: false, skipped: 0 });
+    render(<CommandPalette />);
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(expect.any(String), null, "C:/work", "Foo  Bar", true, {
+        text: [],
+        filters: [
+          { key: "ext", values: ["json", "md"], exclude: false },
+          { key: "path", values: ["vendor"], exclude: true },
+        ],
+      }),
+    );
+  });
+
+  it("supports qualifier-only file searches and exposes presets for commands", async () => {
+    useQuickAccess.setState({ query: "ext:json,md" });
+    useSearchRoots.setState({
+      roots: { files: [{ id: "root", path: "C:/work", sessionId: null }] },
+    });
+    const search = vi.spyOn(api, "filesSearch").mockResolvedValue({
+      matches: [
+        { path: "C:/work/one.json", line: 0, column: 0, preview: "one.json" },
+        { path: "C:/work/two.md", line: 0, column: 0, preview: "two.md" },
+      ],
+      limited: false,
+      skipped: 0,
+    });
+    render(<CommandPalette />);
+    await waitFor(() =>
+      expect(search).toHaveBeenCalledWith(expect.any(String), null, "C:/work", "", false, {
+        text: [],
+        filters: [{ key: "ext", values: ["json", "md"], exclude: false }],
+      }),
+    );
+    expect(await screen.findByRole("option", { name: /one.json/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: /two.md/ })).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: ">category:Application restart" },
+    });
+    expect(screen.getByRole("option", { name: /Restart Tunnelde/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filter presets" })).toBeTruthy();
+  });
+
   it("offers restart and reload as separate searchable commands", () => {
     useDialogs.getState().close();
     render(<CommandPalette />);

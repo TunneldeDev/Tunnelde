@@ -692,8 +692,9 @@ pub async fn files_search(
     root: String,
     query: String,
     content: bool,
+    selection: Option<sftp::search::SearchSelection>,
 ) -> AppResult<sftp::search::SearchResult> {
-    sftp::search::search(app, request_id, session_id, root, query, content).await
+    sftp::search::search(app, request_id, session_id, root, query, content, selection).await
 }
 
 #[tauri::command]
