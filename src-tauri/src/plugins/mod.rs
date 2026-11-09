@@ -249,6 +249,7 @@ impl PluginsManager {
                 permissions: info.permissions,
                 generation: 0,
                 tool_client: None,
+                tool_request: None,
             };
             tokio::spawn(async move {
                 runners::revoke(&context).await;
@@ -659,6 +660,7 @@ impl PluginsManager {
                         permissions: lease.permissions.clone(),
                         generation: lease.generation,
                         tool_client: None,
+                        tool_request: None,
                     }),
                 ),
             )
@@ -919,6 +921,7 @@ impl PluginsManager {
                 permissions: lease.permissions.clone(),
                 generation: lease.generation,
                 tool_client: None,
+                tool_request: None,
             };
             return self
                 .security

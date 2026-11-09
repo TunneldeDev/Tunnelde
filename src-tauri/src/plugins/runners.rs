@@ -630,6 +630,7 @@ pub async fn on_reconnect(app: &tauri::AppHandle) {
             permissions: Vec::new(),
             generation: 0,
             tool_client: None,
+            tool_request: None,
         };
         if let Ok(mut records) = load(&context) {
             flush_pending(&context, &mut records).await;

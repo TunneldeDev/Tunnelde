@@ -293,6 +293,7 @@ pub async fn plugin_frontend_call(
         permissions: lease.permissions.clone(),
         generation: lease.generation,
         tool_client: None,
+        tool_request: None,
     };
     let result = state
         .plugins

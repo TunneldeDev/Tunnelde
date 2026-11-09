@@ -31,6 +31,7 @@ pub struct HostContext {
     pub permissions: Vec<String>,
     pub generation: u64,
     pub tool_client: Option<String>,
+    pub tool_request: Option<uuid::Uuid>,
 }
 
 #[derive(Serialize)]
@@ -115,8 +116,8 @@ pub const METHODS: &[ApiMethod] = &[
     method!("tasks.closeInput", [], "{taskId:string}", "Close this runtime's own process stdin."),
     method!("tasks.cancel", [], "{taskId:string}", "Stop this runtime's own process; local process trees are terminated, remote server signal support may vary."),
     method!("tools.invoke", [], "{method:string,params:object,mode:ask|approve|full|readOnly,scope:{sessionIds?:string[],hostIds?:string[],localRoots?:string[],remoteRoots?:{sessionId:string,path:string}[]},review?:{approved:boolean,reason:string},clientId?:string,requestId?:string}", "Execute an allowlisted AI/MCP tool after permission, target scope and approval checks. ReadOnly rejects every command and mutation. Review may only be supplied by a trusted plugin's independent reviewer."),
-    method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation; already completed operations cannot be rolled back."),
-    method!("tools.revokeClient", [], "{clientId:string}", "Cancel pending tool invocations owned by this plugin runtime's client."),
+    method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation. Undelivered SSH connections created by that invocation are closed; a completed invocation's delivered connection is unaffected. Already completed remote operations cannot be rolled back."),
+    method!("tools.revokeClient", [], "{clientId:string}", "Permanently revoke this client ID for the current plugin runtime generation, cancel its pending tool invocations and release its tasks, transfers and SSH connections. Other clients, direct plugin connections, user-created connections and replacement runtimes are unaffected. A new client identity is required to resume."),
     stable_method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization.", "0.21.0"),
     stable_method!("log", ["log"], "{message:string,level?:string,domain?:string,operation?:string,requestId?:string,fields?:object}", "Write a bounded local log at its requested severity; return null on acceptance, not durable delivery. Host supplies plugin identity and runtime generation; domain is plugin-scoped. Optional structured fields redact credential keys and URL credentials/query/fragment. Existing message/level calls remain supported; structured options require 0.33.0-beta.5 or later. Subject to configured log filter and nonblocking writer; never include secrets in message text.", "0.21.0"),
     method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
@@ -137,7 +138,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("groups.update", ["hosts.write"], "{id:string,input:GroupInput}", "Update a validated host group."),
     method!("groups.delete", ["hosts.write"], "{id:string}", "Delete a host group through the normal group service."),
     stable_method!("sessions.list", ["sessions.read"], "{}", "List active SSH session metadata; no passwords or private keys.", "0.21.0"),
-    method!("sessions.connect", ["ssh.exec"], "{request:SshConnectRequest}", "Connect a saved host with normal host-key verification; never auto-trust a server. The connection belongs to this runtime generation and closes on stop, crash, revocation or replacement. Pending and live connections share a limit of 8 per plugin and 64 total; connection setup has a 120-second deadline. Opening a terminal or file tab does not transfer ownership. User-created connections are unaffected."),
+    method!("sessions.connect", ["ssh.exec"], "{request:SshConnectRequest}", "Connect a saved host with normal host-key verification; never auto-trust a server. The connection belongs to this runtime generation and closes on stop, crash, revocation or replacement. Through tools.invoke it also belongs to that client; client revocation or cancellation before result acceptance closes it. Pending and live connections share a limit of 8 per plugin and 64 total; connection setup has a 120-second deadline. Opening a terminal or file tab does not transfer ownership. User-created connections are unaffected."),
     method!("sessions.disconnect", ["ssh.exec"], "{sessionId:string}", "Disconnect an active SSH session."),
     method!("sessions.exec", ["ssh.exec"], "{sessionId:string,command:string,timeoutMs?:number}", "Execute in a separate SSH channel; return stdout/stderr/exitCode/signal. Timeout 100–60000ms, output at most 1MiB."),
     method!("terminal.write", ["ssh.exec"], "{sessionId:string,data:string}", "Write plain UTF-8 terminal input, including remote shell commands; the host handles transport encoding."),
