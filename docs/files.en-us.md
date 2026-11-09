@@ -120,6 +120,22 @@ host still use server-side rename.
 
 ## Failed remote moves
 
+When pasting a cut folder over an existing folder on the same host, confirming
+replacement merges their contents using server-side renames. Existing destination
+items with other names remain in place. New subfolders move as a whole; matching
+files are replaced atomically when the server supports OpenSSH's rename extension.
+The extension is checked before any item moves. File/folder type conflicts also
+stop the operation before any mutation.
+
+A merge is a sequence of moves, not a transaction for the whole tree. A failure
+leaves already moved items at the destination and keeps the remaining source
+items in the cut selection. Refresh and paste again to move those remaining items.
+Source folders are removed only when empty, so newly added items are retained.
+Observed directory substitutions and newly appearing destination conflicts stop
+the merge. SFTP cannot lock pathname checks and renames against other writers;
+avoid concurrently renaming the folders involved. Merges are bounded to 100,000
+operations and 128 nested levels.
+
 Cut/paste within one remote host uses a server-side rename, avoiding a round trip
 through this computer. A server may reject a rename between different mount points.
 SFTP status 4 (`Failure`) is a general failure and does not identify its cause;
