@@ -3,6 +3,7 @@ pub mod config;
 mod contributions;
 mod declarative;
 mod engines;
+mod events;
 pub mod file_icons;
 mod host;
 mod logging;

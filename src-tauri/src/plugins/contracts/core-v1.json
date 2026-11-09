@@ -1694,6 +1694,90 @@
         "pluginSecurity.unavailable"
       ],
       "events": []
+    },
+    "events.publish": {
+      "version": 1,
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["event"],
+        "properties": {
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+          },
+          "payload": {}
+        },
+        "additionalProperties": true,
+        "description": "Additional fields are ignored; omitted payload becomes null. The independent shared request quota is 256KiB of serialized UTF-8 JSON."
+      },
+      "resultSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "null",
+        "description": "Transport acceptance only, not subscriber processing or durable delivery."
+      },
+      "errorSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "required": ["code"],
+            "properties": {
+              "code": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": true
+      },
+      "knownErrors": [
+        "plugin.api.invalidParams",
+        "plugin.api.missing:event",
+        "plugin.api.invalid:event",
+        "plugin.api.invalidEvent",
+        "pluginSecurity.blocked",
+        "pluginSecurity.changed",
+        "pluginSecurity.approvalRequired",
+        "pluginSecurity.permissionDenied",
+        "pluginSecurity.unavailable"
+      ],
+      "events": ["plugin://event"],
+      "eventSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["pluginId", "generation", "event", "payload"],
+        "properties": {
+          "pluginId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "event": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+          },
+          "payload": {}
+        },
+        "additionalProperties": true,
+        "description": "Host-supplied identity and runtime generation. Advisory payload, no permission grant or replay. A recipient must reject a retired generation; concurrent calls need not complete in order."
+      }
     }
   }
 }

@@ -37,6 +37,13 @@ export function checkCoreContracts(discovery, responses, floor) {
       );
       compiled.commandContextSchema = ajv.compile(method.contract.commandContextSchema);
     }
+    if (Object.hasOwn(method.contract, "eventSchema")) {
+      assert.ok(
+        ajv.validateSchema(method.contract.eventSchema),
+        `${method.name}: invalid eventSchema`,
+      );
+      compiled.eventSchema = ajv.compile(method.contract.eventSchema);
+    }
     validators.set(method.name, compiled);
   }
   const coverage = new Map();
@@ -71,12 +78,29 @@ export function checkCoreContracts(discovery, responses, floor) {
       );
       kinds.add("command");
     }
+    if (compiled.eventSchema) {
+      assert.ok(Array.isArray(sample.emittedEvents), `${sample.method}: missing event evidence`);
+      for (const event of sample.emittedEvents) {
+        assert.ok(
+          compiled.eventSchema(event),
+          `${sample.method}: ${JSON.stringify(compiled.eventSchema.errors)}`,
+        );
+        kinds.add("event");
+      }
+      if (!failed)
+        assert.equal(sample.emittedEvents.length, 1, `${sample.method}: accepted event missing`);
+    }
     coverage.set(sample.method, kinds);
   }
   for (const [name, compiled] of validators) {
     assert.deepEqual(
       coverage.get(name),
-      new Set(["result", "error", ...(compiled.commandContextSchema ? ["command"] : [])]),
+      new Set([
+        "result",
+        "error",
+        ...(compiled.commandContextSchema ? ["command"] : []),
+        ...(compiled.eventSchema ? ["event"] : []),
+      ]),
       `${name}: missing real result/error samples`,
     );
   }

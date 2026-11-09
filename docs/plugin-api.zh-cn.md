@@ -38,6 +38,8 @@
 `log` 也具有冻结的 v1 契约，保留旧 message/level 调用；结构化日志需要
 0.33.0-beta.5 或更新宿主。返回成功表示接受记录，不表示已持久化。
 配额、错误和过滤规则见[日志说明](logging.zh-cn.md)。
+`events.publish` 的 v1 契约也已冻结，并以 `eventSchema` 描述宿主发出的事件封装。
+事件名、默认值、生命周期及投递边界见[插件事件](plugin-events.zh-cn.md)。
 
 冻结的接口发现[请求结构](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
 和[响应结构](../tests/fixtures/plugin-compat/api-describe-v1.schema.json)定义了其 v1

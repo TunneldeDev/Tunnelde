@@ -100,7 +100,7 @@ pub const METHODS: &[ApiMethod] = &[
     method!("runners.poll", ["ssh.exec"], "{sessionId:string,runnerId:string,afterSeq?:number}", "Read sequenced durable runner events and pending approvals after reconnect."),
     method!("runners.status", ["ssh.exec"], "{sessionId:string,runnerId:string}", "Read this plugin's remote runner status."),
     method!("runners.stop", ["ssh.exec"], "{sessionId:string,runnerId:string}", "Persist and request stopping a remote runner; does not claim that an unreachable process has stopped."),
-    method!("events.publish", [], "{event:string,payload:JSON}", "Publish a bounded plugin-identified UI event; the host supplies identity and runtime generation."),
+    stable_method!("events.publish", [], "{event:string,payload?:JSON}", "Emit an advisory UI event from the current approved runtime. Event names use 1-128 ASCII letters, digits, dot, underscore, colon or hyphen. Omitted payload becomes null; extra fields cannot replace host-supplied pluginId/generation. Shared 256KiB UTF-8 request budget. Return null on transport acceptance, not subscriber acknowledgement or durable delivery. No replay, cross-request completion order or permission grant is promised; consumers must check runtime generation.", "0.21.0"),
     method!("secrets.get", ["secrets"], "{key:string}", "Read this plugin's own OS-keyring secret; return string or null. Never exposes SSH credentials."),
     method!("secrets.set", ["secrets"], "{key:string,value:string}", "Store this plugin's own secret in the operating system keyring, at most 16KiB."),
     method!("secrets.delete", ["secrets"], "{key:string}", "Delete this plugin's own keyring secret."),
@@ -364,19 +364,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
                 .await?;
             Ok(Value::Null)
         }
-        "events.publish" => {
-            let event: String = field(&params, "event")?;
-            if event.is_empty()
-                || event.len() > 128
-                || !event
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || b"._:-".contains(&byte))
-            {
-                return Err(AppError::validation("plugin.api.invalidEvent"));
-            }
-            app.emit("plugin://event", json!({"pluginId":context.id,"generation":context.generation,"event":event,"payload":params.get("payload").cloned().unwrap_or(Value::Null)}))?;
-            Ok(Value::Null)
-        }
+        "events.publish" => super::events::publish(context, params),
         name if name.starts_with("secrets.") => secret(context, name, &params).await,
         name if name.starts_with("tasks.") => super::tasks::dispatch(context, name, params).await,
         name if name.starts_with("runners.") => {

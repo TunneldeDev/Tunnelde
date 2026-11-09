@@ -74,6 +74,16 @@ fn stable_core_contracts_preserve_the_frozen_v1_floor() {
             "Frozen tab bar contract changed: {name}"
         );
     }
+    let events_floor: Value = serde_json::from_str(include_str!(
+        "../../../../tests/fixtures/plugin-compat/events-v1.json"
+    ))
+    .unwrap();
+    for (name, contract) in events_floor["methods"].as_object().unwrap() {
+        assert_eq!(
+            &contracts["methods"][name], contract,
+            "Frozen event contract changed: {name}"
+        );
+    }
     for method in response["methods"].as_array().unwrap() {
         assert_eq!(
             method.get("contract").is_some(),
@@ -157,6 +167,7 @@ async fn emit_core_contract_responses() {
     samples.extend(super::super::status_bar::contract_samples());
     samples.extend(super::super::tab_bar::contract_samples());
     samples.extend(super::super::logging::tests::contract_samples());
+    samples.extend(super::super::events::tests::contract_samples());
     for (variable, methods) in [
         (
             "TUNNELDE_EDITOR_CONTRACT_INPUT",

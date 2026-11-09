@@ -48,6 +48,9 @@ An incompatible change to a stable contract requires an explicitly versioned mig
 `log` also has a frozen v1 contract: legacy message/level calls remain available, and
 structured logging requires 0.33.0-beta.5 or later. Its result acknowledges acceptance,
 not durable delivery. See [logging](logging.en-us.md) for quotas, errors and filtering.
+`events.publish` also has a frozen v1 contract, with an `eventSchema` describing the
+host-generated envelope. See [plugin events](plugin-events.en-us.md) for names,
+defaults, lifecycle and delivery boundaries.
 
 The frozen discovery [request schema](../tests/fixtures/plugin-compat/api-describe-v1-request.schema.json)
 and [response schema](../tests/fixtures/plugin-compat/api-describe-v1.schema.json) define
