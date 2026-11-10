@@ -48,6 +48,38 @@ const host: Host = {
   updatedAt: 0,
 };
 
+it("uses an exclusive requester and reports acceptance errors without leaving the dialog busy", async () => {
+  const request = vi.fn().mockResolvedValue({ id: "exclusive", hostId: host.id });
+  const accepted = vi.fn().mockRejectedValueOnce(Error("provider revoked"));
+  const close = vi.fn();
+  render(
+    <ConnectDialog
+      host={host}
+      after="background"
+      purpose="forwarding"
+      connectSession={request}
+      onConnected={accepted}
+      onClose={close}
+    />,
+  );
+  fireEvent.change(await screen.findByLabelText("Password"), { target: { value: "test-only" } });
+  await waitFor(() =>
+    expect((screen.getByRole("button", { name: /^Connect$/ }) as HTMLButtonElement).disabled).toBe(
+      false,
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /^Connect$/ }));
+  await screen.findByText("provider revoked");
+  expect(connect).not.toHaveBeenCalled();
+  expect(close).not.toHaveBeenCalled();
+  expect(request).toHaveBeenCalledWith(
+    expect.objectContaining({ background: true, purpose: "forwarding" }),
+  );
+  accepted.mockResolvedValueOnce(undefined);
+  fireEvent.click(screen.getByRole("button", { name: /^Connect$/ }));
+  await waitFor(() => expect(close).toHaveBeenCalledOnce());
+});
+
 beforeEach(() => {
   connect.mockReset().mockResolvedValue(null);
   useSsh.setState({ connect });

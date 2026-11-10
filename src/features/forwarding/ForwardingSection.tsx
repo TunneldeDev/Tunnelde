@@ -6,6 +6,8 @@ import { useDialogs } from "@/store/dialogs";
 import type { Host } from "@/lib/api/types";
 import { ForwardRuleEditor } from "./components/ForwardRuleEditor";
 import { ForwardingEntries } from "./components/ForwardingEntries";
+import { ForwardingSurface } from "./components/ForwardingSurface";
+import { connectForwardingProvider } from "@/lib/extensions/forwarding/authority";
 import { useForwardingController } from "./runtime/useForwardingController";
 import "./forwarding.css";
 
@@ -50,7 +52,12 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
             >
               <RefreshCw size={14} />
             </IconButton>
-            <Button size="sm" leading={<Plus size={14} />} disabled={busy} onClick={controller.add}>
+            <Button
+              size="sm"
+              leading={<Plus size={14} />}
+              disabled={busy}
+              onClick={() => controller.add()}
+            >
               {t("forward.add")}
             </Button>
           </div>
@@ -75,7 +82,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
               size="sm"
               variant="ghost"
               disabled={busy}
-              onClick={controller.requestDisconnect}
+              onClick={() => controller.requestDisconnect()}
             >
               {t("terminal.disconnect")}
             </Button>
@@ -99,17 +106,20 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onSave={controller.save}
           onCancel={controller.cancel}
         />
-      ) : loading ? (
-        <p className="forwarding__empty" role="status">
-          {t("common.loading")}
-        </p>
-      ) : !rules.length && failure?.target !== "list" ? (
-        <div className="forwarding__empty">
-          <strong>{t("forward.noRules")}</strong>
-        </div>
-      ) : (
-        <ForwardingEntries {...controller} />
-      )}
+      ) : null}
+      <ForwardingSurface hostId={host.id} title={host.name} controller={controller}>
+        {loading ? (
+          <p className="forwarding__empty" role="status">
+            {t("common.loading")}
+          </p>
+        ) : !rules.length && failure?.target !== "list" ? (
+          <div className="forwarding__empty">
+            <strong>{t("forward.noRules")}</strong>
+          </div>
+        ) : (
+          <ForwardingEntries {...controller} />
+        )}
+      </ForwardingSurface>
       {failure?.target === "list" ? (
         <p role="alert" className="td-field__error">
           {failure.message}
@@ -121,7 +131,12 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           after="background"
           purpose="forwarding"
           onClose={controller.closeConnection}
-          onConnected={(connected) => controller.startOnConnection(connectingRules, connected.id)}
+          connectSession={
+            connectingRules.authority
+              ? (request) => connectForwardingProvider(connectingRules.authority!, request)
+              : undefined
+          }
+          onConnected={(connected) => controller.connected(connectingRules, connected)}
         />
       )}
     </section>

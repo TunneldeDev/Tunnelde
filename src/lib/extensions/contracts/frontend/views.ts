@@ -3,6 +3,7 @@ import type { FrontendWorkbenchSlots } from "../workbench/slots.js";
 import type { FrontendFileBrowser } from "../files/browser.js";
 import type { FrontendTerminal } from "../terminal/surface.js";
 import type { FrontendHistory } from "../history/provider.js";
+import type { FrontendForwarding } from "../forwarding/provider.js";
 
 export interface FrontendViewProps {
   pluginId: string;
@@ -18,4 +19,6 @@ export interface FrontendViewProps {
   terminal?: FrontendTerminal;
   /** Present only for a user-selected command-history provider. */
   history?: FrontendHistory;
+  /** Present only for an explicitly selected forwarding provider, scoped to one saved host. */
+  forwarding?: FrontendForwarding;
 }

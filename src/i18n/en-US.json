@@ -1286,6 +1286,13 @@
       "subscriptionLimit": "The terminal subscription limit has been reached.",
       "missingScreen": "The terminal provider did not keep its screen mounted. The built-in terminal has been restored."
     },
+    "forwarding": {
+      "expired": "This forwarding view is no longer active. Reopen it and retry.",
+      "changed": "Forwarding state changed. Refresh the view and retry.",
+      "busy": "A forwarding operation is already in progress or the view needs to refresh.",
+      "invalid": "The forwarding request does not match this host or revision.",
+      "permissionDenied": "This provider does not have permission to change port forwarding."
+    },
     "history": {
       "invalid": "Invalid history request. Use an entry from the current page.",
       "changed": "History or its session changed. Read a fresh snapshot and try again.",
@@ -2050,6 +2057,7 @@
     "actions": "Output actions"
   },
   "providers": {
+    "forwarding": "Port forwarding",
     "title": "Interface providers",
     "hint": "Choose installed extensions for the host list, file browser, terminal, history or workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
     "hostList": "Host list",

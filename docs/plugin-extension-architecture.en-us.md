@@ -46,8 +46,12 @@ domain actions. These private modules are not new public SDK entry points.
 The native forwarding feature separates `model/` DTOs, payloads and address helpers,
 `data/store.ts` shared invalidation, `runtime/useForwardingController.ts` operation
 orchestration, and `components/` rows and editor. The section composes them while keeping
-the controller mounted throughout editing. This separation prepares the forwarding UI
-provider; it does not itself expose a new provider or complete its ownership contract.
+the controller mounted throughout editing. The experimental forwarding provider uses
+`contracts/forwarding/` DTOs and domain-specific context, authority and UI adapters.
+Its native `plugins/forwarding/` adapter separates access, scope lifecycle, connection
+acquisition and rule actions; it reuses CAS domain persistence and final listener admission.
+The [forwarding contract](plugin-ui.en-us.md#forwarding-presentation-providers) describes
+ownership and compatibility limits. Other domain migrations remain incomplete.
 
 ## Discover implemented capabilities
 
