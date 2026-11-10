@@ -1205,6 +1205,18 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "runners": {
+      "busy": "This runner is handling another request. Try again shortly; saved stop requests continue in the background.",
+      "stopPending": "A stop request is pending confirmation from the remote runner. New messages are blocked until it settles.",
+      "inputTooLarge": "The runner configuration or message exceeds its size limit.",
+      "revisionExhausted": "The runner record cannot accept another revision. Open the application log for details.",
+      "invalidMetadata": "The saved runner records could not be read. They were preserved; open the application log for details.",
+      "metadataTooLarge": "The saved runner records exceed the size limit. They were preserved.",
+      "tooManyTasks": "This plugin has reached its remote runner record limit.",
+      "notFound": "This plugin has no matching runner on that host.",
+      "deployFirst": "Deploy and initialize the remote runner before starting a task.",
+      "timeout": "The remote runner did not respond in time. Its state is unknown; saved stop requests will be retried."
+    },
     "activation": {
       "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
       "missingDependencyDetails": "Required plugin “{{id}}” is not installed. Install it before retrying; no dependencies were downloaded or started.",

@@ -37,6 +37,8 @@ mod tests {
         let snapshot = serde_json::to_value(Snapshot::from(&record)).unwrap();
         let mut expected = serde_json::to_value(&record).unwrap();
         expected.as_object_mut().unwrap().remove("runtimeOwner");
+        expected.as_object_mut().unwrap().remove("revision");
+        expected.as_object_mut().unwrap().remove("launchState");
         assert_eq!(snapshot, expected);
         assert!(snapshot.get("runtimeOwner").is_none());
     }
