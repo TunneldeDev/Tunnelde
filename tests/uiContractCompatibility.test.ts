@@ -67,6 +67,9 @@ describe("public UI contract boundaries", () => {
       "FrontendProcessSort",
       "FrontendProcesses",
       "FrontendProcessesSnapshot",
+      "FrontendQuickAccess",
+      "FrontendQuickAccessEntry",
+      "FrontendQuickAccessSnapshot",
       "FrontendTaskProgress",
     ]);
     const widened: string[] = [];

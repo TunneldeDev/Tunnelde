@@ -400,6 +400,7 @@ impl PluginManifest {
                             | "monitor"
                             | "backgroundTasks"
                             | "processes"
+                            | "quickAccess"
                     ) || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
@@ -424,6 +425,17 @@ impl PluginManifest {
                             && ["hosts.read", "forwards.read"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "quickAccess"
+                            && [
+                                "hosts.read",
+                                "sessions.read",
+                                "fs.read",
+                                "sftp.read",
+                                "workspace.read",
+                                "editor.read",
+                            ]
+                            .iter()
+                            .any(|p| !self.permissions.iter().any(|v| v == p)))
                         || (target == "history"
                             && ["sessions.read", "history.read"]
                                 .iter()
@@ -705,6 +717,26 @@ mod tests {
         }
         value["permissions"] = serde_json::json!(["ui.trusted", "backgroundTasks.read"]);
         assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "forwarding".into();
+        let search_permissions = [
+            "ui.trusted",
+            "hosts.read",
+            "sessions.read",
+            "fs.read",
+            "sftp.read",
+            "workspace.read",
+            "editor.read",
+        ];
+        value["views"][0]["provider"] = "quickAccess".into();
+        value["permissions"] = serde_json::json!(search_permissions);
+        assert!(save(&value).is_ok());
+        for omitted in search_permissions {
+            value["permissions"] = serde_json::json!(search_permissions
+                .into_iter()
+                .filter(|p| *p != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
         value["views"][0]["provider"] = "forwarding".into();
         for omitted in ["ui.trusted", "hosts.read", "forwards.read"] {
             value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read", "forwards.read"]

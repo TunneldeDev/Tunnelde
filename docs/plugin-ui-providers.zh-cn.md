@@ -2,6 +2,8 @@
 
 [English](plugin-ui-providers.en-us.md) · [可信 UI SDK](plugin-ui.zh-cn.md)
 
+[快捷搜索结果提供者](plugin-quick-access-ui.zh-cn.md)保留宿主输入、授权与恢复流程。
+
 [进程管理提供者](plugin-processes-ui.zh-cn.md)复用原生进程服务与确认流程。
 
 [后台任务扩展](plugin-background-tasks.zh-cn.md) 可包装插件任务并组合公共任务列表。

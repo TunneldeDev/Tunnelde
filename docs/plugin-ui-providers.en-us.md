@@ -2,6 +2,8 @@
 
 [简体中文](plugin-ui-providers.zh-cn.md) · [Trusted UI SDK](plugin-ui.en-us.md)
 
+[Quick-access result providers](plugin-quick-access-ui.en-us.md) retain host input, consent and recovery.
+
 [Process manager providers](plugin-processes-ui.en-us.md) share the native process service and confirmation flow.
 
 [Background task extensions](plugin-background-tasks.en-us.md) wrap plugin work and compose the shared task list.

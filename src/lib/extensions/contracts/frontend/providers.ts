@@ -9,7 +9,8 @@ export type FrontendProviderTarget =
   | "forwarding"
   | "monitor"
   | "backgroundTasks"
-  | "processes";
+  | "processes"
+  | "quickAccess";
 /** Optional manifest view field; requires kind: component and a trusted frontend. */
 export interface FrontendProviderContribution {
   provider?: FrontendProviderTarget;

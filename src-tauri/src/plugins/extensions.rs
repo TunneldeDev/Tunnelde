@@ -42,7 +42,8 @@ mod tests {
                 "forwarding",
                 "monitor",
                 "backgroundTasks",
-                "processes"
+                "processes",
+                "quickAccess"
             ])
         );
         assert_eq!(
@@ -84,6 +85,16 @@ mod tests {
         assert_eq!(providers["processes"]["pageSize"], 128);
         assert_eq!(providers["processes"]["pageTextLimit"], 65536);
         assert_eq!(providers["processes"]["writePermission"], "monitor.write");
+        assert_eq!(providers["quickAccess"]["pageSize"], 128);
+        assert_eq!(providers["quickAccess"]["pageTextLimit"], 65536);
+        assert_eq!(
+            providers["quickAccess"]["invokePermission"],
+            "workspace.write"
+        );
+        assert_eq!(
+            providers["quickAccess"]["activation"],
+            "invoke-only-native-consent"
+        );
         assert_eq!(
             providers["processes"]["termination"],
             "native-confirmation-with-live-authorization-and-identity"

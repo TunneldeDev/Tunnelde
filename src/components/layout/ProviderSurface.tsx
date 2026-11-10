@@ -44,6 +44,9 @@ import { guardBackgroundTasksProvider } from "@/lib/extensions/backgroundTasks/p
 import type { FrontendProcesses } from "@/lib/extensions/contracts/monitor/processes/provider";
 import type { ProcessesContext } from "@/lib/extensions/monitor/processes/context";
 import { guardProcessesProvider } from "@/lib/extensions/monitor/processes/provider";
+import type { FrontendQuickAccess } from "@/lib/extensions/contracts/search/quickAccess/provider";
+import type { QuickAccessContext } from "@/lib/extensions/search/quickAccess/context";
+import { guardQuickAccessProvider } from "@/lib/extensions/search/quickAccess/provider";
 
 class ProviderBoundary extends Component<
   {
@@ -80,6 +83,7 @@ export function ProviderSurface({
   monitor,
   backgroundTasks,
   processes,
+  quickAccess,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -97,6 +101,7 @@ export function ProviderSurface({
   monitor?: MonitorContext & Pick<FrontendMonitor, "Charts">;
   backgroundTasks?: BackgroundTasksContext & Pick<FrontendBackgroundTasks, "Entries">;
   processes?: ProcessesContext & Pick<FrontendProcesses, "Entries">;
+  quickAccess?: QuickAccessContext & Pick<FrontendQuickAccess, "Entries">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -245,6 +250,18 @@ export function ProviderSurface({
               ?.permissions.includes("monitor.write"),
         )
       : undefined;
+  const quickAccessContext =
+    quickAccess && active
+      ? guardQuickAccessProvider(
+          quickAccess,
+          checkAccess,
+          () =>
+            !!usePlugins
+              .getState()
+              .items.find((item) => item.id === selected!.plugin.id)
+              ?.permissions.includes("workspace.write"),
+        )
+      : undefined;
   const backgroundTasksContext =
     backgroundTasks && active
       ? guardBackgroundTasksProvider(
@@ -325,6 +342,7 @@ export function ProviderSurface({
               monitor={monitorContext}
               backgroundTasks={backgroundTasksContext}
               processes={processesContext}
+              quickAccess={quickAccessContext}
             />
           </ProviderBoundary>
         </div>

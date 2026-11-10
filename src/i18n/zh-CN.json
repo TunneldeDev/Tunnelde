@@ -1085,7 +1085,9 @@
     "noRoot": "打开文件管理器，或选择一个本地文件夹后搜索。",
     "typeMore": "输入至少 2 个字符以搜索此目录。",
     "limits": "搜索最多返回 100 条结果，扫描 4,000 个条目或 15 秒；跳过隐藏目录、构建目录及链接。已跳过文件：{{count}}。",
-    "localPreview": "本地文件预览（只读）"
+    "localPreview": "本地文件预览（只读）",
+    "previousPage": "上一页",
+    "nextPage": "下一页"
   },
   "window": {
     "controls": "窗口控制",
@@ -1318,6 +1320,11 @@
       "unavailable": "当前视图无法终止此进程，请刷新后重试。",
       "permissionDenied": "此界面提供者没有终止进程的权限。",
       "providerInactive": "所选进程界面提供者已失效，请使用当前提供者或原生界面重试。"
+    },
+    "quickAccess": {
+      "changed": "搜索结果已变化，请重新选择当前结果。",
+      "invalid": "搜索请求参数无效。",
+      "permissionDenied": "此提供者缺少 workspace.write 权限，无法执行命令。"
     }
   },
   "themes": {
@@ -2093,7 +2100,8 @@
     "terminal": "终端",
     "history": "命令历史",
     "backgroundTasks": "后台任务",
-    "processes": "进程管理"
+    "processes": "进程管理",
+    "quickAccess": "快捷搜索"
   },
   "hostFields": {
     "title": "插件主机字段",

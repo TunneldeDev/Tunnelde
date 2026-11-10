@@ -76,7 +76,8 @@ export interface Settings {
       | "forwarding"
       | "monitor"
       | "backgroundTasks"
-      | "processes",
+      | "processes"
+      | "quickAccess",
       { pluginId: string; viewId: string }
     >
   >;
@@ -480,7 +481,8 @@ export interface PluginView {
     | "forwarding"
     | "monitor"
     | "backgroundTasks"
-    | "processes";
+    | "processes"
+    | "quickAccess";
 }
 
 export interface PluginEvent {

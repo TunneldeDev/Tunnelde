@@ -18,7 +18,16 @@ export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProv
         ["hosts.read", "forwards.read"].every((p) => plugin.permissions.includes(p))) &&
       (!["monitor", "processes"].includes(target) ||
         ["sessions.read", "monitor.read"].every((p) => plugin.permissions.includes(p))) &&
-      (target !== "backgroundTasks" || plugin.permissions.includes("backgroundTasks.read"))
+      (target !== "backgroundTasks" || plugin.permissions.includes("backgroundTasks.read")) &&
+      (target !== "quickAccess" ||
+        [
+          "hosts.read",
+          "sessions.read",
+          "fs.read",
+          "sftp.read",
+          "workspace.read",
+          "editor.read",
+        ].every((permission) => plugin.permissions.includes(permission)))
         ? plugin.views
             .filter((view) => view.kind === "component" && view.provider === target)
             .map((view) => ({ plugin, view }))
