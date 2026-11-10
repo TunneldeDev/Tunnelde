@@ -1,95 +1,41 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState, useSyncExternalStore } from "react";
+import { acquireProcessSampler, readProcessSample } from "./processes/runtime/sampling";
+import { emptyProcessSample, type ProcessConsumer } from "./processes/runtime/model";
 
-import { translateError } from "@/lib/api/errors";
-import { api } from "@/lib/api/ipc";
-import type { RemoteProcess } from "@/lib/api/types";
-import { useSettings } from "@/store/settings";
-
-interface Result {
-  sessionId: string;
-  items: RemoteProcess[] | null;
-  error: string | null;
-  loading: boolean;
-  updatedAt: number | null;
-}
-
-const initial = { items: null, error: null, loading: false, updatedAt: null };
-
-/** Schedule after completion, preserving rows and avoiding overlapping SSH requests. */
+/** React owns a consumer, never a separate SSH polling loop. */
 export function useProcesses(sessionId: string) {
-  const [result, setResult] = useState<Result>({ sessionId, ...initial });
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
-  const controls = useRef({ refresh: () => {}, reschedule: () => {} });
-
-  useEffect(() => {
-    let active = true;
-    let busy = false;
-    let timer: number | undefined;
-    const interval = () => {
-      const settings = useSettings.getState().settings;
-      return Math.max(1000, settings.monitorIntervalMs, settings.lightweightMode ? 5000 : 0);
-    };
-    const schedule = () => {
-      window.clearTimeout(timer);
-      if (active && !busy && !pausedRef.current && document.visibilityState === "visible") {
-        timer = window.setTimeout(() => void tick(), interval());
-      }
-    };
-    const tick = async (manual = false) => {
-      if (
-        !active ||
-        busy ||
-        (!manual && pausedRef.current) ||
-        document.visibilityState !== "visible"
-      )
-        return;
-      window.clearTimeout(timer);
-      busy = true;
-      setResult((old) => ({
-        ...(old.sessionId === sessionId ? old : initial),
-        sessionId,
-        loading: true,
-      }));
-      try {
-        const items = await api.remoteProcesses(sessionId);
-        if (active)
-          setResult({ sessionId, items, loading: false, error: null, updatedAt: Date.now() });
-      } catch (cause) {
-        if (active) setResult((old) => ({ ...old, loading: false, error: translateError(cause) }));
-      } finally {
-        busy = false;
-        schedule();
-      }
-    };
-    controls.current = { refresh: () => void tick(true), reschedule: schedule };
-    const visibility = () => {
-      window.clearTimeout(timer);
-      if (document.visibilityState === "visible") void tick();
-    };
-    const unsubscribe = useSettings.subscribe((state, old) => {
-      if (
-        state.settings.monitorIntervalMs !== old.settings.monitorIntervalMs ||
-        state.settings.lightweightMode !== old.settings.lightweightMode
-      )
-        schedule();
-    });
-    document.addEventListener("visibilitychange", visibility);
-    timer = window.setTimeout(() => void tick(), 0);
-    return () => {
-      active = false;
-      window.clearTimeout(timer);
-      document.removeEventListener("visibilitychange", visibility);
-      unsubscribe();
-    };
-  }, [sessionId]);
-
-  const refresh = useCallback(() => controls.current.refresh(), []);
-  const togglePaused = useCallback(() => {
-    pausedRef.current = !pausedRef.current;
-    setPaused(pausedRef.current);
-    controls.current.reschedule();
-    if (!pausedRef.current) controls.current.refresh();
+  const lease = useRef<ProcessConsumer | null>(null);
+  const subscribe = useCallback(
+    (receive: () => void) => {
+      const consumer = acquireProcessSampler(sessionId, receive);
+      lease.current = consumer;
+      consumer.setPaused(pausedRef.current);
+      return () => {
+        lease.current = null;
+        consumer.release();
+      };
+    },
+    [sessionId],
+  );
+  const read = useCallback(() => readProcessSample(sessionId), [sessionId]);
+  const sample = useSyncExternalStore(subscribe, read, () => emptyProcessSample);
+  const refresh = useCallback(() => lease.current?.refresh(), []);
+  const setSamplingPaused = useCallback((value: boolean) => {
+    pausedRef.current = value;
+    setPaused(value);
+    lease.current?.setPaused(value);
   }, []);
-  return { ...(result.sessionId === sessionId ? result : initial), paused, refresh, togglePaused };
+  const togglePaused = useCallback(
+    () => setSamplingPaused(!pausedRef.current),
+    [setSamplingPaused],
+  );
+  return {
+    ...sample,
+    paused,
+    refresh,
+    togglePaused,
+    setPaused: setSamplingPaused,
+  };
 }
