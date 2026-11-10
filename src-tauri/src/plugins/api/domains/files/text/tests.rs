@@ -36,7 +36,7 @@ async fn local_text_reads_are_bounded_and_reject_nonregular_or_binary_inputs() {
             .unwrap()
             .success());
         assert!(tokio::time::timeout(
-            Duration::from_secs(2),
+            std::time::Duration::from_secs(2),
             local_read(fifo.to_string_lossy().into_owned())
         )
         .await
