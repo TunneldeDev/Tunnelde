@@ -39,7 +39,7 @@ pub enum ShortcutPropagation {
     Block,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct UiProviderSelection {
     pub plugin_id: String,
@@ -269,7 +269,7 @@ impl Settings {
         self.ui_providers.retain(|target, selection| {
             matches!(
                 target.as_str(),
-                "hostList" | "workbench" | "fileBrowser" | "terminal" | "history"
+                "hostList" | "workbench" | "fileBrowser" | "terminal" | "history" | "forwarding"
             ) && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
                 !id.is_empty()
                     && id.len() <= 128

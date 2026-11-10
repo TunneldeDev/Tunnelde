@@ -6,7 +6,8 @@ pub mod contract;
 mod repository;
 mod runtime;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
-pub use runtime::{start_checked, start_owned, stop};
+pub(crate) use runtime::{prepare_checked, take_checked};
+pub use runtime::{start_checked, stop};
 
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {
     let app = app.clone();
@@ -40,8 +41,10 @@ impl Forwarding<'_> {
             .into_iter()
             .map(|entry| {
                 let rule = entry.rule;
-                let session_id = active.get(&rule.id).cloned();
+                let runtime = active.get(&rule.id);
+                let session_id = runtime.map(|(session, _)| session.clone());
                 RevisionedInfo {
+                    runtime_id: runtime.map(|(_, identity)| identity.clone()),
                     info: ForwardInfo {
                         active: session_id.is_some(),
                         session_id,

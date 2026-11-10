@@ -3,6 +3,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn fixture_entry(owner: Option<&str>, generation: Option<u64>) -> ActiveForward {
     ActiveForward {
+        admitted: Arc::new(AtomicBool::new(true)),
+        identity: uuid::Uuid::new_v4().to_string(),
         session: "session".into(),
         owner: owner.map(str::to_owned),
         generation,
@@ -110,4 +112,40 @@ fn notifications_are_delivered_after_releasing_registry_locks() {
         .unwrap()
         .insert("session".into(), fixture_entry(None, None));
     registry.stop_session("session");
+}
+
+#[tokio::test]
+async fn retained_stop_cannot_remove_a_replacement_runtime_instance() {
+    let registry = ForwardRegistry::default();
+    let previous = fixture_entry(Some("plugin"), Some(1));
+    let old_identity = previous.identity.clone();
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert("rule".into(), previous);
+    registry.stop("rule").await.unwrap();
+    let replacement = fixture_entry(Some("plugin"), Some(1));
+    let identity = replacement.identity.clone();
+    registry
+        .active
+        .lock()
+        .unwrap()
+        .insert("rule".into(), replacement);
+    assert!(registry
+        .take_checked("rule", Some(&old_identity), || Ok(()))
+        .is_err());
+    assert_eq!(registry.snapshot().unwrap()["rule"].1, identity);
+    assert!(registry
+        .take_checked("rule", Some(&identity), || Err(AppError::validation(
+            "revoked"
+        )))
+        .is_err());
+    registry
+        .take_checked("rule", Some(&identity), || Ok(()))
+        .unwrap()
+        .finish()
+        .await
+        .unwrap();
+    assert!(registry.snapshot().unwrap().is_empty());
 }

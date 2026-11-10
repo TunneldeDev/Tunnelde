@@ -226,6 +226,7 @@ enum WriterMsg {
 }
 
 struct SessionHandle {
+    published: bool,
     info: SessionInfo,
     writer: mpsc::Sender<WriterMsg>,
     task: JoinHandle<()>,
@@ -307,11 +308,25 @@ impl SshManager {
             .map(|sessions| {
                 sessions
                     .values()
-                    .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
+                    .filter(|session| {
+                        session.published
+                            && !session.handle.is_closed()
+                            && !session.task.is_finished()
+                    })
                     .map(|handle| handle.info.clone())
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    pub(crate) fn publish(&self, id: &str) -> AppResult<()> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let session = sessions
+            .get_mut(id)
+            .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
+            .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
+        session.published = true;
+        Ok(())
     }
 
     pub fn rename_host(&self, host_id: &str, title: &str) {
@@ -820,7 +835,15 @@ pub async fn trust_route(
 }
 
 pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<SessionInfo> {
-    connect_for_auth(app, request, false).await
+    connect_for_auth(app, request, false, true).await
+}
+
+/// Held by its requester until explicitly published; native consumers cannot reuse it.
+pub(crate) async fn connect_unpublished(
+    app: AppHandle,
+    request: SshConnectRequest,
+) -> AppResult<SessionInfo> {
+    connect_for_auth(app, request, false, false).await
 }
 
 /// Key setup must authenticate with the supplied password even for a host
@@ -829,13 +852,14 @@ pub(crate) async fn connect_with_password(
     app: AppHandle,
     request: SshConnectRequest,
 ) -> AppResult<SessionInfo> {
-    connect_for_auth(app, request, true).await
+    connect_for_auth(app, request, true, true).await
 }
 
 async fn connect_for_auth(
     app: AppHandle,
     request: SshConnectRequest,
     password_auth: bool,
+    published: bool,
 ) -> AppResult<SessionInfo> {
     let state = app.state::<AppState>();
     let mut host = crate::services::hosts::resolve(&app, &request.host_id)?;
@@ -938,6 +962,7 @@ async fn connect_for_auth(
     });
 
     state.ssh.insert(SessionHandle {
+        published,
         _jumps: jumps,
         remote_forwards,
         info: info.clone(),
@@ -947,13 +972,19 @@ async fn connect_for_auth(
     });
 
     tracing::info!(host = %host.name, session = %session_id, "ssh session opened");
+    if published {
+        announce_connection(&app);
+    }
+    Ok(info)
+}
+
+pub(crate) fn announce_connection(app: &AppHandle) {
     let runner_app = app.clone();
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         crate::ssh::files::durable::on_reconnect(&runner_app).await;
         crate::ssh::files::remote_editor::on_reconnect(&runner_app).await;
         crate::plugins::runners::on_reconnect(&runner_app).await;
     });
-    Ok(info)
 }
 
 pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
@@ -1222,6 +1253,7 @@ mod tests {
         let stopped = task.abort_handle();
         let manager = SshManager::default();
         manager.insert(SessionHandle {
+            published: false,
             info: SessionInfo {
                 id: "target".into(),
                 host_id: "host".into(),
@@ -1239,6 +1271,12 @@ mod tests {
             _jumps: vec![jump.clone()],
             remote_forwards: Arc::default(),
         });
+        assert!(manager.list().is_empty());
+        assert!(manager.is_active("target"));
+        assert!(manager.handle("target").is_ok());
+        manager.publish("target").unwrap();
+        assert_eq!(manager.list().len(), 1);
+        assert!(manager.publish("missing").is_err());
         assert!(manager.disconnect("target"));
         assert!(!manager.disconnect("target"));
         assert!(manager.handle("target").is_err());
@@ -1282,6 +1320,7 @@ mod tests {
         let task = tokio::spawn(async {});
         let manager = SshManager::default();
         manager.insert(SessionHandle {
+            published: true,
             info: SessionInfo {
                 id: "ended".into(),
                 host_id: "host".into(),

@@ -38,7 +38,8 @@ mod tests {
                 "workbench",
                 "fileBrowser",
                 "terminal",
-                "history"
+                "history",
+                "forwarding"
             ])
         );
         assert_eq!(providers["selection"], "explicit-user");

@@ -26,6 +26,7 @@ pub fn run() {
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
         .manage(plugins::frontend::Registry::default())
+        .manage(plugins::forwarding::Registry::default())
         .register_asynchronous_uri_scheme_protocol("tunnelde-ui", |context, request, responder| {
             let app = context.app_handle().clone();
             use tauri::Manager;
@@ -88,6 +89,7 @@ pub fn run() {
                 use tauri::Manager;
                 window.state::<preview::Registry>().clear();
                 window.state::<plugins::frontend::Registry>().clear();
+                plugins::forwarding::clear(window.app_handle());
                 platform::background::destroyed(window.app_handle());
             }
         })
@@ -143,6 +145,11 @@ pub fn run() {
             ssh::files::durable::durable_transfer_pause,
             ssh::files::durable::durable_transfer_resume,
             ssh::files::bandwidth::transfer_set_speed_limit,
+            plugins::forwarding::forwarding_provider_open,
+            plugins::forwarding::forwarding_provider_close,
+            plugins::forwarding::connection::forwarding_provider_connect,
+            plugins::forwarding::connection::forwarding_provider_accept_connection,
+            plugins::forwarding::connection::forwarding_provider_disconnect,
             commands::forwarding::forwarding_list,
             commands::forwarding::forwarding_save,
             commands::forwarding::forwarding_remove,

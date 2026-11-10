@@ -36,11 +36,12 @@ pub(in crate::plugins::api) async fn dispatch(
                 .security
                 .guard(
                     &lease,
-                    crate::services::forwarding::start_owned(
+                    crate::services::forwarding::prepare_checked(
                         app,
                         &field::<String>(&params, "id")?,
                         &field::<String>(&params, "sessionId")?,
                         Some((context.id.clone(), context.generation)),
+                        None,
                     ),
                 )
                 .await;
@@ -50,7 +51,11 @@ pub(in crate::plugins::api) async fn dispatch(
                     .stop_generation(&context.id, context.generation);
                 return Err(error);
             }
-            result?;
+            let prepared = result?;
+            state
+                .plugins
+                .security
+                .with_authorized(&lease, &["forwards.write"], || prepared.commit())?;
             Ok(Value::Null)
         }
         "forwards.stop" => {

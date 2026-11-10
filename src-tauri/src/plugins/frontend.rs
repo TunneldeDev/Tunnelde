@@ -100,9 +100,10 @@ impl Registry {
         lease: Lease,
         snapshot: FrontendSnapshot,
         valid: impl Fn(&Lease) -> AppResult<()>,
-    ) -> AppResult<String> {
+    ) -> AppResult<(String, Vec<String>)> {
         let mut modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
         valid(&lease)?;
+        let before: Vec<_> = modules.keys().cloned().collect();
         modules.retain(|_, item| valid(&item.lease).is_ok());
         // A recreated WebView may reopen the same runtime; retire its old URL.
         let bytes: usize = modules
@@ -125,16 +126,34 @@ impl Registry {
                 bytes: snapshot.bytes,
             },
         );
-        Ok(token)
+        let retired = before
+            .into_iter()
+            .filter(|token| !modules.contains_key(token))
+            .collect();
+        Ok((token, retired))
     }
 
-    fn lease(&self, token: &str) -> AppResult<Lease> {
+    pub(super) fn lease(&self, token: &str) -> AppResult<Lease> {
         self.modules
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .get(token)
             .map(|m| m.lease.clone())
             .ok_or_else(|| AppError::validation("plugin.frontend.expired"))
+    }
+
+    /// Token replacement and final admission share the module lock. Callers must
+    /// acquire policy only inside this callback, never in the opposite order.
+    pub(super) fn with_lease<T>(
+        &self,
+        token: &str,
+        operation: impl FnOnce(&Lease) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
+        let module = modules
+            .get(token)
+            .ok_or_else(|| AppError::validation("plugin.frontend.expired"))?;
+        operation(&module.lease)
     }
 
     pub(super) fn remove(&self, owner: &str, generation: impl Fn(u64) -> bool) {
@@ -225,9 +244,12 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
         return Err(AppError::validation("plugin.entry.missing"));
     }
     let generation = lease.generation;
-    let token = app.state::<Registry>().insert(lease, snapshot, |lease| {
+    let (token, retired) = app.state::<Registry>().insert(lease, snapshot, |lease| {
         authorized(&state.plugins.security, lease)
     })?;
+    for old_token in retired {
+        super::forwarding::remove_token(&app, &old_token);
+    }
     Ok(FrontendSession {
         token,
         plugin_id: id,
@@ -238,12 +260,13 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
 }
 
 #[tauri::command]
-pub fn plugin_frontend_close(registry: State<'_, Registry>, token: String) {
+pub fn plugin_frontend_close(app: AppHandle, registry: State<'_, Registry>, token: String) {
     registry
         .modules
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(&token);
+    super::forwarding::remove_token(&app, &token);
 }
 
 #[tauri::command]
@@ -461,7 +484,7 @@ mod tests {
             bytes: 26,
         };
         let registry = Registry::default();
-        let token = registry
+        let (token, _) = registry
             .insert(lease.clone(), snapshot(), |l| authorized(&security, l))
             .unwrap();
         let request = |token: &str, method: &str| {
@@ -498,7 +521,7 @@ mod tests {
             .status(),
             405
         );
-        let next = registry
+        let (next, _) = registry
             .insert(lease.clone(), snapshot(), |l| authorized(&security, l))
             .unwrap();
         assert_eq!(

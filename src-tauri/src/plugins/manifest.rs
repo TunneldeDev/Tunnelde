@@ -391,7 +391,12 @@ impl PluginManifest {
                 || view.provider.as_deref().is_some_and(|target| {
                     !matches!(
                         target,
-                        "hostList" | "workbench" | "fileBrowser" | "terminal" | "history"
+                        "hostList"
+                            | "workbench"
+                            | "fileBrowser"
+                            | "terminal"
+                            | "history"
+                            | "forwarding"
                     ) || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
@@ -404,6 +409,10 @@ impl PluginManifest {
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                         || (target == "terminal"
                             && ["sessions.read", "ssh.exec"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "forwarding"
+                            && ["hosts.read", "forwards.read"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                         || (target == "history"
@@ -654,6 +663,16 @@ mod tests {
             assert!(save(&value).is_err());
         }
         value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "history.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "forwarding".into();
+        for omitted in ["ui.trusted", "hosts.read", "forwards.read"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read", "forwards.read"]
+                .into_iter()
+                .filter(|v| *v != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read", "forwards.read"]);
         assert!(save(&value).is_ok());
         value["views"][0]["location"] = "sidebar".into();
         assert!(save(&value).is_err());

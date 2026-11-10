@@ -175,6 +175,7 @@ pub fn settings_update(
         }
     }
     state.set_settings(next.clone());
+    crate::plugins::forwarding::retire_selections(&app);
     crate::platform::window::apply_theme(&app, &next.theme);
     crate::platform::window::apply_background_dock_preference(&app);
     let _ = app.emit("settings://changed", &next);
@@ -210,6 +211,7 @@ pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<S
         }
     }
     state.set_settings(next.clone());
+    crate::plugins::forwarding::retire_selections(&app);
     crate::platform::window::apply_theme(&app, &next.theme);
     crate::platform::window::apply_background_dock_preference(&app);
     let _ = app.emit("settings://changed", &next);
