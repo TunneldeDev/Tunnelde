@@ -1,5 +1,6 @@
 //! Native, exact-record consent. Never upgrades the original remote package.
 pub(super) mod consent;
+mod presentation;
 #[cfg(test)]
 mod tests;
 mod transition;
