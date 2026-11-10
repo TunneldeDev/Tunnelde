@@ -1268,6 +1268,11 @@
       "duplicateSurface": "The workbench provider mounted a host surface more than once.",
       "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API."
     },
+    "fileBrowser": {
+      "busy": "This file panel is loading or unavailable. Wait for it to finish.",
+      "changed": "This file panel changed or closed. Use its latest revision.",
+      "invalid": "The plugin supplied an invalid file-panel path, selection or page."
+    },
     "hostSources": {
       "invalid": "The plugin supplied an invalid host source. Check entry IDs, addresses, usernames and size limits. Credentials and private-key paths are not accepted.",
       "limit": "The active host sources exceed their source, entry or storage limits.",
@@ -2034,6 +2039,7 @@
     "title": "Interface providers",
     "hint": "Choose installed extensions for host navigation or the workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
     "hostList": "Host list",
+    "fileBrowser": "File browser",
     "workbench": "Workbench",
     "builtin": "Built-in",
     "unavailable": "Unavailable",

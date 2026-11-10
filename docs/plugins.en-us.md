@@ -739,6 +739,8 @@ not run document scripts or interactive forms. Password-protected PDFs require a
 
 [Trusted frontend UI SDK](plugin-ui.en-us.md).
 
+Trusted components can compose the native file listing or render a paged replacement through the experimental [file browser provider](plugin-file-browser.en-us.md). Native navigation, authorization and recovery remain available.
+
 The built-in host table accepts runtime-owned [typed plugin columns](plugin-host-columns.en-us.md), with user-controlled visibility, width, order and sorting.
 
 ## Dynamic host sources (experimental)

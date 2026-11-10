@@ -2,6 +2,8 @@
 
 [English](plugin-ui-providers.en-us.md) · [可信 UI SDK](plugin-ui.zh-cn.md)
 
+[文件浏览器提供者](plugin-file-browser.zh-cn.md) 还可以组合或替换实际文件列表。
+
 实验性 UI SDK 支持由用户显式选择主机列表和工作台的替代界面。为组件视图声明
 `provider: "hostList"` 或 `provider: "workbench"`，不设置 `location`，仍通过
 `context.views.register` 注册。每个包最多声明八个提供者视图。两种目标都要求可信

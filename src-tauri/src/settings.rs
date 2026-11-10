@@ -267,7 +267,7 @@ impl Settings {
     pub fn sanitize(&mut self) {
         self.host_list.sanitize();
         self.ui_providers.retain(|target, selection| {
-            matches!(target.as_str(), "hostList" | "workbench")
+            matches!(target.as_str(), "hostList" | "workbench" | "fileBrowser")
                 && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
                     !id.is_empty()
                         && id.len() <= 128
@@ -575,6 +575,7 @@ mod tests {
             "uiProviders": {
                 "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
                 "hostList": {"pluginId":"../invalid", "viewId":"hosts"},
+                "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
                 "credentials": {"pluginId":"custom-ui", "viewId":"secret"}
             }
         }))
@@ -584,7 +585,8 @@ mod tests {
         assert_eq!(
             saved["uiProviders"],
             serde_json::json!({
-                "workbench": {"pluginId":"custom-ui", "viewId":"desktop"}
+                "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
+                "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"}
             })
         );
         assert!(serde_json::from_value::<Settings>(serde_json::json!({

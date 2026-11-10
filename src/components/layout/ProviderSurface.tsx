@@ -1,4 +1,13 @@
-import { Component, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import {
+  Component,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { useSettings } from "@/store/settings";
@@ -10,6 +19,7 @@ import { selectedUiProvider } from "@/lib/extensions/providers";
 import type {
   FrontendProviderTarget,
   FrontendWorkbenchSlots,
+  FrontendFileBrowser,
 } from "@/lib/extensions/uiSdkContract";
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
@@ -42,6 +52,8 @@ export function ProviderSurface({
   subscribe,
   visible = true,
   keepFallback = false,
+  fileBrowser,
+  suspended = false,
 }: {
   target: FrontendProviderTarget;
   children: ReactNode;
@@ -50,6 +62,8 @@ export function ProviderSurface({
   subscribe?: (receive: () => void) => () => void;
   visible?: boolean;
   keepFallback?: boolean;
+  fileBrowser?: FrontendFileBrowser;
+  suspended?: boolean;
 }) {
   const { t } = useTranslation();
   const selections = useSettings((state) => state.settings.uiProviders);
@@ -67,6 +81,7 @@ export function ProviderSurface({
     error: unknown;
   } | null>(null);
   const available =
+    !suspended &&
     !security.restricted &&
     selected?.plugin.status === "running" &&
     (!isTauri() || hasPluginGrant(security, selected.plugin));
@@ -118,6 +133,69 @@ export function ProviderSurface({
     void useSettings.getState().update({ uiProviders: next });
   };
   const active = !!View;
+  const fileAccess = useRef<object | null>(null);
+  const accessLease = useMemo(
+    () => ({ identity, token, View, active }),
+    [identity, token, View, active],
+  );
+  useLayoutEffect(() => {
+    fileAccess.current = active ? accessLease : null;
+    return () => {
+      fileAccess.current = null;
+    };
+  }, [active, accessLease]);
+  const checkFileAccess = (mutation = true) => {
+    const current = selectedUiProvider(
+      usePlugins.getState().items,
+      useSettings.getState().settings.uiProviders,
+      target,
+    );
+    const policy = usePluginSecurity.getState().state;
+    if (
+      !active ||
+      (mutation && fileAccess.current !== accessLease) ||
+      !selected ||
+      policy.restricted ||
+      current?.plugin.id !== selected.plugin.id ||
+      current.view.id !== selected.view.id ||
+      current.plugin.fingerprint !== selected.plugin.fingerprint ||
+      current.plugin.status !== "running" ||
+      frontendRuntime.token(current.plugin.id) !== token ||
+      frontendRuntime.view(current.plugin.id, current.view.id, current.plugin.fingerprint) !==
+        View ||
+      (isTauri() && !hasPluginGrant(policy, current.plugin))
+    )
+      throw new Error("plugin.frontend.viewUnavailable");
+  };
+  const files: FrontendFileBrowser | undefined =
+    fileBrowser && active
+      ? // Callbacks defer all ref reads until invocation; Object.freeze does not invoke them.
+        // eslint-disable-next-line react-hooks/refs
+        Object.freeze<FrontendFileBrowser>({
+          Entries: fileBrowser.Entries,
+          snapshot: fileBrowser.snapshot,
+          read: (request) => {
+            checkFileAccess(false);
+            return fileBrowser.read(request);
+          },
+          navigate: (path) => {
+            checkFileAccess();
+            fileBrowser.navigate(path);
+          },
+          refresh: () => {
+            checkFileAccess();
+            fileBrowser.refresh();
+          },
+          select: (paths) => {
+            checkFileAccess();
+            fileBrowser.select(paths);
+          },
+          open: (path, mode) => {
+            checkFileAccess();
+            fileBrowser.open(path, mode);
+          },
+        })
+      : undefined;
   return (
     <>
       {selections?.[target] ? (
@@ -149,6 +227,7 @@ export function ProviderSurface({
               viewId={selected!.view.id}
               visible={visible}
               workbench={slots}
+              fileBrowser={files}
             />
           </ProviderBoundary>
         </div>
