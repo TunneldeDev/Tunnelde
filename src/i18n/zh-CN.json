@@ -1204,6 +1204,11 @@
     "consentRequired": "使用本机 Node 前需要你的授权。"
   },
   "plugin": {
+    "activation": {
+      "failed": "插件启动意外失败，请打开软件日志查看详情。",
+      "cleanupFailed": "无法确认插件启动清理已完成，请查看软件日志并重启软件后重试。",
+      "closed": "插件启动连接已关闭，请查看软件日志后重试。"
+    },
     "statusBar": {
       "invalidItem": "插件提供的状态栏项目无效。",
       "unknownCommand": "此插件的状态栏命令不可用。",

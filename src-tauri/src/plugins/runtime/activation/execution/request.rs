@@ -4,6 +4,17 @@ use crate::{
 };
 
 impl PluginsManager {
+    pub(super) async fn admit_package(
+        &self,
+        id: &str,
+        permit: &StartPermit,
+    ) -> AppResult<tokio::sync::RwLockReadGuard<'_, ()>> {
+        let lease = self.admitted_start(id, permit)?;
+        self.security
+            .guard(&lease, async { Ok(self.mutations.read().await) })
+            .await
+    }
+
     pub(super) async fn admit_start(
         &self,
         id: &str,

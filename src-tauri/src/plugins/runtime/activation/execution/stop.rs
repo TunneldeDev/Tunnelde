@@ -47,6 +47,7 @@ impl PluginsManager {
     }
 
     pub async fn stop_all_immediately(&self, app: &AppHandle) {
+        self.starts.cancel_all();
         let ids: Vec<_> = self.plugins.lock().await.keys().cloned().collect();
         for id in ids {
             let _ = self.stop_immediately(app, &id).await;

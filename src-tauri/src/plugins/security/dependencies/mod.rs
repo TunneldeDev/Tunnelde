@@ -24,6 +24,10 @@ pub(in crate::plugins) struct PendingRuntime {
 }
 
 impl PendingRuntime {
+    pub(in crate::plugins) fn owned(&self) -> bool {
+        self.lease.is_some()
+    }
+
     pub(in crate::plugins) fn commit(mut self) {
         self.lease = None;
     }

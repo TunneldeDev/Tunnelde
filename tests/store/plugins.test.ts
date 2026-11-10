@@ -70,6 +70,87 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("recovers failed and removed runtimes without repeatedly activating an obsolete module", async () => {
+    const ui = {
+      ...plugin,
+      status: "running" as const,
+      frontend: { entry: "ui.mjs", sdk: "^0.1.0" },
+    };
+    usePlugins.setState({ items: [ui, { ...ui, id: "removed" }] });
+    const failed = {
+      ...ui,
+      status: "failed" as const,
+      runtimeId: null,
+      error: "activation failed",
+    };
+    apiMock.pluginsList.mockResolvedValueOnce([failed]);
+    await usePlugins.getState().refreshActivation();
+    expect(usePlugins.getState().items).toEqual([failed]);
+  });
+
+  it("recovers an activation event while start is pending and reload waits for that start", async () => {
+    const ui = { ...plugin, frontend: { entry: "ui.mjs", sdk: "^0.1.0" } };
+    usePlugins.setState({ items: [ui] });
+    const started = deferred<PluginInfo>();
+    apiMock.pluginStart.mockReturnValueOnce(started.promise);
+    const starting = usePlugins.getState().start(ui.id);
+    await vi.waitFor(() => expect(apiMock.pluginStart).toHaveBeenCalledOnce());
+    const reloading = usePlugins.getState().reload();
+    const running = { ...ui, status: "running" as const };
+    apiMock.pluginsList.mockResolvedValueOnce([running]);
+    await usePlugins.getState().refreshActivation({ id: ui.id, runtimeId: "boot:1" });
+    expect(usePlugins.getState().items).toEqual([running]);
+    expect(apiMock.pluginReload).not.toHaveBeenCalled();
+    apiMock.pluginReload.mockResolvedValueOnce([running]);
+    started.resolve(running);
+    await starting;
+    await reloading;
+    expect(frontend.ensure).toHaveBeenCalledWith(running);
+  });
+
+  it.each(["failed", "replacement", "removed"])(
+    "does not overwrite a newer %s state with an activation snapshot",
+    async (change) => {
+      const snapshot = deferred<PluginInfo[]>();
+      apiMock.pluginsList.mockReturnValueOnce(snapshot.promise);
+      const pending = usePlugins
+        .getState()
+        .refreshActivation({ id: plugin.id, runtimeId: "boot:1" });
+      const current: PluginInfo = {
+        ...plugin,
+        status: change === "failed" ? "failed" : "running",
+        runtimeId: change === "replacement" ? "boot:2" : null,
+      };
+      if (change === "removed") {
+        apiMock.pluginUninstall.mockResolvedValueOnce(undefined);
+        await usePlugins.getState().uninstall(plugin.id);
+      } else usePlugins.getState().apply(current);
+      snapshot.resolve([
+        { ...plugin, status: "running", frontend: { entry: "ui.mjs", sdk: "^0.1.0" } },
+      ]);
+      await pending;
+      expect(usePlugins.getState().items).toEqual(change === "removed" ? [] : [current]);
+    },
+  );
+
+  it("only restores the exact requested running frontend and skips pending stops", async () => {
+    const ui = {
+      ...plugin,
+      status: "running" as const,
+      frontend: { entry: "ui.mjs", sdk: "^0.1.0" },
+    };
+    apiMock.pluginsList.mockResolvedValue([ui, { ...ui, id: "other" }]);
+    await usePlugins.getState().refreshActivation({ id: plugin.id, runtimeId: "boot:wrong" });
+    expect(usePlugins.getState().items).toEqual([plugin]);
+    const stopped = deferred<PluginInfo>();
+    apiMock.pluginStop.mockReturnValueOnce(stopped.promise);
+    const stopping = usePlugins.getState().stop(plugin.id);
+    await usePlugins.getState().refreshActivation({ id: plugin.id, runtimeId: "boot:1" });
+    expect(usePlugins.getState().items).toEqual([plugin]);
+    stopped.resolve(plugin);
+    await stopping;
+  });
+
   it("stops a command while consent is pending and never builds input after late approval", async () => {
     native.mockReturnValue(true);
     usePlugins.setState({ items: [{ ...plugin, status: "running" }] });

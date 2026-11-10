@@ -820,6 +820,7 @@ pub async fn plugin_start(
     let state = app.state::<AppState>();
     let result = state.plugins.start(&app, &id, &permit).await;
     if let Err(error) = &result {
+        let error = error.original();
         // Do not persist untrusted plugin output or user paths in diagnostic logs.
         let detail = error.to_string();
         let reason = detail.split(':').next().unwrap_or("");

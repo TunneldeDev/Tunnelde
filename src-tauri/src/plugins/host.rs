@@ -8,7 +8,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::Manager;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinSet;
 
@@ -101,7 +101,11 @@ impl PluginHost {
         let plugin_id = context.as_ref().map(|context| context.id.clone());
         tokio::spawn(read_loop(stdout, connection.clone(), context));
         if let Some(stderr) = stderr {
-            tokio::spawn(stderr_loop(stderr, plugin_id));
+            tokio::spawn(stderr_loop(
+                stderr,
+                plugin_id,
+                connection.closed.subscribe(),
+            ));
         }
 
         Ok(Self { child, connection })
@@ -123,6 +127,14 @@ impl PluginHost {
     pub fn kill(&mut self) {
         self.connection.close();
         let _ = self.child.start_kill();
+    }
+
+    pub(super) async fn terminate(&mut self) -> AppResult<()> {
+        self.kill();
+        tokio::time::timeout(Duration::from_secs(3), self.child.wait())
+            .await
+            .map_err(|_| AppError::validation("plugin.timeout"))??;
+        Ok(())
     }
 }
 
@@ -501,9 +513,21 @@ async fn write_reply(connection: &PluginConnection, reply: Value) -> AppResult<(
         .map_err(|_| AppError::validation("plugin.timeout"))?
 }
 
-async fn stderr_loop(stderr: ChildStderr, plugin_id: Option<String>) {
+async fn stderr_loop(
+    stderr: impl tokio::io::AsyncRead + Unpin,
+    plugin_id: Option<String>,
+    mut closed: tokio::sync::watch::Receiver<bool>,
+) {
     let mut reader = BufReader::new(stderr);
-    while let Ok(Some(line)) = read_limited_line(&mut reader, 16 * 1024, true).await {
+    loop {
+        let line = tokio::select! {
+            biased;
+            _ = closed.wait_for(|closed| *closed) => break,
+            line = read_limited_line(&mut reader, 16 * 1024, true) => line,
+        };
+        let Ok(Some(line)) = line else {
+            break;
+        };
         if !line.trim().is_empty() {
             tracing::warn!(target: "plugin", plugin_id = plugin_id.as_deref().unwrap_or("unknown"), message = %line, "plugin stderr");
         }
@@ -682,6 +706,38 @@ mod tests {
             child,
             connection: Arc::new(PluginConnection::new(Arc::new(Mutex::new(stdin)))),
         }
+    }
+
+    #[tokio::test]
+    async fn closed_connection_releases_stderr_even_when_an_inherited_writer_keeps_it_open() {
+        let (reader, _writer) = tokio::io::duplex(64);
+        let (closed, receiver) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(stderr_loop(reader, None, receiver));
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+        closed.send_replace(true);
+        tokio::time::timeout(Duration::from_millis(200), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn termination_confirms_child_exit_and_is_idempotent() {
+        let mut host = non_reading_host();
+        let connection = host.connection();
+        host.terminate().await.unwrap();
+        assert!(host.child.try_wait().unwrap().is_some());
+        assert!(*connection.closed.borrow());
+        host.terminate().await.unwrap();
+        assert_eq!(
+            connection
+                .request("after-exit", json!({}), Duration::from_secs(30))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "plugin.exited"
+        );
     }
 
     #[tokio::test]

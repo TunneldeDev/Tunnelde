@@ -40,7 +40,7 @@ use std::time::Duration;
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::error::{AppError, AppResult};
 use crate::plugins::host::PluginHost;
@@ -207,9 +207,10 @@ impl Instance {
 
 pub struct PluginsManager {
     runtime_app: std::sync::OnceLock<AppHandle>,
+    starts: Arc<runtime::activation::execution::coordination::Coordinator>,
     dir: PathBuf,
     plugins: Mutex<HashMap<String, Arc<Mutex<Instance>>>>,
-    mutations: Mutex<()>,
+    mutations: RwLock<()>,
     snapshots: std::sync::RwLock<HashMap<String, PluginInfo>>,
     runtime_sources: std::sync::RwLock<HashMap<String, (String, security::Lease)>>,
     pub(super) security: Arc<security::PluginSecurity>,
@@ -270,7 +271,7 @@ impl PluginsManager {
                 |retired| self.cleanup_policy_retirement(retired),
             );
         }
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         let info = self
             .snapshots
             .read()
@@ -373,9 +374,10 @@ impl PluginsManager {
         }
         Self {
             runtime_app: std::sync::OnceLock::new(),
+            starts: runtime::activation::execution::coordination::Coordinator::new(),
             dir,
             plugins: Mutex::new(plugins),
-            mutations: Mutex::new(()),
+            mutations: RwLock::new(()),
             snapshots: std::sync::RwLock::new(snapshots),
             runtime_sources: std::sync::RwLock::new(HashMap::new()),
             security: Arc::new(security::PluginSecurity::default()),
@@ -644,7 +646,7 @@ impl PluginsManager {
         source: &config::MarketSource,
         update: bool,
     ) -> AppResult<PluginInfo> {
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         let manifest = manifest::load(root)?;
         let target = self.dir.join(&manifest.id);
         let backup = self.dir.join(format!(".backup-{}", manifest.id));
@@ -695,9 +697,7 @@ impl PluginsManager {
         }
         if update {
             if let Some(old) = previous.as_mut() {
-                if let Some(mut host) = old.host.take() {
-                    host.kill();
-                }
+                old.terminate_host().await?;
                 old.wasm = None;
                 old.status = PluginStatus::Stopped;
                 old.error = None;
@@ -766,7 +766,7 @@ impl PluginsManager {
     }
 
     async fn install_from(&self, root: &Path) -> AppResult<PluginInfo> {
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         let manifest = manifest::load(root)?;
         let target = self.dir.join(&manifest.id);
         if target.exists() {
@@ -813,14 +813,12 @@ impl PluginsManager {
     }
 
     pub async fn uninstall(&self, id: &str) -> AppResult<()> {
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         self.invalidate_plugin(id);
         self.remember_source(id, None);
         let handle = self.instance(id).await?;
         let mut instance = handle.lock().await;
-        if let Some(mut host) = instance.host.take() {
-            host.kill();
-        }
+        instance.terminate_host().await?;
         instance.node_source = None;
         instance.wasm = None;
         instance.status = PluginStatus::Stopped;
@@ -834,19 +832,19 @@ impl PluginsManager {
     }
 
     pub async fn reload(&self) -> Vec<PluginInfo> {
-        let _mutation = self.mutations.lock().await;
+        self.starts.cancel_all();
+        let _mutation = self.mutations.write().await;
         self.security.invalidate_runtimes();
         self.runtime_sources
             .write()
             .unwrap_or_else(|error| error.into_inner())
             .clear();
-        let handles: Vec<_> = self.plugins.lock().await.values().cloned().collect();
-        for handle in handles {
-            let mut instance = handle.lock().await;
-            if let Some(mut host) = instance.host.take() {
-                host.kill();
-            }
-            instance.retired = true;
+        if let Err(error) = self.quiesce_catalogue().await {
+            tracing::error!(
+                error_code = error.code(),
+                "plugin reload retained engines with unconfirmed termination"
+            );
+            return self.list().await;
         }
         let fresh = Self::load(self.dir.clone());
         *self

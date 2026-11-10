@@ -1204,6 +1204,11 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "activation": {
+      "failed": "Plugin startup failed unexpectedly. Open the software log for details.",
+      "cleanupFailed": "Plugin startup cleanup could not be confirmed. Open the software log and restart the application before retrying.",
+      "closed": "The plugin startup connection closed. Check the software log and try again."
+    },
     "statusBar": {
       "invalidItem": "The plugin supplied an invalid status bar item.",
       "unknownCommand": "The plugin's status bar command is unavailable.",

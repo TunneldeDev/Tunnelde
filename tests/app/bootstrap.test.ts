@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   editorCleanupList: vi.fn(async () => []),
   hosts: [] as { id: string }[],
   events: {
+    onPluginActivation: vi.fn(),
     onSettingsChanged: vi.fn(),
     onUpdateState: vi.fn(),
     onNavigate: vi.fn(),
@@ -68,7 +69,14 @@ vi.mock("@/store/monitor", () => ({
 vi.mock("@/store/plugins", () => ({
   usePlugins: {
     subscribe: vi.fn(() => vi.fn()),
-    getState: () => ({ apply: vi.fn(), load: mocks.pluginLoad, start: mocks.pluginStart }),
+    getState: () => ({
+      items: [],
+      stoppingIds: [],
+      apply: vi.fn(),
+      load: mocks.pluginLoad,
+      refreshActivation: mocks.pluginLoad,
+      start: mocks.pluginStart,
+    }),
   },
 }));
 vi.mock("@/store/pluginSecurity", () => ({

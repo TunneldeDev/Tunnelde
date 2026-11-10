@@ -6,6 +6,7 @@ import type { PluginInfo, MarketEntry } from "@/lib/api/types";
 import { pluginFailure } from "@/lib/plugins/errors";
 import { toast } from "@/store/toasts";
 import { normalizeResult } from "@/lib/plugins/pluginView";
+import type { FrontendActivation } from "@/lib/plugins/activation/contracts";
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import i18n from "@/i18n/i18n";
 import {
@@ -44,6 +45,7 @@ interface PluginsStore {
   reloading: boolean;
   outputs: Record<string, PluginOutput>;
   load: () => Promise<void>;
+  refreshActivation: (request?: FrontendActivation) => Promise<void>;
   reload: () => Promise<void>;
   install: (path: string) => Promise<boolean>;
   apply: (info: PluginInfo) => void;
@@ -207,6 +209,41 @@ export const usePlugins = create<PluginsStore>((set, get) => {
       })),
 
     load: () => reloadRequest ?? readList(api.pluginsList),
+
+    refreshActivation: async (request) => {
+      // Activation cannot wait for reload: reload itself may be waiting for the
+      // starting operation. Ordinary list loads also preserve busy items, so a
+      // missed native state event needs this independent authoritative read.
+      const startedAt = revision;
+      const items = await api.pluginsList();
+      for (const plugin of items) {
+        if (
+          (request &&
+            (plugin.status !== "running" ||
+              !plugin.frontend ||
+              !plugin.runtimeId ||
+              plugin.id !== request.id ||
+              plugin.runtimeId !== request.runtimeId)) ||
+          (revisions.get(plugin.id) ?? 0) > startedAt ||
+          get().stoppingIds.includes(plugin.id)
+        )
+          continue;
+        const operation = operations.get(plugin.id);
+        if (operation && operation.kind !== "start") continue;
+        get().apply(plugin);
+      }
+      if (!request) {
+        const known = new Set(items.map((plugin) => plugin.id));
+        set((state) => ({
+          items: state.items.filter(
+            (plugin) =>
+              known.has(plugin.id) ||
+              (revisions.get(plugin.id) ?? 0) > startedAt ||
+              operations.has(plugin.id),
+          ),
+        }));
+      }
+    },
 
     reload: () => {
       if (reloadRequest) return reloadRequest;

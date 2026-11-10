@@ -2,7 +2,7 @@
 //! Planning never authorizes a plugin or starts an engine. Keep it internal until
 //! the executor checks complete approval, live leases, and frontend readiness.
 mod contracts;
-mod execution;
+pub(in crate::plugins) mod execution;
 pub use contracts::StartPermit;
 #[cfg(test)]
 mod graph;
