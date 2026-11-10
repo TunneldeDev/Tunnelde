@@ -108,6 +108,7 @@ describe("public UI contract boundaries", () => {
       "RuntimeResourceState",
       "RuntimeResourcesQuery",
       "RuntimeResourcesSnapshot",
+      "UiChildResourceOptions",
     ]);
     const widened: string[] = [];
     for (const [name, original] of before) {

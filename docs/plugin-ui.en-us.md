@@ -197,3 +197,43 @@ targets must handle unknown targets. Frozen historical fixtures remain unchanged
 checks allow only the documented additive exports and target-union widening.
 Trusted frontend modules share the host context and native bridge; these checks
 are not a sandbox for hostile JavaScript.
+
+## Composing UI resource lifetimes
+
+Check `extensions.describe().frontend.resourceScopes` or `context.resources.child`
+for the experimental child-scope capability. The optional member keeps older
+structural SDK implementations compatible. Create each panel or subscription scope
+inside a committed React effect, then dispose it in the effect cleanup:
+
+```js
+React.useEffect(() => {
+  const scope = context.resources.child?.({ limit: 8 });
+  if (!scope) return; // An older host needs the plugin's explicit fallback.
+  const timer = setInterval(() => { /* refresh this view */ }, 1000);
+  scope.use(() => clearInterval(timer));
+  return () => scope.dispose();
+}, []);
+```
+
+A child inherits module cancellation; disposing it closes its descendants without
+closing siblings. Moving or hiding a retained panel is different from unmounting:
+keep its scope until its effect actually closes. React development-mode effect
+replay creates a fresh scope; never reuse an aborted scope.
+
+Each open child consumes one parent reservation. Work and asynchronous cleanup in
+its descendants count against every ancestor, including after the child closes.
+`size` includes this entire subtree. Cancellation and deadlines reject promptly,
+but uncooperative work keeps its reservation until its result or failure settles;
+a late acquired resource is cleaned instead of delivered. Async cleanup retains
+the reservation until completion, including cleanup for an already supplied
+resource rejected over quota. Cleanup failures reach the module's software log.
+The module default is 128 reservations. Internal configured scopes allow at most
+4096; a child may only lower its local cap, never exceed its parent's cap. Maximum
+child depth is 32. A closed scope admits no new work.
+
+These are JavaScript lifetimes, separate from `resources.snapshot/release` native
+ownership and durable runner recovery. They grant no permissions, do not forcibly
+interrupt trusted code, and do not undo remote operations. Closing a UI scope
+alone does not stop a durable task or erase its recovery record. Use the explicit
+native lifecycle and recovery APIs for those operations. Asynchronous cleanup is
+observed, not a sequential transaction or a promise that process exit completed.
