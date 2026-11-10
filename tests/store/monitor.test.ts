@@ -79,6 +79,58 @@ describe("shared remote monitoring", () => {
     expect(remoteStats).toHaveBeenCalledTimes(3);
   });
 
+  it("retires late results when the last consumer leaves and never overlaps a replacement", async () => {
+    let finish!: (value: RemoteStats) => void;
+    remoteStats.mockReturnValueOnce(
+      new Promise<RemoteStats>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const old = subscribeRemoteMonitor("s1");
+    expect(useMonitor.getState().entries.s1?.loading).toBe(true);
+    old();
+    expect(useMonitor.getState().entries.s1?.loading).toBe(false);
+    releases.push(subscribeRemoteMonitor("s1"));
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(remoteStats).toHaveBeenCalledTimes(1);
+    finish(stats);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(remoteStats).toHaveBeenCalledTimes(2);
+    expect(useMonitorHistory.getState().samples.s1).toHaveLength(1);
+  });
+
+  it("does not start the replacement sample if its owner also leaves while waiting", async () => {
+    let finish!: (value: RemoteStats) => void;
+    remoteStats.mockReturnValueOnce(
+      new Promise<RemoteStats>((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const first = subscribeRemoteMonitor("s1");
+    first();
+    const second = subscribeRemoteMonitor("s1");
+    second();
+    finish(stats);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(remoteStats).toHaveBeenCalledOnce();
+    expect(useMonitorHistory.getState().samples.s1).toBeUndefined();
+  });
+
+  it("keeps shared sampling alive until every owner releases and preserves existing history", async () => {
+    const first = subscribeRemoteMonitor("s1");
+    const second = subscribeRemoteMonitor("s1");
+    releases.push(second);
+    await vi.advanceTimersByTimeAsync(0);
+    first();
+    first();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(remoteStats).toHaveBeenCalledTimes(2);
+    releases.pop()?.();
+    expect(useMonitorHistory.getState().samples.s1).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(remoteStats).toHaveBeenCalledTimes(2);
+  });
+
   it("pauses while the window is hidden and samples immediately on return", async () => {
     releases.push(subscribeRemoteMonitor("s1"));
     await vi.advanceTimersByTimeAsync(0);
