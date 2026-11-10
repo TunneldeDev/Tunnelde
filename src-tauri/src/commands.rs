@@ -111,111 +111,17 @@ pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
 
 #[tauri::command]
 pub fn settings_get(state: State<'_, AppState>) -> Settings {
-    state.settings()
+    crate::services::settings::read(&state)
 }
 
 #[tauri::command]
-pub fn settings_update(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    patch: Value,
-) -> AppResult<Settings> {
-    let previous = state.settings();
-    let mut base = serde_json::to_value(&previous)?;
-    let colors = patch.get("colors").cloned();
-    let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
-    let shortcut_rules = patch.get("shortcutRules").cloned();
-    let network = patch.get("network").cloned();
-    let ui_providers = patch.get("uiProviders").cloned();
-    merge_json(&mut base, patch);
-    if let Some(colors) = colors {
-        base["colors"] = colors;
-    }
-    if let Some(keyboard_shortcuts) = keyboard_shortcuts {
-        base["keyboardShortcuts"] = keyboard_shortcuts;
-    }
-    if let Some(shortcut_rules) = shortcut_rules {
-        base["shortcutRules"] = shortcut_rules;
-    }
-    if let Some(network) = network {
-        base["network"] = network;
-    }
-    // A selection map is a replacement. Deep-merging an empty map would retain
-    // the previous provider and undo the user's recovery after the save completes.
-    if let Some(ui_providers) = ui_providers {
-        base["uiProviders"] = ui_providers;
-    }
-    let mut next: Settings = serde_json::from_value(base)
-        .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;
-    next.sanitize();
-    next.network.validate()?;
-    update::validate_preferences(&next)?;
-    update::validate_settings_change(&previous, &next, &state.update.snapshot())?;
-
-    let title_bar_changed = next.title_bar_style != previous.title_bar_style;
-    if title_bar_changed {
-        crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
-    }
-    if let Err(error) = state.db.with(|conn| db::settings::save(conn, &next)) {
-        if title_bar_changed {
-            let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
-        }
-        return Err(error);
-    }
-    for profile in &previous.network.profiles {
-        if !next
-            .network
-            .profiles
-            .iter()
-            .any(|current| current.id == profile.id)
-        {
-            if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
-                tracing::warn!(%error, "could not remove deleted proxy credential");
-            }
-        }
-    }
-    state.set_settings(next.clone());
-    crate::plugins::forwarding::retire_selections(&app);
-    crate::platform::window::apply_theme(&app, &next.theme);
-    crate::platform::window::apply_background_dock_preference(&app);
-    let _ = app.emit("settings://changed", &next);
-    Ok(next)
+pub async fn settings_update(app: AppHandle, patch: Value) -> AppResult<Settings> {
+    crate::services::settings::update(&app, patch).await
 }
 
 #[tauri::command]
-pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<Settings> {
-    let previous = state.settings();
-    let mut next = Settings::default();
-    next.sanitize();
-    update::validate_settings_change(&previous, &next, &state.update.snapshot())?;
-    let title_bar_changed = next.title_bar_style != previous.title_bar_style;
-    if title_bar_changed {
-        crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
-    }
-    if let Err(error) = state.db.with(|conn| db::settings::save(conn, &next)) {
-        if title_bar_changed {
-            let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
-        }
-        return Err(error);
-    }
-    for profile in &previous.network.profiles {
-        if !next
-            .network
-            .profiles
-            .iter()
-            .any(|current| current.id == profile.id)
-        {
-            if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
-                tracing::warn!(%error, "could not remove deleted proxy credential");
-            }
-        }
-    }
-    state.set_settings(next.clone());
-    crate::plugins::forwarding::retire_selections(&app);
-    crate::platform::window::apply_theme(&app, &next.theme);
-    crate::platform::window::apply_background_dock_preference(&app);
-    let _ = app.emit("settings://changed", &next);
-    Ok(next)
+pub async fn settings_reset(app: AppHandle) -> AppResult<Settings> {
+    crate::services::settings::reset(&app).await
 }
 
 #[tauri::command]
@@ -1387,20 +1293,4 @@ pub fn app_open_data_dir(app: AppHandle) -> AppResult<()> {
     app.opener()
         .open_path(state.data_dir.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|error| AppError::Internal(error.to_string()))
-}
-
-fn merge_json(base: &mut Value, patch: Value) {
-    match (base, patch) {
-        (Value::Object(base_map), Value::Object(patch_map)) => {
-            for (key, value) in patch_map {
-                match base_map.get_mut(&key) {
-                    Some(slot) if slot.is_object() && value.is_object() => merge_json(slot, value),
-                    _ => {
-                        base_map.insert(key, value);
-                    }
-                }
-            }
-        }
-        (slot, value) => *slot = value,
-    }
 }

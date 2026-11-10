@@ -18,6 +18,8 @@ use crate::update::UpdateService;
 pub struct AppState {
     pub db: Database,
     pub settings: RwLock<Settings>,
+    /// Serializes read/validate/persist/publish for every settings writer.
+    pub(crate) settings_commit: tokio::sync::Mutex<()>,
     pub ui_provider_revision: AtomicU64,
     pub http_clients: crate::network::HttpClients,
     pub update: UpdateService,
@@ -45,7 +47,7 @@ impl AppState {
             .clone()
     }
 
-    pub fn set_settings(&self, next: Settings) {
+    pub(crate) fn set_settings(&self, next: Settings) {
         let mut guard = self
             .settings
             .write()
@@ -138,6 +140,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     app.manage(AppState {
         db: database,
         settings: RwLock::new(settings),
+        settings_commit: tokio::sync::Mutex::new(()),
         ui_provider_revision: AtomicU64::new(0),
         http_clients: Default::default(),
         update: UpdateService::new(version),
