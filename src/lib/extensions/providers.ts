@@ -1,5 +1,5 @@
 import type { PluginInfo, Settings } from "@/lib/api/types";
-import type { FrontendProviderTarget } from "./uiSdkContract";
+import type { FrontendProviderTarget } from "./contracts/frontend/providers";
 
 export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProviderTarget) {
   return [...plugins]

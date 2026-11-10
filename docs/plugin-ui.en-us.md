@@ -9,6 +9,25 @@ the host's public contract, not its stores or component source paths.
 
 Frontend commands can also contribute [host menu actions](plugin-host-menu.en-us.md).
 
+## Contract organization
+
+Public types live under `src/lib/extensions/contracts/<domain>/`. Runtime resources,
+components, search, frontend lifecycle, workbench, files, terminal and history own
+separate declarations. Implementations and private stores stay outside that tree.
+The existing `uiSdkContract.ts` entry only re-exports types for compatibility;
+internal consumers import their domain directly.
+
+The marketplace mirrors this dependency graph into `sdk/ui/<domain>/*.d.mts`.
+Existing `tunnelde-ui.mjs` type imports remain valid; domain imports such as
+`sdk/ui/terminal/surface.mjs` are also available. These are declaration imports,
+not new runtime modules: activation still receives the host's SDK instance.
+
+SDK synchronization checks every reachable public file and rejects private or
+runtime imports, cycles, unexported declarations and obsolete generated files.
+Historical type fixtures check the old entry and domain declarations in both
+assignment directions. This preserves the existing experimental 0.1.0 contract;
+it does not promote the UI SDK to stable or change RPC method names.
+
 ## Manifest and module
 
 A pure frontend plugin needs no Node runtime. Existing Node, WASM and declarative

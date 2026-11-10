@@ -8,7 +8,7 @@ import { api, isTauri } from "@/lib/api/ipc";
 import { workspaceRecords } from "@/store/workspace";
 import { uiProviders } from "@/lib/extensions/providers";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
-import type { FrontendProviderTarget } from "@/lib/extensions/uiSdkContract";
+import type { FrontendProviderTarget } from "@/lib/extensions/contracts/frontend/providers";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 

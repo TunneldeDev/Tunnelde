@@ -2,7 +2,7 @@ import type {
   FrontendHistory,
   FrontendHistoryEntry,
   FrontendHistorySnapshot,
-} from "./uiSdkContract";
+} from "./contracts/history/provider";
 
 export interface HistoryActions {
   /** Includes immediate session/host changes, before the next React commit. */

@@ -16,13 +16,11 @@ import { hasPluginGrant, usePluginSecurity } from "@/store/pluginSecurity";
 import { isTauri } from "@/lib/api/ipc";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { selectedUiProvider } from "@/lib/extensions/providers";
-import type {
-  FrontendProviderTarget,
-  FrontendWorkbenchSlots,
-  FrontendFileBrowser,
-  FrontendTerminal,
-  FrontendHistory,
-} from "@/lib/extensions/uiSdkContract";
+import type { FrontendProviderTarget } from "@/lib/extensions/contracts/frontend/providers";
+import type { FrontendWorkbenchSlots } from "@/lib/extensions/contracts/workbench/slots";
+import type { FrontendFileBrowser } from "@/lib/extensions/contracts/files/browser";
+import type { FrontendTerminal } from "@/lib/extensions/contracts/terminal/surface";
+import type { FrontendHistory } from "@/lib/extensions/contracts/history/provider";
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
 import type { HistoryContext } from "@/lib/extensions/history";
