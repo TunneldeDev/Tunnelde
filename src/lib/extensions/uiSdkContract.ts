@@ -11,3 +11,5 @@ export type * from "./contracts/files/browser.js";
 export type * from "./contracts/workbench/slots.js";
 export type * from "./contracts/frontend/providers.js";
 export type * from "./contracts/frontend/lifecycle.js";
+export type * from "./contracts/forwarding/entry.js";
+export type * from "./contracts/forwarding/provider.js";

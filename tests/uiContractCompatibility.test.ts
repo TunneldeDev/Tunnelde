@@ -40,7 +40,7 @@ describe("public UI contract boundaries", () => {
     expect(errors).toEqual([]);
   });
 
-  it("preserves every historical export and bidirectional type assignment", () => {
+  it("preserves historical exports with only the documented experimental target widening", () => {
     expect(
       createHash("sha256")
         .update(readFileSync(historical, "utf8").replaceAll("\r\n", "\n"))
@@ -48,12 +48,18 @@ describe("public UI contract boundaries", () => {
     ).toBe("5c3d4dd56cff9723724b6c43557a84459c8274783451c81c6e633f0e7a5e5339");
     const before = exportsOf(historical),
       after = exportsOf(entry);
-    expect([...after.keys()].sort()).toEqual([...before.keys()].sort());
+    expect([...after.keys()].filter((name) => !before.has(name)).sort()).toEqual([
+      "FrontendForwarding",
+      "FrontendForwardingEntry",
+      "FrontendForwardingSnapshot",
+    ]);
+    const widened: string[] = [];
     for (const [name, original] of before) {
       const current = after.get(name)!;
       expect(checker.isTypeAssignableTo(original, current), `${name}: old to new`).toBe(true);
-      expect(checker.isTypeAssignableTo(current, original), `${name}: new to old`).toBe(true);
+      if (!checker.isTypeAssignableTo(current, original)) widened.push(name);
     }
+    expect(widened.sort()).toEqual(["FrontendProviderContribution", "FrontendProviderTarget"]);
     const domains = new Map(files.flatMap((path) => [...exportsOf(path)]));
     expect([...domains.keys()].sort()).toEqual([...after.keys()].sort());
   });

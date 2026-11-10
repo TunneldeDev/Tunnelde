@@ -12,7 +12,7 @@ Frontend commands can also contribute [host menu actions](plugin-host-menu.en-us
 ## Contract organization
 
 Public types live under `src/lib/extensions/contracts/<domain>/`. Runtime resources,
-components, search, frontend lifecycle, workbench, files, terminal and history own
+components, search, frontend lifecycle, workbench, files, terminal, history and forwarding own
 separate declarations. Implementations and private stores stay outside that tree.
 The existing `uiSdkContract.ts` entry only re-exports types for compatibility;
 internal consumers import their domain directly.
@@ -24,9 +24,10 @@ not new runtime modules: activation still receives the host's SDK instance.
 
 SDK synchronization checks every reachable public file and rejects private or
 runtime imports, cycles, unexported declarations and obsolete generated files.
-Historical type fixtures check the old entry and domain declarations in both
-assignment directions. This preserves the existing experimental 0.1.0 contract;
-it does not promote the UI SDK to stable or change RPC method names.
+Historical type fixtures check old entry and domain declarations in both assignment
+directions, with explicit checks for additive experimental target-union widening.
+Historical fixtures remain unchanged. The UI SDK remains experimental 0.1.0;
+this does not promote it to stable or change RPC method names.
 
 ## Manifest and module
 
@@ -115,3 +116,44 @@ component views expose Refresh for recovery.
 The SDK also supports explicit [interface providers](plugin-ui-providers.en-us.md)
 for the host list and workbench presentation. The remaining domain services and
 dependency management are still under development.
+
+## Forwarding presentation providers
+
+Declare a component view with `provider: "forwarding"` and the permissions
+`ui.trusted`, `hosts.read`, and `forwards.read`. The user selects it in Settings.
+`props.forwarding` is scoped to the saved host selected by the native panel.
+Dynamic host sources must first be saved as an ordinary host. This experimental
+contract is exported from `contracts/forwarding/entry.ts` and `provider.ts`;
+private adapters live in `extensions/forwarding/`, and native presentation,
+state, actions and contracts remain in their forwarding feature directories.
+
+Read `snapshot`, then page with `read({ revision: snapshot.revision, offset })`.
+Pages contain at most 128 immutable rows and 65536 UTF-16 text units. A retained
+page stays readable; actions require the current host and revision. No SSH session
+IDs or mutable application stores are exposed. `runtimeId` identifies an active
+instance so an old Stop action cannot stop its replacement.
+
+`Entries` optionally mounts the original native rows once. Omitting it does not
+unmount the host controller or editor. Host selection, add/refresh controls,
+credential/host-key dialogs, exposure warnings, editor, confirmations and recovery
+remain host-owned. During editing the presentation stays mounted but hidden and
+receives `visible: false`. Use `capabilities.write` to decide whether to offer
+mutations; `forwards.write` is checked again at action, delayed confirmation,
+authentication completion and final native admission. Completion and errors are
+reported in subsequent snapshots; actions do not promise a remote transaction.
+
+`start`, `startAll`, `stop`, `requestAdd`, `requestEdit`, `requestRemove`, and
+`requestDisconnect` act on existing rows or open native controls. Plugins cannot
+inject arbitrary endpoints through these UI actions. Connections are independent
+background SSH acquisitions; unpublished connections are hidden from other panels
+and cleaned if their scope closes. Accepted connections and listeners survive a
+presentation switch but belong to the plugin runtime and close on its revocation.
+Saved rules remain persisted. Changing away and back does not revive old scopes.
+Prepared listeners cannot relay data before authorized commit.
+
+Existing stable RPC methods are unchanged. The new experimental provider target
+widens discovery and manifest target unions: old code that exhaustively enumerates
+targets must handle unknown targets. Frozen historical fixtures remain unchanged;
+checks allow only the documented additive exports and target-union widening.
+Trusted frontend modules share the host context and native bridge; these checks
+are not a sandbox for hostile JavaScript.

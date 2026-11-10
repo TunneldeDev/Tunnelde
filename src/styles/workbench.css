@@ -19,6 +19,7 @@
 .provider-recovery {
   display: flex;
   flex: 0 0 auto;
+  min-width: 0;
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
@@ -27,6 +28,8 @@
   font-size: 12px;
 }
 .provider-recovery > span {
+  flex: 1 1 0;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

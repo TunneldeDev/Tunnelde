@@ -30,6 +30,10 @@ import { guardFileBrowserProvider } from "@/lib/extensions/files/provider";
 import { guardTerminalProvider } from "@/lib/extensions/terminal/provider";
 import { guardHistoryProvider } from "@/lib/extensions/history/provider";
 
+import type { FrontendForwarding } from "@/lib/extensions/contracts/forwarding/provider";
+import type { ForwardingContext } from "@/lib/extensions/forwarding/context";
+import { useForwardingProvider } from "@/lib/extensions/forwarding/useProvider";
+
 class ProviderBoundary extends Component<
   {
     children: ReactNode;
@@ -61,6 +65,7 @@ export function ProviderSurface({
   fileBrowser,
   terminal,
   history,
+  forwarding,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -74,6 +79,7 @@ export function ProviderSurface({
   fileBrowser?: FrontendFileBrowser;
   terminal?: FrontendTerminal;
   history?: HistoryContext & Pick<FrontendHistory, "Entries">;
+  forwarding?: ForwardingContext & Pick<FrontendForwarding, "Entries">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -145,21 +151,32 @@ export function ProviderSurface({
     void useSettings.getState().update({ uiProviders: next });
   };
   const active = !!View;
+  const [selectionEpoch, setSelectionEpoch] = useState(0);
   const committedLease = useRef<object | null>(null);
   const accessLease = useMemo(
     () => createProviderLease(),
     // A context is owned by this exact provider generation and terminal bridge.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [identity, token, View, active, terminal],
+    [identity, token, View, active, terminal, forwarding?.snapshot.hostId, selectionEpoch],
   );
   useLayoutEffect(() => {
     accessLease.activate();
     committedLease.current = active ? accessLease : null;
+    // Retire synchronously even when A -> B -> A is batched into one React commit.
+    const unsubscribe = useSettings.subscribe((state, previous) => {
+      const next = state.settings.uiProviders?.[target];
+      const before = previous.settings.uiProviders?.[target];
+      if (next?.pluginId !== before?.pluginId || next?.viewId !== before?.viewId) {
+        accessLease.close();
+        setSelectionEpoch((epoch) => epoch + 1);
+      }
+    });
     return () => {
+      unsubscribe();
       committedLease.current = null;
       accessLease.close();
     };
-  }, [active, accessLease]);
+  }, [active, accessLease, target]);
   const checkAccess = (mutation = true) => {
     const current = selectedUiProvider(
       usePlugins.getState().items,
@@ -209,6 +226,15 @@ export function ProviderSurface({
         )
       : undefined;
   /* eslint-enable react-hooks/refs */
+  const forwardingContext = useForwardingProvider(
+    active ? forwarding : undefined,
+    token || undefined,
+    selected?.view.id,
+    selected?.plugin.id,
+    selected?.plugin.permissions.includes("forwards.write") ?? false,
+    checkAccess,
+    accessLease,
+  );
   return (
     <>
       {selections?.[target] ? (
@@ -243,6 +269,7 @@ export function ProviderSurface({
               fileBrowser={files}
               terminal={terminalContext}
               history={historyContext}
+              forwarding={forwardingContext}
             />
           </ProviderBoundary>
         </div>

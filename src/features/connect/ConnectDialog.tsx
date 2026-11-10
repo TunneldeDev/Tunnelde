@@ -34,8 +34,10 @@ interface ConnectDialogProps {
   intent?: "connect" | "installKey";
   initialError?: string;
   onClose: () => void;
-  onConnected?: (session: SshSession) => void;
   purpose?: "forwarding";
+  /** Optional exclusive host acquisition, with its own native lifetime. */
+  connectSession?: (request: SshConnectRequest) => Promise<SshSession>;
+  onConnected?: (session: SshSession) => void | Promise<void>;
 }
 
 export function ConnectDialog(props: ConnectDialogProps) {
@@ -59,6 +61,7 @@ function HostConnectDialog({
   onClose,
   onConnected,
   purpose,
+  connectSession,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
@@ -255,7 +258,17 @@ function HostConnectDialog({
     pending.current = true;
     setBusy(true);
     setError(null);
-    const session = await connect(
+    const acquire = connectSession
+      ? async (request: SshConnectRequest, onError: (error: unknown) => void) => {
+          try {
+            return await connectSession(request);
+          } catch (error) {
+            onError(error);
+            return null;
+          }
+        }
+      : connect;
+    const session = await acquire(
       {
         hostId: host.id,
         background: after === "background",
@@ -295,17 +308,20 @@ function HostConnectDialog({
         }
       }
     }
-    if (onConnected) {
-      if (alive.current) onConnected(session);
-    } else if (after === "sftp") {
-      openSftp(session);
-    } else if (after === "terminal") {
-      openTerminal(session);
-    }
-    pending.current = false;
-    if (alive.current) {
-      setBusy(false);
-      onClose();
+    try {
+      if (onConnected) {
+        if (alive.current) await onConnected(session);
+      } else if (after === "sftp") {
+        openSftp(session);
+      } else if (after === "terminal") {
+        openTerminal(session);
+      }
+      if (alive.current) onClose();
+    } catch (cause) {
+      if (alive.current) setError(translateError(cause));
+    } finally {
+      pending.current = false;
+      if (alive.current) setBusy(false);
     }
   };
 
