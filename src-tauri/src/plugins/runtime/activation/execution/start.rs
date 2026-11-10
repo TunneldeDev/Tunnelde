@@ -7,10 +7,13 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::error::{AppError, AppResult};
 use crate::plugins::{
     api, host::PluginHost, manifest, security, PluginInfo, PluginStatus, PluginsManager,
-    StartPermit, STATE_EVENT,
+    STATE_EVENT,
 };
 
-use super::preflight::{self, PreparedEngine};
+use super::{
+    execute::PreparedPackage,
+    preflight::{self, PreparedEngine},
+};
 
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -18,14 +21,15 @@ impl PluginsManager {
     pub(super) async fn start_engine(
         &self,
         app: &AppHandle,
-        id: &str,
-        permit: &StartPermit,
+        package: PreparedPackage,
         ownership: &AtomicBool,
     ) -> AppResult<PluginInfo> {
         // Readers preserve concurrent starts. A package mutation is exclusive
         // through engine initialization, but never through frontend activation.
         // Capture admission before waiting, so a queued start cannot borrow a
         // grant created by the mutation it waited for.
+        let id = &package.admission.lease.id;
+        let permit = &package.admission.permit;
         let _package = self.admit_package(id, permit).await?;
         let (lease, mut instance) = self.admit_start(id, permit).await?;
         if instance.retired {
@@ -33,16 +37,14 @@ impl PluginsManager {
         }
         let _ = self.runtime_app.set(app.clone());
         let state = app.state::<crate::state::AppState>();
-        let prepared = preflight::prepare(
-            &self.security,
-            &lease,
-            &instance,
-            &state.db,
-            state
-                .storage
-                .dir(crate::storage::layout::Category::Runtimes),
-        )
-        .await?;
+        self.security
+            .guard(
+                &lease,
+                preflight::revalidate_package(&instance.info(), &lease),
+            )
+            .await?;
+        instance.require_runtime()?;
+        let prepared = package.engine;
         if instance
             .runtime_lease
             .as_ref()
@@ -62,7 +64,11 @@ impl PluginsManager {
         let rollback_app = app.clone();
         let activation = self
             .security
-            .begin_runtime(&lease, &[], instance.manifest.frontend.is_some())?
+            .begin_runtime(
+                &lease,
+                &package.admission.required,
+                instance.manifest.frontend.is_some(),
+            )?
             .on_rollback(move |retired| {
                 rollback_app
                     .state::<crate::state::AppState>()
@@ -73,6 +79,14 @@ impl PluginsManager {
         instance.runtime_lease = Some(lease.clone());
         instance.runtime_id = Some(self.security.lease_stamp(&lease));
         self.security.mark_running(&state.db)?;
+
+        // Another caller may have completed this engine after graph preflight.
+        // Register the same dependency binding, then reuse its actual process.
+        if instance.host.is_some() {
+            self.security.native_ready(&lease)?;
+            activation.commit();
+            return Ok(instance.info());
+        }
 
         let runtime = match prepared {
             PreparedEngine::Passive => {
@@ -101,9 +115,7 @@ impl PluginsManager {
                 return Ok(info);
             }
             PreparedEngine::ExistingNode => {
-                self.security.native_ready(&lease)?;
-                activation.commit();
-                return Ok(instance.info());
+                return Err(AppError::validation("pluginSecurity.changed"));
             }
             PreparedEngine::Node(runtime) => runtime,
         };
@@ -151,7 +163,7 @@ impl PluginsManager {
                 instance.host.as_ref().unwrap().request(
                     "initialize",
                     json!({
-                        "apiVersion": manifest::API_VERSION,
+                        "apiVersion": instance.manifest.api_version,
                         "pluginId": instance.manifest.id,
                         "permissions": instance.manifest.permissions,
                         "hostApiVersion": 1,

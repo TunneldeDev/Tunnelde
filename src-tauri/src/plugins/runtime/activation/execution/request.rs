@@ -29,14 +29,6 @@ impl PluginsManager {
         Ok((lease, instance))
     }
 
-    pub fn prepare_start(&self, id: &str, expected_fingerprint: &str) -> AppResult<StartPermit> {
-        let lease = self.snapshot_start_lease(id, expected_fingerprint)?;
-        Ok(StartPermit {
-            fingerprint: lease.fingerprint.clone(),
-            stamp: self.security.lease_stamp(&lease),
-        })
-    }
-
     pub(super) fn admitted_start(&self, id: &str, permit: &StartPermit) -> AppResult<Lease> {
         let lease = self.snapshot_start_lease(id, &permit.fingerprint)?;
         if permit.stamp != self.security.lease_stamp(&lease) {

@@ -26,6 +26,17 @@ pub enum AppError {
     Shared(std::sync::Arc<AppError>),
     #[error("{0}")]
     Validation(String),
+    #[error("{reason}")]
+    PluginActivation {
+        reason: &'static str,
+        details: serde_json::Value,
+    },
+    #[error("{cause}")]
+    PluginActivationPackage {
+        plugin_id: String,
+        stage: &'static str,
+        cause: std::sync::Arc<AppError>,
+    },
     #[error("plugin.engine.unsupported")]
     PluginEngineUnsupported {
         plugin_id: String,
@@ -74,12 +85,24 @@ pub enum AppError {
 }
 
 impl AppError {
+    pub fn activation_package(&self) -> Option<(&str, &'static str)> {
+        match self {
+            Self::Shared(cause) => cause.activation_package(),
+            Self::PluginActivationPackage {
+                plugin_id, stage, ..
+            } => Some((plugin_id, stage)),
+            _ => None,
+        }
+    }
+
     pub fn original(&self) -> &Self {
         let mut error = self;
-        while let Self::Shared(cause) = error {
-            error = cause;
+        loop {
+            match error {
+                Self::Shared(cause) | Self::PluginActivationPackage { cause, .. } => error = cause,
+                _ => return error,
+            }
         }
-        error
     }
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
@@ -92,7 +115,9 @@ impl AppError {
     pub fn code(&self) -> &'static str {
         match self {
             Self::Shared(error) => error.code(),
+            Self::PluginActivationPackage { cause, .. } => cause.code(),
             Self::Validation(_)
+            | Self::PluginActivation { .. }
             | Self::PluginEngineUnsupported { .. }
             | Self::PluginUiSdkUnsupported { .. }
             | Self::BackupRecovery { .. }
@@ -145,9 +170,30 @@ impl Serialize for AppError {
         if let Self::Shared(error) = self {
             return error.serialize(serializer);
         }
+        if let Self::PluginActivationPackage {
+            plugin_id,
+            stage,
+            cause,
+        } = self
+        {
+            use serde::ser::Error;
+            let mut payload = serde_json::to_value(cause).map_err(S::Error::custom)?;
+            let details = payload
+                .as_object_mut()
+                .ok_or_else(|| S::Error::custom("invalid activation cause"))?
+                .entry("details")
+                .or_insert_with(|| serde_json::json!({}));
+            if !details.is_object() {
+                let original = details.take();
+                *details = serde_json::json!({"cause":original});
+            }
+            details["activation"] = serde_json::json!({"pluginId":plugin_id,"stage":stage});
+            return payload.serialize(serializer);
+        }
         let detailed = matches!(
             self,
             Self::PluginEngineUnsupported { .. }
+                | Self::PluginActivation { .. }
                 | Self::PluginUiSdkUnsupported { .. }
                 | Self::RemoteRename { .. }
                 | Self::UpdateRequest(_)
@@ -156,6 +202,9 @@ impl Serialize for AppError {
         let mut state = serializer.serialize_struct("AppError", if detailed { 3 } else { 2 })?;
         state.serialize_field("code", self.code())?;
         state.serialize_field("message", &self.to_string())?;
+        if let Self::PluginActivation { details, .. } = self {
+            state.serialize_field("details", details)?;
+        }
         if let Self::PluginUiSdkUnsupported {
             required,
             available,

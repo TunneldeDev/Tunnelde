@@ -270,6 +270,18 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
             <dd>{info.apiVersion}</dd>
           </div>
         ) : null}
+        {info.dependencies?.length ? (
+          <div>
+            <dt>{t("plugins.requiredDependencies")}</dt>
+            <dd>
+              {info.dependencies.map((dependency) => (
+                <div key={dependency.id}>
+                  {dependency.id} · {dependency.version}
+                </div>
+              ))}
+            </dd>
+          </div>
+        ) : null}
         {own ? (
           <div>
             <dt>{t("market.installedVersion")}</dt>

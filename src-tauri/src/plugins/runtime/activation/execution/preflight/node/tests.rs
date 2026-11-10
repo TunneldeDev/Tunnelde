@@ -1,6 +1,39 @@
 use super::*;
 use serde_json::json;
 
+#[tokio::test]
+#[ignore = "requires an explicitly selected TUNNELDE_TEST_NODE runtime"]
+async fn graph_node_selection_probes_once_and_checks_each_declared_range() {
+    let selected = std::env::var("TUNNELDE_TEST_NODE").expect("explicit test runtime required");
+    let db = Database::in_memory().unwrap();
+    let config = PluginConfig {
+        node_path: Some(selected),
+        ..PluginConfig::default()
+    };
+    db.with(|connection| config::save(connection, &config))
+        .unwrap();
+    let runtimes =
+        std::env::temp_dir().join(format!("tunnelde-node-plan-{}", uuid::Uuid::new_v4()));
+    let mut resolver = Resolver::new(&db, &runtimes);
+    let probes = node::probe_count_for_test();
+    let first = resolver.prepare(&manifest(Some(">=22"))).await.unwrap();
+    let second = resolver.prepare(&manifest(None)).await.unwrap();
+    assert_eq!(first.path(), second.path());
+    assert_eq!(first.source(), "explicit");
+    assert_eq!(node::probe_count_for_test(), probes + 1);
+    assert_eq!(
+        resolver
+            .prepare(&manifest(Some(">=999")))
+            .await
+            .err()
+            .unwrap()
+            .to_string(),
+        "node.incompatible"
+    );
+    assert_eq!(node::probe_count_for_test(), probes + 1);
+    assert!(!config.node_system_allowed);
+}
+
 fn manifest(range: Option<&str>) -> PluginManifest {
     serde_json::from_value(json!({
         "id":"sample", "name":"Sample", "version":"1.0.0", "apiVersion":1,

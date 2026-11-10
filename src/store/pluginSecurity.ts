@@ -1,5 +1,6 @@
 import { create } from "zustand";
-import type { PluginInfo, PluginSecurityState } from "@/lib/api/types";
+import type { PluginSecurityState } from "@/lib/api/types";
+import type { PluginApproval } from "@/lib/plugins/activation/contracts";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { pluginFailure } from "@/lib/plugins/errors";
@@ -15,7 +16,7 @@ const INITIAL: PluginSecurityState = {
   grants: {},
 };
 
-export function hasPluginGrant(state: PluginSecurityState, plugin: PluginInfo): boolean {
+export function hasPluginGrant(state: PluginSecurityState, plugin: PluginApproval): boolean {
   return (
     Object.prototype.hasOwnProperty.call(state.grants, plugin.id) &&
     plugin.permissions.every((permission) => state.grants[plugin.id]!.includes(permission))
@@ -28,13 +29,13 @@ interface SecurityStore {
   loading: boolean;
   busy: boolean;
   error: string | null;
-  prompts: PluginInfo[];
+  prompts: PluginApproval[];
   failure: string | null;
   recoveryPrompt: "startup" | "failure" | null;
   recoveryDismissed: boolean;
   load: (force?: boolean) => Promise<void>;
   apply: (state: PluginSecurityState) => void;
-  ensure: (plugin: PluginInfo, signal?: AbortSignal) => Promise<boolean>;
+  ensure: (plugin: PluginApproval, signal?: AbortSignal) => Promise<boolean>;
   approve: (id: string) => Promise<boolean>;
   deny: (id: string) => void;
   setRestricted: (enabled: boolean) => Promise<boolean>;
@@ -49,7 +50,7 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
   let mutation = false;
   let startupNotified = false;
   const failures = new Set<string>();
-  const requests = new Map<string, { plugin: PluginInfo; decision: ActivationDecision }>();
+  const requests = new Map<string, { plugin: PluginApproval; decision: ActivationDecision }>();
   const finish = (id: string, allowed: boolean) => {
     const request = requests.get(id);
     request?.decision.finish(allowed);
@@ -210,7 +211,7 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
   };
 });
 
-export const ensurePluginPermission = (plugin: PluginInfo, signal?: AbortSignal) =>
+export const ensurePluginPermission = (plugin: PluginApproval, signal?: AbortSignal) =>
   usePluginSecurity.getState().ensure(plugin, signal);
 
 function errorMessage(error: unknown): string {

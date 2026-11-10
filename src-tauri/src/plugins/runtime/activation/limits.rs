@@ -1,8 +1,9 @@
-#[cfg(test)]
 pub(in crate::plugins) const MAX_CATALOGUE: usize = 4096;
 pub(in crate::plugins) const MAX_DEPENDENCIES: usize = 16;
 pub(in crate::plugins) const MAX_PACKAGES: usize = 64;
 pub(in crate::plugins) const MAX_EDGES: usize = 256;
 pub(in crate::plugins) const MAX_DEPTH: usize = 32;
-#[cfg(test)]
 pub(in crate::plugins) const MAX_RANGE_BYTES: usize = 160;
+pub(in crate::plugins) const MAX_REQUESTS: usize = 16;
+pub(in crate::plugins) const MAX_BLOCKING_WORKERS: usize = 16;
+pub(in crate::plugins) const PREFLIGHT_TIMEOUT_MS: u64 = 60_000;

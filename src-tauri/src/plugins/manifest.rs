@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 pub const API_VERSION: u32 = 1;
+/// Required dependencies change admission semantics. Old v1-only hosts reject
+/// these packages instead of silently ignoring their required dependencies.
+pub const DEPENDENCY_API_VERSION: u32 = 2;
 pub const MANIFEST_FILE: &str = "tunnelde-plugin.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -144,6 +147,8 @@ pub struct PluginManifest {
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<super::PluginDependency>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_fields: Option<crate::services::host_fields::Schema>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -213,6 +218,16 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if !matches!(self.api_version, API_VERSION | DEPENDENCY_API_VERSION) {
+            return Err(AppError::validation("plugin.apiVersion.unsupported"));
+        }
+        if !self.dependencies.is_empty()
+            && (self.api_version != DEPENDENCY_API_VERSION
+                || self.runtime.as_deref() == Some("theme"))
+        {
+            return Err(AppError::validation("plugin.activation.declarationVersion"));
+        }
+        super::runtime::activation::validate_dependencies(&self.id, &self.dependencies)?;
         if let Some(configuration) = &self.configuration {
             configuration.validate()?;
         }
@@ -258,9 +273,6 @@ impl PluginManifest {
         }
         if self.name.trim().is_empty() {
             return Err(AppError::validation("plugin.name.required"));
-        }
-        if self.api_version != API_VERSION {
-            return Err(AppError::validation("plugin.apiVersion.unsupported"));
         }
         if normalized_version(&self.version).is_none() {
             return Err(AppError::validation("plugin.version.invalid"));

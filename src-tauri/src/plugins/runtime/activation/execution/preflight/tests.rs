@@ -1,5 +1,5 @@
 use super::*;
-use crate::plugins::{manifest, node, PluginStatus};
+use crate::plugins::{manifest, node, Instance, PluginStatus};
 use serde_json::json;
 use std::path::PathBuf;
 
@@ -70,9 +70,8 @@ impl Fixture {
         prepare(
             &self.security,
             &self.lease,
-            &self.instance,
-            &self.db,
-            &self.directory.join("runtimes"),
+            &self.instance.info(),
+            &mut Environment::new(&self.db, &self.directory.join("runtimes")),
         )
         .await
     }
@@ -231,14 +230,8 @@ async fn wasm_is_compiled_before_runtime_registration_and_failed_preparation_is_
 }
 
 #[tokio::test]
-async fn old_grant_and_retired_instance_are_rejected_before_any_runtime_preparation() {
-    let mut f = Fixture::new("declarative", json!({}));
-    f.instance.retired = true;
-    assert_eq!(
-        f.prepare().await.err().unwrap().to_string(),
-        "pluginSecurity.changed"
-    );
-    f.instance.retired = false;
+async fn old_grant_is_rejected_before_any_runtime_preparation() {
+    let f = Fixture::new("declarative", json!({}));
     f.security.retire_runtime("sample");
     assert_eq!(
         f.prepare().await.err().unwrap().to_string(),
@@ -307,9 +300,11 @@ async fn wasm_preparation_preserves_a_loaded_module_but_recompiles_a_retired_run
     let mut f = Fixture::new("wasm", json!({}));
     assert!(matches!(
         f.prepare().await.unwrap(),
-        PreparedEngine::Wasm(None)
+        PreparedEngine::Wasm(Some(_))
     ));
     f.instance.runtime_lease = Some(f.lease.clone());
+    f.instance.runtime_id = Some(f.security.lease_stamp(&f.lease));
+    f.instance.status = PluginStatus::Running;
     assert!(matches!(
         f.prepare().await.unwrap(),
         PreparedEngine::Wasm(None)

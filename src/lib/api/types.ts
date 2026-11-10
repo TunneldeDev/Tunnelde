@@ -507,6 +507,7 @@ export interface MarketEntry {
   readme?: string | null;
   runtime?: "node" | "wasm" | "theme" | "declarative" | "frontend" | null;
   apiVersion?: number | null;
+  dependencies?: Array<{ id: string; version: string }>;
   engines?: Record<string, string>;
   sourceId?: string;
 }
@@ -552,6 +553,8 @@ export interface PluginInfo {
   name: string;
   version: string;
   apiVersion: number;
+  /** Required installed runtime dependencies. Admission v2 rejects older hosts. */
+  dependencies?: Array<{ id: string; version: string }>;
   description: string | null;
   commands: PluginCommand[];
   views: PluginView[];

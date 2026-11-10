@@ -303,18 +303,33 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         async (signal, startedAt) => {
           const info = get().items.find((item) => item.id === id);
           if (info?.runtime === "theme") return null;
+          const plan = isTauri()
+            ? await api.pluginActivationPlan(id, info?.fingerprint ?? "")
+            : { root: id, packages: info ? [info] : [] };
+          if (signal.aborted) return null;
           if (isTauri() && info) {
             const { ensurePluginPermission } = await import("@/store/pluginSecurity");
-            if (signal.aborted || !(await ensurePluginPermission(info, signal))) return null;
+            for (const step of plan.packages) {
+              if (signal.aborted || !(await ensurePluginPermission(step, signal))) return null;
+            }
           }
           if (signal.aborted) return null;
           // Native admission captures the current grant before any further wait.
           // A stop invalidates it even if the later start IPC arrives out of order.
           const permit = isTauri()
-            ? await api.pluginPrepareStart(id, info?.fingerprint ?? "")
+            ? await api.pluginPrepareStart(
+                id,
+                info?.fingerprint ?? "",
+                plan.packages.map((step) => ({ id: step.id, fingerprint: step.fingerprint ?? "" })),
+              )
             : null;
           if (signal.aborted) return null;
-          if (isTauri() && !["wasm", "declarative", "frontend"].includes(info?.runtime ?? "node")) {
+          if (
+            isTauri() &&
+            plan.packages.some(
+              (step) => !["wasm", "declarative", "frontend"].includes(step.runtime ?? "node"),
+            )
+          ) {
             const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
             if (signal.aborted || !(await ensureNodeRuntime(signal))) return null;
           }

@@ -890,6 +890,7 @@
     "reviewChanges": "对比更改"
   },
   "plugins": {
+    "requiredDependencies": "必需插件",
     "search": "搜索插件",
     "installedTab": "已安装",
     "reload": "重新扫描",
@@ -1205,6 +1206,16 @@
   },
   "plugin": {
     "activation": {
+      "missingDependency": "缺少必需的插件，请检查依赖并安装后重试。",
+      "missingDependencyDetails": "未安装必需的插件“{{id}}”。请先安装再重试；本次未自动下载或启动依赖。",
+      "incompatibleDependency": "已安装的依赖插件不符合版本要求。",
+      "incompatibleDependencyDetails": "依赖插件“{{id}}”要求 {{required}}，当前安装的是 {{installed}}。请安装兼容版本后重试。",
+      "cycle": "插件之间存在循环依赖，无法一起启动。",
+      "cycleDetails": "插件循环依赖：{{chain}}。请更新相关插件后重试。",
+      "limit": "插件依赖图超出了支持的数量或深度。",
+      "invalidDependencies": "插件声明的运行依赖无效。",
+      "declarationVersion": "必需运行依赖要求清单 apiVersion 为 2，且插件具有可执行运行环境。",
+      "dependencyUnavailable": "必需的插件未能就绪。",
       "failed": "插件启动意外失败，请打开软件日志查看详情。",
       "cleanupFailed": "无法确认插件启动清理已完成，请查看软件日志并重启软件后重试。",
       "closed": "插件启动连接已关闭，请查看软件日志后重试。"
@@ -1810,6 +1821,7 @@
     "testUpdatesRoute": "软件更新当前线路"
   },
   "pluginErrors": {
+    "packageFailure": "{{pluginId}}：{{error}}",
     "hostVersionMismatch": "插件版本 {{pluginVersion}} 要求 Tunnelde {{required}}，当前软件为 {{hostVersion}}。请更新 Tunnelde 或安装兼容的插件版本。检查未通过，尚未启动运行环境。",
     "hostVersionUnsupported": "此插件不支持当前 Tunnelde 版本。请在插件详情中查看版本要求，再更新软件或安装兼容的插件版本。",
     "startFailed": "无法启动 {{name}}：{{error}}",

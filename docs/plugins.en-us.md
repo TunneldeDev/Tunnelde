@@ -6,6 +6,8 @@ Overview and compatibility: [English](plugins-overview.en-us.md) · [简体中�
 
 API compatibility and security: [English](plugin-api.en-us.md) · [简体中文](plugin-api.zh-cn.md).
 
+Required dependencies, approval and runtime readiness: [activation](plugin-activation.en-us.md).
+
 Editor command and formatter contributions:
 [English](editor-plugins.en-us.md) · [简体中文](editor-plugins.zh-cn.md).
 

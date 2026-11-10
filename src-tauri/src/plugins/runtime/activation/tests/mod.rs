@@ -2,6 +2,8 @@ use super::contracts::{Dependency, Package, PackageIdentity, Plan};
 
 mod bounds;
 mod declarations;
+mod discovery;
+mod manifest;
 mod resolution;
 mod snapshots;
 
