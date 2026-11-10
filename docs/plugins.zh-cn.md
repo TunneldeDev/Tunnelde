@@ -542,3 +542,13 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 [可信前端 UI SDK](plugin-ui.zh-cn.md)。
 
 内置主机表格支持运行时归属的[插件数据列](plugin-host-columns.zh-cn.md)，用户可控制显隐、宽度、顺序和排序。
+
+## 动态主机来源（实验性）
+
+拥有 `hosts.read` 与 `hosts.write` 的插件可通过 `hosts.setSource({ id, label, entries })` 发布运行实例所属的发现清单，通过 `hosts.removeSource({ id })` 移除。条目包含来源内唯一的 `id`、`name`、`host`、`username`，以及可选的 `port`（默认 22）、`tags` 和 `note`。接口拒绝凭据和私钥路径。每个来源最多 256 条；每个插件最多 8 个来源、512 条；全局最多 128 个来源、4096 条及 4 MiB 来源 JSON。每次替换也须符合共享的 256 KiB 请求上限。替换是原子的，验证失败会保留上一份清单。
+
+内置主机列表按来源分组，并标明提供插件。支持 `@is:discovered`、`@is:saved`、`@source:来源ID` 和 `@plugin:插件ID`；无 `@` 的字段仍是普通搜索文字。来源主机使用统一的连接弹窗、连接质量测试与主机密钥信任流程。密码仅用于本次连接。“另存为我的主机”会创建独立副本，用于配置私钥、记住凭据、扩展字段和持久转发规则；修改或删除副本不会修改来源清单。
+
+`hosts.sourcesSnapshot({ offset?, revision? })` 返回 `{ revision, total, nextOffset, items }`，每页至多一个来源。首次传 `{}`；后续将 `nextOffset` 作为 `offset` 并携带原 `revision`。收到 `plugin.hostSources.changed` 时从头读取；分页不预留资源，也不冻结快照。来源包含 `pluginId`、`pluginName`、`id`、`label` 和 `entries`；每条记录还包含宿主生成的 `hostId`。此接口独立于仍只返回已保存主机的 `hosts.snapshot`。
+
+可将返回的 `hostId` 用于 `sessions.connect` 或 `workspace.openHost`。ID 绑定插件身份、来源 ID 和完整条目（包括连接目标）。条目任意信息变化都会改变 ID，因此旧弹窗会失败，不会连接被替换的目标；建立过程中来源消失也会拒绝本次连接。用户已建立的连接继续保留。插件创建的连接仍遵守运行实例／客户端所有权与显式交接规则。插件停止、崩溃、重启、撤权及进入受限模式会移除其来源，不会隐式持久化发现记录，也不会删除用户保存的副本或已信任的服务器密钥。

@@ -499,6 +499,9 @@ async fn authenticate(
         _ => {
             let password = match request.password.clone().filter(|value| !value.is_empty()) {
                 Some(password) => password,
+                None if host.id.starts_with(crate::plugins::host_sources::PREFIX) => {
+                    return Err(AppError::Ssh("ssh.passwordRequired".into()));
+                }
                 None => crate::vault::load(&host.id)?
                     .ok_or_else(|| AppError::Ssh("ssh.passwordRequired".into()))?,
             };
@@ -671,10 +674,7 @@ pub async fn probe_route(
     host_id: &str,
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let host = app
-        .state::<AppState>()
-        .db
-        .with(|conn| db::hosts::find_host(conn, host_id))?;
+    let host = crate::services::hosts::resolve(app, host_id)?;
     probe_host(app, &host, &credentials).await
 }
 
@@ -794,16 +794,14 @@ pub async fn trust_route(
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
     let state = app.state::<AppState>();
-    let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
+    let host = crate::services::hosts::resolve(app, host_id)?;
     let info = probe_host(app, &host, &credentials).await?;
     // Record only the key the user actually reviewed, never a newly observed key.
     if info.fingerprint != fingerprint || info.host_id != expected_host_id.unwrap_or(host_id) {
         return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
     }
 
-    let approved = state
-        .db
-        .with(|conn| db::hosts::find_host(conn, &info.host_id))?;
+    let approved = crate::services::hosts::resolve(app, &info.host_id)?;
     state.db.with(|conn| {
         db::known_hosts::upsert(
             conn,
@@ -840,9 +838,7 @@ async fn connect_for_auth(
     password_auth: bool,
 ) -> AppResult<SessionInfo> {
     let state = app.state::<AppState>();
-    let mut host = state
-        .db
-        .with(|conn| db::hosts::find_host(conn, &request.host_id))?;
+    let mut host = crate::services::hosts::resolve(&app, &request.host_id)?;
     if password_auth {
         host.auth_method = "password".into();
     }
@@ -885,6 +881,11 @@ async fn connect_for_auth(
         },
     };
 
+    // A withdrawn or changed source cannot finish a pending connection.
+    // PendingRoute still owns and closes every transport if resolution fails.
+    if host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+        crate::services::hosts::resolve(&app, &host.id)?;
+    }
     let (handle, jumps) = pending.release();
     let shared_handle = Arc::new(handle);
     let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);

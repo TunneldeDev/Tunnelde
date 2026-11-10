@@ -81,6 +81,36 @@ beforeEach(() => {
 });
 
 describe("ConnectDialog", () => {
+  it("connects discovered hosts with user credentials and never offers implicit vault persistence", async () => {
+    const discovered: Host = {
+      ...host,
+      id: "source:digest",
+      source: {
+        pluginId: "inventory",
+        pluginName: "Inventory",
+        id: "cloud",
+        label: "Cloud",
+        entryId: "one",
+      },
+    };
+    connect.mockResolvedValue({ id: "connection", hostId: discovered.id, terminal: true });
+    const close = vi.fn();
+    render(<ConnectDialog host={discovered} onClose={close} />);
+    await screen.findByText("Trusted");
+    expect(apiMock.credentialStatus).not.toHaveBeenCalled();
+    expect(screen.queryByRole("switch", { name: /remember/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /install key/i })).toBeNull();
+    const password = screen.getByLabelText("Password");
+    fireEvent.change(password, { target: { value: "user-entered-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await waitFor(() => expect(close).toHaveBeenCalledOnce());
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({ hostId: discovered.id, password: "user-entered-secret" }),
+      expect.any(Function),
+    );
+    expect(apiMock.credentialSave).not.toHaveBeenCalled();
+    expect(apiMock.sshInstallKey).not.toHaveBeenCalled();
+  });
   it("connects forwarding in the background without opening a terminal or file tab", async () => {
     apiMock.credentialStatus.mockResolvedValue(true);
     connect.mockResolvedValue({ id: "background", hostId: host.id, terminal: false });

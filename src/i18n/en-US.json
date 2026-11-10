@@ -1267,6 +1267,12 @@
       "missingWorkspace": "The workbench provider did not keep its workspace mounted. The built-in interface has been restored.",
       "duplicateSurface": "The workbench provider mounted a host surface more than once.",
       "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API."
+    },
+    "hostSources": {
+      "invalid": "The plugin supplied an invalid host source. Check entry IDs, addresses, usernames and size limits. Credentials and private-key paths are not accepted.",
+      "limit": "The active host sources exceed their source, entry or storage limits.",
+      "unavailable": "This discovered host is no longer available or its details changed. Refresh the host list and reopen the connection.",
+      "changed": "The host source list changed while reading it. Restart from the first page."
     }
   },
   "themes": {
@@ -2068,5 +2074,12 @@
     "moveHint": "Click to sort; drag to reorder. Alt+Left/Right moves this column.",
     "resize": "Resize {{name}} column",
     "settingsHint": "Choose a view here; use the column menu in the host panel to show columns, drag headers to reorder, and drag dividers to resize."
+  },
+  "hostSources": {
+    "discovered": "Discovered hosts",
+    "source": "Host source",
+    "saveCopy": "Save as my host",
+    "connectionHint": "This host is supplied by a plugin. Sign in for this connection, or save a copy to configure a private key and remember credentials.",
+    "configureHint": "Save a copy of this discovered host to configure persistent forwarding rules, private keys and host settings."
   }
 }

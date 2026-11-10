@@ -74,6 +74,34 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("shows source identity and provides connection and save-copy actions without saved-host mutations", () => {
+    const discovered: Host = {
+      ...host("source:digest", "Dynamic node", 0),
+      source: {
+        pluginId: "inventory",
+        pluginName: "Inventory",
+        id: "cloud",
+        label: "Cloud nodes",
+        entryId: "one",
+      },
+    };
+    useHosts.getState().setSourceHosts([discovered]);
+    render(
+      <>
+        <HostTree />
+        <ContextMenuHost />
+      </>,
+    );
+    expect(screen.getByText("Cloud nodes · Inventory")).toBeTruthy();
+    const row = document.querySelector('[data-host-id="source:digest"]')!;
+    expect(row.getAttribute("draggable")).toBe("false");
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: "Save as my host" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Connect" }));
+    expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(discovered, "terminal");
+  });
   it("renders typed plugin table cells, follows sorting with keyboard navigation and keeps the same host actions", async () => {
     const preferences = defaultHostListPreferences();
     preferences.view = "table";

@@ -40,6 +40,7 @@ import {
 } from "@/lib/hosts/columns";
 import { matchesHostQuery, parseHostQuery } from "@/lib/hosts/query";
 import { HostListViewMenu, HostTableHeader } from "./HostTable";
+import { savedHostInput } from "@/lib/hosts/sources";
 import { hostMenuCommands, runHostMenuCommand } from "@/lib/plugins/hostMenu";
 import type { PluginContextCommand } from "@/lib/plugins/contextCommand";
 import {
@@ -97,6 +98,7 @@ function HostRow({
   const confirm = useDialogs((state) => state.confirm);
   const toggleFavorite = useHosts((state) => state.toggleFavorite);
   const deleteHost = useHosts((state) => state.deleteHost);
+  const createHost = useHosts((state) => state.createHost);
   const moveHost = useHosts((state) => state.moveHost);
   const removeHostTab = useWorkspace((state) => state.removeHost);
   const openMenu = useContextMenu((state) => state.open);
@@ -146,7 +148,7 @@ function HostRow({
     "--",
     quote(host.host),
   ].join(" ");
-  const menuItems = [
+  const builtinItems = [
     { label: t("host.open"), onSelect: () => openHost(host) },
     { label: t("terminal.connect"), onSelect: () => openConnect(host, "terminal") },
     { label: t("sftp.title"), onSelect: () => openConnect(host, "sftp") },
@@ -195,6 +197,38 @@ function HostRow({
       onSelect: removeHost,
     },
   ];
+
+  const menuItems = host.source
+    ? [
+        { label: t("host.open"), onSelect: () => openHost(host) },
+        { label: t("terminal.connect"), onSelect: () => openConnect(host, "terminal") },
+        { label: t("sftp.title"), onSelect: () => openConnect(host, "sftp") },
+        {
+          label: t("hostSources.saveCopy"),
+          separatorBefore: true,
+          onSelect: () =>
+            void createHost(savedHostInput(host)).then((copy) => {
+              if (copy) openHost(copy);
+            }),
+        },
+        { label: t("menu.copySsh"), onSelect: () => copyText(command) },
+        { label: t("menu.copyAddress"), onSelect: () => copyText(address) },
+        ...pluginCommands.map((command) => ({
+          label: command.title,
+          description: command.pluginName,
+          separatorBefore: command.first,
+          onSelect: () => void runHostMenuCommand(command, host),
+        })),
+      ]
+    : builtinItems;
+  const sourceBadge = host.source ? (
+    <span
+      className="host-decoration__badge"
+      title={`${host.source.pluginName} · ${host.source.label}`}
+    >
+      {host.source.label}
+    </span>
+  ) : null;
 
   return (
     <div
@@ -295,6 +329,7 @@ function HostRow({
                 <HostDecorationIcon items={decorations} />
                 <span className="host-row__name">{host.name}</span>
                 <HostDecorationBadges items={decorations} />
+                {sourceBadge}
                 {connecting ? (
                   <LoaderCircle
                     size={13}
@@ -336,6 +371,7 @@ function HostRow({
               <HostDecorationIcon items={decorations} />
               <span className="host-row__name">{host.name}</span>
               <HostDecorationBadges items={decorations} />
+              {sourceBadge}
             </span>
             <span className="host-row__meta">
               {hostSubtitle(host.username, host.host, host.port)}
@@ -373,6 +409,7 @@ interface GroupRowProps {
   onDelete: () => void;
   canReorder: boolean;
   onDropHost: (id: string) => void;
+  readOnly?: boolean;
 }
 
 function GroupRow({
@@ -386,6 +423,7 @@ function GroupRow({
   onDelete,
   canReorder,
   onDropHost,
+  readOnly = false,
 }: GroupRowProps) {
   const { t } = useTranslation();
   const openMenu = useContextMenu((state) => state.open);
@@ -427,7 +465,7 @@ function GroupRow({
       onContextMenu={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        openMenu(event.clientX, event.clientY, actions, event.currentTarget);
+        if (!readOnly) openMenu(event.clientX, event.clientY, actions, event.currentTarget);
       }}
       role="button"
       tabIndex={0}
@@ -450,9 +488,11 @@ function GroupRow({
       <FolderClosed size={13} className="group-row__icon" />
       <span className="group-row__name">{group.name}</span>
       <span className="group-row__count">{count}</span>
-      <span className="group-row__actions">
-        <Menu label={t("common.more")} items={actions} />
-      </span>
+      {!readOnly && (
+        <span className="group-row__actions">
+          <Menu label={t("common.more")} items={actions} />
+        </span>
+      )}
     </div>
   );
 }
@@ -612,7 +652,7 @@ export function HostTree() {
 
   const rowProps = (host: Host) => ({
     focused: focusId === host.id,
-    canReorder,
+    canReorder: canReorder && !host.source,
     pluginCommands,
     onFocusRow: () => {
       setFocusId(host.id);
@@ -623,6 +663,7 @@ export function HostTree() {
   const renderGroup = (
     { group, hosts: members, children, count }: HostGroupNode,
     depth = 0,
+    readOnly = false,
   ): React.ReactNode => {
     const isCollapsed = searching
       ? searchCollapse.query === query && searchCollapse.ids.has(group.id)
@@ -636,7 +677,8 @@ export function HostTree() {
           collapsed={isCollapsed}
           onToggle={() => toggle(group.id)}
           onNewHost={() => openHostDialog(null, group.id)}
-          canReorder={canReorder}
+          canReorder={canReorder && !readOnly}
+          readOnly={readOnly}
           onDropHost={(id) => moveToGroup(id, group.id)}
           onRename={() => openGroupDialog(group)}
           onDelete={() =>
@@ -784,6 +826,11 @@ export function HostTree() {
               </section>
             ) : null}
 
+            {tree.sources.map((node) => (
+              <section className="tree-section" key={node.group.id}>
+                {renderGroup(node, 0, true)}
+              </section>
+            ))}
             {tree.groups.map((node) => (
               <section className="tree-section" key={node.group.id}>
                 {renderGroup(node)}

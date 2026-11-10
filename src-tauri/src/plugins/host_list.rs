@@ -187,6 +187,12 @@ pub(super) fn call(context: &HostContext, method: &str, params: Value) -> AppRes
             .with(crate::db::hosts::list_hosts)?
             .into_iter()
             .map(|host| host.id)
+            .chain(
+                super::host_sources::plugin_host_sources_snapshot(context.app.clone())
+                    .items
+                    .into_iter()
+                    .flat_map(|source| source.entries.into_iter().map(|entry| entry.host_id)),
+            )
             .collect::<HashSet<_>>()
     } else {
         HashSet::new()

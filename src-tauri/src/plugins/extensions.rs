@@ -113,6 +113,15 @@ mod tests {
                 continue;
             }
             assert_eq!(point["ownership"], "runtime");
+            if point["id"] == "hosts.sources" {
+                let read = METHODS
+                    .iter()
+                    .find(|method| method.name == point["registration"]["read"].as_str().unwrap())
+                    .unwrap();
+                assert_eq!(read.permissions, ["hosts.read"]);
+                assert_eq!(point["identity"], "owner-source-content-sha256");
+                assert_eq!(point["limits"]["entriesTotal"], 4096);
+            }
             for action in ["set", "remove"] {
                 let name = point["registration"][action].as_str().unwrap();
                 let method = METHODS
