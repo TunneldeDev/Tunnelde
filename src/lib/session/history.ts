@@ -3,6 +3,9 @@ import { api } from "@/lib/api/ipc";
 import { useSettings } from "@/store/settings";
 
 export function notifyHistoryChanged(hostId: string) {
+  // Native and plugin mutations share the committed domain event. Browser-only
+  // integrations retain the existing local notification without duplicating IPC refreshes.
+  if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) return;
   domainEvents.historyChanged(hostId);
 }
 
