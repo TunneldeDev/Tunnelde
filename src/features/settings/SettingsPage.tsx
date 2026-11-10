@@ -55,9 +55,18 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
   const reset = useSettings((state) => state.reset);
   const confirm = useDialogs((state) => state.confirm);
   const section = useNavigation((state) => state.settingsSection);
+  const settingsRequest = useNavigation((state) => state.settingsRequest);
   const selectSection = useNavigation((state) => state.selectSettings);
   const [query, setQuery] = useViewState("settings:query", "");
   const [modifiedOnly, setModifiedOnly] = useViewState("settings:modified", false);
+  useLayoutEffect(() => {
+    // Explicit navigation must reveal its destination, including repeat requests
+    // for the current category. Merely switching tabs preserves the search.
+    if (settingsRequest > 0) {
+      setQuery("");
+      setModifiedOnly(false);
+    }
+  }, [settingsRequest, setQuery, setModifiedOnly]);
   const shortcutRequest = useShortcutConflicts((state) => state.request);
   useLayoutEffect(() => {
     if (shortcutRequest > 0) {
@@ -71,7 +80,7 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
   const settingsId = useId();
   useLayoutEffect(() => {
     if (body.current) body.current.scrollTop = 0;
-  }, [section, query, modifiedOnly]);
+  }, [section, query, modifiedOnly, settingsRequest]);
   const clearNumberDrafts = (keys: readonly string[]) =>
     setResetVersions((previous) => {
       const next = { ...previous };

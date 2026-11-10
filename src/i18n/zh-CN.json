@@ -473,6 +473,7 @@
     "configureProxy": "配置应用更新代理",
     "showLogs": "打开输出日志",
     "viewDiagnostics": "查看更新详情",
+    "sourcesUnavailableNotification": "暂时无法检查更新，请查看详情了解失败原因和处理方式。",
     "platformUnavailable": "更新清单中没有适用于当前系统与架构的安装包。"
   },
   "about": {
