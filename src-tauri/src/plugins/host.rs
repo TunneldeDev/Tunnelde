@@ -396,6 +396,14 @@ async fn read_loop(
     // otherwise complete just after cleanup and leave a crashed plugin's item.
     while requests.join_next().await.is_some() {}
     if let Some(context) = &context {
+        let state = context.app.state::<crate::state::AppState>();
+        let retired = state.plugins.security.retire_lease(&Lease {
+            id: context.id.clone(),
+            fingerprint: context.fingerprint.clone(),
+            permissions: context.permissions.clone(),
+            generation: context.generation,
+        });
+        state.plugins.cleanup_retired(&context.app, retired);
         super::contributions::remove_runtime(&context.app, &context.id, |generation| {
             generation == context.generation
         });

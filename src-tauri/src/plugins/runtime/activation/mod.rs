@@ -6,8 +6,7 @@ mod contracts;
 mod execution;
 #[cfg(test)]
 mod graph;
-#[cfg(test)]
-mod limits;
+pub(in crate::plugins) mod limits;
 #[cfg(test)]
 use limits::*;
 

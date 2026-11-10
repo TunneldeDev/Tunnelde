@@ -10,7 +10,7 @@ use tauri::{http, AppHandle, Manager, State};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use super::api::HostContext;
-use super::security::{FrontendSnapshot, Lease, PluginSecurity};
+use super::security::{FrontendSnapshot, Lease, PluginSecurity, RuntimeRetirement};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
@@ -100,6 +100,7 @@ impl Registry {
         lease: Lease,
         snapshot: FrontendSnapshot,
         valid: impl Fn(&Lease) -> AppResult<()>,
+        opened: impl FnOnce(&Lease, &str) -> AppResult<()>,
     ) -> AppResult<(String, Vec<String>)> {
         let mut modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
         valid(&lease)?;
@@ -116,8 +117,9 @@ impl Registry {
         {
             return Err(AppError::validation("plugin.frontend.busy"));
         }
-        modules.retain(|_, item| item.lease.id != lease.id);
         let token = uuid::Uuid::new_v4().to_string();
+        opened(&lease, &token)?;
+        modules.retain(|_, item| item.lease.id != lease.id);
         modules.insert(
             token.clone(),
             Module {
@@ -163,11 +165,28 @@ impl Registry {
             .retain(|_, item| item.lease.id != owner || !generation(item.lease.generation));
     }
 
-    pub fn clear(&self) {
-        self.modules
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .clear();
+    fn drain(
+        &self,
+        mut closed: impl FnMut(&Lease, &str) -> Vec<RuntimeRetirement>,
+    ) -> (Vec<String>, Vec<RuntimeRetirement>) {
+        let mut modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
+        let mut tokens = Vec::with_capacity(modules.len());
+        let mut retired = Vec::new();
+        for (token, module) in modules.drain() {
+            retired.extend(closed(&module.lease, &token));
+            tokens.push(token);
+        }
+        (tokens, retired)
+    }
+
+    pub fn clear(&self, app: &AppHandle) {
+        let state = app.state::<AppState>();
+        let (tokens, retired) =
+            self.drain(|lease, token| state.plugins.security.frontend_closed(lease, token));
+        state.plugins.cleanup_retired(app, retired);
+        for token in tokens {
+            super::forwarding::remove_token(app, &token);
+        }
     }
 
     /// Reserve before spawning or allocating a response. The protocol callback
@@ -207,11 +226,7 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
         .clone()
         .ok_or_else(|| AppError::validation("plugin.frontend.unavailable"))?;
     frontend.require_sdk()?;
-    let lease = state.plugins.security.lease(
-        &id,
-        instance.fingerprint.clone(),
-        instance.manifest.permissions.clone(),
-    )?;
+    let lease = instance.running_lease(&state.plugins.security)?;
     authorized(&state.plugins.security, &lease)?;
     let capacity = app
         .state::<Registry>()
@@ -244,9 +259,17 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
         return Err(AppError::validation("plugin.entry.missing"));
     }
     let generation = lease.generation;
-    let (token, retired) = app.state::<Registry>().insert(lease, snapshot, |lease| {
-        authorized(&state.plugins.security, lease)
-    })?;
+    let mut retired_runtimes = Vec::new();
+    let (token, retired) = app.state::<Registry>().insert(
+        lease,
+        snapshot,
+        |lease| authorized(&state.plugins.security, lease),
+        |lease, token| {
+            retired_runtimes = state.plugins.security.frontend_opened(lease, token)?;
+            Ok(())
+        },
+    )?;
+    state.plugins.cleanup_retired(&app, retired_runtimes);
     for old_token in retired {
         super::forwarding::remove_token(&app, &old_token);
     }
@@ -260,12 +283,30 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
 }
 
 #[tauri::command]
+pub fn plugin_frontend_ready(
+    app: AppHandle,
+    registry: State<'_, Registry>,
+    token: String,
+) -> AppResult<()> {
+    registry.with_lease(&token, |lease| {
+        let state = app.state::<AppState>();
+        authorized(&state.plugins.security, lease)?;
+        state.plugins.security.frontend_ready(lease, &token)
+    })
+}
+
+#[tauri::command]
 pub fn plugin_frontend_close(app: AppHandle, registry: State<'_, Registry>, token: String) {
-    registry
-        .modules
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .remove(&token);
+    let mut modules = registry.modules.lock().unwrap_or_else(|e| e.into_inner());
+    let state = app.state::<AppState>();
+    let retired = modules.remove(&token).map_or_else(Vec::new, |module| {
+        state
+            .plugins
+            .security
+            .frontend_closed(&module.lease, &token)
+    });
+    drop(modules);
+    state.plugins.cleanup_retired(&app, retired);
     super::forwarding::remove_token(&app, &token);
 }
 
@@ -292,9 +333,9 @@ pub async fn plugin_frontend_failed(app: AppHandle, token: String) -> AppResult<
     instance.error = Some("plugin.frontend.activationFailed".into());
     let info = instance.info();
     state.plugins.remember(&info);
-    drop(instance);
     use tauri::Emitter;
     let _ = app.emit(super::STATE_EVENT, &info);
+    drop(instance);
     tracing::warn!(plugin_id = %lease.id, stage = "frontend-activation", "plugin frontend activation failed");
     Ok(info)
 }
@@ -416,6 +457,90 @@ mod tests {
     use super::*;
 
     #[test]
+    fn native_registry_teardown_retires_consumers_and_replaced_tokens_cannot_ack() {
+        let db = crate::db::Database::in_memory().unwrap();
+        let security = Arc::new(PluginSecurity::default());
+        let permissions = vec!["ui.trusted".into()];
+        let digest = "a".repeat(64);
+        security
+            .set_permissions(
+                &db,
+                "module",
+                digest.clone(),
+                &permissions,
+                Some(permissions.clone()),
+            )
+            .unwrap();
+        let module = security
+            .lease("module", digest.clone(), permissions)
+            .unwrap();
+        let pending = security.begin_runtime(&module, &[], true).unwrap();
+        security.native_ready(&module).unwrap();
+        let registry = Registry::default();
+        let snapshot = || FrontendSnapshot {
+            digest: digest.clone(),
+            assets: BTreeMap::new(),
+            bytes: 0,
+        };
+        let opened =
+            |lease: &Lease, token: &str| security.frontend_opened(lease, token).map(|_| ());
+        let (first, _) = registry
+            .insert(
+                module.clone(),
+                snapshot(),
+                |lease| authorized(&security, lease),
+                opened,
+            )
+            .unwrap();
+        let (second, _) = registry
+            .insert(
+                module.clone(),
+                snapshot(),
+                |lease| authorized(&security, lease),
+                opened,
+            )
+            .unwrap();
+        assert!(registry
+            .with_lease(&first, |lease| security.frontend_ready(lease, &first))
+            .is_err());
+        registry
+            .with_lease(&second, |lease| security.frontend_ready(lease, &second))
+            .unwrap();
+        pending.commit();
+        security
+            .set_permissions(&db, "consumer", digest.clone(), &[], Some(vec![]))
+            .unwrap();
+        let consumer = security.lease("consumer", digest, vec![]).unwrap();
+        let pending = security.begin_runtime(&consumer, &[module], false).unwrap();
+        security.native_ready(&consumer).unwrap();
+        pending.commit();
+        let (tokens, retired) =
+            registry.drain(|lease, token| security.frontend_closed(lease, token));
+        assert_eq!(tokens.as_slice(), std::slice::from_ref(&second));
+        assert_eq!(
+            retired
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            ["consumer"]
+        );
+        assert!(security
+            .authorize(
+                &consumer.id,
+                &consumer.fingerprint,
+                &consumer.permissions,
+                None,
+                Some(consumer.generation)
+            )
+            .is_err());
+        assert!(registry.lease(&second).is_err());
+        assert!(registry
+            .drain(|lease, token| security.frontend_closed(lease, token))
+            .1
+            .is_empty());
+    }
+
+    #[test]
     fn protocol_capacity_is_reserved_before_allocating_and_recovers_on_release() {
         let registry = Registry::default();
         let mut permits: Vec<_> = (0..16).map(|_| registry.request().unwrap()).collect();
@@ -485,7 +610,12 @@ mod tests {
         };
         let registry = Registry::default();
         let (token, _) = registry
-            .insert(lease.clone(), snapshot(), |l| authorized(&security, l))
+            .insert(
+                lease.clone(),
+                snapshot(),
+                |l| authorized(&security, l),
+                |_, _| Ok(()),
+            )
             .unwrap();
         let request = |token: &str, method: &str| {
             http::Request::builder()
@@ -522,7 +652,12 @@ mod tests {
             405
         );
         let (next, _) = registry
-            .insert(lease.clone(), snapshot(), |l| authorized(&security, l))
+            .insert(
+                lease.clone(),
+                snapshot(),
+                |l| authorized(&security, l),
+                |_, _| Ok(()),
+            )
             .unwrap();
         assert_eq!(
             serve(

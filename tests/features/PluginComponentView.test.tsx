@@ -22,6 +22,7 @@ vi.mock("@/lib/extensions/frontendRuntime", async (original) => {
         sdkVersion: "0.1.0",
       }),
       close: fixture.close,
+      ready: vi.fn(async () => {}),
       fail: vi.fn(async () => {}),
       load: async () => ({ activate: fixture.activate }),
       call: async () => undefined as never,

@@ -12,8 +12,10 @@ use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod dependencies;
 mod package;
 mod restart;
+pub(in crate::plugins) use dependencies::RuntimeRetirement;
 
 pub(super) use package::{frontend_snapshot, FrontendSnapshot};
 
@@ -79,6 +81,7 @@ struct Policy {
     recovery_suggested: bool,
     restarting: bool,
     revision: u64,
+    runtimes: dependencies::RuntimeDependencies,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,7 +94,7 @@ pub struct SecurityState {
     pub grants: BTreeMap<String, Vec<String>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lease {
     pub id: String,
     pub fingerprint: String,
@@ -195,6 +198,7 @@ impl PluginSecurity {
             grant.generation = policy.revision;
         }
         policy.saved = saved;
+        policy.runtimes = dependencies::RuntimeDependencies::default();
         self.notify(&mut policy);
         save(db, &policy.saved)
     }
@@ -242,6 +246,19 @@ impl PluginSecurity {
     }
 
     fn authorize_policy(
+        policy: &Policy,
+        id: &str,
+        digest: &str,
+        declared: &[String],
+        permission: Option<&str>,
+        generation: Option<u64>,
+    ) -> AppResult<u64> {
+        let current = Self::authorize_grant(policy, id, digest, declared, permission, generation)?;
+        dependencies::validate(policy, id, digest, current)?;
+        Ok(current)
+    }
+
+    fn authorize_grant(
         policy: &Policy,
         id: &str,
         digest: &str,
@@ -368,10 +385,12 @@ impl PluginSecurity {
         for grant in policy.saved.grants.values_mut() {
             grant.generation = generation;
         }
+        policy.runtimes = dependencies::RuntimeDependencies::default();
         self.notify(&mut policy);
         persisted
     }
 
+    #[cfg(test)]
     pub fn set_permissions(
         &self,
         db: &Database,
@@ -379,6 +398,18 @@ impl PluginSecurity {
         digest: String,
         declared: &[String],
         permissions: Option<Vec<String>>,
+    ) -> AppResult<()> {
+        self.set_permissions_with_cleanup(db, id, digest, declared, permissions, |_| {})
+    }
+
+    pub(in crate::plugins) fn set_permissions_with_cleanup(
+        &self,
+        db: &Database,
+        id: &str,
+        digest: String,
+        declared: &[String],
+        permissions: Option<Vec<String>>,
+        cleanup: impl FnOnce(Vec<RuntimeRetirement>),
     ) -> AppResult<()> {
         if !super::manifest::valid_id(id) {
             return Err(AppError::validation("plugin.notFound"));
@@ -413,7 +444,10 @@ impl PluginSecurity {
             return persisted;
         }
         policy.saved = next;
+        let retired = dependencies::retire(&mut policy, id);
         self.notify(&mut policy);
+        drop(policy);
+        cleanup(retired);
         persisted
     }
 
@@ -443,10 +477,17 @@ impl PluginSecurity {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn invalidate(&self, id: &str) {
+        self.remove_grant(id);
+    }
+
+    pub(in crate::plugins) fn remove_grant(&self, id: &str) -> Vec<RuntimeRetirement> {
         let mut policy = self.policy();
+        let retired = dependencies::retire(&mut policy, id);
         policy.saved.grants.remove(id);
         self.notify(&mut policy);
+        retired
     }
 
     pub fn invalidate_runtimes(&self) {
@@ -456,19 +497,33 @@ impl PluginSecurity {
         for grant in policy.saved.grants.values_mut() {
             grant.generation = generation;
         }
+        policy.runtimes = dependencies::RuntimeDependencies::default();
         self.notify(&mut policy);
     }
 
+    #[cfg(test)]
     pub fn invalidate_runtime(&self, id: &str) {
-        let mut policy = self.policy();
-        policy.revision += 1;
-        let generation = policy.revision;
-        if let Some(grant) = policy.saved.grants.get_mut(id) {
-            grant.generation = generation;
-        }
-        self.notify(&mut policy);
+        self.retire_runtime(id);
     }
 
+    pub(in crate::plugins) fn retire_runtime(&self, id: &str) -> Vec<RuntimeRetirement> {
+        let mut policy = self.policy();
+        let retired = dependencies::retire(&mut policy, id);
+        self.notify(&mut policy);
+        retired
+    }
+
+    pub(in crate::plugins) fn retire_lease(&self, lease: &Lease) -> Vec<RuntimeRetirement> {
+        let mut policy = self.policy();
+        if !policy.runtimes.matches(lease) {
+            return vec![];
+        }
+        let retired = dependencies::retire(&mut policy, &lease.id);
+        self.notify(&mut policy);
+        retired
+    }
+
+    #[cfg(test)]
     pub fn cleanup_boundary(&self, id: &str) -> u64 {
         let policy = self.policy();
         policy

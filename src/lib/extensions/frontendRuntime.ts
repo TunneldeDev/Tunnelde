@@ -35,6 +35,7 @@ interface Runtime {
 
 export interface FrontendTransport {
   open(id: string): Promise<Session>;
+  ready(token: string): Promise<void>;
   close(token: string): Promise<void>;
   fail(token: string): Promise<void>;
   call<T>(token: string, method: string, params: Record<string, unknown>): Promise<T>;
@@ -166,6 +167,8 @@ export function createFrontendRuntime(transport: FrontendTransport) {
             { timeoutMs: 15_000 },
           );
           live();
+          await scope.run(() => transport.ready(session.token), { timeoutMs: 15_000 });
+          live();
           current.activated = true;
           changed();
         } catch (error) {
@@ -285,6 +288,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
 
 export const frontendRuntime = createFrontendRuntime({
   open: (id) => invoke("plugin_frontend_open", { id }),
+  ready: (token) => invoke("plugin_frontend_ready", { token }),
   close: (token) => invoke("plugin_frontend_close", { token }),
   fail: async (token) => {
     await invoke("plugin_frontend_failed", { token });

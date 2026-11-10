@@ -324,10 +324,18 @@ impl TransferRegistry {
     /// An exited process must not leave background work running. Matching the
     /// generation prevents an older process from cancelling its replacement.
     pub fn cancel_plugin(&self, plugin_id: &str, generation: u64) {
+        self.cancel_plugin_matching(plugin_id, |value| value == generation);
+    }
+
+    pub(crate) fn cancel_plugin_before(&self, plugin_id: &str, boundary: u64) {
+        self.cancel_plugin_matching(plugin_id, |value| value < boundary);
+    }
+
+    fn cancel_plugin_matching(&self, plugin_id: &str, generation: impl Fn(u64) -> bool) {
         if let Ok(state) = self.inner.lock() {
             for transfer in state.active.values() {
                 if transfer.owner.as_ref().is_some_and(|owner| {
-                    owner.plugin_id == plugin_id && owner.generation == generation
+                    owner.plugin_id == plugin_id && generation(owner.generation)
                 }) {
                     transfer.cancel();
                 }
@@ -4008,6 +4016,42 @@ mod tests {
         assert!(flags[0].load(Ordering::SeqCst));
         assert!(!flags[1].load(Ordering::SeqCst));
         assert!(!flags[2].load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn delayed_transfer_cleanup_keeps_new_runtime_and_user_transfers() {
+        let registry = TransferRegistry::default();
+        let mut flags = Vec::new();
+        for (id, plugin, generation) in [
+            ("old", Some("one"), 7),
+            ("new", Some("one"), 8),
+            ("newer", Some("one"), 9),
+            ("other", Some("two"), 7),
+            ("user", None, 0),
+        ] {
+            let flag = Arc::new(AtomicBool::new(false));
+            let (sender, _) = tokio::sync::watch::channel(false);
+            registry
+                .register(
+                    id,
+                    flag.clone(),
+                    plugin.map(|plugin| TransferOwner {
+                        plugin_id: plugin.into(),
+                        generation,
+                        cancelled: sender,
+                    }),
+                )
+                .unwrap();
+            flags.push(flag);
+        }
+        registry.cancel_plugin_before("one", 8);
+        assert_eq!(
+            flags
+                .iter()
+                .map(|flag| flag.load(Ordering::SeqCst))
+                .collect::<Vec<_>>(),
+            [true, false, false, false, false]
+        );
     }
 
     #[test]

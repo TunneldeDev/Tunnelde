@@ -88,7 +88,9 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
                 window.state::<preview::Registry>().clear();
-                window.state::<plugins::frontend::Registry>().clear();
+                window
+                    .state::<plugins::frontend::Registry>()
+                    .clear(window.app_handle());
                 plugins::forwarding::clear(window.app_handle());
                 platform::background::destroyed(window.app_handle());
             }
@@ -181,6 +183,7 @@ pub fn run() {
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
             plugins::frontend::plugin_frontend_open,
+            plugins::frontend::plugin_frontend_ready,
             plugins::frontend::plugin_frontend_close,
             plugins::frontend::plugin_frontend_failed,
             plugins::frontend::plugin_frontend_call,

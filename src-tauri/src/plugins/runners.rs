@@ -12,6 +12,10 @@ use super::api::{authorize, field, frontend_request, optional, HostContext};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod contracts;
+mod lifecycle;
+pub(super) use lifecycle::revoke_before;
+
 // Serialize metadata transitions, including launch reservations and revocation.
 static MUTATIONS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -33,6 +37,8 @@ struct Record {
     runner_id: String,
     deployment: Deployment,
     stop_pending: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    runtime_owner: Option<lifecycle::Owner>,
 }
 
 fn metadata(context: &HostContext) -> PathBuf {
@@ -169,7 +175,11 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
     let _mutation = MUTATIONS.lock().await;
     authorize(context, &["ssh.exec"])?;
     if method == "runners.list" {
-        return Ok(json!(load(context)?));
+        let records = load(context)?;
+        return Ok(json!(records
+            .iter()
+            .map(contracts::Snapshot::from)
+            .collect::<Vec<_>>()));
     }
     if method == "runners.deploy" {
         return deploy(context, params).await;
@@ -223,6 +233,7 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
             runner_id: id.clone(),
             deployment: deployment.clone(),
             stop_pending: true,
+            runtime_owner: Some(lifecycle::Owner::current(context.generation)),
         });
         save(context, &records)?;
         authorize(context, &["ssh.exec"])?;
@@ -460,6 +471,7 @@ async fn deploy(context: &HostContext, params: Value) -> AppResult<Value> {
     let mut records = load(context)?;
     records.push(Record {
         runner_id: "deployment".into(),
+        runtime_owner: None,
         deployment,
         stop_pending: false,
     });
@@ -514,22 +526,6 @@ async fn upload_directory(
     Ok(())
 }
 
-/// Entering safe mode records every stop first. Offline hosts remain visibly pending.
-pub async fn revoke(context: &HostContext) {
-    let _mutation = MUTATIONS.lock().await;
-    let Ok(mut records) = load(context) else {
-        return;
-    };
-    for record in records
-        .iter_mut()
-        .filter(|record| record.runner_id != "deployment")
-    {
-        record.stop_pending = true;
-    }
-    let _ = save(context, &records);
-    flush_pending(context, &mut records).await;
-}
-
 async fn confirm_stopped(
     context: &HostContext,
     session: &str,
@@ -565,10 +561,20 @@ async fn confirm_stopped(
 }
 
 async fn flush_pending(context: &HostContext, records: &mut [Record]) {
+    flush_selected(context, records, |_| true).await;
+}
+
+async fn flush_selected(
+    context: &HostContext,
+    records: &mut [Record],
+    selected: impl Fn(&Record) -> bool,
+) {
     let sessions = context.app.state::<AppState>().ssh.list();
     let pending: Vec<_> = records
         .iter()
-        .filter(|record| record.stop_pending && record.runner_id != "deployment")
+        .filter(|record| {
+            record.stop_pending && record.runner_id != "deployment" && selected(record)
+        })
         .cloned()
         .collect();
     for record in &pending {
