@@ -1,3 +1,4 @@
+import { isPluginInvocationCancelled, samePluginRuntime } from "./commands/runtime";
 import type { PluginInfo } from "@/lib/api/types";
 import { translateError } from "@/lib/api/errors";
 import { isTauri } from "@/lib/api/ipc";
@@ -25,8 +26,10 @@ export async function runPluginContextCommand(
     validate(): void;
     input(): Record<string, unknown>;
   },
+  signal?: AbortSignal,
 ): Promise<void> {
   try {
+    if (signal?.aborted) return;
     const currentPlugin = () => {
       const plugin = usePlugins.getState().items.find((item) => item.id === action.pluginId);
       if (!plugin || plugin.fingerprint !== action.fingerprint || !context.accepts(plugin))
@@ -36,20 +39,27 @@ export async function runPluginContextCommand(
     const original = currentPlugin();
     context.validate();
     if (original.status !== "running") await usePlugins.getState().start(original.id);
+    if (signal?.aborted) return;
     const current = currentPlugin();
     // start() reports launch failures. Declined consent leaves the plugin stopped.
     if (current.status !== "running") return;
-    const result = await usePlugins.getState().execute(current.id, action.command, () => {
-      currentPlugin();
-      context.validate();
-      return context.input();
-    });
+    const result = await usePlugins.getState().execute(
+      current.id,
+      action.command,
+      () => {
+        currentPlugin();
+        context.validate();
+        return context.input();
+      },
+      signal,
+    );
     const latest = usePlugins.getState().items.find((item) => item.id === action.pluginId);
     const security = usePluginSecurity.getState().state;
     if (
       !latest ||
       latest.status !== "running" ||
       latest.fingerprint !== action.fingerprint ||
+      !samePluginRuntime(latest, current) ||
       (isTauri() && (security.restricted || !hasPluginGrant(security, latest)))
     )
       return;
@@ -69,6 +79,7 @@ export async function runPluginContextCommand(
       useWorkspace.getState().openPluginView(current.id, "$command", current.name);
     }
   } catch (error) {
+    if (isPluginInvocationCancelled(error)) return;
     if (error instanceof Error && error.message === "plugin.permissionDenied") return;
     toast(
       error instanceof Error && error.message === "resultTooLarge"

@@ -64,15 +64,24 @@ export function hostMenuInput(host: Host): HostMenuCommandInput {
 }
 
 /** Keep the selected host independent of focus changes and reject edits during consent. */
-export function runHostMenuCommand(action: PluginContextCommand, host: Host): Promise<void> {
+export function runHostMenuCommand(
+  action: PluginContextCommand,
+  host: Host,
+  signal?: AbortSignal,
+): Promise<void> {
   const selected = hostMenuInput(host);
-  return runPluginContextCommand(action, {
-    accepts: (plugin) => hostMenuCommands([plugin]).some((item) => item.command === action.command),
-    validate: () => {
-      const latest = useHosts.getState().hosts.find((item) => item.id === host.id);
-      if (!latest || JSON.stringify(hostMenuInput(latest)) !== JSON.stringify(selected))
-        throw new Error(i18n.t("pluginView.hostChanged"));
+  return runPluginContextCommand(
+    action,
+    {
+      accepts: (plugin) =>
+        hostMenuCommands([plugin]).some((item) => item.command === action.command),
+      validate: () => {
+        const latest = useHosts.getState().hosts.find((item) => item.id === host.id);
+        if (!latest || JSON.stringify(hostMenuInput(latest)) !== JSON.stringify(selected))
+          throw new Error(i18n.t("pluginView.hostChanged"));
+      },
+      input: () => ({ ...selected }),
     },
-    input: () => ({ ...selected }),
-  });
+    signal,
+  );
 }

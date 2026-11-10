@@ -18,6 +18,7 @@ import { openPluginAction } from "@/lib/plugins/actions";
 
 const plugin = {
   id: "formatter",
+  runtimeId: "boot:1",
   name: "Formatter",
   runtime: "node",
   status: "running",
@@ -83,6 +84,7 @@ describe("editor document contracts and contributed formatters", () => {
         source: document.content,
         document: expect.objectContaining({ documentId: document.documentId, version: 0 }),
       }),
+      "boot:1",
     );
     expect(useEditors.getState().entries[tabId]?.content).toContain("9007199254740993");
     expect(useEditors.getState().isDirty(tabId)).toBe(true);
@@ -192,6 +194,7 @@ describe("editor document contracts and contributed formatters", () => {
       plugin.id,
       "format",
       expect.objectContaining({ document: expect.objectContaining({ tabId }) }),
+      "boot:1",
     );
     expect(useEditors.getState().entries[tabId]?.content).toBe("formatted original");
   });

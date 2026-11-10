@@ -228,8 +228,8 @@ export const api = {
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
   pluginRenderView: (id: string, view: string, locale?: string) =>
     invoke<unknown>("plugin_render_view", { id, view, locale: locale ?? null }),
-  pluginRun: (id: string, command: string, input?: Record<string, unknown>) =>
-    invoke<unknown>("plugin_run", { id, command, input: input ?? null }),
+  pluginRun: (id: string, command: string, input: Record<string, unknown>, runtimeId: string) =>
+    invoke<unknown>("plugin_run", { id, command, input, runtimeId }),
   pluginOpenDir: () => invoke<void>("plugin_open_dir"),
   marketplaceInstall: (id: string, sha256: string, data: string) =>
     invoke<PluginInfo>("marketplace_install", { id, sha256, data }),

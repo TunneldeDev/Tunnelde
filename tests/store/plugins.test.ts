@@ -34,6 +34,7 @@ import { toast } from "@/store/toasts";
 
 const plugin: PluginInfo = {
   id: "hello",
+  runtimeId: "boot:1",
   name: "Hello",
   version: "1.0.0",
   apiVersion: 1,
@@ -69,6 +70,71 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("stops a command while consent is pending and never builds input after late approval", async () => {
+    native.mockReturnValue(true);
+    usePlugins.setState({ items: [{ ...plugin, status: "running" }] });
+    const permission = deferred<boolean>();
+    ensurePermission.mockReturnValueOnce(permission.promise);
+    apiMock.pluginStop.mockResolvedValueOnce(plugin);
+    const input = vi.fn(() => ({ secret: "private" }));
+    const operation = usePlugins.getState().execute(plugin.id, "inspect", input);
+    const rejected = expect(operation).rejects.toThrow("plugin.invocation.cancelled");
+    await vi.waitFor(() => expect(ensurePermission).toHaveBeenCalledOnce());
+    await usePlugins.getState().stop(plugin.id);
+    await rejected;
+    expect(apiMock.pluginStop).toHaveBeenCalledOnce();
+    permission.resolve(true);
+    await Promise.resolve();
+    expect(input).not.toHaveBeenCalled();
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
+  it("discards an old runtime result after stop and same-package restart without clearing the new operation", async () => {
+    usePlugins.setState({ items: [{ ...plugin, status: "running" }] });
+    const oldCommand = deferred<unknown>();
+    const newCommand = deferred<unknown>();
+    apiMock.pluginRun
+      .mockReturnValueOnce(oldCommand.promise)
+      .mockReturnValueOnce(newCommand.promise);
+    apiMock.pluginStop.mockResolvedValueOnce(plugin);
+    const old = usePlugins.getState().run(plugin.id, "old");
+    await vi.waitFor(() => expect(apiMock.pluginRun).toHaveBeenCalledOnce());
+    await usePlugins.getState().stop(plugin.id);
+    await old;
+    usePlugins.getState().apply({ ...plugin, status: "running", runtimeId: "boot:2" });
+    const current = usePlugins.getState().run(plugin.id, "new");
+    await vi.waitFor(() => expect(apiMock.pluginRun).toHaveBeenCalledTimes(2));
+    expect(apiMock.pluginRun.mock.calls[0]?.[3]).toBe("boot:1");
+    expect(apiMock.pluginRun.mock.calls[1]?.[3]).toBe("boot:2");
+    oldCommand.resolve({ text: "old output" });
+    await Promise.resolve();
+    expect(usePlugins.getState().outputs[plugin.id]).toBeUndefined();
+    expect(usePlugins.getState().commandingIds).toEqual([plugin.id]);
+    newCommand.resolve({ text: "new output" });
+    await current;
+    expect(usePlugins.getState().outputs[plugin.id]?.text).toBe("new output");
+  });
+
+  it("captures execution identity before the operation microtask, including same-package replacement", async () => {
+    usePlugins.setState({ items: [{ ...plugin, status: "running" }] });
+    const input = vi.fn(() => ({}));
+    const operation = usePlugins.getState().execute(plugin.id, "inspect", input);
+    usePlugins.getState().apply({ ...plugin, status: "running", runtimeId: "boot:2" });
+    await expect(operation).rejects.toThrow("plugin.invocation.cancelled");
+    expect(input).not.toHaveBeenCalled();
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+  });
+
+  it("never falls back to an unbound native command when runtime identity is missing", async () => {
+    native.mockReturnValue(true);
+    usePlugins.setState({ items: [{ ...plugin, status: "running", runtimeId: null }] });
+    await expect(usePlugins.getState().execute(plugin.id, "inspect", () => ({}))).rejects.toThrow(
+      "pluginSecurity.changed",
+    );
+    expect(apiMock.pluginRun).not.toHaveBeenCalled();
+  });
+
   it("starts a pure frontend without Node and stops its backend if activation fails", async () => {
     native.mockReturnValue(true);
     const ui = {
@@ -340,6 +406,7 @@ describe("plugin request ownership", () => {
     const reload = deferred<PluginInfo[]>();
     apiMock.pluginRun.mockReturnValue(command.promise);
     apiMock.pluginReload.mockReturnValue(reload.promise);
+    usePlugins.setState({ items: [{ ...plugin, status: "running" }] });
     const run = usePlugins.getState().run("hello", "build");
     const refresh = usePlugins.getState().reload();
     expect(usePlugins.getState().reload()).toBe(refresh);

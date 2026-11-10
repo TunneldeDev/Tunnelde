@@ -52,6 +52,7 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
     useMarketplace();
   const items = usePlugins((s) => s.items),
     busy = usePlugins((s) => s.busyIds.includes(pluginId));
+  const commanding = usePlugins((s) => s.commandingIds.includes(pluginId));
   const starting = usePlugins((s) => s.startingIds.includes(pluginId));
   const output = usePlugins((s) => s.outputs[pluginId]);
   const loadPlugins = usePlugins((s) => s.load);
@@ -155,7 +156,7 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           <>
             {!themeOnly ? (
               <Button
-                disabled={(busy && !starting) || !!task}
+                disabled={(busy && !starting && !commanding) || !!task}
                 leading={running || starting ? <Square size={13} /> : <Play size={13} />}
                 onClick={() =>
                   void (running || starting

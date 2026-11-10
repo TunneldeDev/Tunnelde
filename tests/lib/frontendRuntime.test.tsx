@@ -9,6 +9,7 @@ import type { FrontendContext, FrontendModule } from "@/lib/extensions/uiSdk";
 const plugin = {
   id: "custom",
   fingerprint: "approved",
+  runtimeId: "boot:1",
   status: "running",
   runtime: "frontend",
   frontend: { entry: "ui/index.mjs", sdk: "^0.1.0" },
@@ -19,10 +20,12 @@ const plugin = {
 
 function fixture(activate: FrontendModule["activate"] = () => {}) {
   const transport: FrontendTransport = {
+    current: vi.fn(() => true),
     open: vi.fn(async () => ({
       token: crypto.randomUUID(),
       pluginId: plugin.id,
       generation: 1,
+      runtimeId: "boot:1",
       entry: "index.mjs",
       sdkVersion: "0.1.0",
     })),
@@ -37,6 +40,49 @@ function fixture(activate: FrontendModule["activate"] = () => {}) {
 }
 
 afterEach(() => vi.useRealTimers());
+
+it("replaces an identical-package module on runtime change and rejects stale ensure without disposing its replacement", async () => {
+  const cleanup = vi.fn();
+  const f = fixture(() => cleanup);
+  let selected = plugin;
+  f.transport.current = (candidate) => candidate.runtimeId === selected.runtimeId;
+  f.transport.open = vi.fn(async (pluginId, runtimeId) => ({
+    token: crypto.randomUUID(),
+    pluginId,
+    runtimeId,
+    generation: 1,
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+  }));
+  await f.runtime.ensure(plugin);
+  const oldToken = f.runtime.token(plugin.id);
+  selected = { ...plugin, runtimeId: "boot:2" };
+  f.runtime.reconcile([selected], false);
+  await f.runtime.ensure(selected);
+  const replacement = f.runtime.token(plugin.id);
+  expect(replacement).not.toBe(oldToken);
+  expect(cleanup).toHaveBeenCalledOnce();
+  await expect(f.runtime.ensure(plugin)).rejects.toThrow("extension.scope.closed");
+  expect(f.runtime.token(plugin.id)).toBe(replacement);
+  expect(f.transport.open).toHaveBeenCalledTimes(2);
+  f.runtime.dispose();
+});
+
+it("rejects a frontend session from the wrong runtime before loading JavaScript", async () => {
+  const f = fixture();
+  vi.mocked(f.transport.open).mockResolvedValueOnce({
+    token: "old",
+    pluginId: plugin.id,
+    runtimeId: "boot:old",
+    generation: 1,
+    entry: "index.mjs",
+    sdkVersion: "0.1.0",
+  });
+  await expect(f.runtime.ensure(plugin)).rejects.toThrow("extension.scope.closed");
+  expect(f.transport.load).not.toHaveBeenCalled();
+  expect(f.transport.ready).not.toHaveBeenCalled();
+  expect(f.transport.close).toHaveBeenCalledExactlyOnceWith("old");
+});
 
 it("calls domain RPC only through an existing activated generation and discards results after retirement", async () => {
   const { runtime, transport } = fixture();
@@ -222,6 +268,7 @@ it("cleans a session arriving after stop and never starts its JavaScript", async
     token: "late",
     pluginId: plugin.id,
     generation: 1,
+    runtimeId: "boot:1",
     entry: "index.mjs",
     sdkVersion: "0.1.0",
   });
@@ -260,6 +307,7 @@ it("rejects SDK mismatch before execution and releases the native session", asyn
     token: "unsupported",
     pluginId: plugin.id,
     generation: 1,
+    runtimeId: "boot:1",
     entry: "index.mjs",
     sdkVersion: "2.0.0",
   }));

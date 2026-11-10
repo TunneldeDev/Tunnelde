@@ -1,3 +1,4 @@
+import { withPluginInvocation, isPluginInvocationCancelled } from "@/lib/plugins/commands/runtime";
 import { Copy, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -277,10 +278,12 @@ function PluginToolForm({
   const [busy, setBusy] = useState<string | null>(null);
   useBackgroundGuard(busy !== null);
   const pending = useRef(false);
+  const invocation = useRef<AbortController | null>(null);
   const generation = useRef(0);
   useEffect(
     () => () => {
       ++generation.current;
+      invocation.current?.abort();
     },
     [],
   );
@@ -297,14 +300,31 @@ function PluginToolForm({
     }
     const current = ++generation.current;
     pending.current = true;
+    const controller = new AbortController();
+    invocation.current = controller;
     setBusy(action.id);
     setError(null);
     try {
-      if (isTauri() && !(await authorizePluginAction(pluginId))) return;
-      if (generation.current !== current) return;
-      const response = await api.pluginRun(pluginId, action.command, input);
+      const original = usePlugins.getState().items.find((item) => item.id === pluginId);
+      const response = await withPluginInvocation(
+        original,
+        async (plugin, signal, check) => {
+          if (isTauri() && !(await authorizePluginAction(pluginId, signal)))
+            throw new Error("plugin.permissionDenied");
+          check();
+          if (generation.current !== current) throw new Error("plugin.invocation.cancelled");
+          return api.pluginRun(pluginId, action.command, input, plugin.runtimeId ?? "");
+        },
+        controller.signal,
+      );
       if (generation.current === current) setResult(normalizeResult(response));
     } catch (cause) {
+      if (
+        isPluginInvocationCancelled(cause) ||
+        (cause instanceof Error &&
+          ["plugin.permissionDenied", "plugin.invocation.cancelled"].includes(cause.message))
+      )
+        return;
       reportPluginExecutionFailure(cause);
       if (generation.current === current) {
         setError(

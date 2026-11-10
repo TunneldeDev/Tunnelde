@@ -1,3 +1,5 @@
+import { usePlugins } from "@/store/plugins";
+import { plugin as installedPlugin } from "../fixtures/plugins";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Profiler } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -35,6 +37,9 @@ import { normalizeChatBlock, type PluginChatBlock } from "@/lib/plugins/pluginCh
 import { useDialogs } from "@/store/dialogs";
 let publish: (event: PluginEvent) => void;
 beforeEach(async () => {
+  usePlugins.setState({
+    items: [{ ...installedPlugin, id: "assistant", status: "running", runtimeId: "boot:1" }],
+  });
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
   mock.run.mockResolvedValue({});
@@ -52,6 +57,23 @@ const emit = (payload: unknown, pluginId = "assistant", generation = 1) =>
   act(() => publish({ pluginId, generation, event: "chat", payload }));
 
 describe("controlled plugin chat", () => {
+  it("rejects a same-package runtime replacement while command consent is pending", async () => {
+    const permission = deferred<boolean>();
+    mock.authorize.mockReturnValueOnce(permission.promise);
+    render(<PluginChat pluginId="assistant" viewId="chat" block={chat} />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hello" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() => expect(mock.authorize).toHaveBeenCalledOnce());
+    act(() =>
+      usePlugins.setState({
+        items: [{ ...installedPlugin, id: "assistant", status: "running", runtimeId: "boot:2" }],
+      }),
+    );
+    await act(async () => permission.resolve(true));
+    expect(mock.run).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("buffers hidden streaming updates without React commits and restores the latest state and draft", async () => {
     const onRender = vi.fn();
     const block: PluginChatBlock = { ...chat, run: { id: "run-1", status: "running", seq: 0 } };
@@ -333,6 +355,7 @@ describe("controlled plugin chat", () => {
         "assistant",
         "ai.stop",
         expect.objectContaining({ runId }),
+        "boot:1",
       ),
     );
   });
@@ -388,6 +411,7 @@ describe("controlled plugin chat", () => {
         "assistant",
         "ai.approve",
         expect.objectContaining({ requestId: "request", decision: "deny" }),
+        "boot:1",
       ),
     );
   });
@@ -412,6 +436,7 @@ describe("controlled plugin chat", () => {
         "assistant",
         "ai.send",
         expect.objectContaining({ mode: "full" }),
+        "boot:1",
       ),
     );
   });
@@ -447,6 +472,7 @@ describe("controlled plugin chat", () => {
         "assistant",
         "ai.recover",
         expect.objectContaining({ taskId: "task", taskRunId: "original-run", action: "resume" }),
+        "boot:1",
       ),
     );
   });
@@ -483,6 +509,7 @@ describe("controlled plugin chat", () => {
           runId: "latest-run",
           action: "inspect",
         }),
+        "boot:1",
       ),
     );
   });
@@ -559,6 +586,7 @@ describe("controlled plugin chat", () => {
             profiles: [expect.objectContaining({ apiKey: "private-test-key" })],
           }),
         }),
+        "boot:1",
       ),
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());

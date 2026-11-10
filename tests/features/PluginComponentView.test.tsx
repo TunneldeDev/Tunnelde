@@ -14,7 +14,9 @@ vi.mock("@/lib/extensions/frontendRuntime", async (original) => {
   return {
     ...module,
     frontendRuntime: module.createFrontendRuntime({
-      open: async (pluginId) => ({
+      current: () => true,
+      open: async (pluginId, runtimeId) => ({
+        runtimeId,
         token: crypto.randomUUID(),
         pluginId,
         generation: 1,
@@ -47,6 +49,7 @@ const plugin = {
   path: "plugins/custom",
   id: "custom",
   fingerprint: "approved",
+  runtimeId: "boot:1",
   status: "running",
   runtime: "frontend",
   frontend: { entry: "ui/index.mjs", sdk: "^0.1.0" },

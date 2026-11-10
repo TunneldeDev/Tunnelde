@@ -1,3 +1,5 @@
+import { withPluginInvocation, isPluginInvocationCancelled } from "@/lib/plugins/commands/runtime";
+import { usePlugins } from "@/store/plugins";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -78,6 +80,7 @@ export function PluginChat({
   );
   const [busy, setBusy] = useState<string | null>(null);
   const pending = useRef(false);
+  const invocation = useRef<AbortController | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamFailed, setStreamFailed] = useState(false);
   const [streamAttempt, setStreamAttempt] = useState(0);
@@ -156,6 +159,7 @@ export function PluginChat({
     return () => {
       disposed = true;
       lifetime.current = token + 1;
+      invocation.current?.abort();
       release?.();
     };
   }, [pluginId, viewId, streamAttempt]);
@@ -299,30 +303,48 @@ export function PluginChat({
   ): Promise<boolean> => {
     if (!name || pending.current) return false;
     pending.current = true;
+    const controller = new AbortController();
+    invocation.current = controller;
     const token = lifetime.current;
     setBusy(name);
     setError(null);
     try {
       if (new TextEncoder().encode(JSON.stringify(input)).length > PLUGIN_INPUT_MAX_BYTES)
         throw new Error(t("pluginView.inputTooLarge"));
-      if (isTauri() && !(await authorizePluginAction(pluginId))) return false;
-      await subscription.current;
-      if (lifetime.current !== token) return false;
-      prepare?.();
+      const original = usePlugins.getState().items.find((item) => item.id === pluginId);
       const result = chatRecord(
-        await api.pluginRun(pluginId, name, {
-          sessionId: current.current.activeSessionId,
-          runId: current.current.run?.id ?? null,
-          ...([
-            current.current.commands.target,
-            current.current.commands.prepare,
-            current.current.commands.install,
-          ].includes(name)
-            ? { mode: current.current.mode }
-            : {}),
-          ...input,
-          _locale: i18n.resolvedLanguage ?? i18n.language,
-        }),
+        await withPluginInvocation(
+          original,
+          async (plugin, signal, check) => {
+            if (isTauri() && !(await authorizePluginAction(pluginId, signal)))
+              throw new Error("plugin.permissionDenied");
+            check();
+            await subscription.current;
+            check();
+            if (lifetime.current !== token) throw new Error("plugin.invocation.cancelled");
+            prepare?.();
+            check();
+            return api.pluginRun(
+              pluginId,
+              name,
+              {
+                sessionId: current.current.activeSessionId,
+                runId: current.current.run?.id ?? null,
+                ...([
+                  current.current.commands.target,
+                  current.current.commands.prepare,
+                  current.current.commands.install,
+                ].includes(name)
+                  ? { mode: current.current.mode }
+                  : {}),
+                ...input,
+                _locale: i18n.resolvedLanguage ?? i18n.language,
+              },
+              plugin.runtimeId ?? "",
+            );
+          },
+          controller.signal,
+        ),
       );
       if (lifetime.current !== token) return false;
       const next = normalizeChatBlock(result.block ?? (result.type === "chat" ? result : null));
@@ -352,11 +374,18 @@ export function PluginChat({
       }
       return true;
     } catch (cause) {
+      if (
+        isPluginInvocationCancelled(cause) ||
+        (cause instanceof Error &&
+          ["plugin.permissionDenied", "plugin.invocation.cancelled"].includes(cause.message))
+      )
+        return false;
       reportPluginExecutionFailure(cause);
       if (lifetime.current === token) setError(translateError(cause));
       return false;
     } finally {
-      if (lifetime.current === token) {
+      if (invocation.current === controller) {
+        invocation.current = null;
         pending.current = false;
         setBusy(null);
       }

@@ -66,6 +66,7 @@ impl PluginsManager {
                     .cleanup_retired(&rollback_app, retired);
             });
         instance.runtime_lease = Some(lease.clone());
+        instance.runtime_id = Some(self.security.lease_stamp(&lease));
         let state = app.state::<crate::state::AppState>();
         self.security.mark_running(&state.db)?;
 

@@ -1,3 +1,5 @@
+import { usePlugins } from "@/store/plugins";
+import { plugin as installedPlugin } from "../fixtures/plugins";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chat } from "../fixtures/pluginChat";
@@ -20,6 +22,14 @@ import { useSsh } from "@/store/ssh";
 import { useHosts } from "@/store/hosts";
 
 beforeEach(async () => {
+  usePlugins.setState({
+    items: ["assistant", "codex", "claude", "pi"].map((id) => ({
+      ...installedPlugin,
+      id,
+      status: "running",
+      runtimeId: "boot:1",
+    })),
+  });
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
   mock.run.mockResolvedValue({});
@@ -119,13 +129,14 @@ describe("plugin chat presentation and controls", () => {
         "codex",
         "ai.target",
         expect.objectContaining({ targetId: "ssh-two", modelId: block.modelId }),
+        "boot:1",
       ),
     );
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe("Keep my draft");
     expect(screen.getByRole("button", { name: "Execution location" }).textContent).toContain(
       "Build host",
     );
-    expect(mock.run).not.toHaveBeenCalledWith("codex", "ai.send", expect.anything());
+    expect(mock.run).not.toHaveBeenCalledWith("codex", "ai.send", expect.anything(), "boot:1");
     // A newly connected host appears without remounting or editing the model.
     act(() =>
       useSsh.setState((state) => ({
@@ -171,6 +182,7 @@ describe("plugin chat presentation and controls", () => {
         "assistant",
         "ai.target",
         expect.objectContaining({ targetId: "ssh", modelId: block.modelId }),
+        "boot:1",
       ),
     );
     expect(mock.run).toHaveBeenCalledTimes(1);
@@ -224,6 +236,7 @@ describe("plugin chat presentation and controls", () => {
         "assistant",
         "ai.send",
         expect.objectContaining({ modelId: "remote", message: "Keep this draft" }),
+        "boot:1",
       ),
     );
   });
@@ -246,6 +259,7 @@ describe("plugin chat presentation and controls", () => {
         "codex",
         "ai.session",
         expect.objectContaining({ action: "select", sessionId: "session-2" }),
+        "boot:1",
       ),
     );
   });
@@ -317,6 +331,7 @@ describe("plugin chat presentation and controls", () => {
         "codex",
         "ai.stop",
         expect.objectContaining({ runId: "run" }),
+        "boot:1",
       ),
     );
     await act(async () => Promise.resolve());

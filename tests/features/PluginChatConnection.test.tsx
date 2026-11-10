@@ -1,3 +1,5 @@
+import { usePlugins } from "@/store/plugins";
+import { plugin as installedPlugin } from "../fixtures/plugins";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Host, SshSession } from "@/lib/api/types";
@@ -68,6 +70,9 @@ const block = { ...chat, commands: { ...chat.commands, target: "ai.target" } };
 const known = { algorithm: "ssh-ed25519", fingerprint: "SHA256:qa", status: "known" };
 
 beforeEach(async () => {
+  usePlugins.setState({
+    items: [{ ...installedPlugin, id: "assistant", status: "running", runtimeId: "boot:1" }],
+  });
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
   useHosts.setState({ hosts: [host] });
@@ -111,6 +116,7 @@ describe("assistant connection from execution location", () => {
           sessionId: chat.activeSessionId,
           modelId: chat.modelId,
         }),
+        "boot:1",
       ),
     );
     expect(mock.connect).toHaveBeenCalledWith(
@@ -204,6 +210,7 @@ describe("assistant connection from execution location", () => {
         "assistant",
         "ai.target",
         expect.objectContaining({ targetId: session.id }),
+        "boot:1",
       ),
     );
     expect(mock.connect).not.toHaveBeenCalled();

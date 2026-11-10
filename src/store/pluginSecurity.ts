@@ -234,11 +234,11 @@ export function reportPluginExecutionFailure(error: unknown): void {
 }
 
 /** Called by explicit tool actions; ordinary view rendering never opens consent dialogs. */
-export async function authorizePluginAction(id: string): Promise<boolean> {
+export async function authorizePluginAction(id: string, signal?: AbortSignal): Promise<boolean> {
   if (!isTauri()) return true;
   const { usePlugins } = await import("@/store/plugins");
   if (!usePlugins.getState().items.some((plugin) => plugin.id === id))
     await usePlugins.getState().load();
   const plugin = usePlugins.getState().items.find((plugin) => plugin.id === id);
-  return !!plugin && plugin.runtime !== "theme" && ensurePluginPermission(plugin);
+  return !!plugin && plugin.runtime !== "theme" && ensurePluginPermission(plugin, signal);
 }
