@@ -20,7 +20,8 @@
         "forwarding",
         "monitor",
         "backgroundTasks",
-        "processes"
+        "processes",
+        "quickAccess"
       ],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
@@ -115,6 +116,25 @@
         "termination": "native-confirmation-with-live-authorization-and-identity",
         "sampling": "shared-visible-consumers",
         "query": "at-prefixed-filters"
+      },
+      "quickAccessPermissions": [
+        "hosts.read",
+        "sessions.read",
+        "fs.read",
+        "sftp.read",
+        "workspace.read",
+        "editor.read"
+      ],
+      "quickAccess": {
+        "context": "quickAccess",
+        "ownership": "host-dialog",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "invokePermission": "workspace.write",
+        "activation": "invoke-only-native-consent",
+        "recovery": "native-input-roots-and-dismissal"
       }
     },
     "components": [

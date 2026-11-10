@@ -22,3 +22,5 @@ export type * from "./contracts/backgroundTasks/provider.js";
 export type * from "./contracts/monitor/processes/entry.js";
 export type * from "./contracts/monitor/processes/query.js";
 export type * from "./contracts/monitor/processes/provider.js";
+export type * from "./contracts/search/quickAccess/entry.js";
+export type * from "./contracts/search/quickAccess/provider.js";

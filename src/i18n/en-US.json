@@ -1085,7 +1085,9 @@
     "noRoot": "Open a file browser or choose a local folder to search.",
     "typeMore": "Type at least 2 characters to search this directory.",
     "limits": "Search is bounded to 100 results, 4,000 entries and 15 seconds. Hidden/build folders and links are excluded. Skipped files: {{count}}.",
-    "localPreview": "Local file preview (read-only)"
+    "localPreview": "Local file preview (read-only)",
+    "previousPage": "Previous page",
+    "nextPage": "Next page"
   },
   "window": {
     "controls": "Window controls",
@@ -1318,6 +1320,11 @@
       "unavailable": "This process cannot be stopped from the current view. Refresh and retry.",
       "permissionDenied": "This provider does not have permission to stop processes.",
       "providerInactive": "The selected process provider is no longer active. Use the current provider or the built-in view."
+    },
+    "quickAccess": {
+      "changed": "These search results have changed. Select a current result.",
+      "invalid": "This search request is invalid.",
+      "permissionDenied": "This provider cannot invoke commands without workspace.write."
     }
   },
   "themes": {
@@ -2093,7 +2100,8 @@
     "terminal": "Terminal",
     "history": "Command history",
     "backgroundTasks": "Background tasks",
-    "processes": "Process manager"
+    "processes": "Process manager",
+    "quickAccess": "Quick access"
   },
   "hostFields": {
     "title": "Plugin host fields",

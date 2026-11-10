@@ -9,6 +9,7 @@ import type { FrontendMonitor } from "../monitor/provider.js";
 import type { FrontendBackgroundTasks } from "../backgroundTasks/provider.js";
 
 import type { FrontendProcesses } from "../monitor/processes/provider.js";
+import type { FrontendQuickAccess } from "../search/quickAccess/provider.js";
 
 export interface FrontendViewProps {
   pluginId: string;
@@ -32,4 +33,6 @@ export interface FrontendViewProps {
   backgroundTasks?: FrontendBackgroundTasks;
   /** Present only for a selected process manager provider. */
   processes?: FrontendProcesses;
+  /** Present only inside an explicitly selected quick-access results provider. */
+  quickAccess?: FrontendQuickAccess;
 }

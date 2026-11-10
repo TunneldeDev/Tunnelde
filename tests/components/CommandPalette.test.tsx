@@ -41,6 +41,57 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it("pages all matching plugin commands instead of silently dropping results after 100", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "batch",
+          name: "Batch",
+          runtime: "node",
+          status: "stopped",
+          views: [],
+          commands: Array.from({ length: 145 }, (_, index) => ({
+            id: `item${index}`,
+            title: `Item ${index}`,
+          })),
+        } as unknown as PluginInfo,
+      ],
+    });
+    const start = vi.spyOn(usePlugins.getState(), "start");
+    useQuickAccess.getState().show(">Batch");
+    render(<CommandPalette />);
+    expect(screen.getAllByRole("option")).toHaveLength(100);
+    expect(screen.getByRole("status").textContent).toBe("1–100 / 145");
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getAllByRole("option")).toHaveLength(45);
+    expect(screen.getByRole("status").textContent).toBe("101–145 / 145");
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowUp" });
+    expect(screen.getAllByRole("option")).toHaveLength(100);
+    expect(screen.getAllByRole("option")[99]!.getAttribute("aria-selected")).toBe("true");
+    expect(start).not.toHaveBeenCalled();
+  });
+  it("reports the collected unsaved-content limit instead of silently hiding extra matches", () => {
+    useQuickAccess.getState().show("% match");
+    const tabId = "editor-local:C:/work/a.txt";
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: null,
+          path: "C:/work/a.txt",
+          name: "a.txt",
+          content: Array(101).fill("match").join("\n"),
+          baseline: "",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    render(<CommandPalette />);
+    expect(screen.getAllByRole("option")).toHaveLength(100);
+    expect(screen.getByRole("status").textContent).toContain("100 results");
+  });
   it("keeps explicit host mode while inserting @tag presets", () => {
     useQuickAccess.setState({ query: "@ " });
     useHosts.setState({
