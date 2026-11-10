@@ -435,3 +435,32 @@ it("cancels tasks started by a failed activation without claiming uncooperative 
   expect(await pending).toMatchObject({ name: "AbortError" });
   expect(backgroundTasksBlockSuspension()).toBe(false);
 });
+
+it("retires nested scopes on a failed activation and keeps late cleanup observable", async () => {
+  let context!: FrontendContext;
+  let finish!: (value: string) => void;
+  let pending!: Promise<unknown>;
+  const released = vi.fn();
+  const f = fixture((ctx) => {
+    context = ctx;
+    const child = ctx.resources.child!().child!();
+    pending = child
+      .acquire(
+        () =>
+          new Promise<string>((resolve) => {
+            finish = resolve;
+          }),
+        released,
+      )
+      .catch((error) => error);
+    throw Error("Activation failed after creating child");
+  });
+  await expect(f.runtime.ensure(plugin)).rejects.toThrow("Activation failed after creating child");
+  expect(await pending).toMatchObject({ code: "extension.scope.closed" });
+  expect(context.signal.aborted).toBe(true);
+  expect(context.resources.size).toBe(1);
+  finish("late descendant");
+  await vi.waitFor(() => expect(released).toHaveBeenCalledExactlyOnceWith("late descendant"));
+  expect(context.resources.size).toBe(0);
+  expect(f.transport.report).toHaveBeenCalledWith(plugin.id, "activate", expect.any(Error));
+});

@@ -9,6 +9,16 @@
     "manifest": "frontend",
     "runtime": "frontend",
     "viewKind": "component",
+    "resourceScopes": {
+      "member": "resources.child",
+      "ownership": "module-descendants",
+      "budget": "shared-ancestors",
+      "defaultLimit": 128,
+      "maximumLimit": 4096,
+      "maximumDepth": 32,
+      "settlement": "retain-until-work-and-cleanup-settle",
+      "nativeOwnership": "unchanged"
+    },
     "providers": {
       "manifest": "views[].provider",
       "targets": [
