@@ -188,6 +188,21 @@ mod tests {
                     }
                     continue;
                 }
+                if point["id"] == "plugin.configuration" {
+                    assert_eq!(point["registration"]["manifest"], "configuration");
+                    assert_eq!(point["ownership"], "manifest");
+                    assert!(permissions.is_empty());
+                    for action in ["read", "replace"] {
+                        let method = METHODS
+                            .iter()
+                            .find(|m| Some(m.name) == point["registration"][action].as_str())
+                            .unwrap();
+                        assert!(method.permissions.is_empty());
+                        assert_eq!(method.stability, "experimental");
+                    }
+                    assert_eq!(point["limits"]["backups"], 8);
+                    continue;
+                }
                 assert_eq!(point["id"], "hostList.menu");
                 assert_eq!(point["registration"]["manifest"], "commands[].hostMenu");
                 assert_eq!(point["ownership"], "manifest");

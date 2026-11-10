@@ -23,6 +23,11 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    if (error.message.startsWith("configuration.invalidValue:")) {
+      return translate("configuration.invalidValue", {
+        field: error.message.slice("configuration.invalidValue:".length),
+      });
+    }
     if (error.message.startsWith("preferences.invalidValue:")) {
       return translate("preferences.invalidValue", {
         field: error.message.slice("preferences.invalidValue:".length),

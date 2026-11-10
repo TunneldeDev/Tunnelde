@@ -11,6 +11,8 @@ Editor command and formatter contributions:
 
 Host metadata extensions use a versioned manifest schema and revision-checked storage. See [plugin host fields](plugin-host-fields.en-us.md).
 
+Plugin-owned settings, explicit schema migration and recovery: [plugin configuration](plugin-configuration.en-us.md).
+
 ## Quick access and command results
 
 The plugin browser renders up to 24 matching entries per page, with previous/next

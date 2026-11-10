@@ -176,6 +176,7 @@
   },
   "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
   "domains": [
+    { "id": "configuration", "namespaces": ["configuration"] },
     {
       "id": "platform",
       "namespaces": ["api", "extensions", "app"]
@@ -218,6 +219,32 @@
     }
   ],
   "points": [
+    {
+      "id": "plugin.configuration",
+      "domain": "configuration",
+      "layer": "data",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "manifest": "configuration",
+        "read": "configuration.snapshot",
+        "replace": "configuration.update"
+      },
+      "ownership": "manifest",
+      "permissions": [],
+      "writePermissions": [],
+      "limits": {
+        "groups": 16,
+        "fields": 64,
+        "schemaBytes": 65536,
+        "documentBytes": 65536,
+        "backups": 8,
+        "totalBytes": 67108864
+      },
+      "persistence": "plugin-data",
+      "concurrency": "uuid-revision-and-schema-digest",
+      "secrets": false
+    },
     {
       "id": "hosts.sources",
       "domain": "hosts",

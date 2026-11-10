@@ -26,3 +26,6 @@ export type * from "./contracts/search/quickAccess/entry.js";
 export type * from "./contracts/search/quickAccess/provider.js";
 export type * from "./contracts/preferences/provider.js";
 export type * from "./contracts/preferences/data/index.js";
+export type * from "./contracts/configuration/schema.js";
+export type * from "./contracts/configuration/document.js";
+export type * from "./contracts/configuration/migration.js";

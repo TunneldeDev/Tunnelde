@@ -24,6 +24,9 @@ import {
 import { COLOR_REGIONS } from "@/lib/prefs/colors";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
+import { PluginConfigurationSection } from "@/features/plugins/configuration/components/PluginConfigurationSection";
+import { matchingConfigurationFields } from "@/features/plugins/configuration/data/search";
+import { usePlugins } from "@/store/plugins";
 import { UiProviderSettings } from "@/features/plugins/UiProviderSettings";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
@@ -39,6 +42,7 @@ import { preferenceMetadata, protectedPreference } from "./data/preferenceMetada
 
 export function SettingsPage({ visible: visiblePage = true }: { visible?: boolean }) {
   const { t, i18n } = useTranslation();
+  const plugins = usePlugins((state) => state.items);
   const settings = useSettings((state) => state.settings);
   const theme = useResolvedTheme(settings.theme);
   const info = useSettings((state) => state.info);
@@ -82,7 +86,13 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
   const isModified = (item: SettingDefinition) =>
     !samePreference(settings[item.key], defaults[item.key]) ||
     (item.key === "userCss" && cssDraft !== null && cssDraft !== settings.userCss);
-  const search = parseSearchQuery(query, ["is", "section", "id"]);
+  const search = parseSearchQuery(query, ["is", "section", "id", "plugin", "group"]);
+  const configurationCount = modifiedOnly
+    ? 0
+    : plugins.reduce(
+        (count, plugin) => count + matchingConfigurationFields(plugin, query).length,
+        0,
+      );
   const modifiedRequested =
     modifiedOnly ||
     search.filters.some(
@@ -191,6 +201,10 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
               exclusive: true,
             })),
             { key: "id", value: "", label: t("searchUi.id") },
+            ...plugins
+              .filter((plugin) => plugin.configuration)
+              .map((plugin) => ({ key: "plugin", value: plugin.id, label: plugin.name })),
+            { key: "group", value: "", label: t("configuration.groupFilter") },
           ]}
         />
         <label className="settings-modified-filter">
@@ -255,7 +269,9 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
           {filtering ? (
             <div className="settings-results">
               <span>
-                {t("settings.resultCount", { count: visible.length + Number(showStorage) })}
+                {t("settings.resultCount", {
+                  count: visible.length + Number(showStorage) + configurationCount,
+                })}
               </span>
               <Button size="sm" variant="ghost" onClick={clearFilters}>
                 {t("settings.clearFilters")}
@@ -394,7 +410,17 @@ export function SettingsPage({ visible: visiblePage = true }: { visible?: boolea
               </div>
             </section>
           ))}
-          {filtering && visible.length === 0 && !showStorage ? (
+          <PluginConfigurationSection
+            query={query}
+            hidden={
+              !((!filtering && section === "plugins") || (filtering && configurationCount > 0))
+            }
+            visible={
+              visiblePage &&
+              ((!filtering && section === "plugins") || (filtering && configurationCount > 0))
+            }
+          />
+          {filtering && visible.length === 0 && !showStorage && !configurationCount ? (
             <div className="settings-empty">
               <Search size={24} aria-hidden="true" />
               <p>{t("common.noResults")}</p>

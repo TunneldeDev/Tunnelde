@@ -146,6 +146,9 @@ pub struct PluginManifest {
     pub api_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub host_fields: Option<crate::services::host_fields::Schema>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration:
+        Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
     #[serde(default)]
     pub main: String,
     /// `theme` packages contribute data without an executable entry point.
@@ -210,6 +213,9 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if let Some(configuration) = &self.configuration {
+            configuration.validate()?;
+        }
         if let Some(schema) = &self.host_fields {
             schema.validate()?;
             if !self

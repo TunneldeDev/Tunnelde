@@ -1,5 +1,6 @@
 pub mod api;
 pub mod config;
+pub mod configuration;
 mod contributions;
 mod declarative;
 mod engines;
@@ -64,6 +65,8 @@ pub struct PluginInfo {
     pub version: String,
     pub api_version: u32,
     pub host_fields: Option<crate::services::host_fields::Schema>,
+    pub configuration:
+        Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
     pub description: Option<String>,
     pub commands: Vec<PluginCommand>,
     pub views: Vec<PluginView>,
@@ -165,6 +168,7 @@ impl Instance {
             version: self.manifest.version.clone(),
             api_version: self.manifest.api_version,
             host_fields: self.manifest.host_fields.clone(),
+            configuration: self.manifest.configuration.clone(),
             description: self.manifest.description.clone(),
             commands: self.manifest.commands.clone(),
             views: self.manifest.views.clone(),

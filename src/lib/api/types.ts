@@ -1,5 +1,6 @@
 import type { HostSourceReference } from "@/lib/hosts/sources";
 import type { HostFieldsSchema } from "@/lib/hosts/fields";
+import type { ConfigurationSchema } from "@/lib/extensions/contracts/configuration/schema";
 import type { HostListPreferences } from "@/lib/hosts/columns";
 import type { ShortcutRules } from "@/lib/keyboard/routing";
 import type { NetworkSettings } from "./network";
@@ -545,6 +546,7 @@ export interface NodeRuntimeInfo {
 
 export interface PluginInfo {
   hostFields?: HostFieldsSchema | null;
+  configuration?: ConfigurationSchema | null;
   tags?: string[];
   id: string;
   name: string;
