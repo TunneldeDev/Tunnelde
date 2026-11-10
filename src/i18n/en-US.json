@@ -1265,7 +1265,7 @@
       "commandUnavailable": "The plugin has not registered this frontend command.",
       "activationFailed": "The plugin UI failed to activate. Check the software log and restart the plugin.",
       "missingWorkspace": "The workbench provider did not keep its workspace mounted. The built-in interface has been restored.",
-      "duplicateSurface": "The workbench provider mounted a host surface more than once.",
+      "duplicateSurface": "The interface provider mounted a host surface more than once.",
       "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API."
     },
     "fileBrowser": {
@@ -2044,7 +2044,7 @@
   },
   "providers": {
     "title": "Interface providers",
-    "hint": "Choose installed extensions for host navigation or the workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
+    "hint": "Choose installed extensions for the host list, file browser, terminal or workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
     "hostList": "Host list",
     "fileBrowser": "File browser",
     "workbench": "Workbench",
