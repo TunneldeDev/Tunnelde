@@ -1265,7 +1265,7 @@
       "commandUnavailable": "插件尚未注册此前端命令。",
       "activationFailed": "插件界面激活失败，请查看软件日志并重启插件。",
       "missingWorkspace": "工作台提供者未保留工作区挂载，已恢复内置界面。",
-      "duplicateSurface": "工作台提供者重复挂载了宿主界面区域。",
+      "duplicateSurface": "界面提供者重复挂载了同一个宿主表面。",
       "userSelectionRequired": "请在设置中选择界面提供者。插件不能通过设置 API 修改该选择。"
     },
     "fileBrowser": {
@@ -2044,7 +2044,7 @@
   },
   "providers": {
     "title": "界面提供者",
-    "hint": "选择已安装的扩展来呈现主机列表或工作台。切换时保留已打开的页面和会话；可通过此处、F1 命令或恢复栏还原内置界面。",
+    "hint": "为主机列表、文件浏览器、终端或工作台选择已安装的扩展。切换时保留已打开的页面和会话，可在此处、F1 命令或恢复栏中恢复内置界面。",
     "hostList": "主机列表",
     "fileBrowser": "文件浏览器",
     "workbench": "工作台",
