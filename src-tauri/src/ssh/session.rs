@@ -965,9 +965,9 @@ async fn connect_for_auth(
 pub(crate) fn announce_connection(app: &AppHandle) {
     let runner_app = app.clone();
     tauri::async_runtime::spawn(async move {
+        crate::plugins::runners::on_reconnect(&runner_app).await;
         crate::ssh::files::durable::on_reconnect(&runner_app).await;
         crate::ssh::files::remote_editor::on_reconnect(&runner_app).await;
-        crate::plugins::runners::on_reconnect(&runner_app).await;
     });
 }
 

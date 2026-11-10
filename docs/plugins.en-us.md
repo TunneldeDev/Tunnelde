@@ -447,9 +447,9 @@ permissions and runtime.
 Remote runners require explicit confirmation, a separately selected native helper, a fresh
 private remote directory and an explicitly chosen remote runtime. No service or Node runtime
 is installed. Closing the app preserves remote tasks; stopping a plugin or entering restricted
-mode records stop requests and retries unreachable hosts on SSH reconnect. Runner records bind
+mode records stop requests and retries through available connections with backoff, including on SSH reconnect. Runner records bind
 to a saved host, so reconnecting with a new session ID can recover the same task. See
-[native helper setup](native-helper.md).
+[native helper setup](native-helper.md) and [durable runner lifecycle](plugin-runners.en-us.md).
 
 The optional `tunnelde-agent` executable supports MCP stdio and remote runners. Ordinary SSH,
 SFTP, terminal and local API chat use does not require it. Helper source, platform binaries and checksums are maintained in the independent

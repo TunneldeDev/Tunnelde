@@ -9,7 +9,7 @@ fn boot_id() -> &'static str {
     BOOT.get_or_init(|| uuid::Uuid::new_v4().to_string())
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins::runners) struct Owner {
     boot_id: String,

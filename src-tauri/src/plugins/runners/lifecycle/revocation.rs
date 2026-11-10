@@ -1,4 +1,4 @@
-use super::super::{flush_selected, load, save, HostContext, Record, MUTATIONS};
+use super::super::{repository, HostContext, Record};
 
 fn selected(record: &Record, boundary: u64) -> bool {
     record.runner_id != "deployment"
@@ -8,34 +8,26 @@ fn selected(record: &Record, boundary: u64) -> bool {
             .is_none_or(|owner| owner.retired_before(boundary))
 }
 
-/// Record cancellation while holding the same metadata mutex as launch. Tasks
-/// created by a replacement generation remain untouched even if this waits.
+/// Commit cancellation without waiting for any SSH operation. A delayed cleanup
+/// must not select a replacement generation.
 pub(in crate::plugins) async fn revoke_before(context: &HostContext, boundary: u64) {
     if !crate::plugins::manifest::valid_id(&context.id) {
         return;
     }
-    let _mutation = MUTATIONS.lock().await;
-    let mut records = match load(context) {
-        Ok(records) => records,
-        Err(error) => {
-            tracing::warn!(plugin_id = %context.id, %error, "could not read runner records for revocation");
-            return;
+    if let Err(error) = repository::transaction(context, |records| {
+        for record in records
+            .iter_mut()
+            .filter(|record| selected(record, boundary))
+        {
+            record.stop_pending = true;
+            record.advance()?;
         }
-    };
-    if !records.iter().any(|record| selected(record, boundary)) {
-        return;
-    }
-    for record in records
-        .iter_mut()
-        .filter(|record| selected(record, boundary))
-    {
-        record.stop_pending = true;
-    }
-    if let Err(error) = save(context, &records) {
+        Ok(())
+    }) {
         tracing::warn!(plugin_id = %context.id, %error, "could not persist runner stop requests");
         return;
     }
-    flush_selected(context, &mut records, |record| selected(record, boundary)).await;
+    super::request_recovery(&context.app);
 }
 
 #[cfg(test)]
