@@ -1,4 +1,4 @@
-use super::{super::Record, Kind};
+use super::{super::Record, presentation, Kind};
 use crate::ssh::session::SessionIdentity;
 use crate::{
     error::{AppError, AppResult},
@@ -16,14 +16,6 @@ fn dialogs() -> &'static Arc<tokio::sync::Semaphore> {
     DIALOGS.get_or_init(|| Arc::new(tokio::sync::Semaphore::new(1)))
 }
 
-fn display(value: &str, limit: usize) -> String {
-    value
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(limit)
-        .collect()
-}
-
 pub(super) async fn ask(
     app: &AppHandle,
     id: &str,
@@ -39,9 +31,10 @@ pub(super) async fn ask(
         (Kind::Control, true) => ("交接旧任务的控制权", "允许当前已授权插件控制此前版本启动的这个持久任务。原远端代码和权限范围不会自动更新。此操作不清除停止请求，不发送提示词，也不启动任务。确认前请核对原任务和插件。", "交接控制权", "取消"),
         (Kind::Control, false) => ("Hand over control of the previous task", "Allow the currently authorized plugin to control this durable task launched by an earlier package. Its remote code and scope are not automatically updated. This does not clear stop requests, send prompts or start work. Review the task and package before confirming.", "Hand over control", "Cancel"),
     };
-    let message = format!("{explanation}\n\nPlugin: {}\nTask: {}\nDirectory: {}\nDestination: {}\nServer key: {}\nOriginal package: {}\nCurrent package: {}",
-        display(id,64),display(&record.runner_id,80),display(&record.deployment.directory,1024),
-        display(&actual.address,512),display(&actual.server_key,128),display(&record.deployment.fingerprint,128),display(fingerprint,128));
+    let message = format!(
+        "{explanation}\n\n{}",
+        presentation::review(chinese, id, record, actual, kind, fingerprint)
+    );
     confirm(app, title, message, yes, no).await
 }
 
@@ -60,17 +53,21 @@ pub(in crate::plugins::runners) async fn stop(
         app,
         title,
         format!(
-            "{text}\n\nPlugin: {}\nTask: {}\nDirectory: {}\nDestination: {}",
-            display(id, 64),
-            display(&record.runner_id, 80),
-            display(&record.deployment.directory, 1024),
-            display(
+            "{text}\n\n{}\n{}",
+            presentation::record(chinese, id, record),
+            presentation::field(
+                chinese,
+                ("Destination", "目标"),
                 record
                     .deployment
                     .identity
                     .as_ref()
                     .map(|value| value.address.as_str())
-                    .unwrap_or("Unreviewed legacy identity"),
+                    .unwrap_or(if chinese {
+                        "待核对的旧目标"
+                    } else {
+                        "Unreviewed legacy identity"
+                    }),
                 512
             )
         ),
@@ -130,12 +127,7 @@ pub(in crate::plugins::runners) async fn forget(
     confirm(
         app,
         title,
-        format!(
-            "{text}\n\nPlugin: {}\nTask: {}\nDirectory: {}",
-            display(id, 64),
-            display(&record.runner_id, 80),
-            display(&record.deployment.directory, 1024)
-        ),
+        format!("{text}\n\n{}", presentation::record(chinese, id, record)),
         yes,
         no,
     )
