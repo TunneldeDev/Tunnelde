@@ -496,6 +496,24 @@ it("does not apply a delayed exposure approval to a cancelled editor", async () 
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("New draft");
 });
 
+it("retires the editor and its pending approval when the host changes", async () => {
+  const view = render(<ForwardingSection host={host} />);
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  fireEvent.change(screen.getByLabelText("Local listen address"), { target: { value: "0.0.0.0" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const confirmation = vi.mocked(useDialogs.getState().confirm).mock.calls.at(-1)![0];
+  view.rerender(<ForwardingSection host={{ ...host, id: "other", name: "Other host" }} />);
+  await act(async () => {
+    await confirmation.onConfirm();
+  });
+  expect(invokeMock).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
+  expect(screen.queryByRole("form")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  expect((screen.getByLabelText("Local listen address") as HTMLInputElement).value).toBe(
+    "127.0.0.1",
+  );
+});
+
 it("shows a delayed deletion conflict even when the rule no longer exists", async () => {
   rows = [savedRule()];
   render(<ForwardingSection host={host} />);

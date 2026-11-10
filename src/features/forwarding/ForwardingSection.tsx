@@ -49,7 +49,7 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
         </Button>
       </section>
     );
-  return <SavedForwardingSection {...props} />;
+  return <SavedForwardingSection key={props.host.id} {...props} />;
 }
 function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
