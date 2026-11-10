@@ -102,10 +102,6 @@
 .terminal-host {
   background: var(--td-color-terminal-background, var(--td-base-bg));
 }
-.terminal-host .xterm-viewport {
-  /* The grid fills whole rows; its unused bottom pixels must share the host background. */
-  background-color: transparent;
-}
 [data-theme="light"] .terminal-host {
   background: var(--td-color-terminal-background, #f8fafd);
 }
