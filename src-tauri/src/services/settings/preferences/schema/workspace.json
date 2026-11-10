@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "workspace",
+  "type": "object",
+  "properties": {
+    "sidebarWidth": {
+      "type": "integer",
+      "minimum": 220,
+      "maximum": 420
+    },
+    "rightPanel": {
+      "type": "boolean"
+    },
+    "rightPanelWidth": {
+      "type": "integer",
+      "minimum": 240,
+      "maximum": 460
+    },
+    "showStatusBar": {
+      "type": "boolean"
+    },
+    "restore": {
+      "type": "boolean"
+    },
+    "hostActivation": {
+      "type": "string",
+      "enum": [
+        "terminal",
+        "details",
+        "edit"
+      ]
+    },
+    "hostDirectConnect": {
+      "type": "boolean"
+    },
+    "hostList": {
+      "type": "object",
+      "properties": {
+        "view": {
+          "type": "string",
+          "enum": [
+            "tree",
+            "table"
+          ]
+        },
+        "order": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "maxItems": 256
+        },
+        "hidden": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "maxItems": 256
+        },
+        "widths": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 64,
+            "maximum": 480
+          },
+          "maxProperties": 256,
+          "propertyNames": {
+            "type": "string",
+            "maxLength": 256
+          }
+        },
+        "sort": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                }
+              },
+              "required": [
+                "key",
+                "direction"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "view",
+        "order",
+        "hidden",
+        "widths",
+        "sort"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "sidebarWidth",
+    "rightPanel",
+    "rightPanelWidth",
+    "showStatusBar",
+    "restore",
+    "hostActivation",
+    "hostDirectConnect",
+    "hostList"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "general",
+  "type": "object",
+  "properties": {
+    "language": {
+      "type": "string",
+      "enum": [
+        "system",
+        "zh-CN",
+        "en-US"
+      ]
+    },
+    "closeToTray": {
+      "type": "boolean"
+    },
+    "releaseWebviewInTray": {
+      "type": "boolean"
+    },
+    "lightweightMode": {
+      "type": "boolean"
+    },
+    "showDockIconInBackground": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "language",
+    "closeToTray",
+    "releaseWebviewInTray",
+    "lightweightMode",
+    "showDockIconInBackground"
+  ],
+  "additionalProperties": false
+}

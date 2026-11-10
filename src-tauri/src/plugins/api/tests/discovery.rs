@@ -35,15 +35,24 @@ fn domain_catalogue_preserves_existing_method_contracts() {
     };
     assert_eq!(current["version"], previous["version"]);
     let actual = keyed(&current);
-    for (name, contract) in keyed(&previous) {
-        assert_eq!(
-            actual.get(&name),
-            Some(&contract),
-            "changed contract: {name}"
-        );
+    let historical = keyed(&previous);
+    for (name, contract) in &historical {
+        assert_eq!(actual.get(name), Some(contract), "changed contract: {name}");
     }
-    // The decomposition must not silently drop or accidentally introduce methods.
-    assert_eq!(actual.len(), previous["methods"].as_array().unwrap().len());
+    // New methods are explicit additions; keep every historical contract frozen.
+    let added: Vec<_> = actual
+        .keys()
+        .filter(|name| !historical.contains_key(*name))
+        .map(String::as_str)
+        .collect();
+    assert_eq!(
+        added,
+        [
+            "preferences.schema",
+            "preferences.snapshot",
+            "preferences.update"
+        ]
+    );
 }
 
 // CI validates the actual serialized host response against the frozen v1 schema.

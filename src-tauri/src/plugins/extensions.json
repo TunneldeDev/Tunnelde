@@ -197,7 +197,7 @@
     },
     {
       "id": "preferences",
-      "namespaces": ["settings", "storage"]
+      "namespaces": ["settings", "preferences", "storage"]
     },
     {
       "id": "governance",

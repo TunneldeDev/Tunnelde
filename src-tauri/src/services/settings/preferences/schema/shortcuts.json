@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "shortcuts",
+  "type": "object",
+  "properties": {
+    "bindings": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "maxItems": 4
+      },
+      "maxProperties": 128,
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 256
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "propagation": {
+              "type": "string",
+              "enum": [
+                "consume",
+                "continue",
+                "block"
+              ]
+            }
+          },
+          "required": [
+            "priority",
+            "propagation"
+          ],
+          "additionalProperties": false
+        },
+        "maxProperties": 512,
+        "propertyNames": {
+          "type": "string",
+          "maxLength": 256
+        }
+      },
+      "maxProperties": 512,
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 256
+      }
+    },
+    "showDetails": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "bindings",
+    "rules",
+    "showDetails"
+  ],
+  "additionalProperties": false
+}

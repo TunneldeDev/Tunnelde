@@ -51,6 +51,9 @@ jobs:
       - name: Check translation catalogues
         run: pnpm i18n:check
 
+      - name: Check public preference contracts
+        run: node scripts/contracts/preferences/generate.mjs --check
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -142,7 +145,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: TunneldeDev/Tunnelde-hub
-          ref: f31d614c6c128c35a0c23c3fa75c1f36bdd14ca1
+          ref: d677bdb4ef814eac5210c23a7327271ab6e5ce30
           path: .sdk-parser
           persist-credentials: false
 
@@ -187,6 +190,7 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
@@ -228,6 +232,7 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops
