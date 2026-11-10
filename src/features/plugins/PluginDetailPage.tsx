@@ -19,6 +19,7 @@ import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
 import { pluginTags, togglePluginTag } from "@/lib/plugins/discovery";
 import { openPluginAction } from "@/lib/plugins/actions";
+import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -95,8 +96,7 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
       else useWorkspace.getState().openPluginView(pluginId, view.id, view.title);
     }
   };
-  const compatible =
-    entry?.apiVersion === undefined || entry.apiVersion === null || entry.apiVersion === 1;
+  const compatible = supportsManifestVersion(entry?.apiVersion);
   return (
     <div className="page plugin-detail">
       <header className="plugin-detail__head">
