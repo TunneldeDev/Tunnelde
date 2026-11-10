@@ -15,11 +15,25 @@ infrastructure contains domain-independent events, resource scopes and synchroni
 
 Forwarding DTOs and validation live in `services/forwarding/contract.rs`, persistence in
 `repository.rs`, and service entry points in `mod.rs`. Native IPC uses `commands/forwarding.rs`;
-the plugin adapter uses `plugins/api/forwarding.rs`. SSH listeners and relaying remain in the
+the plugin adapter uses `plugins/api/domains/forwarding/mod.rs`. SSH listeners and relaying remain in the
 transport module. Both adapters call the domain service. Frontend contracts, shared state and
 views are also separate. Moving files does not change existing RPC names, permissions or wire
 shapes. SDK and documentation entry points should follow domain boundaries; older modules
 have not all migrated yet.
+
+The RPC boundary in `plugins/api.rs` owns request authorization, payload limits and response
+reauthorization. `api/routing.rs` only selects adapters and publishes the existing committed
+domain invalidations. Adapter implementations live under `api/domains/<domain>/`; file
+adapters separate local operations, SFTP, owned transfers and atomic text publication.
+Connection DTOs and bounded SSH execution also have separate files. The request/reply bridge
+to frontend commands lives in `api/transport/frontend.rs`, independently of business logic.
+Tests live beside their owning implementation; cross-domain frozen contract fixtures remain
+shared. These internal module paths are not new plugin RPC namespaces.
+
+Public UI types live under `src/lib/extensions/contracts/<domain>/`. Their SDK mirror and
+the RPC declarations in the marketplace repository follow the same domain boundaries.
+Compatibility entry files re-export the historical names. Generators validate the public
+dependency graph and historical consumers; do not copy private application stores into the SDK.
 
 ## Discover implemented capabilities
 

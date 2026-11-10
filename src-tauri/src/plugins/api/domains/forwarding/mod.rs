@@ -1,5 +1,5 @@
 //! Plugin RPC adapter for forwarding. Authorization and runtime ownership stay at this boundary.
-use super::{authorize, encode, field, HostContext};
+use crate::plugins::api::{authorize, encode, field, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -7,7 +7,7 @@ use crate::{
 use serde_json::Value;
 use tauri::Manager;
 
-pub(super) async fn dispatch(
+pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
     method: &str,
     params: Value,
