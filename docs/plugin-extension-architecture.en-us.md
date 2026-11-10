@@ -79,6 +79,19 @@ loaded frontend code.
 
 ## Domain boundaries
 
+RPC method discovery is organized under
+`src-tauri/src/plugins/api/catalogue/<domain>/methods.rs`. Its composition module
+only owns catalogue metadata and assembly; routing, authorization, domain services,
+persistence and SSH transport remain separate responsibilities. Existing wire
+method names, permissions and compatibility metadata are preserved. A historical
+catalogue fixture compares complete method contracts by name; discovery order
+is presentation detail. The SDK reader checks every composed domain and rejects
+unknown entries, duplicate methods, missing files and unreferenced domains.
+
+This separates discovery declarations, not the entire RPC implementation. Further
+domain adapters and backend SDK types still require migration. UI declarations
+are separately classified under `src/lib/extensions/contracts/<domain>/`.
+
 Public data must use protocol DTOs, not expose arbitrary internal state. Operations
 must pass through domain services and repeat authorization at execution time.
 An execution location is distinct from the location of the target resource.

@@ -57,7 +57,7 @@ mod tests {
                 );
             }
         }
-        for method in METHODS {
+        for method in METHODS.iter() {
             let namespace = method.name.split('.').next().unwrap();
             assert!(
                 namespaces.contains(namespace),
