@@ -103,9 +103,10 @@ catalogue fixture compares complete method contracts by name; discovery order
 is presentation detail. The SDK reader checks every composed domain and rejects
 unknown entries, duplicate methods, missing files and unreferenced domains.
 
-This separates discovery declarations, not the entire RPC implementation. Further
-domain adapters and backend SDK types still require migration. UI declarations
-are separately classified under `src/lib/extensions/contracts/<domain>/`.
+Discovery declarations, RPC adapters and SDK types are each grouped by domain in
+their own layer. Existing SDK entry points remain compatible exports. UI declarations
+are separately classified under `src/lib/extensions/contracts/<domain>/`. This source
+organization does not mean every domain has completed its service or extension migration.
 
 Public data must use protocol DTOs, not expose arbitrary internal state. Operations
 must pass through domain services and repeat authorization at execution time.
