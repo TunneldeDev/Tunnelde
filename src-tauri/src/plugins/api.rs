@@ -36,171 +36,8 @@ pub struct HostContext {
     pub tool_request: Option<uuid::Uuid>,
 }
 
-#[derive(Serialize)]
-pub struct ApiMethod {
-    pub name: &'static str,
-    pub permissions: &'static [&'static str],
-    pub params: &'static str,
-    pub description: &'static str,
-    /// Compatibility state for this method. New methods start experimental;
-    /// promotion to stable is an explicit contract decision.
-    pub stability: &'static str,
-    pub since: Option<&'static str>,
-    pub deprecated: Option<&'static str>,
-}
-
-macro_rules! method {
-    ($name:literal, [$($permission:literal),*], $params:literal, $description:literal) => {
-        ApiMethod {
-            name: $name,
-            permissions: &[$($permission),*],
-            params: $params,
-            description: $description,
-            stability: "experimental",
-            since: None,
-            deprecated: None,
-        }
-    };
-}
-
-macro_rules! stable_method {
-    ($name:literal, [$($permission:literal),*], $params:literal, $description:literal, $since:literal) => {
-        ApiMethod {
-            name: $name,
-            permissions: &[$($permission),*],
-            params: $params,
-            description: $description,
-            stability: "stable",
-            since: Some($since),
-            deprecated: None,
-        }
-    };
-}
-
-pub const METHODS: &[ApiMethod] = &[
-    method!("extensions.describe", [], "{}", "Discover implemented extension points, their domain, permissions, registration methods, composition and runtime ownership. The experimental directory is not a completeness or authorization claim; use api.describe for individual method contracts."),
-    method!("hostList.setDecorations", ["hosts.read", "workspace.write"], "{id:string,priority?:number,decorations:{hostId:string,badge?:string,description?:string,tooltip?:string,icon?:server|cloud|container|database|globe|code|terminal|shield|key|activity,tone?:neutral|info|success|warning|error}[]}", "Replace a runtime-owned collection of host-list decorations. Plain text, semantic colors and host-rendered icons; host names, addresses, connection state and actions remain intact. At most 256 distinct existing hosts per collection, 8 collections per plugin and 128 total. Empty decorations clears a collection. Higher priority wins icon/description; badges combine in deterministic order. Removed on stop, crash, revocation or restart; never modifies saved hosts."),
-    method!("hostList.removeDecorations", ["hosts.read", "workspace.write"], "{id:string}", "Remove only this plugin runtime's host decoration collection; returns false if absent. Requires the same permissions as registration."),
-    stable_method!("tabBar.set", [], "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string,placement?:leading|trailing,group?:string,tooltip?:string,showLabel?:boolean,checked?:boolean}", "Register or replace a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views and trailing placement; when:{} targets all tabs. Groups are plugin-scoped. showLabel keeps button text alongside its icon; checked is button-only, host-rendered, and acknowledged through set. Narrow panes move controls into an accessible overflow menu. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization.", "0.32.0-beta.6"),
-    stable_method!("tabBar.remove", [], "{id:string}", "Remove this runtime's tab-bar control; return false if absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.6"),
-    stable_method!("statusBar.set", [], "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}", "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.", "0.32.0-beta.1"),
-    stable_method!("statusBar.remove", [], "{id:string}", "Remove this runtime's status item; return false when absent. IDs are scoped to the plugin and runtime generation.", "0.32.0-beta.1"),
-    stable_method!("editor.active", ["editor.read"], "{}", "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk.", "0.29.0-beta.2"),
-    stable_method!("editor.replace", ["editor.write"], "{tabId:string,documentId:string,version:number,text:string}", "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents.", "0.29.0-beta.2"),
-    method!("mounts.browse", ["mounts.read"], "{sessionId:string,path?:string}", "Browse directories through an authenticated SFTP session for the mount chooser."),
-    method!("mounts.open", ["mounts.write"], "{id:string}", "Open this plugin's mount in the system file manager."),
-    method!("mounts.documentation", ["mounts.read"], "{}", "Open platform SSHFS installation instructions in the system browser."),
-    method!("mounts.dependencies", ["mounts.read"], "{}", "Detect SSHFS and FUSE compatibility; never install software or drivers."),
-    method!("mounts.list", ["mounts.read"], "{}", "List this plugin's own SSHFS mounts."),
-    method!("mounts.mount", ["mounts.write"], "{sessionId:string,remotePath:string,mountPoint:string,readOnly?:boolean}", "Mount using an authenticated SSH subsystem and the host's proxy/jump route. Defaults read-only."),
-    method!("mounts.unmount", ["mounts.write"], "{id:string,force?:boolean}", "Unmount this plugin's own SSHFS filesystem; never terminate unrelated processes."),
-    method!("forwards.list", ["forwards.read"], "{}", "Read saved TCP forwarding rules and running status."),
-    method!("forwards.save", ["forwards.write"], "{rule:ForwardRule}", "Create or update a validated TCP forwarding rule; active rules must be stopped first."),
-    method!("forwards.remove", ["forwards.write"], "{id:string}", "Remove a saved forwarding rule and stop its active connections."),
-    method!("forwards.start", ["forwards.write"], "{id:string,sessionId:string}", "Start a saved forward through its host's active authenticated session; stopped on plugin revocation."),
-    method!("forwards.stop", ["forwards.write"], "{id:string}", "Stop a forwarding listener and its active connections."),
-    method!("runners.deploy", ["ssh.exec", "fs.read", "sftp.write"], "{sessionId:string,platform:posix|windows,directory:string,runnerPath:string,executable:string}", "After explicit confirmation, deploy an optional selected native helper and this plugin into a fresh user directory. Never install Node or modify services."),
-    method!("runners.start", ["ssh.exec"], "{sessionId:string,directory:string,config:object,secrets?:object}", "Start a durable plugin runner using a previously approved deployment; secrets travel over SSH stdin, not files or argv."),
-    method!("runners.list", ["ssh.exec"], "{}", "Read this plugin's durable runner records, including stopPending for unreachable revoked tasks."),
-    method!("runners.send", ["ssh.exec"], "{sessionId:string,runnerId:string,message:object}", "Enqueue an RPC request or approval response for this plugin's own remote runner."),
-    method!("runners.poll", ["ssh.exec"], "{sessionId:string,runnerId:string,afterSeq?:number}", "Read sequenced durable runner events and pending approvals after reconnect."),
-    method!("runners.status", ["ssh.exec"], "{sessionId:string,runnerId:string}", "Read this plugin's remote runner status."),
-    method!("runners.stop", ["ssh.exec"], "{sessionId:string,runnerId:string}", "Persist and request stopping a remote runner; does not claim that an unreachable process has stopped."),
-    stable_method!("events.publish", [], "{event:string,payload?:JSON}", "Emit an advisory UI event from the current approved runtime. Event names use 1-128 ASCII letters, digits, dot, underscore, colon or hyphen. Omitted payload becomes null; extra fields cannot replace host-supplied pluginId/generation. Shared 256KiB UTF-8 request budget. Return null on transport acceptance, not subscriber acknowledgement or durable delivery. No replay, cross-request completion order or permission grant is promised; consumers must check runtime generation.", "0.21.0"),
-    method!("secrets.get", ["secrets"], "{key:string}", "Read this plugin's own OS-keyring secret; return string or null. Never exposes SSH credentials."),
-    method!("secrets.set", ["secrets"], "{key:string,value:string}", "Store this plugin's own secret in the operating system keyring, at most 16KiB."),
-    method!("secrets.delete", ["secrets"], "{key:string}", "Delete this plugin's own keyring secret."),
-    method!("tasks.start", [], "{executable:string,args?:string[],cwd?:string,sessionId?:string,platform?:posix|windows,timeoutMs?:number}", "Start an explicitly selected executable; requires process.exec locally or ssh.exec remotely. Return taskId. Separate bounded stdout/stderr; default 30 minutes, maximum 24 hours."),
-    method!("tasks.list", [], "{}", "List this runtime's own background processes."),
-    method!("tasks.status", [], "{taskId:string}", "Read this runtime's own process status and exit code."),
-    method!("tasks.readOutput", [], "{taskId:string,afterSeq?:number}", "Read bounded sequenced stdout/stderr events; truncated reports expired output."),
-    method!("tasks.write", [], "{taskId:string,data:string}", "Write UTF-8 to this runtime's own process stdin; at most 128KiB."),
-    method!("tasks.closeInput", [], "{taskId:string}", "Close this runtime's own process stdin."),
-    method!("tasks.cancel", [], "{taskId:string}", "Stop this runtime's own process; local process trees are terminated, remote server signal support may vary."),
-    method!("tools.invoke", [], "{method:string,params:object,mode:ask|approve|full|readOnly,scope:{sessionIds?:string[],hostIds?:string[],localRoots?:string[],remoteRoots?:{sessionId:string,path:string}[]},review?:{approved:boolean,reason:string},clientId?:string,requestId?:string}", "Execute an allowlisted AI/MCP tool after permission, target scope and approval checks. ReadOnly rejects every command and mutation. Review may only be supplied by a trusted plugin's independent reviewer."),
-    method!("tools.cancel", [], "{requestId:string}", "Cancel this plugin runtime's pending tool invocation. Undelivered SSH connections created by that invocation are closed; a completed invocation's delivered connection is unaffected. Already completed remote operations cannot be rolled back."),
-    method!("tools.revokeClient", [], "{clientId:string}", "Permanently revoke this client ID for the current plugin runtime generation, cancel its pending tool invocations and release its tasks, transfers and SSH connections. Other clients, direct plugin connections, user-created connections and replacement runtimes are unaffected. A new client identity is required to resume."),
-    stable_method!("api.describe", [], "{}", "List the fixed versioned host API; every request still checks runtime authorization.", "0.21.0"),
-    stable_method!("log", ["log"], "{message:string,level?:string,domain?:string,operation?:string,requestId?:string,fields?:object}", "Write a bounded local log at its requested severity; return null on acceptance, not durable delivery. Host supplies plugin identity and runtime generation; domain is plugin-scoped. Optional structured fields redact credential keys and URL credentials/query/fragment. Existing message/level calls remain supported; structured options require 0.33.0-beta.5 or later. Subject to configured log filter and nonblocking writer; never include secrets in message text.", "0.21.0"),
-    method!("app.info", ["app.read"], "{}", "Read application metadata, platform and preference schema; no credentials."),
-    method!("app.openExternal", ["app.openExternal"], "{url:string}", "Open an http/https URL with the system browser."),
-    method!("settings.get", ["settings.read"], "{}", "Read application preferences."),
-    method!("settings.update", ["settings.write"], "{patch:object}", "Update and sanitize preferences through the normal settings service."),
-    method!("hosts.snapshot", ["hosts.read"], "{}", "Read saved host and group metadata; authentication secrets are never returned."),
-    method!("hostList.setColumn", ["hosts.read", "workspace.write"], "{id:string,label:string,type:text|number|boolean,width?:number,cells:array}", "Replace one runtime-owned host table column. Each cell is {hostId,value,tooltip?}; at most 256 distinct existing hosts, 512 code points per text value, finite numbers and booleans. At most 8 columns and 512 KiB serialized JSON per plugin, 128 columns and 4 MiB total. Width defaults to 140, range 64..480. Empty cells retain the column; missing cells display unset. Host identity and connection behavior stay host-owned. Stop, crash, replacement and revocation remove contributions; user display preferences remain."),
-    method!("hostList.removeColumn", ["hosts.read", "workspace.write"], "{id:string}", "Remove this runtime's host table column. Returns whether the current generation owned a matching column."),
-    method!("hosts.setSource", ["hosts.read", "hosts.write"], "{id:string,label:string,entries:{id:string,name:string,host:string,port?:number,username:string,tags?:string[],note?:string}[]}", "Atomically replace runtime-owned, nonsecret discovered hosts. No connection or persistence is implied. At most 256 unique entries per source, 8 sources/512 entries per plugin, 128 sources/4096 entries and 4 MiB total. Host IDs bind owner, source and complete entry content, so stale dialogs cannot connect a changed target. Stop, crash and revocation remove discovery data; user-opened live connections remain user-owned. Connect using the normal SSH flow; save a copy to configure keys or persistent credentials."),
-    method!("hosts.removeSource", ["hosts.read", "hosts.write"], "{id:string}", "Remove this runtime's discovery source; returns false when absent. Does not delete saved hosts, credentials or existing user connections."),
-    method!("hosts.sourcesSnapshot", ["hosts.read"], "{offset?:number,revision?:number}", "Read one active discovery source per page, with nonsecret entries and content-bound hostIds. Returns {revision,total,nextOffset,items:[{pluginId,pluginName,id,label,entries:[{hostId,id,name,host,port,username,tags,note}]}]}. Start at offset 0; pass revision with nextOffset. A changed revision rejects continuation; restart from zero. Separate from saved hosts.snapshot; bounded by one source and the shared request budget."),
-    method!("hosts.getFields", ["hosts.read"], "{hostId:string}", "Read this plugin's manifest hostFields schema and revisioned values for one existing host. Returns {schema,document}; document includes hostId, revision, schemaDigest, schemaVersion, storedSchemaVersion, schemaChanged and values. Retains values after schema changes; does not execute migration or expose another plugin's data. Nonsecret metadata only."),
-    method!("hosts.setFields", ["hosts.read", "hosts.write"], "{hostId:string,expectedRevision:number,schemaDigest:string,values:object}", "Atomically replace this plugin's host fields against the current schema digest and revision. Declared text, number, boolean and select values only; missing keys unset values. No merge, implicit migration or secret storage. Returns {schema,document}; stale revisions/schemas fail without mutation. 32KiB per document, 4MiB values per plugin, 32MiB total. Host deletion cascades, uninstall retains data. Revocation is serialized with commit."),
-    method!("hosts.create", ["hosts.write"], "{input:HostInput}", "Create a validated saved host."),
-    method!("hosts.update", ["hosts.write"], "{id:string,input:HostInput}", "Replace a saved host's validated metadata."),
-    method!("hosts.delete", ["hosts.write"], "{id:string}", "Delete a saved host and forget its stored credential."),
-    method!("hosts.markUsed", ["hosts.write"], "{id:string}", "Update a saved host's last-used time."),
-    method!("hosts.reorder", ["hosts.write"], "{ids:string[]}", "Persist the order of saved hosts; at most 500 IDs."),
-    method!("groups.create", ["hosts.write"], "{input:GroupInput}", "Create a validated host group."),
-    method!("groups.update", ["hosts.write"], "{id:string,input:GroupInput}", "Update a validated host group."),
-    method!("groups.delete", ["hosts.write"], "{id:string}", "Delete a host group through the normal group service."),
-    stable_method!("sessions.list", ["sessions.read"], "{}", "List active SSH session metadata; no passwords or private keys.", "0.21.0"),
-    method!("sessions.connect", ["ssh.exec"], "{request:SshConnectRequest}", "Connect a saved host with normal host-key verification; never auto-trust a server. The connection belongs to this runtime generation and closes on stop, crash, revocation or replacement unless explicitly transferred by sessions.requestHandoff. Through tools.invoke it also belongs to that client; client revocation or cancellation before result acceptance closes it. Pending and live connections share a limit of 8 per plugin and 64 total; connection setup has a 120-second deadline. Opening a terminal or file tab does not transfer ownership. User-created connections are unaffected."),
-    method!("sessions.disconnect", ["ssh.exec"], "{sessionId:string}", "Disconnect an active SSH session."),
-    method!("sessions.requestHandoff", ["ssh.exec"], "{sessionId:string}", "Ask the user in a native dialog to keep this runtime's live SSH connection independently of plugin/client lifetime. Returns true only after accepted ownership transfer, false on decline; expired, revoked, disconnected, foreign and pending-result resources fail. Does not open a tab, grant new access or persist the transport across application exit. Not available through tools.invoke."),
-    method!("sessions.exec", ["ssh.exec"], "{sessionId:string,command:string,timeoutMs?:number}", "Execute in a separate SSH channel; return stdout/stderr/exitCode/signal. Timeout 100–60000ms, output at most 1MiB."),
-    method!("terminal.write", ["ssh.exec"], "{sessionId:string,data:string}", "Write plain UTF-8 terminal input, including remote shell commands; the host handles transport encoding."),
-    method!("terminal.resize", ["ssh.exec"], "{sessionId:string,cols:number,rows:number}", "Resize the remote terminal through the validated session service."),
-    method!("files.local.home", ["fs.read"], "{}", "Read the local home directory path."),
-    method!("files.local.list", ["fs.read"], "{path?:string}", "List a local directory."),
-    method!("files.local.readText", ["fs.read"], "{path:string}", "Read a UTF-8 local text file, at most 512KiB; reject binary data."),
-    method!("files.local.writeText", ["fs.write"], "{path:string,content:string,baseline?:string}", "Atomically replace existing local UTF-8 text, at most 512KiB; optional baseline detects external edits."),
-    method!("files.local.createFile", ["fs.write"], "{path:string}", "Create an empty local file without replacing an existing file."),
-    method!("files.local.mkdir", ["fs.write"], "{path:string}", "Create a local directory."),
-    method!("files.local.rename", ["fs.write"], "{from:string,to:string,overwrite?:boolean}", "Rename a local file or directory; overwriting is opt-in."),
-    method!("files.local.copy", ["fs.read", "fs.write"], "{from:string,to:string,overwrite?:boolean}", "Copy local files/directories through the existing copy service."),
-    method!("files.local.delete", ["fs.write"], "{path:string,isDir:boolean}", "Delete a local file or directory."),
-    method!("files.sftp.list", ["sftp.read"], "{sessionId:string,path?:string}", "List a remote directory using an active SSH session."),
-    method!("files.sftp.resolveDirectory", ["sftp.read"], "{sessionId:string,path?:string}", "Resolve the SSH account home and an optional working directory through SFTP without listing entries or executing a shell. Return {home,path}. Supports ~ and relative paths."),
-    method!("files.sftp.readText", ["sftp.read"], "{sessionId:string,path:string}", "Read remote UTF-8 text through the editor service; API response size limits apply."),
-    method!("files.sftp.writeText", ["sftp.write"], "{sessionId:string,path:string,content:string,baseline?:string}", "Atomically replace existing remote text; optional baseline detects external edits."),
-    method!("files.sftp.createFile", ["sftp.write"], "{sessionId:string,path:string}", "Create an empty remote file without replacing an existing file."),
-    method!("files.sftp.mkdir", ["sftp.write"], "{sessionId:string,path:string}", "Create a remote directory."),
-    method!("files.sftp.rename", ["sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Rename a remote file/directory; overwriting is opt-in."),
-    method!("files.sftp.copy", ["sftp.read", "sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Copy remote files/directories within a session."),
-    method!("files.sftp.delete", ["sftp.write"], "{sessionId:string,path:string,isDir:boolean}", "Delete a remote file or directory."),
-    method!("files.upload", ["fs.read", "sftp.write"], "{sessionId:string,localPath:string,remotePath:string,overwrite?:boolean}", "Copy a local file or directory to a remote path. Return transferId; cancellation, progress and file refresh use the normal transfer service. Revoking access or stopping this runtime cancels its active transfers."),
-    method!("files.download", ["sftp.read", "fs.write"], "{sessionId:string,remotePath:string,localPath:string,overwrite?:boolean}", "Copy a remote file or directory to a local path. Return transferId; never remove the source. Revoking access or stopping this runtime cancels its active transfers."),
-    method!("files.cancelTransfer", [], "{transferId:string}", "Cancel only a transfer owned by this plugin's current runtime. Return true if its active transfer was found; false for completed, missing or other owners' transfers."),
-    method!("files.transferStatus", [], "{transferId:string}", "Read progress or the final TransferEvent for this runtime's own transfer; return null for missing, other-owner or expired IDs. The latest 256 completed plugin transfers are retained in memory."),
-    method!("monitor.system", ["monitor.read"], "{}", "Read local CPU, memory, disk and network statistics."),
-    method!("monitor.stats", ["monitor.read"], "{sessionId:string}", "Sample remote system statistics."),
-    method!("monitor.processes", ["monitor.read"], "{sessionId:string}", "List remote processes."),
-    method!("monitor.kill", ["monitor.write"], "{sessionId:string,pid:number}", "Send TERM to a remote process; protected process validation still applies."),
-    method!("history.list", ["history.read"], "{hostId:string,limit?:number}", "Read saved command history, at most 500 rows."),
-    method!("history.record", ["history.write"], "{hostId:string,command:string}", "Record a command for an existing saved host."),
-    method!("history.delete", ["history.write"], "{id:number}", "Delete one command-history entry."),
-    method!("history.clear", ["history.write"], "{hostId:string}", "Clear a saved host's command history."),
-    stable_method!("workspace.snapshot", ["workspace.read"], "{}", "Read a detached v1 snapshot of live tabs, panes, active IDs and split layout, including hidden panels and file-pane metadata. No file contents, credentials or arbitrary store fields. Tab kinds and file-view option values are open vocabularies; tolerate unfamiliar values. The snapshot neither reserves resources nor grants their permissions.", "0.21.0"),
-    method!("workspace.openPage", ["workspace.write"], "{kind:welcome|settings|about|updates|knownHosts}", "Open or focus an existing application page."),
-    method!("workspace.openHost", ["workspace.write", "hosts.read"], "{hostId:string}", "Open a saved host's details; never reveal an authentication secret."),
-    method!("workspace.openTerminal", ["workspace.write", "sessions.read"], "{sessionId:string}", "Open a terminal tab for an already-connected session."),
-    method!("workspace.openFiles", ["workspace.write", "sessions.read"], "{sessionId:string}", "Open a file browser for an already-connected session."),
-    method!("workspace.openSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Dock a list into the current workspace group."),
-    method!("workspace.activate", ["workspace.write"], "{tabId:string}", "Activate an existing tab and its group."),
-    method!("workspace.close", ["workspace.write"], "{tabId:string}", "Close a tab; dirty editors retain the normal user confirmation. Result reports pending confirmation."),
-    method!("workspace.split", ["workspace.write"], "{tabId:string,direction:row|column,position?:before|after,targetPaneId?:string}", "Move a tab into a split group."),
-    method!("workspace.move", ["workspace.write"], "{tabId:string,paneId:string,beforeTabId?:string|null}", "Move or reorder an existing tab."),
-    method!("workspace.showQuickAccess", ["workspace.write"], "{query?:string}", "Open Quick Access with an optional query. Never execute a command automatically."),
-    method!("workspace.setPaneLocked", ["workspace.write"], "{paneId:string,locked:boolean}", "Set the destination lock on an existing pane."),
-    method!("workspace.resizeSplit", ["workspace.write"], "{splitId:string,ratio:number}", "Resize an existing split with a ratio between 0.1 and 0.9."),
-    method!("workspace.returnSidebar", ["workspace.write"], "{view:hosts|plugins|knownHosts}", "Return a docked list to the sidebar."),
-    method!("clipboard.readText", ["clipboard.read"], "{}", "Read the system text clipboard."),
-    method!("clipboard.writeText", ["clipboard.write"], "{text:string}", "Replace the system text clipboard."),
-    stable_method!("storage.get", [], "{key:string}", "Read plugin-scoped JSON data. Keys use 1–128 ASCII letters, digits, dot, hyphen or underscore.", "0.21.0"),
-    stable_method!("storage.set", [], "{key:string,value:JSON}", "Persist plugin-scoped JSON data, at most 256KiB total per plugin.", "0.21.0"),
-    stable_method!("storage.delete", [], "{key:string}", "Remove a key from plugin-scoped JSON data.", "0.21.0"),
-    stable_method!("ui.showMessage", [], "{message:string,kind?:info|success|error}", "Show a bounded plain-text notification prefixed with the installed plugin's identity. Returns null on acceptance, not durable delivery. Nonempty message, no NUL, at most 4000 UTF-16 units. Omitted/null kind defaults to info. No events or actions; notifications may expire or be displaced.", "0.21.0"),
-    stable_method!("ui.confirm", [], "{message:string}", "Ask a plugin-identified plain-text confirmation without replacing an existing dialog. Returns true only on confirmation; dismiss, replacement or 55-second UI timeout returns false. Nonempty message, no NUL, at most 220Ki UTF-16 units and the shared 256KiB wire budget. Concurrent dialogs reject as busy; stopped/revoked/cancelled runtimes do not receive approval. No additional permissions are granted.", "0.21.0"),
-];
+mod catalogue;
+pub use catalogue::{ApiMethod, METHODS};
 
 pub fn method_info(name: &str) -> Option<&'static ApiMethod> {
     METHODS.iter().find(|entry| entry.name == name)
@@ -1197,6 +1034,35 @@ mod tests {
         assert_eq!(experimental["since"], Value::Null);
     }
 
+    // Source organization must not change existing method metadata or stable schemas.
+    #[test]
+    fn domain_catalogue_preserves_existing_method_contracts() {
+        let previous: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/plugin-compat/rpc-catalogue-v1/catalogue.json"
+        ))
+        .unwrap();
+        let current = describe_api();
+        let keyed = |value: &Value| -> std::collections::BTreeMap<String, Value> {
+            value["methods"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|method| (method["name"].as_str().unwrap().to_owned(), method.clone()))
+                .collect()
+        };
+        assert_eq!(current["version"], previous["version"]);
+        let actual = keyed(&current);
+        for (name, contract) in keyed(&previous) {
+            assert_eq!(
+                actual.get(&name),
+                Some(&contract),
+                "changed contract: {name}"
+            );
+        }
+        // The decomposition must not silently drop or accidentally introduce methods.
+        assert_eq!(actual.len(), previous["methods"].as_array().unwrap().len());
+    }
+
     // CI validates the actual serialized host response against the frozen v1 schema.
     #[test]
     fn emit_discovery_contract_response() {
@@ -1211,7 +1077,7 @@ mod tests {
     #[test]
     fn exposes_only_unique_documented_methods_with_declared_permissions() {
         let mut names = HashSet::new();
-        for entry in METHODS {
+        for entry in METHODS.iter() {
             assert!(
                 names.insert(entry.name),
                 "duplicate API method {}",
