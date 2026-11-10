@@ -52,6 +52,7 @@ import { PluginExecutionDialog } from "./PluginExecutionDialog";
 import { PluginChatSessions } from "./PluginChatSessions";
 import "@/styles/pluginChat.css";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
+import { renderPluginView } from "@/lib/plugins/views/render";
 
 export function PluginChat({
   pluginId,
@@ -179,11 +180,14 @@ export function PluginChat({
   useEffect(() => {
     if (!visible || !preparing || !isTauri()) return;
     let disposed = false;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     const refresh = async () => {
       try {
         const result = chatRecord(
-          await api.pluginRenderView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language),
+          await renderPluginView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language, {
+            signal: controller.signal,
+          }),
         );
         const candidate = Array.isArray(result.blocks)
           ? result.blocks.find((item) => chatRecord(item).id === current.current.id)
@@ -205,16 +209,18 @@ export function PluginChat({
           current.current = next;
           if (viewVisible.current) setBlock(next);
         }
-      } catch {
+      } catch (cause) {
+        if (isPluginInvocationCancelled(cause)) controller.abort();
         // The event stream remains primary; a temporary refresh error is retryable.
       } finally {
-        if (!disposed) timer = setTimeout(() => void refresh(), 2000);
+        if (!disposed && !controller.signal.aborted) timer = setTimeout(() => void refresh(), 2000);
       }
     };
     // Read-only fallback for a missing final snapshot; never launches an agent.
     timer = setTimeout(() => void refresh(), 2000);
     return () => {
       disposed = true;
+      controller.abort();
       clearTimeout(timer);
     };
   }, [visible, preparing, pluginId, viewId, i18n.resolvedLanguage, i18n.language]);

@@ -113,6 +113,17 @@ commands retain normal command discovery and shortcut routing. Activation and
 render errors reach software logs; a failed activation stops the plugin, and
 component views expose Refresh for recovery.
 
+An engine reporting `running` does not yet imply that its frontend module is
+ready. Commands and JSON view renders wait up to 15 seconds for native initialize
+and the frontend activation acknowledgement, without holding the instance lock.
+Each invocation remains bound to its original runtime. Stopping, replacing or
+reopening its frontend invalidates unfinished results, including a close and
+reactivation that happen before the next notification is processed. Cancelling
+one readiness waiter does not stop a runtime another caller is waiting for.
+An ordinary view refresh does not open approval or Node setup dialogs; explicit
+interactive actions retain approval checks. Legacy JSON view payloads and public
+SDK method signatures are unchanged.
+
 The SDK also supports explicit [interface providers](plugin-ui-providers.en-us.md)
 for the host list and workbench presentation. The remaining domain services and
 dependency management are still under development.

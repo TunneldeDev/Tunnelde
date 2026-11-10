@@ -6,6 +6,7 @@ use crate::plugins::security::{Lease, PluginSecurity};
 mod authorization;
 mod frontend;
 mod lifecycle;
+mod readiness;
 mod revocation;
 
 fn fixture() -> (Arc<PluginSecurity>, Database) {

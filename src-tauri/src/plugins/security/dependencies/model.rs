@@ -15,6 +15,7 @@ pub(super) struct Binding {
     pub frontend: bool,
     pub phase: Phase,
     pub frontend_token: Option<String>,
+    pub readiness_id: uuid::Uuid,
 }
 
 impl Binding {

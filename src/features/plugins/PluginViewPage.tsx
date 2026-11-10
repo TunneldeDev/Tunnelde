@@ -28,6 +28,7 @@ import { usePlugins } from "@/store/plugins";
 import { PluginComponentView } from "./PluginComponentView";
 import { useNavigation } from "@/store/navigation";
 import { useWorkspace } from "@/store/workspace";
+import { renderPluginView } from "@/lib/plugins/views/render";
 
 interface PluginViewPageProps {
   pluginId: string;
@@ -78,7 +79,7 @@ export function PluginViewPage({
     );
   return (
     <PluginViewContent
-      key={JSON.stringify([pluginId, viewId])}
+      key={JSON.stringify([pluginId, viewId, plugin?.fingerprint, plugin?.runtimeId])}
       pluginId={pluginId}
       viewId={viewId}
       embedded={embedded}
@@ -93,19 +94,18 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
+  const renderRequest = useRef<AbortController | null>(null);
 
   const load = useCallback(
     (interactive = false) => {
       const current = ++requestId.current;
-      const render = () =>
-        api.pluginRenderView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language);
-      return (
-        interactive && isTauri()
-          ? authorizePluginAction(pluginId).then((allowed) =>
-              allowed && current === requestId.current ? render() : null,
-            )
-          : render()
-      )
+      renderRequest.current?.abort();
+      const controller = new AbortController();
+      renderRequest.current = controller;
+      return renderPluginView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language, {
+        interactive,
+        signal: controller.signal,
+      })
         .then((payload) => {
           if (current !== requestId.current) return;
           if (payload === null) return;
@@ -114,6 +114,7 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
           setError(null);
         })
         .catch((cause: unknown) => {
+          if (isPluginInvocationCancelled(cause)) return;
           reportPluginExecutionFailure(cause);
           if (current === requestId.current) setError(translateError(cause));
         })
@@ -126,6 +127,7 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
 
   const invalidate = useCallback(() => {
     ++requestId.current;
+    renderRequest.current?.abort();
   }, []);
 
   useEffect(() => {
