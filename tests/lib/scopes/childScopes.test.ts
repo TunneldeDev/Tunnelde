@@ -203,3 +203,33 @@ it("rejects malformed JavaScript callbacks and releases a failed child construct
   expect(root.size).toBe(0);
   root.dispose();
 });
+
+it("rejects malformed cancellation signals without starting work or leaking ancestor capacity", async () => {
+  const root = createResourceScope({ limit: 2 });
+  const child = root.child({ limit: 1 });
+  const start = vi.fn();
+  for (const signal of [null, 0, {}, { aborted: false }]) {
+    await expect(child.run(start, { signal: signal as never })).rejects.toThrow(
+      "extension.scope.invalidSignal",
+    );
+    expect(() => root.child({ signal: signal as never })).toThrow("extension.scope.invalidSignal");
+    expect(child.size).toBe(0);
+    expect(root.size).toBe(1);
+  }
+  const broken = {
+    aborted: false,
+    addEventListener() {
+      throw new Error("cannot register cancellation");
+    },
+    removeEventListener() {
+      throw new Error("cannot unregister cancellation");
+    },
+  } as unknown as AbortSignal;
+  await expect(child.run(start, { signal: broken })).rejects.toThrow("cannot register cancellation");
+  expect(start).not.toHaveBeenCalled();
+  expect(child.size).toBe(0);
+  expect(root.size).toBe(1);
+  await expect(child.run(() => "still available")).resolves.toBe("still available");
+  root.dispose();
+  expect(root.size).toBe(0);
+});

@@ -1,6 +1,7 @@
 import type { ResourceOperationOptions } from "./contracts";
 import type { ScopeReservation } from "./reservation";
 import { ResourceScopeClosed, ResourceScopeError } from "./errors";
+import { validateScopeSignal } from "./signals";
 
 export function runOperation<T>(
   owner: AbortSignal,
@@ -14,6 +15,11 @@ export function runOperation<T>(
     return Promise.reject(new TypeError("extension.scope.invalidOperation"));
   if (typeof cleanup !== "function")
     return Promise.reject(new TypeError("extension.scope.invalidCleanup"));
+  try {
+    validateScopeSignal(signal);
+  } catch (error) {
+    return Promise.reject(error);
+  }
   if (
     timeoutMs !== undefined &&
     (!Number.isSafeInteger(timeoutMs) || timeoutMs < 0 || timeoutMs > 2_147_483_647)
@@ -35,7 +41,11 @@ export function runOperation<T>(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const detach = () => {
       owner.removeEventListener("abort", stop);
-      signal?.removeEventListener("abort", cancel);
+      try {
+        signal?.removeEventListener("abort", cancel);
+      } catch {
+        /* A malformed plugin signal must not retain a reservation. */
+      }
       if (timer !== undefined) clearTimeout(timer);
     };
     const fail = (error: ResourceScopeError) => {
@@ -47,10 +57,6 @@ export function runOperation<T>(
     };
     const stop = () => fail(new ResourceScopeClosed());
     const cancel = () => fail(new ResourceScopeError("extension.scope.cancelled"));
-    owner.addEventListener("abort", stop, { once: true });
-    signal?.addEventListener("abort", cancel, { once: true });
-    if (timeoutMs !== undefined)
-      timer = setTimeout(() => fail(new ResourceScopeError("extension.scope.timeout")), timeoutMs);
     const accepted = (value: T) => {
       entry.attach(() => {
         work.abort(new ResourceScopeClosed());
@@ -71,6 +77,10 @@ export function runOperation<T>(
       reject(error);
     };
     try {
+      owner.addEventListener("abort", stop, { once: true });
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (timeoutMs !== undefined)
+        timer = setTimeout(() => fail(new ResourceScopeError("extension.scope.timeout")), timeoutMs);
       Promise.resolve(start(work.signal)).then(accepted, rejected).catch(rejected);
     } catch (error) {
       rejected(error);

@@ -4,12 +4,14 @@ import { ResourceScopeClosed } from "./errors";
 import { createReservation, type ScopeReservation } from "./reservation";
 import { runOperation } from "./operation";
 import { scopeLimits } from "./limits";
+import { validateScopeSignal } from "./signals";
 
 function createScope(
   budget: ScopeBudget,
   report: (error: unknown) => void,
   parent?: AbortSignal,
 ): ResourceScope {
+  validateScopeSignal(parent);
   const controller = new AbortController();
   const entries = new Set<ScopeReservation>();
   const reserve = (unownedCleanup = false) => {
