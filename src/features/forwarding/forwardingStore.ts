@@ -5,7 +5,7 @@ import { createInvalidatedListStore } from "@/lib/data/invalidatedListStore";
 import { domainEvents } from "@/lib/events/domain";
 import { useSsh } from "@/store/ssh";
 
-import type { ForwardInfo, ForwardRule } from "./contract";
+import type { ForwardInfo, RevisionedRule } from "./contract";
 export type { ForwardInfo, ForwardRule } from "./contract";
 
 /** One committed list and one native read for all forwarding surfaces. */
@@ -40,7 +40,7 @@ export function createForwardingStore(
         }
       };
     },
-    saved: (rule: ForwardRule) => {
+    saved: (rule: RevisionedRule) => {
       const saved = Object.freeze({ ...rule, active: false, sessionId: null });
       store.accept((entries) => [...entries.filter((item) => item.id !== rule.id), saved]);
     },

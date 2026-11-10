@@ -4,7 +4,9 @@ use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state
 use tauri::{AppHandle, Emitter, Manager};
 pub mod contract;
 mod repository;
-use contract::{validate, ForwardInfo, ForwardRule};
+mod runtime;
+use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
+pub use runtime::{start_checked, start_owned, stop};
 
 pub(crate) fn registry(app: &AppHandle) -> ForwardRegistry {
     let app = app.clone();
@@ -21,35 +23,59 @@ struct Forwarding<'a> {
     registry: &'a ForwardRegistry,
 }
 impl Forwarding<'_> {
-    fn rules(&self) -> AppResult<Vec<ForwardRule>> {
+    fn rules(&self) -> AppResult<Vec<RevisionedRule>> {
         repository::list(self.db)
     }
     fn list(&self) -> AppResult<Vec<ForwardInfo>> {
+        Ok(self
+            .list_revisioned()?
+            .into_iter()
+            .map(|entry| entry.info)
+            .collect())
+    }
+    fn list_revisioned(&self) -> AppResult<Vec<RevisionedInfo>> {
         let rules = self.rules()?;
         let active = self.registry.snapshot()?;
         Ok(rules
             .into_iter()
-            .map(|rule| {
+            .map(|entry| {
+                let rule = entry.rule;
                 let session_id = active.get(&rule.id).cloned();
-                ForwardInfo {
-                    active: session_id.is_some(),
-                    session_id,
-                    rule,
+                RevisionedInfo {
+                    info: ForwardInfo {
+                        active: session_id.is_some(),
+                        session_id,
+                        rule,
+                    },
+                    revision: entry.revision,
                 }
             })
             .collect())
     }
-    fn save(&self, mut rule: ForwardRule) -> AppResult<ForwardRule> {
+    fn save(&self, rule: ForwardRule) -> AppResult<ForwardRule> {
+        Ok(self.save_checked(rule, None)?.rule)
+    }
+    fn save_checked(
+        &self,
+        mut rule: ForwardRule,
+        expected: Option<&str>,
+    ) -> AppResult<RevisionedRule> {
         if rule.id.is_empty() {
+            if expected.is_some() {
+                return Err(crate::error::AppError::validation("forward.changed"));
+            }
             rule.id = uuid::Uuid::new_v4().to_string();
         }
         validate(&rule)?;
         self.registry
-            .edit(&rule.id, || repository::save(self.db, &rule))
+            .edit(&rule.id, || repository::save(self.db, &rule, expected))
     }
     fn remove(&self, id: &str) -> AppResult<()> {
+        self.remove_checked(id, None)
+    }
+    fn remove_checked(&self, id: &str, expected: Option<&str>) -> AppResult<()> {
         self.registry
-            .remove_rule(id, || repository::remove(self.db, id))
+            .remove_rule(id, || repository::remove(self.db, id, expected))
     }
 }
 
@@ -62,60 +88,24 @@ fn service(state: &AppState) -> Forwarding<'_> {
 pub fn list(app: &AppHandle) -> AppResult<Vec<ForwardInfo>> {
     service(&app.state::<AppState>()).list()
 }
+pub fn list_revisioned(app: &AppHandle) -> AppResult<Vec<RevisionedInfo>> {
+    service(&app.state::<AppState>()).list_revisioned()
+}
 pub fn save(app: &AppHandle, rule: ForwardRule) -> AppResult<ForwardRule> {
     service(&app.state::<AppState>()).save(rule)
+}
+pub fn save_checked(
+    app: &AppHandle,
+    rule: ForwardRule,
+    expected: Option<&str>,
+) -> AppResult<RevisionedRule> {
+    service(&app.state::<AppState>()).save_checked(rule, expected)
 }
 pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
     service(&app.state::<AppState>()).remove(id)
 }
-pub async fn start_owned(
-    app: &AppHandle,
-    id: &str,
-    session_id: &str,
-    owner: Option<(String, u64)>,
-) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let rule = service(&state)
-        .rules()?
-        .into_iter()
-        .find(|rule| rule.id == id)
-        .ok_or_else(|| crate::error::AppError::validation("forward.missing"))?;
-    validate(&rule)?;
-    if !state
-        .ssh
-        .list()
-        .iter()
-        .any(|session| session.id == session_id && session.host_id == rule.host_id)
-    {
-        return Err(crate::error::AppError::validation("ssh.sessionMissing"));
-    }
-    crate::ssh::forward::start_owned(
-        &state.forwards,
-        &rule,
-        session_id,
-        state.ssh.handle(session_id)?,
-        state.ssh.remote_routes(session_id)?,
-        owner,
-        || {
-            if !state
-                .ssh
-                .list()
-                .iter()
-                .any(|session| session.id == session_id && session.host_id == rule.host_id)
-            {
-                return Err(crate::error::AppError::validation("ssh.sessionMissing"));
-            }
-            if !service(&state).rules()?.iter().any(|saved| saved == &rule) {
-                return Err(crate::error::AppError::validation("forward.missing"));
-            }
-            Ok(())
-        },
-    )
-    .await
+pub fn remove_checked(app: &AppHandle, id: &str, expected: Option<&str>) -> AppResult<()> {
+    service(&app.state::<AppState>()).remove_checked(id, expected)
 }
-pub async fn stop(app: &AppHandle, id: &str) -> AppResult<()> {
-    app.state::<AppState>().forwards.stop(id).await
-}
-
 #[cfg(test)]
 mod tests;

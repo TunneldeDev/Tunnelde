@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight, Laptop, Play, Plus, RefreshCw, Server, Square } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
@@ -10,6 +10,7 @@ import { copyText } from "@/lib/session/clipboard";
 import { useSsh } from "@/store/ssh";
 import { useDialogs } from "@/store/dialogs";
 import type { Host } from "@/lib/api/types";
+import type { RevisionedRule } from "./contract";
 import { endpointAddress, localConnectionAddress, ForwardRuleEditor } from "./ForwardRuleEditor";
 import "./forwarding.css";
 
@@ -54,14 +55,18 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
   const { t } = useTranslation();
   const sessions = useSsh((state) => state.sessions);
   const session = sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
-  const [connectingRules, setConnectingRules] = useState<string[] | null>(null);
+  const [connectingRules, setConnectingRules] = useState<RevisionedRule[] | null>(null);
   const snapshot = useForwardingSnapshot();
   const rules = (snapshot.entries ?? []).filter((rule) => rule.hostId === host.id);
   const loading = snapshot.entries === null && snapshot.busy;
   const load = forwardingStore.refresh;
   const isActive = (rule: ForwardInfo) =>
     rule.active && sessions.some((item) => item.id === rule.sessionId);
-  const [form, setForm] = useState<ForwardRule | null>(null);
+  const [form, setForm] = useState<(ForwardRule & { revision?: string }) | null>(null);
+  const currentForm = useRef(form);
+  useLayoutEffect(() => {
+    currentForm.current = form;
+  }, [form]);
   const [pending, setPending] = useState<string | null>(null);
   const [pendingKind, setPendingKind] = useState<"start" | "stop" | "save" | "remove">("start");
   const [operationFailure, setFailure] = useState<{ target: string; message: string } | null>(null);
@@ -82,7 +87,7 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
     operation: () => Promise<unknown>,
     kind: typeof pendingKind = "start",
   ) => {
-    if (mutation.current) return;
+    if (mutation.current || !live.current) return;
     mutation.current = true;
     setPending(target);
     setPendingKind(kind);
@@ -98,40 +103,49 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
       if (live.current) setPending(null);
     }
   };
-  const startOnConnection = (ids: string[], sessionId: string) => {
-    void run(ids.length === 1 ? (ids[0] ?? "group") : "group", async () => {
+  const startOnConnection = (targets: RevisionedRule[], sessionId: string) => {
+    void run(targets.length === 1 ? (targets[0]?.id ?? "group") : "group", async () => {
       const failures: string[] = [];
-      for (const id of ids) {
+      for (const rule of targets) {
         try {
-          await invoke("forwarding_start", { id, sessionId });
+          if (!live.current) return;
+          await invoke("forwarding_start", {
+            id: rule.id,
+            sessionId,
+            expectedRevision: rule.revision,
+          });
         } catch (cause) {
-          if (ids.length === 1) throw cause;
-          failures.push(
-            `${rules.find((rule) => rule.id === id)?.name ?? id}: ${translateError(cause)}`,
-          );
+          if (targets.length === 1) throw cause;
+          failures.push(`${rule.name}: ${translateError(cause)}`);
         }
       }
       if (failures.length) throw new Error(failures.join("; "));
     });
   };
   const start = (ids: string[]) => {
+    const targets = rules.filter((rule) => ids.includes(rule.id));
     const connected = useSsh
       .getState()
       .sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
     if (!connected) {
-      setConnectingRules(ids);
+      setConnectingRules(targets);
       return;
     }
-    startOnConnection(ids, connected.id);
+    startOnConnection(targets, connected.id);
   };
   const save = (rule: ForwardRule, start: boolean) => {
     if (mutation.current) return;
+    const draft = form;
+    if (!draft) return;
     const action = () =>
       run(
         "editor",
         async () => {
-          const saved = await invoke<ForwardRule>("forwarding_save", {
+          if (currentForm.current !== draft || (draft.id && !draft.revision))
+            throw new Error("forward.changed");
+          const saved = await invoke<RevisionedRule>("forwarding_save", {
             rule: forwardingSavePayload(rule),
+            ...(draft.id ? { expectedRevision: draft.revision } : {}),
           });
           forwardingStore.saved(saved);
           if (!live.current) return;
@@ -139,10 +153,17 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           if (start) {
             setPending(saved.id);
             setPendingKind("start");
-            if (!session) setConnectingRules([saved.id]);
+            const connected = useSsh
+              .getState()
+              .sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
+            if (!connected) setConnectingRules([saved]);
             else {
               try {
-                await invoke("forwarding_start", { id: saved.id, sessionId: session.id });
+                await invoke("forwarding_start", {
+                  id: saved.id,
+                  sessionId: connected.id,
+                  expectedRevision: saved.revision,
+                });
               } catch (cause) {
                 if (live.current) setFailure({ target: saved.id, message: translateError(cause) });
               }
@@ -230,11 +251,14 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           )}
         </div>
       )}
-      {failure?.target === "group" && (
-        <p role="alert" className="td-field__error">
-          {failure.message}
-        </p>
-      )}
+      {failure &&
+        failure.target !== "editor" &&
+        failure.target !== "list" &&
+        !rules.some((rule) => rule.id === failure.target) && (
+          <p role="alert" className="td-field__error">
+            {failure.message}
+          </p>
+        )}
       {form ? (
         <>
           <ForwardRuleEditor
@@ -348,7 +372,11 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
                                 onConfirm: () =>
                                   run(
                                     rule.id,
-                                    () => invoke("forwarding_remove", { id: rule.id }),
+                                    () =>
+                                      invoke("forwarding_remove", {
+                                        id: rule.id,
+                                        expectedRevision: rule.revision,
+                                      }),
                                     "remove",
                                   ),
                               }),

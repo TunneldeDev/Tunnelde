@@ -22,6 +22,22 @@ pub struct ForwardInfo {
     pub session_id: Option<String>,
     pub active: bool,
 }
+/// Native editing snapshot. The historical plugin DTO remains unchanged.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevisionedRule {
+    #[serde(flatten)]
+    pub rule: ForwardRule,
+    /// Opaque persisted token; changes even when values return to an earlier state.
+    pub revision: String,
+}
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevisionedInfo {
+    #[serde(flatten)]
+    pub info: ForwardInfo,
+    pub revision: String,
+}
 pub(crate) fn validate(rule: &ForwardRule) -> AppResult<()> {
     let host_valid = |s: &str| {
         !s.is_empty()

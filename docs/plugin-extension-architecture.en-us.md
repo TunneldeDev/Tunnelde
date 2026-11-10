@@ -14,7 +14,8 @@ are review dimensions, not a requirement to create six files for every small mod
 infrastructure contains domain-independent events, resource scopes and synchronization.
 
 Forwarding DTOs and validation live in `services/forwarding/contract.rs`, persistence in
-`repository.rs`, and service entry points in `mod.rs`. Native IPC uses `commands/forwarding.rs`;
+`repository.rs`, SSH startup admission in `runtime.rs`, and service entry points in `mod.rs`.
+Native IPC uses `commands/forwarding.rs`;
 the plugin adapter uses `plugins/api/domains/forwarding/mod.rs`. SSH listeners and relaying remain in the
 transport module. Both adapters call the domain service. Frontend contracts, shared state and
 views are also separate. Moving files does not change existing RPC names, permissions or wire

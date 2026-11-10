@@ -1801,6 +1801,7 @@
     "bindFailed": "无法监听此地址和端口，可能已被占用。",
     "remoteRejected": "SSH 服务器拒绝了远程转发或未响应，请检查其转发策略和监听地址。",
     "startCancelled": "转发启动已取消。",
+    "changed": "此转发规则已被其他页面修改或删除，未保存的草稿会保留。请重新打开规则，查看当前内容后重试。",
     "stopFailed": "无法确认监听端口已释放。请先断开此主机的转发连接，再重试。",
     "localEndpoint": "本机",
     "remoteEndpoint": "远端",
