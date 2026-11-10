@@ -6,6 +6,12 @@ File icon themes are available under **Files → Browsing → File icon theme**.
 uses an installed icon theme; Plain file icons disables plugin icons. A specific selection
 is preserved in profiles and exports, even if that package is temporarily unavailable.
 
+Preference changes from application windows, approved plugins and update-check
+metadata share an ordered save service. Each change merges into the latest confirmed
+settings; a failed save retains the previous values. Profiles also preserve advanced
+shortcut priorities, propagation rules, detail visibility and terminal clipboard
+preferences. Profile files remain version 1 and exclude update-check timestamps.
+
 ## Application updates
 
 **Settings → Updates** contains the current version, checks, installation progress and

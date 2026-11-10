@@ -61,6 +61,7 @@ const PORTABLE_KEYS: &[&str] = &[
     "terminalSmoothScrolling",
     "terminalScrollOnInput",
     "terminalCopyOnSelect",
+    "terminalApplicationClipboard",
     "terminalRightClick",
     "terminalRenderer",
     "fileIconTheme",
@@ -80,6 +81,8 @@ const PORTABLE_KEYS: &[&str] = &[
     "editorSpellCheck",
     "monitorIntervalMs",
     "keyboardShortcuts",
+    "shortcutRules",
+    "showShortcutDetails",
 ];
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -331,6 +334,42 @@ pub async fn settings_file_export(
 mod tests {
     use super::*;
     use crate::db::Database;
+
+    #[test]
+    fn full_profile_preserves_terminal_clipboard_and_advanced_shortcut_preferences() {
+        let settings: Settings = serde_json::from_value(serde_json::json!({
+            "terminalApplicationClipboard": false,
+            "shortcutRules": {"terminal.paste":{"Mod+V":{"priority":300,"propagation":"continue"}}},
+            "showShortcutDetails": true
+        }))
+        .unwrap();
+        let snapshot = portable(&settings).unwrap();
+        let parsed = normalize(snapshot.clone()).unwrap();
+        assert_eq!(parsed, snapshot);
+        assert_eq!(parsed["terminalApplicationClipboard"], false);
+        assert_eq!(
+            parsed["shortcutRules"]["terminal.paste"]["Mod+V"]["priority"],
+            300
+        );
+        assert_eq!(parsed["showShortcutDetails"], true);
+        let db = Database::in_memory().unwrap();
+        db.with(|conn| {
+            let profiles = upsert(conn, None, "Complete profile".into(), snapshot.clone())?;
+            assert_eq!(load(conn)?[0].settings, snapshot);
+            let document = SettingsDocument {
+                format: FORMAT.into(),
+                version: 1,
+                name: profiles[0].name.clone(),
+                settings: profiles[0].settings.clone(),
+            };
+            assert_eq!(
+                parse_document(&serde_json::to_string(&document)?)?.settings,
+                snapshot
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
 
     #[test]
     fn background_dock_preference_is_portable_and_legacy_profiles_keep_default() {
