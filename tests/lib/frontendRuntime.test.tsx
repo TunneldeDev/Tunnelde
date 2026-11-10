@@ -27,6 +27,7 @@ function fixture(activate: FrontendModule["activate"] = () => {}) {
       sdkVersion: "0.1.0",
     })),
     close: vi.fn(async () => {}),
+    ready: vi.fn(async () => {}),
     fail: vi.fn(async () => {}),
     call: vi.fn(async () => undefined as never),
     load: vi.fn(async () => ({ activate })),
@@ -103,11 +104,105 @@ it("rejects undeclared and duplicate registrations and clears partial activation
   await expect(bad.runtime.ensure(plugin)).rejects.toThrow("undeclaredContribution");
   expect(bad.runtime.view(plugin.id, "main")).toBeUndefined();
   expect(bad.transport.close).toHaveBeenCalledOnce();
+  expect(bad.transport.ready).not.toHaveBeenCalled();
   const duplicate = fixture((ctx) => {
     ctx.commands.register("hello", () => {});
     ctx.commands.register("hello", () => {});
   });
   await expect(duplicate.runtime.ensure(plugin)).rejects.toThrow("duplicateContribution");
+});
+
+it("waits for native readiness acknowledgement before exposing views or running commands", async () => {
+  let activate!: () => void;
+  let acknowledge!: () => void;
+  const command = vi.fn();
+  const f = fixture((ctx) => {
+    ctx.views.register("main", () => null);
+    ctx.commands.register("hello", command);
+    return new Promise<void>((resolve) => {
+      activate = resolve;
+    });
+  });
+  f.transport.ready = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        acknowledge = resolve;
+      }),
+  );
+  const pending = f.runtime.ensure(plugin);
+  await vi.waitFor(() => expect(f.transport.load).toHaveBeenCalledOnce());
+  expect(f.transport.ready).not.toHaveBeenCalled();
+  activate();
+  await vi.waitFor(() => expect(f.transport.ready).toHaveBeenCalledOnce());
+  expect(f.runtime.view(plugin.id, "main")).toBeUndefined();
+  const running = f.runtime.run(plugin, "hello", {});
+  expect(command).not.toHaveBeenCalled();
+  acknowledge();
+  await Promise.all([pending, running]);
+  expect(f.runtime.view(plugin.id, "main")).toBeTypeOf("function");
+  expect(command).toHaveBeenCalledOnce();
+  f.runtime.dispose();
+});
+
+it("cleans activation and the native session when the readiness acknowledgement fails", async () => {
+  const cleanup = vi.fn();
+  const f = fixture((ctx) => {
+    ctx.views.register("main", () => null);
+    return cleanup;
+  });
+  f.transport.ready = vi.fn(async () => {
+    throw Error("pluginSecurity.changed");
+  });
+  await expect(f.runtime.ensure(plugin)).rejects.toThrow("pluginSecurity.changed");
+  expect(f.runtime.view(plugin.id, "main")).toBeUndefined();
+  expect(cleanup).toHaveBeenCalledOnce();
+  expect(f.transport.fail).toHaveBeenCalledOnce();
+  expect(f.transport.close).toHaveBeenCalledOnce();
+});
+
+it("bounds readiness acknowledgement and releases a session that never acknowledges", async () => {
+  vi.useFakeTimers();
+  const cleanup = vi.fn();
+  const f = fixture(() => cleanup);
+  f.transport.ready = vi.fn(() => new Promise<void>(() => {}));
+  const pending = expect(f.runtime.ensure(plugin)).rejects.toThrow("extension.scope.timeout");
+  await vi.advanceTimersByTimeAsync(15_001);
+  await pending;
+  expect(cleanup).toHaveBeenCalledOnce();
+  expect(f.transport.fail).toHaveBeenCalledOnce();
+  expect(f.transport.close).toHaveBeenCalledOnce();
+});
+
+it("does not publish a stopped module or retire its replacement when an old acknowledgement arrives", async () => {
+  let acknowledge!: () => void;
+  const f = fixture((ctx) => {
+    ctx.views.register("main", () => null);
+  });
+  f.transport.ready = vi
+    .fn()
+    .mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          acknowledge = resolve;
+        }),
+    )
+    .mockResolvedValue(undefined);
+  const old = expect(f.runtime.ensure(plugin)).rejects.toThrow("extension.scope.closed");
+  await vi.waitFor(() => expect(f.transport.ready).toHaveBeenCalledOnce());
+  const oldToken = f.runtime.token(plugin.id);
+  f.runtime.stop(plugin.id);
+  await old;
+  await f.runtime.ensure(plugin);
+  const newToken = f.runtime.token(plugin.id);
+  const newView = f.runtime.view(plugin.id, "main");
+  expect(newToken).not.toBe(oldToken);
+  acknowledge();
+  await Promise.resolve();
+  expect(f.runtime.token(plugin.id)).toBe(newToken);
+  expect(f.runtime.view(plugin.id, "main")).toBe(newView);
+  expect(f.transport.fail).not.toHaveBeenCalled();
+  expect(f.transport.close).toHaveBeenCalledExactlyOnceWith(oldToken);
+  f.runtime.dispose();
 });
 
 it("cleans a session arriving after stop and never starts its JavaScript", async () => {

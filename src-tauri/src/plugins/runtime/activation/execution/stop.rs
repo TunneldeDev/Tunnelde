@@ -1,62 +1,49 @@
-use std::time::Duration;
+use tauri::AppHandle;
 
-use serde_json::json;
-use tauri::{AppHandle, Emitter};
-
+use super::cleanup::StopMode;
 use crate::error::{AppError, AppResult};
-use crate::plugins::{tasks, PluginInfo, PluginStatus, PluginsManager, STATE_EVENT};
+use crate::plugins::{PluginInfo, PluginsManager};
 
 impl PluginsManager {
     pub async fn stop(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        self.security.invalidate_runtime(id);
-        tasks::cancel_plugin(id, None);
-        self.stop_network_resources(app, id);
-        self.stop_remote_runners(app, id);
-        self.remember_source(id, None);
-        let handle = self.instance(id).await?;
-        let mut instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-
-        if let Some(mut host) = instance.host.take() {
-            let _ = host
-                .request("shutdown", json!({}), Duration::from_secs(2))
-                .await;
-            host.kill();
-        }
-        instance.wasm = None;
-        instance.node_source = None;
-        instance.status = PluginStatus::Stopped;
-        instance.error = None;
-
-        let info = instance.info();
-        self.remember(&info);
-        drop(instance);
-        let _ = app.emit(STATE_EVENT, &info);
-        Ok(info)
+        self.stop_runtime(app, id, true).await
     }
 
     pub async fn stop_immediately(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        self.security.invalidate_runtime(id);
-        tasks::cancel_plugin(id, None);
-        self.stop_network_resources(app, id);
-        self.stop_remote_runners(app, id);
-        self.remember_source(id, None);
-        let handle = self.instance(id).await?;
-        let mut instance = handle.lock().await;
-        if let Some(mut host) = instance.host.take() {
-            host.kill();
+        self.stop_runtime(app, id, false).await
+    }
+
+    async fn stop_runtime(
+        &self,
+        app: &AppHandle,
+        id: &str,
+        graceful: bool,
+    ) -> AppResult<PluginInfo> {
+        if !crate::plugins::manifest::valid_id(id) {
+            return Err(AppError::NotFound("plugin.notFound".into()));
         }
-        instance.wasm = None;
-        instance.node_source = None;
-        instance.status = PluginStatus::Stopped;
-        instance.error = None;
-        let info = instance.info();
-        self.remember(&info);
-        drop(instance);
-        let _ = app.emit(STATE_EVENT, &info);
-        Ok(info)
+        let retired = self.security.retire_runtime(id);
+        let (mut owner, mut consumers) = (None, Vec::new());
+        for retirement in retired {
+            if retirement.id == id {
+                owner = Some(retirement);
+            } else {
+                consumers.push(retirement);
+            }
+        }
+        self.cleanup_retired(app, consumers);
+        let owner = owner.expect("retirement always includes requested owner");
+        self.cleanup_resources(app, &owner);
+        self.stop_captured(
+            app,
+            &owner,
+            if graceful {
+                StopMode::Graceful
+            } else {
+                StopMode::Immediate
+            },
+        )
+        .await
     }
 
     pub async fn stop_all_immediately(&self, app: &AppHandle) {
@@ -67,44 +54,27 @@ impl PluginsManager {
     }
 
     pub async fn stop_system_nodes(&self, app: &AppHandle) {
-        let ids: Vec<_> = self
+        let leases: Vec<_> = self
             .runtime_sources
             .read()
             .unwrap_or_else(|error| error.into_inner())
             .iter()
-            .filter(|(_, source)| {
+            .filter(|(_, (source, _))| {
                 matches!(
                     source.as_str(),
                     "environment" | "path" | "registry" | "shell"
                 )
             })
-            .map(|(id, _)| id.clone())
+            .map(|(_, (_, lease))| lease.clone())
             .collect();
-        for id in ids {
-            self.security.invalidate_runtime(&id);
-            self.revoke_background(app, &id);
-            self.remember_source(&id, None);
-            let Ok(handle) = self.instance(&id).await else {
-                continue;
-            };
-            let mut instance = handle.lock().await;
-            if !matches!(
-                instance.node_source.as_deref(),
-                Some("environment" | "path" | "registry" | "shell")
-            ) {
-                continue;
+        for lease in leases {
+            let retired = self.security.retire_lease(&lease);
+            for retirement in retired {
+                self.cleanup_resources(app, &retirement);
+                let _ = self
+                    .stop_captured(app, &retirement, StopMode::Immediate)
+                    .await;
             }
-            if let Some(mut host) = instance.host.take() {
-                host.kill();
-            }
-            instance.node_source = None;
-            self.remember_source(&id, None);
-            instance.status = PluginStatus::Stopped;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            drop(instance);
-            let _ = app.emit(STATE_EVENT, info);
         }
     }
 }

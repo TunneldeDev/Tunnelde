@@ -23,6 +23,45 @@ pub(in crate::plugins) fn cancel_owned_resource(plugin: &str, generation: u64, i
 mod tests {
     use super::*;
     #[test]
+    fn delayed_generation_cleanup_preserves_replacement_and_other_plugins() {
+        let plugin = uuid::Uuid::new_v4().to_string();
+        let other = uuid::Uuid::new_v4().to_string();
+        let mut ids = Vec::new();
+        for (owner, generation) in [(&plugin, 7), (&plugin, 8), (&plugin, 9), (&other, 7)] {
+            let id = uuid::Uuid::new_v4().to_string();
+            let (input, _) = mpsc::channel(1);
+            let (cancel, _) = watch::channel(false);
+            lock().insert(
+                id.clone(),
+                Task {
+                    plugin: owner.clone(),
+                    generation,
+                    status: "running".into(),
+                    exit_code: None,
+                    error: None,
+                    seq: 0,
+                    bytes: 0,
+                    events: VecDeque::new(),
+                    input,
+                    cancel,
+                },
+            );
+            ids.push(id);
+        }
+        cancel_before_generation(&plugin, 8);
+        let mut tasks = lock();
+        assert_eq!(
+            ids.iter()
+                .map(|id| *tasks[id].cancel.borrow())
+                .collect::<Vec<_>>(),
+            [true, false, false, false]
+        );
+        for id in ids {
+            tasks.remove(&id);
+        }
+    }
+
+    #[test]
     fn only_current_running_tasks_are_visible_and_cancellation_preserves_running_ownership() {
         let plugin = uuid::Uuid::new_v4().to_string();
         let id = uuid::Uuid::new_v4().to_string();

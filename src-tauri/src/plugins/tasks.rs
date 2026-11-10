@@ -110,9 +110,20 @@ fn publish(
 }
 
 pub fn cancel_plugin(plugin: &str, generation: Option<u64>) {
-    for task in lock().values().filter(|task| {
-        task.plugin == plugin && generation.is_none_or(|generation| task.generation == generation)
-    }) {
+    cancel_matching(plugin, |value| {
+        generation.is_none_or(|generation| value == generation)
+    });
+}
+
+pub(super) fn cancel_before_generation(plugin: &str, boundary: u64) {
+    cancel_matching(plugin, |value| value < boundary);
+}
+
+fn cancel_matching(plugin: &str, generation: impl Fn(u64) -> bool) {
+    for task in lock()
+        .values()
+        .filter(|task| task.plugin == plugin && generation(task.generation))
+    {
         task.cancel.send_replace(true);
     }
 }

@@ -20,15 +20,44 @@ impl PluginsManager {
             return Err(AppError::NotFound("plugin.notFound".into()));
         }
         instance.require_runtime()?;
+        let _ = self.runtime_app.set(app.clone());
         if let Some(frontend) = &instance.manifest.frontend {
             frontend.require_sdk()?;
-            let _ = self.frontend_app.set(app.clone());
         }
         let lease = self.security.lease(
             id,
             security::fingerprint_async(instance.dir.clone()).await?,
             instance.manifest.permissions.clone(),
         )?;
+        if instance
+            .runtime_lease
+            .as_ref()
+            .is_some_and(|active| active.generation != lease.generation)
+        {
+            if let Some(mut host) = instance.host.take() {
+                host.kill();
+            }
+            instance.wasm = None;
+            instance.node_source = None;
+            self.cleanup_retired(
+                app,
+                vec![security::RuntimeRetirement {
+                    id: id.into(),
+                    before_generation: lease.generation,
+                }],
+            );
+        }
+        let rollback_app = app.clone();
+        let activation = self
+            .security
+            .begin_runtime(&lease, &[], instance.manifest.frontend.is_some())?
+            .on_rollback(move |retired| {
+                rollback_app
+                    .state::<crate::state::AppState>()
+                    .plugins
+                    .cleanup_retired(&rollback_app, retired);
+            });
+        instance.runtime_lease = Some(lease.clone());
         let state = app.state::<crate::state::AppState>();
         self.security.mark_running(&state.db)?;
 
@@ -36,12 +65,14 @@ impl PluginsManager {
             instance.manifest.runtime.as_deref(),
             Some("declarative" | "frontend")
         ) {
+            self.security.native_ready(&lease)?;
+            activation.commit();
             instance.status = PluginStatus::Running;
             instance.error = None;
             let info = instance.info();
             self.remember(&info);
-            drop(instance);
             let _ = app.emit(STATE_EVENT, &info);
+            drop(instance);
             return Ok(info);
         }
 
@@ -56,22 +87,26 @@ impl PluginsManager {
                         instance.error = Some(error.to_string());
                         let info = instance.info();
                         self.remember(&info);
-                        drop(instance);
                         let _ = app.emit(STATE_EVENT, &info);
+                        drop(instance);
                         return Ok(info);
                     }
                 }
             }
+            self.security.native_ready(&lease)?;
+            activation.commit();
             instance.status = PluginStatus::Running;
             instance.error = None;
             let info = instance.info();
             self.remember(&info);
-            drop(instance);
             let _ = app.emit(STATE_EVENT, &info);
+            drop(instance);
             return Ok(info);
         }
 
         if instance.host.is_some() {
+            self.security.native_ready(&lease)?;
+            activation.commit();
             return Ok(instance.info());
         }
 
@@ -110,7 +145,10 @@ impl PluginsManager {
             }
         }
         let entry = manifest::entry_path(&instance.dir, &instance.manifest.main)?;
-        self.remember_source(id, runtime.source.clone());
+        self.remember_source(
+            id,
+            runtime.source.clone().map(|source| (source, lease.clone())),
+        );
         if matches!(
             runtime.source.as_deref(),
             Some("environment" | "path" | "registry" | "shell")
@@ -181,13 +219,15 @@ impl PluginsManager {
             instance.error = None;
             let info = instance.info();
             self.remember(&info);
-            drop(instance);
             let _ = app.emit(STATE_EVENT, &info);
+            drop(instance);
             return Err(error);
         }
 
         match initialized {
             Ok(_) => {
+                self.security.native_ready(&lease)?;
+                activation.commit();
                 instance.host = Some(host);
                 instance.node_source = runtime.source;
                 instance.status = PluginStatus::Running;
@@ -207,8 +247,8 @@ impl PluginsManager {
 
         let info = instance.info();
         self.remember(&info);
-        drop(instance);
         let _ = app.emit(STATE_EVENT, &info);
+        drop(instance);
         Ok(info)
     }
 }
