@@ -1215,7 +1215,20 @@
       "tooManyTasks": "此插件的远端任务记录已达到数量上限。",
       "notFound": "此插件在该主机上没有对应的远端任务。",
       "deployFirst": "请先部署并初始化远端运行器，再启动任务。",
-      "timeout": "远端任务未及时响应，当前状态尚不确定；已保存的停止请求会继续重试。"
+      "timeout": "远端任务未及时响应，当前状态尚不确定；已保存的停止请求会继续重试。",
+      "identityReviewRequired": "此旧任务尚未核对目标身份，请前往设置 → 插件 → 远端任务恢复，核对原主机。",
+      "destinationChanged": "连接地址或主机密钥与任务原目标不同，请重新连接原主机。",
+      "destinationAmbiguous": "此保存主机的多个连接指向不同目标，请仅保留原目标的连接后再核对。",
+      "controlReviewRequired": "此任务由其他版本的插件控制，请在远端任务恢复中明确交接控制权后再继续。",
+      "identityAlreadyReviewed": "此任务已绑定目标，核对操作无法覆盖原身份。",
+      "controlUnavailable": "当前任务状态不允许此操作，请刷新恢复记录。",
+      "controlAlreadyReviewed": "当前插件已持有此任务的控制权，请刷新恢复记录。",
+      "reviewBusy": "另一个恢复确认窗口尚未关闭，请处理后再试。",
+      "reviewExpired": "确认已过期，未应用恢复更改。",
+      "reviewClosed": "确认窗口已关闭，未应用恢复更改。",
+      "recordChanged": "操作期间恢复记录已变化，请刷新后重新核对。",
+      "exitUnconfirmed": "尚未确认进程退出，请保留记录，直至原主机确认任务状态。",
+      "invalidResponse": "远端辅助程序返回了无效响应，已保留原记录，请查看软件日志。"
     },
     "activation": {
       "missingDependency": "缺少必需的插件，请检查依赖并安装后重试。",
@@ -2237,5 +2250,58 @@
       "restore": "恢复前"
     },
     "workerFailed": "配置处理线程意外停止，请重试；若再次出现，请查看软件日志。"
+  },
+  "runnerRecovery": {
+    "title": "远端任务恢复",
+    "description": "无需启动插件即可管理已保存的远端任务。存在记录不代表进程正在运行。停止和移除记录需要确认，并会保留远端文件。",
+    "plugin": "记录所属插件（包含已卸载插件）",
+    "empty": "没有已保存的远端任务记录。",
+    "limited": "已达到目录扫描上限，可能仍有其他插件的记录未列出。",
+    "recordCount_one": "{{count}} 条已保存记录",
+    "recordCount_other": "{{count}} 条已保存记录",
+    "deployment": "部署记录",
+    "directory": "远端目录",
+    "host": "保存的主机 ID",
+    "serverKey": "主机密钥",
+    "unreviewed": "尚未记录，需核对原目标",
+    "packageChanged": "已安装插件与此任务的控制版本不同。仍可在此检查和停止；继续控制需要明确交接给当前已授权的插件。",
+    "stopHint": "停止请求已保存，原目标连通后将重试清理。这不代表远端进程已经退出。",
+    "uncertainHint": "启动确认曾丢失。如果启动仍可能延迟发生，即使返回“未找到”也无法确认任务已退出。",
+    "legacyHint": "旧记录未捕获目标身份。请连接任务原来的主机，明确核对地址和主机密钥后再检查或清理。",
+    "changedHint": "可用连接与原地址或主机密钥不同。请重新连接原目标；核对操作不能覆盖已经绑定的身份。",
+    "inspect": "检查远端状态",
+    "reviewDestination": "核对原目标",
+    "handoff": "交接控制权",
+    "stop": "请求停止",
+    "forget": "移除本地记录",
+    "openLog": "打开软件日志",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {{page}} 页",
+    "checkedAt": "检查于 {{time}}",
+    "connection": {
+      "connected": "原目标已连接",
+      "offline": "未连接",
+      "legacy": "目标待核对",
+      "ambiguous": "存在多个目标",
+      "changed": "目标已变化"
+    },
+    "status": {
+      "unknown": "尚未检查",
+      "stopPending": "停止待确认",
+      "uncertain": "启动结果未知",
+      "stopped": "已确认停止",
+      "failed": "已确认失败",
+      "notFound": "已确认不存在"
+    },
+    "observed": {
+      "starting": "观测状态：正在启动",
+      "running": "观测状态：正在运行",
+      "stopping": "观测状态：正在停止",
+      "stopped": "观测状态：已停止",
+      "failed": "观测状态：失败",
+      "notFound": "观测状态：未找到",
+      "unresponsive": "观测状态：无响应"
+    }
   }
 }

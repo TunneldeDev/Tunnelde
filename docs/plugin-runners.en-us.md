@@ -2,7 +2,7 @@
 
 The experimental `runners.*` API operates on an explicitly deployed native helper and a runtime selected by the user. Deployment requires native confirmation and a fresh remote directory. It does not install a service or implicitly select Node.
 
-Records belong to a plugin and a saved host, rather than a temporary SSH session ID. A new connection to the same host can poll the existing journal. Disconnecting SSH or closing Tunnelde preserves acknowledged running tasks. Recovery never repeats `start`, a prompt, or a message.
+Records belong to a plugin and a captured destination, rather than a temporary SSH session ID. New deployments save the host ID, connected address and observed server key. A new connection must match all three before it can poll the existing journal or stop the task. Editing a saved host or trusting a different key cannot silently redirect recovery. Disconnecting SSH or closing Tunnelde preserves acknowledged running tasks. Recovery never repeats `start`, a prompt, or a message.
 
 Stopping a task, retiring its plugin runtime, or cancelling an unfinished launch saves a stop intent before attempting remote cleanup. If the original session has disconnected, `runners.stop` can still save that intent and return `stopRequested: true` with `status: "stopping"`. This acknowledges the request, not process exit. Cleanup retries through available connections with bounded concurrency and backoff, including after reconnect and in restricted mode. It has separate capacity limits so it cannot consume all foreground operation slots.
 
@@ -11,3 +11,15 @@ Only an observed terminal helper status clears a pending stop. A launch whose ac
 Metadata updates use bounded reads and writes, atomic replacement, and revisions checked before applying delayed results. No repository lock is held while waiting for SSH. Private revision and launch fields are storage details; `runners.list` retains its existing public shape. Existing records without those fields remain readable.
 
 This lifecycle does not make the runner API stable, replace active resource handles, grant access to other plugins, or validate account-specific AI configuration. Remote deployment, initialization and credentials still require the appropriate authorization.
+
+## Recovery and package changes
+
+Open **Settings → Plugins → Remote task recovery** to discover records, including those belonging to stopped or uninstalled plugins. The host can check status and save stop intent without launching the plugin or selecting Node. Records are paged in groups of 32. A saved record or connected SSH transport is not proof that the task is running; remote observations show their check time. Offline, changed, ambiguous and unreviewed destinations remain distinct.
+
+Older records have no captured destination. They remain readable, but inspection and remote cleanup require explicitly reviewing the original address and key in a native confirmation. When different connections exist for the same saved host, the host refuses to guess which one owns an older record. Review cannot replace an already captured identity. Binding an older record with a pending stop can immediately resume that existing cleanup intent.
+
+Updating a plugin does not automatically transfer an older task to its new package. **Hand over control** requires the currently installed package's existing `ssh.exec` approval and native consent for that specific task. It preserves the original deployment, code and permissions; it does not clear pending stops, launch work, send a prompt, or replay approval. Confirmed terminal tasks and tasks with pending stops cannot be handed over.
+
+The experimental `runners.review` method accepts `{sessionId, runnerId, directory, kind: "destination" | "control"}` and returns `{reviewed: boolean}`. `destination` binds only an unreviewed legacy record; `control` hands one task to the currently authorized package fingerprint. Cancellation returns `false`; changed records, revoked permissions, changed connections or expired confirmation fail without applying the review. Check `api.describe` for availability before calling it. Existing `runners.list` fields stay unchanged and do not expose private identity or ownership metadata.
+
+Removing a record is available only after confirmed terminal status and no pending stop. It removes local metadata only; remote files remain. An uncertain launch returning `notFound` does not qualify. Native actions use opaque tokens for the complete observed record, and recheck those tokens after confirmation so old pages cannot remove or mutate newer records.
