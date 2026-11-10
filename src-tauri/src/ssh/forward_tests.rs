@@ -385,6 +385,84 @@ async fn local_stop_returns_only_after_port_can_be_rebound() {
     drop(rebound);
     server.abort();
 }
+
+#[tokio::test]
+async fn domain_admission_rejects_stale_state_and_publishes_only_accepted_listeners() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (handle, routes, server) = fixture().await;
+    let (echo_port, echo_task) = echo().await;
+    let count = Arc::new(AtomicUsize::new(0));
+    let received = count.clone();
+    let registry = ForwardRegistry::with_notifier(move || {
+        received.fetch_add(1, Ordering::SeqCst);
+    });
+    for (index, mode) in ["local", "remote"].into_iter().enumerate() {
+        let rule = ForwardRule {
+            id: mode.into(),
+            host_id: "host".into(),
+            name: mode.into(),
+            mode: mode.into(),
+            bind_host: "127.0.0.1".into(),
+            bind_port: free_port().await,
+            target_host: "127.0.0.1".into(),
+            target_port: echo_port,
+        };
+        let rejected = start_owned(
+            &registry,
+            &rule,
+            "session",
+            handle.clone(),
+            routes.clone(),
+            Some(("plugin".into(), 1)),
+            || Err(AppError::validation("forward.missing")),
+        )
+        .await;
+        assert!(
+            matches!(rejected, Err(AppError::Validation(message)) if message == "forward.missing")
+        );
+        assert!(registry.snapshot().unwrap().is_empty());
+        assert_eq!(count.load(Ordering::SeqCst), index * 2);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Ok(listener) = TcpListener::bind(("127.0.0.1", rule.bind_port)).await {
+                    drop(listener);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            while !routes.entries.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        start_owned(
+            &registry,
+            &rule,
+            "session",
+            handle.clone(),
+            routes.clone(),
+            Some(("plugin".into(), 1)),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), index * 2 + 1);
+        assert_eq!(
+            registry
+                .snapshot()
+                .unwrap()
+                .get(&rule.id)
+                .map(String::as_str),
+            Some("session")
+        );
+        drop(roundtrip(rule.bind_port).await);
+        registry.stop(&rule.id).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), index * 2 + 2);
+    }
+    server.abort();
+    echo_task.abort();
+}
 async fn echo() -> (u16, JoinHandle<()>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
