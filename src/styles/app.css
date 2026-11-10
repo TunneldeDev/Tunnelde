@@ -2106,6 +2106,12 @@
   height: 100%;
 }
 
+/* xterm 6.1 uses its scrollable element; the retained legacy viewport is empty.
+   Hide it so its old native scrollbar/background cannot cover the bottom row. */
+.terminal-surface .xterm > .xterm-viewport {
+  display: none;
+}
+
 /* ---------- connect dialog ---------- */
 
 .connect {
