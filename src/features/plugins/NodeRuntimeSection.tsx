@@ -9,6 +9,7 @@ import { translateError } from "@/lib/api/errors";
 import type { NodeRuntimeInfo } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { usePluginSecurity } from "@/store/pluginSecurity";
+import { ActivationDecision } from "@/lib/plugins/activation/decision";
 
 interface Progress {
   taskId: string;
@@ -250,72 +251,65 @@ export function NodeRuntimeSection({
   );
 }
 
-const useGate = create<{ open: boolean }>(() => ({ open: false }));
-export const useNodeRuntimeGateOpen = () => useGate((state) => state.open);
-let gatePromise: Promise<boolean> | null = null;
-let finishGate: ((ready: boolean) => void) | null = null;
+const useGate = create<{ request: ActivationDecision | null }>(() => ({ request: null }));
+export const useNodeRuntimeGateOpen = () => useGate((state) => state.request !== null);
+let gate: ActivationDecision | null = null;
 
 /** First-use setup is shared by concurrent plugin starts and view requests. */
-export function ensureNodeRuntime(): Promise<boolean> {
+export function ensureNodeRuntime(signal?: AbortSignal): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
   if (usePluginSecurity.getState().state.restricted) return Promise.resolve(false);
-  if (gatePromise) return gatePromise;
-  gatePromise = new Promise<boolean>((resolve) => {
-    const finish = (ready: boolean) => {
-      if (finishGate !== finish) return;
-      useGate.setState({ open: false });
-      finishGate = null;
-      gatePromise = null;
-      resolve(ready);
-    };
-    finishGate = finish;
-    void (async () => {
-      try {
-        const info = await api.nodeDetect();
-        if (finishGate !== finish) return;
-        if (usePluginSecurity.getState().state.restricted) {
-          finish(false);
-          return;
-        }
-        useRuntime.setState({ info });
-        if (info.compatible) {
-          finish(true);
-          return;
-        }
-      } catch (error) {
-        if (finishGate !== finish) return;
-        useRuntime.setState({ error: translateError(error) });
-      }
-      if (finishGate !== finish) return;
+  if (gate) return gate.wait(signal);
+  const request = new ActivationDecision(() => {
+    if (gate !== request) return;
+    gate = null;
+    useGate.setState({ request: null });
+  });
+  gate = request;
+  const result = request.wait(signal);
+  void (async () => {
+    try {
+      const info = await api.nodeDetect();
+      if (!request.active) return;
       if (usePluginSecurity.getState().state.restricted) {
-        finish(false);
+        request.finish(false);
         return;
       }
-      useGate.setState({ open: true });
-    })();
-  });
-  return gatePromise;
-}
-
-function ready() {
-  finishGate?.(true);
+      useRuntime.setState({ info });
+      if (info.compatible) {
+        request.finish(true);
+        return;
+      }
+    } catch (error) {
+      if (!request.active) return;
+      useRuntime.setState({ error: translateError(error) });
+    }
+    if (!request.active) return;
+    if (usePluginSecurity.getState().state.restricted) {
+      request.finish(false);
+      return;
+    }
+    useGate.setState({ request });
+  })();
+  return result;
 }
 
 export function NodeRuntimeGate() {
   const { t } = useTranslation();
-  const open = useGate((state) => state.open);
+  const request = useGate((state) => state.request);
   const restricted = usePluginSecurity((state) => state.state.restricted);
   useEffect(() => {
-    if (restricted) finishGate?.(false);
+    if (restricted) gate?.finish(false);
   }, [restricted]);
   return (
     <Dialog
-      open={open}
+      open={request !== null}
       title={t("plugins.node.title")}
       closeLabel={t("common.close")}
-      onClose={() => finishGate?.(false)}
+      onClose={() => request?.finish(false)}
       width={560}
     >
-      {open ? <NodeRuntimeSection onReady={ready} embedded /> : null}
+      {request ? <NodeRuntimeSection onReady={() => request.finish(true)} embedded /> : null}
     </Dialog>
   );
 }

@@ -801,9 +801,24 @@ pub async fn plugins_list(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>>
 }
 
 #[tauri::command]
-pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::PluginInfo> {
+pub fn plugin_prepare_start(
+    app: AppHandle,
+    id: String,
+    expected_fingerprint: String,
+) -> AppResult<plugins::StartPermit> {
+    app.state::<AppState>()
+        .plugins
+        .prepare_start(&id, &expected_fingerprint)
+}
+
+#[tauri::command]
+pub async fn plugin_start(
+    app: AppHandle,
+    id: String,
+    permit: plugins::StartPermit,
+) -> AppResult<plugins::PluginInfo> {
     let state = app.state::<AppState>();
-    let result = state.plugins.start(&app, &id).await;
+    let result = state.plugins.start(&app, &id, &permit).await;
     if let Err(error) = &result {
         // Do not persist untrusted plugin output or user paths in diagnostic logs.
         let detail = error.to_string();

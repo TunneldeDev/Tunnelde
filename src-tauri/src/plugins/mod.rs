@@ -29,6 +29,8 @@ pub mod tasks;
 mod tools;
 pub mod wasm;
 
+pub use runtime::activation::StartPermit;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;

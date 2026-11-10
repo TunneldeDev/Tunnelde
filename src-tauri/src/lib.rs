@@ -278,6 +278,7 @@ pub fn run() {
             commands::remote_kill,
             commands::plugins_list,
             commands::plugin_start,
+            commands::plugin_prepare_start,
             commands::plugin_stop,
             commands::plugin_run,
             commands::plugin_open_dir,

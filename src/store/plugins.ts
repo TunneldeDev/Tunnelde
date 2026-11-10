@@ -33,6 +33,7 @@ interface PluginsStore {
   items: PluginInfo[];
   busy: string | null;
   busyIds: string[];
+  startingIds: string[];
   reloading: boolean;
   outputs: Record<string, PluginOutput>;
   load: () => Promise<void>;
@@ -55,12 +56,23 @@ interface PluginsStore {
 }
 
 export const usePlugins = create<PluginsStore>((set, get) => {
-  const operations = new Map<string, Promise<void>>();
+  const operations = new Map<
+    string,
+    { promise: Promise<void>; controller: AbortController; kind: "start" | "stop" | "other" }
+  >();
   const installations = new Map<string, Promise<boolean>>();
   const revisions = new Map<string, number>();
   let revision = 0;
   let listRequest = 0;
   let reloadRequest: Promise<void> | null = null;
+
+  const publishOperations = () => {
+    const busyIds = [...operations.keys()];
+    const startingIds = [...operations]
+      .filter(([, operation]) => operation.kind === "start")
+      .map(([id]) => id);
+    set({ busyIds, busy: busyIds[0] ?? null, startingIds });
+  };
 
   const touch = (id: string) => {
     revisions.set(id, ++revision);
@@ -93,53 +105,73 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     }
   };
 
-  // A plugin has one runtime: conflicting actions share its pending operation.
-  // Other plugins remain independently usable while it is busy.
-  const operate = (id: string, action: (startedAt: number) => Promise<void>) => {
+  // Stop supersedes activation, including consent/setup waits. Other operations
+  // remain serialized per plugin, without blocking unrelated plugins.
+  const operate = (
+    id: string,
+    action: (startedAt: number, signal: AbortSignal) => Promise<void>,
+    kind: "start" | "stop" | "other" = "other",
+  ) => {
     const pending = operations.get(id);
-    if (pending) return pending;
+    if (pending) {
+      if (kind !== "stop" || pending.kind !== "start") return pending.promise;
+      pending.controller.abort();
+    }
+    const controller = new AbortController();
     const pendingReload = reloadRequest;
     touch(id);
     const request = Promise.resolve().then(async () => {
       try {
         if (pendingReload) await pendingReload;
-        await action(touch(id));
+        if (!controller.signal.aborted) await action(touch(id), controller.signal);
       } finally {
-        operations.delete(id);
-        const busyIds = [...operations.keys()];
-        set({ busyIds, busy: busyIds[0] ?? null });
+        if (operations.get(id)?.promise === request) {
+          operations.delete(id);
+          publishOperations();
+        }
       }
     });
-    operations.set(id, request);
-    const busyIds = [...operations.keys()];
-    set({ busyIds, busy: busyIds[0] ?? null });
+    operations.set(id, { promise: request, controller, kind });
+    publishOperations();
     return request;
   };
 
-  const changeStatus = (id: string, request: () => Promise<PluginInfo | null>, starting = false) =>
-    operate(id, async (startedAt) => {
-      try {
-        const info = await request();
-        // A pushed failure/status event may already be newer than this response.
-        if (info && revisions.get(id) === startedAt) get().apply(info);
-        const current = get().items.find((item) => item.id === id);
-        if (starting && info && current?.status === "failed") {
-          notifyPluginFailure(id, new Error(current.error || i18n.t("pluginErrors.unknown")));
+  const changeStatus = (
+    id: string,
+    request: (signal: AbortSignal) => Promise<PluginInfo | null>,
+    starting = false,
+  ) =>
+    operate(
+      id,
+      async (startedAt, signal) => {
+        try {
+          const info = await request(signal);
+          if (signal.aborted) return;
+          // A pushed failure/status event may already be newer than this response.
+          if (info && revisions.get(id) === startedAt) get().apply(info);
+          const current = get().items.find((item) => item.id === id);
+          if (starting && info && current?.status === "failed") {
+            notifyPluginFailure(id, new Error(current.error || i18n.t("pluginErrors.unknown")));
+          }
+        } catch (error) {
+          if (signal.aborted) return;
+          if (isTauri()) {
+            const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
+            if (signal.aborted) return;
+            reportPluginExecutionFailure(error);
+          }
+          if (starting) notifyPluginFailure(id, error);
+          else toast(translateError(error), "error");
         }
-      } catch (error) {
-        if (isTauri()) {
-          const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
-          reportPluginExecutionFailure(error);
-        }
-        if (starting) notifyPluginFailure(id, error);
-        else toast(translateError(error), "error");
-      }
-    });
+      },
+      starting ? "start" : "stop",
+    );
 
   return {
     items: [],
     busy: null,
     busyIds: [],
+    startingIds: [],
     reloading: false,
     outputs: {},
     clearOutput: (id) =>
@@ -152,10 +184,11 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     reload: () => {
       if (reloadRequest) return reloadRequest;
       ++listRequest;
-      const pending = [...operations.values(), ...installations.values()];
+      const pending = [...operations.values()].map((operation) => operation.promise);
+      const pendingInstalls = [...installations.values()];
       reloadRequest = Promise.resolve()
         .then(async () => {
-          await Promise.allSettled(pending);
+          await Promise.allSettled([...pending, ...pendingInstalls]);
           await readList(api.pluginReload);
         })
         .finally(() => {
@@ -203,18 +236,27 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     start: (id) =>
       changeStatus(
         id,
-        async () => {
+        async (signal) => {
           const info = get().items.find((item) => item.id === id);
           if (info?.runtime === "theme") return null;
           if (isTauri() && info) {
             const { ensurePluginPermission } = await import("@/store/pluginSecurity");
-            if (!(await ensurePluginPermission(info))) return null;
+            if (signal.aborted || !(await ensurePluginPermission(info, signal))) return null;
           }
+          if (signal.aborted) return null;
+          // Native admission captures the current grant before any further wait.
+          // A stop invalidates it even if the later start IPC arrives out of order.
+          const permit = isTauri()
+            ? await api.pluginPrepareStart(id, info?.fingerprint ?? "")
+            : null;
+          if (signal.aborted) return null;
           if (isTauri() && !["wasm", "declarative", "frontend"].includes(info?.runtime ?? "node")) {
             const { ensureNodeRuntime } = await import("@/features/plugins/NodeRuntimeSection");
-            if (!(await ensureNodeRuntime())) return null;
+            if (signal.aborted || !(await ensureNodeRuntime(signal))) return null;
           }
-          const started = await api.pluginStart(id);
+          if (signal.aborted) return null;
+          const started = await api.pluginStart(id, permit);
+          if (signal.aborted) return null;
           if (started.frontend && started.status === "running") {
             const { frontendRuntime } = await import("@/lib/extensions/frontendRuntime");
             try {
@@ -222,7 +264,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
             } catch (error) {
               // The runtime retires failures by lease, never by an unbound ID.
               // Re-read authoritative status while preserving the activation cause.
-              await readList(api.pluginsList);
+              if (!signal.aborted) await readList(api.pluginsList);
               throw error;
             }
           }

@@ -896,6 +896,7 @@
     "openFolder": "打开目录",
     "empty": "未安装插件",
     "start": "启动",
+    "starting": "正在启动…",
     "stop": "停止",
     "running": "运行中",
     "stopped": "已停止",

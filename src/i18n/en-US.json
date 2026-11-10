@@ -896,6 +896,7 @@
     "openFolder": "Open folder",
     "empty": "No plugins installed",
     "start": "Start",
+    "starting": "Starting…",
     "stop": "Stop",
     "running": "Running",
     "stopped": "Stopped",

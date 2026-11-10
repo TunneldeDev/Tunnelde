@@ -52,6 +52,7 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
     useMarketplace();
   const items = usePlugins((s) => s.items),
     busy = usePlugins((s) => s.busyIds.includes(pluginId));
+  const starting = usePlugins((s) => s.startingIds.includes(pluginId));
   const output = usePlugins((s) => s.outputs[pluginId]);
   const loadPlugins = usePlugins((s) => s.load);
   useEffect(() => {
@@ -154,15 +155,15 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           <>
             {!themeOnly ? (
               <Button
-                disabled={busy || !!task}
-                leading={running ? <Square size={13} /> : <Play size={13} />}
+                disabled={(busy && !starting) || !!task}
+                leading={running || starting ? <Square size={13} /> : <Play size={13} />}
                 onClick={() =>
-                  void (running
+                  void (running || starting
                     ? usePlugins.getState().stop(pluginId)
                     : usePlugins.getState().start(pluginId))
                 }
               >
-                {t(running ? "plugins.stop" : "plugins.start")}
+                {t(starting ? "common.cancel" : running ? "plugins.stop" : "plugins.start")}
               </Button>
             ) : null}
             <Button
@@ -181,16 +182,26 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
               {t("plugins.uninstall")}
             </Button>
             {!themeOnly ? (
-              <span className="plugin-detail__status">
+              <span className="plugin-detail__status" role="status" aria-live="polite">
                 <StatusDot
-                  tone={running ? "ok" : installed.status === "failed" ? "error" : "idle"}
+                  tone={
+                    starting
+                      ? "idle"
+                      : running
+                        ? "ok"
+                        : installed.status === "failed"
+                          ? "error"
+                          : "idle"
+                  }
                 />
                 {t(
-                  running
-                    ? "plugins.running"
-                    : installed.status === "failed"
-                      ? "plugins.failed"
-                      : "plugins.stopped",
+                  starting
+                    ? "plugins.starting"
+                    : running
+                      ? "plugins.running"
+                      : installed.status === "failed"
+                        ? "plugins.failed"
+                        : "plugins.stopped",
                 )}
               </span>
             ) : null}
