@@ -34,10 +34,11 @@ pub use runtime::activation::StartPermit;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
@@ -47,7 +48,6 @@ use crate::plugins::manifest::{PluginCommand, PluginManifest, PluginTheme, Plugi
 use crate::plugins::wasm::WasmPlugin;
 
 pub const STATE_EVENT: &str = "plugin://state";
-const CALL_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -481,70 +481,6 @@ impl PluginsManager {
             .get(id)
             .cloned()
             .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))
-    }
-
-    pub async fn render_view(
-        &self,
-        id: &str,
-        view: &str,
-        locale: Option<&str>,
-    ) -> AppResult<Value> {
-        let handle = self.instance(id).await?;
-        let instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-        instance.require_runtime()?;
-        let lease = instance.checked_runtime(&self.security).await?;
-        if instance.manifest.runtime.as_deref() == Some("declarative") {
-            if !instance.manifest.views.iter().any(|item| item.id == view) {
-                return Err(AppError::NotFound("plugin.view.notFound".into()));
-            }
-            let result = declarative::render(&instance.dir, &instance.manifest.main, view);
-            self.security.authorize(
-                id,
-                &lease.fingerprint,
-                &lease.permissions,
-                None,
-                Some(lease.generation),
-            )?;
-            return result;
-        }
-        if instance.is_wasm() {
-            let result = wasm_call(
-                &instance,
-                json!({ "method": "render", "view": view, "locale": locale }),
-                &self.security,
-                &lease,
-            );
-            self.security.authorize(
-                id,
-                &lease.fingerprint,
-                &lease.permissions,
-                None,
-                Some(lease.generation),
-            )?;
-            return result;
-        }
-        let host = instance
-            .host
-            .as_ref()
-            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?
-            .connection();
-        // An async plugin reply must not hold up its other commands/views or
-        // lifecycle changes. This transport remains bound to the captured lease.
-        drop(instance);
-
-        self.security
-            .guard(
-                &lease,
-                host.request(
-                    "view.render",
-                    json!({ "view": view, "locale": locale }),
-                    CALL_TIMEOUT,
-                ),
-            )
-            .await
     }
 }
 
@@ -1280,7 +1216,7 @@ mod tests {
             .to_string()
             .contains("plugin.theme.noRuntime"));
         assert!(manager
-            .render_view("theme-pack", "panel", None)
+            .render_view("theme-pack", "panel", None, "")
             .await
             .unwrap_err()
             .to_string()

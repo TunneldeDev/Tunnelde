@@ -997,11 +997,12 @@ pub async fn plugin_render_view(
     id: String,
     view: String,
     locale: Option<String>,
+    runtime_id: String,
 ) -> AppResult<Value> {
     let state = app.state::<AppState>();
     state
         .plugins
-        .render_view(&id, &view, locale.as_deref())
+        .render_view(&id, &view, locale.as_deref(), &runtime_id)
         .await
 }
 

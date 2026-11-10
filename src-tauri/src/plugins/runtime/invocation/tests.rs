@@ -16,7 +16,11 @@ impl Fixture {
             std::env::temp_dir().join(format!("tunnelde-invocation-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(root.join("sample")).unwrap();
         std::fs::write(root.join("sample").join(crate::plugins::manifest::MANIFEST_FILE), r#"{"id":"sample","name":"Sample","version":"1.0.0","apiVersion":1,"runtime":"declarative","main":"view.json","views":[{"id":"main","title":"Sample"}]}"#).unwrap();
-        std::fs::write(root.join("sample/view.json"), "{}").unwrap();
+        std::fs::write(
+            root.join("sample/view.json"),
+            r#"{"views":{"main":{"title":"Sample","blocks":[]}}}"#,
+        )
+        .unwrap();
         let manager = Arc::new(PluginsManager::load(root.clone()));
         let db = Database::in_memory().unwrap();
         let fingerprint = crate::plugins::security::fingerprint(&root.join("sample")).unwrap();
@@ -137,4 +141,90 @@ async fn admission_checks_actual_files_and_exact_lease_owner() {
     assert!(instance.info().runtime_id.is_none());
     instance.status = PluginStatus::Failed;
     assert!(instance.info().runtime_id.is_none());
+}
+
+#[tokio::test]
+async fn view_render_is_bound_before_waits_and_rejects_missing_or_replaced_runtime() {
+    let f = Fixture::new();
+    let (_, old) = f.activate().await;
+    assert_eq!(
+        f.manager
+            .render_view("sample", "main", None, &old)
+            .await
+            .unwrap()["title"],
+        "Sample"
+    );
+    assert!(f
+        .manager
+        .render_view("sample", "main", None, "")
+        .await
+        .is_err());
+    let handle = f.manager.instance("sample").await.unwrap();
+    let held = handle.lock().await;
+    let mut pending = Box::pin(f.manager.render_view("sample", "main", None, &old));
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), &mut pending)
+            .await
+            .is_err()
+    );
+    f.manager.security.retire_runtime("sample");
+    assert!(tokio::time::timeout(Duration::from_millis(200), pending)
+        .await
+        .unwrap()
+        .is_err());
+    drop(held);
+    let (_, replacement) = f.activate().await;
+    assert!(f
+        .manager
+        .render_view("sample", "main", None, &old)
+        .await
+        .is_err());
+    assert!(f
+        .manager
+        .render_view("sample", "main", None, &replacement)
+        .await
+        .is_ok());
+    std::fs::write(f.root.join("sample/view.json"), "{}").unwrap();
+    assert!(f
+        .manager
+        .render_view("sample", "main", None, &replacement)
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn render_waits_for_frontend_without_holding_the_instance_lock() {
+    let f = Fixture::new();
+    let (_, old) = f.activate().await;
+    f.manager.security.retire_runtime("sample");
+    let handle = f.manager.instance("sample").await.unwrap();
+    let mut instance = handle.lock().await;
+    let lease = f
+        .manager
+        .security
+        .lease("sample", instance.fingerprint.clone(), vec![])
+        .unwrap();
+    let pending = f.manager.security.begin_runtime(&lease, &[], true).unwrap();
+    f.manager.security.native_ready(&lease).unwrap();
+    pending.commit();
+    let id = f.manager.security.lease_stamp(&lease);
+    assert_ne!(id, old);
+    instance.runtime_lease = Some(lease.clone());
+    instance.runtime_id = Some(id.clone());
+    f.manager.remember(&instance.info());
+    drop(instance);
+    let mut render = Box::pin(f.manager.render_view("sample", "main", None, &id));
+    assert!(tokio::time::timeout(Duration::from_millis(20), &mut render)
+        .await
+        .is_err());
+    let held = tokio::time::timeout(Duration::from_millis(200), handle.lock())
+        .await
+        .unwrap();
+    f.manager
+        .security
+        .frontend_opened(&lease, "module")
+        .unwrap();
+    f.manager.security.frontend_ready(&lease, "module").unwrap();
+    drop(held);
+    assert_eq!(render.await.unwrap()["title"], "Sample");
 }

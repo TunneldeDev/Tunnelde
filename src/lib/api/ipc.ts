@@ -226,8 +226,8 @@ export const api = {
   pluginPickArchive: () => invoke<string | null>("plugin_pick_archive"),
   pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
-  pluginRenderView: (id: string, view: string, locale?: string) =>
-    invoke<unknown>("plugin_render_view", { id, view, locale: locale ?? null }),
+  pluginRenderView: (id: string, view: string, locale: string | undefined, runtimeId: string) =>
+    invoke<unknown>("plugin_render_view", { id, view, locale: locale ?? null, runtimeId }),
   pluginRun: (id: string, command: string, input: Record<string, unknown>, runtimeId: string) =>
     invoke<unknown>("plugin_run", { id, command, input, runtimeId }),
   pluginOpenDir: () => invoke<void>("plugin_open_dir"),

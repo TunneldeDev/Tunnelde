@@ -86,6 +86,7 @@ pub(super) fn prepare(
             frontend,
             phase: Phase::Starting,
             frontend_token: None,
+            readiness_id: uuid::Uuid::new_v4(),
         },
     );
     if let Err(error) = authorization::validate(policy, &id, &fingerprint, generation) {

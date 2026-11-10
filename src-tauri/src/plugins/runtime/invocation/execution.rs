@@ -17,6 +17,21 @@ impl PluginsManager {
         input: Option<Value>,
         lease: &Lease,
     ) -> AppResult<Value> {
+        self.security
+            .wait_ready(lease, tokio::time::Instant::now() + super::READY_TIMEOUT)
+            .await?;
+        self.security
+            .guard_ready(lease, self.execute_command(id, command, input, lease))
+            .await
+    }
+
+    async fn execute_command(
+        &self,
+        id: &str,
+        command: &str,
+        input: Option<Value>,
+        lease: &Lease,
+    ) -> AppResult<Value> {
         if input
             .as_ref()
             .is_some_and(|value| !value.is_object() || value.to_string().len() > 256 * 1024)

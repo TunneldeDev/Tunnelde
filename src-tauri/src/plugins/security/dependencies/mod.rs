@@ -4,6 +4,7 @@ mod authorization;
 mod frontend;
 mod lifecycle;
 mod model;
+mod readiness;
 mod revocation;
 
 use std::sync::Arc;

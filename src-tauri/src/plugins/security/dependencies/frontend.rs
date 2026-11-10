@@ -22,6 +22,7 @@ impl PluginSecurity {
             return Ok(vec![]);
         }
         runtime.frontend_token = Some(token.to_owned());
+        runtime.readiness_id = uuid::Uuid::new_v4();
         runtime.phase = Phase::AwaitingFrontend;
         let retired = retire_consumers(&mut policy, &lease.id);
         self.notify(&mut policy);
@@ -54,6 +55,7 @@ impl PluginSecurity {
             return vec![];
         };
         runtime.frontend_token = None;
+        runtime.readiness_id = uuid::Uuid::new_v4();
         runtime.phase = Phase::AwaitingFrontend;
         let retired = retire_consumers(&mut policy, &lease.id);
         self.notify(&mut policy);

@@ -145,7 +145,7 @@ describe("agent preparation", () => {
     mock.render.mockResolvedValue({ blocks: [completed] });
     render(<PluginChat pluginId="assistant" viewId="chat" block={block("checking")} />);
     await screen.findByRole("button", { name: "Send" }, { timeout: 3500 });
-    expect(mock.render).toHaveBeenCalledWith("assistant", "chat", "en-US");
+    expect(mock.render).toHaveBeenCalledWith("assistant", "chat", "en-US", "boot:1");
     expect(mock.run).not.toHaveBeenCalled();
   });
   it("shows initialization instead of Send, blocks Enter, then preserves the draft for a verified target", async () => {
