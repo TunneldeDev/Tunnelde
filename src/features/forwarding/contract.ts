@@ -11,4 +11,8 @@ export interface ForwardRule {
 export interface ForwardInfo extends ForwardRule {
   active: boolean;
   sessionId: string | null;
+  revision: string;
+}
+export interface RevisionedRule extends ForwardRule {
+  revision: string;
 }

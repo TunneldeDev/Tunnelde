@@ -12,6 +12,7 @@ const row = (name: string): ForwardInfo => ({
   targetPort: 80,
   active: false,
   sessionId: null,
+  revision: "revision-1",
 });
 const deferred = <T>() => {
   let resolve!: (value: T) => void;

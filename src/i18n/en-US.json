@@ -1801,6 +1801,7 @@
     "bindFailed": "Could not listen on that address and port. It may already be in use.",
     "remoteRejected": "The SSH server rejected the remote forward or did not respond. Check its forwarding policy and listen address.",
     "startCancelled": "Port forward startup was cancelled.",
+    "changed": "This forwarding rule changed or was deleted elsewhere. Any unsaved draft has been kept. Reopen the rule and review its current values before retrying.",
     "stopFailed": "Could not confirm that the listening port was released. Disconnect this host's forwarding connection before trying again.",
     "localEndpoint": "Local",
     "remoteEndpoint": "Remote",

@@ -12,7 +12,7 @@
 公共基础设施只承载领域无关的事件、资源作用域和同步机制，不集中存放各领域业务。
 
 转发领域的协议结构与校验在 `services/forwarding/contract.rs`，持久化在同目录的
-`repository.rs`，服务入口在 `mod.rs`。原生 IPC 在 `commands/forwarding.rs`，插件适配在
+`repository.rs`，SSH 启动校验在 `runtime.rs`，服务入口在 `mod.rs`。原生 IPC 在 `commands/forwarding.rs`，插件适配在
 `plugins/api/domains/forwarding/mod.rs`，SSH 监听与转发实现保留在传输模块。两类适配都调用领域服务。
 前端同样区分领域契约、共享状态和视图。目录调整不改变已有 RPC 名称、权限或返回结构。
 后续 SDK 和文档按领域提供入口；旧目录尚未全部完成迁移。

@@ -444,6 +444,10 @@ The rule list keeps Start/Stop visible and puts Edit, Copy local connection addr
 Delete in each rule's actions menu. An active rule must be stopped before editing.
 Startup failures stay beside the saved rule so Start can retry without creating duplicates;
 save failures keep the editor draft. Other open forwarding views refresh after changes.
+Edits, deletion confirmations and starts use the version that was reviewed. If another
+view or plugin changes or deletes that rule, the old action is rejected and an unsaved
+draft is preserved. Cancel and reopen the rule to review its current values before retrying.
+Changing a rule back to its previous values does not restore an old confirmation.
 Endpoint groups stack vertically in narrow panes.
 
 Stopping waits for the local listener to close or for the SSH server to acknowledge
