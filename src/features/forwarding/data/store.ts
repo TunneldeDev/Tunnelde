@@ -5,8 +5,8 @@ import { createInvalidatedListStore } from "@/lib/data/invalidatedListStore";
 import { domainEvents } from "@/lib/events/domain";
 import { useSsh } from "@/store/ssh";
 
-import type { ForwardInfo, RevisionedRule } from "./contract";
-export type { ForwardInfo, ForwardRule } from "./contract";
+import type { ForwardInfo, RevisionedRule } from "../model/contract";
+export type { ForwardInfo, ForwardRule } from "../model/contract";
 
 /** One committed list and one native read for all forwarding surfaces. */
 export function createForwardingStore(

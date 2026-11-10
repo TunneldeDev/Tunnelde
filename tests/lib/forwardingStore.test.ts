@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { createForwardingStore, type ForwardInfo } from "@/features/forwarding/forwardingStore";
+import { createForwardingStore, type ForwardInfo } from "@/features/forwarding/data/store";
 
 const row = (name: string): ForwardInfo => ({
   id: "rule",

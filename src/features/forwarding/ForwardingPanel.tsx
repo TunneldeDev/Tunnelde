@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Network, Plus, Server } from "lucide-react";
 import { ForwardingSection } from "./ForwardingSection";
-import { useForwardingSnapshot } from "./forwardingStore";
+import { useForwardingSnapshot } from "./data/store";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
 import { translateError } from "@/lib/api/errors";

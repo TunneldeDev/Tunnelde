@@ -36,6 +36,19 @@ the RPC declarations in the marketplace repository follow the same domain bounda
 Compatibility entry files re-export the historical names. Generators validate the public
 dependency graph and historical consumers; do not copy private application stores into the SDK.
 
+Host-side UI bridges follow the same domain boundaries under `src/lib/extensions/`:
+`files/context.ts`, `terminal/bridge.ts` and `history/context.ts` own their data adapters;
+each domain's `provider.ts` owns its authorized callback facade. Shared provider lease
+and access types live under `runtime/providers/`. `ProviderSurface` selects the renderer,
+checks its current identity and recovers to the built-in view; it does not implement
+domain actions. These private modules are not new public SDK entry points.
+
+The native forwarding feature separates `model/` DTOs, payloads and address helpers,
+`data/store.ts` shared invalidation, `runtime/useForwardingController.ts` operation
+orchestration, and `components/` rows and editor. The section composes them while keeping
+the controller mounted throughout editing. This separation prepares the forwarding UI
+provider; it does not itself expose a new provider or complete its ownership contract.
+
 ## Discover implemented capabilities
 
 Call `api.describe` to inspect available RPC methods, permissions and stable

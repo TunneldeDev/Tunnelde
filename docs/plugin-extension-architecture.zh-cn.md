@@ -28,6 +28,17 @@ RPC 边界 `plugins/api.rs` 负责请求授权、大小限制及响应返回前�
 RPC 类型声明也按领域组织。兼容入口仅重新导出历史名称，生成工具校验公开依赖图及
 历史消费者；不要把应用私有状态容器直接复制到 SDK。
 
+宿主 UI 桥接也在 `src/lib/extensions/` 下按领域分类：`files/context.ts`、
+`terminal/bridge.ts`、`history/context.ts` 分别负责数据适配，各领域的 `provider.ts`
+负责带授权检查的回调接口。共享租约及访问类型在 `runtime/providers/`。
+`ProviderSurface` 负责选择渲染器、检查当前身份及恢复内置视图，不承载领域操作实现。
+这些私有模块不是新的公开 SDK 入口。
+
+原生转发功能中，`model/` 放 DTO、保存载荷及地址工具，`data/store.ts` 负责共享失效，
+`runtime/useForwardingController.ts` 编排操作，`components/` 放列表和编辑器。
+页面组合这些职责，编辑期间保持控制器挂载。这是转发 UI 提供者的准备工作，
+本身不表示已开放新的提供者或完成其资源所有权契约。
+
 ## 发现已实现能力
 
 通过 `api.describe` 查询实际 RPC 方法、权限及稳定契约。该目录包含
