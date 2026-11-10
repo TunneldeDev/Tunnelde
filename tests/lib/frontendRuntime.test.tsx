@@ -37,6 +37,31 @@ function fixture(activate: FrontendModule["activate"] = () => {}) {
 
 afterEach(() => vi.useRealTimers());
 
+it("calls domain RPC only through an existing activated generation and discards results after retirement", async () => {
+  const { runtime, transport } = fixture();
+  await expect(runtime.call(plugin.id, "unknown", "preferences.schema")).rejects.toThrow("closed");
+  expect(transport.open).not.toHaveBeenCalled();
+  await runtime.ensure(plugin);
+  const token = runtime.token(plugin.id)!;
+  await expect(runtime.call(plugin.id, "wrong", "preferences.snapshot")).rejects.toThrow("closed");
+  expect(transport.call).not.toHaveBeenCalled();
+  let finish!: (value: unknown) => void;
+  vi.mocked(transport.call).mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const pending = runtime.call(plugin.id, token, "preferences.snapshot");
+  const rejected = expect(pending).rejects.toThrow("closed");
+  runtime.stop(plugin.id);
+  await rejected;
+  finish({ revision: "late" });
+  await runtime.ensure(plugin);
+  await expect(runtime.call(plugin.id, token, "preferences.snapshot")).rejects.toThrow("closed");
+  runtime.dispose();
+});
+
 it("shares the host React instance, hooks and host components without recreating a running module", async () => {
   let context!: FrontendContext;
   const dispose = vi.fn();

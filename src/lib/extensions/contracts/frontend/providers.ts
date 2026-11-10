@@ -10,7 +10,8 @@ export type FrontendProviderTarget =
   | "monitor"
   | "backgroundTasks"
   | "processes"
-  | "quickAccess";
+  | "quickAccess"
+  | "preferences";
 /** Optional manifest view field; requires kind: component and a trusted frontend. */
 export interface FrontendProviderContribution {
   provider?: FrontendProviderTarget;

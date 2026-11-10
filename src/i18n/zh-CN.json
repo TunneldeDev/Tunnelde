@@ -1325,6 +1325,11 @@
       "changed": "搜索结果已变化，请重新选择当前结果。",
       "invalid": "搜索请求参数无效。",
       "permissionDenied": "此提供者缺少 workspace.write 权限，无法执行命令。"
+    },
+    "preferences": {
+      "changed": "设置页面已变化，请读取当前页面后重试。",
+      "permissionDenied": "此插件需要 settings.write 权限才能修改设置。",
+      "invalid": "设置更新参数无效，请提供版本与要替换的字段。"
     }
   },
   "themes": {
@@ -2101,7 +2106,8 @@
     "history": "命令历史",
     "backgroundTasks": "后台任务",
     "processes": "进程管理",
-    "quickAccess": "快捷搜索"
+    "quickAccess": "快捷搜索",
+    "preferences": "设置表单"
   },
   "hostFields": {
     "title": "插件主机字段",

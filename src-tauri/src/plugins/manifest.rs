@@ -401,6 +401,7 @@ impl PluginManifest {
                             | "backgroundTasks"
                             | "processes"
                             | "quickAccess"
+                            | "preferences"
                     ) || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
@@ -415,6 +416,8 @@ impl PluginManifest {
                             && ["sessions.read", "ssh.exec"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "preferences"
+                            && !self.permissions.iter().any(|p| p == "settings.read"))
                         || (target == "backgroundTasks"
                             && !self.permissions.iter().any(|p| p == "backgroundTasks.read"))
                         || (matches!(target, "monitor" | "processes")
@@ -718,6 +721,18 @@ mod tests {
         value["permissions"] = serde_json::json!(["ui.trusted", "backgroundTasks.read"]);
         assert!(save(&value).is_ok());
         value["views"][0]["provider"] = "forwarding".into();
+        value["views"][0]["provider"] = "preferences".into();
+        for omitted in ["ui.trusted", "settings.read"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "settings.read"]
+                .into_iter()
+                .filter(|p| *p != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "settings.read"]);
+        assert!(save(&value).is_ok());
+        value["permissions"] = serde_json::json!(["ui.trusted", "settings.read", "settings.write"]);
+        assert!(save(&value).is_ok());
         let search_permissions = [
             "ui.trusted",
             "hosts.read",

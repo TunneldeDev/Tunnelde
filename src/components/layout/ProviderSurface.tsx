@@ -47,6 +47,9 @@ import { guardProcessesProvider } from "@/lib/extensions/monitor/processes/provi
 import type { FrontendQuickAccess } from "@/lib/extensions/contracts/search/quickAccess/provider";
 import type { QuickAccessContext } from "@/lib/extensions/search/quickAccess/context";
 import { guardQuickAccessProvider } from "@/lib/extensions/search/quickAccess/provider";
+import type { FrontendPreferences } from "@/lib/extensions/contracts/preferences/provider";
+import type { PreferencesContext } from "@/lib/extensions/preferences/context";
+import { guardPreferencesProvider } from "@/lib/extensions/preferences/provider";
 
 class ProviderBoundary extends Component<
   {
@@ -84,6 +87,7 @@ export function ProviderSurface({
   backgroundTasks,
   processes,
   quickAccess,
+  preferences,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -102,6 +106,7 @@ export function ProviderSurface({
   backgroundTasks?: BackgroundTasksContext & Pick<FrontendBackgroundTasks, "Entries">;
   processes?: ProcessesContext & Pick<FrontendProcesses, "Entries">;
   quickAccess?: QuickAccessContext & Pick<FrontendQuickAccess, "Entries">;
+  preferences?: PreferencesContext & Pick<FrontendPreferences, "Fields">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -262,6 +267,19 @@ export function ProviderSurface({
               ?.permissions.includes("workspace.write"),
         )
       : undefined;
+  const preferencesContext =
+    preferences && active
+      ? guardPreferencesProvider(
+          preferences,
+          checkAccess,
+          () =>
+            !!usePlugins
+              .getState()
+              .items.find((item) => item.id === selected!.plugin.id)
+              ?.permissions.includes("settings.write"),
+          (method, params) => frontendRuntime.call(selected!.plugin.id, token!, method, params),
+        )
+      : undefined;
   const backgroundTasksContext =
     backgroundTasks && active
       ? guardBackgroundTasksProvider(
@@ -343,6 +361,7 @@ export function ProviderSurface({
               backgroundTasks={backgroundTasksContext}
               processes={processesContext}
               quickAccess={quickAccessContext}
+              preferences={preferencesContext}
             />
           </ProviderBoundary>
         </div>

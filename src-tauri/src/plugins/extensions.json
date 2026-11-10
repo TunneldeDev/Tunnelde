@@ -21,7 +21,8 @@
         "monitor",
         "backgroundTasks",
         "processes",
-        "quickAccess"
+        "quickAccess",
+        "preferences"
       ],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
@@ -135,6 +136,18 @@
         "invokePermission": "workspace.write",
         "activation": "invoke-only-native-consent",
         "recovery": "native-input-roots-and-dismissal"
+      },
+      "preferencesPermissions": ["settings.read"],
+      "preferences": {
+        "context": "preferences",
+        "ownership": "host-page",
+        "optionalSlot": "Fields",
+        "schema": "preferences.schema",
+        "read": "preferences.snapshot",
+        "update": "preferences.update",
+        "writePermission": "settings.write",
+        "concurrency": "persistent-revision",
+        "recovery": "native-search-navigation-and-trust"
       }
     },
     "components": [

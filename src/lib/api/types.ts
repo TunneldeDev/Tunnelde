@@ -77,7 +77,8 @@ export interface Settings {
       | "monitor"
       | "backgroundTasks"
       | "processes"
-      | "quickAccess",
+      | "quickAccess"
+      | "preferences",
       { pluginId: string; viewId: string }
     >
   >;
@@ -482,7 +483,8 @@ export interface PluginView {
     | "monitor"
     | "backgroundTasks"
     | "processes"
-    | "quickAccess";
+    | "quickAccess"
+    | "preferences";
 }
 
 export interface PluginEvent {

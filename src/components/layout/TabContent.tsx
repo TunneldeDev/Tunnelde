@@ -41,13 +41,13 @@ function TabBody({
     case "host":
       return <HostPage hostId={tab.hostId} />;
     case "settings":
-      return <SettingsPage />;
+      return <SettingsPage visible={visible} />;
     case "knownHosts":
       return <KnownHostsPage />;
     case "about":
       return <AboutPage />;
     case "updates":
-      return <LegacyUpdates />;
+      return <LegacyUpdates visible={visible} />;
     case "terminal":
       return <TerminalPage sessionId={tab.id.replace("terminal:", "")} active={active} />;
     case "sftp":
@@ -91,11 +91,11 @@ function TabBody({
   }
 }
 
-function LegacyUpdates() {
+function LegacyUpdates({ visible }: { visible: boolean }) {
   useLayoutEffect(() => {
     useNavigation.getState().selectSettings("updates");
   }, []);
-  return <SettingsPage />;
+  return <SettingsPage visible={visible} />;
 }
 
 export function TabContent({ paneId }: { paneId?: string }) {

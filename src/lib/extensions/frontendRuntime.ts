@@ -220,6 +220,32 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         : undefined;
     },
     token: (id: string) => runtimes.get(id)?.token,
+    /** Domain providers use the selected runtime's existing transport and quotas. */
+    async call<T>(
+      id: string,
+      token: string,
+      method: string,
+      params: Record<string, unknown> = {},
+    ): Promise<T> {
+      const runtime = runtimes.get(id);
+      const live = () => {
+        if (
+          !runtime ||
+          runtimes.get(id) !== runtime ||
+          runtime.token !== token ||
+          !runtime.activated ||
+          runtime.retiring ||
+          runtime.scope.signal.aborted
+        )
+          throw new ResourceScopeClosed();
+      };
+      live();
+      const result = await runtime!.scope.run(() => transport.call<T>(token, method, params), {
+        timeoutMs: 30_000,
+      });
+      live();
+      return result;
+    },
     stop,
     dispose: () => {
       for (const id of [...runtimes.keys()]) stop(id);
