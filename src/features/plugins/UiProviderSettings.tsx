@@ -77,6 +77,7 @@ export function UiProviderSettings() {
           "history",
           "forwarding",
           "monitor",
+          "backgroundTasks",
         ] as const
       ).map((target) => {
         const selected = selections?.[target];

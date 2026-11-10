@@ -1303,6 +1303,14 @@
       "changed": "历史记录或会话已变化，请读取最新快照后重试。",
       "busy": "历史记录正在加载或暂不可用，请刷新后再操作。",
       "permissionDenied": "此历史记录提供者没有执行该操作的权限。"
+    },
+    "backgroundTasks": {
+      "invalid": "后台任务请求或进度无效。",
+      "changed": "任务列表已变化，请使用当前任务重试。",
+      "actionUnavailable": "此任务操作不可用或已禁用。",
+      "inactive": "此任务已结束或执行已取消。",
+      "limit": "此插件已有八个尚未结束的后台任务。",
+      "busy": "此任务操作正在执行。"
     }
   },
   "themes": {
@@ -1389,7 +1397,9 @@
       "forwardsWrite": "管理、启动本地或远程端口转发",
       "editorRead": "读取已打开编辑器中的文档",
       "editorWrite": "修改编辑器缓冲区（不会自动保存）",
-      "trustedUi": "在应用界面中加载受信任代码。"
+      "trustedUi": "在应用界面中加载受信任代码。",
+      "backgroundTasksRead": "读取各功能的可见后台任务",
+      "backgroundTasksWrite": "调用可用的后台任务操作"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -2074,7 +2084,8 @@
     "fallback": "所选提供者不可用，已使用内置界面。",
     "restore": "恢复内置界面",
     "terminal": "终端",
-    "history": "命令历史"
+    "history": "命令历史",
+    "backgroundTasks": "后台任务"
   },
   "hostFields": {
     "title": "插件主机字段",

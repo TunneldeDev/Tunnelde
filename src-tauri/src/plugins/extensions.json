@@ -18,7 +18,8 @@
         "terminal",
         "history",
         "forwarding",
-        "monitor"
+        "monitor",
+        "backgroundTasks"
       ],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
@@ -87,6 +88,19 @@
         "connection": "independent-host-confirmation",
         "acceptedOwnership": "plugin-runtime",
         "recovery": "native-editor-and-confirmation"
+      },
+      "backgroundTasksPermissions": ["backgroundTasks.read"],
+      "backgroundTasks": {
+        "context": "backgroundTasks",
+        "ownership": "host-panel",
+        "presentations": ["floating", "embedded"],
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "backgroundTasks.write",
+        "visibility": "visible-tasks-only",
+        "recovery": "native-toolbar-and-confirmation"
       }
     },
     "components": [
@@ -103,6 +117,14 @@
       "moduleBytes": 8388608,
       "totalBytes": 33554432,
       "owners": 16
+    },
+    "backgroundTasks": {
+      "context": "backgroundTasks",
+      "method": "run",
+      "ownership": "runtime",
+      "pendingLimit": 8,
+      "cancellation": "cooperative-settlement",
+      "hidden": "blocks-webview-suspension"
     }
   },
   "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],

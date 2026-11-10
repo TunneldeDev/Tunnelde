@@ -49,6 +49,12 @@ describe("public UI contract boundaries", () => {
     const before = exportsOf(historical),
       after = exportsOf(entry);
     expect([...after.keys()].filter((name) => !before.has(name)).sort()).toEqual([
+      "FrontendBackgroundTaskContext",
+      "FrontendBackgroundTaskEntry",
+      "FrontendBackgroundTaskOptions",
+      "FrontendBackgroundTaskRunner",
+      "FrontendBackgroundTasks",
+      "FrontendBackgroundTasksSnapshot",
       "FrontendForwarding",
       "FrontendForwardingEntry",
       "FrontendForwardingSnapshot",
@@ -56,6 +62,7 @@ describe("public UI contract boundaries", () => {
       "FrontendMonitorReading",
       "FrontendMonitorSample",
       "FrontendMonitorSnapshot",
+      "FrontendTaskProgress",
     ]);
     const widened: string[] = [];
     for (const [name, original] of before) {

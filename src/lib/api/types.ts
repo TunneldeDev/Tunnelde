@@ -68,7 +68,14 @@ export interface Settings {
   showStatusBar: boolean;
   uiProviders: Partial<
     Record<
-      "hostList" | "workbench" | "fileBrowser" | "terminal" | "history" | "forwarding" | "monitor",
+      | "hostList"
+      | "workbench"
+      | "fileBrowser"
+      | "terminal"
+      | "history"
+      | "forwarding"
+      | "monitor"
+      | "backgroundTasks",
       { pluginId: string; viewId: string }
     >
   >;
@@ -464,7 +471,14 @@ export interface PluginView {
   kind?: "chat" | "blocks" | "component";
   icon?: string;
   provider?:
-    "hostList" | "workbench" | "fileBrowser" | "terminal" | "history" | "forwarding" | "monitor";
+    | "hostList"
+    | "workbench"
+    | "fileBrowser"
+    | "terminal"
+    | "history"
+    | "forwarding"
+    | "monitor"
+    | "backgroundTasks";
 }
 
 export interface PluginEvent {

@@ -37,6 +37,10 @@ import type { FrontendMonitor } from "@/lib/extensions/contracts/monitor/provide
 import type { MonitorContext } from "@/lib/extensions/monitor/context";
 import { guardMonitorProvider } from "@/lib/extensions/monitor/provider";
 
+import type { BackgroundTasksContext } from "@/lib/extensions/backgroundTasks/context";
+import type { FrontendBackgroundTasks } from "@/lib/extensions/contracts/backgroundTasks/provider";
+import { guardBackgroundTasksProvider } from "@/lib/extensions/backgroundTasks/provider";
+
 class ProviderBoundary extends Component<
   {
     children: ReactNode;
@@ -70,6 +74,7 @@ export function ProviderSurface({
   history,
   forwarding,
   monitor,
+  backgroundTasks,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -85,6 +90,7 @@ export function ProviderSurface({
   history?: HistoryContext & Pick<FrontendHistory, "Entries">;
   forwarding?: ForwardingContext & Pick<FrontendForwarding, "Entries">;
   monitor?: MonitorContext & Pick<FrontendMonitor, "Charts">;
+  backgroundTasks?: BackgroundTasksContext & Pick<FrontendBackgroundTasks, "Entries">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -220,6 +226,18 @@ export function ProviderSurface({
   const files =
     fileBrowser && active ? guardFileBrowserProvider(fileBrowser, checkAccess) : undefined;
   const monitorContext = monitor && active ? guardMonitorProvider(monitor, checkAccess) : undefined;
+  const backgroundTasksContext =
+    backgroundTasks && active
+      ? guardBackgroundTasksProvider(
+          backgroundTasks,
+          checkAccess,
+          () =>
+            !!usePlugins
+              .getState()
+              .items.find((item) => item.id === selected!.plugin.id)
+              ?.permissions.includes("backgroundTasks.write"),
+        )
+      : undefined;
   const terminalContext =
     terminal && active
       ? guardTerminalProvider(terminal, checkAccess, accessLease, (error) =>
@@ -286,6 +304,7 @@ export function ProviderSurface({
               history={historyContext}
               forwarding={forwardingContext}
               monitor={monitorContext}
+              backgroundTasks={backgroundTasksContext}
             />
           </ProviderBoundary>
         </div>

@@ -2,6 +2,8 @@
 
 [English](plugin-ui-providers.en-us.md) · [可信 UI SDK](plugin-ui.zh-cn.md)
 
+[后台任务扩展](plugin-background-tasks.zh-cn.md) 可包装插件任务并组合公共任务列表。
+
 [监控界面提供者](plugin-monitor-ui.zh-cn.md)可组合完整页与远端侧栏的共享图表及有界资源数据。
 
 [文件浏览器提供者](plugin-file-browser.zh-cn.md) 还可以组合或替换实际文件列表。
