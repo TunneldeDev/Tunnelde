@@ -5,6 +5,10 @@ use std::{
 };
 
 use super::session::ClientHandler;
+use crate::services::forwarding::{
+    contract::{validate, ForwardRule},
+    rules,
+};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -13,7 +17,6 @@ use russh::{
     client::{self, ChannelOpenHandle},
     Channel,
 };
-use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 use tokio::{
     io::{copy_bidirectional, AsyncRead, AsyncWrite},
@@ -22,26 +25,6 @@ use tokio::{
 };
 
 const TIMEOUT: Duration = Duration::from_secs(15);
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ForwardRule {
-    pub id: String,
-    pub host_id: String,
-    pub name: String,
-    pub mode: String,
-    pub bind_host: String,
-    pub bind_port: u16,
-    pub target_host: String,
-    pub target_port: u16,
-}
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ForwardInfo {
-    #[serde(flatten)]
-    pub rule: ForwardRule,
-    pub session_id: Option<String>,
-    pub active: bool,
-}
 #[derive(Clone)]
 struct RemoteTarget {
     host: String,
@@ -148,6 +131,7 @@ pub struct ForwardRegistry {
     active: Mutex<HashMap<String, ActiveForward>>,
     revisions: Mutex<HashMap<String, u64>>,
     changed: watch::Sender<u64>,
+    notify: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 impl Default for ForwardRegistry {
     fn default() -> Self {
@@ -155,10 +139,66 @@ impl Default for ForwardRegistry {
             active: Mutex::new(HashMap::new()),
             revisions: Mutex::new(HashMap::new()),
             changed: watch::channel(0).0,
+            notify: None,
         }
     }
 }
 impl ForwardRegistry {
+    pub(crate) fn with_notifier(notify: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            notify: Some(Arc::new(notify)),
+            ..Default::default()
+        }
+    }
+    fn publish(&self) {
+        if let Some(notify) = &self.notify {
+            notify();
+        }
+    }
+    pub(crate) fn snapshot(&self) -> AppResult<HashMap<String, String>> {
+        Ok(self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?
+            .iter()
+            .map(|(id, item)| (id.clone(), item.session.clone()))
+            .collect())
+    }
+    /// Serialize persistence with listener admission, then notify outside both locks.
+    pub(crate) fn edit<T>(&self, id: &str, commit: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        if active.contains_key(id) {
+            return Err(AppError::validation("forward.stopBeforeEdit"));
+        }
+        let result = commit()?;
+        self.invalidate(format!("rule:{id}"));
+        drop(active);
+        self.publish();
+        Ok(result)
+    }
+    pub(crate) fn remove_rule(
+        &self,
+        id: &str,
+        commit: impl FnOnce() -> AppResult<bool>,
+    ) -> AppResult<()> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        let changed = commit()?;
+        self.invalidate(format!("rule:{id}"));
+        let removed = active.remove(id);
+        drop(active);
+        let notify = changed || removed.is_some();
+        drop(removed);
+        if notify {
+            self.publish();
+        }
+        Ok(())
+    }
     fn invalidate(&self, key: String) {
         if let Ok(mut revisions) = self.revisions.lock() {
             *revisions.entry(key).or_default() += 1;
@@ -204,6 +244,7 @@ impl ForwardRegistry {
             m.remove(id)
         };
         if let Some(item) = item {
+            self.publish();
             // Cleanup keeps running if an IPC/plugin caller is cancelled.
             tauri::async_runtime::spawn(item.shutdown())
                 .await
@@ -214,30 +255,53 @@ impl ForwardRegistry {
     pub fn stop_session(&self, session: &str) {
         if let Ok(mut m) = self.active.lock() {
             self.invalidate(format!("session:{session}"));
+            let previous = m.len();
             m.retain(|_, item| item.session != session);
+            let changed = m.len() != previous;
+            drop(m);
+            if changed {
+                self.publish();
+            }
         }
     }
     pub fn stop_generation(&self, owner: &str, generation: u64) {
         if let Ok(mut active) = self.active.lock() {
+            let previous = active.len();
             active.retain(|_, item| {
                 item.owner.as_deref() != Some(owner) || item.generation != Some(generation)
             });
+            let changed = active.len() != previous;
+            drop(active);
+            if changed {
+                self.publish();
+            }
         }
     }
     pub fn stop_before_generation(&self, owner: &str, boundary: u64) {
         if let Ok(mut active) = self.active.lock() {
+            let previous = active.len();
             active.retain(|_, item| {
                 item.owner.as_deref() != Some(owner)
                     || item
                         .generation
                         .is_none_or(|generation| generation >= boundary)
             });
+            let changed = active.len() != previous;
+            drop(active);
+            if changed {
+                self.publish();
+            }
         }
     }
     pub fn stop_all(&self) {
         if let Ok(mut m) = self.active.lock() {
             self.invalidate(String::new());
+            let changed = !m.is_empty();
             m.clear();
+            drop(m);
+            if changed {
+                self.publish();
+            }
         }
     }
 }
@@ -270,104 +334,6 @@ pub async fn remote_channel(
         reply.accept().await;
         relay(local, channel.into_stream(), target.cancel).await;
     });
-}
-fn validate(rule: &ForwardRule) -> AppResult<()> {
-    let host_valid = |s: &str| {
-        !s.is_empty()
-            && s.len() <= 253
-            && !s
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control() || "/\\@?#[]".contains(c))
-    };
-    if !["local", "remote"].contains(&rule.mode.as_str())
-        || rule.id.len() > 128
-        || rule.host_id.is_empty()
-        || rule.name.trim().is_empty()
-        || rule.name.len() > 120
-        || rule.bind_port == 0
-        || rule.target_port == 0
-        || !host_valid(&rule.bind_host)
-        || !host_valid(&rule.target_host)
-    {
-        return Err(AppError::validation("forward.invalid"));
-    }
-    Ok(())
-}
-fn key(id: &str) -> String {
-    format!("forward:{id}")
-}
-fn rules(app: &AppHandle) -> AppResult<Vec<ForwardRule>> {
-    app.state::<AppState>().db.with(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT value FROM settings WHERE key LIKE 'forward:%' ORDER BY updated_at DESC",
-        )?;
-        let raw = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut result = Vec::new();
-        for item in raw {
-            result.push(serde_json::from_str(&item?)?);
-        }
-        Ok(result)
-    })
-}
-pub fn list(app: &AppHandle) -> AppResult<Vec<ForwardInfo>> {
-    let rules = rules(app)?;
-    let state = app.state::<AppState>();
-    let active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    Ok(rules
-        .into_iter()
-        .map(|rule| {
-            let session_id = active.get(&rule.id).map(|item| item.session.clone());
-            ForwardInfo {
-                active: session_id.is_some(),
-                session_id,
-                rule,
-            }
-        })
-        .collect())
-}
-pub fn save(app: &AppHandle, mut rule: ForwardRule) -> AppResult<ForwardRule> {
-    if rule.id.is_empty() {
-        rule.id = uuid::Uuid::new_v4().to_string();
-    }
-    validate(&rule)?;
-    let state = app.state::<AppState>();
-    let active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    if active.contains_key(&rule.id) {
-        return Err(AppError::validation("forward.stopBeforeEdit"));
-    }
-    let saved = state.db.with(|conn| {
-        crate::db::hosts::find_host(conn, &rule.host_id)?;
-        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![key(&rule.id), serde_json::to_string(&rule)?, crate::models::now_ms()])?;
-        Ok(rule.clone())
-    })?;
-    state.forwards.invalidate(format!("rule:{}", rule.id));
-    Ok(saved)
-}
-pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let mut active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    state.db.with(|conn| {
-        conn.execute("DELETE FROM settings WHERE key=?1", [key(id)])?;
-        Ok(())
-    })?;
-    state.forwards.invalidate(format!("rule:{id}"));
-    active.remove(id);
-    Ok(())
-}
-pub async fn start(app: &AppHandle, id: &str, session_id: &str) -> AppResult<()> {
-    start_owned(app, id, session_id, None).await
 }
 pub async fn start_owned(
     app: &AppHandle,
@@ -436,28 +402,9 @@ pub async fn start_owned(
         return Err(AppError::validation("forward.alreadyActive"));
     }
     active.insert(id.to_owned(), item);
+    drop(active);
+    state.forwards.publish();
     Ok(())
-}
-
-#[tauri::command]
-pub fn forwarding_list(app: AppHandle) -> AppResult<Vec<ForwardInfo>> {
-    list(&app)
-}
-#[tauri::command]
-pub fn forwarding_save(app: AppHandle, rule: ForwardRule) -> AppResult<ForwardRule> {
-    save(&app, rule)
-}
-#[tauri::command]
-pub fn forwarding_remove(app: AppHandle, id: String) -> AppResult<()> {
-    remove(&app, &id)
-}
-#[tauri::command]
-pub async fn forwarding_start(app: AppHandle, id: String, session_id: String) -> AppResult<()> {
-    start(&app, &id, &session_id).await
-}
-#[tauri::command]
-pub async fn forwarding_stop(app: AppHandle, id: String) -> AppResult<()> {
-    app.state::<AppState>().forwards.stop(&id).await
 }
 
 #[cfg(test)]
@@ -618,3 +565,7 @@ async fn open_forward(
 #[cfg(test)]
 #[path = "forward_tests.rs"]
 mod protocol_tests;
+
+#[cfg(test)]
+#[path = "forward_registry_tests.rs"]
+mod registry_tests;

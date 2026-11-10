@@ -37,6 +37,7 @@ import { ForwardingSection, type ForwardRule } from "@/features/forwarding/Forwa
 import type { Host } from "@/lib/api/types";
 import { useSsh } from "@/store/ssh";
 import { useDialogs } from "@/store/dialogs";
+import { domainEvents } from "@/lib/events/domain";
 const copyMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
 const host = { id: "host", name: "server" } as Host;
@@ -359,10 +360,13 @@ it("keeps stopping feedback and actions disabled until the listener is released"
   let release!: () => void;
   const implementation = invokeMock.getMockImplementation()!;
   invokeMock.mockImplementation(async (command, args) => {
-    if (command === "forwarding_stop")
+    if (command === "forwarding_stop") {
+      rows = rows.map((row) => ({ ...row, active: false, sessionId: null }));
+      domainEvents.forwardsChanged();
       await new Promise<void>((resolve) => {
         release = resolve;
       });
+    }
     return implementation(command, args);
   });
   render(<ForwardingSection host={host} />);
@@ -374,6 +378,7 @@ it("keeps stopping feedback and actions disabled until the listener is released"
     (screen.getByRole("button", { name: "Actions for Database" }) as HTMLButtonElement).disabled,
   ).toBe(true);
   expect(screen.queryByText("Stopped")).toBeNull();
+  expect(screen.queryByText("Starting…")).toBeNull();
   await act(async () => release());
   await screen.findByText("Stopped");
   expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);

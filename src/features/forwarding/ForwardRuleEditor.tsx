@@ -3,7 +3,7 @@ import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { Field, Input } from "@/components/ui/form/Field";
-import type { ForwardRule } from "./ForwardingSection";
+import type { ForwardRule } from "./contract";
 
 export function endpointAddress(host: string, port: number | string): string {
   return `${host.includes(":") && !host.startsWith("[") ? `[${host}]` : host}:${port}`;

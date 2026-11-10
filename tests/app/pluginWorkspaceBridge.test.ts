@@ -229,10 +229,12 @@ describe("plugin workspace bridge authorization and live state", () => {
       groups: [],
     });
     const files = vi.fn(),
-      history = vi.fn();
+      history = vi.fn(),
+      forwards = vi.fn();
     const lifetime = new AbortController();
     window.addEventListener("tunnelde:files-changed", files, { signal: lifetime.signal });
     window.addEventListener("tunnelde:history-changed", history, { signal: lifetime.signal });
+    window.addEventListener("tunnelde:forwarding-changed", forwards, { signal: lifetime.signal });
     try {
       await reconcilePluginWorkspace(lifetime.signal);
       expect(useWorkspace.getState().tabs[0]?.title).toBe("Recovered name");
@@ -241,6 +243,7 @@ describe("plugin workspace bridge authorization and live state", () => {
         { kind: "remote", sessionId: session.id },
       ]);
       expect(history).toHaveBeenCalledOnce();
+      expect(forwards).toHaveBeenCalledOnce();
     } finally {
       lifetime.abort();
     }
@@ -624,17 +627,22 @@ describe("plugin dialog and listener lifecycle", () => {
     );
     const files = vi.fn();
     const history = vi.fn();
+    const forwards = vi.fn();
     window.addEventListener("tunnelde:files-changed", files);
     window.addEventListener("tunnelde:history-changed", history);
+    window.addEventListener("tunnelde:forwarding-changed", forwards);
     emit("plugin://domain-changed", { domain: "files", sessionId: session.id });
     emit("plugin://domain-changed", { domain: "history", hostId: "history-host" });
+    emit("plugin://domain-changed", { domain: "forwards" });
     expect(files.mock.calls[0]?.[0].detail).toEqual({
       source: { kind: "remote", sessionId: session.id },
       origin: "plugin-api",
     });
     expect(history).toHaveBeenCalledTimes(1);
+    expect(forwards).toHaveBeenCalledOnce();
     expect((history.mock.calls[0]![0] as CustomEvent).detail).toEqual({ hostId: "history-host" });
     window.removeEventListener("tunnelde:files-changed", files);
     window.removeEventListener("tunnelde:history-changed", history);
+    window.removeEventListener("tunnelde:forwarding-changed", forwards);
   });
 });
