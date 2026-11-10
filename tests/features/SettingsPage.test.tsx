@@ -9,6 +9,9 @@ import type { AppInfo, SettingsPatch } from "@/lib/api/types";
 import { useSettings } from "@/store/settings";
 import { useNavigation } from "@/store/navigation";
 import { useDialogs } from "@/store/dialogs";
+import { useWorkspace } from "@/store/workspace";
+import { ToastHost } from "@/components/ui/overlay/Toast";
+import { useToasts } from "@/store/toasts";
 
 vi.mock("@/features/terminal/TerminalPreview", () => ({ TerminalPreview: () => null }));
 
@@ -38,10 +41,55 @@ beforeEach(async () => {
     reset,
   });
   useNavigation.setState({ settingsSection: "general" });
+  useToasts.setState({ items: [] });
   useDialogs.setState({ dialog: { kind: "none" } });
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("retains filters when activating the settings tab without an explicit category request", () => {
+    render(<SettingsPage />);
+    const search = screen.getByRole("textbox", { name: "Search settings" }) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "@section:terminal" } });
+    act(() => useWorkspace.getState().openPage("settings"));
+    expect(search.value).toBe("@section:terminal");
+  });
+  it("returns to the top when explicitly opening the already-selected category", () => {
+    useNavigation.setState({ settingsSection: "updates" });
+    render(<SettingsPage />);
+    const body = document.querySelector<HTMLElement>(".settings__body")!;
+    expect(body).toBeTruthy();
+    body.scrollTop = 400;
+    act(() => useWorkspace.getState().openPage("updates"));
+    expect(body.scrollTop).toBe(0);
+  });
+  it("opens update details from a notification even with a retained settings filter", async () => {
+    useNavigation.setState({ settingsSection: "updates" });
+    render(
+      <>
+        <SettingsPage />
+        <ToastHost />
+      </>,
+    );
+    const search = screen.getByRole("textbox", { name: "Search settings" }) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "@section:terminal" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /modified/i }));
+    expect(screen.queryByLabelText("Updates")).toBeNull();
+    act(() =>
+      useToasts.getState().push("Update sources could not be reached", "error", {
+        label: "View update details",
+        onClick: () => useWorkspace.getState().openPage("updates"),
+      }),
+    );
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "View update details" })),
+    );
+    expect(search.value).toBe("");
+    expect((screen.getByRole("checkbox", { name: /modified/i }) as HTMLInputElement).checked).toBe(
+      false,
+    );
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeTruthy();
+    expect(screen.queryByText("Update sources could not be reached")).toBeNull();
+  });
   it("shows one host-owned shortcut editor when several advanced fields match", () => {
     render(<SettingsPage />);
     fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {

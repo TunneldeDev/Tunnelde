@@ -473,6 +473,7 @@
     "configureProxy": "Configure update proxy",
     "showLogs": "Open output logs",
     "viewDiagnostics": "View update details",
+    "sourcesUnavailableNotification": "Unable to check for updates. View details for the cause and available next steps.",
     "platformUnavailable": "The update manifest does not contain a package for this platform."
   },
   "about": {

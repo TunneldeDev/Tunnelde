@@ -26,6 +26,7 @@ export const useNavigation = create<{
   activeSidebar: SidebarView;
   visitedSidebars: SidebarView[];
   settingsSection: SettingsSection;
+  settingsRequest: number;
   forwardingTarget: { hostId: string; sessionId: string; revision: number } | null;
   toggleSidebar: () => void;
   selectSidebar: (view: SidebarView) => void;
@@ -39,6 +40,7 @@ export const useNavigation = create<{
   activeSidebar: "hosts",
   visitedSidebars: ["hosts"],
   settingsSection: "general",
+  settingsRequest: 0,
   forwardingTarget: null,
   toggleSidebar: () =>
     set((state) => {
@@ -117,5 +119,6 @@ export const useNavigation = create<{
     const layout = useWorkspace.getState().layout;
     if (layout.kind === "split") useWorkspace.getState().resizeSplit(layout.id, 0.68);
   },
-  selectSettings: (settingsSection) => set({ settingsSection }),
+  selectSettings: (settingsSection) =>
+    set((state) => ({ settingsSection, settingsRequest: state.settingsRequest + 1 })),
 }));

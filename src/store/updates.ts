@@ -122,10 +122,13 @@ export const useUpdates = create<UpdatesStore>((set, get) => ({
       set({ state, busy: false });
     } catch (error) {
       set({ busy: false });
+      const hasDiagnostics = isIpcError(error) && Array.isArray(error.details?.sourceErrors);
       toast(
-        translateError(error),
+        hasDiagnostics && error.message === "updates.sourcesUnavailable"
+          ? i18n.t("updates.sourcesUnavailableNotification")
+          : translateError(error),
         "error",
-        isIpcError(error) && Array.isArray(error.details?.sourceErrors)
+        hasDiagnostics
           ? {
               label: i18n.t("updates.viewDiagnostics"),
               onClick: () => useWorkspace.getState().openPage("updates"),
