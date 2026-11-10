@@ -1,5 +1,24 @@
 //! Host ranges include prereleases while retaining each comparator's bounds.
 //! Runtime (Node) ranges continue to use the runtime's ordinary SemVer rules.
+impl super::manifest::PluginManifest {
+    pub(super) fn require_runtime(&self) -> crate::error::AppResult<()> {
+        if let Some(range) = self.engines.get("tunnelde") {
+            if !supports_host(range, env!("CARGO_PKG_VERSION")) {
+                return Err(crate::error::AppError::PluginEngineUnsupported {
+                    plugin_id: self.id.clone(),
+                    plugin_version: self.version.clone(),
+                    host_version: env!("CARGO_PKG_VERSION").into(),
+                    required: range.clone(),
+                });
+            }
+        }
+        if self.runtime.as_deref() == Some("theme") {
+            return Err(crate::error::AppError::validation("plugin.theme.noRuntime"));
+        }
+        Ok(())
+    }
+}
+
 pub(super) fn supports_host(range: &str, version: &str) -> bool {
     let (Ok(mut range), Ok(version)) = (
         semver::VersionReq::parse(range),

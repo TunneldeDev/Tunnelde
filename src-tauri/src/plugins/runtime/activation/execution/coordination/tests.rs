@@ -6,6 +6,20 @@ use std::{
 };
 use tokio::sync::{oneshot, Notify};
 
+#[test]
+fn graph_request_capacity_remains_bounded_and_releases_only_owned_slots() {
+    let coordinator = Coordinator::new();
+    let permits = (0..crate::plugins::runtime::activation::limits::MAX_REQUESTS)
+        .map(|_| coordinator.admit_request().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        coordinator.admit_request().unwrap_err().to_string(),
+        "plugin.api.busy"
+    );
+    drop(permits);
+    assert!(coordinator.admit_request().is_ok());
+}
+
 fn key(generation: usize) -> Key {
     Key {
         id: "sample".into(),

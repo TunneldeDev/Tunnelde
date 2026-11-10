@@ -1,15 +1,14 @@
-#[cfg(test)]
 mod declaration;
-#[cfg(test)]
 mod issue;
-#[cfg(test)]
 mod plan;
+mod preview;
 mod start;
 
-#[cfg(test)]
-pub(super) use declaration::{Dependency, Package, PackageIdentity};
-#[cfg(test)]
+pub use declaration::Dependency;
+pub(super) use declaration::{Package, PackageIdentity};
 pub(super) use issue::{DeclarationIssue, Issue, Limit, PackageField};
-#[cfg(test)]
 pub(super) use plan::{Plan, ResolvedDependency, Step};
+pub(super) use preview::ActivationPackage;
+pub use preview::{ActivationPlan, PackageReview};
+pub(super) use start::PackagePermit;
 pub use start::StartPermit;

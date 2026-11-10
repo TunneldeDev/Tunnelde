@@ -1,5 +1,7 @@
 # 插件
 
+必需依赖、授权与运行就绪：[插件依赖与激活](plugin-activation.zh-cn.md)。
+
 [English](plugins.en-us.md)
 
 概览与兼容性：[中文](plugins-overview.zh-cn.md) · [English](plugins-overview.en-us.md)。

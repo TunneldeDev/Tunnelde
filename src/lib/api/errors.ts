@@ -23,6 +23,21 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    const details = error.details;
+    if (error.message === "plugin.activation.missingDependency" && typeof details?.id === "string")
+      return translate("plugin.activation.missingDependencyDetails", { id: details.id });
+    if (
+      error.message === "plugin.activation.incompatibleDependency" &&
+      details &&
+      ["id", "required", "installed"].every((key) => typeof details[key] === "string")
+    )
+      return translate("plugin.activation.incompatibleDependencyDetails", details);
+    if (
+      error.message === "plugin.activation.cycle" &&
+      Array.isArray(details?.chain) &&
+      details.chain.every((item: unknown) => typeof item === "string")
+    )
+      return translate("plugin.activation.cycleDetails", { chain: details.chain.join(" → ") });
     if (error.message.startsWith("configuration.invalidValue:")) {
       return translate("configuration.invalidValue", {
         field: error.message.slice("configuration.invalidValue:".length),

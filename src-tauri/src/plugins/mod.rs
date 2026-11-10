@@ -29,7 +29,7 @@ pub mod tasks;
 mod tools;
 pub mod wasm;
 
-pub use runtime::activation::StartPermit;
+pub use runtime::activation::{ActivationPlan, PackageReview, PluginDependency, StartPermit};
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -60,10 +60,14 @@ pub enum PluginStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
+    /// Immutable installed metadata for internal planning. Never crosses IPC.
+    #[serde(skip)]
+    pub(in crate::plugins) package_manifest: Arc<PluginManifest>,
     pub id: String,
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    pub dependencies: Vec<PluginDependency>,
     pub host_fields: Option<crate::services::host_fields::Schema>,
     pub configuration:
         Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
@@ -143,21 +147,7 @@ impl Instance {
     }
 
     fn require_runtime(&self) -> AppResult<()> {
-        if let Some(range) = self.manifest.engines.get("tunnelde") {
-            let compatible = engines::supports_host(range, env!("CARGO_PKG_VERSION"));
-            if !compatible {
-                return Err(AppError::PluginEngineUnsupported {
-                    plugin_id: self.manifest.id.clone(),
-                    plugin_version: self.manifest.version.clone(),
-                    host_version: env!("CARGO_PKG_VERSION").into(),
-                    required: range.clone(),
-                });
-            }
-        }
-        if self.manifest.runtime.as_deref() == Some("theme") {
-            return Err(AppError::validation("plugin.theme.noRuntime"));
-        }
-        Ok(())
+        self.manifest.require_runtime()
     }
 
     fn load_wasm(&self) -> AppResult<WasmPlugin> {
@@ -168,10 +158,12 @@ impl Instance {
 
     fn info(&self) -> PluginInfo {
         PluginInfo {
+            package_manifest: Arc::new(self.manifest.clone()),
             id: self.manifest.id.clone(),
             name: self.manifest.name.clone(),
             version: self.manifest.version.clone(),
             api_version: self.manifest.api_version,
+            dependencies: self.manifest.dependencies.clone(),
             host_fields: self.manifest.host_fields.clone(),
             configuration: self.manifest.configuration.clone(),
             description: self.manifest.description.clone(),

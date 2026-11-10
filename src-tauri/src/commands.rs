@@ -801,14 +801,32 @@ pub async fn plugins_list(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>>
 }
 
 #[tauri::command]
+pub fn plugin_activation_plan(
+    app: AppHandle,
+    id: String,
+    expected_fingerprint: String,
+) -> AppResult<plugins::ActivationPlan> {
+    app.state::<AppState>()
+        .plugins
+        .activation_plan(&id, &expected_fingerprint)
+}
+
+#[tauri::command]
 pub fn plugin_prepare_start(
     app: AppHandle,
     id: String,
     expected_fingerprint: String,
+    expected_packages: Option<Vec<plugins::PackageReview>>,
 ) -> AppResult<plugins::StartPermit> {
-    app.state::<AppState>()
-        .plugins
-        .prepare_start(&id, &expected_fingerprint)
+    let state = app.state::<AppState>();
+    match expected_packages {
+        Some(packages) => {
+            state
+                .plugins
+                .prepare_reviewed_start(&id, &expected_fingerprint, &packages)
+        }
+        None => state.plugins.prepare_start(&id, &expected_fingerprint),
+    }
 }
 
 #[tauri::command]
@@ -820,6 +838,8 @@ pub async fn plugin_start(
     let state = app.state::<AppState>();
     let result = state.plugins.start(&app, &id, &permit).await;
     if let Err(error) = &result {
+        let (affected_id, activation_stage) =
+            error.activation_package().unwrap_or((&id, "startup"));
         let error = error.original();
         // Do not persist untrusted plugin output or user paths in diagnostic logs.
         let detail = error.to_string();
@@ -836,15 +856,15 @@ pub async fn plugin_start(
             ..
         } = error
         {
-            tracing::warn!(plugin_id = %id, reason, stage = "compatibility", plugin_version, host_version, required_host = required, action = "update_application_or_install_compatible_plugin", "plugin start failed");
+            tracing::warn!(plugin_id = affected_id, requested_plugin_id = %id, activation_stage, reason, stage = "compatibility", plugin_version, host_version, required_host = required, action = "update_application_or_install_compatible_plugin", "plugin start failed");
         } else if let AppError::PluginUiSdkUnsupported {
             required,
             available,
         } = error
         {
-            tracing::warn!(plugin_id = %id, reason, stage = "ui-sdk-compatibility", required_sdk = required, available_sdk = available, action = "update_application_or_install_compatible_plugin", "plugin start failed");
+            tracing::warn!(plugin_id = affected_id, requested_plugin_id = %id, activation_stage, reason, stage = "ui-sdk-compatibility", required_sdk = required, available_sdk = available, action = "update_application_or_install_compatible_plugin", "plugin start failed");
         } else {
-            tracing::warn!(plugin_id = %id, reason, error_code = error.code(), stage = "startup", "plugin start failed");
+            tracing::warn!(plugin_id = affected_id, requested_plugin_id = %id, activation_stage, reason, error_code = error.code(), stage = "startup", "plugin start failed");
         }
     }
     result

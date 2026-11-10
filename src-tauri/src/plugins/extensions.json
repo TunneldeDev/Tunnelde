@@ -175,23 +175,38 @@
     }
   },
   "runtime": {
+    "activation": {
+      "stability": "experimental",
+      "manifest": "dependencies",
+      "manifestApiVersion": 2,
+      "rpcApiVersion": 1,
+      "declaration": "required-installed-runtime",
+      "ordering": "dependencies-first",
+      "preflight": "whole-graph-before-engines",
+      "approval": "per-package-fingerprint-and-generation",
+      "sharing": "per-runtime-with-independent-waiters",
+      "retirement": "reverse-dependents",
+      "readyDependencies": "retained-after-root-failure",
+      "automaticInstallation": false,
+      "limits": {
+        "catalogue": 4096,
+        "dependencies": 16,
+        "packages": 64,
+        "edges": 256,
+        "depth": 32,
+        "rangeBytes": 160,
+        "requests": 16,
+        "blockingWorkers": 16,
+        "preflightTimeoutMs": 60000
+      }
+    },
     "resources": {
       "snapshot": "resources.snapshot",
       "release": "resources.release",
       "stability": "experimental",
       "ownership": "current-runtime",
-      "kinds": [
-        "connection",
-        "forward",
-        "mount",
-        "task",
-        "transfer"
-      ],
-      "states": [
-        "owned",
-        "releaseRequested",
-        "cleanupRequired"
-      ],
+      "kinds": ["connection", "forward", "mount", "task", "transfer"],
+      "states": ["owned", "releaseRequested", "cleanupRequired"],
       "pageSize": 128,
       "pageBytes": 65536,
       "observationLimit": 4096,

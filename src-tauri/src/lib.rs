@@ -279,6 +279,7 @@ pub fn run() {
             commands::plugins_list,
             commands::plugin_start,
             commands::plugin_prepare_start,
+            commands::plugin_activation_plan,
             commands::plugin_stop,
             commands::plugin_run,
             commands::plugin_open_dir,

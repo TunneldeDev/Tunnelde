@@ -890,6 +890,7 @@
     "reviewChanges": "Compare changes"
   },
   "plugins": {
+    "requiredDependencies": "Required plugins",
     "search": "Search plugins",
     "installedTab": "Installed",
     "reload": "Reload",
@@ -1205,6 +1206,16 @@
   },
   "plugin": {
     "activation": {
+      "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
+      "missingDependencyDetails": "Required plugin “{{id}}” is not installed. Install it before retrying; no dependencies were downloaded or started.",
+      "incompatibleDependency": "An installed dependency does not satisfy this plugin's version requirement.",
+      "incompatibleDependencyDetails": "Dependency “{{id}}” requires {{required}}, but {{installed}} is installed. Install a compatible version before retrying.",
+      "cycle": "These plugins have a circular dependency and cannot start together.",
+      "cycleDetails": "Circular plugin dependency: {{chain}}. Update the affected plugins before retrying.",
+      "limit": "This plugin's dependency graph exceeds the supported size or depth.",
+      "invalidDependencies": "This plugin declares invalid runtime dependencies.",
+      "declarationVersion": "Required runtime dependencies need manifest apiVersion 2 and an executable plugin runtime.",
+      "dependencyUnavailable": "A required plugin could not become ready.",
       "failed": "Plugin startup failed unexpectedly. Open the software log for details.",
       "cleanupFailed": "Plugin startup cleanup could not be confirmed. Open the software log and restart the application before retrying.",
       "closed": "The plugin startup connection closed. Check the software log and try again."
@@ -1810,6 +1821,7 @@
     "testUpdatesRoute": "Current update route"
   },
   "pluginErrors": {
+    "packageFailure": "{{pluginId}}: {{error}}",
     "hostVersionMismatch": "This plugin version ({{pluginVersion}}) requires Tunnelde {{required}}; you are running {{hostVersion}}. Update Tunnelde or install a compatible plugin version. Startup stopped before launching a runtime.",
     "hostVersionUnsupported": "This plugin does not support this Tunnelde version. Check the version requirement in Plugin details, then update Tunnelde or install a compatible plugin version.",
     "startFailed": "Could not start {{name}}: {{error}}",

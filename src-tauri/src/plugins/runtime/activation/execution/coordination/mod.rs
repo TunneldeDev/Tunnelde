@@ -30,6 +30,7 @@ pub(in crate::plugins) struct Key {
 pub(in crate::plugins) struct Coordinator {
     entries: Mutex<HashMap<Key, Arc<Entry>>>,
     waiters: Arc<Semaphore>,
+    requests: Arc<Semaphore>,
 }
 
 impl Coordinator {
@@ -37,7 +38,17 @@ impl Coordinator {
         Arc::new(Self {
             entries: Mutex::new(HashMap::new()),
             waiters: Arc::new(Semaphore::new(MAX_WAITERS)),
+            requests: Arc::new(Semaphore::new(
+                crate::plugins::runtime::activation::limits::MAX_REQUESTS,
+            )),
         })
+    }
+
+    pub(in crate::plugins) fn admit_request(&self) -> AppResult<tokio::sync::OwnedSemaphorePermit> {
+        self.requests
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| AppError::validation("plugin.api.busy"))
     }
 
     /// Only the creator's factory and settlement callback run. A rejected or

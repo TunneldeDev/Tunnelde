@@ -1,7 +1,8 @@
 /// Required runtime dependencies only. Optional discovery and JS module imports
 /// have different semantics and do not belong in the activation graph.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(in crate::plugins::runtime::activation) struct Dependency {
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Dependency {
     pub id: String,
     pub version: String,
 }

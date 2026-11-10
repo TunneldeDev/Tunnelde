@@ -1,4 +1,5 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(in crate::plugins::runtime::activation) enum Limit {
     Catalogue,
     Dependencies,
@@ -7,7 +8,8 @@ pub(in crate::plugins::runtime::activation) enum Limit {
     Depth,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(in crate::plugins::runtime::activation) enum DeclarationIssue {
     InvalidId,
     InvalidVersionRange,
@@ -15,7 +17,8 @@ pub(in crate::plugins::runtime::activation) enum DeclarationIssue {
     SelfDependency,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(in crate::plugins::runtime::activation) enum PackageField {
     Id,
     Version,
@@ -24,7 +27,8 @@ pub(in crate::plugins::runtime::activation) enum PackageField {
 
 /// Structured, bounded failures. No paths, process output, or permissions are
 /// included; the UI adapter can localize these after the runtime is integrated.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub(in crate::plugins::runtime::activation) enum Issue {
     InvalidRoot,
     Limit {
@@ -60,4 +64,21 @@ pub(in crate::plugins::runtime::activation) enum Issue {
     PlanChanged {
         root: String,
     },
+}
+
+impl Issue {
+    pub(in crate::plugins::runtime::activation) fn into_error(self) -> crate::error::AppError {
+        let reason = match &self {
+            Self::Missing { .. } => "plugin.activation.missingDependency",
+            Self::Incompatible { .. } => "plugin.activation.incompatibleDependency",
+            Self::Cycle { .. } => "plugin.activation.cycle",
+            Self::Limit { .. } => "plugin.activation.limit",
+            Self::PlanChanged { .. } => "pluginSecurity.changed",
+            _ => "plugin.activation.invalidDependencies",
+        };
+        crate::error::AppError::PluginActivation {
+            reason,
+            details: serde_json::to_value(self).expect("bounded activation issue is serializable"),
+        }
+    }
 }

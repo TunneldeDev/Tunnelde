@@ -7,10 +7,11 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
+use super::execute::PreparedPackage;
 use super::{cleanup::StopMode, coordination::Key};
 use crate::{
     error::AppResult,
-    plugins::{security::RuntimeRetirement, PluginInfo, PluginStatus, PluginsManager, StartPermit},
+    plugins::{security::RuntimeRetirement, PluginInfo, PluginStatus, PluginsManager},
     state::AppState,
 };
 
@@ -24,23 +25,40 @@ struct FrontendActivation<'a> {
 }
 
 impl PluginsManager {
-    pub async fn start(
+    pub(super) async fn start_one(
         &self,
         app: &AppHandle,
-        id: &str,
-        permit: &StartPermit,
+        package: PreparedPackage,
     ) -> AppResult<PluginInfo> {
         // Capture before joining or waiting. No caller can borrow a newer grant.
-        let lease = self.admitted_start(id, permit)?;
+        let id = package.admission.lease.id.clone();
+        let lease = self.admitted_start(&id, &package.admission.permit)?;
         let ownership = Arc::new(AtomicBool::new(false));
         let key = Key {
             id: id.to_owned(),
-            stamp: self.security.lease_stamp(&lease),
+            stamp: {
+                use sha2::{Digest, Sha256};
+                let mut digest = Sha256::new();
+                for required in &package.admission.required {
+                    for field in [
+                        &required.id,
+                        &self.security.lease_stamp(required),
+                        &required.fingerprint,
+                    ] {
+                        digest.update((field.len() as u64).to_be_bytes());
+                        digest.update(field.as_bytes());
+                    }
+                }
+                format!(
+                    "{}:{:x}",
+                    self.security.lease_stamp(&lease),
+                    digest.finalize()
+                )
+            },
             fingerprint: lease.fingerprint.clone(),
         };
         let (worker_app, cleanup_app) = (app.clone(), app.clone());
-        let (worker_id, worker_permit, worker_lease) =
-            (id.to_owned(), permit.clone(), lease.clone());
+        let (worker_id, worker_lease) = (id.to_owned(), lease.clone());
         let cleanup_lease = lease.clone();
         let worker_ownership = ownership.clone();
         let ticket = self.starts.join(
@@ -51,7 +69,7 @@ impl PluginsManager {
                 // asynchronous stage. A failed engine retires its own pending
                 // lease, so an outer lease guard would hide the real failure.
                 let info = plugins
-                    .start_engine(&worker_app, &worker_id, &worker_permit, &worker_ownership)
+                    .start_engine(&worker_app, package, &worker_ownership)
                     .await?;
                 if info.status != PluginStatus::Running {
                     return Ok(info);

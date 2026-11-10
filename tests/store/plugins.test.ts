@@ -13,6 +13,7 @@ const { apiMock, native, ensureNode, ensurePermission, frontend } = vi.hoisted((
     pluginInstall: vi.fn(),
     pluginStart: vi.fn(),
     pluginPrepareStart: vi.fn(),
+    pluginActivationPlan: vi.fn(),
     pluginStop: vi.fn(),
     pluginRun: vi.fn(),
     pluginUninstall: vi.fn(),
@@ -60,6 +61,10 @@ beforeEach(() => {
   native.mockReturnValue(false);
   ensurePermission.mockResolvedValue(true);
   apiMock.pluginPrepareStart.mockResolvedValue({ fingerprint: "package", stamp: "boot:1" });
+  apiMock.pluginActivationPlan.mockImplementation(async (id: string) => ({
+    root: id,
+    packages: usePlugins.getState().items.filter((item) => item.id === id),
+  }));
   usePlugins.setState({
     items: [plugin],
     busy: null,
@@ -70,6 +75,83 @@ beforeEach(() => {
 });
 
 describe("plugin request ownership", () => {
+  it("reviews every exact installed dependency before capturing admission or requesting Node", async () => {
+    native.mockReturnValue(true);
+    const dependency = {
+      ...plugin,
+      id: "shared",
+      name: "Shared",
+      fingerprint: "shared-bytes",
+      runtime: "node" as const,
+    };
+    const root = { ...plugin, fingerprint: "root-bytes", runtime: "declarative" as const };
+    usePlugins.setState({ items: [root, dependency] });
+    apiMock.pluginActivationPlan.mockResolvedValueOnce({
+      root: root.id,
+      packages: [dependency, root],
+    });
+    const approval = deferred<boolean>();
+    ensurePermission.mockReturnValueOnce(approval.promise);
+    ensureNode.mockResolvedValueOnce(true);
+    apiMock.pluginStart.mockResolvedValueOnce({ ...root, status: "running" });
+    const pending = usePlugins.getState().start(root.id);
+    await vi.waitFor(() =>
+      expect(ensurePermission).toHaveBeenCalledWith(dependency, expect.any(AbortSignal)),
+    );
+    expect(apiMock.pluginPrepareStart).not.toHaveBeenCalled();
+    expect(ensureNode).not.toHaveBeenCalled();
+    approval.resolve(true);
+    await pending;
+    expect(ensurePermission).toHaveBeenNthCalledWith(2, root, expect.any(AbortSignal));
+    expect(apiMock.pluginPrepareStart).toHaveBeenCalledWith(root.id, "root-bytes", [
+      { id: "shared", fingerprint: "shared-bytes" },
+      { id: root.id, fingerprint: "root-bytes" },
+    ]);
+    expect(ensureNode).toHaveBeenCalledOnce();
+    expect(apiMock.pluginStart).toHaveBeenCalledOnce();
+  });
+
+  it("does not request Node or start any plugin after a dependency approval is denied", async () => {
+    native.mockReturnValue(true);
+    apiMock.pluginActivationPlan.mockResolvedValueOnce({
+      root: plugin.id,
+      packages: [{ ...plugin, id: "shared" }, plugin],
+    });
+    ensurePermission.mockResolvedValueOnce(false);
+    await usePlugins.getState().start(plugin.id);
+    expect(ensurePermission).toHaveBeenCalledOnce();
+    expect(apiMock.pluginPrepareStart).not.toHaveBeenCalled();
+    expect(ensureNode).not.toHaveBeenCalled();
+    expect(apiMock.pluginStart).not.toHaveBeenCalled();
+  });
+
+  it("does not mint a permit when the native dependency graph changed during review", async () => {
+    native.mockReturnValue(true);
+    apiMock.pluginPrepareStart.mockRejectedValueOnce({
+      code: "validation",
+      message: "pluginSecurity.changed",
+    });
+    await usePlugins.getState().start(plugin.id);
+    expect(ensureNode).not.toHaveBeenCalled();
+    expect(apiMock.pluginStart).not.toHaveBeenCalled();
+    expect(toast).toHaveBeenCalledOnce();
+  });
+
+  it("does not reopen approval when the authoritative plan arrives after stop", async () => {
+    native.mockReturnValue(true);
+    const plan = deferred<{ root: string; packages: PluginInfo[] }>();
+    apiMock.pluginActivationPlan.mockReturnValueOnce(plan.promise);
+    apiMock.pluginStop.mockResolvedValueOnce(plugin);
+    const pending = usePlugins.getState().start(plugin.id);
+    await vi.waitFor(() => expect(apiMock.pluginActivationPlan).toHaveBeenCalledOnce());
+    await usePlugins.getState().stop(plugin.id);
+    plan.resolve({ root: plugin.id, packages: [plugin] });
+    await pending;
+    expect(ensurePermission).not.toHaveBeenCalled();
+    expect(apiMock.pluginPrepareStart).not.toHaveBeenCalled();
+    expect(toast).not.toHaveBeenCalled();
+  });
+
   it("recovers failed and removed runtimes without repeatedly activating an obsolete module", async () => {
     const ui = {
       ...plugin,

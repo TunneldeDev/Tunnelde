@@ -16,24 +16,40 @@ pub(in crate::plugins::runtime::activation::execution) struct PreparedNode {
     selected_path: Option<String>,
 }
 
-impl PreparedNode {
-    pub(super) async fn prepare(
-        db: &Database,
-        runtimes: &Path,
-        manifest: &PluginManifest,
-    ) -> AppResult<Self> {
-        let config = db.with(config::load)?;
-        let runtime = node::resolve(
+pub(super) struct Resolver<'a> {
+    db: &'a Database,
+    runtimes: &'a Path,
+    resolved: Option<(PluginConfig, NodeRuntimeInfo)>,
+}
+
+impl<'a> Resolver<'a> {
+    pub(super) fn new(db: &'a Database, runtimes: &'a Path) -> Self {
+        Self {
+            db,
             runtimes,
-            config.node_path.as_deref().map(Path::new),
-            config.node_system_allowed,
-        )
-        .await?;
-        let prepared = Self::checked(&config, manifest, runtime)?;
-        prepared.revalidate(db)?;
-        Ok(prepared)
+            resolved: None,
+        }
     }
 
+    pub(super) async fn prepare(&mut self, manifest: &PluginManifest) -> AppResult<PreparedNode> {
+        if self.resolved.is_none() {
+            let config = self.db.with(config::load)?;
+            let runtime = node::resolve(
+                self.runtimes,
+                config.node_path.as_deref().map(Path::new),
+                config.node_system_allowed,
+            )
+            .await?;
+            self.resolved = Some((config, runtime));
+        }
+        let (config, runtime) = self.resolved.as_ref().expect("runtime resolved above");
+        let prepared = PreparedNode::checked(config, manifest, runtime.clone())?;
+        prepared.revalidate(self.db)?;
+        Ok(prepared)
+    }
+}
+
+impl PreparedNode {
     fn checked(
         config: &PluginConfig,
         manifest: &PluginManifest,

@@ -7,6 +7,32 @@ afterEach(async () => {
 });
 
 describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
+  it("keeps dependency identity, version and original detailed runtime errors", async () => {
+    await i18n.changeLanguage(language);
+    const missing = pluginFailure({
+      code: "validation",
+      message: "plugin.activation.missingDependency",
+      details: { id: "shared" },
+    });
+    expect(missing).toContain("shared");
+    const mismatch = pluginFailure({
+      code: "validation",
+      message: "plugin.activation.incompatibleDependency",
+      details: { id: "shared", required: "^2.0", installed: "1.0.0" },
+    });
+    for (const value of ["shared", "^2.0", "1.0.0"]) expect(mismatch).toContain(value);
+    const context = pluginFailure({
+      code: "validation",
+      message: "plugin.engine.unsupported",
+      details: {
+        pluginVersion: "1.0.0",
+        hostVersion: "0.33.0",
+        required: ">=0.34.0",
+        activation: { pluginId: "shared", stage: "preflight" },
+      },
+    });
+    for (const value of ["shared", "1.0.0", "0.33.0", ">=0.34.0"]) expect(context).toContain(value);
+  });
   it("preserves structured UI SDK version requirements", async () => {
     await i18n.changeLanguage(language);
     const message = pluginFailure({
