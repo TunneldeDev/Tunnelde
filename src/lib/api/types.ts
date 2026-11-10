@@ -75,7 +75,8 @@ export interface Settings {
       | "history"
       | "forwarding"
       | "monitor"
-      | "backgroundTasks",
+      | "backgroundTasks"
+      | "processes",
       { pluginId: string; viewId: string }
     >
   >;
@@ -478,7 +479,8 @@ export interface PluginView {
     | "history"
     | "forwarding"
     | "monitor"
-    | "backgroundTasks";
+    | "backgroundTasks"
+    | "processes";
 }
 
 export interface PluginEvent {

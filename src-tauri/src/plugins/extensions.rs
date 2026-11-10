@@ -41,7 +41,8 @@ mod tests {
                 "history",
                 "forwarding",
                 "monitor",
-                "backgroundTasks"
+                "backgroundTasks",
+                "processes"
             ])
         );
         assert_eq!(
@@ -76,6 +77,17 @@ mod tests {
         assert_eq!(providers["requiredSlot"], "Workspace");
         assert_eq!(providers["fallback"], "built-in");
         assert_eq!(providers["limits"]["perPlugin"], 8);
+        assert_eq!(
+            providers["processesPermissions"],
+            serde_json::json!(["sessions.read", "monitor.read"])
+        );
+        assert_eq!(providers["processes"]["pageSize"], 128);
+        assert_eq!(providers["processes"]["pageTextLimit"], 65536);
+        assert_eq!(providers["processes"]["writePermission"], "monitor.write");
+        assert_eq!(
+            providers["processes"]["termination"],
+            "native-confirmation-with-live-authorization-and-identity"
+        );
         let domains = catalogue["domains"].as_array().unwrap();
         let mut ids = HashSet::new();
         let mut namespaces = HashSet::new();

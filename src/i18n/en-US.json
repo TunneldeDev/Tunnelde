@@ -1311,6 +1311,13 @@
       "inactive": "This task has settled or its execution has been cancelled.",
       "limit": "This plugin already has eight pending background tasks.",
       "busy": "This task action is already pending."
+    },
+    "processes": {
+      "changed": "This process view has changed. Use the current snapshot and retry.",
+      "invalid": "The process request is invalid.",
+      "unavailable": "This process cannot be stopped from the current view. Refresh and retry.",
+      "permissionDenied": "This provider does not have permission to stop processes.",
+      "providerInactive": "The selected process provider is no longer active. Use the current provider or the built-in view."
     }
   },
   "themes": {
@@ -2085,7 +2092,8 @@
     "restore": "Restore built-in interface",
     "terminal": "Terminal",
     "history": "Command history",
-    "backgroundTasks": "Background tasks"
+    "backgroundTasks": "Background tasks",
+    "processes": "Process manager"
   },
   "hostFields": {
     "title": "Plugin host fields",

@@ -19,7 +19,8 @@
         "history",
         "forwarding",
         "monitor",
-        "backgroundTasks"
+        "backgroundTasks",
+        "processes"
       ],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
@@ -101,6 +102,19 @@
         "writePermission": "backgroundTasks.write",
         "visibility": "visible-tasks-only",
         "recovery": "native-toolbar-and-confirmation"
+      },
+      "processesPermissions": ["sessions.read", "monitor.read"],
+      "processes": {
+        "context": "processes",
+        "ownership": "host-dialog",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "monitor.write",
+        "termination": "native-confirmation-with-live-authorization-and-identity",
+        "sampling": "shared-visible-consumers",
+        "query": "at-prefixed-filters"
       }
     },
     "components": [

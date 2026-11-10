@@ -19,3 +19,6 @@ export type { FrontendMonitor, FrontendMonitorSnapshot } from "./contracts/monit
 export type * from "./contracts/backgroundTasks/entry.js";
 export type * from "./contracts/backgroundTasks/execution.js";
 export type * from "./contracts/backgroundTasks/provider.js";
+export type * from "./contracts/monitor/processes/entry.js";
+export type * from "./contracts/monitor/processes/query.js";
+export type * from "./contracts/monitor/processes/provider.js";
