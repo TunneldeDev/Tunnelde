@@ -5,19 +5,12 @@ use std::{
 };
 
 use super::session::ClientHandler;
-use crate::services::forwarding::{
-    contract::{validate, ForwardRule},
-    rules,
-};
-use crate::{
-    error::{AppError, AppResult},
-    state::AppState,
-};
+use crate::error::{AppError, AppResult};
+use crate::services::forwarding::contract::ForwardRule;
 use russh::{
     client::{self, ChannelOpenHandle},
     Channel,
 };
-use tauri::{AppHandle, Manager};
 use tokio::{
     io::{copy_bidirectional, AsyncRead, AsyncWrite},
     net::{TcpListener, TcpStream},
@@ -335,30 +328,19 @@ pub async fn remote_channel(
         relay(local, channel.into_stream(), target.cancel).await;
     });
 }
-pub async fn start_owned(
-    app: &AppHandle,
-    id: &str,
+pub(crate) async fn start_owned(
+    registry: &ForwardRegistry,
+    rule: &ForwardRule,
     session_id: &str,
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
     owner: Option<(String, u64)>,
+    current: impl FnOnce() -> AppResult<()>,
 ) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let mut changed = state.forwards.changed.subscribe();
-    let ticket = state.forwards.ticket(id, session_id)?;
-    let rule = rules(app)?
-        .into_iter()
-        .find(|r| r.id == id)
-        .ok_or_else(|| AppError::validation("forward.missing"))?;
-    validate(&rule)?;
-    if !state
-        .ssh
-        .list()
-        .iter()
-        .any(|s| s.id == session_id && s.host_id == rule.host_id)
-    {
-        return Err(AppError::validation("ssh.sessionMissing"));
-    }
-    if state
-        .forwards
+    let id = &rule.id;
+    let mut changed = registry.changed.subscribe();
+    let ticket = registry.ticket(id, session_id)?;
+    if registry
         .active
         .lock()
         .map_err(|_| AppError::internal("forward.lock"))?
@@ -366,50 +348,38 @@ pub async fn start_owned(
     {
         return Err(AppError::validation("forward.alreadyActive"));
     }
-    let handle = state.ssh.handle(session_id)?;
-    let setup = open_forward(
-        handle,
-        state.ssh.remote_routes(session_id)?,
-        &rule,
-        session_id,
-        owner,
-    );
+    let setup = open_forward(handle, routes, rule, session_id, owner);
     tokio::pin!(setup);
     let item = loop {
         tokio::select! {
             result = &mut setup => break result?,
             _ = changed.changed() => {
-                if !state.forwards.valid_ticket(&ticket) { return Err(AppError::validation("forward.startCancelled")); }
+                if !registry.valid_ticket(&ticket) { return Err(AppError::validation("forward.startCancelled")); }
             }
         }
     };
     // If the session closed during setup, dropping the item cancels all created resources.
-    let mut active = state
-        .forwards
+    let mut active = registry
         .active
         .lock()
         .map_err(|_| AppError::internal("forward.lock"))?;
-    if !state.forwards.valid_ticket(&ticket) {
+    if !registry.valid_ticket(&ticket) {
         return Err(AppError::validation("forward.startCancelled"));
     }
-    if !state.ssh.list().iter().any(|s| s.id == session_id) {
-        return Err(AppError::validation("ssh.sessionMissing"));
-    }
-    if !rules(app)?.iter().any(|saved| saved == &rule) {
-        return Err(AppError::validation("forward.missing"));
-    }
+    current()?;
     if active.contains_key(id) {
         return Err(AppError::validation("forward.alreadyActive"));
     }
     active.insert(id.to_owned(), item);
     drop(active);
-    state.forwards.publish();
+    registry.publish();
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::forwarding::contract::validate;
     fn rule() -> ForwardRule {
         ForwardRule {
             id: "a".into(),
