@@ -21,9 +21,11 @@ import type {
   FrontendWorkbenchSlots,
   FrontendFileBrowser,
   FrontendTerminal,
+  FrontendHistory,
 } from "@/lib/extensions/uiSdkContract";
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
+import type { HistoryContext } from "@/lib/extensions/history";
 
 function createProviderLease() {
   let closed = false;
@@ -78,6 +80,7 @@ export function ProviderSurface({
   keepFallback = false,
   fileBrowser,
   terminal,
+  history,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -90,6 +93,7 @@ export function ProviderSurface({
   keepFallback?: boolean;
   fileBrowser?: FrontendFileBrowser;
   terminal?: FrontendTerminal;
+  history?: HistoryContext & Pick<FrontendHistory, "Entries">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -300,6 +304,50 @@ export function ProviderSurface({
           },
         })
       : undefined;
+  const requireHistoryPermission = (permission: "history.write" | "ssh.exec") => {
+    checkAccess();
+    const plugin = usePlugins.getState().items.find((item) => item.id === selected!.plugin.id);
+    if (!plugin?.permissions.includes(permission))
+      throw new Error("plugin.history.permissionDenied");
+  };
+  const historyContext: FrontendHistory | undefined =
+    history && active
+      ? // These callbacks only read host refs when invoked by a provider.
+        // eslint-disable-next-line react-hooks/refs
+        Object.freeze<FrontendHistory>({
+          Entries: history.Entries,
+          snapshot: history.snapshot,
+          capabilities: Object.freeze({
+            delete: selected!.plugin.permissions.includes("history.write"),
+            clear: selected!.plugin.permissions.includes("history.write"),
+            execute: selected!.plugin.permissions.includes("ssh.exec"),
+          }),
+          read: (request) => {
+            checkAccess(false);
+            return history.read(request);
+          },
+          setQuery: (query) => {
+            checkAccess();
+            history.setQuery(query);
+          },
+          refresh: () => {
+            checkAccess();
+            history.refresh();
+          },
+          delete: async (id) => {
+            requireHistoryPermission("history.write");
+            await history.delete(id);
+          },
+          requestClear: () => {
+            requireHistoryPermission("history.write");
+            history.requestClear(() => requireHistoryPermission("history.write"));
+          },
+          execute: async (id) => {
+            requireHistoryPermission("ssh.exec");
+            await history.execute(id);
+          },
+        })
+      : undefined;
   return (
     <>
       {selections?.[target] ? (
@@ -333,6 +381,7 @@ export function ProviderSurface({
               workbench={slots}
               fileBrowser={files}
               terminal={terminalContext}
+              history={historyContext}
             />
           </ProviderBoundary>
         </div>

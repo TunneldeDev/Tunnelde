@@ -2827,6 +2827,21 @@
   padding: 4px 0;
 }
 
+.history-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--td-danger);
+  font-size: 12px;
+}
+
+.history-error > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .history-empty {
   padding: 24px;
   text-align: center;

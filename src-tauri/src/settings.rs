@@ -269,7 +269,7 @@ impl Settings {
         self.ui_providers.retain(|target, selection| {
             matches!(
                 target.as_str(),
-                "hostList" | "workbench" | "fileBrowser" | "terminal"
+                "hostList" | "workbench" | "fileBrowser" | "terminal" | "history"
             ) && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
                 !id.is_empty()
                     && id.len() <= 128
@@ -579,6 +579,7 @@ mod tests {
                 "hostList": {"pluginId":"../invalid", "viewId":"hosts"},
                 "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
                 "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
+                "history": {"pluginId":"custom-ui", "viewId":"history"},
                 "credentials": {"pluginId":"custom-ui", "viewId":"secret"}
             }
         }))
@@ -590,7 +591,8 @@ mod tests {
             serde_json::json!({
                 "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
                 "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
-                "terminal": {"pluginId":"custom-ui", "viewId":"screen"}
+                "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
+                "history": {"pluginId":"custom-ui", "viewId":"history"}
             })
         );
         assert!(serde_json::from_value::<Settings>(serde_json::json!({

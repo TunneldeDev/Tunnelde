@@ -11,11 +11,23 @@
     "viewKind": "component",
     "providers": {
       "manifest": "views[].provider",
-      "targets": ["hostList", "workbench", "fileBrowser", "terminal"],
+      "targets": ["hostList", "workbench", "fileBrowser", "terminal", "history"],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
       "fileBrowserPermissions": ["fs.read", "sftp.read", "workspace.write"],
       "terminalPermissions": ["sessions.read", "ssh.exec"],
+      "historyPermissions": ["sessions.read", "history.read"],
+      "history": {
+        "context": "history",
+        "ownership": "host-panel",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "history.write",
+        "executePermission": "ssh.exec",
+        "recovery": "native-search-and-confirmation"
+      },
       "terminal": {
         "context": "terminal",
         "ownership": "host-session",

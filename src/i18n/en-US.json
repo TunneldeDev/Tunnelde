@@ -1285,6 +1285,12 @@
       "changed": "The terminal buffer changed. Read the current revision and restart pagination.",
       "subscriptionLimit": "The terminal subscription limit has been reached.",
       "missingScreen": "The terminal provider did not keep its screen mounted. The built-in terminal has been restored."
+    },
+    "history": {
+      "invalid": "Invalid history request. Use an entry from the current page.",
+      "changed": "History or its session changed. Read a fresh snapshot and try again.",
+      "busy": "History is loading or unavailable. Refresh before changing entries.",
+      "permissionDenied": "This history provider does not have permission for this action."
     }
   },
   "themes": {
@@ -2044,7 +2050,7 @@
   },
   "providers": {
     "title": "Interface providers",
-    "hint": "Choose installed extensions for the host list, file browser, terminal or workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
+    "hint": "Choose installed extensions for the host list, file browser, terminal, history or workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
     "hostList": "Host list",
     "fileBrowser": "File browser",
     "workbench": "Workbench",
@@ -2052,7 +2058,8 @@
     "unavailable": "Unavailable",
     "fallback": "Using the built-in interface: the selected provider is unavailable.",
     "restore": "Restore built-in interface",
-    "terminal": "Terminal"
+    "terminal": "Terminal",
+    "history": "Command history"
   },
   "hostFields": {
     "title": "Plugin host fields",

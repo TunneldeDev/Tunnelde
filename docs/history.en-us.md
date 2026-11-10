@@ -29,7 +29,9 @@ The workbench bridge invalidates only panels for the affected host; legacy event
 local `tunnelde:history-changed` event. Native UI code does not emit a duplicate local event
 after the same mutation.
 
-Panels reload authoritative history and ignore late results from previous requests or
-hosts. Events are invalidation hints, not durable delivery acknowledgements. A new panel
-must always load a fresh snapshot. Revisioned pagination, public history components and
-the remaining terminal/history domain extension contracts are still under development.
+Panels load all retained entries (up to 500), collapse concurrent invalidations into
+one trailing read and ignore late results from previous hosts or lifetimes. Events are
+invalidation hints, not durable delivery acknowledgements. A new panel always loads
+fresh data. The [experimental history provider](plugin-history.en-us.md) exposes
+revision-bound bounded pages and a reusable native list. The legacy RPC list remains
+an unpaged array; the remaining domain contracts are still under development.
