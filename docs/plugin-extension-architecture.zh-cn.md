@@ -13,9 +13,20 @@
 
 转发领域的协议结构与校验在 `services/forwarding/contract.rs`，持久化在同目录的
 `repository.rs`，服务入口在 `mod.rs`。原生 IPC 在 `commands/forwarding.rs`，插件适配在
-`plugins/api/forwarding.rs`，SSH 监听与转发实现保留在传输模块。两类适配都调用领域服务。
+`plugins/api/domains/forwarding/mod.rs`，SSH 监听与转发实现保留在传输模块。两类适配都调用领域服务。
 前端同样区分领域契约、共享状态和视图。目录调整不改变已有 RPC 名称、权限或返回结构。
 后续 SDK 和文档按领域提供入口；旧目录尚未全部完成迁移。
+
+RPC 边界 `plugins/api.rs` 负责请求授权、大小限制及响应返回前的再次授权。
+`api/routing.rs` 只选择适配器，并保留已提交操作的领域失效通知。
+具体适配在 `api/domains/<domain>/`；文件领域再区分本地操作、SFTP、有所有权的传输和
+文本原子保存，连接的协议结构与有界 SSH 命令执行也分别存放。
+前端命令的请求与响应桥接在 `api/transport/frontend.rs`，不与领域业务混写。
+测试靠近所属实现，跨领域冻结契约的样例继续共享。这些内部模块路径不是新的插件 RPC 命名空间。
+
+公开 UI 类型在 `src/lib/extensions/contracts/<domain>/`，市场仓库中的 SDK 镜像及
+RPC 类型声明也按领域组织。兼容入口仅重新导出历史名称，生成工具校验公开依赖图及
+历史消费者；不要把应用私有状态容器直接复制到 SDK。
 
 ## 发现已实现能力
 

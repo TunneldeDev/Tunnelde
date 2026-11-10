@@ -1,3 +1,6 @@
+use super::domains::connections::PluginSession;
+use super::domains::storage::{storage_at, storage_path, MAX_STORAGE};
+use super::transport::frontend::frontend_result;
 use super::*;
 
 #[test]
