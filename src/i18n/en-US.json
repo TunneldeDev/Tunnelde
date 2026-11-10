@@ -1215,7 +1215,20 @@
       "tooManyTasks": "This plugin has reached its remote runner record limit.",
       "notFound": "This plugin has no matching runner on that host.",
       "deployFirst": "Deploy and initialize the remote runner before starting a task.",
-      "timeout": "The remote runner did not respond in time. Its state is unknown; saved stop requests will be retried."
+      "timeout": "The remote runner did not respond in time. Its state is unknown; saved stop requests will be retried.",
+      "identityReviewRequired": "This older task has no verified destination. Review its original host in Settings → Plugins → Remote task recovery.",
+      "destinationChanged": "The connection address or server key differs from this task’s original destination. Reconnect the original host.",
+      "destinationAmbiguous": "Multiple connections point to different destinations for this saved host. Keep only the original destination connected before reviewing.",
+      "controlReviewRequired": "This task belongs to an earlier plugin package. Review a control handoff in Remote task recovery before continuing.",
+      "identityAlreadyReviewed": "This task already has a bound destination. Review cannot replace it.",
+      "controlUnavailable": "This action is unavailable for the current task state. Refresh its recovery record.",
+      "controlAlreadyReviewed": "This package already controls the task. Refresh its recovery record.",
+      "reviewBusy": "Another native recovery confirmation is open. Close it before retrying.",
+      "reviewExpired": "The confirmation expired. No recovery change was applied.",
+      "reviewClosed": "The confirmation closed before a decision. No recovery change was applied.",
+      "recordChanged": "This recovery record changed while the operation was pending. Refresh and review it again.",
+      "exitUnconfirmed": "Process exit has not been confirmed. Keep the record until the original host confirms its state.",
+      "invalidResponse": "The remote helper returned an invalid response. The saved record was preserved; check the software log."
     },
     "activation": {
       "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
@@ -2237,5 +2250,58 @@
       "restore": "Before restoration"
     },
     "workerFailed": "The configuration worker stopped unexpectedly. Retry and inspect the software log if it happens again."
+  },
+  "runnerRecovery": {
+    "title": "Remote task recovery",
+    "description": "Review saved remote tasks without starting a plugin. A record does not prove that a process is running. Stopping and removing records require confirmation; remote files are preserved.",
+    "plugin": "Record owner (including removed plugins)",
+    "empty": "No saved remote task records.",
+    "limited": "Discovery reached its directory scan limit. Additional owners may not be listed.",
+    "recordCount_one": "{{count}} saved record",
+    "recordCount_other": "{{count}} saved records",
+    "deployment": "Deployment",
+    "directory": "Remote directory",
+    "host": "Saved host ID",
+    "serverKey": "Server key",
+    "unreviewed": "Not recorded — review required",
+    "packageChanged": "The installed plugin package differs from this task’s controller. Inspect and stop remain available here; continuing control requires explicit handoff to an approved package.",
+    "stopHint": "The stop request is saved. Cleanup retries when the original destination is connected. This does not confirm that the process has exited.",
+    "uncertainHint": "The launch acknowledgement was lost. Even “not found” cannot confirm exit while a delayed launch remains possible.",
+    "legacyHint": "This older record has no captured destination identity. Connect its original host and explicitly review the address and server key before inspection or cleanup.",
+    "changedHint": "The available connection differs from the saved address or server key. Reconnect the original destination; review cannot replace an already bound identity.",
+    "inspect": "Check remote status",
+    "reviewDestination": "Review original destination",
+    "handoff": "Hand over control",
+    "stop": "Request stop",
+    "forget": "Remove local record",
+    "openLog": "Open software log",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {{page}}",
+    "checkedAt": "Checked {{time}}",
+    "connection": {
+      "connected": "Original host connected",
+      "offline": "Offline",
+      "legacy": "Destination unreviewed",
+      "ambiguous": "Multiple destinations",
+      "changed": "Destination changed"
+    },
+    "status": {
+      "unknown": "Not checked",
+      "stopPending": "Stop pending",
+      "uncertain": "Launch uncertain",
+      "stopped": "Confirmed stopped",
+      "failed": "Confirmed failed",
+      "notFound": "Confirmed absent"
+    },
+    "observed": {
+      "starting": "Observed: starting",
+      "running": "Observed: running",
+      "stopping": "Observed: stopping",
+      "stopped": "Observed: stopped",
+      "failed": "Observed: failed",
+      "notFound": "Observed: not found",
+      "unresponsive": "Observed: unresponsive"
+    }
   }
 }
