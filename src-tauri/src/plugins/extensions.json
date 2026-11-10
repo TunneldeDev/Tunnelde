@@ -174,8 +174,38 @@
       "hidden": "blocks-webview-suspension"
     }
   },
+  "runtime": {
+    "resources": {
+      "snapshot": "resources.snapshot",
+      "release": "resources.release",
+      "stability": "experimental",
+      "ownership": "current-runtime",
+      "kinds": [
+        "connection",
+        "forward",
+        "mount",
+        "task",
+        "transfer"
+      ],
+      "states": [
+        "owned",
+        "releaseRequested",
+        "cleanupRequired"
+      ],
+      "pageSize": 128,
+      "pageBytes": 65536,
+      "observationLimit": 4096,
+      "operationLimitPerPlugin": 4,
+      "operationLimitTotal": 16,
+      "observationTimeoutMs": 5000,
+      "paging": "revision-bound",
+      "cancellation": "cooperative-settlement",
+      "persistence": false
+    }
+  },
   "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
   "domains": [
+    { "id": "runtime", "namespaces": ["resources"] },
     { "id": "configuration", "namespaces": ["configuration"] },
     {
       "id": "platform",

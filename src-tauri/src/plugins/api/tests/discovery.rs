@@ -57,7 +57,9 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "configuration.update",
             "preferences.schema",
             "preferences.snapshot",
-            "preferences.update"
+            "preferences.update",
+            "resources.release",
+            "resources.snapshot"
         ]
     );
 }

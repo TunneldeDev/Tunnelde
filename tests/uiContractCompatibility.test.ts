@@ -101,6 +101,13 @@ describe("public UI contract boundaries", () => {
       "PreferenceUpdates",
       "PreferenceValues",
       "PreferenceWorkspace",
+      "RuntimeResource",
+      "RuntimeResourceKind",
+      "RuntimeResourceRelease",
+      "RuntimeResourceReleased",
+      "RuntimeResourceState",
+      "RuntimeResourcesQuery",
+      "RuntimeResourcesSnapshot",
     ]);
     const widened: string[] = [];
     for (const [name, original] of before) {

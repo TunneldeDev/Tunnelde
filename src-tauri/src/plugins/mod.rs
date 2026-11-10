@@ -19,8 +19,8 @@ pub mod manifest;
 pub mod marketplace;
 pub mod network;
 pub mod node;
-mod resources;
 pub mod runners;
+mod runtime;
 pub mod security;
 mod sessions;
 pub mod status_bar;
@@ -210,7 +210,7 @@ pub struct PluginsManager {
     host_list: contributions::Registry<host_list::DecorationSet>,
     host_columns: contributions::Registry<host_columns::Column>,
     host_sources: contributions::Registry<host_sources::Source>,
-    sessions: Arc<resources::Registry<String>>,
+    sessions: Arc<runtime::ownership::Registry<String>>,
 }
 
 impl PluginsManager {
@@ -440,7 +440,7 @@ impl PluginsManager {
             host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
-            sessions: resources::Registry::new(8, 64),
+            sessions: runtime::ownership::Registry::new(8, 64),
         }
     }
 

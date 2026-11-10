@@ -5,7 +5,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
-use super::{api::HostContext, resources::Scope, security::Lease};
+use super::{api::HostContext, runtime::ownership::Scope, security::Lease};
 use crate::{
     error::{AppError, AppResult},
     ssh::{SessionInfo, SshConnectRequest},
@@ -146,7 +146,7 @@ async fn confirmation_response(
 fn handoff_authorized<T>(
     context: &HostContext,
     lease: &Lease,
-    ownership: &super::resources::Ownership,
+    ownership: &super::runtime::ownership::Ownership,
     operation: impl FnOnce() -> AppResult<T>,
 ) -> AppResult<T> {
     context

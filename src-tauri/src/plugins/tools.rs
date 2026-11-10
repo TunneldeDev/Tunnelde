@@ -999,7 +999,7 @@ mod tests {
 
     #[test]
     fn client_revocation_cannot_miss_connection_admission_or_publication() {
-        use super::super::{resources, security::Lease};
+        use super::super::{runtime::ownership as resources, security::Lease};
         let plugin = uuid::Uuid::new_v4().to_string();
         let lease = Lease {
             id: plugin.clone(),

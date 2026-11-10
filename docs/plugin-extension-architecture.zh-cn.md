@@ -128,3 +128,5 @@ UI 声明单独位于 `src/lib/extensions/contracts/<领域>/`。这些源码分
 公共外壳只协调提供者；业务归领域服务所有。消费者依赖公开契约，不引用其他领域的内部
 状态或私有组件。兼容入口保留既有符号的重新导出；市场 SDK 按公开依赖图镜像生成。
 [监控领域](plugin-monitor-ui.zh-cn.md)说明了一种具体组织方式。
+
+[运行资源生命周期](plugin-runtime-resources.zh-cn.md)说明实验性的自有资源观测、释放及其边界。

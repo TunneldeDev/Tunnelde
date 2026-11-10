@@ -18,6 +18,7 @@ pub mod bandwidth;
 mod batch;
 mod compressed;
 pub mod durable;
+mod lifecycle;
 #[cfg(windows)]
 mod local_directory_move;
 pub mod local_editor;
@@ -116,6 +117,7 @@ struct TransferState {
 }
 
 struct ActiveTransfer {
+    identity: String,
     cancel: Arc<AtomicBool>,
     owner: Option<TransferOwner>,
     event: TransferEvent,
@@ -224,6 +226,7 @@ impl TransferRegistry {
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
+                identity: uuid::Uuid::new_v4().to_string(),
                 cancel: flag,
                 owner,
                 event: TransferEvent {
@@ -289,22 +292,7 @@ impl TransferRegistry {
 
     /// Plugins can cancel only transfers created by their current runtime.
     pub fn cancel_owned(&self, id: &str, plugin_id: &str, generation: u64) -> bool {
-        let Ok(state) = self.inner.lock() else {
-            return false;
-        };
-        let Some(transfer) = state.active.get(id) else {
-            return false;
-        };
-        if transfer
-            .owner
-            .as_ref()
-            .is_some_and(|owner| owner.plugin_id == plugin_id && owner.generation == generation)
-        {
-            transfer.cancel();
-            true
-        } else {
-            false
-        }
+        self.cancel_owned_checked(id, plugin_id, generation, None)
     }
 
     pub fn status_owned(

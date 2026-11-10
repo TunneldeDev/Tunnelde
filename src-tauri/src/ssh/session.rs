@@ -21,6 +21,9 @@ use crate::state::AppState;
 pub const DATA_EVENT: &str = "ssh://data";
 pub const CLOSED_EVENT: &str = "ssh://closed";
 
+mod cleanup;
+pub(crate) use cleanup::SessionDisposal;
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const TERM: &str = "xterm-256color";
 const MAX_EARLY_OUTPUT: usize = 1024 * 1024;
@@ -404,32 +407,13 @@ impl SshManager {
         Ok(())
     }
 
-    pub fn disconnect(&self, session_id: &str) -> bool {
+    pub(crate) fn begin_disconnect(&self, session_id: &str) -> Option<SessionDisposal> {
         let removed = self
             .sessions
             .lock()
-            .ok()
-            .and_then(|mut sessions| sessions.remove(session_id));
-        if let Some(handle) = removed {
-            let _ = handle.writer.try_send(WriterMsg::Close);
-            handle.task.abort();
-            // Dropping a terminal task or Handle does not close channels that
-            // already hold a sender. Close the entire transport explicitly,
-            // including private jump connections, outside the registry lock.
-            let session_id = session_id.to_owned();
-            tauri::async_runtime::spawn(async move {
-                close_transports(
-                    std::iter::once(&handle.handle)
-                        .chain(handle._jumps.iter().rev())
-                        .map(Arc::as_ref),
-                    Some(&session_id),
-                )
-                .await;
-            });
-            true
-        } else {
-            false
-        }
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(session_id)?;
+        Some(SessionDisposal::start(removed, session_id.to_owned()))
     }
 }
 
@@ -988,6 +972,11 @@ pub(crate) fn announce_connection(app: &AppHandle) {
 }
 
 pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
+    let _ = begin_disconnect(app, session_id);
+    Ok(())
+}
+
+pub(crate) fn begin_disconnect(app: &AppHandle, session_id: &str) -> Option<SessionDisposal> {
     let state = app.state::<AppState>();
     state.forwards.stop_session(session_id);
     let cleanup_app = app.clone();
@@ -999,7 +988,8 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
             .stop_session(&cleanup_session)
             .await;
     });
-    if state.ssh.disconnect(session_id) {
+    let disposal = state.ssh.begin_disconnect(session_id);
+    if disposal.is_some() {
         state.monitor.forget(session_id);
         let _ = app.emit(
             CLOSED_EVENT,
@@ -1010,7 +1000,7 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
         );
     }
     state.plugins.forget_connection(session_id);
-    Ok(())
+    disposal
 }
 
 pub fn attach(app: &AppHandle, session_id: &str) -> AppResult<()> {
@@ -1277,8 +1267,16 @@ mod tests {
         manager.publish("target").unwrap();
         assert_eq!(manager.list().len(), 1);
         assert!(manager.publish("missing").is_err());
-        assert!(manager.disconnect("target"));
-        assert!(!manager.disconnect("target"));
+        manager
+            .begin_disconnect("target")
+            .unwrap()
+            .finish()
+            .await
+            .unwrap();
+        assert!(client.is_closed());
+        assert!(jump.is_closed());
+        assert!(stopped.is_finished());
+        assert!(manager.begin_disconnect("target").is_none());
         assert!(manager.handle("target").is_err());
         assert!(manager.list().is_empty());
         let closed = tokio::time::timeout(Duration::from_secs(2), async {
