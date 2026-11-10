@@ -48,6 +48,8 @@ macro_rules! stable_method {
 mod application;
 #[path = "clipboard/methods.rs"]
 mod clipboard;
+#[path = "configuration/methods.rs"]
+mod configuration;
 #[path = "connections/methods.rs"]
 mod connections;
 #[path = "discovery/methods.rs"]
@@ -86,6 +88,7 @@ mod tools;
 mod workbench;
 
 const DOMAINS: &[&[ApiMethod]] = &[
+    configuration::METHODS,
     discovery::METHODS,
     hosts::METHODS,
     workbench::METHODS,

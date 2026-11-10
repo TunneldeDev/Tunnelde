@@ -49,6 +49,16 @@ describe("public UI contract boundaries", () => {
     const before = exportsOf(historical),
       after = exportsOf(entry);
     expect([...after.keys()].filter((name) => !before.has(name)).sort()).toEqual([
+      "ConfigurationBackup",
+      "ConfigurationBackupRequest",
+      "ConfigurationDocument",
+      "ConfigurationExpected",
+      "ConfigurationField",
+      "ConfigurationMigration",
+      "ConfigurationSchema",
+      "ConfigurationSnapshot",
+      "ConfigurationUpdate",
+      "ConfigurationValueSchema",
       "FrontendBackgroundTaskContext",
       "FrontendBackgroundTaskEntry",
       "FrontendBackgroundTaskOptions",

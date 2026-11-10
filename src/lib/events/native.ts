@@ -21,6 +21,7 @@ import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
 import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
 
 export interface NativeEvents {
+  "plugin://configuration-changed": { pluginId: string; revision: string; schemaDigest: string };
   "plugin://host-columns-changed": HostColumnsSnapshot;
   "plugin://host-sources-changed": HostSourcesSnapshot;
   "hosts://fields-changed": { pluginId: string; hostId: string; revision: number };

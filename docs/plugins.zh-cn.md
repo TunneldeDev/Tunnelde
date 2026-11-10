@@ -8,6 +8,8 @@ API 兼容性与安全：[中文](plugin-api.zh-cn.md) · [English](plugin-api.e
 
 主机元数据扩展采用独立的 Manifest 字段结构和修订检查存储，详见[插件主机字段](plugin-host-fields.zh-cn.md)。
 
+插件自有设置、明确 Schema 迁移与恢复，详见[插件配置](plugin-configuration.zh-cn.md)。
+
 ## 快速访问与命令结果
 
 启动失败的通知提供**打开日志**入口。软件版本不兼容时，会显示已安装的插件版本、当前

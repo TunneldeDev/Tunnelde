@@ -4,4 +4,5 @@ pub mod forwarding;
 pub mod history;
 pub mod host_fields;
 pub mod hosts;
+pub mod plugin_configuration;
 pub mod settings;

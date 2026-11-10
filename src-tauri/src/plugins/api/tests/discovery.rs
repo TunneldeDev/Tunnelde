@@ -48,6 +48,13 @@ fn domain_catalogue_preserves_existing_method_contracts() {
     assert_eq!(
         added,
         [
+            "configuration.backups",
+            "configuration.deleteBackup",
+            "configuration.migrate",
+            "configuration.restore",
+            "configuration.schema",
+            "configuration.snapshot",
+            "configuration.update",
             "preferences.schema",
             "preferences.snapshot",
             "preferences.update"
