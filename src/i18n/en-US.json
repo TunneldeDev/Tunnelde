@@ -1278,6 +1278,13 @@
       "limit": "The active host sources exceed their source, entry or storage limits.",
       "unavailable": "This discovered host is no longer available or its details changed. Refresh the host list and reopen the connection.",
       "changed": "The host source list changed while reading it. Restart from the first page."
+    },
+    "terminal": {
+      "unavailable": "This terminal is not ready or has closed. Wait for it to connect or reopen it.",
+      "invalid": "The plugin supplied an invalid terminal page, subscription or input.",
+      "changed": "The terminal buffer changed. Read the current revision and restart pagination.",
+      "subscriptionLimit": "The terminal subscription limit has been reached.",
+      "missingScreen": "The terminal provider did not keep its screen mounted. The built-in terminal has been restored."
     }
   },
   "themes": {
@@ -2044,7 +2051,8 @@
     "builtin": "Built-in",
     "unavailable": "Unavailable",
     "fallback": "Using the built-in interface: the selected provider is unavailable.",
-    "restore": "Restore built-in interface"
+    "restore": "Restore built-in interface",
+    "terminal": "Terminal"
   },
   "hostFields": {
     "title": "Plugin host fields",

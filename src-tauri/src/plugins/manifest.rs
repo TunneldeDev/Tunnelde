@@ -389,8 +389,10 @@ impl PluginManifest {
                     .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
                 || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
                 || view.provider.as_deref().is_some_and(|target| {
-                    !matches!(target, "hostList" | "workbench" | "fileBrowser")
-                        || view.kind.as_deref() != Some("component")
+                    !matches!(
+                        target,
+                        "hostList" | "workbench" | "fileBrowser" | "terminal"
+                    ) || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
                         || view.title.chars().any(char::is_control)
@@ -398,6 +400,10 @@ impl PluginManifest {
                             && !self.permissions.iter().any(|p| p == "hosts.read"))
                         || (target == "fileBrowser"
                             && ["fs.read", "sftp.read", "workspace.write"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "terminal"
+                            && ["sessions.read", "ssh.exec"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                 })
@@ -623,6 +629,16 @@ mod tests {
         }
         value["permissions"] =
             serde_json::json!(["ui.trusted", "fs.read", "sftp.read", "workspace.write"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "terminal".into();
+        for omitted in ["ui.trusted", "sessions.read", "ssh.exec"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "ssh.exec"]
+                .into_iter()
+                .filter(|v| *v != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "ssh.exec"]);
         assert!(save(&value).is_ok());
         value["views"][0]["location"] = "sidebar".into();
         assert!(save(&value).is_err());

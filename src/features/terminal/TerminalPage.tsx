@@ -45,6 +45,9 @@ import {
   terminalUsesEnhancedKeyboard,
 } from "./terminalState";
 import { shortcutMatches } from "@/lib/keyboard/registry";
+import { createTerminalBridge, type TerminalBridge } from "@/lib/extensions/terminal";
+import { reportError } from "@/lib/diagnostics";
+import { TerminalSurface } from "./TerminalSurface";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -79,6 +82,10 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     canPaste: () => boolean;
   } | null>(null);
   const [closed, setClosed] = useState(false);
+  const [bridge, setBridge] = useState<TerminalBridge | null>(null);
+  useEffect(() => {
+    bridge?.update({ hostId: session?.hostId ?? null, title: session?.title ?? "" });
+  }, [bridge, session?.hostId, session?.title]);
   const capture = useRef<CommandCapture>({ text: "", escape: 0 });
   useEffect(() => {
     capture.current = { text: "", escape: 0 };
@@ -135,6 +142,11 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     }
 
     let unregisterShortcuts: (() => void) | undefined;
+    const terminalBridge = createTerminalBridge(sessionId, (error) =>
+      reportError("plugins.frontend", "terminal.subscription", error),
+    );
+    setBridge(terminalBridge);
+    let detachBridge: (() => void) | undefined;
     let disposed = false;
     let ended = false;
     let registrationFailed = false;
@@ -227,6 +239,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       unregisterCheckpoint = registerTerminalCheckpoint(sessionId, {
         prepare: async () => {
           checkpointing.current = true;
+          terminalBridge.update({ status: "suspended" });
           const barrier = ended ? sequence : await api.sshDetach(sessionId);
           await waitForSequence(barrier);
           // write callbacks run after xterm has parsed every preceding packet.
@@ -255,6 +268,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         resume: async () => {
           checkpointing.current = false;
           if (!disposed && !ended) await api.sshAttach(sessionId);
+          if (!disposed) terminalBridge.update({ status: ended ? "closed" : "ready" });
           runtime?.requestLayout();
         },
       });
@@ -442,6 +456,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           }
         }
       });
+      detachBridge = terminalBridge.attach(instance);
     };
 
     const started = start();
@@ -461,6 +476,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         }
         registrationFailed = true;
         ended = true;
+        terminalBridge.update({ status: "closed" });
         setClosed(true);
         subscriptions.splice(0).forEach((unlisten) => unlisten());
         const message = translateError(error);
@@ -490,6 +506,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
             return;
           }
           ended = true;
+          terminalBridge.update({ status: "closed" });
           sequenceWaiters.forEach((check) => check());
           setClosed(true);
           write(new TextEncoder().encode(`\r\n\x1b[38;5;245m[${t("ssh.closed")}]\x1b[0m\r\n`));
@@ -503,6 +520,7 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         .then(async () => {
           if (!disposed && !registrationFailed && !ended) {
             await api.sshAttach(sessionId);
+            if (!disposed) terminalBridge.update({ status: ended ? "closed" : "ready" });
           }
         })
         .catch(fail);
@@ -523,6 +541,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
     void started.catch((error) => {
       if (!disposed) toast(translateError(error), "error");
     });
+    if (!isTauri())
+      void started.then(
+        () => {
+          if (!disposed) terminalBridge.update({ status: "ready" });
+        },
+        () => terminalBridge.update({ status: "closed" }),
+      );
 
     return () => {
       disposed = true;
@@ -537,6 +562,8 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
       applicationClipboard?.dispose();
       window.clearTimeout(selectionTimer);
       runtime?.dispose();
+      detachBridge?.();
+      terminalBridge.dispose();
       terminal?.dispose();
       terminalRef.current = null;
       fitRef.current = null;
@@ -603,35 +630,45 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
           <X size={15} />
         </IconButton>
       </header>
-      <div
-        className="terminal-host"
-        onContextMenu={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const actions = clipboardRef.current;
-          if (!actions) {
-            return;
-          }
-          const mode = useSettings.getState().settings.terminalRightClick;
-          if (!event.shiftKey && mode !== "menu") {
-            useContextMenu.getState().close();
-            if (mode === "copyPaste" && actions.hasSelection()) actions.copyAndClear();
-            else actions.paste();
-            return;
-          }
-          useContextMenu.getState().open(event.clientX, event.clientY, [
-            {
-              label: t("terminal.copy"),
-              disabled: !actions.hasSelection(),
-              onSelect: actions.copy,
-            },
-            { label: t("terminal.paste"), disabled: !actions.canPaste(), onSelect: actions.paste },
-            { label: t("terminal.selectAll"), separatorBefore: true, onSelect: actions.selectAll },
-          ]);
-        }}
-      >
-        <div className="terminal-surface" ref={containerRef} />
-      </div>
+      <TerminalSurface bridge={bridge?.sessionId === sessionId ? bridge : null} visible={active}>
+        <div
+          className="terminal-host"
+          onContextMenu={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const actions = clipboardRef.current;
+            if (!actions) {
+              return;
+            }
+            const mode = useSettings.getState().settings.terminalRightClick;
+            if (!event.shiftKey && mode !== "menu") {
+              useContextMenu.getState().close();
+              if (mode === "copyPaste" && actions.hasSelection()) actions.copyAndClear();
+              else actions.paste();
+              return;
+            }
+            useContextMenu.getState().open(event.clientX, event.clientY, [
+              {
+                label: t("terminal.copy"),
+                disabled: !actions.hasSelection(),
+                onSelect: actions.copy,
+              },
+              {
+                label: t("terminal.paste"),
+                disabled: !actions.canPaste(),
+                onSelect: actions.paste,
+              },
+              {
+                label: t("terminal.selectAll"),
+                separatorBefore: true,
+                onSelect: actions.selectAll,
+              },
+            ]);
+          }}
+        >
+          <div className="terminal-surface" ref={containerRef} />
+        </div>
+      </TerminalSurface>
     </div>
   );
 }
