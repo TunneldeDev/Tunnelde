@@ -27,6 +27,12 @@ pub(in crate::plugins::runners) async fn action(
         .into_iter()
         .find(|record| record.runner_id != "deployment" && record.runner_id == id)
         .ok_or_else(|| AppError::validation("plugin.runners.notFound"))?;
+    if host.is_ok() {
+        super::super::identity::verify(
+            &observed.deployment,
+            &super::super::identity::capture(&context.app, &session)?,
+        )?;
+    }
     // A disconnected session cannot prevent recording the user's stop intent.
     if host
         .as_ref()
@@ -55,6 +61,7 @@ pub(in crate::plugins::runners) async fn action(
         return stop_record(context, &session, &stopping).await;
     }
     host?;
+    super::super::identity::controller(&observed, &context.fingerprint)?;
     if method == "runners.send" && observed.stop_pending {
         lifecycle::request_recovery(&context.app);
         return Err(AppError::validation("plugin.runners.stopPending"));
@@ -87,15 +94,7 @@ pub(in crate::plugins::runners) async fn action(
         ]);
     }
     authorize(context, &["ssh.exec"])?;
-    let result = exec(
-        context,
-        &session,
-        &deployment.runner,
-        args,
-        &deployment.platform,
-        input,
-    )
-    .await?;
+    let result = exec(context, &session, deployment, args, input).await?;
     let status = if method == "runners.poll" {
         result["state"]["status"].as_str()
     } else if method == "runners.status" {
@@ -127,25 +126,9 @@ pub(in crate::plugins::runners) async fn stop_record(
             record.runner_id.clone(),
         ]
     };
-    let stopped = exec(
-        context,
-        session,
-        &deployment.runner,
-        args("stop"),
-        &deployment.platform,
-        None,
-    )
-    .await;
+    let stopped = exec(context, session, deployment, args("stop"), None).await;
     // Even a failed stop response may have delivered STOP. Query independently.
-    let status = exec(
-        context,
-        session,
-        &deployment.runner,
-        args("status"),
-        &deployment.platform,
-        None,
-    )
-    .await?;
+    let status = exec(context, session, deployment, args("status"), None).await?;
     if let Some(status) = status["status"].as_str() {
         repository::compare_update(context, record, |record| record.settle(status))?;
         if status == "notFound"

@@ -11,10 +11,13 @@ use tauri::Manager;
 mod contracts;
 mod coordinator;
 mod deployment;
+mod identity;
 mod lifecycle;
+pub mod management;
 mod model;
 mod operations;
 mod repository;
+mod review;
 mod transport;
 pub(crate) use coordinator::Coordinator;
 pub use lifecycle::on_reconnect;
@@ -71,6 +74,7 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
             .collect::<Vec<_>>())),
         "runners.deploy" => deployment::deploy(context, params).await,
         "runners.start" => operations::start(context, params).await,
+        "runners.review" => review::dispatch(context, params).await,
         _ => operations::action(context, method, params).await,
     }
 }

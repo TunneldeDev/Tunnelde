@@ -19,6 +19,7 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
     }
     let session: String = field(&params, "sessionId")?;
     let host = host_id(context, &session)?;
+    let destination = super::identity::capture(&context.app, &session)?;
     let directory: String = field(&params, "directory")?;
     let platform: String = field(&params, "platform")?;
     if !matches!(platform.as_str(), "windows" | "posix") {
@@ -33,6 +34,7 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
             && record.deployment.directory == directory
     }) {
         let deployed = &existing.deployment;
+        super::identity::verify(deployed, &destination)?;
         if deployed.fingerprint == context.fingerprint
             && deployed.platform == platform
             && deployed.executable == executable
@@ -55,6 +57,9 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
         return Err(AppError::validation("plugin.tools.denied"));
     }
     authorize(context, &["ssh.exec", "fs.read", "sftp.write"])?;
+    if super::identity::capture(&context.app, &session)? != destination {
+        return Err(AppError::validation("plugin.runners.destinationChanged"));
+    }
     let state = context.app.state::<AppState>();
     let _lease = state
         .runners
@@ -158,6 +163,7 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
         runner,
         entry: path_join(&directory, "remote-entry.mjs", &platform),
         fingerprint: context.fingerprint.clone(),
+        identity: Some(destination),
     };
     repository::transaction(context, |records| {
         authorize(context, &["ssh.exec", "fs.read", "sftp.write"])?;
@@ -168,6 +174,8 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
             stop_pending: false,
             revision: 1,
             launch_state: LaunchState::Confirmed,
+            controller_fingerprint: None,
+            terminal_status: None,
         });
         Ok(())
     })?;

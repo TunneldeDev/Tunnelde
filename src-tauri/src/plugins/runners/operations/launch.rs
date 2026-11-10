@@ -59,7 +59,13 @@ pub(in crate::plugins::runners) async fn start(
             runtime_owner: Some(lifecycle::Owner::current(context.generation)),
             revision: 1,
             launch_state: LaunchState::Reserved,
+            controller_fingerprint: None,
+            terminal_status: None,
         };
+        super::super::identity::verify(
+            &record.deployment,
+            &super::super::identity::capture(&context.app, &session)?,
+        )?;
         records.push(record.clone());
         Ok(record)
     })?;
@@ -100,7 +106,7 @@ pub(in crate::plugins::runners) async fn start(
     let result = exec(
         context,
         &session,
-        &deployment.runner,
+        deployment,
         vec![
             "start".into(),
             "--directory".into(),
@@ -114,7 +120,6 @@ pub(in crate::plugins::runners) async fn start(
             "--entry".into(),
             deployment.entry.clone(),
         ],
-        &deployment.platform,
         Some(initial),
     )
     .await?;
