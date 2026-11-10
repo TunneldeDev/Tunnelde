@@ -1228,7 +1228,9 @@
       "reviewClosed": "The confirmation closed before a decision. No recovery change was applied.",
       "recordChanged": "This recovery record changed while the operation was pending. Refresh and review it again.",
       "exitUnconfirmed": "Process exit has not been confirmed. Keep the record until the original host confirms its state.",
-      "invalidResponse": "The remote helper returned an invalid response. The saved record was preserved; check the software log."
+      "invalidResponse": "The remote helper returned an invalid response. The saved record was preserved; check the software log.",
+      "commandFailed": "The remote helper command failed: {{reason}}",
+      "noCommandDetails": "No error output was returned. Open the software log for diagnostics."
     },
     "activation": {
       "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
