@@ -76,6 +76,8 @@ mod monitor;
 mod mounts;
 #[path = "settings/preferences/methods.rs"]
 mod preferences;
+#[path = "runtime/methods.rs"]
+mod runtime;
 #[path = "settings/methods.rs"]
 mod settings;
 #[path = "storage/methods.rs"]
@@ -88,6 +90,7 @@ mod tools;
 mod workbench;
 
 const DOMAINS: &[&[ApiMethod]] = &[
+    runtime::METHODS,
     configuration::METHODS,
     discovery::METHODS,
     hosts::METHODS,

@@ -1241,7 +1241,14 @@
       "confirmationClosed": "The connection ownership confirmation closed without a decision. The connection remains managed by its plugin."
     },
     "resources": {
-      "limit": "Plugin connection limit reached (8 per plugin, 64 total, including pending requests). Disconnect unused connections before retrying."
+      "limit": "Plugin connection limit reached (8 per plugin, 64 total, including pending requests). Disconnect unused connections before retrying.",
+      "observationLimit": "Runtime resource observation exceeds its bounded limit. Release unused resources through their domain APIs.",
+      "invalidRequest": "Invalid runtime resource request. Use an opaque handle or a revision-bound page.",
+      "changed": "Runtime resources changed. Refresh from the first page before continuing.",
+      "unavailable": "This resource is no longer owned by the current plugin runtime. Refresh the resource list.",
+      "busy": "Runtime resource operations are busy (4 per plugin, 16 total). Wait for existing cleanup to finish.",
+      "workerFailed": "Runtime resource cleanup failed. Open the application log for details.",
+      "cleanupIncomplete": "The SSH connection was removed, but transport closure did not finish before its deadline. Check the application log."
     },
     "hostList": {
       "invalidDecoration": "Invalid host decoration. Check its fields, length and supported icon.",

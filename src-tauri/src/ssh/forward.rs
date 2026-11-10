@@ -1,3 +1,4 @@
+mod lifecycle;
 use std::{
     collections::HashMap,
     sync::{
@@ -239,11 +240,27 @@ impl ForwardRegistry {
         expected: Option<&str>,
         check: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<StoppedForward> {
+        self.take_inner(id, expected, None, check)
+    }
+    fn take_inner(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        owner: Option<(&str, u64)>,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<StoppedForward> {
         let mut active = self
             .active
             .lock()
             .map_err(|_| AppError::internal("forward.lock"))?;
         check()?;
+        if owner.is_some_and(|(owner, generation)| {
+            active.get(id).is_none_or(|item| {
+                item.owner.as_deref() != Some(owner) || item.generation != Some(generation)
+            })
+        }) {
+            return Err(AppError::validation("plugin.resources.unavailable"));
+        }
         if expected
             .is_some_and(|expected| active.get(id).is_none_or(|item| item.identity != expected))
         {

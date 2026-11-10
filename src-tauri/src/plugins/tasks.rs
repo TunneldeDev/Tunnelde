@@ -14,6 +14,9 @@ use super::api::{authorize, field, optional, HostContext};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod lifecycle;
+pub(super) use lifecycle::{cancel_owned_resource, owned_resources};
+
 const MAX_BUFFER: usize = 4 * 1024 * 1024;
 const MAX_EVENTS: usize = 4096;
 const MAX_TASKS: usize = 128;

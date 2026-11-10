@@ -29,3 +29,6 @@ export type * from "./contracts/preferences/data/index.js";
 export type * from "./contracts/configuration/schema.js";
 export type * from "./contracts/configuration/document.js";
 export type * from "./contracts/configuration/migration.js";
+export type * from "./contracts/runtime/lifecycle/resource.js";
+export type * from "./contracts/runtime/lifecycle/snapshot.js";
+export type * from "./contracts/runtime/lifecycle/release.js";

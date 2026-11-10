@@ -22,6 +22,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
         "app" => domains::application::dispatch(context, method, params).await,
         "settings" | "preferences" => domains::settings::dispatch(context, method, params).await,
         "configuration" => plugins::configuration::rpc::call(context, method, params).await,
+        "resources" => plugins::runtime::lifecycle::rpc::dispatch(context, method, params).await,
         "hosts" | "groups" | "hostList" => domains::hosts::dispatch(context, method, params).await,
         "sessions" => domains::connections::dispatch(context, method, params).await,
         "terminal" => domains::terminal::dispatch(context, method, params).await,

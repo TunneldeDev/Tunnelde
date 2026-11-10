@@ -174,3 +174,5 @@ Domain services own behavior, and consumers depend on public contracts rather th
 other domains' stores or private components. Compatibility entry points re-export
 existing symbols; generated market SDK files mirror the public dependency graph.
 The [monitoring domain](plugin-monitor-ui.en-us.md) documents one concrete example.
+
+[Runtime resource lifecycle](plugin-runtime-resources.en-us.md) documents the experimental owned snapshot/disposal contract and its limits.

@@ -1,0 +1,5 @@
+use super::ApiMethod;
+pub const METHODS:&[ApiMethod]=&[
+    method!("resources.snapshot",[],"{offset?:number,revision?:string}","Observe committed live domain resources (connections must also have accepted ownership) owned by this plugin's current runtime. Returns bounded revision-checked pages of opaque handles, kinds and lifecycle states, without paths, commands or credentials. Covers connections, forwards, mounts, process tasks and active transfers; not a global atomic transaction or durable runner catalogue."),
+    method!("resources.release",[],"{handle:string}","Release only an exact current-runtime owned resource. Revalidates domain ownership; cannot stop user-owned or transferred connections or a replacement instance. Returns released only after synchronous disposal or completed cleanup, cancellationRequested for cooperative task/transfer cancellation. Never forces unmount, deletes history or promises remote command rollback. Accepted cleanup keeps bounded capacity until settled even if its caller disappears."),
+];
