@@ -59,3 +59,5 @@ There are two independent clipboard settings under Terminal → Copy and paste:
 Only a terminal application that emits the clipboard protocol can copy its own selection through
 OSC 52. A multiplexer or intermediate SSH layer may require its own clipboard configuration.
 The application clipboard setting cannot enable an unsupported protocol in a remote program.
+
+[Command history, privacy and shared service behavior](history.en-us.md).

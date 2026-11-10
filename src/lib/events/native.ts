@@ -42,7 +42,7 @@ export interface NativeEvents {
   "sftp://transfer": TransferEvent;
   "sftp://changed": null;
   "editor://cleanup-changed": null;
-  "plugin://domain-changed": { domain: string; sessionId?: string | null };
+  "plugin://domain-changed": { domain: string; sessionId?: string | null; hostId?: string | null };
   "plugin://workspace-request": {
     requestId: string;
     pluginId: string;

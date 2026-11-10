@@ -1023,35 +1023,32 @@ pub fn plugin_open_dir(app: AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 pub fn history_record(
+    app: AppHandle,
     state: State<'_, AppState>,
     host_id: String,
     command: String,
-) -> AppResult<Option<db::history::HistoryEntry>> {
-    state.db.with(|conn| {
-        db::hosts::find_host(conn, &host_id)?;
-        db::history::record(conn, &host_id, &command)
-    })
+) -> AppResult<Option<crate::services::history::Entry>> {
+    crate::services::history::service(&app, &state).record(&host_id, &command)
 }
 
 #[tauri::command]
 pub fn history_list(
+    app: AppHandle,
     state: State<'_, AppState>,
     host_id: String,
     limit: Option<i64>,
-) -> AppResult<Vec<db::history::HistoryEntry>> {
-    state
-        .db
-        .with(|conn| db::history::list(conn, &host_id, limit.unwrap_or(200)))
+) -> AppResult<Vec<crate::services::history::Entry>> {
+    crate::services::history::service(&app, &state).list(&host_id, limit)
 }
 
 #[tauri::command]
-pub fn history_delete(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    state.db.with(|conn| db::history::delete(conn, id))
+pub fn history_delete(app: AppHandle, state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    crate::services::history::service(&app, &state).delete(id)
 }
 
 #[tauri::command]
-pub fn history_clear(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
-    state.db.with(|conn| db::history::clear(conn, &host_id))
+pub fn history_clear(app: AppHandle, state: State<'_, AppState>, host_id: String) -> AppResult<()> {
+    crate::services::history::service(&app, &state).clear(&host_id)
 }
 
 #[tauri::command]

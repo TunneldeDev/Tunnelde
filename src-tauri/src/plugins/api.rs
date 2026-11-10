@@ -686,21 +686,23 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             Ok(Value::Null)
         }
         "history.list" => encode(commands::history_list(
+            app.clone(),
             state,
             field(&params, "hostId")?,
             optional(&params, "limit")?,
         )?),
         "history.record" => encode(commands::history_record(
+            app.clone(),
             state,
             field(&params, "hostId")?,
             field(&params, "command")?,
         )?),
         "history.delete" => {
-            commands::history_delete(state, field(&params, "id")?)?;
+            commands::history_delete(app.clone(), state, field(&params, "id")?)?;
             Ok(Value::Null)
         }
         "history.clear" => {
-            commands::history_clear(state, field(&params, "hostId")?)?;
+            commands::history_clear(app.clone(), state, field(&params, "hostId")?)?;
             Ok(Value::Null)
         }
         "clipboard.readText" => encode(commands::clipboard_read_text(app.clone()).await?),
@@ -724,7 +726,6 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
     }?;
     let domain = match method {
         "sessions.connect" | "sessions.disconnect" | "sessions.requestHandoff" => Some("sessions"),
-        "history.record" | "history.delete" | "history.clear" => Some("history"),
         name if name.starts_with("files.")
             && !matches!(
                 name,

@@ -627,12 +627,13 @@ describe("plugin dialog and listener lifecycle", () => {
     window.addEventListener("tunnelde:files-changed", files);
     window.addEventListener("tunnelde:history-changed", history);
     emit("plugin://domain-changed", { domain: "files", sessionId: session.id });
-    emit("plugin://domain-changed", { domain: "history" });
+    emit("plugin://domain-changed", { domain: "history", hostId: "history-host" });
     expect(files.mock.calls[0]?.[0].detail).toEqual({
       source: { kind: "remote", sessionId: session.id },
       origin: "plugin-api",
     });
     expect(history).toHaveBeenCalledTimes(1);
+    expect((history.mock.calls[0]![0] as CustomEvent).detail).toEqual({ hostId: "history-host" });
     window.removeEventListener("tunnelde:files-changed", files);
     window.removeEventListener("tunnelde:history-changed", history);
   });

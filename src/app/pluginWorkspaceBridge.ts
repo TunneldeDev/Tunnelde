@@ -365,7 +365,8 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         (payload) => {
           if (payload.domain === "hosts") void refreshPluginHosts(lifetime);
           if (payload.domain === "sessions") void useSsh.getState().refresh();
-          if (payload.domain === "history") domainEvents.historyChanged();
+          if (payload.domain === "history")
+            domainEvents.historyChanged(payload.hostId ?? undefined);
           if (payload.domain === "files")
             domainEvents.filesChanged({
               source: payload.sessionId
