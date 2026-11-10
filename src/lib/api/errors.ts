@@ -100,6 +100,13 @@ export function translateError(error: unknown): string {
     if (error.message.startsWith("ssh.error:")) {
       return error.message.slice("ssh.error:".length).trim();
     }
+    if (error.message.startsWith("plugin.runners.commandFailed:")) {
+      return translate("plugin.runners.commandFailed", {
+        reason:
+          error.message.slice("plugin.runners.commandFailed:".length).trim() ||
+          translate("plugin.runners.noCommandDetails"),
+      });
+    }
     // SFTP wraps transport/protocol details; do not reduce every failure to
     // "SSH error", which prevents users from distinguishing reconnection,
     // permission and server failures.

@@ -1228,7 +1228,9 @@
       "reviewClosed": "确认窗口已关闭，未应用恢复更改。",
       "recordChanged": "操作期间恢复记录已变化，请刷新后重新核对。",
       "exitUnconfirmed": "尚未确认进程退出，请保留记录，直至原主机确认任务状态。",
-      "invalidResponse": "远端辅助程序返回了无效响应，已保留原记录，请查看软件日志。"
+      "invalidResponse": "远端辅助程序返回了无效响应，已保留原记录，请查看软件日志。",
+      "commandFailed": "远端辅助程序执行失败：{{reason}}",
+      "noCommandDetails": "远端未返回错误输出，请打开软件日志查看诊断信息。"
     },
     "activation": {
       "missingDependency": "缺少必需的插件，请检查依赖并安装后重试。",
