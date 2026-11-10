@@ -6,6 +6,10 @@ import { useWorkspace } from "@/store/workspace";
 
 /** The backend verifies the actual server key before authenticating with the vault. */
 export async function connectHostDirectly(host: Host): Promise<void> {
+  if (host.source) {
+    useDialogs.getState().openConnect(host, "terminal");
+    return;
+  }
   const session = await useSsh
     .getState()
     .connect({ hostId: host.id, cols: 120, rows: 32 }, (error) =>

@@ -15,6 +15,7 @@ import {
   EDITOR_DOCUMENT_MAX_BYTES,
 } from "@/store/editors";
 import { useHosts } from "@/store/hosts";
+import { sourceHosts, type HostSourcesSnapshot } from "@/lib/hosts/sources";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
@@ -141,11 +142,25 @@ export async function runPluginWorkspaceRequest(
     }
     case "workspace.openHost": {
       const hostId = text(params, "hostId");
+      if (hostId.startsWith("source:")) {
+        const discovered = await invoke<HostSourcesSnapshot>("plugin_host_sources_snapshot");
+        await authorizeRequest();
+        const hosts = sourceHosts(discovered);
+        const host = hosts.find((item) => item.id === hostId);
+        if (!host) throw new Error("plugin.hostSources.unavailable");
+        useHosts.getState().setSourceHosts(hosts);
+        useWorkspace.getState().openHost(host, { preview: false });
+        break;
+      }
       const snapshot = await api.hostsSnapshot();
       await authorizeRequest();
       const host = snapshot.hosts.find((item) => item.id === hostId);
       if (!host) throw new Error("host.notFound");
-      useHosts.setState({ ...snapshot, loaded: true });
+      useHosts.setState((state) => ({
+        groups: snapshot.groups,
+        hosts: [...snapshot.hosts, ...state.hosts.filter((item) => item.source)],
+        loaded: true,
+      }));
       useWorkspace.getState().openHost(host, { preview: false });
       break;
     }

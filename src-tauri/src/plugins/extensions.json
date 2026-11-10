@@ -76,6 +76,31 @@
   ],
   "points": [
     {
+      "id": "hosts.sources",
+      "domain": "hosts",
+      "layer": "data",
+      "stability": "experimental",
+      "composition": "merge",
+      "ownership": "runtime",
+      "registration": {
+        "set": "hosts.setSource",
+        "remove": "hosts.removeSource",
+        "read": "hosts.sourcesSnapshot"
+      },
+      "permissions": ["hosts.read", "hosts.write"],
+      "readPermissions": ["hosts.read"],
+      "identity": "owner-source-content-sha256",
+      "persistence": false,
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "entriesPerSource": 256,
+        "entriesPerPlugin": 512,
+        "entriesTotal": 4096,
+        "serializedBytesTotal": 4194304
+      }
+    },
+    {
       "id": "hostList.columns",
       "domain": "hosts",
       "layer": "presentation",

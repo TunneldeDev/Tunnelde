@@ -120,6 +120,7 @@ function HostConnectDialog({
   }, [host.id]);
 
   useEffect(() => {
+    if (host.source) return;
     let alive = true;
     api
       .credentialStatus(host.id)
@@ -132,7 +133,7 @@ function HostConnectDialog({
     return () => {
       alive = false;
     };
-  }, [host.id]);
+  }, [host.id, host.source]);
 
   useEffect(() => {
     let active = true;
@@ -174,7 +175,7 @@ function HostConnectDialog({
     }
   };
 
-  const setup = intent === "installKey";
+  const setup = intent === "installKey" && !host.source;
   const unsupported = !setup && host.authMethod === "agent";
   const interactive = setup || (host.authMethod !== "key" && !unsupported);
   const hasCredentials = !interactive || password.length > 0 || saved;
@@ -276,7 +277,7 @@ function HostConnectDialog({
       }
       return;
     }
-    if (interactive && remember && password.length > 0) {
+    if (!host.source && interactive && remember && password.length > 0) {
       try {
         await api.credentialSave(host.id, password);
       } catch (cause) {
@@ -392,6 +393,7 @@ function HostConnectDialog({
       }
     >
       <div className="connect">
+        {host.source && <p className="connect__hint">{t("hostSources.connectionHint")}</p>}
         {setup ? (
           <p className="connect__hint">
             {t("connect.installKeyHint", {
@@ -551,7 +553,7 @@ function HostConnectDialog({
                 }}
               />
             </Field>
-            {!setup ? (
+            {!setup && !host.source ? (
               <div className="connect__remember">
                 <Switch
                   label={t("connect.remember")}
@@ -567,7 +569,7 @@ function HostConnectDialog({
                 ) : null}
               </div>
             ) : null}
-            {!setup ? (
+            {!setup && !host.source ? (
               <div className="connect__actions">
                 <Button
                   variant="ghost"

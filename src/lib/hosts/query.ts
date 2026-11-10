@@ -15,7 +15,16 @@ export interface HostQuery extends SearchQuery {
 
 /** Keep quoted tags together, including an unfinished quote while the user types. */
 export function parseHostQuery(query: string): HostQuery {
-  const parsed = parseSearchQuery(query, ["tag", "is", "name", "host", "user", "port"]);
+  const parsed = parseSearchQuery(query, [
+    "tag",
+    "is",
+    "name",
+    "host",
+    "user",
+    "port",
+    "source",
+    "plugin",
+  ]);
   return {
     ...parsed,
     tags: parsed.filters
@@ -29,12 +38,21 @@ export function parseHostQuery(query: string): HostQuery {
 
 export function matchesHostQuery(host: Host, query: HostQuery): boolean {
   const tags = host.tags.map((tag) => tag.toLocaleLowerCase());
-  const haystack = [host.name, host.host, host.username, ...host.tags]
+  const haystack = [
+    host.name,
+    host.host,
+    host.username,
+    host.source?.label ?? "",
+    host.source?.pluginName ?? "",
+    ...host.tags,
+  ]
     .join("\n")
     .toLocaleLowerCase();
   return matchesSearch(query, haystack, {
     tag: tags,
-    is: host.favorite ? ["favorite"] : [],
+    is: [...(host.favorite ? ["favorite"] : []), host.source ? "discovered" : "saved"],
+    source: host.source ? [host.source.id, host.source.label] : [],
+    plugin: host.source?.pluginId,
     name: (value) => searchText(host.name).includes(value),
     host: (value) => searchText(host.host).includes(value),
     user: host.username,

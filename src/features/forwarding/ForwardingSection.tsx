@@ -43,7 +43,21 @@ const initial = (hostId: string): ForwardRule => ({
   targetPort: 80,
 });
 
-export function ForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
+export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
+  const { t } = useTranslation();
+  const openHost = useDialogs((state) => state.openHost);
+  if (props.host.source)
+    return (
+      <section className="card">
+        <p className="connect__hint">{t("hostSources.configureHint")}</p>
+        <Button variant="secondary" size="sm" onClick={() => openHost(props.host)}>
+          {t("hostSources.saveCopy")}
+        </Button>
+      </section>
+    );
+  return <SavedForwardingSection {...props} />;
+}
+function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
   const origin = useId();
   const sessions = useSsh((state) => state.sessions);

@@ -78,7 +78,8 @@ export const useSsh = create<SshStore>((set, get) => ({
         set((state) => ({
           sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
         }));
-        void api.markHostUsed(request.hostId).catch(() => undefined);
+        if (!request.hostId.startsWith("source:"))
+          void api.markHostUsed(request.hostId).catch(() => undefined);
         return session;
       } catch (error) {
         if (onError) onError(error);

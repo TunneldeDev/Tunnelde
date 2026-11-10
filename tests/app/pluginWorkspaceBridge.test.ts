@@ -183,6 +183,45 @@ afterEach(() => {
 });
 
 describe("plugin workspace bridge authorization and live state", () => {
+  it("opens authoritative discovered hosts and preserves discovery when opening a saved host", async () => {
+    const discovered = {
+      revision: 1,
+      items: [
+        {
+          pluginId: "inventory",
+          pluginName: "Inventory",
+          id: "cloud",
+          label: "Cloud",
+          entries: [
+            {
+              id: "one",
+              hostId: "source:digest",
+              name: "Node",
+              host: "192.0.2.1",
+              username: "qa",
+              port: 22,
+            },
+          ],
+        },
+      ],
+    };
+    mocks.invoke.mockImplementation(async (method) =>
+      method === "plugin_host_sources_snapshot" ? discovered : undefined,
+    );
+    await runPluginWorkspaceRequest(request("workspace.openHost", { hostId: "source:digest" }));
+    expect(useWorkspace.getState().tabs.some((tab) => tab.hostId === "source:digest")).toBe(true);
+    expect(
+      useHosts.getState().hosts.find((item) => item.id === "source:digest")?.source?.pluginId,
+    ).toBe("inventory");
+    await runPluginWorkspaceRequest(request("workspace.openHost", { hostId: host.id }));
+    expect(useHosts.getState().hosts.some((item) => item.id === "source:digest")).toBe(true);
+    mocks.invoke.mockImplementation(async (method) =>
+      method === "plugin_host_sources_snapshot" ? { revision: 2, items: [] } : undefined,
+    );
+    await expect(
+      runPluginWorkspaceRequest(request("workspace.openHost", { hostId: "source:digest" })),
+    ).rejects.toThrow("hostSources.unavailable");
+  });
   it("reconciles host titles and invalidates local and remote views after event recovery", async () => {
     useWorkspace.getState().openHost(host);
     mocks.hostsSnapshot.mockResolvedValue({

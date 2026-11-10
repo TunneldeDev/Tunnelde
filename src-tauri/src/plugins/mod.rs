@@ -11,6 +11,7 @@ mod host;
 pub mod host_columns;
 pub mod host_fields;
 pub mod host_list;
+pub mod host_sources;
 mod logging;
 pub mod manifest;
 pub mod marketplace;
@@ -203,6 +204,7 @@ pub struct PluginsManager {
     tab_bar: contributions::Registry<tab_bar::TabBarItem>,
     host_list: contributions::Registry<host_list::DecorationSet>,
     host_columns: contributions::Registry<host_columns::Column>,
+    host_sources: contributions::Registry<host_sources::Source>,
     sessions: Arc<resources::Registry<String>>,
 }
 
@@ -432,6 +434,7 @@ impl PluginsManager {
             tab_bar: contributions::Registry::default(),
             host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
+            host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
             sessions: resources::Registry::new(8, 64),
         }
     }

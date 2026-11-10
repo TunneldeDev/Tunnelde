@@ -105,7 +105,8 @@ export function nativeContributionSource<
     | "plugin://status-bar-changed"
     | "plugin://tab-bar-changed"
     | "plugin://host-list-changed"
-    | "plugin://host-columns-changed",
+    | "plugin://host-columns-changed"
+    | "plugin://host-sources-changed",
 >(
   event: K,
   options: Pick<ContributionSource<NativeEvents[K]>, "read" | "apply" | "clear" | "report">,

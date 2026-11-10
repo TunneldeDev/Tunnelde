@@ -1,3 +1,4 @@
+import type { HostSourcesSnapshot } from "@/lib/hosts/sources";
 import { listen } from "@tauri-apps/api/event";
 import { reportError } from "@/lib/diagnostics";
 import type {
@@ -21,6 +22,7 @@ import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
 
 export interface NativeEvents {
   "plugin://host-columns-changed": HostColumnsSnapshot;
+  "plugin://host-sources-changed": HostSourcesSnapshot;
   "hosts://fields-changed": { pluginId: string; hostId: string; revision: number };
   "plugin://host-list-changed": HostDecorationSnapshot;
   "plugin://tab-bar-changed": TabBarSnapshot;

@@ -20,6 +20,7 @@ pub(super) fn remove_runtime(
     super::tab_bar::remove_runtime(app, owner, &generation);
     super::host_list::remove_runtime(app, owner, &generation);
     super::host_columns::remove_runtime(app, owner, &generation);
+    super::host_sources::remove_runtime(app, owner, &generation);
 }
 
 #[derive(Clone)]

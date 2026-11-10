@@ -1,3 +1,4 @@
+import type { HostSourceReference } from "@/lib/hosts/sources";
 import type { HostFieldsSchema } from "@/lib/hosts/fields";
 import type { HostListPreferences } from "@/lib/hosts/columns";
 import type { ShortcutRules } from "@/lib/keyboard/routing";
@@ -134,6 +135,7 @@ export interface Group {
 export type AuthMethod = "password" | "key" | "agent" | "keyboardInteractive";
 
 export interface Host {
+  source?: HostSourceReference;
   id: string;
   groupId: string | null;
   name: string;

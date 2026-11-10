@@ -56,6 +56,19 @@ pub(crate) struct Hosts<'a, E: Effects> {
     effects: E,
 }
 
+/// Resolve a public, content-bound dynamic identity or an ordinary saved host.
+/// Source metadata never enters the database or credential vault implicitly.
+pub(crate) fn resolve(app: &AppHandle, id: &str) -> AppResult<Host> {
+    if id.starts_with(crate::plugins::host_sources::PREFIX) {
+        crate::plugins::host_sources::resolve(app, id)
+    } else {
+        use tauri::Manager;
+        app.state::<AppState>()
+            .db
+            .with(|conn| db::hosts::find_host(conn, id))
+    }
+}
+
 /// A snapshot is read under one database lock; no transport or UI state leaks.
 pub(crate) fn snapshot(db: &Database) -> AppResult<Snapshot> {
     db.with(|conn| {
