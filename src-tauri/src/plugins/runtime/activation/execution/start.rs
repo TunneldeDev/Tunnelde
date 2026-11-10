@@ -1,4 +1,3 @@
-use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
@@ -7,9 +6,11 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
 use crate::plugins::{
-    api, config, host::PluginHost, manifest, node, security, PluginInfo, PluginStatus,
-    PluginsManager, StartPermit, STATE_EVENT,
+    api, host::PluginHost, manifest, security, PluginInfo, PluginStatus, PluginsManager,
+    StartPermit, STATE_EVENT,
 };
+
+use super::preflight::{self, PreparedEngine};
 
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 
@@ -30,20 +31,18 @@ impl PluginsManager {
         if instance.retired {
             return Err(AppError::NotFound("plugin.notFound".into()));
         }
-        instance.require_runtime()?;
         let _ = self.runtime_app.set(app.clone());
-        if let Some(frontend) = &instance.manifest.frontend {
-            frontend.require_sdk()?;
-        }
-        let actual_fingerprint = self
-            .security
-            .guard(&lease, security::fingerprint_async(instance.dir.clone()))
-            .await?;
-        if actual_fingerprint != lease.fingerprint
-            || instance.manifest.permissions != lease.permissions
-        {
-            return Err(AppError::validation("pluginSecurity.changed"));
-        }
+        let state = app.state::<crate::state::AppState>();
+        let prepared = preflight::prepare(
+            &self.security,
+            &lease,
+            &instance,
+            &state.db,
+            state
+                .storage
+                .dir(crate::storage::layout::Category::Runtimes),
+        )
+        .await?;
         if instance
             .runtime_lease
             .as_ref()
@@ -73,105 +72,46 @@ impl PluginsManager {
         ownership.store(activation.owned(), Ordering::Release);
         instance.runtime_lease = Some(lease.clone());
         instance.runtime_id = Some(self.security.lease_stamp(&lease));
-        let state = app.state::<crate::state::AppState>();
         self.security.mark_running(&state.db)?;
 
-        if matches!(
-            instance.manifest.runtime.as_deref(),
-            Some("declarative" | "frontend")
-        ) {
-            self.security.native_ready(&lease)?;
-            activation.commit();
-            instance.status = PluginStatus::Running;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            let _ = app.emit(STATE_EVENT, &info);
-            drop(instance);
-            return Ok(info);
-        }
-
-        if instance.is_wasm() {
-            // The module is preloaded when the plugin is scanned, but a stop
-            // drops it, so reload on demand to keep start idempotent.
-            if instance.wasm.is_none() {
-                match instance.load_wasm() {
-                    Ok(wasm) => instance.wasm = Some(wasm),
-                    Err(error) => {
-                        instance.status = PluginStatus::Failed;
-                        instance.error = Some(error.to_string());
-                        let info = instance.info();
-                        self.remember(&info);
-                        let _ = app.emit(STATE_EVENT, &info);
-                        drop(instance);
-                        return Ok(info);
-                    }
+        let runtime = match prepared {
+            PreparedEngine::Passive => {
+                self.security.native_ready(&lease)?;
+                activation.commit();
+                instance.status = PluginStatus::Running;
+                instance.error = None;
+                let info = instance.info();
+                self.remember(&info);
+                let _ = app.emit(STATE_EVENT, &info);
+                drop(instance);
+                return Ok(info);
+            }
+            PreparedEngine::Wasm(wasm) => {
+                if let Some(wasm) = wasm {
+                    instance.wasm = Some(wasm);
                 }
+                self.security.native_ready(&lease)?;
+                activation.commit();
+                instance.status = PluginStatus::Running;
+                instance.error = None;
+                let info = instance.info();
+                self.remember(&info);
+                let _ = app.emit(STATE_EVENT, &info);
+                drop(instance);
+                return Ok(info);
             }
-            self.security.native_ready(&lease)?;
-            activation.commit();
-            instance.status = PluginStatus::Running;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            let _ = app.emit(STATE_EVENT, &info);
-            drop(instance);
-            return Ok(info);
-        }
-
-        if instance.host.is_some() {
-            self.security.native_ready(&lease)?;
-            activation.commit();
-            return Ok(instance.info());
-        }
-
-        let config = state.db.with(config::load)?;
-        let runtime = self
-            .security
-            .guard(
-                &lease,
-                node::resolve(
-                    state
-                        .storage
-                        .dir(crate::storage::layout::Category::Runtimes),
-                    config.node_path.as_deref().map(Path::new),
-                    config.node_system_allowed,
-                ),
-            )
-            .await
-            .inspect_err(|_| {
-                self.remember_source(id, None);
-            })?;
-        if !runtime.compatible {
-            return Err(AppError::validation("node.required"));
-        }
-        let node = runtime
-            .path
-            .ok_or_else(|| AppError::validation("node.required"))?;
-        if let Some(range) = instance.manifest.engines.get("node") {
-            let version = runtime
-                .version
-                .as_deref()
-                .and_then(|value| semver::Version::parse(value.trim_start_matches('v')).ok());
-            if !version.is_some_and(|version| {
-                semver::VersionReq::parse(range).is_ok_and(|req| req.matches(&version))
-            }) {
-                return Err(AppError::validation("node.incompatible"));
+            PreparedEngine::ExistingNode => {
+                self.security.native_ready(&lease)?;
+                activation.commit();
+                return Ok(instance.info());
             }
-        }
+            PreparedEngine::Node(runtime) => runtime,
+        };
         let entry = manifest::entry_path(&instance.dir, &instance.manifest.main)?;
-        self.remember_source(
-            id,
-            runtime.source.clone().map(|source| (source, lease.clone())),
-        );
-        if matches!(
-            runtime.source.as_deref(),
-            Some("environment" | "path" | "registry" | "shell")
-        ) && !state.db.with(config::load)?.node_system_allowed
-        {
-            self.remember_source(id, None);
-            return Err(AppError::validation("node.required"));
-        }
+        self.remember_source(id, Some((runtime.source().to_owned(), lease.clone())));
+        runtime
+            .revalidate(&state.db)
+            .inspect_err(|_| self.remember_source(id, None))?;
         self.security
             .authorize(
                 id,
@@ -186,7 +126,7 @@ impl PluginsManager {
             .guard(
                 &lease,
                 PluginHost::spawn(
-                    &node,
+                    runtime.path(),
                     &entry,
                     &instance.dir,
                     Some(api::HostContext {
@@ -243,7 +183,7 @@ impl PluginsManager {
             Ok(_) => {
                 self.security.native_ready(&lease)?;
                 activation.commit();
-                instance.node_source = runtime.source;
+                instance.node_source = Some(runtime.source().to_owned());
                 instance.status = PluginStatus::Running;
                 instance.error = None;
             }
