@@ -1303,6 +1303,14 @@
       "changed": "History or its session changed. Read a fresh snapshot and try again.",
       "busy": "History is loading or unavailable. Refresh before changing entries.",
       "permissionDenied": "This history provider does not have permission for this action."
+    },
+    "backgroundTasks": {
+      "invalid": "The background task request or progress is invalid.",
+      "changed": "The task list changed. Use the current task and try again.",
+      "actionUnavailable": "This task action is unavailable or disabled.",
+      "inactive": "This task has settled or its execution has been cancelled.",
+      "limit": "This plugin already has eight pending background tasks.",
+      "busy": "This task action is already pending."
     }
   },
   "themes": {
@@ -1389,7 +1397,9 @@
       "forwardsWrite": "Manage and start local or remote port forwarding",
       "editorRead": "Read documents in open editors",
       "editorWrite": "Modify editor buffers (without saving automatically)",
-      "trustedUi": "Load trusted code into the application interface."
+      "trustedUi": "Load trusted code into the application interface.",
+      "backgroundTasksRead": "Read visible background tasks across features",
+      "backgroundTasksWrite": "Invoke available background task actions"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -2074,7 +2084,8 @@
     "fallback": "Using the built-in interface: the selected provider is unavailable.",
     "restore": "Restore built-in interface",
     "terminal": "Terminal",
-    "history": "Command history"
+    "history": "Command history",
+    "backgroundTasks": "Background tasks"
   },
   "hostFields": {
     "title": "Plugin host fields",

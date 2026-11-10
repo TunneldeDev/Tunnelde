@@ -40,7 +40,8 @@ mod tests {
                 "terminal",
                 "history",
                 "forwarding",
-                "monitor"
+                "monitor",
+                "backgroundTasks"
             ])
         );
         assert_eq!(
@@ -60,6 +61,17 @@ mod tests {
             providers["monitor"]["refresh"],
             "coalesced-existing-sampler"
         );
+        assert_eq!(
+            providers["backgroundTasksPermissions"],
+            serde_json::json!(["backgroundTasks.read"])
+        );
+        assert_eq!(
+            providers["backgroundTasks"]["writePermission"],
+            "backgroundTasks.write"
+        );
+        assert_eq!(providers["backgroundTasks"]["pageSize"], 128);
+        assert_eq!(providers["backgroundTasks"]["pageTextLimit"], 65536);
+        assert_eq!(catalogue["frontend"]["backgroundTasks"]["pendingLimit"], 8);
         assert_eq!(providers["selection"], "explicit-user");
         assert_eq!(providers["requiredSlot"], "Workspace");
         assert_eq!(providers["fallback"], "built-in");

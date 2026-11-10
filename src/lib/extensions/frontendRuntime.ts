@@ -10,6 +10,8 @@ import {
 } from "./resourceScope";
 import { uiSdk, type FrontendContext, type FrontendModule, type FrontendViewProps } from "./uiSdk";
 
+import { createBackgroundTaskRunner } from "./backgroundTasks/execution";
+
 interface Session {
   token: string;
   pluginId: string;
@@ -124,6 +126,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
             pluginId: plugin.id,
             signal: scope.signal,
             resources: scope,
+            backgroundTasks: createBackgroundTaskRunner(scope.signal, live, plugin.id),
             api: Object.freeze({
               call: <T>(method: string, params: Record<string, unknown> = {}) => {
                 live();

@@ -353,3 +353,17 @@
     animation: none;
   }
 }
+
+.background-tasks-surface {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.background-tasks-surface > .provider-content {
+  flex: 1 0 auto;
+  overflow: visible;
+}

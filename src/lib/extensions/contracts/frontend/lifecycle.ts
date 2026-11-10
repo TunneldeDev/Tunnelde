@@ -2,6 +2,7 @@
 import type * as React from "react";
 import type { UiSdk } from "../components/sdk.js";
 import type { UiResourceScope } from "../runtime/resources.js";
+import type { FrontendBackgroundTaskRunner } from "../backgroundTasks/execution.js";
 import type { FrontendViewProps } from "./views.js";
 
 export interface FrontendContext {
@@ -9,6 +10,8 @@ export interface FrontendContext {
   readonly pluginId: string;
   readonly signal: AbortSignal;
   readonly resources: UiResourceScope;
+  /** Available on hosts with frontend.backgroundTasks execution discovery. */
+  readonly backgroundTasks?: FrontendBackgroundTaskRunner;
   /** Calls retain existing RPC authorization, size limits and stable contracts. */
   readonly api: { call<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> };
   readonly views: {

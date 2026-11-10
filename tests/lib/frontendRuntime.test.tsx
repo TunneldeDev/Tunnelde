@@ -3,6 +3,7 @@ import * as React from "react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { PluginInfo } from "@/lib/api/types";
 import { createFrontendRuntime, type FrontendTransport } from "@/lib/extensions/frontendRuntime";
+import { backgroundTasksBlockSuspension, useBackgroundTasks } from "@/lib/tasks/background";
 import type { FrontendContext, FrontendModule } from "@/lib/extensions/uiSdk";
 
 const plugin = {
@@ -208,4 +209,61 @@ it("restricts stopped or absent modules and stops only the changed owner on reco
   await f.runtime.ensure(plugin);
   f.runtime.reconcile([plugin], true);
   expect(f.runtime.view(plugin.id, "main")).toBeUndefined();
+});
+
+it("revokes owned task reporting on stop and keeps hidden JS alive until settlement", async () => {
+  let context!: FrontendContext;
+  const f = fixture((ctx) => {
+    context = ctx;
+  });
+  await f.runtime.ensure(plugin);
+  let finish!: () => void;
+  let taskSignal!: AbortSignal;
+  const result = context.backgroundTasks!.run(
+    { title: "Hidden owned work", visible: false },
+    (task) => {
+      taskSignal = task.signal;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    },
+  );
+  const handled = expect(result).rejects.toMatchObject({ name: "AbortError" });
+  expect(
+    useBackgroundTasks.getState().items.find((item) => item.title === "Hidden owned work")
+      ?.pluginId,
+  ).toBe(plugin.id);
+  expect(backgroundTasksBlockSuspension()).toBe(true);
+  f.runtime.stop(plugin.id);
+  expect(taskSignal.aborted).toBe(true);
+  expect(backgroundTasksBlockSuspension()).toBe(true);
+  await expect(context.backgroundTasks!.run({ title: "Late work" }, () => {})).rejects.toThrow(
+    "closed",
+  );
+  finish();
+  await handled;
+  expect(backgroundTasksBlockSuspension()).toBe(false);
+});
+
+it("cancels tasks started by a failed activation without claiming uncooperative work has stopped", async () => {
+  let finish!: () => void;
+  let pending!: Promise<unknown>;
+  let signal!: AbortSignal;
+  const f = fixture((ctx) => {
+    pending = ctx
+      .backgroundTasks!.run({ title: "Partial activation", visible: false }, (task) => {
+        signal = task.signal;
+        return new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      })
+      .catch((error) => error);
+    throw Error("Activation failed");
+  });
+  await expect(f.runtime.ensure(plugin)).rejects.toThrow("Activation failed");
+  expect(signal.aborted).toBe(true);
+  expect(backgroundTasksBlockSuspension()).toBe(true);
+  finish();
+  expect(await pending).toMatchObject({ name: "AbortError" });
+  expect(backgroundTasksBlockSuspension()).toBe(false);
 });

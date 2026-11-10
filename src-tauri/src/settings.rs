@@ -276,6 +276,7 @@ impl Settings {
                     | "history"
                     | "forwarding"
                     | "monitor"
+                    | "backgroundTasks"
             ) && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
                 !id.is_empty()
                     && id.len() <= 128

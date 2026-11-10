@@ -14,7 +14,7 @@ const PERMISSION_GROUPS = {
   execution: ["process", "network", "secrets"],
   remote: ["hosts", "sessions", "ssh", "sftp", "monitor", "history", "mounts", "forwards"],
   files: ["fs"],
-  workspace: ["workspace", "clipboard"],
+  workspace: ["workspace", "clipboard", "backgroundTasks"],
   application: ["app", "settings", "log"],
   other: [],
 } as const;

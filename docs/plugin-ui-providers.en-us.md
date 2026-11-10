@@ -2,6 +2,8 @@
 
 [简体中文](plugin-ui-providers.zh-cn.md) · [Trusted UI SDK](plugin-ui.en-us.md)
 
+[Background task extensions](plugin-background-tasks.en-us.md) wrap plugin work and compose the shared task list.
+
 [Monitoring providers](plugin-monitor-ui.en-us.md) compose the shared charts and bounded resource data in the page and remote inspector.
 
 [File browser providers](plugin-file-browser.en-us.md) additionally compose or replace the live file listing.
