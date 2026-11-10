@@ -139,6 +139,14 @@ settlement; failed settlement quarantines that slot. Shared failures preserve th
 original error code and compatibility details. The bootstrap activation listener
 only loads the exact already admitted runtime; it cannot approve or start plugins.
 
+Before registering a runtime, the host reads the installed manifest again,
+compares it with the loaded metadata, and verifies the approved package bytes.
+It checks the host and UI SDK ranges, compiles a missing WASM module, or prepares
+the selected Node runtime before activation. A failed preparation does not create
+a runtime or invalidate the original grant. Node selection and system-runtime
+consent are checked again immediately before spawning. An already running Node
+process is reused without resolving another executable.
+
 Engine initialization takes a shared package read lock; installation, replacement,
 removal and reload take an exclusive write lock. The read lock is released before
 waiting for frontend readiness. Package replacement and removal wait for the local
