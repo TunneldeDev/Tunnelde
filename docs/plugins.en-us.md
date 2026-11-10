@@ -754,3 +754,5 @@ The built-in list groups entries by source and identifies the supplying plugin. 
 Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bind plugin identity, source ID and the complete entry, including the connection endpoint. Changing any entry metadata changes its ID; a stale dialog fails instead of connecting a replacement endpoint. Source disappearance during setup rejects the pending connection. This does not revoke a connection that has already been established by the user. Plugin-created connections still follow runtime/client ownership and explicit handoff rules. Stop, crash, restart, revocation and restricted mode remove the runtime's sources; no discovery records are persisted implicitly. Runtime source removal does not erase saved copies or trusted server keys.
 
 [Experimental terminal component and subscriptions](plugin-terminal.en-us.md).
+
+[Experimental command-history component and bounded pages](plugin-history.en-us.md).

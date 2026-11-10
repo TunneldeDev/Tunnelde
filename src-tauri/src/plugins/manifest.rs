@@ -391,7 +391,7 @@ impl PluginManifest {
                 || view.provider.as_deref().is_some_and(|target| {
                     !matches!(
                         target,
-                        "hostList" | "workbench" | "fileBrowser" | "terminal"
+                        "hostList" | "workbench" | "fileBrowser" | "terminal" | "history"
                     ) || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
@@ -404,6 +404,10 @@ impl PluginManifest {
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                         || (target == "terminal"
                             && ["sessions.read", "ssh.exec"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "history"
+                            && ["sessions.read", "history.read"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                 })
@@ -639,6 +643,17 @@ mod tests {
             assert!(save(&value).is_err());
         }
         value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "ssh.exec"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "history".into();
+        for omitted in ["ui.trusted", "sessions.read", "history.read"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "sessions.read", "history.read"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "history.read"]);
         assert!(save(&value).is_ok());
         value["views"][0]["location"] = "sidebar".into();
         assert!(save(&value).is_err());

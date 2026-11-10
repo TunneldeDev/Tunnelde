@@ -68,7 +68,7 @@ export interface Settings {
   showStatusBar: boolean;
   uiProviders: Partial<
     Record<
-      "hostList" | "workbench" | "fileBrowser" | "terminal",
+      "hostList" | "workbench" | "fileBrowser" | "terminal" | "history",
       { pluginId: string; viewId: string }
     >
   >;
@@ -463,7 +463,7 @@ export interface PluginView {
   location?: "sidebar" | "workspace";
   kind?: "chat" | "blocks" | "component";
   icon?: string;
-  provider?: "hostList" | "workbench" | "fileBrowser" | "terminal";
+  provider?: "hostList" | "workbench" | "fileBrowser" | "terminal" | "history";
 }
 
 export interface PluginEvent {

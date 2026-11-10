@@ -1,5 +1,5 @@
 import { CornerDownLeft, Trash2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, IconButton } from "@/components/ui/form/Button";
@@ -16,43 +16,39 @@ import type { HistoryEntry } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
 import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
+import { HistorySurface } from "./HistorySurface";
+import { createHistoryStore } from "./historyStore";
+
+const NO_ENTRIES: readonly HistoryEntry[] = Object.freeze([]);
 
 export function HistoryPage({ sessionId }: { sessionId: string }) {
   const { t, i18n } = useTranslation();
   const session = useSsh((state) => state.sessions.find((item) => item.id === sessionId) ?? null);
   const confirm = useDialogs((state) => state.confirm);
-  const [snapshot, setSnapshot] = useState<{ hostId: string; entries: HistoryEntry[] } | null>(
-    null,
-  );
   const [query, setQuery] = useState("");
   const hostId = session?.hostId ?? null;
-  const entries = snapshot?.hostId === hostId ? snapshot.entries : null;
+  const store = useMemo(
+    () =>
+      createHistoryStore(
+        () => (hostId ? api.historyList(hostId, 500) : Promise.resolve([])),
+        (error) => toast(translateError(error), "error"),
+      ),
+    [hostId],
+  );
+  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const entries = snapshot.entries;
 
   useEffect(() => {
-    let alive = true;
-    let revision = 0;
-    const load = () => {
-      if (!hostId) return;
-      const requested = ++revision;
-      void api
-        .historyList(hostId)
-        .then((list) => {
-          if (alive && revision === requested) setSnapshot({ hostId, entries: list });
-        })
-        .catch((error: unknown) => {
-          if (alive && revision === requested) toast(translateError(error), "error");
-        });
-    };
     const lifetime = new AbortController();
     void domainEvents.onHistory(({ hostId: changedHost }) => {
-      if (!changedHost || changedHost === hostId) load();
+      if (!changedHost || changedHost === hostId) store.refresh();
     }, lifetime.signal);
-    load();
+    const stop = store.start();
     return () => {
-      alive = false;
       lifetime.abort();
+      stop();
     };
-  }, [hostId]);
+  }, [hostId, store]);
 
   if (!session) {
     return (
@@ -63,28 +59,29 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
   }
 
   const search = parseSearchQuery(query, ["command", "date"]);
-  const filtered = (hostId ? (entries ?? []) : []).filter((entry) =>
+  const filtered = (hostId ? (entries ?? NO_ENTRIES) : NO_ENTRIES).filter((entry) =>
     matchesSearch(search, entry.command, {
       command: (value) => entry.command.toLocaleLowerCase().includes(value),
       date: (value) => matchesSearchDate(entry.executedAt, value),
     }),
   );
 
-  const insert = (entry: HistoryEntry) => {
-    void api
-      .sshWrite(session.id, encodeBase64(`${entry.command}\r`))
-      .then(() => recordTerminalCommand(session.hostId, entry.command))
-      .catch((error) => toast(translateError(error), "error"));
+  const validate = () => {
+    const current = useSsh.getState().sessions.find((item) => item.id === session.id);
+    return current?.hostId === hostId && store.getSnapshot() === snapshot;
+  };
+  const insert = async (entry: Readonly<HistoryEntry>) => {
+    if (!validate() || snapshot.busy || snapshot.error) throw new Error("plugin.history.changed");
+    await api.sshWrite(session.id, encodeBase64(`${entry.command}\r`));
+    await recordTerminalCommand(session.hostId, entry.command);
+  };
+  const remove = async (entry: Readonly<HistoryEntry>) => {
+    if (!validate() || snapshot.busy || snapshot.error) throw new Error("plugin.history.changed");
+    await api.historyDelete(entry.id);
+    notifyHistoryChanged(session.hostId);
   };
 
-  const remove = (entry: HistoryEntry) => {
-    void api
-      .historyDelete(entry.id)
-      .then(() => notifyHistoryChanged(session.hostId))
-      .catch((error) => toast(translateError(error), "error"));
-  };
-
-  const clear = () => {
+  const clear = (authorize: () => void = () => {}) => {
     confirm({
       title: t("history.clearTitle"),
       body: t("history.clearBody", { name: session.title }),
@@ -92,6 +89,10 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
       danger: true,
       onConfirm: async () => {
         try {
+          authorize();
+          // Recheck the session when the user confirms, not only when opening the dialog.
+          if (useSsh.getState().sessions.find((item) => item.id === session.id)?.hostId !== hostId)
+            throw new Error("plugin.history.changed");
           await api.historyClear(session.hostId);
           notifyHistoryChanged(session.hostId);
         } catch (error) {
@@ -124,39 +125,75 @@ export function HistoryPage({ sessionId }: { sessionId: string }) {
           variant="ghost"
           size="sm"
           leading={<Trash2 size={13} />}
-          disabled={!entries || entries.length === 0}
-          onClick={clear}
+          disabled={snapshot.busy || !!snapshot.error || !entries || entries.length === 0}
+          onClick={() => clear()}
         >
           {t("history.clear")}
         </Button>
       </header>
 
-      <div className="history-list">
-        {entries !== null && filtered.length === 0 ? (
-          <p className="history-empty">{t("history.empty")}</p>
-        ) : null}
-        {filtered.map((entry) => (
-          <div className="history-row" key={entry.id}>
-            <code className="history-row__command" title={entry.command}>
-              {entry.command}
-            </code>
-            <span className="history-row__time">{formatRelative(entry.executedAt, locale)}</span>
-            <span className="history-row__actions">
-              <IconButton label={t("history.insert")} size="sm" onClick={() => insert(entry)}>
-                <CornerDownLeft size={12} />
-              </IconButton>
-              <IconButton
-                label={t("history.delete")}
-                size="sm"
-                danger
-                onClick={() => remove(entry)}
-              >
-                <Trash2 size={12} />
-              </IconButton>
-            </span>
-          </div>
-        ))}
-      </div>
+      {snapshot.error ? (
+        <div className="history-error" role="alert">
+          <span>{translateError(snapshot.error)}</span>
+          <Button variant="ghost" size="sm" onClick={store.refresh}>
+            {t("common.retry")}
+          </Button>
+        </div>
+      ) : null}
+      <HistorySurface
+        sessionId={session.id}
+        hostId={session.hostId}
+        title={session.title}
+        query={query}
+        entries={filtered}
+        busy={snapshot.busy}
+        error={snapshot.error ? translateError(snapshot.error) : null}
+        actions={{
+          validate,
+          setQuery,
+          refresh: store.refresh,
+          delete: remove,
+          requestClear: clear,
+          execute: insert,
+        }}
+      >
+        <div className="history-list" aria-busy={snapshot.busy}>
+          {entries !== null && filtered.length === 0 ? (
+            <p className="history-empty">{t("history.empty")}</p>
+          ) : null}
+          {filtered.map((entry) => (
+            <div className="history-row" key={entry.id}>
+              <code className="history-row__command" title={entry.command}>
+                {entry.command}
+              </code>
+              <span className="history-row__time">{formatRelative(entry.executedAt, locale)}</span>
+              <span className="history-row__actions">
+                <IconButton
+                  label={t("history.insert")}
+                  size="sm"
+                  disabled={snapshot.busy || !!snapshot.error}
+                  onClick={() =>
+                    void insert(entry).catch((error) => toast(translateError(error), "error"))
+                  }
+                >
+                  <CornerDownLeft size={12} />
+                </IconButton>
+                <IconButton
+                  label={t("history.delete")}
+                  size="sm"
+                  danger
+                  disabled={snapshot.busy || !!snapshot.error}
+                  onClick={() =>
+                    void remove(entry).catch((error) => toast(translateError(error), "error"))
+                  }
+                >
+                  <Trash2 size={12} />
+                </IconButton>
+              </span>
+            </div>
+          ))}
+        </div>
+      </HistorySurface>
     </div>
   );
 }
