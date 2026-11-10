@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { ProviderSurface } from "@/components/layout/ProviderSurface";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
-import type { TerminalBridge } from "@/lib/extensions/terminal";
+import type { TerminalBridge } from "@/lib/extensions/terminal/bridge";
 
 /** The host retains the PTY, renderer and recovery UI; providers compose the live screen. */
 export function TerminalSurface({

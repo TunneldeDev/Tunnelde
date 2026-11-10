@@ -23,30 +23,12 @@ import type { FrontendTerminal } from "@/lib/extensions/contracts/terminal/surfa
 import type { FrontendHistory } from "@/lib/extensions/contracts/history/provider";
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
-import type { HistoryContext } from "@/lib/extensions/history";
+import type { HistoryContext } from "@/lib/extensions/history/context";
 
-function createProviderLease() {
-  let closed = false;
-  const subscriptions = new Set<() => void>();
-  return {
-    isClosed: () => closed,
-    activate: () => {
-      closed = false;
-    },
-    close: () => {
-      closed = true;
-      for (const release of [...subscriptions]) release();
-    },
-    retain: (release: () => void) => {
-      const cleanup = () => {
-        if (!subscriptions.delete(cleanup)) return;
-        release();
-      };
-      subscriptions.add(cleanup);
-      return cleanup;
-    },
-  };
-}
+import { createProviderLease } from "@/lib/extensions/runtime/providers/lease";
+import { guardFileBrowserProvider } from "@/lib/extensions/files/provider";
+import { guardTerminalProvider } from "@/lib/extensions/terminal/provider";
+import { guardHistoryProvider } from "@/lib/extensions/history/provider";
 
 class ProviderBoundary extends Component<
   {
@@ -202,150 +184,31 @@ export function ProviderSurface({
     )
       throw new Error("plugin.frontend.viewUnavailable");
   };
-  const files: FrontendFileBrowser | undefined =
-    fileBrowser && active
-      ? // Callbacks defer all ref reads until invocation; Object.freeze does not invoke them.
-        // eslint-disable-next-line react-hooks/refs
-        Object.freeze<FrontendFileBrowser>({
-          Entries: fileBrowser.Entries,
-          snapshot: fileBrowser.snapshot,
-          read: (request) => {
-            checkAccess(false);
-            return fileBrowser.read(request);
-          },
-          navigate: (path) => {
-            checkAccess();
-            fileBrowser.navigate(path);
-          },
-          refresh: () => {
-            checkAccess();
-            fileBrowser.refresh();
-          },
-          select: (paths) => {
-            checkAccess();
-            fileBrowser.select(paths);
-          },
-          open: (path, mode) => {
-            checkAccess();
-            fileBrowser.open(path, mode);
-          },
-        })
-      : undefined;
-  const terminalContext: FrontendTerminal | undefined =
+  // Factories capture authorization callbacks; they do not read host refs during render.
+  /* eslint-disable react-hooks/refs */
+  const files =
+    fileBrowser && active ? guardFileBrowserProvider(fileBrowser, checkAccess) : undefined;
+  const terminalContext =
     terminal && active
-      ? // Callbacks read refs only when invoked, never during Object.freeze.
-        // eslint-disable-next-line react-hooks/refs
-        Object.freeze<FrontendTerminal>({
-          Screen: terminal.Screen,
-          readState: () => {
-            checkAccess(false);
-            return terminal.readState();
-          },
-          readLines: (request) => {
-            checkAccess(false);
-            return terminal.readLines(request);
-          },
-          readSelection: () => {
-            checkAccess(false);
-            return terminal.readSelection();
-          },
-          subscribe: (receive, options) => {
-            checkAccess();
-            if (typeof receive !== "function") throw new Error("plugin.terminal.invalid");
-            let release = () => {};
-            const stop = terminal.subscribe((change) => {
-              try {
-                // Revocation can precede the next React commit.
-                checkAccess();
-              } catch {
-                release();
-                return;
-              }
-              try {
-                receive(change);
-              } catch (error) {
-                release();
-                reportError(
-                  `plugins.${selected!.plugin.id}.frontend`,
-                  "terminal.subscription",
-                  error,
-                );
-              }
-            }, options);
-            release = accessLease.retain(() => {
-              stop();
-              options?.signal?.removeEventListener("abort", release);
-            });
-            if (options?.signal?.aborted) release();
-            else options?.signal?.addEventListener("abort", release, { once: true });
-            return release;
-          },
-          focus: () => {
-            checkAccess();
-            terminal.focus();
-          },
-          paste: (text) => {
-            checkAccess();
-            terminal.paste(text);
-          },
-          send: (text) => {
-            checkAccess();
-            terminal.send(text);
-          },
-          scrollToLine: (row) => {
-            checkAccess();
-            terminal.scrollToLine(row);
-          },
-          clearSelection: () => {
-            checkAccess();
-            terminal.clearSelection();
-          },
-        })
+      ? guardTerminalProvider(terminal, checkAccess, accessLease, (error) =>
+          reportError(`plugins.${selected!.plugin.id}.frontend`, "terminal.subscription", error),
+        )
       : undefined;
-  const requireHistoryPermission = (permission: "history.write" | "ssh.exec") => {
-    checkAccess();
-    const plugin = usePlugins.getState().items.find((item) => item.id === selected!.plugin.id);
-    if (!plugin?.permissions.includes(permission))
-      throw new Error("plugin.history.permissionDenied");
-  };
-  const historyContext: FrontendHistory | undefined =
+  /* eslint-enable react-hooks/refs */
+  // Delayed confirmations retain a live permission check, never a cached grant.
+  /* eslint-disable react-hooks/refs */
+  const historyContext =
     history && active
-      ? // These callbacks only read host refs when invoked by a provider.
-        // eslint-disable-next-line react-hooks/refs
-        Object.freeze<FrontendHistory>({
-          Entries: history.Entries,
-          snapshot: history.snapshot,
-          capabilities: Object.freeze({
-            delete: selected!.plugin.permissions.includes("history.write"),
-            clear: selected!.plugin.permissions.includes("history.write"),
-            execute: selected!.plugin.permissions.includes("ssh.exec"),
-          }),
-          read: (request) => {
-            checkAccess(false);
-            return history.read(request);
-          },
-          setQuery: (query) => {
-            checkAccess();
-            history.setQuery(query);
-          },
-          refresh: () => {
-            checkAccess();
-            history.refresh();
-          },
-          delete: async (id) => {
-            requireHistoryPermission("history.write");
-            await history.delete(id);
-          },
-          requestClear: () => {
-            requireHistoryPermission("history.write");
-            history.requestClear(() => requireHistoryPermission("history.write"));
-          },
-          execute: async (id) => {
-            requireHistoryPermission("ssh.exec");
-            await history.execute(id);
-          },
-        })
+      ? guardHistoryProvider(
+          history,
+          checkAccess,
+          selected!.plugin.permissions,
+          () =>
+            usePlugins.getState().items.find((item) => item.id === selected!.plugin.id)
+              ?.permissions ?? [],
+        )
       : undefined;
+  /* eslint-enable react-hooks/refs */
   return (
     <>
       {selections?.[target] ? (

@@ -45,7 +45,7 @@ import {
   terminalUsesEnhancedKeyboard,
 } from "./terminalState";
 import { shortcutMatches } from "@/lib/keyboard/registry";
-import { createTerminalBridge, type TerminalBridge } from "@/lib/extensions/terminal";
+import { createTerminalBridge, type TerminalBridge } from "@/lib/extensions/terminal/bridge";
 import { reportError } from "@/lib/diagnostics";
 import { TerminalSurface } from "./TerminalSurface";
 

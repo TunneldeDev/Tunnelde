@@ -2,7 +2,7 @@ import type {
   FrontendFileBrowser,
   FrontendFileBrowserSnapshot,
   FrontendFileEntry,
-} from "./contracts/files/browser";
+} from "../contracts/files/browser";
 
 export interface FileBrowserActions {
   /** Recheck synchronous host state, including pending navigation, before dispatch. */

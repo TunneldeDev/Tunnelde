@@ -6,7 +6,7 @@ import {
   createFileBrowserContext,
   createFileBrowserListing,
   type FileBrowserActions,
-} from "@/lib/extensions/fileBrowser";
+} from "@/lib/extensions/files/context";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
 
 /** Keeps file ownership, navigation, filtering and native recovery outside the provider. */

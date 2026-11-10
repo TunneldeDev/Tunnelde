@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createFileBrowserContext } from "@/lib/extensions/fileBrowser";
+import { createFileBrowserContext } from "@/lib/extensions/files/context";
 import type { FrontendFileBrowserSnapshot } from "@/lib/extensions/uiSdkContract";
 
 function fixture(count = 600) {

@@ -3,7 +3,7 @@ import type {
   FrontendTerminal,
   FrontendTerminalChange,
   FrontendTerminalSnapshot,
-} from "./contracts/terminal/surface";
+} from "../contracts/terminal/surface";
 
 type Change = FrontendTerminalChange["changes"][number];
 type Metadata = Pick<FrontendTerminalSnapshot, "hostId" | "title" | "status">;
