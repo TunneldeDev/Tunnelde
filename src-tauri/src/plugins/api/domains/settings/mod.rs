@@ -1,6 +1,5 @@
-use crate::plugins::api::{encode, field, HostContext};
+use crate::plugins::api::{authorize, encode, field, HostContext};
 use crate::{
-    commands,
     error::{AppError, AppResult},
     state::AppState,
 };
@@ -15,7 +14,7 @@ pub(in crate::plugins::api) async fn dispatch(
     let app = &context.app;
     let state = app.state::<AppState>();
     match method {
-        "settings.get" => encode(commands::settings_get(state)),
+        "settings.get" => encode(crate::services::settings::read(&state)),
         "settings.update" => {
             let patch: Value = field(&params, "patch")?;
             if !patch.is_object() {
@@ -26,7 +25,21 @@ pub(in crate::plugins::api) async fn dispatch(
                     "plugin.frontend.userSelectionRequired",
                 ));
             }
-            encode(commands::settings_update(app.clone(), state, patch)?)
+            let writer = crate::services::settings::writer(app, &state).await;
+            authorize(context, &["settings.write"])?;
+            let mut prepared = writer.prepare_update(patch)?;
+            let lease = crate::plugins::security::Lease {
+                id: context.id.clone(),
+                fingerprint: context.fingerprint.clone(),
+                permissions: context.permissions.clone(),
+                generation: context.generation,
+            };
+            // Waiting for a concurrent commit is an authorization boundary too.
+            state
+                .plugins
+                .security
+                .with_authorized(&lease, &["settings.write"], || prepared.persist())?;
+            encode(prepared.finish())
         }
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }
