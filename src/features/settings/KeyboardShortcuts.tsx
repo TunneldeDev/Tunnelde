@@ -352,6 +352,7 @@ export function KeyboardShortcuts() {
                   <Input
                     autoFocus
                     readOnly
+                    data-shortcut-recorder
                     aria-label={t("shortcuts.record" as ParseKeys)}
                     value={draft ? displayShortcut(draft) : ""}
                     placeholder={t("shortcuts.record" as ParseKeys)}

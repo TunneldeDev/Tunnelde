@@ -119,6 +119,14 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
   const previous = results.get(event);
   if (previous) return previous;
   const empty = { handled: false, consumed: false };
+  // Window capture runs before the recorder's input handler. Leave the event
+  // untouched so the recorder can capture occupied bindings and handle Tab/Escape.
+  if (
+    event
+      .composedPath()
+      .some((target) => target instanceof Element && target.hasAttribute("data-shortcut-recorder"))
+  )
+    return empty;
   if (
     event.type !== "keydown" ||
     event.defaultPrevented ||

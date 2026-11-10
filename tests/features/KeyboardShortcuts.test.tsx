@@ -9,6 +9,8 @@ import { useSettings } from "@/store/settings";
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { useDialogs } from "@/store/dialogs";
 import { usePlugins } from "@/store/plugins";
+import { bindShortcutProvider, dispatchShortcuts } from "@/lib/keyboard/routing";
+import * as shortcutActions from "@/lib/keyboard/actions";
 
 beforeEach(() => {
   useSettings.setState({
@@ -29,6 +31,97 @@ const search = (value: string) =>
   });
 
 describe("KeyboardShortcuts", () => {
+  it("records occupied shortcuts before window capture routing and saves the conflict", async () => {
+    const run = vi.spyOn(shortcutActions, "runWorkbenchCommand").mockReturnValue(true);
+    const capture = (event: KeyboardEvent) => {
+      dispatchShortcuts(event);
+    };
+    window.addEventListener("keydown", capture, true);
+    const { unmount } = render(<KeyboardShortcuts />);
+    try {
+      search("page.settings");
+      const searchInput = screen.getByRole("textbox", { name: "Search commands or shortcuts" });
+      fireEvent.keyDown(searchInput, { key: "k", ctrlKey: true });
+      expect(run).toHaveBeenCalledWith("palette.open");
+      run.mockClear();
+      fireEvent.click(screen.getByRole("button", { name: "Edit: Settings Ctrl+," }));
+      const recorder = screen.getByRole("textbox", { name: "Press a shortcut" });
+      for (const key of [
+        { key: "k", ctrlKey: true },
+        { key: "F1" },
+        { key: ",", ctrlKey: true },
+        { key: "Tab", ctrlKey: true },
+      ]) {
+        expect(fireEvent.keyDown(recorder, key)).toBe(false);
+        expect(recorder).toHaveProperty(
+          "value",
+          key.key === "F1" ? "F1" : `Ctrl+${key.key === "k" ? "K" : key.key}`,
+        );
+      }
+      expect(run).not.toHaveBeenCalled();
+      fireEvent.keyDown(recorder, { key: "k", ctrlKey: true });
+      expect(screen.getByRole("alert").textContent).toContain("Quick Access");
+      await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
+      expect(useSettings.getState().settings.keyboardShortcuts["page.settings"]).toEqual(["Mod+K"]);
+      fireEvent.keyDown(searchInput, { key: "k", ctrlKey: true });
+      expect(run).toHaveBeenCalledWith("palette.open");
+      expect(run).toHaveBeenCalledWith("page.settings");
+    } finally {
+      window.removeEventListener("keydown", capture, true);
+      unmount();
+      run.mockRestore();
+    }
+  });
+  it("isolates plugin and scoped shortcuts while recording, then restores routing on cancel", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "example",
+          name: "Example",
+          runtime: "node",
+          views: [],
+          commands: [
+            { id: "run", title: "Run", keybindings: ["Mod+K"], macKeybindings: ["Meta+K"] },
+          ],
+        },
+      ] as never,
+    });
+    const run = vi.spyOn(shortcutActions, "runWorkbenchCommand").mockReturnValue(true);
+    const scoped = vi.fn(() => true);
+    const { container, unmount } = render(<KeyboardShortcuts />);
+    const unbind = bindShortcutProvider(container, () => [
+      {
+        command: { id: "local", label: "Local", scope: "editor", defaults: ["Mod+K"] },
+        binding: "Mod+K",
+        run: scoped,
+      },
+    ]);
+    const platform = vi.spyOn(navigator, "platform", "get").mockReturnValue("MacIntel");
+    try {
+      search("page.settings");
+      fireEvent.click(screen.getByRole("button", { name: "Edit: Settings ⌘+," }));
+      const recorder = screen.getByRole("textbox", { name: "Press a shortcut" });
+      fireEvent.keyDown(recorder, { key: "k", metaKey: true });
+      expect(recorder).toHaveProperty("value", "⌘+K");
+      expect(run).not.toHaveBeenCalled();
+      expect(scoped).not.toHaveBeenCalled();
+      expect(fireEvent.keyDown(recorder, { key: "Tab" })).toBe(true);
+      fireEvent.keyDown(recorder, { key: "Escape" });
+      expect(screen.queryByRole("textbox", { name: "Press a shortcut" })).toBeNull();
+      expect(useSettings.getState().settings.keyboardShortcuts).toEqual({});
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "Search commands or shortcuts" }), {
+        key: "k",
+        metaKey: true,
+      });
+      expect(scoped).toHaveBeenCalledOnce();
+      expect(run).toHaveBeenCalledWith("plugin.c.7.example.run");
+    } finally {
+      unbind();
+      unmount();
+      run.mockRestore();
+      platform.mockRestore();
+    }
+  });
   it("reviews all queued plugin conflicts in settings without another modal blocking it", () => {
     const plugin = {
       id: "formatter",
