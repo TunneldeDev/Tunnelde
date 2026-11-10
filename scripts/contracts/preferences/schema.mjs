@@ -13,6 +13,9 @@ export async function loadGroups(root) {
     assert.equal(schema.title, name);
     assert.equal(schema.type, "object");
     assert.deepEqual(schema.required, Object.keys(schema.properties));
-    return { name, schema };
+    const mapping = await readFile(join(directory, "mapping", `${name}.rs`), "utf8");
+    const fields = [...mapping.matchAll(/\("([a-zA-Z]+)",\s*"([a-zA-Z.]+)"\)/g)].map(match => [match[1], match[2]]);
+    assert.deepEqual(fields.map(([field]) => field).sort(), Object.keys(schema.properties).sort());
+    return { name, schema, fields };
   }));
 }

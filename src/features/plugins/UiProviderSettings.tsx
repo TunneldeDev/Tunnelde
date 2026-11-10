@@ -80,6 +80,7 @@ export function UiProviderSettings() {
           "backgroundTasks",
           "processes",
           "quickAccess",
+          "preferences",
         ] as const
       ).map((target) => {
         const selected = selections?.[target];

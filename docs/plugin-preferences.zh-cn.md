@@ -45,7 +45,7 @@ const after = await host.call("preferences.update", {
 
 等待其他写入之后以及持久化之前都会重新验证授权。数据库保存失败时保留设置和修订，
 并恢复已预备的标题栏变化。提交后通知和外部清理在数据库事务之外执行。
-这些接口不承诺回滚外部副作用，也不代表已实现插件自定义 Schema、迁移或可替换的设置界面。
+这些接口不承诺回滚外部副作用，也不代表已实现插件自定义 Schema 与迁移。
 
 ## 契约维护
 
@@ -55,7 +55,32 @@ const after = await host.call("preferences.update", {
 `settings/preferences` 子目录，不承担设置业务规则。
 
 修改 Schema 后运行 `node scripts/contracts/preferences/generate.mjs`。
-`--check` 校验 `src/lib/preferences/contracts/` 下的独立生成类型，CI 会执行检查。
+`--check` 校验 `src/lib/extensions/contracts/preferences/data/`（原 `src/lib/preferences/contracts/` 仅保留兼容转发） 下的独立生成类型，CI 会执行检查。
 市场 SDK 同步将公开声明镜像到 `sdk/rpc/settings/preferences/`，Schema 镜像到
 `sdk/preferences/schema.json`；检查模式只验证差异，不修改文件。
 旧版 RPC 消费者兼容性测试独立保留，不用新增接口测试替代。
+
+## 设置表单提供者
+
+受信任组件视图可声明 `provider: "preferences"`，需要 `ui.trusted` 与
+`settings.read`；写入额外需要 `settings.write`。用户在界面提供者中主动选择，
+安装插件不会自动替换设置表单。
+
+视图收到 `preferences`，包含不可变页面元数据（分区、查询、仅显示修改项、
+公开字段标识与文案、保存状态、页面版本）、可选的 `Fields` 插槽以及经过授权的
+`schema()`、`read()`、`update(request)`。页面版本仅表示界面身份，写入必须使用
+`read()` 返回的持久化版本。调用复用所选插件的 RPC 会话、权限与配额。
+请在挂载后的普通 effect 中读取，不要在 render 或宿主提交前的 layout effect 中调用。
+属性更新后应采用新接口引用；页面或设置变化会让旧引用失效，隐藏页面不能写入。
+成功写入引起自身页面更新时仍返回已提交的快照，不会自动重试写入。
+
+`Fields` 最多挂载一次；宿主移动原有 DOM，切换提供者、恢复原生、停止、撤权或
+渲染失败时保留控件草稿。也可以省略插槽。搜索、漏斗预设、导航、配置档案、
+重置按钮、保存状态、提供者选择、凭据与网络表单、快捷键冲突处理、存储迁移、
+日志及更新安装入口仍由宿主管理。恢复栏可随时恢复原生控件。受信任前端共享
+宿主上下文，不属于沙箱。
+
+公开数据契约归属 `contracts/preferences/data/`，表现契约归属
+`contracts/preferences/provider.ts`；运行授权适配归属 `extensions/preferences/`，
+与原生表单组件、私有字段映射分开。市场 UI 与 RPC 类型从同一公开源生成。
+该表现接口尚不包含插件自定义设置 Schema 与迁移能力。

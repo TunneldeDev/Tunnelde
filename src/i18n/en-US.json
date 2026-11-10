@@ -1325,6 +1325,11 @@
       "changed": "These search results have changed. Select a current result.",
       "invalid": "This search request is invalid.",
       "permissionDenied": "This provider cannot invoke commands without workspace.write."
+    },
+    "preferences": {
+      "changed": "These preferences changed. Read the current page and try again.",
+      "permissionDenied": "This plugin requires settings.write to change preferences.",
+      "invalid": "Invalid preference update. Provide the revision and field replacements."
     }
   },
   "themes": {
@@ -2101,7 +2106,8 @@
     "history": "Command history",
     "backgroundTasks": "Background tasks",
     "processes": "Process manager",
-    "quickAccess": "Quick access"
+    "quickAccess": "Quick access",
+    "preferences": "Preference forms"
   },
   "hostFields": {
     "title": "Plugin host fields",

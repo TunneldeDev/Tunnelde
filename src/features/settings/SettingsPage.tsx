@@ -1,33 +1,16 @@
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import { AboutPage } from "@/features/about/AboutPage";
-import { FileCode2, RotateCcw, Search } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import { SearchField } from "@/components/ui/form/SearchField";
 import { matchesSearch, parseSearchQuery, toggleSearchFilter } from "@/lib/search/query";
-import {
-  Fragment,
-  lazy,
-  Suspense,
-  useId,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from "react";
+import { Fragment, useId, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, IconButton } from "@/components/ui/form/Button";
-import { Switch, Textarea } from "@/components/ui/form/Field";
-import { Select } from "@/components/ui/form/Select";
-import { ColorPicker } from "@/components/ui/form/ColorPicker";
-import { validateUserCss } from "@/lib/prefs/appearance";
-import { createDefaultSettings, ACCENT_SWATCHES } from "@/lib/prefs/defaults";
-import type { Settings, SettingsPatch } from "@/lib/api/types";
-import { translateError } from "@/lib/api/errors";
-import { api, isTauri } from "@/lib/api/ipc";
+import { Button } from "@/components/ui/form/Button";
+import { createDefaultSettings } from "@/lib/prefs/defaults";
+import type { SettingsPatch } from "@/lib/api/types";
 import { cn } from "@/lib/text/format";
-import { toast } from "@/store/toasts";
 import { useSettings } from "@/store/settings";
-import { UpdateSourceUrl, UpdateStatus } from "./UpdateSettings";
+import { UpdateStatus } from "./UpdateSettings";
 import { useUpdates } from "@/store/updates";
 import { useDialogs } from "@/store/dialogs";
 import { useNavigation, type SettingsSection } from "@/store/navigation";
@@ -36,19 +19,12 @@ import {
   SETTINGS_CATALOG,
   SETTINGS_SECTIONS,
   SETTINGS_GROUPS,
-  groupSettings,
   type SettingDefinition,
-  type SettingOption,
 } from "./catalog";
-import { NumberPreference } from "./NumberPreference";
-import { RegionColors } from "./RegionColors";
-import { FileIconThemeSetting } from "./FileIconThemeSetting";
-import { COLOR_REGIONS, previewColors, resolveAccent } from "@/lib/prefs/colors";
-import type { ResolvedTheme } from "@/lib/prefs/appearance";
+import { COLOR_REGIONS } from "@/lib/prefs/colors";
 import { useResolvedTheme } from "@/lib/prefs/useResolvedTheme";
 import { PluginSettingsSection } from "@/features/plugins/PluginSettingsSection";
 import { UiProviderSettings } from "@/features/plugins/UiProviderSettings";
-import { HostListSettings } from "./HostListSettings";
 import { KeyboardShortcuts } from "./KeyboardShortcuts";
 import { SettingsProfiles } from "./SettingsProfiles";
 import { NetworkSettingsSection } from "./NetworkSettings";
@@ -57,267 +33,11 @@ import { StorageSettings } from "./StorageSettings";
 import { useViewState } from "@/lib/session/viewState";
 import { sameSettings as samePreference } from "@/lib/prefs/profiles";
 
-const TerminalPreview = lazy(() =>
-  import("@/features/terminal/TerminalPreview").then((module) => ({
-    default: module.TerminalPreview,
-  })),
-);
+import { PreferenceSurface } from "./components/PreferenceSurface";
+import { PreferenceFields } from "./components/PreferenceFields";
+import { preferenceMetadata, protectedPreference } from "./data/preferenceMetadata";
 
-function PreferenceRow({
-  definition,
-  settings,
-  defaults,
-  onReset,
-  resetVersion,
-  theme,
-}: {
-  definition: SettingDefinition;
-  settings: Settings;
-  defaults: Settings;
-  onReset: () => void;
-  resetVersion: number;
-  theme: ResolvedTheme;
-}) {
-  const { t } = useTranslation();
-  const descriptionId = useId();
-  const update = useSettings((state) => state.update);
-  const updatesBusy = useUpdates(
-    (state) => state.busy || state.state?.phase === "downloading" || state.state?.phase === "ready",
-  );
-  const label = t(definition.label);
-  const value = settings[definition.key];
-  const defaultValue = defaults[definition.key];
-  const modified = !samePreference(value, defaultValue);
-  const disabled =
-    (definition.dependsOn ? !settings[definition.dependsOn] : false) ||
-    (definition.section === "updates" && updatesBusy);
-  const setValue = (next: string | number | boolean) =>
-    void update({ [definition.key]: next } as SettingsPatch);
-  const optionLabel = (option: SettingOption) => (option.literal ? option.label : t(option.label));
-  const formatValue = (next: Settings[typeof definition.key]) => {
-    if (typeof next === "boolean") return t(next ? "settings.enabled" : "settings.disabled");
-    if (definition.kind === "colors") return t("color.themeDefault");
-    const option = definition.options?.find((item) => item.value === next);
-    if (option) return optionLabel(option);
-    if (definition.kind === "accent") {
-      const swatch = ACCENT_SWATCHES.find((item) => item.id === next);
-      if (swatch) return t(swatch.labelKey);
-    }
-    return `${next}${definition.unit ? ` ${definition.unit}` : ""}`;
-  };
-  return (
-    <div
-      className={cn(
-        "settings-row",
-        definition.kind === "colors" && "settings-row--colors",
-        modified && "is-modified",
-        disabled && "is-disabled",
-      )}
-      data-setting={definition.key}
-    >
-      <div className="settings-row__text" id={descriptionId}>
-        <span className="settings-row__label">
-          {label}
-          {modified ? (
-            <span
-              className="settings-row__modified"
-              title={t("settings.modified")}
-              aria-label={t("settings.modified")}
-            />
-          ) : null}
-        </span>
-        {definition.hint ? <span className="settings-row__hint">{t(definition.hint)}</span> : null}
-        <span className="settings-row__default">
-          {t("settings.defaultValue", { value: formatValue(defaultValue) })}
-          {definition.kind === "number"
-            ? ` · ${t("settings.valueRange", { min: definition.min, max: definition.max })}`
-            : ""}
-        </span>
-      </div>
-      <div
-        className="settings-row__control"
-        aria-describedby={definition.hint ? descriptionId : undefined}
-      >
-        {definition.kind === "toggle" ? (
-          <Switch
-            label={label}
-            checked={Boolean(value)}
-            disabled={disabled}
-            onChange={setValue}
-            descriptionId={descriptionId}
-          />
-        ) : null}
-        {definition.kind === "number" ? (
-          <NumberPreference
-            key={resetVersion}
-            label={label}
-            descriptionId={descriptionId}
-            value={Number(value)}
-            min={definition.min!}
-            max={definition.max!}
-            step={definition.step}
-            unit={definition.unit}
-            disabled={disabled}
-            onChange={setValue}
-          />
-        ) : null}
-        {definition.kind === "select" ? (
-          <Select
-            label={label}
-            descriptionId={descriptionId}
-            value={String(value)}
-            disabled={disabled}
-            options={definition.options!.map((option) => ({
-              value: String(option.value),
-              label: optionLabel(option),
-            }))}
-            onChange={(next) => setValue(typeof defaultValue === "number" ? Number(next) : next)}
-          />
-        ) : null}
-        {definition.kind === "fileIcons" ? (
-          <FileIconThemeSetting
-            value={String(value)}
-            descriptionId={descriptionId}
-            onChange={setValue}
-          />
-        ) : null}
-        {definition.kind === "accent" ? (
-          <ColorPicker
-            label={label}
-            value={String(value)}
-            defaultValue={String(defaultValue)}
-            presets={ACCENT_SWATCHES.map((preset) => ({
-              value: preset.id,
-              label: t(preset.labelKey),
-              color: resolveAccent(preset.id, theme),
-            }))}
-            onChange={setValue}
-            onPreview={(accent) => previewColors(accent ? { accent } : null)}
-          />
-        ) : null}
-        <IconButton
-          className="settings-reset"
-          size="sm"
-          label={t("settings.restoreOne", { name: label })}
-          disabled={!modified || (definition.section === "updates" && updatesBusy)}
-          onClick={onReset}
-        >
-          <RotateCcw size={13} />
-        </IconButton>
-      </div>
-      {definition.kind === "colors" ? <RegionColors settings={settings} /> : null}
-    </div>
-  );
-}
-
-function CssEditor({
-  draft,
-  onDraft,
-}: {
-  draft: string | null;
-  onDraft: Dispatch<SetStateAction<string | null>>;
-}) {
-  const { t } = useTranslation();
-  const value = useSettings((state) => state.settings.userCss);
-  const update = useSettings((state) => state.update);
-  const [applying, setApplying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const text = draft ?? value;
-  const apply = async () => {
-    if (applying) return;
-    const submitted = text;
-    if (!validateUserCss(submitted).ok) {
-      setError(t("settings.cssRejected"));
-      return;
-    }
-    setApplying(true);
-    try {
-      if (await update({ userCss: submitted })) {
-        onDraft((current) => (current === submitted ? null : current));
-        setError(null);
-      }
-    } finally {
-      setApplying(false);
-    }
-  };
-  const importFile = async () => {
-    try {
-      const imported = await api.importCss();
-      if (imported !== null) {
-        onDraft(imported);
-        setError(null);
-      }
-    } catch (failure) {
-      toast(translateError(failure), "error");
-    }
-  };
-  const exportFile = async () => {
-    try {
-      const path = await api.exportCss(text);
-      if (path) toast(t("toast.cssExported", { path }), "success");
-    } catch (failure) {
-      toast(translateError(failure), "error");
-    }
-  };
-  return (
-    <div className="settings-css-editor">
-      <Textarea
-        aria-label={t("settings.customCss")}
-        className="settings-css"
-        spellCheck={false}
-        rows={10}
-        value={text}
-        placeholder={t("settings.customCssPlaceholder")}
-        onChange={(event) => {
-          onDraft(event.target.value);
-          setError(null);
-        }}
-      />
-      {draft !== null && draft !== value ? (
-        <p className="settings-row__hint" role="status">
-          {t("settings.cssDraft")}
-        </p>
-      ) : null}
-      {error ? (
-        <p className="settings-message is-error" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <div className="settings-actions">
-        <Button
-          variant="primary"
-          disabled={applying || text === value}
-          onClick={() => void apply()}
-        >
-          {t("common.apply")}
-        </Button>
-        <Button
-          leading={<FileCode2 size={14} />}
-          disabled={!isTauri()}
-          onClick={() => void importFile()}
-        >
-          {t("common.import")}
-        </Button>
-        <Button variant="ghost" disabled={!isTauri()} onClick={() => void exportFile()}>
-          {t("common.export")}
-        </Button>
-        {draft !== null ? (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              onDraft(null);
-              setError(null);
-            }}
-          >
-            {t("settings.discardDraft")}
-          </Button>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-export function SettingsPage() {
+export function SettingsPage({ visible: visiblePage = true }: { visible?: boolean }) {
   const { t, i18n } = useTranslation();
   const settings = useSettings((state) => state.settings);
   const theme = useResolvedTheme(settings.theme);
@@ -575,111 +295,64 @@ export function SettingsPage() {
                 {item === "plugins" && !filtering ? <PluginSettingsSection /> : null}
                 {item === "about" && !filtering ? <AboutPage embedded /> : null}
                 {item === "updates" && !filtering ? <UpdateStatus /> : null}
-                {groupSettings(
-                  item,
-                  visible.filter((definition) => definition.section === item),
-                ).map((group) => (
-                  <div
-                    key={group.id}
-                    id={`${settingsId}-${group.id}`}
-                    className={group.label ? "settings-preference-group" : undefined}
-                    data-settings-group={group.id}
+                {visible
+                  .filter(
+                    (definition) => definition.section === item && protectedPreference(definition),
+                  )
+                  .map((definition) =>
+                    definition.kind === "uiProviders" ? (
+                      <UiProviderSettings key={definition.key} />
+                    ) : definition.kind === "network" ? (
+                      <NetworkSettingsSection key={definition.key} />
+                    ) : definition.kind === "shortcuts" ||
+                      (definition.kind === "shortcutRules" &&
+                        filtering &&
+                        visible.find(
+                          (candidate) =>
+                            candidate.section === item && candidate.kind === "shortcutRules",
+                        ) === definition &&
+                        !visible.some(
+                          (candidate) =>
+                            candidate.section === item && candidate.kind === "shortcuts",
+                        )) ? (
+                      <div key={definition.key} data-setting="keyboardShortcuts">
+                        <KeyboardShortcuts />
+                      </div>
+                    ) : null,
+                  )}
+                {visible.some(
+                  (definition) => definition.section === item && !protectedPreference(definition),
+                ) ? (
+                  <PreferenceSurface
+                    section={item}
+                    query={query}
+                    modifiedOnly={modifiedRequested}
+                    visible={visiblePage}
+                    fields={preferenceMetadata(
+                      visible.filter((definition) => definition.section === item),
+                      t,
+                      isModified,
+                    )}
                   >
-                    {group.label ? (
-                      <h3 className="settings-preference-group__title">{t(group.label)}</h3>
-                    ) : null}
-                    <div className={group.label ? "settings-preference-group__body" : undefined}>
-                      {group.preview === "terminal" && !filtering ? (
-                        <div
-                          className="settings-preview"
-                          role="group"
-                          aria-labelledby={`${settingsId}-${group.id}-preview-title`}
-                          aria-describedby={`${settingsId}-${group.id}-preview-hint`}
-                        >
-                          <div className="settings-preview__head">
-                            <h4
-                              className="settings-preview__title"
-                              id={`${settingsId}-${group.id}-preview-title`}
-                            >
-                              {t("terminal.previewLabel")}
-                            </h4>
-                            <p
-                              className="settings-preview__hint"
-                              id={`${settingsId}-${group.id}-preview-hint`}
-                            >
-                              {t("terminal.previewHint")}
-                            </p>
-                          </div>
-                          <Suspense
-                            fallback={<p className="settings-row__hint">{t("common.loading")}</p>}
-                          >
-                            <TerminalPreview />
-                          </Suspense>
-                        </div>
-                      ) : null}
-                      {group.definitions.map((definition) =>
-                        definition.kind === "updateUrl" ? (
-                          !filtering && settings.updateSource !== "custom" ? null : (
-                            <UpdateSourceUrl
-                              key={`${definition.key}-${resetVersions[definition.key] ?? 0}`}
-                              onReset={() => resetOne(definition)}
-                            />
-                          )
-                        ) : definition.kind === "hostList" ? (
-                          <HostListSettings key={definition.key} />
-                        ) : definition.kind === "uiProviders" ? (
-                          <UiProviderSettings key={definition.key} />
-                        ) : definition.kind === "network" ? (
-                          <NetworkSettingsSection key={definition.key} />
-                        ) : definition.kind === "shortcutRules" ? (
-                          filtering &&
-                          !group.definitions.some((item) => item.kind === "shortcuts") &&
-                          group.definitions.find((item) => item.kind === "shortcutRules") ===
-                            definition ? (
-                            <KeyboardShortcuts key={definition.key} />
-                          ) : null
-                        ) : definition.kind === "shortcuts" ? (
-                          <div key={definition.key} data-setting="keyboardShortcuts">
-                            <KeyboardShortcuts />
-                          </div>
-                        ) : definition.kind === "css" ? (
-                          <div
-                            key={definition.key}
-                            className="settings-css-group"
-                            data-setting="userCss"
-                          >
-                            <div className="settings-section__head">
-                              <span>{t(definition.label)}</span>
-                              <IconButton
-                                size="sm"
-                                label={t("settings.restoreOne", { name: t(definition.label) })}
-                                disabled={!isModified(definition)}
-                                onClick={() => resetOne(definition)}
-                              >
-                                <RotateCcw size={13} />
-                              </IconButton>
-                            </div>
-                            <p className="settings-row__hint">
-                              {t(definition.hint!)} ·{" "}
-                              {t("settings.defaultValue", { value: t("settings.cssEmpty") })}
-                            </p>
-                            <CssEditor draft={cssDraft} onDraft={setCssDraft} />
-                          </div>
-                        ) : (
-                          <PreferenceRow
-                            key={definition.key}
-                            definition={definition}
-                            settings={settings}
-                            defaults={defaults}
-                            onReset={() => resetOne(definition)}
-                            resetVersion={resetVersions[definition.key] ?? 0}
-                            theme={theme}
-                          />
-                        ),
+                    <PreferenceFields
+                      section={item}
+                      definitions={visible.filter(
+                        (definition) =>
+                          definition.section === item && !protectedPreference(definition),
                       )}
-                    </div>
-                  </div>
-                ))}
+                      settings={settings}
+                      defaults={defaults}
+                      filtering={filtering}
+                      settingsId={settingsId}
+                      resetVersions={resetVersions}
+                      theme={theme}
+                      cssDraft={cssDraft}
+                      setCssDraft={setCssDraft}
+                      onReset={resetOne}
+                      isModified={isModified}
+                    />
+                  </PreferenceSurface>
+                ) : null}
                 {item === "advanced" && showStorage ? (
                   <div
                     id={`${settingsId}-storage`}

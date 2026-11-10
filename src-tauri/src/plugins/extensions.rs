@@ -43,7 +43,8 @@ mod tests {
                 "monitor",
                 "backgroundTasks",
                 "processes",
-                "quickAccess"
+                "quickAccess",
+                "preferences"
             ])
         );
         assert_eq!(
@@ -85,6 +86,29 @@ mod tests {
         assert_eq!(providers["processes"]["pageSize"], 128);
         assert_eq!(providers["processes"]["pageTextLimit"], 65536);
         assert_eq!(providers["processes"]["writePermission"], "monitor.write");
+        assert_eq!(
+            providers["preferencesPermissions"],
+            serde_json::json!(["settings.read"])
+        );
+        assert_eq!(providers["preferences"]["optionalSlot"], "Fields");
+        assert_eq!(
+            providers["preferences"]["concurrency"],
+            "persistent-revision"
+        );
+        for action in ["schema", "read", "update"] {
+            let method = METHODS
+                .iter()
+                .find(|method| Some(method.name) == providers["preferences"][action].as_str())
+                .unwrap();
+            assert_eq!(
+                method.permissions,
+                if action == "update" {
+                    &["settings.write"]
+                } else {
+                    &["settings.read"]
+                }
+            );
+        }
         assert_eq!(providers["quickAccess"]["pageSize"], 128);
         assert_eq!(providers["quickAccess"]["pageTextLimit"], 65536);
         assert_eq!(

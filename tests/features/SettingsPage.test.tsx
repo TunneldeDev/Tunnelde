@@ -42,6 +42,15 @@ beforeEach(async () => {
 });
 
 describe("settings discovery and scoped resets", () => {
+  it("shows one host-owned shortcut editor when several advanced fields match", () => {
+    render(<SettingsPage />);
+    fireEvent.change(screen.getByRole("textbox", { name: "Search settings" }), {
+      target: { value: "@id:shortcutRules,showShortcutDetails" },
+    });
+    expect(screen.getAllByRole("textbox", { name: "Search commands or shortcuts" })).toHaveLength(
+      1,
+    );
+  });
   it("shows and inserts @section presets and treats bare section fields as literal text", () => {
     render(<SettingsPage />);
     const input = screen.getByRole("textbox", { name: "Search settings" }) as HTMLInputElement;
