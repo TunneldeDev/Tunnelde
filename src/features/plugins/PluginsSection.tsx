@@ -22,6 +22,7 @@ import {
 } from "@/lib/plugins/discovery";
 import { api } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
+import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 import { useMarketplace, boundTo, newerVersion } from "@/store/marketplace";
 import { usePlugins } from "@/store/plugins";
 import { useWorkspace } from "@/store/workspace";
@@ -341,7 +342,7 @@ export function PluginsSection({ sidebar = false }: { sidebar?: boolean }) {
                   <Button
                     size="sm"
                     variant="primary"
-                    disabled={busy || (entry.apiVersion != null && entry.apiVersion !== 1)}
+                    disabled={busy || !supportsManifestVersion(entry.apiVersion)}
                     onClick={() => requestMarketInstall(entry, source, update)}
                   >
                     {t(busy ? "plugins.installing" : update ? "market.update" : "plugins.install")}
