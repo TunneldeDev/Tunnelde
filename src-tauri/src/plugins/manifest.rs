@@ -397,6 +397,7 @@ impl PluginManifest {
                             | "terminal"
                             | "history"
                             | "forwarding"
+                            | "monitor"
                     ) || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
@@ -409,6 +410,10 @@ impl PluginManifest {
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                         || (target == "terminal"
                             && ["sessions.read", "ssh.exec"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "monitor"
+                            && ["sessions.read", "monitor.read"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
                         || (target == "forwarding"
@@ -663,6 +668,17 @@ mod tests {
             assert!(save(&value).is_err());
         }
         value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "history.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "monitor".into();
+        for omitted in ["ui.trusted", "sessions.read", "monitor.read"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "sessions.read", "monitor.read"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "monitor.read"]);
         assert!(save(&value).is_ok());
         value["views"][0]["provider"] = "forwarding".into();
         for omitted in ["ui.trusted", "hosts.read", "forwards.read"] {

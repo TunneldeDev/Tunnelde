@@ -1,78 +1,19 @@
-import {
-  Activity,
-  Cpu,
-  Gauge,
-  HardDrive,
-  List,
-  Maximize2,
-  MemoryStick,
-  Network,
-  Timer,
-  X,
-} from "lucide-react";
+import { Activity, List, Maximize2, X } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { IconButton } from "@/components/ui/form/Button";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
-import { cn, formatBytes, formatPercent, formatUptime } from "@/lib/text/format";
+import { cn, formatPercent } from "@/lib/text/format";
 import { useMonitor } from "@/store/monitor";
 import { useWorkspace } from "@/store/workspace";
 import { useSsh } from "@/store/ssh";
-import { useRemoteMonitor } from "@/lib/session/useRemoteMonitor";
-import { MonitorChart } from "@/features/monitor/MonitorChart";
+import { useRemoteMonitor } from "@/features/monitor/runtime/sampling";
+import { MonitorSurface } from "@/features/monitor/components/MonitorSurface";
+import { MonitorPanelMetrics } from "@/features/monitor/components/MonitorPanelMetrics";
 import { useMonitorHistory, type MonitorSample } from "@/store/monitorHistory";
 
 const EMPTY_SAMPLES: MonitorSample[] = [];
-
-function Meter({ value }: { value: number }) {
-  const clamped = Math.min(100, Math.max(0, Math.round(value)));
-  return (
-    <div
-      className="td-meter"
-      role="meter"
-      aria-valuemin={0}
-      aria-valuemax={100}
-      aria-valuenow={clamped}
-    >
-      <div
-        className="td-meter__fill"
-        style={{ width: `${clamped}%` }}
-        data-tone={clamped >= 90 ? "red" : clamped >= 70 ? "orange" : "accent"}
-      />
-    </div>
-  );
-}
-
-interface CardProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  detail?: string;
-  meter?: number;
-  action?: React.ReactNode;
-  children?: React.ReactNode;
-}
-
-function Card({ icon, label, value, detail, meter, action, children }: CardProps) {
-  return (
-    <div className="panel-card">
-      <div className="panel-card__head">
-        <span className="panel-card__label">
-          {icon}
-          {label}
-        </span>
-        <span className="panel-card__right">
-          {action}
-          <span className="panel-card__value">{value}</span>
-        </span>
-      </div>
-      {meter === undefined ? null : <Meter value={meter} />}
-      {detail ? <p className="panel-card__detail">{detail}</p> : null}
-      {children}
-    </div>
-  );
-}
 
 interface RemotePanelProps {
   hidden?: boolean;
@@ -91,10 +32,6 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
   useRemoteMonitor(sessionId, !hidden && session !== null);
 
   const stats = entry?.stats ?? null;
-  const load = stats?.load ?? [0, 0, 0];
-  const memoryPercent =
-    stats && stats.memoryTotal > 0 ? (stats.memoryUsed / stats.memoryTotal) * 100 : 0;
-  const diskPercent = stats && stats.diskTotal > 0 ? (stats.diskUsed / stats.diskTotal) * 100 : 0;
 
   return (
     <aside
@@ -125,73 +62,19 @@ export function RemotePanel({ sessionId, width, onHide, hidden }: RemotePanelPro
       <div className="panel__body">
         {entry?.error ? <p className="panel__error">{entry.error}</p> : null}
 
-        <Card
-          icon={<Cpu size={12} />}
-          label={t("panel.cpu")}
-          value={stats ? formatPercent(stats.cpuPercent) : "—"}
-          detail={
-            stats && stats.cpuCount > 0 ? t("panel.cores", { count: stats.cpuCount }) : undefined
-          }
-        >
-          <MonitorChart samples={samples} kind="cpu" label={t("panel.cpu")} />
-        </Card>
-
-        <Card
-          icon={<MemoryStick size={12} />}
-          label={t("panel.memory")}
-          value={stats ? formatPercent(memoryPercent) : "—"}
-          detail={
-            stats
-              ? `${formatBytes(stats.memoryUsed)} / ${formatBytes(stats.memoryTotal)}`
-              : undefined
-          }
-        >
-          <MonitorChart samples={samples} kind="memory" label={t("panel.memory")} />
-        </Card>
-
-        <Card
-          icon={<HardDrive size={12} />}
-          label={t("panel.disk")}
-          value={stats ? formatPercent(diskPercent) : "—"}
-          meter={stats ? diskPercent : undefined}
-          detail={
-            stats ? `${formatBytes(stats.diskUsed)} / ${formatBytes(stats.diskTotal)}` : undefined
-          }
-        />
-
-        <Card
-          icon={<Network size={12} />}
-          label={t("panel.network")}
-          value={stats ? `↓ ${formatBytes(stats.netRxRate)}/s` : "—"}
-          detail={stats ? `↑ ${formatBytes(stats.netTxRate)}/s` : undefined}
-        >
-          <MonitorChart samples={samples} kind="network" label={t("panel.network")} />
-        </Card>
-
-        <Card
-          icon={<HardDrive size={12} />}
-          label={t("monitor.diskIo")}
-          value={stats?.diskReadRate != null ? `↓ ${formatBytes(stats.diskReadRate)}/s` : "—"}
-          detail={
-            stats?.diskWriteRate != null ? `↑ ${formatBytes(stats.diskWriteRate)}/s` : undefined
-          }
-        >
-          <MonitorChart samples={samples} kind="disk" label={t("monitor.diskIo")} />
-        </Card>
-
-        <div className="panel-grid">
-          <Card
-            icon={<Timer size={12} />}
-            label={t("panel.uptime")}
-            value={stats ? formatUptime(stats.uptime) : "—"}
-          />
-          <Card
-            icon={<Gauge size={12} />}
-            label={t("panel.load")}
-            value={stats ? load[0].toFixed(2) : "—"}
-            detail={stats ? `${load[1].toFixed(2)}  ${load[2].toFixed(2)}` : undefined}
-          />
-        </div>
+        {session ? (
+          <MonitorSurface
+            session={session}
+            samples={samples}
+            entry={entry}
+            visible={!hidden}
+            presentation="panel"
+          >
+            <MonitorPanelMetrics stats={stats} samples={samples} />
+          </MonitorSurface>
+        ) : (
+          <MonitorPanelMetrics stats={stats} samples={samples} />
+        )}
 
         <div className="panel-card">
           <div className="panel-card__head">

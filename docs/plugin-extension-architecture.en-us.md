@@ -161,3 +161,16 @@ workbench replacement and the remaining domain migrations are still pending.
 Existing stable RPC contracts remain compatible. New extension discovery, host
 annotations and the UI SDK are experimental. Extending stability requires SDK
 synchronization, old-plugin regression tests and real platform acceptance.
+
+## Domain file boundaries
+
+Organize new interfaces by feature domain, then split files or subdirectories by
+actual responsibility: public data contracts, lifecycle/runtime, storage or
+projection, UI adapters, operations and governance. Do not add unrelated domains
+to one namespace or collect business implementations in an SDK entry file.
+Create deeper folders when responsibilities need them; empty six-layer folder
+trees do not establish an architecture. Shared shells only coordinate providers.
+Domain services own behavior, and consumers depend on public contracts rather than
+other domains' stores or private components. Compatibility entry points re-export
+existing symbols; generated market SDK files mirror the public dependency graph.
+The [monitoring domain](plugin-monitor-ui.en-us.md) documents one concrete example.

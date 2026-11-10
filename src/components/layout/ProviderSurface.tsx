@@ -33,6 +33,9 @@ import { guardHistoryProvider } from "@/lib/extensions/history/provider";
 import type { FrontendForwarding } from "@/lib/extensions/contracts/forwarding/provider";
 import type { ForwardingContext } from "@/lib/extensions/forwarding/context";
 import { useForwardingProvider } from "@/lib/extensions/forwarding/useProvider";
+import type { FrontendMonitor } from "@/lib/extensions/contracts/monitor/provider";
+import type { MonitorContext } from "@/lib/extensions/monitor/context";
+import { guardMonitorProvider } from "@/lib/extensions/monitor/provider";
 
 class ProviderBoundary extends Component<
   {
@@ -66,6 +69,7 @@ export function ProviderSurface({
   terminal,
   history,
   forwarding,
+  monitor,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -80,6 +84,7 @@ export function ProviderSurface({
   terminal?: FrontendTerminal;
   history?: HistoryContext & Pick<FrontendHistory, "Entries">;
   forwarding?: ForwardingContext & Pick<FrontendForwarding, "Entries">;
+  monitor?: MonitorContext & Pick<FrontendMonitor, "Charts">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -157,7 +162,16 @@ export function ProviderSurface({
     () => createProviderLease(),
     // A context is owned by this exact provider generation and terminal bridge.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [identity, token, View, active, terminal, forwarding?.snapshot.hostId, selectionEpoch],
+    [
+      identity,
+      token,
+      View,
+      active,
+      terminal,
+      forwarding?.snapshot.hostId,
+      monitor?.snapshot.sessionId,
+      selectionEpoch,
+    ],
   );
   useLayoutEffect(() => {
     accessLease.activate();
@@ -205,6 +219,7 @@ export function ProviderSurface({
   /* eslint-disable react-hooks/refs */
   const files =
     fileBrowser && active ? guardFileBrowserProvider(fileBrowser, checkAccess) : undefined;
+  const monitorContext = monitor && active ? guardMonitorProvider(monitor, checkAccess) : undefined;
   const terminalContext =
     terminal && active
       ? guardTerminalProvider(terminal, checkAccess, accessLease, (error) =>
@@ -270,6 +285,7 @@ export function ProviderSurface({
               terminal={terminalContext}
               history={historyContext}
               forwarding={forwardingContext}
+              monitor={monitorContext}
             />
           </ProviderBoundary>
         </div>

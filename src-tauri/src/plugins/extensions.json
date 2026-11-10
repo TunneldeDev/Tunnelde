@@ -11,7 +11,15 @@
     "viewKind": "component",
     "providers": {
       "manifest": "views[].provider",
-      "targets": ["hostList", "workbench", "fileBrowser", "terminal", "history", "forwarding"],
+      "targets": [
+        "hostList",
+        "workbench",
+        "fileBrowser",
+        "terminal",
+        "history",
+        "forwarding",
+        "monitor"
+      ],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
       "fileBrowserPermissions": ["fs.read", "sftp.read", "workspace.write"],
@@ -55,6 +63,18 @@
         "perPlugin": 8
       },
       "fallback": "built-in",
+      "monitorPermissions": ["sessions.read", "monitor.read"],
+      "monitor": {
+        "context": "monitor",
+        "ownership": "host-view",
+        "presentations": ["page", "panel"],
+        "optionalSlot": "Charts",
+        "sampleLimit": 240,
+        "pageSize": 128,
+        "paging": "revision-bound",
+        "sampling": "shared-visible-consumers",
+        "refresh": "coalesced-existing-sampler"
+      },
       "forwardingPermissions": ["hosts.read", "forwards.read"],
       "forwarding": {
         "context": "forwarding",

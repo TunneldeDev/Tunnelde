@@ -614,6 +614,30 @@
   color: var(--td-faint);
 }
 
+/* Monitoring scrolls with its host page/panel, including provider content. */
+.monitor-surface {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 8px;
+}
+
+.monitor-surface > .provider-content {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.monitor-page > .monitor-surface {
+  gap: 12px;
+}
+
+.monitor-panel-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .panel__body {
   flex: 1 1 auto;
   min-height: 0;
