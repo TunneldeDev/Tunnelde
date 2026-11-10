@@ -22,7 +22,9 @@ pub const DATA_EVENT: &str = "ssh://data";
 pub const CLOSED_EVENT: &str = "ssh://closed";
 
 mod cleanup;
+mod identity;
 pub(crate) use cleanup::SessionDisposal;
+pub(crate) use identity::SessionIdentity;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const TERM: &str = "xterm-256color";
@@ -230,6 +232,7 @@ enum WriterMsg {
 
 struct SessionHandle {
     published: bool,
+    server_key: String,
     info: SessionInfo,
     writer: mpsc::Sender<WriterMsg>,
     task: JoinHandle<()>,
@@ -245,6 +248,23 @@ pub struct SshManager {
 }
 
 impl SshManager {
+    pub(crate) fn identity(&self, session_id: &str) -> AppResult<SessionIdentity> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let session = sessions
+            .get(session_id)
+            .filter(|session| {
+                session.published && !session.handle.is_closed() && !session.task.is_finished()
+            })
+            .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
+        Ok(SessionIdentity {
+            host_id: session.info.host_id.clone(),
+            address: session.info.address.clone(),
+            server_key: session.server_key.clone(),
+        })
+    }
     pub(crate) fn is_active(&self, session_id: &str) -> bool {
         self.sessions
             .lock()
@@ -850,7 +870,7 @@ async fn connect_for_auth(
     if password_auth {
         host.auth_method = "password".into();
     }
-    let (mut pending, _observed, remote_forwards) =
+    let (mut pending, observed, remote_forwards) =
         open_route(&app, &host, &request.jump_credentials, false).await?;
 
     tokio::time::timeout(
@@ -947,6 +967,7 @@ async fn connect_for_auth(
 
     state.ssh.insert(SessionHandle {
         published,
+        server_key: observed.fingerprint,
         _jumps: jumps,
         remote_forwards,
         info: info.clone(),
@@ -1244,6 +1265,7 @@ mod tests {
         let manager = SshManager::default();
         manager.insert(SessionHandle {
             published: false,
+            server_key: "SHA256:target".into(),
             info: SessionInfo {
                 id: "target".into(),
                 host_id: "host".into(),
@@ -1264,7 +1286,16 @@ mod tests {
         assert!(manager.list().is_empty());
         assert!(manager.is_active("target"));
         assert!(manager.handle("target").is_ok());
+        assert!(manager.identity("target").is_err());
         manager.publish("target").unwrap();
+        assert_eq!(
+            manager.identity("target").unwrap(),
+            SessionIdentity {
+                host_id: "host".into(),
+                address: "qa@target:22".into(),
+                server_key: "SHA256:target".into(),
+            }
+        );
         assert_eq!(manager.list().len(), 1);
         assert!(manager.publish("missing").is_err());
         manager
@@ -1278,6 +1309,7 @@ mod tests {
         assert!(stopped.is_finished());
         assert!(manager.begin_disconnect("target").is_none());
         assert!(manager.handle("target").is_err());
+        assert!(manager.identity("target").is_err());
         assert!(manager.list().is_empty());
         let closed = tokio::time::timeout(Duration::from_secs(2), async {
             while !client.is_closed() || !jump.is_closed() || !stopped.is_finished() {
@@ -1319,6 +1351,7 @@ mod tests {
         let manager = SshManager::default();
         manager.insert(SessionHandle {
             published: true,
+            server_key: "SHA256:target".into(),
             info: SessionInfo {
                 id: "ended".into(),
                 host_id: "host".into(),

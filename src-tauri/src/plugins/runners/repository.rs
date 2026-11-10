@@ -28,13 +28,31 @@ fn load(path: &Path) -> AppResult<Vec<Record>> {
     if records.len() > MAX_RECORDS {
         return Err(AppError::validation("plugin.runners.tooManyTasks"));
     }
+    validate_keys(&records)?;
     Ok(records)
+}
+
+fn validate_keys(records: &[Record]) -> AppResult<()> {
+    let mut tasks = std::collections::HashSet::new();
+    let mut deployments = std::collections::HashSet::new();
+    for record in records {
+        let unique = if record.runner_id == "deployment" {
+            deployments.insert((&record.deployment.host_id, &record.deployment.directory))
+        } else {
+            tasks.insert(&record.runner_id)
+        };
+        if !unique {
+            return Err(AppError::validation("plugin.runners.invalidMetadata"));
+        }
+    }
+    Ok(())
 }
 
 fn save(path: &Path, records: &[Record]) -> AppResult<()> {
     if records.len() > MAX_RECORDS {
         return Err(AppError::validation("plugin.runners.tooManyTasks"));
     }
+    validate_keys(records)?;
     let bytes = serde_json::to_vec(records)?;
     if bytes.len() > MAX_BYTES {
         return Err(AppError::validation("plugin.runners.metadataTooLarge"));

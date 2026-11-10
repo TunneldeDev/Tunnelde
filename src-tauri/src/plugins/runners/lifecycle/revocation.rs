@@ -2,6 +2,7 @@ use super::super::{repository, HostContext, Record};
 
 fn selected(record: &Record, boundary: u64) -> bool {
     record.runner_id != "deployment"
+        && record.terminal_status.is_none()
         && record
             .runtime_owner
             .as_ref()
@@ -53,6 +54,9 @@ mod tests {
             10
         ));
         assert!(!selected(&record("deployment", None), 10));
+        let mut completed = record("completed", None);
+        completed.settle("stopped").unwrap();
+        assert!(!selected(&completed, 10));
         let legacy: Record = serde_json::from_value(serde_json::json!({
             "runnerId":"legacy", "stopPending":true,
             "deployment": { "hostId":"host", "directory":"/tmp/plugin", "platform":"linux",

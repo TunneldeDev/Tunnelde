@@ -144,3 +144,25 @@ fn repeated_live_polling_does_not_advance_the_revision_or_change_metadata() {
     }
     assert_eq!(serde_json::to_vec(&task).unwrap(), before);
 }
+
+#[test]
+fn duplicate_task_and_deployment_identities_are_preserved_and_rejected() {
+    let scratch = Scratch::new();
+    let task = record();
+    std::fs::write(
+        scratch.file(),
+        serde_json::to_vec(&vec![task.clone(), task.clone()]).unwrap(),
+    )
+    .unwrap();
+    assert!(load(&scratch.file()).is_err());
+    let before = std::fs::read(scratch.file()).unwrap();
+    assert!(save(&scratch.file(), &[task.clone(), task]).is_err());
+    assert_eq!(before, std::fs::read(scratch.file()).unwrap());
+    let mut first = record();
+    first.runner_id = "deployment".into();
+    let mut second = first.clone();
+    second.deployment.fingerprint = "different".into();
+    assert!(validate_keys(&[first.clone(), second.clone()]).is_err());
+    second.deployment.directory = "/other".into();
+    validate_keys(&[first, second]).unwrap();
+}

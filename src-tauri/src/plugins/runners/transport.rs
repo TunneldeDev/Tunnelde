@@ -1,5 +1,5 @@
 //! Bounded SSH helper protocol; never owns repository locks.
-use super::HostContext;
+use super::{Deployment, HostContext};
 use crate::{
     error::{AppError, AppResult},
     state::AppState,
@@ -12,12 +12,20 @@ use tauri::Manager;
 pub(super) async fn exec(
     context: &HostContext,
     session: &str,
-    executable: &str,
+    deployment: &Deployment,
     args: Vec<String>,
-    platform: &str,
     input: Option<String>,
 ) -> AppResult<Value> {
-    let command = crate::plugins::tasks::remote_command(executable, &args, None, platform)?;
+    super::identity::verify(
+        deployment,
+        &super::identity::capture(&context.app, session)?,
+    )?;
+    let command = crate::plugins::tasks::remote_command(
+        &deployment.runner,
+        &args,
+        None,
+        &deployment.platform,
+    )?;
     let handle = context.app.state::<AppState>().ssh.handle(session)?;
     tokio::time::timeout(Duration::from_secs(45), async {
         let mut channel = handle

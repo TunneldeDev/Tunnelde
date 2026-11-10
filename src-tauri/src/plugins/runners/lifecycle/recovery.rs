@@ -122,7 +122,12 @@ async fn pass(app: &tauri::AppHandle, round: usize) -> bool {
                 .filter_map(|record| {
                     sessions
                         .iter()
-                        .find(|session| session.host_id == record.deployment.host_id)
+                        .find(|session| {
+                            state.ssh.identity(&session.id).is_ok_and(|identity| {
+                                super::super::identity::verify(&record.deployment, &identity)
+                                    .is_ok()
+                            })
+                        })
                         .map(|session| (record, session.id.clone()))
                 })
                 .collect();
