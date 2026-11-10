@@ -1,3 +1,5 @@
+mod forwarding;
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -334,48 +336,7 @@ async fn route(context: &HostContext, method: &str, params: Value) -> AppResult<
             )
             .await
         }
-        "forwards.list" => encode(crate::ssh::forward::list(app)?),
-        "forwards.save" => encode(crate::ssh::forward::save(app, field(&params, "rule")?)?),
-        "forwards.remove" => {
-            crate::ssh::forward::remove(app, &field::<String>(&params, "id")?)?;
-            Ok(Value::Null)
-        }
-        "forwards.start" => {
-            let lease = super::security::Lease {
-                id: context.id.clone(),
-                fingerprint: context.fingerprint.clone(),
-                permissions: context.permissions.clone(),
-                generation: context.generation,
-            };
-            let result = state
-                .plugins
-                .security
-                .guard(
-                    &lease,
-                    crate::ssh::forward::start_owned(
-                        app,
-                        &field::<String>(&params, "id")?,
-                        &field::<String>(&params, "sessionId")?,
-                        Some((context.id.clone(), context.generation)),
-                    ),
-                )
-                .await;
-            if let Err(error) = authorize(context, &["forwards.write"]) {
-                state
-                    .forwards
-                    .stop_generation(&context.id, context.generation);
-                return Err(error);
-            }
-            result?;
-            Ok(Value::Null)
-        }
-        "forwards.stop" => {
-            state
-                .forwards
-                .stop(&field::<String>(&params, "id")?)
-                .await?;
-            Ok(Value::Null)
-        }
+        name if name.starts_with("forwards.") => forwarding::dispatch(context, name, params).await,
         "events.publish" => super::events::publish(context, params),
         name if name.starts_with("secrets.") => secret(context, name, &params).await,
         name if name.starts_with("tasks.") => super::tasks::dispatch(context, name, params).await,

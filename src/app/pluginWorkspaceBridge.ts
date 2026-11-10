@@ -304,6 +304,7 @@ export async function reconcilePluginWorkspace(signal: AbortSignal): Promise<voi
   await Promise.all([refreshPluginHosts(signal), useSsh.getState().refresh()]);
   if (signal.aborted) return;
   domainEvents.historyChanged();
+  domainEvents.forwardsChanged();
   domainEvents.filesChanged({ source: { kind: "local" }, origin: "event-recovery" });
   for (const session of useSsh.getState().sessions)
     domainEvents.filesChanged({
@@ -365,6 +366,7 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         (payload) => {
           if (payload.domain === "hosts") void refreshPluginHosts(lifetime);
           if (payload.domain === "sessions") void useSsh.getState().refresh();
+          if (payload.domain === "forwards") domainEvents.forwardsChanged();
           if (payload.domain === "history")
             domainEvents.historyChanged(payload.hostId ?? undefined);
           if (payload.domain === "files")

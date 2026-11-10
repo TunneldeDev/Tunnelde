@@ -136,7 +136,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         http_clients: Default::default(),
         update: UpdateService::new(version),
         ssh: SshManager::default(),
-        forwards: Default::default(),
+        forwards: crate::services::forwarding::registry(app),
         mounts: Default::default(),
         transfers,
         monitor: MonitorCache::default(),

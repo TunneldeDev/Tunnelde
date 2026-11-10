@@ -6,6 +6,21 @@ Extensions are organized by domain, with six review dimensions: contract, runtim
 data, presentation, behavior and governance. This is the architectural direction,
 not a claim that all domains already implement every extension capability.
 
+## Interface source organization
+
+Group interfaces by domain first, then separate contracts, service orchestration, persistence,
+transport adapters and presentation according to their actual responsibilities. The six layers
+are review dimensions, not a requirement to create six files for every small module. Shared
+infrastructure contains domain-independent events, resource scopes and synchronization.
+
+Forwarding DTOs and validation live in `services/forwarding/contract.rs`, persistence in
+`repository.rs`, and service entry points in `mod.rs`. Native IPC uses `commands/forwarding.rs`;
+the plugin adapter uses `plugins/api/forwarding.rs`. SSH listeners and relaying remain in the
+transport module. Both adapters call the domain service. Frontend contracts, shared state and
+views are also separate. Moving files does not change existing RPC names, permissions or wire
+shapes. SDK and documentation entry points should follow domain boundaries; older modules
+have not all migrated yet.
+
 ## Discover implemented capabilities
 
 Call `api.describe` to inspect available RPC methods, permissions and stable

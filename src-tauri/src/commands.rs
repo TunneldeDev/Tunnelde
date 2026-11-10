@@ -1,3 +1,5 @@
+pub mod forwarding;
+
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};

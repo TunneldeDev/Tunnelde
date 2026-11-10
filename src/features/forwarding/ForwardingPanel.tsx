@@ -1,11 +1,10 @@
-import { invoke } from "@tauri-apps/api/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight, Network, Plus, Server } from "lucide-react";
-import { ForwardingSection, type ForwardRule } from "./ForwardingSection";
+import { ForwardingSection } from "./ForwardingSection";
+import { useForwardingSnapshot } from "./forwardingStore";
 import { useHosts } from "@/store/hosts";
 import { useSsh } from "@/store/ssh";
-import { isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { SidebarDockControls, SidebarTitle } from "@/components/layout/SidebarDockControls";
 import { sidebarTabId } from "@/lib/session/sidebarDock";
@@ -16,10 +15,6 @@ import { EmptyState } from "@/components/ui/display/Misc";
 import { Button } from "@/components/ui/form/Button";
 import "./forwarding-panel.css";
 
-interface ForwardStatus extends ForwardRule {
-  active: boolean;
-  sessionId: string | null;
-}
 export function ForwardingPanel() {
   const { t } = useTranslation();
   const hosts = useHosts((state) => state.hosts);
@@ -36,33 +31,9 @@ export function ForwardingPanel() {
   }>({ hostId: null, targetRevision: 0 });
   const selected =
     target && target.revision !== selection.targetRevision ? target.hostId : selection.hostId;
-  const [rules, setRules] = useState<ForwardStatus[]>([]);
-  const [error, setError] = useState("");
-  const generation = useRef(0);
-  const load = useCallback(() => {
-    if (!isTauri()) return;
-    const request = ++generation.current;
-    void invoke<ForwardStatus[]>("forwarding_list").then(
-      (rows) => {
-        if (generation.current === request) {
-          setRules(rows);
-          setError("");
-        }
-      },
-      (cause: unknown) => {
-        if (generation.current === request) setError(translateError(cause));
-      },
-    );
-  }, []);
-  useEffect(() => {
-    const requests = generation;
-    load();
-    window.addEventListener("tunnelde:forwarding-changed", load);
-    return () => {
-      requests.current++;
-      window.removeEventListener("tunnelde:forwarding-changed", load);
-    };
-  }, [load, sessions]);
+  const snapshot = useForwardingSnapshot();
+  const rules = snapshot.entries ?? [];
+  const error = snapshot.error ? translateError(snapshot.error) : "";
   return (
     <div className="forwarding-panel">
       {!docked && (

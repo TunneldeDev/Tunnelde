@@ -1,11 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowRight, Laptop, Play, Plus, RefreshCw, Server, Square } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
-import { isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { copyText } from "@/lib/session/clipboard";
 import { useSsh } from "@/store/ssh";
@@ -14,23 +13,17 @@ import type { Host } from "@/lib/api/types";
 import { endpointAddress, localConnectionAddress, ForwardRuleEditor } from "./ForwardRuleEditor";
 import "./forwarding.css";
 
-export interface ForwardRule {
-  id: string;
-  hostId: string;
-  name: string;
-  mode: "local" | "remote";
-  bindHost: string;
-  bindPort: number;
-  targetHost: string;
-  targetPort: number;
-}
+import {
+  forwardingStore,
+  useForwardingSnapshot,
+  type ForwardInfo,
+  type ForwardRule,
+} from "./forwardingStore";
+export type { ForwardRule } from "./forwardingStore";
+
 export function forwardingSavePayload(rule: ForwardRule): ForwardRule {
   const { id, hostId, name, mode, bindHost, bindPort, targetHost, targetPort } = rule;
   return { id, hostId, name, mode, bindHost, bindPort, targetHost, targetPort };
-}
-interface ForwardInfo extends ForwardRule {
-  active: boolean;
-  sessionId: string | null;
 }
 const initial = (hostId: string): ForwardRule => ({
   id: "",
@@ -59,72 +52,48 @@ export function ForwardingSection(props: { host: Host; embedded?: boolean }) {
 }
 function SavedForwardingSection({ host, embedded = false }: { host: Host; embedded?: boolean }) {
   const { t } = useTranslation();
-  const origin = useId();
   const sessions = useSsh((state) => state.sessions);
   const session = sessions.find((item) => item.hostId === host.id && item.purpose === "forwarding");
   const [connectingRules, setConnectingRules] = useState<string[] | null>(null);
-  const [rules, setRules] = useState<ForwardInfo[]>([]);
+  const snapshot = useForwardingSnapshot();
+  const rules = (snapshot.entries ?? []).filter((rule) => rule.hostId === host.id);
+  const loading = snapshot.entries === null && snapshot.busy;
+  const load = forwardingStore.refresh;
   const isActive = (rule: ForwardInfo) =>
     rule.active && sessions.some((item) => item.id === rule.sessionId);
   const [form, setForm] = useState<ForwardRule | null>(null);
   const [pending, setPending] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [failure, setFailure] = useState<{ target: string; message: string } | null>(null);
+  const [pendingKind, setPendingKind] = useState<"start" | "stop" | "save" | "remove">("start");
+  const [operationFailure, setFailure] = useState<{ target: string; message: string } | null>(null);
   const mutation = useRef(false);
-  const generation = useRef(0);
   const live = useRef(true);
   const confirm = useDialogs((state) => state.confirm);
-  const load = useCallback(() => {
-    const request = ++generation.current;
-    const result = isTauri()
-      ? invoke<ForwardInfo[]>("forwarding_list")
-      : Promise.resolve<ForwardInfo[]>([]);
-    return result.then(
-      (rows) => {
-        if (live.current && request === generation.current) {
-          setRules(rows.filter((rule) => rule.hostId === host.id));
-          setLoading(false);
-        }
-      },
-      (cause: unknown) => {
-        if (live.current && request === generation.current) {
-          setLoading(false);
-          setFailure({ target: "list", message: translateError(cause) });
-        }
-      },
-    );
-  }, [host.id]);
+  const failure =
+    operationFailure ??
+    (snapshot.error ? { target: "list", message: translateError(snapshot.error) } : null);
   useEffect(() => {
     live.current = true;
-    void load();
     return () => {
       live.current = false;
     };
-  }, [load, sessions]);
-  useEffect(() => {
-    const changed = (event: Event) => {
-      const detail = (event as CustomEvent<{ hostId: string; origin: string }>).detail;
-      if (detail?.hostId === host.id && detail.origin !== origin && !mutation.current) void load();
-    };
-    window.addEventListener("tunnelde:forwarding-changed", changed);
-    return () => window.removeEventListener("tunnelde:forwarding-changed", changed);
-  }, [host.id, load, origin]);
-  const run = async (target: string, operation: () => Promise<unknown>) => {
+  }, []);
+  const run = async (
+    target: string,
+    operation: () => Promise<unknown>,
+    kind: typeof pendingKind = "start",
+  ) => {
     if (mutation.current) return;
     mutation.current = true;
     setPending(target);
+    setPendingKind(kind);
     setFailure(null);
-    // Older list requests cannot replace the result of this mutation.
-    generation.current++;
     try {
       await operation();
     } catch (cause) {
       if (live.current) setFailure({ target, message: translateError(cause) });
     } finally {
-      if (live.current) await load();
-      window.dispatchEvent(
-        new CustomEvent("tunnelde:forwarding-changed", { detail: { hostId: host.id, origin } }),
-      );
+      // Also reconcile partial failures; the shared store coalesces native events and completion.
+      load();
       mutation.current = false;
       if (live.current) setPending(null);
     }
@@ -158,30 +127,30 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
   const save = (rule: ForwardRule, start: boolean) => {
     if (mutation.current) return;
     const action = () =>
-      run("editor", async () => {
-        const saved = await invoke<ForwardRule>("forwarding_save", {
-          rule: forwardingSavePayload(rule),
-        });
-        if (!live.current) return;
-        generation.current++;
-        setRules((current) => [
-          ...current.filter((item) => item.id !== saved.id),
-          { ...saved, active: false, sessionId: null },
-        ]);
-        setLoading(false);
-        setForm(null);
-        if (start) {
-          setPending(saved.id);
-          if (!session) setConnectingRules([saved.id]);
-          else {
-            try {
-              await invoke("forwarding_start", { id: saved.id, sessionId: session.id });
-            } catch (cause) {
-              if (live.current) setFailure({ target: saved.id, message: translateError(cause) });
+      run(
+        "editor",
+        async () => {
+          const saved = await invoke<ForwardRule>("forwarding_save", {
+            rule: forwardingSavePayload(rule),
+          });
+          forwardingStore.saved(saved);
+          if (!live.current) return;
+          setForm(null);
+          if (start) {
+            setPending(saved.id);
+            setPendingKind("start");
+            if (!session) setConnectingRules([saved.id]);
+            else {
+              try {
+                await invoke("forwarding_start", { id: saved.id, sessionId: session.id });
+              } catch (cause) {
+                if (live.current) setFailure({ target: saved.id, message: translateError(cause) });
+              }
             }
           }
-        }
-      });
+        },
+        "save",
+      );
     if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(rule.bindHost.toLowerCase())) {
       confirm({
         title: t("forward.exposureTitle"),
@@ -296,8 +265,9 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
                 const ruleError = failure?.target === rule.id ? failure.message : null;
                 const local = rule.mode === "local";
                 const active = isActive(rule);
-                const starting = !active && (pending === rule.id || pending === "group");
-                const stopping = active && pending === rule.id;
+                const starting =
+                  pendingKind === "start" && (pending === rule.id || pending === "group");
+                const stopping = pendingKind === "stop" && pending === rule.id;
                 return (
                   <li key={rule.id} className="forward-rule">
                     <div className="forward-rule__head">
@@ -322,8 +292,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
                       <IconButton
                         size="sm"
                         label={t(
-                          pending === rule.id
-                            ? active
+                          stopping || starting
+                            ? stopping
                               ? "forward.stopping"
                               : "forward.starting"
                             : active
@@ -333,7 +303,11 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
                         disabled={busy}
                         onClick={() =>
                           active
-                            ? void run(rule.id, () => invoke("forwarding_stop", { id: rule.id }))
+                            ? void run(
+                                rule.id,
+                                () => invoke("forwarding_stop", { id: rule.id }),
+                                "stop",
+                              )
                             : start([rule.id])
                         }
                       >
@@ -372,7 +346,11 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
                                 confirmLabel: t("common.delete"),
                                 danger: true,
                                 onConfirm: () =>
-                                  run(rule.id, () => invoke("forwarding_remove", { id: rule.id })),
+                                  run(
+                                    rule.id,
+                                    () => invoke("forwarding_remove", { id: rule.id }),
+                                    "remove",
+                                  ),
                               }),
                           },
                         ]}
