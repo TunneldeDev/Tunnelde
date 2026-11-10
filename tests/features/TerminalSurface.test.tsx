@@ -9,7 +9,7 @@ import type {
   FrontendViewProps,
   FrontendTerminalChange,
 } from "@/lib/extensions/uiSdkContract";
-import type { TerminalBridge } from "@/lib/extensions/terminal";
+import type { TerminalBridge } from "@/lib/extensions/terminal/bridge";
 import type { PluginInfo } from "@/lib/api/types";
 import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";

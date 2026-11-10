@@ -1,5 +1,5 @@
 import { expect, it, vi } from "vitest";
-import { createHistoryContext, type HistoryActions } from "@/lib/extensions/history";
+import { createHistoryContext, type HistoryActions } from "@/lib/extensions/history/context";
 
 function fixture(count = 2, command = "pwd") {
   let current = true;

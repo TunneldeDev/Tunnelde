@@ -5,7 +5,7 @@ import {
   createHistoryContext,
   type HistoryActions,
   type HistoryRow,
-} from "@/lib/extensions/history";
+} from "@/lib/extensions/history/context";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
 
 /** Host toolbar, data loading and confirmations remain outside plugin presentation. */

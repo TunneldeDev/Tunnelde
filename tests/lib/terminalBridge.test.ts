@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { runInNewContext } from "node:vm";
 import type * as XtermModule from "@xterm/xterm";
 import { afterEach, expect, it, vi } from "vitest";
-import { createTerminalBridge } from "@/lib/extensions/terminal";
+import { createTerminalBridge } from "@/lib/extensions/terminal/bridge";
 
 const require = createRequire(import.meta.url);
 const module = { exports: {} as typeof XtermModule };
