@@ -16,7 +16,7 @@ export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProv
         ["sessions.read", "history.read"].every((p) => plugin.permissions.includes(p))) &&
       (target !== "forwarding" ||
         ["hosts.read", "forwards.read"].every((p) => plugin.permissions.includes(p))) &&
-      (target !== "monitor" ||
+      (!["monitor", "processes"].includes(target) ||
         ["sessions.read", "monitor.read"].every((p) => plugin.permissions.includes(p))) &&
       (target !== "backgroundTasks" || plugin.permissions.includes("backgroundTasks.read"))
         ? plugin.views

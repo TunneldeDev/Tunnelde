@@ -1311,6 +1311,13 @@
       "inactive": "此任务已结束或执行已取消。",
       "limit": "此插件已有八个尚未结束的后台任务。",
       "busy": "此任务操作正在执行。"
+    },
+    "processes": {
+      "changed": "进程视图已变更，请使用当前快照重试。",
+      "invalid": "进程操作参数无效。",
+      "unavailable": "当前视图无法终止此进程，请刷新后重试。",
+      "permissionDenied": "此界面提供者没有终止进程的权限。",
+      "providerInactive": "所选进程界面提供者已失效，请使用当前提供者或原生界面重试。"
     }
   },
   "themes": {
@@ -2085,7 +2092,8 @@
     "restore": "恢复内置界面",
     "terminal": "终端",
     "history": "命令历史",
-    "backgroundTasks": "后台任务"
+    "backgroundTasks": "后台任务",
+    "processes": "进程管理"
   },
   "hostFields": {
     "title": "插件主机字段",

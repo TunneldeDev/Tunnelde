@@ -8,7 +8,8 @@ export type FrontendProviderTarget =
   | "history"
   | "forwarding"
   | "monitor"
-  | "backgroundTasks";
+  | "backgroundTasks"
+  | "processes";
 /** Optional manifest view field; requires kind: component and a trusted frontend. */
 export interface FrontendProviderContribution {
   provider?: FrontendProviderTarget;

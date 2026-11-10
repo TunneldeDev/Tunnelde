@@ -41,6 +41,10 @@ import type { BackgroundTasksContext } from "@/lib/extensions/backgroundTasks/co
 import type { FrontendBackgroundTasks } from "@/lib/extensions/contracts/backgroundTasks/provider";
 import { guardBackgroundTasksProvider } from "@/lib/extensions/backgroundTasks/provider";
 
+import type { FrontendProcesses } from "@/lib/extensions/contracts/monitor/processes/provider";
+import type { ProcessesContext } from "@/lib/extensions/monitor/processes/context";
+import { guardProcessesProvider } from "@/lib/extensions/monitor/processes/provider";
+
 class ProviderBoundary extends Component<
   {
     children: ReactNode;
@@ -75,6 +79,7 @@ export function ProviderSurface({
   forwarding,
   monitor,
   backgroundTasks,
+  processes,
   suspended = false,
   validationError = "plugin.frontend.missingWorkspace",
 }: {
@@ -91,6 +96,7 @@ export function ProviderSurface({
   forwarding?: ForwardingContext & Pick<FrontendForwarding, "Entries">;
   monitor?: MonitorContext & Pick<FrontendMonitor, "Charts">;
   backgroundTasks?: BackgroundTasksContext & Pick<FrontendBackgroundTasks, "Entries">;
+  processes?: ProcessesContext & Pick<FrontendProcesses, "Entries">;
   suspended?: boolean;
   validationError?: string;
 }) {
@@ -176,6 +182,7 @@ export function ProviderSurface({
       terminal,
       forwarding?.snapshot.hostId,
       monitor?.snapshot.sessionId,
+      processes?.snapshot.sessionId,
       selectionEpoch,
     ],
   );
@@ -226,6 +233,18 @@ export function ProviderSurface({
   const files =
     fileBrowser && active ? guardFileBrowserProvider(fileBrowser, checkAccess) : undefined;
   const monitorContext = monitor && active ? guardMonitorProvider(monitor, checkAccess) : undefined;
+  const processesContext =
+    processes && active
+      ? guardProcessesProvider(
+          processes,
+          checkAccess,
+          () =>
+            !!usePlugins
+              .getState()
+              .items.find((item) => item.id === selected!.plugin.id)
+              ?.permissions.includes("monitor.write"),
+        )
+      : undefined;
   const backgroundTasksContext =
     backgroundTasks && active
       ? guardBackgroundTasksProvider(
@@ -305,6 +324,7 @@ export function ProviderSurface({
               forwarding={forwardingContext}
               monitor={monitorContext}
               backgroundTasks={backgroundTasksContext}
+              processes={processesContext}
             />
           </ProviderBoundary>
         </div>
