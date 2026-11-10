@@ -56,6 +56,8 @@ export function terminalOptions(
   return {
     // The official Unicode addon uses xterm's proposed Unicode provider API.
     allowProposedApi: true,
+    // Let applications negotiate enhanced keys instead of guessing their input mode.
+    vtExtensions: { kittyKeyboard: true },
     fontFamily: monoStack(settings.monoFont),
     fontSize: settings.monoFontSize,
     lineHeight: settings.terminalLineHeight,

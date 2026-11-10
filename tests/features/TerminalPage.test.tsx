@@ -970,6 +970,53 @@ describe("terminal clipboard", () => {
     }
   });
 
+  it("lets negotiated keyboard encoding own editing defaults unless the user customizes them", async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "platform");
+    Object.defineProperty(navigator, "platform", { configurable: true, value: "MacIntel" });
+    try {
+      render(<TerminalPage sessionId="s1" active />);
+      await waitFor(() => expect(keyboard).toHaveLength(1));
+      const instance = instances[0]!;
+      Object.assign(instance, { _core: { coreService: { kittyKeyboard: { flags: 7 } } } });
+      const press = () =>
+        new KeyboardEvent("keydown", {
+          key: "ArrowLeft",
+          metaKey: true,
+          cancelable: true,
+        });
+      expect(keyboard[0]!(press())).toBe(true);
+      expect(apiMock.sshWrite).not.toHaveBeenCalled();
+      act(() =>
+        useSettings.setState({
+          settings: {
+            ...useSettings.getState().settings,
+            keyboardShortcuts: { "terminal.lineStart": ["Meta+ArrowLeft"] },
+          },
+        }),
+      );
+      expect(keyboard[0]!(press())).toBe(false);
+      expect(apiMock.sshWrite).toHaveBeenLastCalledWith("s1", encodeBase64("\x01"));
+      act(() =>
+        useSettings.setState({
+          settings: {
+            ...useSettings.getState().settings,
+            keyboardShortcuts: {},
+            shortcutRules: {
+              "terminal.lineStart": {
+                "Meta+ArrowLeft": { priority: 100, propagation: "continue" },
+              },
+            },
+          },
+        }),
+      );
+      expect(keyboard[0]!(press())).toBe(true);
+      expect(apiMock.sshWrite).toHaveBeenCalledTimes(2);
+    } finally {
+      if (original) Object.defineProperty(navigator, "platform", original);
+      else Reflect.deleteProperty(navigator, "platform");
+    }
+  });
+
   it("opens copy, paste and select-all actions in the terminal context menu", async () => {
     const view = render(<TerminalPage sessionId="s1" active={false} />);
     await waitFor(() => expect(instances).toHaveLength(1));

@@ -1,5 +1,6 @@
 import {
   bindShortcutProvider,
+  consumeShortcutRelease,
   dispatchShortcuts,
   executeShortcutCandidates,
   scopedShortcutCandidates,
@@ -38,7 +39,12 @@ import { createTerminalOutputDecoder } from "./terminalOutput";
 import { bindTerminalClipboard } from "./terminalClipboard";
 import { terminalSequenceFor } from "./terminalKeyboard";
 import { registerTerminalCheckpoint, takeTerminalCheckpoint } from "./terminalCheckpoint";
-import { captureTerminalState, restoreTerminalState } from "./terminalState";
+import {
+  captureTerminalState,
+  restoreTerminalState,
+  terminalUsesEnhancedKeyboard,
+} from "./terminalState";
+import { shortcutMatches } from "@/lib/keyboard/registry";
 
 interface TerminalPageProps {
   sessionId: string;
@@ -363,7 +369,17 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
               paste();
               return true;
             }
-            const sequence = terminalSequenceFor(id);
+            const settings = useSettings.getState().settings;
+            const customized =
+              Object.hasOwn(settings.keyboardShortcuts, id) ||
+              Object.keys(settings.shortcutRules?.[id] ?? {}).some((binding) =>
+                shortcutMatches(event, binding),
+              );
+            const sequence = terminalSequenceFor(
+              id,
+              terminalUsesEnhancedKeyboard(instance),
+              customized,
+            );
             if (sequence === null) return false;
             instance.input(sequence, true);
             return true;
@@ -371,9 +387,13 @@ export function TerminalPage({ sessionId, active }: TerminalPageProps) {
         );
       unregisterShortcuts = bindShortcutProvider(element, terminalCandidates);
       instance.attachCustomKeyEventHandler((event) => {
+        if (disposed || ended || checkpointing.current || event.defaultPrevented) return false;
+        if (consumeShortcutRelease(event)) {
+          event.preventDefault();
+          return false;
+        }
         if (
           event.type !== "keydown" ||
-          event.defaultPrevented ||
           event.isComposing ||
           event.keyCode === 229 ||
           event.getModifierState("AltGraph")

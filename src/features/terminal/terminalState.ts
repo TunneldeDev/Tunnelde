@@ -20,8 +20,15 @@ interface Core {
     isCursorHidden: boolean;
     isCursorInitialized: boolean;
     decPrivateModes: Record<string, boolean | string | undefined>;
+    kittyKeyboard: {
+      flags: number;
+      mainFlags: number;
+      altFlags: number;
+      mainStack: number[];
+      altStack: number[];
+    };
   };
-  coreMouseService: { activeEncoding: string };
+  mouseStateService: { activeEncoding: string };
   _charsetService: {
     charset: Charset;
     glevel: number;
@@ -34,13 +41,14 @@ export interface TerminalState {
   cursorHidden: boolean;
   cursorInitialized: boolean;
   privateModes: Core["coreService"]["decPrivateModes"];
+  kittyKeyboard?: Core["coreService"]["kittyKeyboard"];
   mouseEncoding: string;
   charset: Core["_charsetService"];
 }
 
-// SerializeAddon 0.14 restores cells, colors and basic modes, but omits scrolling
+// SerializeAddon restores cells, colors and basic modes, but omits scrolling
 // margins, saved cursors, tab stops, character sets and SGR mouse encoding.
-// This narrow adapter is tied to our pinned xterm 6.0.0. Roundtrip tests run its
+// This narrow adapter is tied to our pinned xterm 6.1.0-beta.337. Roundtrip tests run its
 // actual distributed parser. If its shape changes, refuse teardown safely.
 function coreOf(terminal: Terminal): Core {
   const core = (terminal as unknown as { _core: Core })._core;
@@ -48,12 +56,22 @@ function coreOf(terminal: Terminal): Core {
     !core?.buffers?.normal?.savedCurAttrData ||
     !core.buffers.alt?.tabs ||
     !core.coreService?.decPrivateModes ||
-    !core.coreMouseService ||
+    !core.coreService.kittyKeyboard ||
+    !core.mouseStateService ||
     !core._charsetService
   ) {
     throw new Error("terminal.checkpointBusy");
   }
   return core;
+}
+
+/** Keep negotiated protocol inspection in the same pinned xterm adapter. */
+export function terminalUsesEnhancedKeyboard(terminal: Terminal): boolean {
+  const core = (terminal as unknown as { _core?: Core })._core;
+  return (
+    !!terminal.options.vtExtensions?.kittyKeyboard &&
+    (core?.coreService?.kittyKeyboard?.flags ?? 0) > 0
+  );
 }
 
 function snapshotBuffer(buffer: BufferState): BufferState {
@@ -79,7 +97,8 @@ export function captureTerminalState(terminal: Terminal): TerminalState {
     cursorHidden: core.coreService.isCursorHidden,
     cursorInitialized: core.coreService.isCursorInitialized,
     privateModes: { ...core.coreService.decPrivateModes, synchronizedOutput: false },
-    mouseEncoding: core.coreMouseService.activeEncoding,
+    kittyKeyboard: core.coreService.kittyKeyboard,
+    mouseEncoding: core.mouseStateService.activeEncoding,
     charset: {
       charset: core._charsetService.charset,
       glevel: core._charsetService.glevel,
@@ -109,6 +128,8 @@ export function restoreTerminalState(terminal: Terminal, state: TerminalState) {
   core.coreService.isCursorHidden = state.cursorHidden;
   core.coreService.isCursorInitialized = state.cursorInitialized;
   Object.assign(core.coreService.decPrivateModes, state.privateModes);
-  core.coreMouseService.activeEncoding = state.mouseEncoding;
+  if (state.kittyKeyboard)
+    Object.assign(core.coreService.kittyKeyboard, structuredClone(state.kittyKeyboard));
+  core.mouseStateService.activeEncoding = state.mouseEncoding;
   Object.assign(core._charsetService, state.charset);
 }

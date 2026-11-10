@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   bindShortcutProvider,
+  consumeShortcutRelease,
   dispatchShortcuts,
   executeShortcutCandidates,
   scopedShortcutCandidates,
@@ -23,6 +24,29 @@ beforeEach(() => {
   usePlugins.setState({ items: [] });
 });
 describe("shortcut routing", () => {
+  it("suppresses consumed terminal key releases, including changed modifiers, without stale suppression", () => {
+    const element = document.createElement("div");
+    element.className = "terminal-host";
+    document.body.append(element);
+    const unbind = bindShortcutProvider(element, (key) => (key.ctrlKey ? [candidate("copy")] : []));
+    const releases: boolean[] = [];
+    const release = (event: KeyboardEvent) => releases.push(consumeShortcutRelease(event));
+    element.addEventListener("keyup", release);
+    try {
+      element.dispatchEvent(event());
+      element.dispatchEvent(new KeyboardEvent("keyup", { key: "j", bubbles: true }));
+      expect(releases).toEqual([true]);
+      element.dispatchEvent(new KeyboardEvent("keyup", { key: "j", bubbles: true }));
+      expect(releases.at(-1)).toBe(false);
+      element.dispatchEvent(event());
+      element.dispatchEvent(new KeyboardEvent("keydown", { key: "j", bubbles: true }));
+      element.dispatchEvent(new KeyboardEvent("keyup", { key: "j", bubbles: true }));
+      expect(releases.at(-1)).toBe(false);
+    } finally {
+      unbind();
+      element.remove();
+    }
+  });
   it("orders all conflicts by descending priority and preserves ties", () => {
     const order: string[] = [];
     const candidates = ["a", "b", "c"].map((id) =>
