@@ -208,6 +208,20 @@ methods, authorization changes and errors; do not depend on undocumented fields 
 fixed method count. The market SDK catalogue and `api.describe` can differ when their
 releases are not synchronized.
 
+## 1.0 release gate
+
+Completing the extension roadmap does not automatically stabilize every API. A 1.0
+review must identify the exact stable surface and prove its documented input, output,
+error, event, permission and lifecycle contracts through compatibility tests. Advanced
+capabilities can remain explicitly experimental, with discovery and fallback behavior.
+
+The release review also requires current Windows/macOS/Linux evidence for core user
+flows, safe data migrations and recovery, actual update installation/restart with
+settings/hosts/plugins preserved, and resolved blocking security or data-loss issues.
+A green CI run or a method count alone does not establish these requirements. Maintain
+the current evidence and outstanding gaps in the active implementation checklist;
+do not treat `apiVersion: 1`, UI SDK `0.1.0` or a completed RPC directory as a 1.0 claim.
+
 ## Approval and runtime boundaries
 
 Installing an executable plugin leaves it stopped. Before execution, Tunnelde asks for
