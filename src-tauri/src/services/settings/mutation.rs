@@ -26,6 +26,14 @@ pub(crate) async fn writer<'a>(app: &'a AppHandle, state: &'a AppState) -> Write
 }
 
 impl<'a> Writer<'a> {
+    pub(super) fn current(&self) -> AppResult<(Settings, String)> {
+        let current = self.state.settings();
+        let revision = self
+            .state
+            .db
+            .with(|conn| super::repository::revision(conn, &current))?;
+        Ok((current, revision))
+    }
     pub(crate) fn update(self, patch: serde_json::Value) -> AppResult<Settings> {
         self.commit(Kind::Preferences, |previous| {
             super::patch::apply(previous, patch)
@@ -45,7 +53,7 @@ impl<'a> Writer<'a> {
         prepared.persist()?;
         Ok(prepared.finish())
     }
-    fn prepare(
+    pub(super) fn prepare(
         self,
         kind: Kind,
         prepare: impl FnOnce(&Settings) -> AppResult<Settings>,
@@ -67,6 +75,7 @@ impl<'a> Writer<'a> {
             kind,
             title_changed,
             committed: false,
+            revision: None,
         })
     }
 }
@@ -78,6 +87,7 @@ pub(crate) struct Prepared<'a> {
     kind: Kind,
     title_changed: bool,
     committed: bool,
+    revision: Option<String>,
 }
 impl Prepared<'_> {
     /// Bounded durable commit only: safe inside the caller's final authorization
@@ -86,21 +96,29 @@ impl Prepared<'_> {
         if self.committed {
             return Ok(());
         }
-        self.writer
+        let revision = self
+            .writer
             .state
             .db
-            .with(|conn| crate::db::settings::save(conn, &self.next))?;
+            .with(|conn| super::repository::save(conn, &self.next))?;
         self.writer.state.set_settings(self.next.clone());
+        self.revision = Some(revision);
         self.committed = true;
         Ok(())
     }
     pub(crate) fn finish(self) -> Settings {
+        self.finish_with(|next, _| next.clone())
+    }
+    pub(super) fn finish_with<T>(self, project: impl FnOnce(&Settings, &str) -> T) -> T {
         assert!(
             self.committed,
             "settings must be persisted before publication"
         );
         super::effects::publish(self.writer.app, &self.previous, &self.next, self.kind);
-        self.next.clone()
+        project(
+            &self.next,
+            self.revision.as_deref().expect("committed revision"),
+        )
     }
 }
 impl Drop for Prepared<'_> {

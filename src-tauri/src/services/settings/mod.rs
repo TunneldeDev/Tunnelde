@@ -3,6 +3,8 @@
 mod effects;
 mod mutation;
 mod patch;
+pub(crate) mod preferences;
+mod repository;
 
 use crate::{error::AppResult, settings::Settings, state::AppState};
 pub(crate) use mutation::writer;

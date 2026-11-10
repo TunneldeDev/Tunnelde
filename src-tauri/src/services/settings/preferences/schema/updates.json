@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "updates",
+  "type": "object",
+  "properties": {
+    "autoCheck": {
+      "type": "boolean"
+    },
+    "channel": {
+      "type": "string",
+      "enum": [
+        "stable",
+        "beta"
+      ]
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "github",
+        "custom"
+      ]
+    },
+    "sourceUrl": {
+      "type": "string",
+      "maxLength": 2048
+    },
+    "interval": {
+      "type": "string",
+      "enum": [
+        "startup",
+        "daily",
+        "weekly"
+      ]
+    }
+  },
+  "required": [
+    "autoCheck",
+    "channel",
+    "source",
+    "sourceUrl",
+    "interval"
+  ],
+  "additionalProperties": false
+}

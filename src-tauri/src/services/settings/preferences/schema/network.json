@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "network",
+  "type": "object",
+  "properties": {
+    "profiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "maxLength": 128
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "protocol": {
+            "type": "string",
+            "enum": [
+              "http",
+              "socks5"
+            ]
+          },
+          "host": {
+            "type": "string",
+            "maxLength": 253
+          },
+          "port": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 65535
+          },
+          "username": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "protocol",
+          "host",
+          "port",
+          "username"
+        ],
+        "additionalProperties": false
+      },
+      "maxItems": 64
+    },
+    "defaultProxy": {
+      "type": "string",
+      "maxLength": 128
+    },
+    "features": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 128
+      },
+      "maxProperties": 256,
+      "propertyNames": {
+        "type": "string",
+        "maxLength": 256
+      }
+    }
+  },
+  "required": [
+    "profiles",
+    "defaultProxy",
+    "features"
+  ],
+  "additionalProperties": false
+}

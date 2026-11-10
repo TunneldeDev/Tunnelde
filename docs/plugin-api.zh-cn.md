@@ -206,3 +206,8 @@ WASM 插件运行，并阻止其宿主 API 请求；它无法撤销任意代码�
 ## 扩展点
 
 实验性的 `extensions.describe` 目录见[扩展架构](plugin-extension-architecture.zh-cn.md)；主机样式扩展见[主机列表装饰](plugin-host-list.zh-cn.md)。既有稳定 API 契约保持兼容。
+
+## 版本化偏好设置
+
+[公开偏好设置](plugin-preferences.zh-cn.md)说明领域 Schema、独立快照和修订校验写入。
+新增接口保持实验状态，旧设置 RPC 继续兼容。

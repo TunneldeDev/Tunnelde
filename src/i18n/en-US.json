@@ -2144,5 +2144,9 @@
     "saveCopy": "Save as my host",
     "connectionHint": "This host is supplied by a plugin. Sign in for this connection, or save a copy to configure a private key and remember credentials.",
     "configureHint": "Save a copy of this discovered host to configure persistent forwarding rules, private keys and host settings."
+  },
+  "preferences": {
+    "invalidValue": "Invalid preference value: {{field}}.",
+    "staleRevision": "Preferences changed. Read a new snapshot before saving again."
   }
 }

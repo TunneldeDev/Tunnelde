@@ -247,3 +247,9 @@ WASM restrictions and platform-specific invocation.
 ## Extension points
 
 See [extension architecture](plugin-extension-architecture.en-us.md) for the experimental `extensions.describe` directory and [host-list decorations](plugin-host-list.en-us.md). Existing stable API contracts remain unchanged.
+
+## Versioned preferences
+
+See [public preferences](plugin-preferences.en-us.md) for grouped schemas, detached
+snapshots and revision-checked updates. These new methods are experimental;
+legacy settings RPCs remain available.

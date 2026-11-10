@@ -20,7 +20,7 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
             plugins::logging::write(&context.id, context.generation, params)
         }
         "app" => domains::application::dispatch(context, method, params).await,
-        "settings" => domains::settings::dispatch(context, method, params).await,
+        "settings" | "preferences" => domains::settings::dispatch(context, method, params).await,
         "hosts" | "groups" | "hostList" => domains::hosts::dispatch(context, method, params).await,
         "sessions" => domains::connections::dispatch(context, method, params).await,
         "terminal" => domains::terminal::dispatch(context, method, params).await,
