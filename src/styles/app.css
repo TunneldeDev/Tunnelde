@@ -2832,7 +2832,7 @@
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  color: var(--td-danger);
+  color: var(--td-red);
   font-size: 12px;
 }
 
