@@ -269,7 +269,13 @@ impl Settings {
         self.ui_providers.retain(|target, selection| {
             matches!(
                 target.as_str(),
-                "hostList" | "workbench" | "fileBrowser" | "terminal" | "history" | "forwarding"
+                "hostList"
+                    | "workbench"
+                    | "fileBrowser"
+                    | "terminal"
+                    | "history"
+                    | "forwarding"
+                    | "monitor"
             ) && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
                 !id.is_empty()
                     && id.len() <= 128

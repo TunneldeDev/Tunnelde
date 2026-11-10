@@ -15,7 +15,9 @@ export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProv
       (target !== "history" ||
         ["sessions.read", "history.read"].every((p) => plugin.permissions.includes(p))) &&
       (target !== "forwarding" ||
-        ["hosts.read", "forwards.read"].every((p) => plugin.permissions.includes(p)))
+        ["hosts.read", "forwards.read"].every((p) => plugin.permissions.includes(p))) &&
+      (target !== "monitor" ||
+        ["sessions.read", "monitor.read"].every((p) => plugin.permissions.includes(p)))
         ? plugin.views
             .filter((view) => view.kind === "component" && view.provider === target)
             .map((view) => ({ plugin, view }))

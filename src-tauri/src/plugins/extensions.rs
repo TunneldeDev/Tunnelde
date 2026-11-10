@@ -39,8 +39,26 @@ mod tests {
                 "fileBrowser",
                 "terminal",
                 "history",
-                "forwarding"
+                "forwarding",
+                "monitor"
             ])
+        );
+        assert_eq!(
+            providers["monitorPermissions"],
+            serde_json::json!(["sessions.read", "monitor.read"])
+        );
+        assert_eq!(providers["monitor"]["ownership"], "host-view");
+        assert_eq!(
+            providers["monitor"]["presentations"],
+            serde_json::json!(["page", "panel"])
+        );
+        assert_eq!(providers["monitor"]["sampleLimit"], 240);
+        assert_eq!(providers["monitor"]["pageSize"], 128);
+        assert_eq!(providers["monitor"]["optionalSlot"], "Charts");
+        assert_eq!(providers["monitor"]["sampling"], "shared-visible-consumers");
+        assert_eq!(
+            providers["monitor"]["refresh"],
+            "coalesced-existing-sampler"
         );
         assert_eq!(providers["selection"], "explicit-user");
         assert_eq!(providers["requiredSlot"], "Workspace");

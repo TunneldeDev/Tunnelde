@@ -2,6 +2,8 @@
 
 [English](plugin-ui-providers.en-us.md) · [可信 UI SDK](plugin-ui.zh-cn.md)
 
+[监控界面提供者](plugin-monitor-ui.zh-cn.md)可组合完整页与远端侧栏的共享图表及有界资源数据。
+
 [文件浏览器提供者](plugin-file-browser.zh-cn.md) 还可以组合或替换实际文件列表。
 
 实验性 UI SDK 支持由用户显式选择主机列表和工作台的替代界面。为组件视图声明

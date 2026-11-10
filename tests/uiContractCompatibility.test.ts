@@ -52,6 +52,10 @@ describe("public UI contract boundaries", () => {
       "FrontendForwarding",
       "FrontendForwardingEntry",
       "FrontendForwardingSnapshot",
+      "FrontendMonitor",
+      "FrontendMonitorReading",
+      "FrontendMonitorSample",
+      "FrontendMonitorSnapshot",
     ]);
     const widened: string[] = [];
     for (const [name, original] of before) {
