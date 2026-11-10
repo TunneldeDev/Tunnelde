@@ -20,6 +20,8 @@ import { reconcilePluginWorkspace, wirePluginWorkspaceBridge } from "./pluginWor
 import { restoreBackgroundSnapshot } from "./backgroundWindow";
 import { registerBackgroundTaskSources } from "./backgroundTaskSources";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
+import { createPluginActivationBridge } from "./plugins/activationBridge";
+import { reportError } from "@/lib/diagnostics";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -172,7 +174,16 @@ function pruneMissingHosts(): void {
 }
 
 async function wireEvents(): Promise<void> {
+  const activation = createPluginActivationBridge({
+    subscribe: (handler, signal) => events.onPluginActivation(handler, signal),
+    read: () => usePlugins.getState(),
+    load: (request) => usePlugins.getState().refreshActivation(request),
+    ensure: (plugin) => frontendRuntime.ensure(plugin),
+    report: (error) => reportError("plugins.activation", "frontend-request", error),
+  });
+  cleanups.push(() => activation.dispose());
   const subscriptions: Subscription[] = [
+    activation.subscription,
     {
       register: (signal) => wirePluginWorkspaceBridge(signal),
       recover: reconcilePluginWorkspace,

@@ -9,7 +9,7 @@ use crate::{
     error::AppResult,
     plugins::{
         api::HostContext, contributions, runners, security::RuntimeRetirement, sessions, tasks,
-        PluginInfo, PluginStatus, PluginsManager, STATE_EVENT,
+        Instance, PluginInfo, PluginStatus, PluginsManager, STATE_EVENT,
     },
     state::AppState,
 };
@@ -21,6 +21,30 @@ pub(in crate::plugins) enum StopMode {
 }
 
 impl PluginsManager {
+    /// Caller holds the package write lock. Keep every Instance authoritative
+    /// until all local processes have exited, including when cleanup fails.
+    pub(in crate::plugins) async fn quiesce_catalogue(&self) -> AppResult<()> {
+        let handles: Vec<_> = self.plugins.lock().await.values().cloned().collect();
+        for handle in &handles {
+            let mut instance = handle.lock().await;
+            if let Err(error) = instance.terminate_host().await {
+                instance.status = PluginStatus::Failed;
+                instance.error = Some(error.to_string());
+                self.remember(&instance.info());
+                return Err(error);
+            }
+            instance.wasm = None;
+            instance.node_source = None;
+            instance.status = PluginStatus::Stopped;
+            instance.error = None;
+            self.remember(&instance.info());
+        }
+        for handle in handles {
+            handle.lock().await.retired = true;
+        }
+        Ok(())
+    }
+
     pub(in crate::plugins) fn cleanup_policy_retirement(&self, retired: Vec<RuntimeRetirement>) {
         if let Some(app) = self.runtime_app.get() {
             self.cleanup_retired(app, retired);
@@ -98,13 +122,20 @@ impl PluginsManager {
         if !instance.belongs_to_retirement(retirement) {
             return Ok(instance.info());
         }
-        if let Some(mut host) = instance.host.take() {
+        if let Some(host) = instance.host.as_ref() {
             if matches!(mode, StopMode::Graceful) {
                 let _ = host
                     .request("shutdown", json!({}), Duration::from_secs(2))
                     .await;
             }
-            host.kill();
+        }
+        if let Err(error) = instance.terminate_host().await {
+            instance.status = PluginStatus::Failed;
+            instance.error = Some(error.to_string());
+            let info = instance.info();
+            self.remember(&info);
+            let _ = app.emit(STATE_EVENT, &info);
+            return Err(error);
         }
         instance.wasm = None;
         instance.node_source = None;
@@ -118,5 +149,17 @@ impl PluginsManager {
         let _ = app.emit(STATE_EVENT, &info);
         drop(instance);
         Ok(info)
+    }
+}
+
+impl Instance {
+    /// Retain Child in its authoritative slot across waits/cancellation. Only a
+    /// confirmed local process exit releases the engine's ownership.
+    pub(in crate::plugins) async fn terminate_host(&mut self) -> AppResult<()> {
+        if let Some(host) = self.host.as_mut() {
+            host.terminate().await?;
+        }
+        self.host = None;
+        Ok(())
     }
 }

@@ -11,6 +11,10 @@ use super::{
 use crate::error::{AppError, AppResult};
 
 impl PluginSecurity {
+    pub(in crate::plugins) fn is_ready(&self, lease: &Lease) -> AppResult<bool> {
+        Ok(self.ready_identity(lease)?.is_some())
+    }
+
     fn ready_identity(&self, lease: &Lease) -> AppResult<Option<uuid::Uuid>> {
         let policy = self.policy();
         Self::authorize_policy(

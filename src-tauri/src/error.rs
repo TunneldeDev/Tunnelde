@@ -21,6 +21,9 @@ impl std::fmt::Display for UpdateSourceFailure {
 /// so the frontend can localize messages instead of showing raw strings.
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
+    /// Shared in-flight operations preserve the original error's IPC contract.
+    #[error("{0}")]
+    Shared(std::sync::Arc<AppError>),
     #[error("{0}")]
     Validation(String),
     #[error("plugin.engine.unsupported")]
@@ -71,6 +74,13 @@ pub enum AppError {
 }
 
 impl AppError {
+    pub fn original(&self) -> &Self {
+        let mut error = self;
+        while let Self::Shared(cause) = error {
+            error = cause;
+        }
+        error
+    }
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
     }
@@ -81,6 +91,7 @@ impl AppError {
 
     pub fn code(&self) -> &'static str {
         match self {
+            Self::Shared(error) => error.code(),
             Self::Validation(_)
             | Self::PluginEngineUnsupported { .. }
             | Self::PluginUiSdkUnsupported { .. }
@@ -100,6 +111,7 @@ impl AppError {
 
     pub fn update_source_errors(&self) -> Option<Vec<UpdateSourceFailure>> {
         match self {
+            Self::Shared(error) => error.update_source_errors(),
             Self::UpdateRequest(failure) => Some(vec![failure.clone()]),
             Self::UpdateSources(failures) => Some(failures.clone()),
             _ => None,
@@ -130,6 +142,9 @@ impl Serialize for AppError {
     where
         S: Serializer,
     {
+        if let Self::Shared(error) = self {
+            return error.serialize(serializer);
+        }
         let detailed = matches!(
             self,
             Self::PluginEngineUnsupported { .. }
@@ -198,6 +213,39 @@ pub type AppResult<T> = Result<T, AppError>;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sharing_preserves_original_variant_and_the_entire_ipc_payload() {
+        let error = AppError::PluginEngineUnsupported {
+            plugin_id: "sample".into(),
+            plugin_version: "2.0.0".into(),
+            host_version: "0.33.0".into(),
+            required: ">=0.34.0".into(),
+        };
+        let expected = serde_json::to_value(&error).unwrap();
+        let shared = AppError::Shared(std::sync::Arc::new(AppError::Shared(std::sync::Arc::new(
+            error,
+        ))));
+        assert!(
+            matches!(shared.original(), AppError::PluginEngineUnsupported { plugin_id, .. } if plugin_id == "sample")
+        );
+        assert_eq!(shared.code(), "validation");
+        assert_eq!(shared.to_string(), "plugin.engine.unsupported");
+        assert_eq!(serde_json::to_value(&shared).unwrap(), expected);
+        let update = AppError::Shared(std::sync::Arc::new(AppError::UpdateSources(vec![
+            UpdateSourceFailure {
+                source: "github-api",
+                reason: "updates.rateLimited".into(),
+                status: Some(403),
+                retry_at: Some(42),
+            },
+        ])));
+        assert_eq!(update.code(), "update");
+        assert_eq!(update.update_source_errors().unwrap()[0].retry_at, Some(42));
+        assert_eq!(
+            serde_json::to_value(update).unwrap()["details"]["sourceErrors"][0]["status"],
+            403
+        );
+    }
     #[test]
     fn engine_mismatch_keeps_error_code_and_supplies_exact_compatibility_context() {
         let error = AppError::PluginEngineUnsupported {

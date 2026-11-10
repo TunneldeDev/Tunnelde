@@ -19,8 +19,10 @@ import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
 import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
 import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
+import type { FrontendActivation } from "@/lib/plugins/activation/contracts";
 
 export interface NativeEvents {
+  "plugin://activate-frontend": FrontendActivation;
   "plugin://configuration-changed": { pluginId: string; revision: string; schemaDigest: string };
   "plugin://host-columns-changed": HostColumnsSnapshot;
   "plugin://host-sources-changed": HostSourcesSnapshot;

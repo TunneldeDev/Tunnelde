@@ -45,6 +45,57 @@ impl Drop for Fixture {
 }
 
 #[tokio::test]
+async fn package_admission_shares_readers_but_holds_mutations_until_engine_admission_finishes() {
+    let fixture = Fixture::new();
+    let permit = fixture.permit();
+    let first = fixture
+        .manager
+        .admit_package("sample", &permit)
+        .await
+        .unwrap();
+    let second = fixture
+        .manager
+        .admit_package("sample", &permit)
+        .await
+        .unwrap();
+    let mut mutation = Box::pin(fixture.manager.mutations.write());
+    assert!(futures_util::poll!(&mut mutation).is_pending());
+    drop(first);
+    assert!(futures_util::poll!(&mut mutation).is_pending());
+    drop(second);
+    let writer = mutation.await;
+    let mut queued = Box::pin(fixture.manager.admit_package("sample", &permit));
+    assert!(futures_util::poll!(&mut queued).is_pending());
+    drop(writer);
+    drop(queued.await.unwrap());
+}
+
+#[tokio::test]
+async fn package_admission_cannot_borrow_a_new_grant_while_waiting_for_a_mutation() {
+    let fixture = Fixture::new();
+    let permit = fixture.permit();
+    let writer = fixture.manager.mutations.write().await;
+    let mut queued = Box::pin(fixture.manager.admit_package("sample", &permit));
+    assert!(futures_util::poll!(&mut queued).is_pending());
+    fixture.manager.security.retire_runtime("sample");
+    assert_eq!(
+        tokio::time::timeout(Duration::from_millis(200), &mut queued)
+            .await
+            .unwrap()
+            .err()
+            .unwrap()
+            .to_string(),
+        "pluginSecurity.changed"
+    );
+    drop(writer);
+    assert!(fixture
+        .manager
+        .admit_package("sample", &fixture.permit())
+        .await
+        .is_ok());
+}
+
+#[tokio::test]
 async fn stop_rejects_late_start_and_cancels_admission_waiting_for_instance() {
     let fixture = Fixture::new();
     let permit = fixture.permit();

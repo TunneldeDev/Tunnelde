@@ -6,7 +6,7 @@ import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
 import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
-import type { StartPermit } from "@/lib/plugins/activation/contracts";
+import type { FrontendActivation, StartPermit } from "@/lib/plugins/activation/contracts";
 
 import type {
   AppInfo,
@@ -339,6 +339,10 @@ export const api = {
 };
 
 export const events = {
+  onPluginActivation: (
+    handler: (request: FrontendActivation) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugin://activate-frontend", handler, signal),
   onEditorCleanupChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
     nativeEvents.on("editor://cleanup-changed", handler, signal),
   onTransfersChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>

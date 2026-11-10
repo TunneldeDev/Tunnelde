@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use serde_json::json;
@@ -13,12 +14,18 @@ use crate::plugins::{
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 
 impl PluginsManager {
-    pub async fn start(
+    pub(super) async fn start_engine(
         &self,
         app: &AppHandle,
         id: &str,
         permit: &StartPermit,
+        ownership: &AtomicBool,
     ) -> AppResult<PluginInfo> {
+        // Readers preserve concurrent starts. A package mutation is exclusive
+        // through engine initialization, but never through frontend activation.
+        // Capture admission before waiting, so a queued start cannot borrow a
+        // grant created by the mutation it waited for.
+        let _package = self.admit_package(id, permit).await?;
         let (lease, mut instance) = self.admit_start(id, permit).await?;
         if instance.retired {
             return Err(AppError::NotFound("plugin.notFound".into()));
@@ -42,9 +49,7 @@ impl PluginsManager {
             .as_ref()
             .is_some_and(|active| active.generation != lease.generation)
         {
-            if let Some(mut host) = instance.host.take() {
-                host.kill();
-            }
+            instance.terminate_host().await?;
             instance.wasm = None;
             instance.node_source = None;
             self.cleanup_retired(
@@ -65,6 +70,7 @@ impl PluginsManager {
                     .plugins
                     .cleanup_retired(&rollback_app, retired);
             });
+        ownership.store(activation.owned(), Ordering::Release);
         instance.runtime_lease = Some(lease.clone());
         instance.runtime_id = Some(self.security.lease_stamp(&lease));
         let state = app.state::<crate::state::AppState>();
@@ -197,11 +203,12 @@ impl PluginsManager {
             .await
             .inspect_err(|_| self.remember_source(id, None))?;
 
+        instance.host = Some(host);
         let initialized = self
             .security
             .guard(
                 &lease,
-                host.request(
+                instance.host.as_ref().unwrap().request(
                     "initialize",
                     json!({
                         "apiVersion": manifest::API_VERSION,
@@ -221,8 +228,7 @@ impl PluginsManager {
             None,
             Some(lease.generation),
         ) {
-            let mut host = host;
-            host.kill();
+            instance.terminate_host().await?;
             self.remember_source(id, None);
             instance.status = PluginStatus::Stopped;
             instance.error = None;
@@ -237,7 +243,6 @@ impl PluginsManager {
             Ok(_) => {
                 self.security.native_ready(&lease)?;
                 activation.commit();
-                instance.host = Some(host);
                 instance.node_source = runtime.source;
                 instance.status = PluginStatus::Running;
                 instance.error = None;
@@ -246,8 +251,7 @@ impl PluginsManager {
                 let detail = error.to_string();
                 let reason = detail.split(':').next().unwrap_or("plugin.error");
                 tracing::warn!(plugin_id = %id, reason, "plugin initialization failed");
-                let mut host = host;
-                host.kill();
+                instance.terminate_host().await?;
                 self.remember_source(id, None);
                 instance.status = PluginStatus::Failed;
                 instance.error = Some(error.to_string());

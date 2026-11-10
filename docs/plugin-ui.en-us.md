@@ -124,6 +124,27 @@ An ordinary view refresh does not open approval or Node setup dialogs; explicit
 interactive actions retain approval checks. Legacy JSON view payloads and public
 SDK method signatures are unchanged.
 
+Concurrent starts of the same admitted runtime share initialization and frontend
+activation. The host requests frontend activation while the native start is still
+pending, and returns success only after the ready handshake. The complete startup
+has a fixed 45-second deadline, including a 15-second frontend readiness wait.
+Later callers do not extend it. Cancelling one startup waiter leaves other waiters
+intact; cancelling the last unfinished waiter retires a newly owned startup and
+waits for local process exit. An already running runtime is retained. This does
+not guarantee completion of remote or mounted-resource cleanup.
+
+Startup coordination is bounded to 64 unfinished operations, 256 total waiting
+calls and 32 waiting calls per operation. Cleanup retains its operation slot until
+settlement; failed settlement quarantines that slot. Shared failures preserve the
+original error code and compatibility details. The bootstrap activation listener
+only loads the exact already admitted runtime; it cannot approve or start plugins.
+
+Engine initialization takes a shared package read lock; installation, replacement,
+removal and reload take an exclusive write lock. The read lock is released before
+waiting for frontend readiness. Package replacement and removal wait for the local
+child to exit. If reload cannot confirm termination, it keeps the original engine
+instances and reports the failure instead of silently replacing their registry.
+
 The SDK also supports explicit [interface providers](plugin-ui-providers.en-us.md)
 for the host list and workbench presentation. The remaining domain services and
 dependency management are still under development.
