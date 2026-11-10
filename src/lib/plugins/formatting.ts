@@ -1,3 +1,4 @@
+import { isPluginInvocationCancelled, samePluginRuntime } from "./commands/runtime";
 import { create } from "zustand";
 import type { PluginInfo } from "@/lib/api/types";
 import { isTauri } from "@/lib/api/ipc";
@@ -50,7 +51,9 @@ export function documentFormatters(path: string, plugins: readonly PluginInfo[])
 export async function runEditorPlugin(
   provider: EditorProvider,
   document: EditorDocument,
+  signal?: AbortSignal,
 ): Promise<boolean> {
+  if (signal?.aborted) return false;
   if (useFormatting.getState().busy.includes(document.tabId)) return false;
   useFormatting.setState((state) => ({ busy: [...state.busy, document.tabId] }));
   try {
@@ -64,6 +67,7 @@ export async function runEditorPlugin(
     )
       throw new Error(i18n.t("editor.noFormatter"));
     if (plugin.status !== "running") await usePlugins.getState().start(plugin.id);
+    if (signal?.aborted) return false;
     plugin = usePlugins.getState().items.find((item) => item.id === provider.id);
     if (
       !original ||
@@ -71,7 +75,7 @@ export async function runEditorPlugin(
       plugin.status !== "running"
     )
       return false;
-    const fingerprint = plugin.fingerprint;
+    const running = plugin;
     // Consent can take time. Do not send a closed or superseded document to the plugin.
     const current = editorDocument(document.tabId);
     if (
@@ -97,28 +101,33 @@ export async function runEditorPlugin(
       new TextEncoder().encode(JSON.stringify(input)).length > 256 * 1024
     )
       throw new Error(i18n.t("editor.formatTooLarge"));
-    const result = await usePlugins.getState().execute(plugin.id, command.id, () => {
-      const current = editorDocument(document.tabId);
-      const runtime = usePlugins.getState().items.find((item) => item.id === provider.id);
-      if (
-        !current ||
-        current.documentId !== document.documentId ||
-        current.version !== document.version
-      )
-        throw new Error(i18n.t("editor.documentChanged"));
-      if (
-        !samePluginAction(runtime, original, { id: provider.id, command: provider.command }) ||
-        runtime.status !== "running"
-      )
-        throw new Error(i18n.t("editor.formatRevoked"));
-      return input;
-    });
+    const result = await usePlugins.getState().execute(
+      plugin.id,
+      command.id,
+      () => {
+        const current = editorDocument(document.tabId);
+        const runtime = usePlugins.getState().items.find((item) => item.id === provider.id);
+        if (
+          !current ||
+          current.documentId !== document.documentId ||
+          current.version !== document.version
+        )
+          throw new Error(i18n.t("editor.documentChanged"));
+        if (
+          !samePluginAction(runtime, original, { id: provider.id, command: provider.command }) ||
+          runtime.status !== "running"
+        )
+          throw new Error(i18n.t("editor.formatRevoked"));
+        return input;
+      },
+      signal,
+    );
     const latest = usePlugins.getState().items.find((item) => item.id === provider.id);
     const security = usePluginSecurity.getState().state;
     if (
       !samePluginAction(latest, original, { id: provider.id, command: provider.command }) ||
       latest.status !== "running" ||
-      latest.fingerprint !== fingerprint ||
+      !samePluginRuntime(latest, running) ||
       (isTauri() && (security.restricted || !hasPluginGrant(security, latest)))
     )
       throw new Error(i18n.t("editor.formatRevoked"));
@@ -135,6 +144,7 @@ export async function runEditorPlugin(
     replaceEditorDocument(document, result.text);
     return true;
   } catch (error) {
+    if (isPluginInvocationCancelled(error)) return false;
     const message =
       error instanceof Error && i18n.exists(error.message)
         ? i18n.t(error.message as "editor.documentChanged")

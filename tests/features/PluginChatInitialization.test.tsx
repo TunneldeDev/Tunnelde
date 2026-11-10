@@ -1,3 +1,5 @@
+import { usePlugins } from "@/store/plugins";
+import { plugin as installedPlugin } from "../fixtures/plugins";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chat } from "../fixtures/pluginChat";
@@ -54,6 +56,9 @@ function block(status: "required" | "checking" | "ready" | "error" = "required")
   };
 }
 beforeEach(async () => {
+  usePlugins.setState({
+    items: [{ ...installedPlugin, id: "assistant", status: "running", runtimeId: "boot:1" }],
+  });
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
   useDialogs.getState().close();
@@ -83,6 +88,7 @@ describe("agent preparation", () => {
         "assistant",
         "ai.prepare",
         expect.objectContaining({ mode: "approve" }),
+        "boot:1",
       ),
     );
     await screen.findByRole("button", { name: "Send" });
@@ -103,6 +109,7 @@ describe("agent preparation", () => {
         "assistant",
         "ai.install",
         expect.objectContaining({ mode: "approve" }),
+        "boot:1",
       ),
     );
   });
@@ -154,6 +161,7 @@ describe("agent preparation", () => {
       "assistant",
       "ai.prepare",
       expect.objectContaining({ modelId: chat.modelId }),
+      "boot:1",
     );
     expect((screen.getByLabelText("Message") as HTMLTextAreaElement).value).toBe(
       "Keep this prompt",
@@ -164,6 +172,7 @@ describe("agent preparation", () => {
         "assistant",
         "ai.send",
         expect.objectContaining({ message: "Keep this prompt" }),
+        "boot:1",
       ),
     );
   });
@@ -179,6 +188,7 @@ describe("agent preparation", () => {
         "assistant",
         "ai.install",
         expect.objectContaining({ modelId: chat.modelId }),
+        "boot:1",
       ),
     );
     await screen.findByRole("button", { name: "Cancel initialization" });
@@ -187,7 +197,7 @@ describe("agent preparation", () => {
     ).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "Cancel initialization" }));
     await waitFor(() =>
-      expect(mock.run).toHaveBeenCalledWith("assistant", "ai.stop", expect.anything()),
+      expect(mock.run).toHaveBeenCalledWith("assistant", "ai.stop", expect.anything(), "boot:1"),
     );
     expect(screen.queryByText("You")).toBeNull();
   });

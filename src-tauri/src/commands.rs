@@ -861,9 +861,10 @@ pub async fn plugin_run(
     id: String,
     command: String,
     input: Option<Value>,
+    runtime_id: String,
 ) -> AppResult<Value> {
     let state = app.state::<AppState>();
-    state.plugins.run(&id, &command, input).await
+    state.plugins.run(&id, &command, input, &runtime_id).await
 }
 
 /// Lets the user pick the folder that contains a plugin.

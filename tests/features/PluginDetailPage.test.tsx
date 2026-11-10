@@ -48,6 +48,22 @@ beforeEach(async () => {
   });
 });
 describe("plugin workspace details", () => {
+  it("keeps Stop available during a command and disables it only while stopping", () => {
+    const stop = vi.fn(async () => {});
+    usePlugins.setState({
+      items: [{ ...plugin, status: "running" }],
+      commandingIds: [plugin.id],
+      busyIds: [plugin.id],
+      stop,
+    });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    const button = screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledWith(plugin.id);
+    act(() => usePlugins.setState({ commandingIds: [], stoppingIds: [plugin.id] }));
+    expect(button.disabled).toBe(true);
+  });
   it("keeps cancellation available while activation is pending", () => {
     const stop = vi.fn(async () => {});
     usePlugins.setState({ startingIds: [plugin.id], busyIds: [plugin.id], stop });

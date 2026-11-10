@@ -68,6 +68,7 @@ pub struct FrontendSession {
     pub token: String,
     pub plugin_id: String,
     pub generation: u64,
+    pub runtime_id: String,
     pub entry: String,
     pub sdk_version: &'static str,
 }
@@ -209,10 +210,14 @@ fn authorized(security: &PluginSecurity, lease: &Lease) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<FrontendSession> {
+pub async fn plugin_frontend_open(
+    app: AppHandle,
+    id: String,
+    runtime_id: String,
+) -> AppResult<FrontendSession> {
     let state = app.state::<AppState>();
-    let handle = state.plugins.instance(&id).await?;
-    let instance = handle.lock().await;
+    let lease = state.plugins.invocation_lease(&id, &runtime_id)?;
+    let instance = state.plugins.admit_invocation(&id, &lease).await?;
     if instance.retired {
         return Err(AppError::validation("plugin.notFound"));
     }
@@ -226,7 +231,6 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
         .clone()
         .ok_or_else(|| AppError::validation("plugin.frontend.unavailable"))?;
     frontend.require_sdk()?;
-    let lease = instance.running_lease(&state.plugins.security)?;
     authorized(&state.plugins.security, &lease)?;
     let capacity = app
         .state::<Registry>()
@@ -277,6 +281,7 @@ pub async fn plugin_frontend_open(app: AppHandle, id: String) -> AppResult<Front
         token,
         plugin_id: id,
         generation,
+        runtime_id,
         entry: frontend.entry.trim_start_matches("ui/").into(),
         sdk_version: UI_SDK_VERSION,
     })

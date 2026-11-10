@@ -8,6 +8,11 @@ import { toast } from "@/store/toasts";
 import { normalizeResult } from "@/lib/plugins/pluginView";
 import { useShortcutConflicts } from "@/store/shortcutConflicts";
 import i18n from "@/i18n/i18n";
+import {
+  withPluginInvocation,
+  isPluginInvocationCancelled,
+  PluginInvocationCancelled,
+} from "@/lib/plugins/commands/runtime";
 
 export interface PluginOutput {
   text: string;
@@ -34,6 +39,8 @@ interface PluginsStore {
   busy: string | null;
   busyIds: string[];
   startingIds: string[];
+  stoppingIds: string[];
+  commandingIds: string[];
   reloading: boolean;
   outputs: Record<string, PluginOutput>;
   load: () => Promise<void>;
@@ -51,14 +58,23 @@ interface PluginsStore {
   start: (id: string) => Promise<void>;
   stop: (id: string) => Promise<void>;
   run: (id: string, command: string) => Promise<void>;
-  execute: (id: string, command: string, input: () => Record<string, unknown>) => Promise<unknown>;
+  execute: (
+    id: string,
+    command: string,
+    input: () => Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
   clearOutput: (id: string) => void;
 }
 
 export const usePlugins = create<PluginsStore>((set, get) => {
   const operations = new Map<
     string,
-    { promise: Promise<void>; controller: AbortController; kind: "start" | "stop" | "other" }
+    {
+      promise: Promise<void>;
+      controller: AbortController;
+      kind: "start" | "stop" | "command" | "other";
+    }
   >();
   const installations = new Map<string, Promise<boolean>>();
   const revisions = new Map<string, number>();
@@ -71,7 +87,11 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     const startingIds = [...operations]
       .filter(([, operation]) => operation.kind === "start")
       .map(([id]) => id);
-    set({ busyIds, busy: busyIds[0] ?? null, startingIds });
+    const stoppingIds = [...operations].filter(([, op]) => op.kind === "stop").map(([id]) => id);
+    const commandingIds = [...operations]
+      .filter(([, op]) => op.kind === "command")
+      .map(([id]) => id);
+    set({ busyIds, busy: busyIds[0] ?? null, startingIds, stoppingIds, commandingIds });
   };
 
   const touch = (id: string) => {
@@ -105,19 +125,23 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     }
   };
 
-  // Stop supersedes activation, including consent/setup waits. Other operations
+  // Stop supersedes activation and commands, including consent/transport waits. Other operations
   // remain serialized per plugin, without blocking unrelated plugins.
   const operate = (
     id: string,
     action: (startedAt: number, signal: AbortSignal) => Promise<void>,
-    kind: "start" | "stop" | "other" = "other",
+    kind: "start" | "stop" | "command" | "other" = "other",
+    parentSignal?: AbortSignal,
   ) => {
     const pending = operations.get(id);
     if (pending) {
-      if (kind !== "stop" || pending.kind !== "start") return pending.promise;
+      if (kind !== "stop" || !["start", "command"].includes(pending.kind)) return pending.promise;
       pending.controller.abort();
     }
     const controller = new AbortController();
+    const cancel = () => controller.abort();
+    parentSignal?.addEventListener("abort", cancel, { once: true });
+    if (parentSignal?.aborted) controller.abort();
     const pendingReload = reloadRequest;
     touch(id);
     const request = Promise.resolve().then(async () => {
@@ -125,6 +149,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         if (pendingReload) await pendingReload;
         if (!controller.signal.aborted) await action(touch(id), controller.signal);
       } finally {
+        parentSignal?.removeEventListener("abort", cancel);
         if (operations.get(id)?.promise === request) {
           operations.delete(id);
           publishOperations();
@@ -138,14 +163,14 @@ export const usePlugins = create<PluginsStore>((set, get) => {
 
   const changeStatus = (
     id: string,
-    request: (signal: AbortSignal) => Promise<PluginInfo | null>,
+    request: (signal: AbortSignal, startedAt: number) => Promise<PluginInfo | null>,
     starting = false,
   ) =>
     operate(
       id,
       async (startedAt, signal) => {
         try {
-          const info = await request(signal);
+          const info = await request(signal, startedAt);
           if (signal.aborted) return;
           // A pushed failure/status event may already be newer than this response.
           if (info && revisions.get(id) === startedAt) get().apply(info);
@@ -172,6 +197,8 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     busy: null,
     busyIds: [],
     startingIds: [],
+    stoppingIds: [],
+    commandingIds: [],
     reloading: false,
     outputs: {},
     clearOutput: (id) =>
@@ -236,7 +263,7 @@ export const usePlugins = create<PluginsStore>((set, get) => {
     start: (id) =>
       changeStatus(
         id,
-        async (signal) => {
+        async (signal, startedAt) => {
           const info = get().items.find((item) => item.id === id);
           if (info?.runtime === "theme") return null;
           if (isTauri() && info) {
@@ -257,6 +284,9 @@ export const usePlugins = create<PluginsStore>((set, get) => {
           if (signal.aborted) return null;
           const started = await api.pluginStart(id, permit);
           if (signal.aborted) return null;
+          // UI activation must see this admitted runtime, without replacing a
+          // newer pushed failure or replacement instance.
+          if (revisions.get(id) === startedAt) get().apply(started);
           if (started.frontend && started.status === "running") {
             const { frontendRuntime } = await import("@/lib/extensions/frontendRuntime");
             try {
@@ -320,53 +350,95 @@ export const usePlugins = create<PluginsStore>((set, get) => {
         }
       }),
 
-    execute: async (id, command, input) => {
+    execute: async (id, command, input, parentSignal) => {
       if (operations.has(id)) throw new Error("plugin.api.busy");
+      const original = get().items.find((item) => item.id === id);
       let result: unknown;
-      await operate(id, async () => {
-        const info = get().items.find((item) => item.id === id);
-        if (!info || info.status !== "running") throw new Error("plugin.notRunning");
-        if (isTauri()) {
-          const { ensurePluginPermission } = await import("@/store/pluginSecurity");
-          if (!(await ensurePluginPermission(info))) throw new Error("plugin.permissionDenied");
-        }
-        const current = get().items.find((item) => item.id === id);
-        if (!current || current.status !== "running" || current.fingerprint !== info.fingerprint) {
-          throw new Error(i18n.t("pluginSecurity.changed"));
-        }
-        // Build editor input only after consent, so callers can reject stale snapshots.
-        result = await api.pluginRun(id, command, input());
-      });
+      let invoked = false;
+      await operate(
+        id,
+        async (_, signal) => {
+          invoked = true;
+          result = await withPluginInvocation(
+            original,
+            async (info, lifetime, check) => {
+              if (isTauri()) {
+                const { ensurePluginPermission } = await import("@/store/pluginSecurity");
+                check();
+                const allowed = await ensurePluginPermission(info, lifetime);
+                check();
+                if (!allowed) throw new Error("plugin.permissionDenied");
+              }
+              check();
+              // Construct document input only after consent and lifetime checks.
+              const params = input();
+              check();
+              return api.pluginRun(id, command, params, info.runtimeId ?? "");
+            },
+            signal,
+          );
+        },
+        "command",
+        parentSignal,
+      );
+      if (!invoked) throw new PluginInvocationCancelled();
       return result;
     },
 
-    run: (id, command) =>
-      operate(id, async () => {
-        let output: PluginOutput;
-        try {
-          const info = get().items.find((item) => item.id === id);
-          if (isTauri() && info) {
-            const { ensurePluginPermission } = await import("@/store/pluginSecurity");
-            if (!(await ensurePluginPermission(info))) return;
+    run: (id, command) => {
+      const original = get().items.find((item) => item.id === id);
+      return operate(
+        id,
+        async (_, signal) => {
+          try {
+            const result = await withPluginInvocation(
+              original,
+              async (info, lifetime, check) => {
+                if (isTauri()) {
+                  const { ensurePluginPermission } = await import("@/store/pluginSecurity");
+                  check();
+                  const allowed = await ensurePluginPermission(info, lifetime);
+                  check();
+                  if (!allowed) throw new Error("plugin.permissionDenied");
+                }
+                return api.pluginRun(
+                  id,
+                  command,
+                  {
+                    _locale: i18n.resolvedLanguage ?? i18n.language,
+                  },
+                  info.runtimeId ?? "",
+                );
+              },
+              signal,
+            );
+            if (signal.aborted) return;
+            const output = normalizeResult(result);
+            set((state) => ({ outputs: { ...state.outputs, [id]: output } }));
+          } catch (error) {
+            if (
+              signal.aborted ||
+              isPluginInvocationCancelled(error) ||
+              (error instanceof Error && error.message === "plugin.permissionDenied")
+            )
+              return;
+            if (isTauri()) {
+              const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
+              if (signal.aborted) return;
+              reportPluginExecutionFailure(error);
+            }
+            const output = {
+              text:
+                error instanceof Error && error.message === "resultTooLarge"
+                  ? i18n.t("pluginView.resultTooLarge")
+                  : translateError(error),
+              error: true,
+            };
+            set((state) => ({ outputs: { ...state.outputs, [id]: output } }));
           }
-          const result = await api.pluginRun(id, command, {
-            _locale: i18n.resolvedLanguage ?? i18n.language,
-          });
-          output = normalizeResult(result);
-        } catch (error) {
-          if (isTauri()) {
-            const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
-            reportPluginExecutionFailure(error);
-          }
-          output = {
-            text:
-              error instanceof Error && error.message === "resultTooLarge"
-                ? i18n.t("pluginView.resultTooLarge")
-                : translateError(error),
-            error: true,
-          };
-        }
-        set((state) => ({ outputs: { ...state.outputs, [id]: output } }));
-      }),
+        },
+        "command",
+      );
+    },
   };
 });

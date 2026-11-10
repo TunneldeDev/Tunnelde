@@ -25,6 +25,27 @@ beforeEach(() => {
 });
 
 describe("contributed plugin actions", () => {
+  it("does not revive an action whose delayed activation returns after stop and same-package restart", async () => {
+    usePlugins.setState({ items: [{ ...plugin, status: "stopped" }] });
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    const start = vi.spyOn(usePlugins.getState(), "start").mockImplementation(async () => {
+      await gate;
+    });
+    const run = vi.spyOn(api, "pluginRun");
+    const action = openPluginAction({ id: plugin.id, command: "one" });
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    usePlugins.setState({ stoppingIds: [plugin.id] });
+    await action;
+    usePlugins.setState({ stoppingIds: [], items: [{ ...plugin, runtimeId: "boot:2" }] });
+    finish();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(run).not.toHaveBeenCalled();
+    expect(useWorkspace.getState().openPluginView).not.toHaveBeenCalled();
+    start.mockRestore();
+  });
   it("does not run a different package or changed contribution after delayed activation", async () => {
     for (const replacement of [
       { ...plugin, fingerprint: "replacement" },

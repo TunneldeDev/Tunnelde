@@ -67,6 +67,12 @@ async function start(signal: AbortSignal): Promise<void> {
 
   if (isTauri()) {
     cleanups.push(() => frontendRuntime.dispose());
+    cleanups.push(
+      usePlugins.subscribe((state) => {
+        frontendRuntime.reconcile(state.items, false);
+        for (const id of state.stoppingIds) frontendRuntime.stop(id);
+      }),
+    );
     await wireEvents();
   }
   if (signal.aborted) return;

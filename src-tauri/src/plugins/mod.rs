@@ -48,7 +48,6 @@ use crate::plugins::wasm::WasmPlugin;
 
 pub const STATE_EVENT: &str = "plugin://state";
 const CALL_TIMEOUT: Duration = Duration::from_secs(20);
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +86,7 @@ pub struct PluginInfo {
     pub file_previews: Vec<crate::preview::providers::Provider>,
     pub mounted_file_reveal: bool,
     pub fingerprint: String,
+    pub runtime_id: Option<String>,
     pub frontend: Option<frontend::FrontendManifest>,
 }
 
@@ -102,6 +102,7 @@ struct Instance {
     node_source: Option<String>,
     fingerprint: String,
     runtime_lease: Option<security::Lease>,
+    runtime_id: Option<String>,
 }
 
 impl Instance {
@@ -123,6 +124,7 @@ impl Instance {
             node_source: None,
             fingerprint,
             runtime_lease: None,
+            runtime_id: None,
         };
         if instance.is_wasm() {
             match instance.load_wasm() {
@@ -195,6 +197,9 @@ impl Instance {
             mounted_file_reveal: self.manifest.mounted_file_reveal,
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
+            runtime_id: (self.status == PluginStatus::Running)
+                .then(|| self.runtime_id.clone())
+                .flatten(),
             frontend: self.manifest.frontend.clone(),
         }
     }
@@ -537,111 +542,6 @@ impl PluginsManager {
                     "view.render",
                     json!({ "view": view, "locale": locale }),
                     CALL_TIMEOUT,
-                ),
-            )
-            .await
-    }
-
-    pub async fn run(&self, id: &str, command: &str, input: Option<Value>) -> AppResult<Value> {
-        self.run_bound(id, command, input, None).await
-    }
-
-    pub(super) async fn run_bound(
-        &self,
-        id: &str,
-        command: &str,
-        input: Option<Value>,
-        expected_generation: Option<u64>,
-    ) -> AppResult<Value> {
-        if input
-            .as_ref()
-            .is_some_and(|value| !value.is_object() || value.to_string().len() > 256 * 1024)
-        {
-            return Err(AppError::validation("plugin.input.invalid"));
-        }
-        let handle = self.instance(id).await?;
-        let instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-        instance.require_runtime()?;
-        let lease = instance.checked_runtime(&self.security).await?;
-        if expected_generation.is_some_and(|generation| generation != lease.generation) {
-            return Err(AppError::validation("plugin.statusBar.expired"));
-        }
-        if instance.manifest.runtime.as_deref() == Some("frontend")
-            || instance
-                .manifest
-                .commands
-                .iter()
-                .any(|item| item.id == command && item.frontend)
-        {
-            if instance.status != PluginStatus::Running
-                || !instance
-                    .manifest
-                    .commands
-                    .iter()
-                    .any(|item| item.id == command)
-            {
-                return Err(AppError::validation("plugin.notRunning"));
-            }
-            let app = self
-                .runtime_app
-                .get()
-                .cloned()
-                .ok_or_else(|| AppError::validation("plugin.frontend.unavailable"))?;
-            drop(instance);
-            let context = api::HostContext {
-                app,
-                id: id.into(),
-                fingerprint: lease.fingerprint.clone(),
-                permissions: lease.permissions.clone(),
-                generation: lease.generation,
-                tool_client: None,
-                tool_request: None,
-            };
-            return self
-                .security
-                .guard(
-                    &lease,
-                    api::frontend_request(
-                        &context,
-                        "__frontend.command",
-                        json!({"command":command,"input":input.unwrap_or_else(|| json!({}))}),
-                    ),
-                )
-                .await;
-        }
-        if instance.is_wasm() {
-            let result = wasm_call(
-                &instance,
-                json!({ "method": "run", "command": command, "input": input }),
-                &self.security,
-                &lease,
-            );
-            self.security.authorize(
-                id,
-                &lease.fingerprint,
-                &lease.permissions,
-                None,
-                Some(lease.generation),
-            )?;
-            return result;
-        }
-        let host = instance
-            .host
-            .as_ref()
-            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?
-            .connection();
-        drop(instance);
-
-        self.security
-            .guard(
-                &lease,
-                host.request(
-                    "command.run",
-                    json!({ "command": command, "input": input }),
-                    COMMAND_TIMEOUT,
                 ),
             )
             .await
@@ -1374,7 +1274,7 @@ mod tests {
         assert_eq!(info.themes[1].accent.as_deref(), Some("#0088ff"));
         assert_eq!(manager.list().await[0].themes.len(), 2);
         assert!(manager
-            .run("theme-pack", "run", None)
+            .run("theme-pack", "run", None, "")
             .await
             .unwrap_err()
             .to_string()
@@ -1457,7 +1357,7 @@ mod tests {
         );
         assert!(list[0].permissions.is_empty());
         assert_eq!(list[0].runtime, "theme");
-        assert!(restored.run("file-icons", "run", None).await.is_err());
+        assert!(restored.run("file-icons", "run", None, "").await.is_err());
         assert_eq!(node::probe_count_for_test(), probes);
         restored.uninstall("file-icons").await.unwrap();
         assert!(restored.list().await.is_empty());
@@ -1481,7 +1381,7 @@ mod tests {
             assert!(theme.icons.contains_key(&theme.extensions[extension]));
         }
         assert!(info.permissions.is_empty());
-        assert!(manager.run("file-icons", "run", None).await.is_err());
+        assert!(manager.run("file-icons", "run", None, "").await.is_err());
         manager.uninstall("file-icons").await.unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1502,7 +1402,7 @@ mod tests {
                 .iter()
                 .any(|provider| provider.matches(&format!("test.{extension}"))));
         }
-        assert!(manager.run("file-previews", "run", None).await.is_err());
+        assert!(manager.run("file-previews", "run", None, "").await.is_err());
         let restored = PluginsManager::load(root.join("installed"));
         assert_eq!(restored.list().await[0].file_previews.len(), 6);
         restored.uninstall("file-previews").await.unwrap();
@@ -1614,7 +1514,7 @@ mod tests {
             .set_permissions(&db, "two", Some(vec![]), Some(two.fingerprint))
             .await
             .unwrap();
-        {
+        let runtime_id = {
             let handle = manager.instance("two").await.unwrap();
             let mut instance = handle.lock().await;
             let lease = manager
@@ -1624,16 +1524,22 @@ mod tests {
             let activation = manager.security.begin_runtime(&lease, &[], false).unwrap();
             manager.security.native_ready(&lease).unwrap();
             activation.commit();
+            instance.runtime_id = Some(manager.security.lease_stamp(&lease));
             instance.runtime_lease = Some(lease);
             instance.status = PluginStatus::Running;
-        }
+            let info = instance.info();
+            manager.remember(&info);
+            info.runtime_id.unwrap()
+        };
         let first = manager.instance("one").await.unwrap();
         let _busy = first.lock().await;
         // The stub returns invalid JSON; reaching that response still proves
         // the second command acquired its own lock without waiting on "one".
-        let result =
-            tokio::time::timeout(Duration::from_millis(200), manager.run("two", "test", None))
-                .await;
+        let result = tokio::time::timeout(
+            Duration::from_millis(200),
+            manager.run("two", "test", None, &runtime_id),
+        )
+        .await;
         assert!(result
             .unwrap()
             .unwrap_err()

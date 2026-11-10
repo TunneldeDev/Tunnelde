@@ -560,6 +560,8 @@ export interface PluginInfo {
   error: string | null;
   path: string;
   fingerprint?: string;
+  /** Internal process-bound invocation identity. Never persisted or granted by plugins. */
+  runtimeId?: string | null;
   runtime?: "node" | "wasm" | "theme" | "declarative" | "frontend";
   frontend?: { entry: string; sdk: string } | null;
   themes?: PluginTheme[];

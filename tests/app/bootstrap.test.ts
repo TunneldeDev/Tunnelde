@@ -67,6 +67,7 @@ vi.mock("@/store/monitor", () => ({
 }));
 vi.mock("@/store/plugins", () => ({
   usePlugins: {
+    subscribe: vi.fn(() => vi.fn()),
     getState: () => ({ apply: vi.fn(), load: mocks.pluginLoad, start: mocks.pluginStart }),
   },
 }));

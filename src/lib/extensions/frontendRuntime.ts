@@ -11,11 +11,14 @@ import {
 import { uiSdk, type FrontendContext, type FrontendModule, type FrontendViewProps } from "./uiSdk";
 
 import { createBackgroundTaskRunner } from "./backgroundTasks/execution";
+import { samePluginRuntime } from "@/lib/plugins/commands/runtime";
+import { usePlugins } from "@/store/plugins";
 
 interface Session {
   token: string;
   pluginId: string;
   generation: number;
+  runtimeId: string;
   entry: string;
   sdkVersion: string;
 }
@@ -34,7 +37,8 @@ interface Runtime {
 }
 
 export interface FrontendTransport {
-  open(id: string): Promise<Session>;
+  open(id: string, runtimeId: string): Promise<Session>;
+  current(plugin: PluginInfo): boolean;
   ready(token: string): Promise<void>;
   close(token: string): Promise<void>;
   fail(token: string): Promise<void>;
@@ -67,9 +71,11 @@ export function createFrontendRuntime(transport: FrontendTransport) {
     changed();
   };
   const ensure = async (plugin: PluginInfo): Promise<Runtime> => {
-    if (!plugin.frontend || plugin.status !== "running") throw new Error("plugin.notRunning");
+    if (!plugin.frontend || plugin.status !== "running" || !plugin.runtimeId)
+      throw new Error("plugin.notRunning");
+    if (!transport.current(plugin)) throw new ResourceScopeClosed();
     let runtime = runtimes.get(plugin.id);
-    if (runtime && runtime.plugin.fingerprint !== plugin.fingerprint) {
+    if (runtime && !samePluginRuntime(runtime.plugin, plugin)) {
       stop(plugin.id);
       runtime = undefined;
     }
@@ -89,7 +95,12 @@ export function createFrontendRuntime(transport: FrontendTransport) {
       runtime = current;
       runtimes.set(plugin.id, current);
       const live = () => {
-        if (current.retiring || scope.signal.aborted || runtimes.get(plugin.id) !== current)
+        if (
+          current.retiring ||
+          scope.signal.aborted ||
+          runtimes.get(plugin.id) !== current ||
+          !transport.current(plugin)
+        )
           throw new ResourceScopeClosed();
       };
       const register = <T>(map: Map<string, T>, id: string, value: T, declared: boolean) => {
@@ -110,13 +121,14 @@ export function createFrontendRuntime(transport: FrontendTransport) {
       current.ready = (async () => {
         try {
           const session = await scope.acquire(
-            () => transport.open(plugin.id),
+            () => transport.open(plugin.id, plugin.runtimeId!),
             (session) => transport.close(session.token),
             { timeoutMs: 15_000 },
           );
           live();
           if (session.sdkVersion !== uiSdk.version || session.pluginId !== plugin.id)
             throw new Error("plugin.frontend.sdkMismatch");
+          if (session.runtimeId !== plugin.runtimeId) throw new ResourceScopeClosed();
           current.token = session.token;
           const module = await scope.run(() => transport.load(session), { timeoutMs: 15_000 });
           live();
@@ -190,7 +202,11 @@ export function createFrontendRuntime(transport: FrontendTransport) {
       })();
     }
     await runtime.ready;
-    if (runtimes.get(plugin.id) !== runtime || runtime.scope.signal.aborted)
+    if (
+      runtimes.get(plugin.id) !== runtime ||
+      runtime.scope.signal.aborted ||
+      !transport.current(plugin)
+    )
       throw new ResourceScopeClosed();
     return runtime;
   };
@@ -218,6 +234,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
       return runtime?.activated &&
         !runtime.retiring &&
         !runtime.scope.signal.aborted &&
+        transport.current(runtime.plugin) &&
         (fingerprint === undefined || runtime.plugin.fingerprint === fingerprint)
         ? runtime.views.get(viewId)
         : undefined;
@@ -238,6 +255,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           runtime.token !== token ||
           !runtime.activated ||
           runtime.retiring ||
+          !transport.current(runtime.plugin) ||
           runtime.scope.signal.aborted
         )
           throw new ResourceScopeClosed();
@@ -278,7 +296,7 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           restricted ||
           !plugin ||
           plugin.status !== "running" ||
-          plugin.fingerprint !== runtime.plugin.fingerprint
+          !samePluginRuntime(plugin, runtime.plugin)
         )
           stop(id);
       }
@@ -287,7 +305,17 @@ export function createFrontendRuntime(transport: FrontendTransport) {
 }
 
 export const frontendRuntime = createFrontendRuntime({
-  open: (id) => invoke("plugin_frontend_open", { id }),
+  open: (id, runtimeId) => invoke("plugin_frontend_open", { id, runtimeId }),
+  current: (plugin) => {
+    const state = usePlugins.getState();
+    return (
+      !state.stoppingIds.includes(plugin.id) &&
+      samePluginRuntime(
+        state.items.find((item) => item.id === plugin.id),
+        plugin,
+      )
+    );
+  },
   ready: (token) => invoke("plugin_frontend_ready", { token }),
   close: (token) => invoke("plugin_frontend_close", { token }),
   fail: async (token) => {

@@ -1,3 +1,5 @@
+import { enqueuePluginAction } from "./commands/queue";
+import { translateError } from "@/lib/api/errors";
 import { usePlugins } from "@/store/plugins";
 import { useWorkspace } from "@/store/workspace";
 import { useNavigation } from "@/store/navigation";
@@ -14,11 +16,6 @@ import { invokeContributedCommand } from "./commands/invoke";
 import type { PluginInfo } from "@/lib/api/types";
 
 type PluginAction = PluginActionTarget;
-
-// A plugin has one runtime and its store serializes lifecycle operations. Queue
-// distinct contributed actions so retained shortcut conflicts are not dropped
-// while a previous action starts or invokes the same plugin.
-const actionTails = new Map<string, Promise<void>>();
 
 /** Metadata can be searched without starting code. Runtime consent happens on invocation. */
 export function openPluginAction(
@@ -49,21 +46,13 @@ export function openPluginAction(
     toast(i18n.t("editor.noDocument"), "info");
     return Promise.resolve();
   }
-  const previous = actionTails.get(action.id) ?? Promise.resolve();
-  const pending = previous
-    .catch(() => {})
-    .then(async () => {
-      const current = usePlugins.getState().items.find((item) => item.id === action.id);
-      if (!samePluginAction(current, original, action)) return;
-      await invokePluginAction(action, target, original, hostTarget);
-    });
-  actionTails.set(action.id, pending);
-  void pending
-    .finally(() => {
-      if (actionTails.get(action.id) === pending) actionTails.delete(action.id);
-    })
-    .catch(() => {});
-  return pending;
+  return enqueuePluginAction(original, async (signal) => {
+    const current = usePlugins.getState().items.find((item) => item.id === action.id);
+    if (!samePluginAction(current, original, action)) return;
+    await invokePluginAction(action, target, original, hostTarget, signal);
+  }).catch((error: unknown) => {
+    toast(translateError(error), "error");
+  });
 }
 
 async function invokePluginAction(
@@ -71,13 +60,15 @@ async function invokePluginAction(
   target: ReturnType<typeof editorDocument>,
   original: PluginInfo,
   hostTarget?: Host,
+  signal?: AbortSignal,
 ) {
+  if (signal?.aborted) return;
   const store = usePlugins.getState();
   let plugin = store.items.find((item) => item.id === action.id);
   if (!plugin || plugin.runtime === "theme") return;
   if (hostTarget) {
     const command = hostMenuCommands([plugin]).find((item) => item.command === action.command);
-    if (command) await runHostMenuCommand(command, hostTarget);
+    if (command) await runHostMenuCommand(command, hostTarget, signal);
     return;
   }
   const editorCommand = action.command
@@ -92,10 +83,12 @@ async function invokePluginAction(
     await runEditorPlugin(
       { id: plugin.id, command: editorCommand.id, title: editorCommand.title },
       document,
+      signal,
     );
     return;
   }
   if (plugin.status !== "running") await store.start(plugin.id);
+  if (signal?.aborted) return;
   plugin = usePlugins.getState().items.find((item) => item.id === action.id);
   if (!samePluginAction(plugin, original, action) || plugin.status !== "running") return;
   const view = action.view
@@ -106,6 +99,6 @@ async function invokePluginAction(
       useNavigation.getState().showSidebar(pluginSidebarId(plugin.id, view.id));
     else useWorkspace.getState().openPluginView(plugin.id, view.id, view.title);
   } else if (action.command && plugin.commands.some((item) => item.id === action.command)) {
-    await invokeContributedCommand(original, action);
+    await invokeContributedCommand(plugin, action, signal);
   }
 }

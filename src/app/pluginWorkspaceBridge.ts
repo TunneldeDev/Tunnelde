@@ -74,6 +74,8 @@ export async function runPluginWorkspaceRequest(
     case "__frontend.command": {
       const plugin = usePlugins.getState().items.find((item) => item.id === request.pluginId);
       if (!plugin) throw new Error("plugin.notFound");
+      if (!plugin.runtimeId || plugin.runtimeId !== text(params, "runtimeId"))
+        throw new Error("pluginSecurity.changed");
       const { frontendRuntime } = await import("@/lib/extensions/frontendRuntime");
       return frontendRuntime.run(
         plugin,
