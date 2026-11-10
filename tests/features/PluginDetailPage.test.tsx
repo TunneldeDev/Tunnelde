@@ -48,6 +48,17 @@ beforeEach(async () => {
   });
 });
 describe("plugin workspace details", () => {
+  it("keeps cancellation available while activation is pending", () => {
+    const stop = vi.fn(async () => {});
+    usePlugins.setState({ startingIds: [plugin.id], busyIds: [plugin.id], stop });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    const button = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(screen.getByText("Starting…")).toBeTruthy();
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledWith(plugin.id);
+    expect(start).not.toHaveBeenCalled();
+  });
   it("does not render an empty Open tool section for provider-only packages", () => {
     usePlugins.setState({
       items: [

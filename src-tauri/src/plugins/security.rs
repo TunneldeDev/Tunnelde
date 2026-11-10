@@ -105,6 +105,7 @@ pub struct Lease {
 pub struct PluginSecurity {
     inner: Mutex<Policy>,
     changed: watch::Sender<u64>,
+    boot_id: uuid::Uuid,
 }
 
 impl Default for PluginSecurity {
@@ -113,6 +114,7 @@ impl Default for PluginSecurity {
         Self {
             inner: Mutex::new(Policy::default()),
             changed,
+            boot_id: uuid::Uuid::new_v4(),
         }
     }
 }
@@ -331,6 +333,10 @@ impl PluginSecurity {
             permissions: declared,
             generation,
         })
+    }
+
+    pub(in crate::plugins) fn lease_stamp(&self, lease: &Lease) -> String {
+        format!("{}:{}", self.boot_id, lease.generation)
     }
 
     pub async fn guard<T>(

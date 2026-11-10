@@ -6,6 +6,7 @@ import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
 import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
+import type { StartPermit } from "@/lib/plugins/activation/contracts";
 
 import type {
   AppInfo,
@@ -205,7 +206,10 @@ export const api = {
     permissions: string[] | null,
     expectedFingerprint: string | null,
   ) => invoke<void>("plugin_set_permissions", { id, permissions, expectedFingerprint }),
-  pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),
+  pluginPrepareStart: (id: string, expectedFingerprint: string) =>
+    invoke<StartPermit>("plugin_prepare_start", { id, expectedFingerprint }),
+  pluginStart: (id: string, permit: StartPermit | null) =>
+    invoke<PluginInfo>("plugin_start", { id, permit }),
   pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
   pluginInstall: (path: string) => invoke<PluginInfo>("plugin_install", { path }),
   pluginInspect: (path: string) =>

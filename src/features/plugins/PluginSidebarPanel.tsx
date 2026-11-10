@@ -21,6 +21,7 @@ export function PluginSidebarPanel({
   const reference = parsePluginSidebar(view)!;
   const plugin = usePlugins((state) => state.items.find((item) => item.id === reference.pluginId));
   const busy = usePlugins((state) => state.busyIds.includes(reference.pluginId));
+  const starting = usePlugins((state) => state.startingIds.includes(reference.pluginId));
   const docked = useWorkspace((state) => state.tabs.some((tab) => tab.id === sidebarTabId(view)));
   const contribution = plugin?.views.find(
     (item) => item.id === reference.viewId && item.location === "sidebar",
@@ -39,8 +40,15 @@ export function PluginSidebarPanel({
         <div className="plugins-sidebar__empty">
           <p>{t("pluginChat.startHint")}</p>
           {plugin.error ? <PluginError message={pluginFailure(new Error(plugin.error))} /> : null}
-          <Button disabled={busy} onClick={() => void usePlugins.getState().start(plugin.id)}>
-            {t("plugins.start")}
+          <Button
+            disabled={busy && !starting}
+            onClick={() =>
+              void (starting
+                ? usePlugins.getState().stop(plugin.id)
+                : usePlugins.getState().start(plugin.id))
+            }
+          >
+            {t(starting ? "common.cancel" : "plugins.start")}
           </Button>
         </div>
       ) : (

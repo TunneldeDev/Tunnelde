@@ -7,15 +7,19 @@ use tauri::{AppHandle, Emitter, Manager};
 use crate::error::{AppError, AppResult};
 use crate::plugins::{
     api, config, host::PluginHost, manifest, node, security, PluginInfo, PluginStatus,
-    PluginsManager, STATE_EVENT,
+    PluginsManager, StartPermit, STATE_EVENT,
 };
 
 const START_TIMEOUT: Duration = Duration::from_secs(8);
 
 impl PluginsManager {
-    pub async fn start(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        let handle = self.instance(id).await?;
-        let mut instance = handle.lock().await;
+    pub async fn start(
+        &self,
+        app: &AppHandle,
+        id: &str,
+        permit: &StartPermit,
+    ) -> AppResult<PluginInfo> {
+        let (lease, mut instance) = self.admit_start(id, permit).await?;
         if instance.retired {
             return Err(AppError::NotFound("plugin.notFound".into()));
         }
@@ -24,11 +28,15 @@ impl PluginsManager {
         if let Some(frontend) = &instance.manifest.frontend {
             frontend.require_sdk()?;
         }
-        let lease = self.security.lease(
-            id,
-            security::fingerprint_async(instance.dir.clone()).await?,
-            instance.manifest.permissions.clone(),
-        )?;
+        let actual_fingerprint = self
+            .security
+            .guard(&lease, security::fingerprint_async(instance.dir.clone()))
+            .await?;
+        if actual_fingerprint != lease.fingerprint
+            || instance.manifest.permissions != lease.permissions
+        {
+            return Err(AppError::validation("pluginSecurity.changed"));
+        }
         if instance
             .runtime_lease
             .as_ref()
