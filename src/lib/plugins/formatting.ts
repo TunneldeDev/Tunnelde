@@ -14,6 +14,7 @@ import {
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
 import i18n from "@/i18n/i18n";
+import { samePluginAction } from "./commands/identity";
 
 export interface EditorProvider {
   id: string;
@@ -55,6 +56,7 @@ export async function runEditorPlugin(
   try {
     let plugin = usePlugins.getState().items.find((item) => item.id === provider.id);
     const command = plugin?.commands.find((item) => item.id === provider.command);
+    const original = plugin;
     if (
       !plugin ||
       !command?.editor ||
@@ -63,7 +65,12 @@ export async function runEditorPlugin(
       throw new Error(i18n.t("editor.noFormatter"));
     if (plugin.status !== "running") await usePlugins.getState().start(plugin.id);
     plugin = usePlugins.getState().items.find((item) => item.id === provider.id);
-    if (plugin?.status !== "running") return false;
+    if (
+      !original ||
+      !samePluginAction(plugin, original, { id: provider.id, command: provider.command }) ||
+      plugin.status !== "running"
+    )
+      return false;
     const fingerprint = plugin.fingerprint;
     // Consent can take time. Do not send a closed or superseded document to the plugin.
     const current = editorDocument(document.tabId);
@@ -99,14 +106,17 @@ export async function runEditorPlugin(
         current.version !== document.version
       )
         throw new Error(i18n.t("editor.documentChanged"));
-      if (!runtime || runtime.status !== "running" || runtime.fingerprint !== fingerprint)
+      if (
+        !samePluginAction(runtime, original, { id: provider.id, command: provider.command }) ||
+        runtime.status !== "running"
+      )
         throw new Error(i18n.t("editor.formatRevoked"));
       return input;
     });
     const latest = usePlugins.getState().items.find((item) => item.id === provider.id);
     const security = usePluginSecurity.getState().state;
     if (
-      !latest ||
+      !samePluginAction(latest, original, { id: provider.id, command: provider.command }) ||
       latest.status !== "running" ||
       latest.fingerprint !== fingerprint ||
       (isTauri() && (security.restricted || !hasPluginGrant(security, latest)))

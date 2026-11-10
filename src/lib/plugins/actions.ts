@@ -9,8 +9,11 @@ import { editorDocument } from "@/store/editors";
 import { runEditorPlugin } from "./formatting";
 import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
+import { samePluginAction, type PluginActionTarget } from "./commands/identity";
+import { invokeContributedCommand } from "./commands/invoke";
+import type { PluginInfo } from "@/lib/api/types";
 
-type PluginAction = { id: string; view?: string; command?: string };
+type PluginAction = PluginActionTarget;
 
 // A plugin has one runtime and its store serializes lifecycle operations. Queue
 // distinct contributed actions so retained shortcut conflicts are not dropped
@@ -51,13 +54,8 @@ export function openPluginAction(
     .catch(() => {})
     .then(async () => {
       const current = usePlugins.getState().items.find((item) => item.id === action.id);
-      if (
-        !current ||
-        current.fingerprint !== original.fingerprint ||
-        current.version !== original.version
-      )
-        return;
-      await invokePluginAction(action, target, hostTarget);
+      if (!samePluginAction(current, original, action)) return;
+      await invokePluginAction(action, target, original, hostTarget);
     });
   actionTails.set(action.id, pending);
   void pending
@@ -71,6 +69,7 @@ export function openPluginAction(
 async function invokePluginAction(
   action: PluginAction,
   target: ReturnType<typeof editorDocument>,
+  original: PluginInfo,
   hostTarget?: Host,
 ) {
   const store = usePlugins.getState();
@@ -98,7 +97,7 @@ async function invokePluginAction(
   }
   if (plugin.status !== "running") await store.start(plugin.id);
   plugin = usePlugins.getState().items.find((item) => item.id === action.id);
-  if (plugin?.status !== "running") return;
+  if (!samePluginAction(plugin, original, action) || plugin.status !== "running") return;
   const view = action.view
     ? plugin.views.find((item) => item.id === action.view && !item.provider)
     : undefined;
@@ -107,8 +106,6 @@ async function invokePluginAction(
       useNavigation.getState().showSidebar(pluginSidebarId(plugin.id, view.id));
     else useWorkspace.getState().openPluginView(plugin.id, view.id, view.title);
   } else if (action.command && plugin.commands.some((item) => item.id === action.command)) {
-    // A host-owned result page also works for plugins without any contributed view.
-    useWorkspace.getState().openPluginView(plugin.id, "$command", plugin.name);
-    await usePlugins.getState().run(plugin.id, action.command);
+    await invokeContributedCommand(original, action);
   }
 }

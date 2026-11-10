@@ -25,6 +25,45 @@ beforeEach(() => {
 });
 
 describe("contributed plugin actions", () => {
+  it("does not run a different package or changed contribution after delayed activation", async () => {
+    for (const replacement of [
+      { ...plugin, fingerprint: "replacement" },
+      { ...plugin, commands: [{ id: "one", title: "Replaced" }] },
+    ]) {
+      usePlugins.setState({ items: [{ ...plugin, status: "stopped" }] });
+      let finish!: () => void;
+      const gate = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const start = vi.spyOn(usePlugins.getState(), "start").mockImplementation(async () => {
+        await gate;
+        usePlugins.setState({ items: [replacement] });
+      });
+      const run = vi.spyOn(api, "pluginRun");
+      const operation = openPluginAction({ id: plugin.id, command: "one" });
+      await vi.waitFor(() => expect(start).toHaveBeenCalled());
+      finish();
+      await operation;
+      expect(run).not.toHaveBeenCalled();
+      start.mockRestore();
+      run.mockRestore();
+    }
+  });
+  it("does not publish a result from a package replaced during execution", async () => {
+    let finish!: (result: unknown) => void;
+    const run = vi.spyOn(api, "pluginRun").mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const operation = openPluginAction({ id: plugin.id, command: "one" });
+    await vi.waitFor(() => expect(run).toHaveBeenCalledOnce());
+    usePlugins.setState({ items: [{ ...plugin, fingerprint: "replacement" }] });
+    finish({ text: "retired" });
+    await operation;
+    expect(usePlugins.getState().outputs[plugin.id]).toBeUndefined();
+    expect(useWorkspace.getState().openPluginView).not.toHaveBeenCalled();
+  });
   it("executes both commands for the same plugin in order, even while the first is pending", async () => {
     let finish!: (value: unknown) => void;
     const first = new Promise<unknown>((resolve) => {
