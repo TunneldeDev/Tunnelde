@@ -68,7 +68,7 @@ export function UiProviderSettings() {
     <section className="settings-subsection ui-provider-settings" aria-label={t("providers.title")}>
       <h3 className="settings-subtitle">{t("providers.title")}</h3>
       <p className="settings-hint">{t("providers.hint")}</p>
-      {(["hostList", "workbench"] as const).map((target) => {
+      {(["hostList", "workbench", "fileBrowser"] as const).map((target) => {
         const selected = selections?.[target];
         const value = selected ? JSON.stringify([selected.pluginId, selected.viewId]) : "";
         const options = uiProviders(plugins, target).map(({ plugin, view }) => ({

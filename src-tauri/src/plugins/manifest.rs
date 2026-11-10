@@ -389,13 +389,17 @@ impl PluginManifest {
                     .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
                 || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
                 || view.provider.as_deref().is_some_and(|target| {
-                    !matches!(target, "hostList" | "workbench")
+                    !matches!(target, "hostList" | "workbench" | "fileBrowser")
                         || view.kind.as_deref() != Some("component")
                         || view.location.is_some()
                         || view.title.chars().count() > 120
                         || view.title.chars().any(char::is_control)
                         || (target == "hostList"
                             && !self.permissions.iter().any(|p| p == "hosts.read"))
+                        || (target == "fileBrowser"
+                            && ["fs.read", "sftp.read", "workspace.write"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
                 })
                 || view.icon.as_deref().is_some_and(|v| {
                     !matches!(
@@ -606,6 +610,19 @@ mod tests {
         value["views"][0]["provider"] = "hostList".into();
         assert!(save(&value).is_err());
         value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "fileBrowser".into();
+        assert!(save(&value).is_err());
+        for omitted in ["fs.read", "sftp.read", "workspace.write"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "fs.read", "sftp.read", "workspace.write"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] =
+            serde_json::json!(["ui.trusted", "fs.read", "sftp.read", "workspace.write"]);
         assert!(save(&value).is_ok());
         value["views"][0]["location"] = "sidebar".into();
         assert!(save(&value).is_err());

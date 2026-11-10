@@ -11,9 +11,17 @@
     "viewKind": "component",
     "providers": {
       "manifest": "views[].provider",
-      "targets": ["hostList", "workbench"],
+      "targets": ["hostList", "workbench", "fileBrowser"],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
+      "fileBrowserPermissions": ["fs.read", "sftp.read", "workspace.write"],
+      "fileBrowser": {
+        "context": "fileBrowser",
+        "ownership": "host-pane",
+        "pageSize": 256,
+        "paging": "revision-bound",
+        "recovery": "native-path-and-actions"
+      },
       "slots": ["Workspace", "Navigation", "Inspector", "StatusBar"],
       "requiredSlot": "Workspace",
       "limits": { "perPlugin": 8 },

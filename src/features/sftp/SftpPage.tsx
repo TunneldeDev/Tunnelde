@@ -32,6 +32,7 @@ import { FilePathBar } from "./FilePathBar";
 import { FileRemoteDialog } from "./FileRemoteDialog";
 import { FileTypeSelect } from "./FileTypeSelect";
 import { FileSplitView } from "./FileSplitView";
+import { FileBrowserSurface } from "./FileBrowserSurface";
 import { fitFileColumn } from "@/lib/files/columnWidth";
 import { typeSelect, type TypeSelectState } from "@/lib/files/typeSelect";
 import { columnAncestors } from "@/lib/files/navigation";
@@ -2327,394 +2328,435 @@ export function SftpPage({
             </IconButton>
           </div>
         ) : null}
-        <div className={columnView ? "sftp-miller" : "sftp-details"}>
-          {columnView
-            ? state.ancestors.map((listing, columnIndex) => (
-                <div className="sftp-miller__column" key={listing.path}>
-                  <div className="sftp-miller__heading" title={listing.path}>
-                    {listing.path}
-                  </div>
-                  <div
-                    className="sftp-pane__body"
-                    data-column-path={listing.path}
-                    onScroll={(event) =>
-                      rememberColumnScroll(id, listing.path, event.currentTarget.scrollTop)
-                    }
-                    role="listbox"
-                    tabIndex={0}
-                    aria-label={listing.path}
-                    aria-multiselectable="true"
-                    onFocus={(event) => {
-                      if (event.target === event.currentTarget)
-                        event.currentTarget
-                          .querySelector<HTMLInputElement>(".sftp-type-select")
-                          ?.focus({ preventScroll: true });
-                    }}
-                    onKeyDown={(event) => {
-                      const proxy = (event.target as HTMLElement).classList.contains(
-                        "sftp-type-select",
-                      );
-                      if (
-                        (isTextTarget(event.target) && !proxy) ||
-                        event.nativeEvent.isComposing ||
-                        event.nativeEvent.keyCode === 229
-                      )
-                        return;
-                      if (
-                        proxy &&
-                        event.key.length === 1 &&
-                        !event.ctrlKey &&
-                        !event.metaKey &&
-                        !event.altKey
-                      )
-                        return;
-                      const branch = (state.ancestors[columnIndex + 1] ?? state.listing)?.path;
-                      activateColumn(id, columnIndex);
-                      const entry = listing.entries.find((item) => item.path === branch);
-                      if (entry) selectEntry(id, entry, "single");
-                      onKeyDown(event, id);
-                    }}
-                    onContextMenu={(event) => {
-                      if ((event.target as HTMLElement).closest(".sftp-row")) return;
-                      activateColumn(id, columnIndex);
-                      openEntryMenu(event, id, null);
-                    }}
-                    onDragOver={(event) => {
-                      if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
-                      event.preventDefault();
-                      const dragged = currentDragSource();
-                      event.dataTransfer.dropEffect =
-                        dragged && sameFilesystem(dragged, source) ? "move" : "copy";
-                    }}
-                    onDrop={(event) => {
-                      if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
-                      event.preventDefault();
-                      event.stopPropagation();
-                      const payload = readDragPayload(event.dataTransfer);
-                      setDropTarget(null);
-                      if (payload) handleDrop(id, listing.path, payload);
-                    }}
-                  >
-                    <FileTypeSelect
-                      onText={(text, at) => {
-                        activateColumn(id, columnIndex);
-                        selectByText(id, text, at);
+        <FileBrowserSurface
+          paneId={`${instanceId}:${id}`}
+          source={source}
+          path={state.listing?.path ?? null}
+          entries={entries}
+          selectedPaths={state.selectedPaths}
+          busy={state.busy}
+          error={state.error}
+          suspended={!!creating || !!renaming}
+          actions={{
+            validate: () => {
+              const current = panesRef.current[id];
+              return (
+                sameSource(current.source, source) &&
+                current.state.listing === state.listing &&
+                !current.state.busy &&
+                !current.state.creating &&
+                !current.state.renaming
+              );
+            },
+            navigate: (path) => navigate(id, path),
+            refresh: () => {
+              void load(id, requested.current[id].path);
+            },
+            select: (paths) => {
+              patch(id, {
+                selectedPaths: [...paths],
+                cursor: paths.at(-1) ?? null,
+                anchor: paths[0] ?? null,
+              });
+              setActive(id);
+            },
+            open: (entry, preview) => (preview ? previewEntry(id, entry) : applyEntry(id, entry)),
+          }}
+        >
+          <div className={columnView ? "sftp-miller" : "sftp-details"}>
+            {columnView
+              ? state.ancestors.map((listing, columnIndex) => (
+                  <div className="sftp-miller__column" key={listing.path}>
+                    <div className="sftp-miller__heading" title={listing.path}>
+                      {listing.path}
+                    </div>
+                    <div
+                      className="sftp-pane__body"
+                      data-column-path={listing.path}
+                      onScroll={(event) =>
+                        rememberColumnScroll(id, listing.path, event.currentTarget.scrollTop)
+                      }
+                      role="listbox"
+                      tabIndex={0}
+                      aria-label={listing.path}
+                      aria-multiselectable="true"
+                      onFocus={(event) => {
+                        if (event.target === event.currentTarget)
+                          event.currentTarget
+                            .querySelector<HTMLInputElement>(".sftp-type-select")
+                            ?.focus({ preventScroll: true });
                       }}
-                    />
-                    {visibleFiles(listing.entries, view, collator).map((entry, index) =>
-                      renderRow(entry, index, columnIndex),
-                    )}
-                  </div>
-                </div>
-              ))
-            : null}
-          <div
-            className={cn("sftp-pane__scroll", columnView && "sftp-miller__column")}
-            key="current"
-          >
-            {columnView ? (
-              <div className="sftp-miller__heading" title={state.listing?.path}>
-                {state.listing?.path}
-              </div>
-            ) : (
-              <table className="sftp-columns" aria-label={t("sftp.sortColumns")}>
-                <thead>
-                  <tr>
-                    {columns.map((sort) => (
-                      <th
-                        key={sort}
-                        className={`sftp-columns__${sort}`}
-                        scope="col"
-                        title={t("sftp.columnHeaderHint")}
-                        aria-label={t(
-                          sort === "name"
-                            ? "sftp.sortName"
-                            : sort === "type"
-                              ? "sftp.sortType"
-                              : sort === "size"
-                                ? "sftp.sortSize"
-                                : "sftp.sortModified",
-                        )}
-                        draggable
-                        style={{
-                          gridColumn:
-                            sort === "name" ? `${columnIndex(sort)} / span 2` : columnIndex(sort),
-                        }}
-                        onDragStart={(event) => {
-                          event.stopPropagation();
-                          event.dataTransfer.setData("application/x-tunnelde-file-column", sort);
-                          event.dataTransfer.effectAllowed = "move";
-                          event.currentTarget.dataset.dragging = "true";
-                        }}
-                        onDragOver={(event) => {
-                          if (
-                            !event.dataTransfer.types.includes("application/x-tunnelde-file-column")
-                          )
-                            return;
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          event.currentTarget.dataset.columnDrop =
-                            event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
-                        }}
-                        onDragLeave={(event) => {
-                          if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                            delete event.currentTarget.dataset.columnDrop;
-                        }}
-                        onDragEnd={(event) => {
-                          delete event.currentTarget.dataset.dragging;
-                          for (const header of event.currentTarget
-                            .closest("tr")
-                            ?.querySelectorAll<HTMLElement>("[data-column-drop]") ?? [])
-                            delete header.dataset.columnDrop;
-                        }}
-                        onDrop={(event) => {
-                          const dragged = event.dataTransfer.getData(
-                            "application/x-tunnelde-file-column",
-                          ) as FileColumn;
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          const after = event.clientX >= bounds.left + bounds.width / 2;
-                          delete event.currentTarget.dataset.columnDrop;
-                          if (!columns.includes(dragged) || dragged === sort) return;
-                          event.preventDefault();
-                          event.stopPropagation();
-                          const next = columns.filter((item) => item !== dragged);
-                          next.splice(next.indexOf(sort) + Number(after), 0, dragged);
-                          updateView(id, { filesColumns: next });
-                        }}
-                        aria-sort={
-                          view.filesSortBy === sort
-                            ? view.filesSortDirection === "asc"
-                              ? "ascending"
-                              : "descending"
-                            : "none"
-                        }
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateView(id, {
-                              filesSortBy: sort,
-                              filesSortDirection:
-                                view.filesSortBy === sort && view.filesSortDirection === "asc"
-                                  ? "desc"
-                                  : "asc",
-                            })
-                          }
-                        >
-                          <span>
-                            {t(
-                              sort === "name"
-                                ? "sftp.sortName"
-                                : sort === "type"
-                                  ? "sftp.sortType"
-                                  : sort === "size"
-                                    ? "sftp.sortSize"
-                                    : "sftp.sortModified",
-                            )}
-                          </span>
-                          {view.filesSortBy === sort ? (
-                            <ArrowUp
-                              size={11}
-                              className={view.filesSortDirection === "desc" ? "is-desc" : undefined}
-                              aria-hidden="true"
-                            />
-                          ) : null}
-                        </button>
-                        <span
-                          className="sftp-columns__resize"
-                          role="separator"
-                          aria-orientation="vertical"
-                          tabIndex={0}
-                          aria-valuemin={56}
-                          aria-valuemax={1000}
-                          aria-valuenow={
-                            view.filesColumnWidths?.[sort] ?? DEFAULT_COLUMN_WIDTHS[sort]
-                          }
-                          aria-label={`${t("sftp.sortColumns")}: ${t(sort === "name" ? "sftp.sortName" : sort === "type" ? "sftp.sortType" : sort === "size" ? "sftp.sortSize" : "sftp.sortModified")}`}
-                          onDragStart={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }}
-                          onDoubleClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            updateView(id, {
-                              filesColumnWidths: {
-                                ...view.filesColumnWidths,
-                                [sort]: fitFileColumn(event.currentTarget.closest("th")!, sort),
-                              },
-                            });
-                          }}
-                          title={t("sftp.resizeColumnHint")}
-                          onPointerDown={(event) => resizeColumn(sort, event)}
-                          onKeyDown={(event) => {
-                            if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const current =
-                              view.filesColumnWidths?.[sort] ?? DEFAULT_COLUMN_WIDTHS[sort];
-                            const delta =
-                              (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 50 : 10);
-                            updateView(id, {
-                              filesColumnWidths: {
-                                ...view.filesColumnWidths,
-                                [sort]: Math.max(56, Math.min(1000, current + delta)),
-                              },
-                            });
-                          }}
-                        />
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-              </table>
-            )}
-
-            <div
-              ref={(element) => {
-                bodies.current[id] = element;
-              }}
-              className={cn(
-                "sftp-pane__body",
-                dropTarget?.pane === id && dropTarget.path === "" && "is-drop",
-              )}
-              data-column-path={state.listing?.path}
-              onScroll={(event) => {
-                if (columnView && state.listing)
-                  rememberColumnScroll(id, state.listing.path, event.currentTarget.scrollTop);
-              }}
-              tabIndex={0}
-              role="listbox"
-              aria-multiselectable="true"
-              aria-busy={state.busy}
-              aria-label={t("sftp.title")}
-              aria-activedescendant={
-                primary
-                  ? `${instanceId}-${id}-row-${entries.findIndex((item) => item.path === primary.path)}`
-                  : undefined
-              }
-              onKeyDown={(event) => onKeyDown(event, id)}
-              onFocus={(event) => {
-                if (event.target === event.currentTarget)
-                  event.currentTarget
-                    .querySelector<HTMLInputElement>(".sftp-type-select")
-                    ?.focus({ preventScroll: true });
-              }}
-              onContextMenu={(event) => {
-                if (!(event.target as HTMLElement).closest(".sftp-row")) {
-                  openEntryMenu(event, id, null);
-                }
-              }}
-              onDragOver={(event) => {
-                if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) {
-                  return;
-                }
-                event.preventDefault();
-                const dragged = currentDragSource();
-                event.dataTransfer.dropEffect =
-                  dragged && sameFilesystem(dragged, source) ? "move" : "copy";
-                setDropTarget({ pane: id, path: "" });
-              }}
-              onDragLeave={() => setDropTarget(null)}
-              onDrop={(event) => {
-                if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
-                event.preventDefault();
-                const payload = readDragPayload(event.dataTransfer);
-                setDropTarget(null);
-                if (payload && state.listing) {
-                  handleDrop(id, state.listing.path, payload);
-                }
-              }}
-            >
-              <FileTypeSelect onText={(text, at) => selectByText(id, text, at)} />
-              {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
-              {!state.busy && state.listing && fileView.total === 0 && !creating ? (
-                <p className="sftp-pane__empty">
-                  {t(state.filter || state.filterKind !== "all" ? "sftp.noMatches" : "sftp.empty")}
-                </p>
-              ) : null}
-
-              {creating ? (
-                <div className="sftp-row is-creating">
-                  <span className="sftp-row__icon">
-                    {creating.kind === "folder" ? <Folder size={13} /> : <FileIcon size={13} />}
-                  </span>
-                  <Input
-                    autoFocus
-                    className="sftp-row__name"
-                    value={creating.value}
-                    spellCheck={false}
-                    aria-label={
-                      creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
-                    }
-                    placeholder={
-                      creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
-                    }
-                    onChange={(event) =>
-                      patch(id, { creating: { kind: creating.kind, value: event.target.value } })
-                    }
-                    onBlur={() => patch(id, { creating: null })}
-                    onClick={(event) => event.stopPropagation()}
-                    onDoubleClick={(event) => event.stopPropagation()}
-                    onKeyDown={(event) => {
-                      event.stopPropagation();
-                      if (event.nativeEvent.isComposing) return;
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void commitCreate(id);
-                      }
-                      if (event.key === "Escape") {
-                        event.preventDefault();
-                        patch(id, { creating: null });
-                        bodies.current[id]?.focus({ preventScroll: true });
-                      }
-                    }}
-                  />
-                </div>
-              ) : null}
-
-              {fileView.groups.map((group) => (
-                <div key={group.key} role="presentation">
-                  {view.filesGroupBy && view.filesGroupBy !== "none" ? (
-                    <button
-                      type="button"
-                      className="sftp-group"
-                      aria-expanded={!group.collapsed}
-                      onKeyDown={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        const proxy = (event.target as HTMLElement).classList.contains(
+                          "sftp-type-select",
+                        );
+                        if (
+                          (isTextTarget(event.target) && !proxy) ||
+                          event.nativeEvent.isComposing ||
+                          event.nativeEvent.keyCode === 229
+                        )
+                          return;
+                        if (
+                          proxy &&
+                          event.key.length === 1 &&
+                          !event.ctrlKey &&
+                          !event.metaKey &&
+                          !event.altKey
+                        )
+                          return;
+                        const branch = (state.ancestors[columnIndex + 1] ?? state.listing)?.path;
+                        activateColumn(id, columnIndex);
+                        const entry = listing.entries.find((item) => item.path === branch);
+                        if (entry) selectEntry(id, entry, "single");
+                        onKeyDown(event, id);
+                      }}
                       onContextMenu={(event) => {
+                        if ((event.target as HTMLElement).closest(".sftp-row")) return;
+                        activateColumn(id, columnIndex);
+                        openEntryMenu(event, id, null);
+                      }}
+                      onDragOver={(event) => {
+                        if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) return;
+                        event.preventDefault();
+                        const dragged = currentDragSource();
+                        event.dataTransfer.dropEffect =
+                          dragged && sameFilesystem(dragged, source) ? "move" : "copy";
+                      }}
+                      onDrop={(event) => {
+                        if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
                         event.preventDefault();
                         event.stopPropagation();
+                        const payload = readDragPayload(event.dataTransfer);
+                        setDropTarget(null);
+                        if (payload) handleDrop(id, listing.path, payload);
                       }}
-                      onClick={() =>
-                        updateView(
-                          id,
-                          {},
-                          {
-                            collapsedGroups: group.collapsed
-                              ? state.collapsedGroups.filter((key) => key !== group.key)
-                              : [...state.collapsedGroups, group.key],
-                          },
-                        )
-                      }
                     >
-                      <ChevronRight
-                        size={12}
-                        className={!group.collapsed ? "is-expanded" : undefined}
+                      <FileTypeSelect
+                        onText={(text, at) => {
+                          activateColumn(id, columnIndex);
+                          selectByText(id, text, at);
+                        }}
                       />
-                      <span>{groupLabel(group.key)}</span>
-                      <span className="sftp-group__count">{group.entries.length}</span>
-                    </button>
-                  ) : null}
-                  {!group.collapsed
-                    ? group.entries.map((entry) => renderRow(entry, positions.get(entry.path)!))
-                    : null}
+                      {visibleFiles(listing.entries, view, collator).map((entry, index) =>
+                        renderRow(entry, index, columnIndex),
+                      )}
+                    </div>
+                  </div>
+                ))
+              : null}
+            <div
+              className={cn("sftp-pane__scroll", columnView && "sftp-miller__column")}
+              key="current"
+            >
+              {columnView ? (
+                <div className="sftp-miller__heading" title={state.listing?.path}>
+                  {state.listing?.path}
                 </div>
-              ))}
+              ) : (
+                <table className="sftp-columns" aria-label={t("sftp.sortColumns")}>
+                  <thead>
+                    <tr>
+                      {columns.map((sort) => (
+                        <th
+                          key={sort}
+                          className={`sftp-columns__${sort}`}
+                          scope="col"
+                          title={t("sftp.columnHeaderHint")}
+                          aria-label={t(
+                            sort === "name"
+                              ? "sftp.sortName"
+                              : sort === "type"
+                                ? "sftp.sortType"
+                                : sort === "size"
+                                  ? "sftp.sortSize"
+                                  : "sftp.sortModified",
+                          )}
+                          draggable
+                          style={{
+                            gridColumn:
+                              sort === "name" ? `${columnIndex(sort)} / span 2` : columnIndex(sort),
+                          }}
+                          onDragStart={(event) => {
+                            event.stopPropagation();
+                            event.dataTransfer.setData("application/x-tunnelde-file-column", sort);
+                            event.dataTransfer.effectAllowed = "move";
+                            event.currentTarget.dataset.dragging = "true";
+                          }}
+                          onDragOver={(event) => {
+                            if (
+                              !event.dataTransfer.types.includes(
+                                "application/x-tunnelde-file-column",
+                              )
+                            )
+                              return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const bounds = event.currentTarget.getBoundingClientRect();
+                            event.currentTarget.dataset.columnDrop =
+                              event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
+                          }}
+                          onDragLeave={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                              delete event.currentTarget.dataset.columnDrop;
+                          }}
+                          onDragEnd={(event) => {
+                            delete event.currentTarget.dataset.dragging;
+                            for (const header of event.currentTarget
+                              .closest("tr")
+                              ?.querySelectorAll<HTMLElement>("[data-column-drop]") ?? [])
+                              delete header.dataset.columnDrop;
+                          }}
+                          onDrop={(event) => {
+                            const dragged = event.dataTransfer.getData(
+                              "application/x-tunnelde-file-column",
+                            ) as FileColumn;
+                            const bounds = event.currentTarget.getBoundingClientRect();
+                            const after = event.clientX >= bounds.left + bounds.width / 2;
+                            delete event.currentTarget.dataset.columnDrop;
+                            if (!columns.includes(dragged) || dragged === sort) return;
+                            event.preventDefault();
+                            event.stopPropagation();
+                            const next = columns.filter((item) => item !== dragged);
+                            next.splice(next.indexOf(sort) + Number(after), 0, dragged);
+                            updateView(id, { filesColumns: next });
+                          }}
+                          aria-sort={
+                            view.filesSortBy === sort
+                              ? view.filesSortDirection === "asc"
+                                ? "ascending"
+                                : "descending"
+                              : "none"
+                          }
+                        >
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateView(id, {
+                                filesSortBy: sort,
+                                filesSortDirection:
+                                  view.filesSortBy === sort && view.filesSortDirection === "asc"
+                                    ? "desc"
+                                    : "asc",
+                              })
+                            }
+                          >
+                            <span>
+                              {t(
+                                sort === "name"
+                                  ? "sftp.sortName"
+                                  : sort === "type"
+                                    ? "sftp.sortType"
+                                    : sort === "size"
+                                      ? "sftp.sortSize"
+                                      : "sftp.sortModified",
+                              )}
+                            </span>
+                            {view.filesSortBy === sort ? (
+                              <ArrowUp
+                                size={11}
+                                className={
+                                  view.filesSortDirection === "desc" ? "is-desc" : undefined
+                                }
+                                aria-hidden="true"
+                              />
+                            ) : null}
+                          </button>
+                          <span
+                            className="sftp-columns__resize"
+                            role="separator"
+                            aria-orientation="vertical"
+                            tabIndex={0}
+                            aria-valuemin={56}
+                            aria-valuemax={1000}
+                            aria-valuenow={
+                              view.filesColumnWidths?.[sort] ?? DEFAULT_COLUMN_WIDTHS[sort]
+                            }
+                            aria-label={`${t("sftp.sortColumns")}: ${t(sort === "name" ? "sftp.sortName" : sort === "type" ? "sftp.sortType" : sort === "size" ? "sftp.sortSize" : "sftp.sortModified")}`}
+                            onDragStart={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }}
+                            onDoubleClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              updateView(id, {
+                                filesColumnWidths: {
+                                  ...view.filesColumnWidths,
+                                  [sort]: fitFileColumn(event.currentTarget.closest("th")!, sort),
+                                },
+                              });
+                            }}
+                            title={t("sftp.resizeColumnHint")}
+                            onPointerDown={(event) => resizeColumn(sort, event)}
+                            onKeyDown={(event) => {
+                              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+                              event.preventDefault();
+                              event.stopPropagation();
+                              const current =
+                                view.filesColumnWidths?.[sort] ?? DEFAULT_COLUMN_WIDTHS[sort];
+                              const delta =
+                                (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 50 : 10);
+                              updateView(id, {
+                                filesColumnWidths: {
+                                  ...view.filesColumnWidths,
+                                  [sort]: Math.max(56, Math.min(1000, current + delta)),
+                                },
+                              });
+                            }}
+                          />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                </table>
+              )}
+
+              <div
+                ref={(element) => {
+                  bodies.current[id] = element;
+                }}
+                className={cn(
+                  "sftp-pane__body",
+                  dropTarget?.pane === id && dropTarget.path === "" && "is-drop",
+                )}
+                data-column-path={state.listing?.path}
+                onScroll={(event) => {
+                  if (columnView && state.listing)
+                    rememberColumnScroll(id, state.listing.path, event.currentTarget.scrollTop);
+                }}
+                tabIndex={0}
+                role="listbox"
+                aria-multiselectable="true"
+                aria-busy={state.busy}
+                aria-label={t("sftp.title")}
+                aria-activedescendant={
+                  primary
+                    ? `${instanceId}-${id}-row-${entries.findIndex((item) => item.path === primary.path)}`
+                    : undefined
+                }
+                onKeyDown={(event) => onKeyDown(event, id)}
+                onFocus={(event) => {
+                  if (event.target === event.currentTarget)
+                    event.currentTarget
+                      .querySelector<HTMLInputElement>(".sftp-type-select")
+                      ?.focus({ preventScroll: true });
+                }}
+                onContextMenu={(event) => {
+                  if (!(event.target as HTMLElement).closest(".sftp-row")) {
+                    openEntryMenu(event, id, null);
+                  }
+                }}
+                onDragOver={(event) => {
+                  if (state.busy || !event.dataTransfer.types.includes(DRAG_MIME)) {
+                    return;
+                  }
+                  event.preventDefault();
+                  const dragged = currentDragSource();
+                  event.dataTransfer.dropEffect =
+                    dragged && sameFilesystem(dragged, source) ? "move" : "copy";
+                  setDropTarget({ pane: id, path: "" });
+                }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={(event) => {
+                  if (!event.dataTransfer.types.includes(DRAG_MIME)) return;
+                  event.preventDefault();
+                  const payload = readDragPayload(event.dataTransfer);
+                  setDropTarget(null);
+                  if (payload && state.listing) {
+                    handleDrop(id, state.listing.path, payload);
+                  }
+                }}
+              >
+                <FileTypeSelect onText={(text, at) => selectByText(id, text, at)} />
+                {state.error ? <p className="sftp-pane__error">{state.error}</p> : null}
+                {!state.busy && state.listing && fileView.total === 0 && !creating ? (
+                  <p className="sftp-pane__empty">
+                    {t(
+                      state.filter || state.filterKind !== "all" ? "sftp.noMatches" : "sftp.empty",
+                    )}
+                  </p>
+                ) : null}
+
+                {creating ? (
+                  <div className="sftp-row is-creating">
+                    <span className="sftp-row__icon">
+                      {creating.kind === "folder" ? <Folder size={13} /> : <FileIcon size={13} />}
+                    </span>
+                    <Input
+                      autoFocus
+                      className="sftp-row__name"
+                      value={creating.value}
+                      spellCheck={false}
+                      aria-label={
+                        creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
+                      }
+                      placeholder={
+                        creating.kind === "folder" ? t("sftp.folderName") : t("sftp.fileName")
+                      }
+                      onChange={(event) =>
+                        patch(id, { creating: { kind: creating.kind, value: event.target.value } })
+                      }
+                      onBlur={() => patch(id, { creating: null })}
+                      onClick={(event) => event.stopPropagation()}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.nativeEvent.isComposing) return;
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void commitCreate(id);
+                        }
+                        if (event.key === "Escape") {
+                          event.preventDefault();
+                          patch(id, { creating: null });
+                          bodies.current[id]?.focus({ preventScroll: true });
+                        }
+                      }}
+                    />
+                  </div>
+                ) : null}
+
+                {fileView.groups.map((group) => (
+                  <div key={group.key} role="presentation">
+                    {view.filesGroupBy && view.filesGroupBy !== "none" ? (
+                      <button
+                        type="button"
+                        className="sftp-group"
+                        aria-expanded={!group.collapsed}
+                        onKeyDown={(event) => event.stopPropagation()}
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                        }}
+                        onClick={() =>
+                          updateView(
+                            id,
+                            {},
+                            {
+                              collapsedGroups: group.collapsed
+                                ? state.collapsedGroups.filter((key) => key !== group.key)
+                                : [...state.collapsedGroups, group.key],
+                            },
+                          )
+                        }
+                      >
+                        <ChevronRight
+                          size={12}
+                          className={!group.collapsed ? "is-expanded" : undefined}
+                        />
+                        <span>{groupLabel(group.key)}</span>
+                        <span className="sftp-group__count">{group.entries.length}</span>
+                      </button>
+                    ) : null}
+                    {!group.collapsed
+                      ? group.entries.map((entry) => renderRow(entry, positions.get(entry.path)!))
+                      : null}
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-        </div>
-
+        </FileBrowserSurface>
         <footer className="sftp-pane__foot">
           <span className="sftp-pane__status" role="status" aria-live="polite" aria-atomic="true">
             {state.busy

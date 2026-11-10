@@ -7,7 +7,9 @@ export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProv
     .flatMap((plugin) =>
       plugin.frontend &&
       plugin.permissions.includes("ui.trusted") &&
-      (target !== "hostList" || plugin.permissions.includes("hosts.read"))
+      (target !== "hostList" || plugin.permissions.includes("hosts.read")) &&
+      (target !== "fileBrowser" ||
+        ["fs.read", "sftp.read", "workspace.write"].every((p) => plugin.permissions.includes(p)))
         ? plugin.views
             .filter((view) => view.kind === "component" && view.provider === target)
             .map((view) => ({ plugin, view }))
