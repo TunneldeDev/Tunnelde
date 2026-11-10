@@ -554,3 +554,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 `hosts.sourcesSnapshot({ offset?, revision? })` 返回 `{ revision, total, nextOffset, items }`，每页至多一个来源。首次传 `{}`；后续将 `nextOffset` 作为 `offset` 并携带原 `revision`。收到 `plugin.hostSources.changed` 时从头读取；分页不预留资源，也不冻结快照。来源包含 `pluginId`、`pluginName`、`id`、`label` 和 `entries`；每条记录还包含宿主生成的 `hostId`。此接口独立于仍只返回已保存主机的 `hosts.snapshot`。
 
 可将返回的 `hostId` 用于 `sessions.connect` 或 `workspace.openHost`。ID 绑定插件身份、来源 ID 和完整条目（包括连接目标）。条目任意信息变化都会改变 ID，因此旧弹窗会失败，不会连接被替换的目标；建立过程中来源消失也会拒绝本次连接。用户已建立的连接继续保留。插件创建的连接仍遵守运行实例／客户端所有权与显式交接规则。插件停止、崩溃、重启、撤权及进入受限模式会移除其来源，不会隐式持久化发现记录，也不会删除用户保存的副本或已信任的服务器密钥。
+
+[实验性终端组件与订阅](plugin-terminal.zh-cn.md)。

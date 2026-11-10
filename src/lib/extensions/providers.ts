@@ -9,7 +9,9 @@ export function uiProviders(plugins: readonly PluginInfo[], target: FrontendProv
       plugin.permissions.includes("ui.trusted") &&
       (target !== "hostList" || plugin.permissions.includes("hosts.read")) &&
       (target !== "fileBrowser" ||
-        ["fs.read", "sftp.read", "workspace.write"].every((p) => plugin.permissions.includes(p)))
+        ["fs.read", "sftp.read", "workspace.write"].every((p) => plugin.permissions.includes(p))) &&
+      (target !== "terminal" ||
+        ["sessions.read", "ssh.exec"].every((p) => plugin.permissions.includes(p)))
         ? plugin.views
             .filter((view) => view.kind === "component" && view.provider === target)
             .map((view) => ({ plugin, view }))

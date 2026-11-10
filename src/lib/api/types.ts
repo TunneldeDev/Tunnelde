@@ -67,7 +67,10 @@ export interface Settings {
   motion: MotionPreference;
   showStatusBar: boolean;
   uiProviders: Partial<
-    Record<"hostList" | "workbench" | "fileBrowser", { pluginId: string; viewId: string }>
+    Record<
+      "hostList" | "workbench" | "fileBrowser" | "terminal",
+      { pluginId: string; viewId: string }
+    >
   >;
   restoreWorkspace: boolean;
   hostActivation: HostActivation;
@@ -460,7 +463,7 @@ export interface PluginView {
   location?: "sidebar" | "workspace";
   kind?: "chat" | "blocks" | "component";
   icon?: string;
-  provider?: "hostList" | "workbench" | "fileBrowser";
+  provider?: "hostList" | "workbench" | "fileBrowser" | "terminal";
 }
 
 export interface PluginEvent {

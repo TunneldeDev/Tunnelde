@@ -106,6 +106,9 @@ vi.mock("@xterm/xterm", () => ({
       selections.push(callback);
       return { dispose: vi.fn() };
     });
+    onWriteParsed = vi.fn(() => ({ dispose: vi.fn() }));
+    onScroll = vi.fn(() => ({ dispose: vi.fn() }));
+    onResize = vi.fn(() => ({ dispose: vi.fn() }));
     attachCustomKeyEventHandler = vi.fn((callback: (event: KeyboardEvent) => boolean) => {
       keyboard.push(callback);
     });
@@ -721,7 +724,7 @@ describe("terminal clipboard", () => {
   it("copies the captured selection even if a TUI redraw clears it before the debounce", async () => {
     useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } });
     render(<TerminalPage sessionId="s1" active={false} />);
-    await waitFor(() => expect(selections).toHaveLength(1));
+    await waitFor(() => expect(selections).toHaveLength(2));
     vi.useFakeTimers();
     const terminal = instances[0]!;
     terminal.hasSelection.mockReturnValue(true);
@@ -773,7 +776,7 @@ describe("terminal clipboard", () => {
 
   it("debounces copy-on-select without stealing focus, and honors disabling and cleanup", async () => {
     const view = render(<TerminalPage sessionId="s1" active={false} />);
-    await waitFor(() => expect(selections).toHaveLength(1));
+    await waitFor(() => expect(selections).toHaveLength(2));
     vi.useFakeTimers();
     const terminal = instances[0]!;
     terminal.hasSelection.mockReturnValue(true);

@@ -20,9 +20,33 @@ import type {
   FrontendProviderTarget,
   FrontendWorkbenchSlots,
   FrontendFileBrowser,
+  FrontendTerminal,
 } from "@/lib/extensions/uiSdkContract";
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
+
+function createProviderLease() {
+  let closed = false;
+  const subscriptions = new Set<() => void>();
+  return {
+    isClosed: () => closed,
+    activate: () => {
+      closed = false;
+    },
+    close: () => {
+      closed = true;
+      for (const release of [...subscriptions]) release();
+    },
+    retain: (release: () => void) => {
+      const cleanup = () => {
+        if (!subscriptions.delete(cleanup)) return;
+        release();
+      };
+      subscriptions.add(cleanup);
+      return cleanup;
+    },
+  };
+}
 
 class ProviderBoundary extends Component<
   {
@@ -53,7 +77,9 @@ export function ProviderSurface({
   visible = true,
   keepFallback = false,
   fileBrowser,
+  terminal,
   suspended = false,
+  validationError = "plugin.frontend.missingWorkspace",
 }: {
   target: FrontendProviderTarget;
   children: ReactNode;
@@ -63,7 +89,9 @@ export function ProviderSurface({
   visible?: boolean;
   keepFallback?: boolean;
   fileBrowser?: FrontendFileBrowser;
+  terminal?: FrontendTerminal;
   suspended?: boolean;
+  validationError?: string;
 }) {
   const { t } = useTranslation();
   const selections = useSettings((state) => state.settings.uiProviders);
@@ -120,31 +148,35 @@ export function ProviderSurface({
   useEffect(() => {
     if (!View || !validate) return;
     const check = () => {
-      if (!validate()) fail(new Error("plugin.frontend.missingWorkspace"));
+      if (!validate()) fail(new Error(validationError));
     };
     check();
     // Observe mount ownership, never terminal/editor DOM mutations at output frequency.
     return subscribe?.(check);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [View, identity, validate, subscribe]);
+  }, [View, identity, validate, subscribe, validationError]);
   const reset = () => {
     const next = { ...useSettings.getState().settings.uiProviders };
     delete next[target];
     void useSettings.getState().update({ uiProviders: next });
   };
   const active = !!View;
-  const fileAccess = useRef<object | null>(null);
+  const committedLease = useRef<object | null>(null);
   const accessLease = useMemo(
-    () => ({ identity, token, View, active }),
-    [identity, token, View, active],
+    () => createProviderLease(),
+    // A context is owned by this exact provider generation and terminal bridge.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [identity, token, View, active, terminal],
   );
   useLayoutEffect(() => {
-    fileAccess.current = active ? accessLease : null;
+    accessLease.activate();
+    committedLease.current = active ? accessLease : null;
     return () => {
-      fileAccess.current = null;
+      committedLease.current = null;
+      accessLease.close();
     };
   }, [active, accessLease]);
-  const checkFileAccess = (mutation = true) => {
+  const checkAccess = (mutation = true) => {
     const current = selectedUiProvider(
       usePlugins.getState().items,
       useSettings.getState().settings.uiProviders,
@@ -153,7 +185,8 @@ export function ProviderSurface({
     const policy = usePluginSecurity.getState().state;
     if (
       !active ||
-      (mutation && fileAccess.current !== accessLease) ||
+      accessLease.isClosed() ||
+      (mutation && committedLease.current !== accessLease) ||
       !selected ||
       policy.restricted ||
       current?.plugin.id !== selected.plugin.id ||
@@ -175,24 +208,95 @@ export function ProviderSurface({
           Entries: fileBrowser.Entries,
           snapshot: fileBrowser.snapshot,
           read: (request) => {
-            checkFileAccess(false);
+            checkAccess(false);
             return fileBrowser.read(request);
           },
           navigate: (path) => {
-            checkFileAccess();
+            checkAccess();
             fileBrowser.navigate(path);
           },
           refresh: () => {
-            checkFileAccess();
+            checkAccess();
             fileBrowser.refresh();
           },
           select: (paths) => {
-            checkFileAccess();
+            checkAccess();
             fileBrowser.select(paths);
           },
           open: (path, mode) => {
-            checkFileAccess();
+            checkAccess();
             fileBrowser.open(path, mode);
+          },
+        })
+      : undefined;
+  const terminalContext: FrontendTerminal | undefined =
+    terminal && active
+      ? // Callbacks read refs only when invoked, never during Object.freeze.
+        // eslint-disable-next-line react-hooks/refs
+        Object.freeze<FrontendTerminal>({
+          Screen: terminal.Screen,
+          readState: () => {
+            checkAccess(false);
+            return terminal.readState();
+          },
+          readLines: (request) => {
+            checkAccess(false);
+            return terminal.readLines(request);
+          },
+          readSelection: () => {
+            checkAccess(false);
+            return terminal.readSelection();
+          },
+          subscribe: (receive, options) => {
+            checkAccess();
+            if (typeof receive !== "function") throw new Error("plugin.terminal.invalid");
+            let release = () => {};
+            const stop = terminal.subscribe((change) => {
+              try {
+                // Revocation can precede the next React commit.
+                checkAccess();
+              } catch {
+                release();
+                return;
+              }
+              try {
+                receive(change);
+              } catch (error) {
+                release();
+                reportError(
+                  `plugins.${selected!.plugin.id}.frontend`,
+                  "terminal.subscription",
+                  error,
+                );
+              }
+            }, options);
+            release = accessLease.retain(() => {
+              stop();
+              options?.signal?.removeEventListener("abort", release);
+            });
+            if (options?.signal?.aborted) release();
+            else options?.signal?.addEventListener("abort", release, { once: true });
+            return release;
+          },
+          focus: () => {
+            checkAccess();
+            terminal.focus();
+          },
+          paste: (text) => {
+            checkAccess();
+            terminal.paste(text);
+          },
+          send: (text) => {
+            checkAccess();
+            terminal.send(text);
+          },
+          scrollToLine: (row) => {
+            checkAccess();
+            terminal.scrollToLine(row);
+          },
+          clearSelection: () => {
+            checkAccess();
+            terminal.clearSelection();
           },
         })
       : undefined;
@@ -228,6 +332,7 @@ export function ProviderSurface({
               visible={visible}
               workbench={slots}
               fileBrowser={files}
+              terminal={terminalContext}
             />
           </ProviderBoundary>
         </div>

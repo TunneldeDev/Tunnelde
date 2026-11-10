@@ -11,10 +11,25 @@
     "viewKind": "component",
     "providers": {
       "manifest": "views[].provider",
-      "targets": ["hostList", "workbench", "fileBrowser"],
+      "targets": ["hostList", "workbench", "fileBrowser", "terminal"],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
       "fileBrowserPermissions": ["fs.read", "sftp.read", "workspace.write"],
+      "terminalPermissions": ["sessions.read", "ssh.exec"],
+      "terminal": {
+        "context": "terminal",
+        "ownership": "host-session",
+        "requiredSlot": "Screen",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "lineTextLimit": 4096,
+        "inputTextLimit": 65536,
+        "subscriptions": 16,
+        "notificationIntervalMs": 100,
+        "paging": "revision-bound",
+        "stream": "coalesced-dirty",
+        "recovery": "native-toolbar-and-screen"
+      },
       "fileBrowser": {
         "context": "fileBrowser",
         "ownership": "host-pane",

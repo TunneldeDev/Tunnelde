@@ -267,14 +267,16 @@ impl Settings {
     pub fn sanitize(&mut self) {
         self.host_list.sanitize();
         self.ui_providers.retain(|target, selection| {
-            matches!(target.as_str(), "hostList" | "workbench" | "fileBrowser")
-                && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
-                    !id.is_empty()
-                        && id.len() <= 128
-                        && id.bytes().all(|b| {
-                            b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':')
-                        })
-                })
+            matches!(
+                target.as_str(),
+                "hostList" | "workbench" | "fileBrowser" | "terminal"
+            ) && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id.bytes().all(|b| {
+                        b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':')
+                    })
+            })
         });
         let mut rule_count = 0;
         self.shortcut_rules.retain(|id, bindings| {
@@ -576,6 +578,7 @@ mod tests {
                 "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
                 "hostList": {"pluginId":"../invalid", "viewId":"hosts"},
                 "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
+                "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
                 "credentials": {"pluginId":"custom-ui", "viewId":"secret"}
             }
         }))
@@ -586,7 +589,8 @@ mod tests {
             saved["uiProviders"],
             serde_json::json!({
                 "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
-                "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"}
+                "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
+                "terminal": {"pluginId":"custom-ui", "viewId":"screen"}
             })
         );
         assert!(serde_json::from_value::<Settings>(serde_json::json!({

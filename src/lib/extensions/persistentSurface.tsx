@@ -6,6 +6,16 @@ export function createPersistentSurface() {
   container.style.display = "contents";
   let owner: HTMLElement | null = null;
   let focused: HTMLElement | null = null;
+  const listeners = new Set<() => void>();
+  let scheduled = false;
+  const changed = () => {
+    if (scheduled) return;
+    scheduled = true;
+    queueMicrotask(() => {
+      scheduled = false;
+      for (const receive of listeners) receive();
+    });
+  };
   function Mount() {
     const ref = useRef<HTMLDivElement>(null);
     useLayoutEffect(() => {
@@ -15,6 +25,7 @@ export function createPersistentSurface() {
       target.append(container);
       if (focused && container.contains(focused)) focused.focus({ preventScroll: true });
       focused = null;
+      changed();
       return () => {
         if (
           document.activeElement instanceof HTMLElement &&
@@ -24,10 +35,21 @@ export function createPersistentSurface() {
         if (owner === target) {
           owner = null;
           container.remove();
+          changed();
         }
       };
     }, []);
     return <div ref={ref} style={{ display: "contents" }} />;
   }
-  return Object.freeze({ container, Mount });
+  return Object.freeze({
+    container,
+    Mount,
+    hasMount: () => owner !== null && container.isConnected,
+    subscribe: (receive: () => void) => {
+      listeners.add(receive);
+      return () => {
+        listeners.delete(receive);
+      };
+    },
+  });
 }

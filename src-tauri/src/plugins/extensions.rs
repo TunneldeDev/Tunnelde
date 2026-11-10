@@ -33,7 +33,7 @@ mod tests {
         assert_eq!(providers["manifest"], "views[].provider");
         assert_eq!(
             providers["targets"],
-            serde_json::json!(["hostList", "workbench", "fileBrowser"])
+            serde_json::json!(["hostList", "workbench", "fileBrowser", "terminal"])
         );
         assert_eq!(providers["selection"], "explicit-user");
         assert_eq!(providers["requiredSlot"], "Workspace");
