@@ -16,6 +16,7 @@ pub(super) fn remove_runtime(
     if let Some(registry) = tauri::Manager::try_state::<super::frontend::Registry>(app) {
         registry.remove(owner, &generation);
     }
+    super::forwarding::remove_runtime(app, owner, &generation);
     super::status_bar::remove_runtime(app, owner, &generation);
     super::tab_bar::remove_runtime(app, owner, &generation);
     super::host_list::remove_runtime(app, owner, &generation);

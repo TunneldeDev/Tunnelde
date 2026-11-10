@@ -11,7 +11,7 @@
     "viewKind": "component",
     "providers": {
       "manifest": "views[].provider",
-      "targets": ["hostList", "workbench", "fileBrowser", "terminal", "history"],
+      "targets": ["hostList", "workbench", "fileBrowser", "terminal", "history", "forwarding"],
       "selection": "explicit-user",
       "hostListPermission": "hosts.read",
       "fileBrowserPermissions": ["fs.read", "sftp.read", "workspace.write"],
@@ -51,8 +51,23 @@
       },
       "slots": ["Workspace", "Navigation", "Inspector", "StatusBar"],
       "requiredSlot": "Workspace",
-      "limits": { "perPlugin": 8 },
-      "fallback": "built-in"
+      "limits": {
+        "perPlugin": 8
+      },
+      "fallback": "built-in",
+      "forwardingPermissions": ["hosts.read", "forwards.read"],
+      "forwarding": {
+        "context": "forwarding",
+        "ownership": "host-panel",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "forwards.write",
+        "connection": "independent-host-confirmation",
+        "acceptedOwnership": "plugin-runtime",
+        "recovery": "native-editor-and-confirmation"
+      }
     },
     "components": [
       "Button",
@@ -64,7 +79,11 @@
       "SearchField",
       "EmptyState"
     ],
-    "limits": { "moduleBytes": 8388608, "totalBytes": 33554432, "owners": 16 }
+    "limits": {
+      "moduleBytes": 8388608,
+      "totalBytes": 33554432,
+      "owners": 16
+    }
   },
   "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
   "domains": [
@@ -142,7 +161,10 @@
       "stability": "experimental",
       "composition": "merge",
       "ownership": "runtime",
-      "registration": { "set": "hostList.setColumn", "remove": "hostList.removeColumn" },
+      "registration": {
+        "set": "hostList.setColumn",
+        "remove": "hostList.removeColumn"
+      },
       "permissions": ["hosts.read", "workspace.write"],
       "limits": {
         "perPlugin": 8,
@@ -185,10 +207,15 @@
       "layer": "presentation",
       "stability": "experimental",
       "composition": "merge",
-      "registration": { "manifest": "commands[].hostMenu" },
+      "registration": {
+        "manifest": "commands[].hostMenu"
+      },
       "ownership": "manifest",
       "permissions": ["hosts.read"],
-      "limits": { "perPlugin": 16, "total": 128 }
+      "limits": {
+        "perPlugin": 16,
+        "total": 128
+      }
     },
     {
       "id": "hostList.decorations",

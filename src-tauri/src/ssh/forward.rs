@@ -1,6 +1,9 @@
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -20,6 +23,7 @@ use tokio::{
 const TIMEOUT: Duration = Duration::from_secs(15);
 #[derive(Clone)]
 struct RemoteTarget {
+    admitted: Arc<AtomicBool>,
     host: String,
     port: u16,
     cancel: watch::Receiver<bool>,
@@ -80,6 +84,8 @@ async fn release_remote((handle, routes, host, port): RemoteForward) -> AppResul
 }
 
 struct ActiveForward {
+    admitted: Arc<AtomicBool>,
+    identity: String,
     session: String,
     owner: Option<String>,
     generation: Option<u64>,
@@ -148,13 +154,13 @@ impl ForwardRegistry {
             notify();
         }
     }
-    pub(crate) fn snapshot(&self) -> AppResult<HashMap<String, String>> {
+    pub(crate) fn snapshot(&self) -> AppResult<HashMap<String, (String, String)>> {
         Ok(self
             .active
             .lock()
             .map_err(|_| AppError::internal("forward.lock"))?
             .iter()
-            .map(|(id, item)| (id.clone(), item.session.clone()))
+            .map(|(id, item)| (id.clone(), (item.session.clone(), item.identity.clone())))
             .collect())
     }
     /// Serialize persistence with listener admission, then notify outside both locks.
@@ -227,23 +233,35 @@ impl ForwardRegistry {
             })
             .unwrap_or(false)
     }
-    pub async fn stop(&self, id: &str) -> AppResult<()> {
-        let item = {
-            let mut m = self
-                .active
-                .lock()
-                .map_err(|_| AppError::internal("forward.lock"))?;
-            self.invalidate(format!("rule:{id}"));
-            m.remove(id)
-        };
-        if let Some(item) = item {
-            self.publish();
-            // Cleanup keeps running if an IPC/plugin caller is cancelled.
-            tauri::async_runtime::spawn(item.shutdown())
-                .await
-                .map_err(|_| AppError::internal("forward.stopFailed"))??;
+    pub(crate) fn take_checked(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<StoppedForward> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        check()?;
+        if expected
+            .is_some_and(|expected| active.get(id).is_none_or(|item| item.identity != expected))
+        {
+            return Err(AppError::validation("forward.changed"));
         }
-        Ok(())
+        self.invalidate(format!("rule:{id}"));
+        let item = active.remove(id);
+        drop(active);
+        if item.is_some() {
+            self.publish();
+        }
+        // Spawn before returning so caller cancellation cannot interrupt cleanup.
+        Ok(StoppedForward(
+            item.map(|item| tauri::async_runtime::spawn(item.shutdown())),
+        ))
+    }
+    pub async fn stop(&self, id: &str) -> AppResult<()> {
+        self.take_checked(id, None, || Ok(()))?.finish().await
     }
     pub fn stop_session(&self, session: &str) {
         if let Ok(mut m) = self.active.lock() {
@@ -312,7 +330,7 @@ pub async fn remote_channel(
     let Some(mut target) = target else {
         return;
     };
-    if *target.cancel.borrow() {
+    if !target.admitted.load(Ordering::Acquire) || *target.cancel.borrow() {
         return;
     }
     // Never await socket I/O inside russh's handler: its event loop also services SSH traffic.
@@ -321,22 +339,64 @@ pub async fn remote_channel(
             _ = target.cancel.changed() => return,
             result = tokio::time::timeout(TIMEOUT, TcpStream::connect((target.host.as_str(), target.port))) => match result { Ok(Ok(s)) => s, _ => return },
         };
-        if *target.cancel.borrow() {
+        if !target.admitted.load(Ordering::Acquire) || *target.cancel.borrow() {
             return;
         }
         reply.accept().await;
         relay(local, channel.into_stream(), target.cancel).await;
     });
 }
-pub(crate) async fn start_owned(
+/// A prepared listener owns its cleanup until committed to the registry.
+pub(crate) struct PendingForward {
+    id: String,
+    ticket: Vec<(String, u64)>,
+    item: ActiveForward,
+}
+impl PendingForward {
+    /// Callers can hold their authorization/scope locks before acquiring the registry.
+    pub(crate) fn commit(
+        self,
+        registry: &ForwardRegistry,
+        current: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()> {
+        let mut active = registry
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        if !registry.valid_ticket(&self.ticket) {
+            return Err(AppError::validation("forward.startCancelled"));
+        }
+        current()?;
+        if active.contains_key(&self.id) {
+            return Err(AppError::validation("forward.alreadyActive"));
+        }
+        self.item.admitted.store(true, Ordering::Release);
+        active.insert(self.id, self.item);
+        drop(active);
+        registry.publish();
+        Ok(())
+    }
+}
+
+pub(crate) struct StoppedForward(Option<tauri::async_runtime::JoinHandle<AppResult<()>>>);
+impl StoppedForward {
+    pub(crate) async fn finish(self) -> AppResult<()> {
+        if let Some(task) = self.0 {
+            task.await
+                .map_err(|_| AppError::internal("forward.stopFailed"))??;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) async fn prepare(
     registry: &ForwardRegistry,
     rule: &ForwardRule,
     session_id: &str,
     handle: Arc<client::Handle<ClientHandler>>,
     routes: Arc<RemoteRoutes>,
     owner: Option<(String, u64)>,
-    current: impl FnOnce() -> AppResult<()>,
-) -> AppResult<()> {
+) -> AppResult<PendingForward> {
     let id = &rule.id;
     let mut changed = registry.changed.subscribe();
     let ticket = registry.ticket(id, session_id)?;
@@ -348,7 +408,7 @@ pub(crate) async fn start_owned(
     {
         return Err(AppError::validation("forward.alreadyActive"));
     }
-    let setup = open_forward(handle, routes, rule, session_id, owner);
+    let setup = open_uncommitted_forward(handle, routes, rule, session_id, owner, false);
     tokio::pin!(setup);
     let item = loop {
         tokio::select! {
@@ -358,22 +418,11 @@ pub(crate) async fn start_owned(
             }
         }
     };
-    // If the session closed during setup, dropping the item cancels all created resources.
-    let mut active = registry
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    if !registry.valid_ticket(&ticket) {
-        return Err(AppError::validation("forward.startCancelled"));
-    }
-    current()?;
-    if active.contains_key(id) {
-        return Err(AppError::validation("forward.alreadyActive"));
-    }
-    active.insert(id.to_owned(), item);
-    drop(active);
-    registry.publish();
-    Ok(())
+    Ok(PendingForward {
+        id: id.clone(),
+        ticket,
+        item,
+    })
 }
 
 #[cfg(test)]
@@ -410,6 +459,8 @@ mod tests {
         reg.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                admitted: Arc::new(AtomicBool::new(true)),
+                identity: uuid::Uuid::new_v4().to_string(),
                 session: "session".into(),
                 owner: None,
                 generation: None,
@@ -425,6 +476,7 @@ mod tests {
         assert!(*rx.borrow());
     }
 }
+#[cfg(test)]
 async fn open_forward(
     handle: Arc<client::Handle<ClientHandler>>,
     routes: Arc<RemoteRoutes>,
@@ -432,6 +484,17 @@ async fn open_forward(
     session_id: &str,
     owner: Option<(String, u64)>,
 ) -> AppResult<ActiveForward> {
+    open_uncommitted_forward(handle, routes, rule, session_id, owner, true).await
+}
+async fn open_uncommitted_forward(
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
+    rule: &ForwardRule,
+    session_id: &str,
+    owner: Option<(String, u64)>,
+    published: bool,
+) -> AppResult<ActiveForward> {
+    let admitted = Arc::new(AtomicBool::new(published));
     let (owner, generation) = owner
         .map(|(id, generation)| (Some(id), Some(generation)))
         .unwrap_or_default();
@@ -440,6 +503,7 @@ async fn open_forward(
         let listener = TcpListener::bind((rule.bind_host.as_str(), rule.bind_port))
             .await
             .map_err(|_| AppError::validation("forward.bindFailed"))?;
+        let allowed = admitted.clone();
         let h = handle.clone();
         let host = rule.target_host.clone();
         let port = rule.target_port;
@@ -449,6 +513,9 @@ async fn open_forward(
                 let Ok((socket, origin)) = accepted else {
                     break;
                 };
+                if !allowed.load(Ordering::Acquire) {
+                    continue;
+                }
                 let h = h.clone();
                 let host = host.clone();
                 let mut c = cancelled.clone();
@@ -483,6 +550,7 @@ async fn open_forward(
                     entries.insert(
                         key,
                         RemoteTarget {
+                            admitted: admitted.clone(),
                             host: rule.target_host.clone(),
                             port: rule.target_port,
                             cancel: cancelled.clone(),
@@ -501,6 +569,8 @@ async fn open_forward(
         // Own cleanup before awaiting the request. Dropping an in-flight setup
         // must revoke the route and cancel a listener the server may yet accept.
         let pending = ActiveForward {
+            admitted,
+            identity: uuid::Uuid::new_v4().to_string(),
             session: session_id.to_owned(),
             owner,
             generation,
@@ -524,6 +594,8 @@ async fn open_forward(
         return Ok(pending);
     };
     Ok(ActiveForward {
+        admitted,
+        identity: uuid::Uuid::new_v4().to_string(),
         session: session_id.to_owned(),
         owner,
         generation,

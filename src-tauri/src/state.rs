@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, RwLock};
 
 use sysinfo::{Disks, System};
@@ -17,6 +18,7 @@ use crate::update::UpdateService;
 pub struct AppState {
     pub db: Database,
     pub settings: RwLock<Settings>,
+    pub ui_provider_revision: AtomicU64,
     pub http_clients: crate::network::HttpClients,
     pub update: UpdateService,
     pub ssh: SshManager,
@@ -52,6 +54,9 @@ impl AppState {
             next.transfer_upload_limit_kib,
             next.transfer_download_limit_kib,
         );
+        if guard.ui_providers.get("forwarding") != next.ui_providers.get("forwarding") {
+            self.ui_provider_revision.fetch_add(1, Ordering::SeqCst);
+        }
         *guard = next;
     }
 
@@ -133,6 +138,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
     app.manage(AppState {
         db: database,
         settings: RwLock::new(settings),
+        ui_provider_revision: AtomicU64::new(0),
         http_clients: Default::default(),
         update: UpdateService::new(version),
         ssh: SshManager::default(),

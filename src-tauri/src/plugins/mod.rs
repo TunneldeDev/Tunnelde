@@ -6,6 +6,7 @@ mod engines;
 mod events;
 mod extensions;
 pub mod file_icons;
+pub mod forwarding;
 pub mod frontend;
 mod host;
 pub mod host_columns;

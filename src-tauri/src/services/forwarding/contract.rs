@@ -34,6 +34,7 @@ pub struct RevisionedRule {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RevisionedInfo {
+    pub runtime_id: Option<String>,
     #[serde(flatten)]
     pub info: ForwardInfo,
     pub revision: String,
