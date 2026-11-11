@@ -43,4 +43,6 @@ fn classify(response: std::result::Result<transport::Output, transport::Failure>
 }
 
 #[cfg(test)]
+mod compatibility;
+#[cfg(test)]
 mod tests;

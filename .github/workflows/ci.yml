@@ -155,6 +155,34 @@ jobs:
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
 
+      - name: Checkout current helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: 2020a1dd35d6c784e09e3ab0fdc71d6962a0ed04
+          path: .tmp/ci/helper-current
+          persist-credentials: false
+
+      - name: Check current helper output against host decoder
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-current/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml current_selected_helper_discovery_matches_host_contract -- --ignored
+
+      - name: Checkout historical helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: a094e0341b9a7a131681041857014404008e0200
+          path: .tmp/ci/helper-historical
+          persist-credentials: false
+
+      - name: Check historical helper rejection remains explicit
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-historical/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml historical_selected_helper_discovery_remains_unavailable -- --ignored
+
       - name: Test real SSHFS mount when FUSE is available
         run: |
           if [ -r /dev/fuse ] && [ -w /dev/fuse ]; then
