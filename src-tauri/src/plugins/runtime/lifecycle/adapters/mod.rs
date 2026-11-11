@@ -1,5 +1,6 @@
 mod connections;
 mod forwarding;
+mod identify;
 mod mounts;
 mod tasks;
 mod transfers;
@@ -17,6 +18,8 @@ use crate::{
     state::AppState,
 };
 use tauri::Manager;
+
+pub(super) use identify::identify;
 
 pub(super) enum Target {
     Connection { session: String, receipt: Ownership },
