@@ -49,6 +49,9 @@ pub(super) fn recovery_required(paths: &Paths, config: &Config) -> AppResult<boo
         return Ok(true);
     }
     if let Some(pending) = &config.pending {
+        if pending.action == crate::storage::config::Action::Cancel {
+            return Ok(true);
+        }
         for change in &pending.changes {
             if layout::metadata(&migration::stage(change, &pending.id)?)?.is_some()
                 || layout::metadata(&change.target.join(migration::MARKER))?.is_some()

@@ -32,8 +32,12 @@ pub fn initialize(
         &config.locations,
         plugins.clone(),
     );
-    if config.pending.is_some() {
-        if let Err(error) = migration::apply(&paths, &mut config) {
+    if let Some(pending) = &config.pending {
+        let result = match pending.action {
+            config::Action::Apply => migration::apply(&paths, &mut config),
+            config::Action::Cancel => migration::cancel(&paths, &mut config),
+        };
+        if let Err(error) = result {
             // Continue using original locations; retain plan and explain recovery in Settings.
             config.last_error = Some(error.to_string());
             config::save(&home, &config)?;
