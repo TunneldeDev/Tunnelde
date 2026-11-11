@@ -1785,7 +1785,36 @@
     "notFound": "此方案已不存在，请刷新方案后重试。",
     "conflict": "已保存的方案发生变化，请刷新列表、确认后重试；未更改任何偏好。",
     "invalidRequest": "方案请求无效，请刷新方案后重试。",
-    "limit": "最多可保存 32 个设置方案，请先删除一个再新增。"
+    "limit": "最多可保存 32 个设置方案，请先删除一个再新增。",
+    "activationReview": "应用已保存的配置“{{name}}”？\n\n变更分组：{{groups}}\n\n将替换公共偏好，包括配置的代理路由、更新源和快捷键。保留私有界面提供者选择。移除的代理会按正常流程清理凭据。部分变更可能需要重启。",
+    "noPublicChanges": "没有公共偏好变更",
+    "activation": {
+      "denied": "已拒绝应用配置，偏好保持不变。"
+    },
+    "mutation": {
+      "invalidRequest": "配置操作缺少必要字段或含有不支持的字段。",
+      "unavailable": "配置操作未能完成。请查看软件日志，并刷新已保存配置后再重试。"
+    },
+    "draft": {
+      "notFound": "配置上传不存在或已过期，请重新开始上传。",
+      "busy": "配置上传正在提交，请刷新已保存配置确认结果。",
+      "incomplete": "配置上传尚未完成。",
+      "invalidOffset": "配置上传位置不正确，请重新开始上传。",
+      "limit": "配置上传数量或预留大小已达上限，请等待当前操作结束。"
+    },
+    "groups": {
+      "general": "常规",
+      "appearance": "外观",
+      "workspace": "工作区",
+      "terminal": "终端",
+      "files": "文件",
+      "transfers": "传输",
+      "editor": "编辑器",
+      "monitoring": "监控",
+      "shortcuts": "快捷键",
+      "network": "网络与代理",
+      "updates": "更新"
+    }
   },
   "search": {
     "invalidRoot": "请选择有效的绝对目录。",
