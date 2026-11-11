@@ -183,6 +183,19 @@ jobs:
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
 
+      - name: Checkout cancellable transport SDK
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 404f019e0d3552358e5504b34b993573a6d22983
+          path: .tmp/ci/cancellation-sdk
+          persist-credentials: false
+
+      - name: Check actual SDK cancellation against native request lifetime
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_TEST_NODE="$(command -v node)" TUNNELDE_TEST_CANCEL_SDK="$GITHUB_WORKSPACE/.tmp/ci/cancellation-sdk/sdk/tunnelde-plugin.mjs" cargo test --manifest-path src-tauri/Cargo.toml --lib current_sdk_control_frames_cancel_native_owned_futures_and_preserve_next_reply -- --ignored
+
       - name: Checkout current helper protocol fixture
         uses: actions/checkout@v4
         with:

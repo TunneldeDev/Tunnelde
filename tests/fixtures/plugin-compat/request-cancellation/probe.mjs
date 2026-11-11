@@ -1,15 +1,25 @@
 // Explicit opt-in test Node only. The SDK comes from a pinned independent repo.
 import { pathToFileURL } from "node:url";
+import process from "node:process";
+import { setTimeout, clearTimeout } from "node:timers";
 const { createPlugin } = await import(pathToFileURL(process.argv[2]).href);
-const runtime = createPlugin(), owner = new AbortController(), mode = process.argv[3];
+const runtime = createPlugin(),
+  owner = new globalThis.AbortController(),
+  mode = process.argv[3];
 let timer;
 if (mode === "abort") timer = setTimeout(() => owner.abort(new Error("fixture-cancelled")), 100);
 if (mode === "close") timer = setTimeout(() => runtime.close(), 100);
 let outcome;
 try {
-  await runtime.host.call("ui.confirm", { message: "Pending test" }, { signal: owner.signal, timeoutMs: mode === "timeout" ? 100 : 10000 });
+  await runtime.host.call(
+    "ui.confirm",
+    { message: "Pending test" },
+    { signal: owner.signal, timeoutMs: mode === "timeout" ? 100 : 10000 },
+  );
   throw new Error("Cancelled call unexpectedly resolved");
-} catch (error) { outcome = error.message; }
+} catch (error) {
+  outcome = error.message;
+}
 clearTimeout(timer);
 const next = mode === "close" ? null : await runtime.host.call("api.describe");
 runtime.close();
