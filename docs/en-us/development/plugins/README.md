@@ -13,6 +13,8 @@ Editor command and formatter contributions:
 
 Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-buffers.md).
 
+Independent log reading grants and cancellable subscriptions: [persisted logs](logging.md).
+
 Host metadata extensions use a versioned manifest schema and revision-checked storage. See [plugin host fields](host-fields.md).
 
 Plugin-owned settings, explicit schema migration and recovery: [plugin configuration](configuration.md).

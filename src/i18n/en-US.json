@@ -1450,6 +1450,7 @@
     "dismiss": "Dismiss suggestion",
     "permission": {
       "log": "Write plugin messages to the application log.",
+      "logsRead": "Read application and other plugins' diagnostic and operation logs. Logs may contain sensitive information.",
       "appRead": "Read application and operating-system information.",
       "settingsRead": "Read application preferences.",
       "settingsWrite": "Change application preferences.",

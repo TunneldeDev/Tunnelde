@@ -58,6 +58,7 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "editor.applyEdits",
             "editor.observe",
             "editor.readRange",
+            "logs.read",
             "preferences.observe",
             "preferences.schema",
             "preferences.snapshot",

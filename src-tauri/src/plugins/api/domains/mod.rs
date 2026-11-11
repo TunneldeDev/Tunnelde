@@ -6,6 +6,7 @@ pub(super) mod files;
 pub(super) mod forwarding;
 pub(super) mod history;
 pub(super) mod hosts;
+pub(super) mod logging;
 pub(super) mod monitor;
 pub(super) mod settings;
 pub(super) mod storage;

@@ -279,7 +279,7 @@
     },
     {
       "id": "governance",
-      "namespaces": ["events", "log", "secrets"]
+      "namespaces": ["events", "log", "logs", "secrets"]
     }
   ],
   "points": [

@@ -26,6 +26,7 @@ pub const PERMISSIONS: &[&str] = &[
     "backgroundTasks.read",
     "backgroundTasks.write",
     "log",
+    "logs.read",
     "app.read",
     "storage.locations.read",
     "storage.locations.write",

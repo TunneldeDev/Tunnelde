@@ -12,6 +12,7 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
   const descriptions = {
     "ui.trusted": "pluginSecurity.permission.trustedUi",
     log: "pluginSecurity.permission.log",
+    "logs.read": "pluginSecurity.permission.logsRead",
     "app.read": "pluginSecurity.permission.appRead",
     "settings.read": "pluginSecurity.permission.settingsRead",
     "settings.write": "pluginSecurity.permission.settingsWrite",
