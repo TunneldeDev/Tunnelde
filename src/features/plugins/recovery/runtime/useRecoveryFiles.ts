@@ -45,6 +45,7 @@ export function useRecoveryFiles(pluginId: string) {
     setConnection(null);
     setPending(false);
     const session = target.session;
+    useSsh.getState().acceptSession(session);
     useWorkspace.getState().openFilePane(
       {
         source: { kind: "remote", sessionId: session.id },
@@ -54,7 +55,6 @@ export function useRecoveryFiles(pluginId: string) {
       },
       session.title,
     );
-    void useSsh.getState().refresh();
   }, []);
   const browse = useCallback(
     async (entry: RecoveryEntry) => {

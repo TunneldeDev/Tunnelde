@@ -14,6 +14,7 @@ const mock = vi.hoisted(() => ({
   disconnect: vi.fn(),
   open: vi.fn(),
   refresh: vi.fn(),
+  acceptSession: vi.fn(),
   toast: vi.fn(),
 }));
 vi.mock("@/lib/api/runners/recovery", () => ({ runnerRecoveryApi: mock }));
@@ -21,7 +22,9 @@ vi.mock("@/lib/api/ipc", () => ({ api: { sshDisconnect: mock.disconnect } }));
 vi.mock("@/store/workspace", () => ({
   useWorkspace: { getState: () => ({ openFilePane: mock.open }) },
 }));
-vi.mock("@/store/ssh", () => ({ useSsh: { getState: () => ({ refresh: mock.refresh }) } }));
+vi.mock("@/store/ssh", () => ({
+  useSsh: { getState: () => ({ refresh: mock.refresh, acceptSession: mock.acceptSession }) },
+}));
 vi.mock("@/store/toasts", () => ({ toast: mock.toast }));
 vi.mock("@/lib/api/errors", () => ({ translateError: (error: unknown) => String(error) }));
 const entry = { token: "record-token" } as RecoveryEntry;
@@ -57,6 +60,10 @@ it("opens the exact native-verified directory without starting a plugin or creat
     "Server",
   );
   expect(mock.connectBrowser).not.toHaveBeenCalled();
+  expect(mock.acceptSession).toHaveBeenCalledWith(target.session);
+  expect(mock.acceptSession.mock.invocationCallOrder[0]).toBeLessThan(
+    mock.open.mock.invocationCallOrder[0]!,
+  );
   expect(mock.disconnect).not.toHaveBeenCalled();
 });
 
