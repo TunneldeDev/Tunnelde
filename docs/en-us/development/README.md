@@ -24,6 +24,7 @@
 - [Monitoring providers](plugins/monitor-ui.md)
 - [Public preferences](plugins/preferences.md)
 - [Profile metadata observation](plugins/profiles.md)
+- [Public profile contents](plugins/profile-content.md)
 - [Process manager providers](plugins/processes-ui.md)
 - [Quick-access result providers](plugins/quick-access-ui.md)
 - [Plugins](plugins/README.md)

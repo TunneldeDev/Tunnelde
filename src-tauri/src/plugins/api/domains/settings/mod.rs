@@ -14,7 +14,7 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     if method.starts_with("profiles.") {
-        return profiles::dispatch(context, method, params);
+        return profiles::dispatch(context, method, params).await;
     }
     if method.starts_with("preferences.") {
         return preferences::dispatch(context, method, params).await;

@@ -4,9 +4,9 @@ use std::sync::{
     Arc,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-pub(super) struct Operation(Ticket);
+pub(in crate::plugins::api) struct Operation(Ticket);
 #[derive(Clone)]
-pub(super) struct Ticket {
+pub(in crate::plugins::api) struct Ticket {
     cancelled: Arc<AtomicBool>,
     _capacity: Arc<OwnedSemaphorePermit>,
 }

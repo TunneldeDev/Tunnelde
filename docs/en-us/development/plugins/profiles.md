@@ -53,7 +53,8 @@ if (result.reason === "failed") reportFailure(result.error);
 ```
 
 The strict facade provides `observe(request?, {signal?,timeoutMs?})` and `subscribe`.
-Distribute `sdk/profiles/`, `sdk/runtime/observation/` and referenced declarations.
+Distribute `sdk/profiles/`, `sdk/preferences/schema.mjs`, `sdk/runtime/observation/` and
+referenced declarations.
 No Node globals or runtime installation are required. Use an explicitly authorized
 transport that supports cancellation/deadlines; basic trusted-UI `api.call` alone
 does not provide that transport contract.
@@ -74,6 +75,7 @@ revision pairing and output-size checks in the host/consumer. CI checks actual R
 producer output against the schema and selected SDK consumer, plus catalogue/type
 parity and historical consumers.
 
-This does not add profile content editing, activation, file import/export or durable
-subscriptions. Those need independent governance contracts; existing native profile
-controls and stable preference/editor APIs remain compatible.
+Revision-bound [public content reads](profile-content.md) use an independent
+content token and SDK read method. Writes, activation, file import/export and durable
+subscriptions still need their own governance contracts; existing native controls
+and stable preference/editor APIs remain compatible.
