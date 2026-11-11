@@ -378,6 +378,10 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
+          cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
@@ -421,6 +425,10 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
+          cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
