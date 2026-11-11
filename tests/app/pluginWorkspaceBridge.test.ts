@@ -14,12 +14,16 @@ import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
+import { useStorage } from "@/store/storage";
+import { useRestartPrompt } from "@/store/restartPrompt";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(),
   hostsSnapshot: vi.fn(),
   sshSessions: vi.fn(),
+  storageRestartPending: vi.fn(),
+  storageStatus: vi.fn(),
   toast: vi.fn(),
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
   cleanups: [] as Array<ReturnType<typeof vi.fn>>,
@@ -62,6 +66,8 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(undefined);
   mocks.hostsSnapshot.mockReset().mockResolvedValue({ hosts: [host], groups: [] });
   mocks.sshSessions.mockReset().mockResolvedValue([session]);
+  mocks.storageRestartPending.mockReset().mockResolvedValue(false);
+  mocks.storageStatus.mockReset();
   mocks.toast.mockReset();
   mocks.handlers.clear();
   mocks.cleanups.length = 0;
@@ -81,6 +87,8 @@ beforeEach(() => {
   });
   useHosts.setState({ hosts: [], groups: [], loaded: false });
   useSsh.setState({ sessions: [] });
+  useStorage.setState({ status: null, restartPending: false, loading: false, busy: false });
+  useRestartPrompt.getState().close();
   useEditors.setState({ entries: {} });
   useDialogs.getState().close();
   usePlugins.setState({ items: [{ id: "example.tool", name: "Installed tool" } as PluginInfo] });
@@ -247,6 +255,28 @@ describe("plugin workspace bridge authorization and live state", () => {
     } finally {
       lifetime.abort();
     }
+  });
+
+  it("recovers storage metadata and the restart prompt alongside the other domain snapshots", async () => {
+    mocks.storageRestartPending.mockResolvedValue(true);
+    await reconcilePluginWorkspace(new AbortController().signal);
+    expect(useStorage.getState().restartPending).toBe(true);
+    expect(useRestartPrompt.getState().open).toBe(true);
+    expect(mocks.storageStatus).not.toHaveBeenCalled();
+  });
+
+  it("handles live storage invalidations using the same metadata reconciliation", async () => {
+    cleanup = await wirePluginWorkspaceBridge();
+    mocks.storageRestartPending.mockResolvedValue(true);
+    emit("plugin://domain-changed", { domain: "storage" });
+    await settle();
+    expect(useRestartPrompt.getState().open).toBe(true);
+    mocks.storageRestartPending.mockResolvedValue(false);
+    emit("plugin://domain-changed", { domain: "storage" });
+    await settle();
+    expect(useStorage.getState().restartPending).toBe(false);
+    expect(useRestartPrompt.getState().open).toBe(false);
+    expect(mocks.storageStatus).not.toHaveBeenCalled();
   });
 
   it("opens a query without executing it and applies pane locks idempotently", async () => {

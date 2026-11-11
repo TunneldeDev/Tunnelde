@@ -21,8 +21,7 @@ import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 import { isIpcError } from "@/lib/api/types";
 import { storageLocationReview } from "@/app/plugins/storageLocationRequests";
-import { useStorage } from "@/store/storage";
-import { useRestartPrompt } from "@/store/restartPrompt";
+import { reconcileStorageMetadata } from "@/app/plugins/storageReconciliation";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -287,7 +286,12 @@ async function refreshPluginHosts(signal?: AbortSignal): Promise<void> {
 
 /** Reconcile domain invalidations missed while the bridge was unavailable. */
 export async function reconcilePluginWorkspace(signal: AbortSignal): Promise<void> {
-  await Promise.all([refreshPluginHosts(signal), useSsh.getState().refresh()]);
+  if (signal.aborted) return;
+  await Promise.all([
+    refreshPluginHosts(signal),
+    useSsh.getState().refresh(),
+    reconcileStorageMetadata(signal),
+  ]);
   if (signal.aborted) return;
   domainEvents.historyChanged();
   domainEvents.forwardsChanged();
@@ -352,19 +356,7 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         (payload) => {
           if (payload.domain === "hosts") void refreshPluginHosts(lifetime);
           if (payload.domain === "sessions") void useSsh.getState().refresh();
-          if (payload.domain === "storage") {
-            void (async () => {
-              await useStorage.getState().refreshMetadata();
-              if (lifetime.aborted) return;
-              if (useStorage.getState().restartPending) useRestartPrompt.getState().show();
-              // Refresh inventory only if settings already requested it.
-              if (useStorage.getState().status) {
-                const alreadyLoading = useStorage.getState().loading;
-                await useStorage.getState().load();
-                if (alreadyLoading && !lifetime.aborted) await useStorage.getState().load();
-              }
-            })();
-          }
+          if (payload.domain === "storage") return reconcileStorageMetadata(lifetime);
           if (payload.domain === "forwards") domainEvents.forwardsChanged();
           if (payload.domain === "history")
             domainEvents.historyChanged(payload.hostId ?? undefined);
