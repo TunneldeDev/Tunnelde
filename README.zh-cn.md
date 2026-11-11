@@ -113,7 +113,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```text
 src/                 React 工作台、UI 组件、功能状态和国际化
 src-tauri/           Rust SSH/SFTP 核心、插件 API、原生集成和更新器
-examples/plugins/   最小插件示例
+tests/fixtures/     测试材料与冻结的插件兼容性样例
 scripts/            构建、验证、打包与发布工具
 docs/               用户和开发者文档
 ```

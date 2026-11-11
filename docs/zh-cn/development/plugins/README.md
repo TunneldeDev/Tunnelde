@@ -502,7 +502,7 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 - 可选择文件夹、压缩包，或在安装对话框打开时拖入。
 - **重新加载**先停止正在运行的宿主，再扫描目录。
 - **卸载**停止宿主并移除安装文件夹。
-- 仓库 `examples/plugins/hello` 是完整的最小示例。
+- 开发示例统一维护在 [Tunnelde Hub](https://github.com/TunneldeDev/Tunnelde-hub/tree/main/examples)。`tests/fixtures/plugin-compat/` 内的历史协议样例是冻结测试材料，不是持续维护的开发模板。
 
 ## 文件预览提供者
 

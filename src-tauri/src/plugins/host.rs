@@ -864,62 +864,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires explicit TUNNELDE_TEST_NODE executable"]
-    async fn talks_json_rpc_with_the_example_plugin() {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/plugins/hello");
-        let entry = dir.join("index.js");
-        assert!(entry.is_file(), "example plugin entry must exist");
-
-        // Integration runs must explicitly opt into using a system executable.
-        let node = std::env::var("TUNNELDE_TEST_NODE").expect("explicit test Node executable");
-
-        let host = PluginHost::spawn(&node, &entry, &dir, None)
-            .await
-            .expect("spawn plugin");
-        let initialized = host
-            .request(
-                "initialize",
-                json!({ "apiVersion": 1 }),
-                Duration::from_secs(10),
-            )
-            .await
-            .expect("initialize");
-        assert_eq!(initialized.get("ok").and_then(Value::as_bool), Some(true));
-
-        let result = host
-            .request(
-                "command.run",
-                json!({ "command": "greet" }),
-                Duration::from_secs(10),
-            )
-            .await
-            .expect("run command");
-        let message = result
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        assert!(message.contains("Hello"));
-
-        let view = host
-            .request(
-                "view.render",
-                json!({ "view": "hello" }),
-                Duration::from_secs(10),
-            )
-            .await
-            .expect("render view");
-        let blocks = view
-            .get("blocks")
-            .and_then(Value::as_array)
-            .expect("blocks array");
-        assert!(!blocks.is_empty());
-        let _ = host
-            .request("shutdown", json!({}), Duration::from_secs(2))
-            .await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires explicit TUNNELDE_TEST_NODE executable"]
     async fn talks_json_rpc_with_the_historical_v028_plugin() {
         let dir = legacy_plugin_dir();
         let manifest = super::super::manifest::load(&dir).expect("load historical plugin");
