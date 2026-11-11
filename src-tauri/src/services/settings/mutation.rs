@@ -101,14 +101,37 @@ impl Prepared<'_> {
         &mut self,
         extra: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
     ) -> AppResult<()> {
+        self.persist_guarded(None, |_| Ok(()), extra)
+    }
+
+    /// Additional domain CAS and cancellation fences run inside the same
+    /// transaction before preferences or companion rows are written.
+    pub(crate) fn persist_guarded(
+        &mut self,
+        expected_preferences: Option<&str>,
+        before: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
+        extra: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
+    ) -> AppResult<()> {
         if self.committed {
             return Ok(());
         }
-        let revision = self
-            .writer
-            .state
-            .db
-            .with(|conn| super::repository::save_with(conn, &self.next, extra))?;
+        let revision = self.writer.state.db.with(|conn| {
+            super::repository::save_guarded(
+                conn,
+                &self.next,
+                |conn| {
+                    if let Some(expected) = expected_preferences {
+                        if super::repository::revision(conn, &self.previous)? != expected {
+                            return Err(crate::error::AppError::validation(
+                                "preferences.staleRevision",
+                            ));
+                        }
+                    }
+                    before(conn)
+                },
+                extra,
+            )
+        })?;
         self.writer.state.set_settings(self.next.clone());
         self.revision = Some(revision);
         self.committed = true;

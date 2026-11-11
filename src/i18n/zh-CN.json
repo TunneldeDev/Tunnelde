@@ -35,6 +35,16 @@
     "status": "状态",
     "author": "作者"
   },
+  "fileRead": {
+    "busy": "仍有文件读取操作未结束，请等待完成后重试。",
+    "cancelled": "文件读取已取消。",
+    "workerFailed": "文件读取线程意外停止，请查看软件日志后重试。",
+    "invalidPath": "请选择绝对路径指向的普通文件。",
+    "invalidRange": "请求的文件区间超过了读取限制。",
+    "invalidReply": "远端文件服务返回了无效的读取响应。",
+    "metadataUnavailable": "远端文件服务未提供可读取的文件大小。",
+    "sourceChanged": "文件已不包含请求的区间，请重新打开后重试。"
+  },
   "preview": {
     "previousPage": "上一页",
     "nextPage": "下一页",
@@ -798,7 +808,14 @@
     "resetTasksLayout": "恢复传输窗口默认布局",
     "resizeTasksHint": "调整传输窗口大小（方向键调整，Shift 精细调整）",
     "resizeColumnHint": "拖动调整列宽，双击适配内容；聚焦后使用方向键调整",
-    "columnHeaderHint": "单击按此列排序，拖动列名调整列的顺序"
+    "columnHeaderHint": "单击按此列排序，拖动列名调整列的顺序",
+    "retainedCreationTask": "临时目录 · {{name}}",
+    "retainedCreationPath": "临时目录路径",
+    "retainedCreationChanged": "临时目录中有其他数据，或其类型、权限与预期不符。目录已保留，请检查内容后再重试清理。",
+    "retainedCreationUnknown": "旧的目录创建请求尚未确认结果。此记录保留准确路径，原传输可使用新的临时目录继续。收到旧请求的确认前无法清理此目录。",
+    "retainedCreationSettled": "旧请求已结束。请重试清理空临时目录，或清除被拒绝的请求记录；其他文件会保留。",
+    "retainedCreationInvalid": "保留的操作记录或主机身份不匹配。请保留记录并查看软件日志。",
+    "retainedCreationLimit": "保留的未确认临时目录过多。请先完成或检查已有的恢复任务，再尝试新的传输代次。"
   },
   "processes": {
     "title": "进程",
@@ -1394,6 +1411,10 @@
       "changed": "设置页面已变化，请读取当前页面后重试。",
       "permissionDenied": "此插件需要 settings.write 权限才能修改设置。",
       "invalid": "设置更新参数无效，请提供版本与要替换的字段。"
+    },
+    "fileContent": {
+      "invalid": "文件内容请求无效。请选择绝对文件路径及支持的读取区间。",
+      "unavailable": "此文件内容句柄已关闭、过期或不属于当前插件运行实例，请重新预留并打开。"
     }
   },
   "themes": {
@@ -1480,12 +1501,16 @@
       "forwardsRead": "查看已保存的端口转发规则",
       "forwardsWrite": "管理、启动本地或远程端口转发",
       "editorRead": "读取已打开编辑器中的文档",
+      "fileBrowserRead": "读取已打开文件浏览器的路径、可见条目及选择状态（不含文件内容）",
+      "fileBrowserWrite": "通过现有文件浏览器导航、选择、刷新及打开条目",
       "editorWrite": "修改编辑器缓冲区（不会自动保存）",
       "trustedUi": "在应用界面中加载受信任代码。",
       "backgroundTasksRead": "读取各功能的可见后台任务",
       "backgroundTasksWrite": "调用可用的后台任务操作",
       "storageLocationsRead": "读取全局存储位置及迁移计划（不含文件内容）",
-      "storageLocationsWrite": "经确认后计划或取消全局存储迁移"
+      "storageLocationsWrite": "经确认后计划或取消全局存储迁移",
+      "storageRecoveryRead": "读取存储恢复方向、错误状态及已记录的副本位置（不含内容）",
+      "storageRecoveryWrite": "经确认后安排下次启动重试或取消存储迁移"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -1785,7 +1810,36 @@
     "notFound": "此方案已不存在，请刷新方案后重试。",
     "conflict": "已保存的方案发生变化，请刷新列表、确认后重试；未更改任何偏好。",
     "invalidRequest": "方案请求无效，请刷新方案后重试。",
-    "limit": "最多可保存 32 个设置方案，请先删除一个再新增。"
+    "limit": "最多可保存 32 个设置方案，请先删除一个再新增。",
+    "activationReview": "应用已保存的配置“{{name}}”？\n\n变更分组：{{groups}}\n\n将替换公共偏好，包括配置的代理路由、更新源和快捷键。保留私有界面提供者选择。移除的代理会按正常流程清理凭据。部分变更可能需要重启。",
+    "noPublicChanges": "没有公共偏好变更",
+    "activation": {
+      "denied": "已拒绝应用配置，偏好保持不变。"
+    },
+    "mutation": {
+      "invalidRequest": "配置操作缺少必要字段或含有不支持的字段。",
+      "unavailable": "配置操作未能完成。请查看软件日志，并刷新已保存配置后再重试。"
+    },
+    "draft": {
+      "notFound": "配置上传不存在或已过期，请重新开始上传。",
+      "busy": "配置上传正在提交，请刷新已保存配置确认结果。",
+      "incomplete": "配置上传尚未完成。",
+      "invalidOffset": "配置上传位置不正确，请重新开始上传。",
+      "limit": "配置上传数量或预留大小已达上限，请等待当前操作结束。"
+    },
+    "groups": {
+      "general": "常规",
+      "appearance": "外观",
+      "workspace": "工作区",
+      "terminal": "终端",
+      "files": "文件",
+      "transfers": "传输",
+      "editor": "编辑器",
+      "monitoring": "监控",
+      "shortcuts": "快捷键",
+      "network": "网络与代理",
+      "updates": "更新"
+    }
   },
   "search": {
     "invalidRoot": "请选择有效的绝对目录。",
@@ -2037,7 +2091,7 @@
     "resetCategory": "将{{category}}重置为默认位置",
     "defaultPath": "默认位置：{{path}}",
     "resetHint": "默认位置已有的数据会先归档保留，再迁回当前数据；其他存储分类的数据保留原位。",
-    "archivedDefault": "默认位置旧数据归档 · {{category}}",
+    "archivedDefault": "恢复副本 · {{category}}",
     "size_one": "{{size}} · {{count}} 个文件",
     "size_other": "{{size}} · {{count}} 个文件",
     "overridden": "由 TUNNELDE_PLUGINS_DIR 管理。请修改该环境变量来更改此目录。",
@@ -2056,7 +2110,26 @@
     "pending": "已安排存储位置变更",
     "restartHint": "完成工作后，请完全退出 Tunnelde（包括托盘），再重新打开。只关闭窗口不会应用这些变更。",
     "cancelPlan": "取消待执行的变更",
-    "recovery": "为恢复保留的原位置",
+    "cancellationPending": "存储迁移取消尚未完成",
+    "cancellationFailed": "取消尚未完成，当前仍使用原位置。",
+    "cancellationHint": "该迁移不会再执行。请处理提示的冲突后重试取消，或完全退出并重新打开 Tunnelde 继续恢复。恢复副本会保留。",
+    "retryCancellation": "重试取消",
+    "incompleteCopy": "已保留中断或发生变化的暂存副本。请取消迁移以保留恢复副本，然后重新安排迁移。",
+    "recovery": {
+      "invalidState": "存储恢复元数据无效，请查看软件日志。",
+      "conflict": "存储恢复状态已变化，请刷新后重新确认。",
+      "busy": "存储配置正在变更，请稍后重试。",
+      "noPendingPlan": "没有待恢复的存储计划。",
+      "unavailable": "暂时无法访问存储恢复信息，请查看软件日志。",
+      "reviewCancel": "允许此插件安排下次启动时取消这个存储计划吗？取消方向不能改回迁移。",
+      "reviewRetry": "允许此插件安排下次启动时重试这个存储迁移吗？",
+      "reviewBoundaries": "现在只保存恢复请求，不会立即重启或移动数据。现有恢复副本和上次错误会保留。",
+      "restartPending": "存储恢复已安排",
+      "cancelAtRestart": "下次启动将继续取消此计划。当前存储位置保持有效，恢复副本会保留。",
+      "retryAtRestart": "下次启动将重试此迁移。当前存储位置保持有效。",
+      "previousError": "上次恢复错误（尚未执行新请求）：",
+      "reviewRestart": "选择重启时间"
+    },
     "keptOriginals": "这些副本不再更新。请确认新位置的数据正常后，再手动清理原文件。",
     "boundaries": "系统钥匙串凭据、外部密钥、工作区、下载目标和远端文件保持原位置。小型位置索引 storage.json 保留在原应用数据目录，存储位置不参与设置配置档和导出。插件自行保存的绝对路径可能需要在插件中调整。",
     "migrationFailed": "迁移未完成，当前仍使用原位置。可取消计划并选择新的空目录，或排除冲突后完全重启以重试。",
@@ -2101,7 +2174,8 @@
       "invalidState": "存储位置元数据无效。",
       "unavailable": "无法访问存储位置元数据。",
       "busy": "存储设置正忙，请重新读取当前状态后重试。"
-    }
+    },
+    "recoveryCopies": "为恢复保留的原位置"
   },
   "tasks": {
     "title": "后台任务",

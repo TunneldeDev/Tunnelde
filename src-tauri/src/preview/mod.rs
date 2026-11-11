@@ -299,6 +299,54 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn whole_images_larger_than_one_range_keep_the_existing_http_contract() {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-whole-preview-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("image.png");
+        let bytes = vec![b'x'; 2 * 1024 * 1024 + 17];
+        std::fs::write(&path, &bytes).unwrap();
+        let registry = Registry::default();
+        let id = uuid::Uuid::new_v4().to_string();
+        let ticket = registry.register(&id, "image/png").unwrap();
+        let (reader, size) =
+            crate::services::files::read::LocalReader::open(path.to_string_lossy().into_owned())
+                .await
+                .unwrap();
+        *ticket.source.lock().await = Some(Source::Local(reader));
+        ticket
+            .size
+            .store(size, std::sync::atomic::Ordering::Release);
+        let request = http::Request::builder()
+            .uri(format!("preview://localhost/{id}"))
+            .body(vec![])
+            .unwrap();
+        let reply = serve(&registry, request, "tauri://localhost".into()).await;
+        assert_eq!(reply.status(), 200);
+        assert_eq!(reply.body(), &bytes);
+        let request = http::Request::builder()
+            .uri(format!("preview://localhost/{id}"))
+            .header("Range", "bytes=0-")
+            .body(vec![])
+            .unwrap();
+        let reply = serve(&registry, request, "tauri://localhost".into()).await;
+        assert_eq!(reply.status(), 206);
+        assert_eq!(reply.body().len() as u64, range::MAX_RANGE);
+        assert!(ticket
+            .source
+            .lock()
+            .await
+            .as_mut()
+            .unwrap()
+            .read(0, range::MAX_WHOLE + 1)
+            .await
+            .is_err());
+        registry.remove(&id);
+        drop(ticket);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn tickets_are_bounded_revocable_and_not_paths() {
         let registry = Registry::default();
         assert!(registry.register("/etc/passwd", "text/plain").is_err());
@@ -328,8 +376,12 @@ mod tests {
         let registry = Registry::default();
         let id = uuid::Uuid::new_v4().to_string();
         let ticket = registry.register(&id, "video/mp4").unwrap();
-        *ticket.source.lock().await =
-            Some(Source::Local(tokio::fs::File::open(&path).await.unwrap()));
+        *ticket.source.lock().await = Some(Source::Local(
+            crate::services::files::read::LocalReader::open(path.to_string_lossy().into_owned())
+                .await
+                .unwrap()
+                .0,
+        ));
         ticket.size.store(200, std::sync::atomic::Ordering::Release);
         let request = |method: &str, range: Option<&str>| {
             let request = http::Request::builder()

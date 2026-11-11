@@ -1054,6 +1054,8 @@ fn spawn_transfer_inner(
             durable::DurableTransfer {
                 id: id.clone(),
                 plugin_id: owner.as_ref().map(|lease| lease.id.clone()),
+                retained_creation: false,
+                retained_settlement: None,
                 direction: "transfer".into(),
                 name: file_name_of(&from.path),
                 from_session: from.session.clone(),
@@ -4920,15 +4922,17 @@ mod tests {
                 let target = endpoint("target.part", remote_target);
                 let controller = Arc::new(bandwidth::Controller::default());
                 controller.register("test");
-                controller.configure(256, 256);
                 let files = range_io::Files::open(&sessions, &source, &target)
                     .await
                     .unwrap()
                     .with_throttle(bandwidth::Throttle {
-                        controller,
+                        controller: controller.clone(),
                         id: "test".into(),
                     });
                 let start = std::time::Instant::now();
+                // Measure from a fresh budget. Opening SFTP handles may take
+                // long enough to earn the intentional 100ms of idle credit.
+                controller.configure(256, 256);
                 let mut progress = 0;
                 segments::copy_window(
                     &files,

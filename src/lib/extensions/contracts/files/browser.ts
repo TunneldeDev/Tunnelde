@@ -1,5 +1,7 @@
 /** Public experimental UI SDK 0.1.0 contract. */
 import type * as React from "react";
+export type * from "./browser/data.js";
+export type * from "./browser/actions.js";
 
 /** Independent public file DTO; never a reference to a host store or cache. */
 export interface FrontendFileEntry {

@@ -2,6 +2,8 @@ use super::*;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+mod recovery;
+
 fn workspace() -> (PathBuf, Paths) {
     let root = std::env::temp_dir().join(format!("tunnelde-storage-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(root.join("home")).unwrap();

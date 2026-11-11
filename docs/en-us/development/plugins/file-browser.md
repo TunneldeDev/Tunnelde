@@ -1,5 +1,8 @@
 # File browser providers
 
+Ordinary plugins can also use [live browser data and actions](file-browser-data.md)
+without registering a replacement interface provider.
+
 [简体中文](../../../zh-cn/development/plugins/file-browser.md) · [Interface providers](ui-providers.md)
 
 The experimental UI SDK supports `views[].provider: "fileBrowser"` for trusted

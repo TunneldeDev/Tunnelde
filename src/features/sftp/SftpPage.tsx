@@ -2330,6 +2330,7 @@ export function SftpPage({
         ) : null}
         <FileBrowserSurface
           paneId={`${instanceId}:${id}`}
+          tabId={tabId}
           source={source}
           path={state.listing?.path ?? null}
           entries={entries}

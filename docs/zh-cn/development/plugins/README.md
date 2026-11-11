@@ -1,5 +1,7 @@
 # 插件
 
+现有文件浏览器的发现、分页和宿主操作：[实时浏览器数据](file-browser-data.md)。
+
 必需依赖、授权与运行就绪：[插件依赖与激活](activation.md)。
 
 [English](../../../en-us/development/plugins/README.md)
@@ -13,6 +15,8 @@ API 兼容性与安全：[中文](api.md) · [English](../../../en-us/developmen
 插件自有设置、明确 Schema 迁移与恢复，详见[插件配置](configuration.md)。
 
 独立日志读取授权与可取消订阅，详见[持久化日志](logging.md)。
+
+经确认后安排迁移重试/取消及观察记录副本，详见[宿主存储恢复](storage-recovery.md)。
 
 ## 快速访问与命令结果
 
@@ -570,3 +574,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 [插件自有存储观察](storage-observation.md)。
 
 [宿主存储位置元数据与迁移计划](storage-locations.md).
+
+- [公共 Profile 写入与启用](profile-mutations.md)

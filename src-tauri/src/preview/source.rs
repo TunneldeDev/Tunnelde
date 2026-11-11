@@ -1,126 +1,5 @@
-use std::path::Path;
-
-use tokio::io::{AsyncReadExt, AsyncSeekExt};
-
-use crate::error::{AppError, AppResult};
-
-pub struct RemoteSession(Option<russh_sftp::client::SftpSession>);
-
-impl std::ops::Deref for RemoteSession {
-    type Target = russh_sftp::client::SftpSession;
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref().expect("live remote preview session")
-    }
-}
-
-impl Drop for RemoteSession {
-    fn drop(&mut self) {
-        if let Some(session) = self.0.take() {
-            tauri::async_runtime::spawn(async move {
-                let _ =
-                    tokio::time::timeout(std::time::Duration::from_secs(3), session.close()).await;
-            });
-        }
-    }
-}
-
-pub enum Source {
-    Local(tokio::fs::File),
-    Remote {
-        file: Box<russh_sftp::client::fs::File>,
-        session: RemoteSession,
-    },
-}
-
-impl Source {
-    pub async fn open(
-        app: &tauri::AppHandle,
-        session_id: Option<&str>,
-        path: &str,
-    ) -> AppResult<(Self, u64)> {
-        if path.len() > 32768 || path.contains('\0') {
-            return Err(AppError::validation("preview.invalidPath"));
-        }
-        if let Some(session_id) = session_id {
-            if !path.starts_with('/') {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            Self::remote(crate::ssh::files::session(app, session_id).await?, path).await
-        } else {
-            let path = Path::new(path);
-            if !path.is_absolute() || !tokio::fs::metadata(path).await?.is_file() {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            let file = tokio::fs::File::open(path).await?;
-            let metadata = file.metadata().await?;
-            if !metadata.is_file() {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            Ok((Self::Local(file), metadata.len()))
-        }
-    }
-
-    async fn remote(
-        session: russh_sftp::client::SftpSession,
-        path: &str,
-    ) -> AppResult<(Self, u64)> {
-        let session = RemoteSession(Some(session));
-        let result = async {
-            let metadata = session
-                .metadata(path)
-                .await
-                .map_err(|e| AppError::Ssh(e.to_string()))?;
-            if !metadata.file_type().is_file() {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            let file = session
-                .open(path)
-                .await
-                .map_err(|e| AppError::Ssh(e.to_string()))?;
-            let metadata = file
-                .metadata()
-                .await
-                .map_err(|e| AppError::Ssh(e.to_string()))?;
-            if !metadata.file_type().is_file() {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            Ok((file, metadata.len()))
-        }
-        .await;
-        match result {
-            Ok((file, size)) => Ok((
-                Self::Remote {
-                    file: Box::new(file),
-                    session,
-                },
-                size,
-            )),
-            Err(error) => Err(error),
-        }
-    }
-
-    pub async fn read(&mut self, start: u64, len: u64) -> AppResult<Vec<u8>> {
-        let mut bytes = vec![0; len as usize];
-        match self {
-            Self::Local(file) => {
-                file.seek(std::io::SeekFrom::Start(start)).await?;
-                file.read_exact(&mut bytes).await?;
-            }
-            Self::Remote { file, .. } => {
-                file.seek(std::io::SeekFrom::Start(start)).await?;
-                file.read_exact(&mut bytes).await?;
-            }
-        }
-        Ok(bytes)
-    }
-
-    pub async fn close(self) {
-        if let Self::Remote { file, session } = self {
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(3), (*file).close()).await;
-            drop(session);
-        }
-    }
-}
+//! Compatibility adapter; native source ownership belongs to file services.
+pub use crate::services::files::read::Source;
 
 #[cfg(test)]
 mod tests {
@@ -177,10 +56,13 @@ mod tests {
         file.close().await.unwrap();
         let channel = ssh.channel_open_session().await.unwrap();
         channel.request_subsystem(true, "sftp").await.unwrap();
-        let preview_session = russh_sftp::client::SftpSession::new(channel.into_stream())
-            .await
-            .unwrap();
-        let (mut source, size) = Source::remote(preview_session, &path).await.unwrap();
+        let (reader, size) = crate::services::files::read::RemoteReader::from_stream(
+            channel.into_stream(),
+            path.clone(),
+        )
+        .await
+        .unwrap();
+        let source = Source::Remote(reader);
         assert_eq!(size, bytes.len() as u64);
         for (start, length) in [(1_000_000, 1024 * 1024), (10, 30), (size - 73, 73)] {
             let actual = source.read(start, length).await.unwrap();

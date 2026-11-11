@@ -16,7 +16,9 @@ const MAX_FILE_BYTES: usize = 512_000;
 const MAX_PROFILES: usize = 32;
 
 pub(crate) mod activation;
+pub(crate) mod content;
 mod files;
+pub(crate) mod mutations;
 pub(crate) mod observation;
 mod repository;
 

@@ -12,6 +12,12 @@ export function TransferBackgroundTask({ task, now }: TaskViewProps) {
   const hosts = useHosts((state) => state.hosts);
   const [connecting, setConnecting] = useState<string | null>(null);
   const resume = (current: TransferItem) => {
+    // Unknown receipts need no network probe; explicit rejections perform no
+    // filesystem I/O. Only a confirmed creation can require reconnecting.
+    if (current.retainedCreation && current.retainedSettlement !== "created") {
+      void useTransfers.getState().clear(current.id);
+      return;
+    }
     const endpoints = [
       ...(current.status === "cleanupPending"
         ? []

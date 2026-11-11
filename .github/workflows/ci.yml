@@ -142,6 +142,21 @@ jobs:
       - name: Compare SDK parser with host discovery
         run: node scripts/ci/check-sdk-parser.mjs . .sdk-parser "$RUNNER_TEMP/plugin-api-describe.json"
 
+      - name: Checkout file content SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: bcc4a862de16d756ab2ad71e2b59656a3ac67c60
+          path: .tmp/ci/file-content-consumer
+          sparse-checkout: sdk
+          persist-credentials: false
+
+      - name: Check actual native file content against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_FILE_CONTENT_OUTPUT="$RUNNER_TEMP/plugin-file-content.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_actual_file_content_contracts
+          node scripts/ci/check-file-content-contract.mjs "$RUNNER_TEMP/plugin-file-content.json" .tmp/ci/file-content-consumer/sdk
+
       - name: Checkout profile metadata SDK consumer
         uses: actions/checkout@v4
         with:
@@ -149,6 +164,35 @@ jobs:
           ref: 0d19b67a6b8c4e1d275d3c938f47040250fdb04c
           path: .tmp/ci/profile-consumer
           persist-credentials: false
+
+      - name: Checkout profile content SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 845a8d909f8fb0f058fd13eea032b3389204a222
+          path: .tmp/ci/profile-content-consumer
+          persist-credentials: false
+
+      - name: Check actual large profile contents against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_PROFILE_CONTENT_OUTPUT="$RUNNER_TEMP/plugin-profile-content.json" cargo test --manifest-path src-tauri/Cargo.toml --lib large_public_body_emits_actual_segmented_sdk_interoperability_fixture
+          node scripts/ci/check-profile-content.mjs "$RUNNER_TEMP/plugin-profile-content.json" .tmp/ci/profile-content-consumer/sdk
+
+      - name: Checkout profile mutation SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: ed0fdb1ed918ce7434b3a0df7894fcf8c9384331
+          path: .tmp/ci/profile-mutation-consumer
+          sparse-checkout: sdk
+          persist-credentials: false
+
+      - name: Check actual profile mutations against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_PROFILE_MUTATION_OUTPUT="$RUNNER_TEMP/plugin-profile-mutations.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_actual_public_profile_mutations_for_sdk
+          node scripts/ci/check-profile-mutations.mjs "$RUNNER_TEMP/plugin-profile-mutations.json" .tmp/ci/profile-mutation-consumer/sdk
 
       - name: Check actual profile metadata against schema and SDK
         timeout-minutes: 3
@@ -200,6 +244,35 @@ jobs:
         run: |
           TUNNELDE_LOCATION_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-locations.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_location_contract
           node scripts/ci/check-storage-locations-contract.mjs "$RUNNER_TEMP/host-storage-locations.json" .tmp/ci/storage-locations-consumer/sdk
+
+      # Recovery is a separate contract; retain the historical location consumer.
+      - name: Checkout host storage recovery SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: d5a9f19d548af4ef7722f8ac69d4cdd5b5e08b0d
+          path: .tmp/ci/storage-recovery-consumer
+          persist-credentials: false
+
+      - name: Check actual storage recovery against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_RECOVERY_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-recovery.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_recovery_contract
+          node scripts/ci/check-storage-recovery-contract.mjs "$RUNNER_TEMP/host-storage-recovery.json" .tmp/ci/storage-recovery-consumer/sdk
+
+      - name: Checkout live file browser SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 380b292873fe682bb01694d201e9ba02522ee5f9
+          path: .tmp/ci/file-browser-consumer
+          persist-credentials: false
+
+      - name: Check actual browser bridge against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_FILE_BROWSER_CONTRACT_OUTPUT="$RUNNER_TEMP/file-browser.json" pnpm exec vitest run tests/app/pluginFileBrowserContract.test.ts
+          node scripts/ci/check-file-browser-contract.mjs "$RUNNER_TEMP/file-browser.json" .tmp/ci/file-browser-consumer/sdk
 
       - name: Checkout cancellable transport SDK
         uses: actions/checkout@v4
@@ -320,6 +393,11 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
+          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
+          cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
@@ -363,6 +441,11 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
+          cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
+          cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles

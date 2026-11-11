@@ -1,4 +1,5 @@
 mod connections;
+mod content;
 mod forwarding;
 mod identify;
 mod mounts;
@@ -22,6 +23,7 @@ use tauri::Manager;
 pub(super) use identify::identify;
 
 pub(super) enum Target {
+    FileContent { id: String, receipt: Ownership },
     Connection { session: String, receipt: Ownership },
     Forward { rule: String, runtime: String },
     Mount(String),
@@ -50,6 +52,7 @@ fn immediate(context: &HostContext) -> AppResult<Vec<Entry>> {
     result.extend(forwarding::collect(context)?);
     result.extend(tasks::collect(context)?);
     result.extend(transfers::collect(context)?);
+    result.extend(content::collect(context)?);
     Ok(result)
 }
 
@@ -81,6 +84,7 @@ pub(super) async fn collect(context: &HostContext) -> AppResult<Vec<Entry>> {
 
 pub(super) async fn release(context: &HostContext, target: Target) -> AppResult<Outcome> {
     match target {
+        Target::FileContent { receipt, .. } => content::release(context, &receipt),
         Target::Connection { session, receipt } => {
             connections::release(context, &session, &receipt).await
         }

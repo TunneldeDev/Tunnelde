@@ -1,4 +1,5 @@
 //! Read-only transport; worker permits survive cancellation of their async owner.
+use crate::plugins::api::transport::operation;
 use crate::{
     error::{AppError, AppResult},
     logs::read::{self, contracts::Request},
@@ -9,7 +10,6 @@ use serde_json::Value;
 use std::sync::{Arc, OnceLock};
 use tauri::Manager;
 use tokio::sync::Semaphore;
-mod operation;
 
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,

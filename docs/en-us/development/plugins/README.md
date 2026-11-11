@@ -13,7 +13,11 @@ Editor command and formatter contributions:
 
 Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-buffers.md).
 
+Existing file-browser discovery, paging and host actions: [live browser data](file-browser-data.md).
+
 Independent log reading grants and cancellable subscriptions: [persisted logs](logging.md).
+
+Confirmed deferred migration retry/cancellation and recorded copies: [host storage recovery](storage-recovery.md).
 
 Host metadata extensions use a versioned manifest schema and revision-checked storage. See [plugin host fields](host-fields.md).
 
@@ -768,3 +772,5 @@ Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bin
 [Plugin-owned storage observation](storage-observation.md).
 
 [Host storage location metadata and migration plans](storage-locations.md).
+
+- [Public profile writes and activation](profile-mutations.md)
