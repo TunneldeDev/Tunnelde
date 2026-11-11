@@ -127,6 +127,14 @@ fn clean(value: &mut Value, depth: usize, nodes: &mut usize) -> AppResult<()> {
     Ok(())
 }
 
+/// Reuse the writer's privacy rules when projecting persisted structured fields.
+pub(crate) fn clean_context(value: &mut Value) -> AppResult<()> {
+    if serde_json::to_vec(value)?.len() > MAX_FIELDS {
+        return Err(invalid("fields"));
+    }
+    clean(value, 0, &mut 0)
+}
+
 struct Prepared {
     entry: LogEntry,
     domain: String,

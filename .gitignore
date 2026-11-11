@@ -41,6 +41,7 @@ pnpm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 logs/
+!src-tauri/src/logs/
 .DS_Store
 Thumbs.db
 desktop.ini

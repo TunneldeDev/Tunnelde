@@ -1450,6 +1450,7 @@
     "dismiss": "关闭建议",
     "permission": {
       "log": "向应用日志写入插件消息。",
+      "logsRead": "读取应用及其他插件的诊断与操作日志。日志可能包含敏感信息。",
       "appRead": "读取应用和操作系统信息。",
       "settingsRead": "读取应用偏好设置。",
       "settingsWrite": "修改应用偏好设置。",

@@ -85,3 +85,9 @@ a stable protocol. Malformed entries report `plugin.api.invalid:log`; byte, iden
 context limits report `logs.invalid:<field>`. These use JSON-RPC `-32000`, while common
 parameter-object/total-request validation uses `-32602` and authorization uses `-32001`.
 Handle unknown errors as well as the contract's `knownErrors` list.
+
+Plugins may separately request the experimental `logs.read` permission to read structured
+persisted diagnostic and operation pages, including other plugins' records. This sensitive
+grant is independent of writing. The SDK supports owner-bound, cancellable incremental
+subscriptions with explicit gaps on rotation/truncation. See the
+[log reading API](../development/plugins/logging.md) for limits and lifecycle semantics.

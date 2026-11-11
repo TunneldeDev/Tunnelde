@@ -47,3 +47,6 @@ export type * from "./contracts/storage/locations/location.js";
 export type * from "./contracts/storage/locations/snapshot.js";
 export type * from "./contracts/storage/locations/observation.js";
 export type * from "./contracts/storage/locations/mutation.js";
+export type * from "./contracts/logging/entry.js";
+export type * from "./contracts/logging/query.js";
+export type * from "./contracts/logging/page.js";

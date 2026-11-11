@@ -183,6 +183,20 @@ jobs:
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
 
+      - name: Checkout persisted log SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 8e67ccfa45003e5ccdc8246a44093684c1ac5b29
+          path: .tmp/ci/logging-consumer
+          persist-credentials: false
+
+      - name: Check actual persisted logs against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_LOG_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-logs.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_public_log_page_for_sdk
+          node scripts/ci/check-logging-contract.mjs "$RUNNER_TEMP/plugin-logs.json" .tmp/ci/logging-consumer/sdk
+
       - name: Checkout host storage location SDK consumer
         uses: actions/checkout@v4
         with:
@@ -316,6 +330,7 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
@@ -358,6 +373,7 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor

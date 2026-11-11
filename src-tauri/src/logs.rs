@@ -9,6 +9,8 @@ use crate::{db::Database, error::AppResult, models::now_ms, state::AppState};
 const MAX_BYTES: u64 = 256 * 1024;
 const MAX_AUDIT: i64 = 1000;
 
+pub(crate) mod read;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
