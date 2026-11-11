@@ -33,6 +33,27 @@ only when the installed entries can still be verified. Resolve any reported
 conflict before retrying or canceling; the application never silently deletes the
 changed data. Ordinary moves to custom folders still require empty destinations.
 
+Cancellation is recorded in `storage.json` before any recovery entries are moved.
+After an interruption, startup resumes cancellation instead of applying the old
+migration. Settings shows **Storage cancellation needs recovery** and **Retry
+cancellation** while a conflict remains. A failed cancellation refreshes that state
+immediately; choosing a new location stays disabled until recovery completes.
+
+Cancellation retains incoming copies and restoration journals. For an interrupted
+return to defaults, incoming data is kept under the migration's recovery directory
+as `cancelled`; custom-location copies remain in place. Settings lists these as
+**Recovery copy**, including copies from a migration that never completed. Original
+defaults are restored with renames that cannot overwrite an existing destination.
+Resolve a conflict without removing your only copy of a file. Missing originals
+are reported rather than treated as an already completed restore.
+
+An existing staging copy is reused only after its content matches the current
+source. An incomplete or changed copy is preserved and blocks publication; cancel
+the plan, retain the displayed recovery copy, and schedule the migration again.
+Failure cleanup does not recursively remove staging directories. These safeguards
+do not establish exclusive ownership against another process changing directory
+parents, or guarantee recovery after physical disk failure; keep an external backup.
+
 Location configuration is machine-specific and excluded from settings profiles and
 exports. System credentials, external key files, workspace files and remote files
 are not moved. See [settings](settings.md#storage-locations) for migration boundaries.
