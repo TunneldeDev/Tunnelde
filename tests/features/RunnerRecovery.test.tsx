@@ -3,7 +3,11 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { RecoveryRecord } from "@/features/plugins/recovery/components/RecoveryRecord";
 import { useRecoveryPage } from "@/features/plugins/recovery/runtime/useRecoveryPage";
 import { RunnerRecoverySection } from "@/features/plugins/recovery/components/RunnerRecoverySection";
-import type { RecoveryEntry, RecoverySnapshot } from "@/lib/runners/recovery/contracts";
+import type {
+  RecoveryEntry,
+  RecoverySnapshot,
+  RecoveryCapabilityObservation,
+} from "@/lib/runners/recovery/contracts";
 import i18n from "@/i18n/i18n";
 import { deferred } from "../fixtures/plugins";
 
@@ -202,4 +206,95 @@ it("preserves records on native cancellation and exposes a recoverable action er
   await act(async () => result.current.act(entry, "inspect"));
   expect(result.current.error).toContain("Refresh and review");
   expect(result.current.pending).toBe(false);
+});
+
+const capabilityObservation: RecoveryCapabilityObservation = {
+  token: entry.token,
+  checkedAt: 1,
+  result: {
+    status: "available",
+    envelope: {
+      schemaVersion: 1,
+      helper: "tunnelde-agent",
+      helperVersion: "0.26.1",
+      runnerProtocols: [1],
+      features: ["runner.control.v1"],
+    },
+  },
+};
+
+it("queries capabilities explicitly and displays metadata separately from process state", () => {
+  const action = vi.fn();
+  render(
+    <RecoveryRecord
+      entry={{ ...entry, canQueryCapabilities: true }}
+      capabilities={capabilityObservation}
+      pending={false}
+      onAction={action}
+    />,
+  );
+  fireEvent.click(screen.getByText(entry.runnerId));
+  expect(screen.getByText("0.26.1")).toBeTruthy();
+  expect(screen.getByText("runner.control.v1")).toBeTruthy();
+  expect(screen.getByText("Not checked")).toBeTruthy();
+  expect(screen.queryByText("Observed: running")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Check helper capabilities" }));
+  expect(action).toHaveBeenCalledWith("capabilities");
+  expect(screen.getByRole("button", { name: "Check remote status" })).toBeTruthy();
+});
+
+it("shows a failed discovery without inferring a legacy version or blocking existing recovery", () => {
+  render(
+    <RecoveryRecord
+      entry={{ ...entry, canQueryCapabilities: true }}
+      capabilities={{
+        ...capabilityObservation,
+        result: { status: "unavailable", reason: "nonzeroExit", exitCode: 1 },
+      }}
+      pending={false}
+      onAction={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByText(entry.runnerId));
+  expect(screen.getByText(/This does not identify its version/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Check remote status" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Request stop" })).toBeTruthy();
+});
+
+it("retains capability observations only for the exact current record token", async () => {
+  mock.action.mockResolvedValue({
+    accepted: true,
+    observation: null,
+    capabilities: capabilityObservation,
+  });
+  const { result } = renderHook(() => useRecoveryPage("old", 0));
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  await act(async () => result.current.act(entry, "capabilities"));
+  expect(result.current.capabilities[entry.token]).toEqual(capabilityObservation);
+  expect(result.current.observations).toEqual({});
+  mock.snapshot.mockResolvedValue(snapshot("old", [{ ...entry, token: "b".repeat(64) }]));
+  await act(async () => result.current.act(entry, "capabilities"));
+  expect(result.current.capabilities).toEqual({});
+});
+
+it("discards a capability response when its owner page is replaced", async () => {
+  const delayed = deferred<{
+    accepted: boolean;
+    observation: null;
+    capabilities: RecoveryCapabilityObservation;
+  }>();
+  mock.action.mockReturnValue(delayed.promise);
+  const { result, rerender } = renderHook(({ id }) => useRecoveryPage(id, 0), {
+    initialProps: { id: "old" },
+  });
+  await waitFor(() => expect(result.current.pending).toBe(false));
+  act(() => {
+    void result.current.act(entry, "capabilities");
+  });
+  rerender({ id: "new" });
+  await waitFor(() => expect(result.current.snapshot?.pluginId).toBe("new"));
+  await act(async () =>
+    delayed.resolve({ accepted: true, observation: null, capabilities: capabilityObservation }),
+  );
+  expect(result.current.capabilities).toEqual({});
 });

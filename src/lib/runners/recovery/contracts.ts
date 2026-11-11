@@ -22,6 +22,7 @@ export interface RecoveryEntry {
   canReviewDestination: boolean;
   canHandoff: boolean;
   canInspect: boolean;
+  canQueryCapabilities?: boolean;
   canStop: boolean;
   canForget: boolean;
   deploymentState?: "reserved" | "creating" | "uploading" | "ready" | null;
@@ -33,7 +34,8 @@ export interface RecoverySnapshot {
   total: number;
   nextOffset: number | null;
 }
-export type RecoveryAction = "inspect" | "stop" | "reviewDestination" | "handoff" | "forget";
+export type RecoveryAction =
+  "inspect" | "capabilities" | "stop" | "reviewDestination" | "handoff" | "forget";
 export interface RecoveryRequest {
   pluginId: string;
   token: string;
@@ -48,6 +50,35 @@ export interface RecoveryObservation {
 export interface RecoveryOutcome {
   accepted: boolean;
   observation: RecoveryObservation | null;
+  capabilities?: RecoveryCapabilityObservation;
+}
+
+export interface RecoveryCapabilityObservation {
+  token: string;
+  checkedAt: number;
+  result:
+    | {
+        status: "available";
+        envelope: {
+          schemaVersion: number;
+          helper: string;
+          helperVersion: string;
+          runnerProtocols: number[];
+          features: string[];
+        };
+      }
+    | {
+        status: "unavailable";
+        reason:
+          | "transport"
+          | "timeout"
+          | "outputTooLarge"
+          | "missingExitStatus"
+          | "nonzeroExit"
+          | "invalidResponse"
+          | "unsupportedSchema";
+        exitCode?: number;
+      };
 }
 
 export interface RecoveryBrowserRequest {

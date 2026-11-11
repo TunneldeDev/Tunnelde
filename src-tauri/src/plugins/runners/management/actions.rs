@@ -69,7 +69,7 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
         );
         return Ok(Outcome {
             accepted: true,
-            observation: None,
+            ..Outcome::default()
         });
     }
     let session = identity::select(
@@ -77,6 +77,9 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
         &identity::sessions(app),
         matches!(request.action, Action::ReviewDestination),
     )?;
+    if matches!(request.action, Action::Capabilities) {
+        return super::capabilities::inspect(&context, &session, &observed, &request.token).await;
+    }
     if matches!(request.action, Action::ReviewDestination | Action::Handoff) {
         let control = matches!(request.action, Action::Handoff);
         if control {
@@ -97,7 +100,7 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
         .await?;
         return Ok(Outcome {
             accepted: approved,
-            observation: None,
+            ..Outcome::default()
         });
     }
     if observed.runner_id == "deployment" {
@@ -155,5 +158,6 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
             }),
             checked_at: crate::models::now_ms(),
         }),
+        ..Outcome::default()
     })
 }

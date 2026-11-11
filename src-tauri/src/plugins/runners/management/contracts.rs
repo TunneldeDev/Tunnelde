@@ -26,6 +26,7 @@ pub struct Entry {
     pub can_review_destination: bool,
     pub can_handoff: bool,
     pub can_inspect: bool,
+    pub can_query_capabilities: bool,
     pub can_stop: bool,
     pub can_forget: bool,
     pub deployment_state: Option<&'static str>,
@@ -45,6 +46,7 @@ pub struct Snapshot {
 #[serde(rename_all = "camelCase")]
 pub enum Action {
     Inspect,
+    Capabilities,
     Stop,
     ReviewDestination,
     Handoff,
@@ -73,4 +75,6 @@ pub struct Observation {
 pub struct Outcome {
     pub accepted: bool,
     pub observation: Option<Observation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<super::super::capabilities::contracts::Observation>,
 }

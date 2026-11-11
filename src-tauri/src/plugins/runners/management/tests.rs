@@ -127,11 +127,13 @@ fn capability_projection_distinguishes_original_offline_changed_and_legacy_desti
     assert_eq!(legacy.connection, "legacy");
     assert!(legacy.can_review_destination);
     assert!(!legacy.can_inspect);
+    assert!(!legacy.can_query_capabilities);
     assert!(!legacy.can_handoff);
     task.deployment.identity = Some(original.clone());
     let online = entry(&task, &sessions, Some("new"), true).unwrap();
     assert_eq!(online.connection, "connected");
     assert!(online.can_inspect);
+    assert!(online.can_query_capabilities);
     assert!(online.can_handoff);
     assert!(!online.can_forget);
     assert!(
@@ -149,6 +151,7 @@ fn capability_projection_distinguishes_original_offline_changed_and_legacy_desti
     let mismatch = entry(&task, &sessions, Some("new"), true).unwrap();
     assert_eq!(mismatch.connection, "changed");
     assert!(!mismatch.can_inspect);
+    assert!(!mismatch.can_query_capabilities);
     assert!(!mismatch.can_review_destination);
     assert!(!mismatch.can_handoff);
     task.deployment.identity = None;
@@ -176,6 +179,32 @@ fn capability_projection_distinguishes_original_offline_changed_and_legacy_desti
     assert!(!deployment.can_forget);
     assert!(!deployment.can_stop);
     assert!(!deployment.can_inspect);
+}
+
+#[test]
+fn capabilities_require_ready_deployment_and_do_not_change_recovery_authority() {
+    use crate::{plugins::runners::deployment::journal::State, ssh::session::SessionIdentity};
+    let mut task = record();
+    task.runner_id = "deployment".into();
+    let identity = SessionIdentity {
+        host_id: "host".into(),
+        address: "user@host:22".into(),
+        server_key: "SHA256:original".into(),
+    };
+    task.deployment.identity = Some(identity.clone());
+    let sessions = vec![("original".into(), identity)];
+    for phase in [
+        State::Reserved,
+        State::Creating,
+        State::Uploading,
+        State::Ready,
+    ] {
+        task.deployment_state = Some(phase);
+        let entry = super::projection::entry(&task, &sessions, None, false).unwrap();
+        assert_eq!(entry.can_query_capabilities, phase == State::Ready);
+        assert!(!entry.can_inspect && !entry.can_stop && !entry.can_handoff);
+        assert_eq!(entry.can_forget, phase == State::Reserved);
+    }
 }
 
 #[test]

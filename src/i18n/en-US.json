@@ -2331,6 +2331,25 @@
     "incompleteConfigurationHint": "A stopped or missing task does not prove that configuration writes have finished. Keep this recovery record for inspection; the configuration is not rewritten or automatically deleted.",
     "configurationHint": "This records configuration preparation separately from the process status. Removing the local recovery record preserves remote files.",
     "configurationPath": "Configuration file",
-    "browseFiles": "Open remote files"
+    "browseFiles": "Open remote files",
+    "capabilities": {
+      "title": "Helper capabilities",
+      "check": "Check helper capabilities",
+      "version": "Helper version",
+      "protocols": "Runner protocols",
+      "features": "Declared features",
+      "none": "None declared",
+      "exitCode": "exit {{code}}",
+      "hint": "This checks the recorded helper on the original host. It does not confirm task exit or artifact ownership. Existing status and stop actions remain available.",
+      "failure": {
+        "transport": "The helper query could not reach the original host.",
+        "timeout": "The helper query exceeded its 5-second time limit.",
+        "outputTooLarge": "The helper response exceeded 4096 bytes.",
+        "missingExitStatus": "The SSH command ended without an exit status.",
+        "nonzeroExit": "The selected helper rejected the query or failed. This does not identify its version.",
+        "invalidResponse": "The helper returned invalid capability metadata.",
+        "unsupportedSchema": "The helper uses an unsupported capability schema."
+      }
+    }
   }
 }

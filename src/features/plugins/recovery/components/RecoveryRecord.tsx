@@ -3,19 +3,23 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import type {
   RecoveryAction,
+  RecoveryCapabilityObservation,
   RecoveryEntry,
   RecoveryObservation,
 } from "@/lib/runners/recovery/contracts";
+import { HelperCapabilities } from "./HelperCapabilities";
 
 export function RecoveryRecord({
   entry,
   observation,
+  capabilities,
   pending,
   onAction,
   onBrowse,
 }: {
   entry: RecoveryEntry;
   observation?: RecoveryObservation;
+  capabilities?: RecoveryCapabilityObservation;
   pending: boolean;
   onAction: (action: RecoveryAction) => void;
   onBrowse?: () => void;
@@ -130,6 +134,11 @@ export function RecoveryRecord({
             </div>
           )}
           <div className="runner-recovery__actions">
+            {entry.canQueryCapabilities && (
+              <Button size="sm" disabled={pending} onClick={() => onAction("capabilities")}>
+                {t("runnerRecovery.capabilities.check")}
+              </Button>
+            )}
             {entry.canBrowse && onBrowse && (
               <Button size="sm" disabled={pending} onClick={onBrowse}>
                 {t("runnerRecovery.browseFiles")}
@@ -166,6 +175,7 @@ export function RecoveryRecord({
               </Button>
             )}
           </div>
+          {capabilities && <HelperCapabilities observation={capabilities} />}
         </div>
       </details>
     </article>

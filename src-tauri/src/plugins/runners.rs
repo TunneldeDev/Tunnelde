@@ -8,6 +8,7 @@ use crate::{
 use serde_json::{json, Value};
 use tauri::Manager;
 
+mod capabilities;
 mod contracts;
 mod coordinator;
 mod deployment;
