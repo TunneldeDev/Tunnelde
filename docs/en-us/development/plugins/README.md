@@ -691,7 +691,7 @@ asks for consent before using an existing system Node runtime.
 - Pick a folder, pick an archive, or drop either onto the window while the dialog is open.
 - **Reload** rescans the directory, stopping running hosts first.
 - **Uninstall** stops the host and deletes the folder.
-- `examples/plugins/hello` in the repository is a complete minimal plugin.
+- Development examples live in [Tunnelde Hub](https://github.com/TunneldeDev/Tunnelde-hub/tree/main/examples). Historical protocol fixtures under `tests/fixtures/plugin-compat/` are frozen test inputs, not maintained development templates.
 
 ## File preview providers
 

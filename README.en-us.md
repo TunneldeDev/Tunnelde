@@ -141,7 +141,7 @@ Source layout:
 ```text
 src/                 React workbench, UI primitives, feature stores and i18n
 src-tauri/           Rust SSH/SFTP core, plugin APIs, native integration and updater
-examples/plugins/   Minimal plugin examples
+tests/fixtures/     Test inputs and frozen plugin compatibility samples
 scripts/            Build, validation, packaging and release tools
 docs/               User and developer documentation
 ```
