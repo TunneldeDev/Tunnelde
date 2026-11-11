@@ -26,7 +26,8 @@ seek/read pairs. Windows readers permit an existing log writer to continue writi
 the editor's more restrictive publication handles remain separate. Ancestor path
 resolution still follows the OS and does not establish a filesystem sandbox.
 
-At most eight native blocking read/open workers may be queued or running together.
+At most eight native read/open workers may be queued or running together, shared
+by local blocking IO and remote protocol IO.
 Capacity belongs to the worker until it exits, even when its async caller times out
 or closes. Cancelled queued workers skip IO; a reader waiting for its cursor lock
 checks cancellation again after acquiring the lock. Already running filesystem IO
@@ -38,6 +39,26 @@ other writers: these handles do not promise a consistent immutable snapshot.
 
 This native service adds no public RPC or plugin authority. Full public content and
 preview resources require separate lifetime, permission, transport and SDK contracts.
+
+Remote previews use the same source service, with a dedicated read-only SFTP
+channel and opened handle. Each READ carries an explicit offset and exact bounded
+length; there is no mutable prefetched cursor. Short replies continue from the
+returned byte count, without reading beyond the requested range. The service
+honors negotiated packet/read limits, rejects empty or oversized DATA replies,
+and validates the opened handle's regular-file type and reported size.
+
+Cancelling a caller keeps its actual worker reservation until the pending protocol
+request settles; it then skips subsequent requests and discards delivery. A late
+OPEN acknowledgement closes its abandoned channel. A read error or whole-read
+deadline closes only this dedicated channel before releasing admission. This
+preserves the user's parent SSH connection. At most 64 source channels, including
+pending opens and retained workers, may exist. Opens are bounded to 15 seconds,
+individual replies to 15 seconds, and whole reads to 30 seconds.
+
+SFTP v3 does not provide local `O_NOFOLLOW` guarantees or control over a server's
+blocked filesystem operations. Closing a channel requests remote resource release;
+it does not prove that server-side OS IO stopped. These sources pin handles, not
+immutable file contents, and do not add public content or preview RPCs.
 
 Each provider preview gets a fresh host-generated ticket ID. Closing while native
 provider discovery is pending requests early close; a late successful open is
