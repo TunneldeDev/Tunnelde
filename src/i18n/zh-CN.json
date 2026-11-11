@@ -2086,6 +2086,7 @@
     "restartHint": "完成工作后，请完全退出 Tunnelde（包括托盘），再重新打开。只关闭窗口不会应用这些变更。",
     "cancelPlan": "取消待执行的变更",
     "cancellationPending": "存储迁移取消尚未完成",
+    "cancellationFailed": "取消尚未完成，当前仍使用原位置。",
     "cancellationHint": "该迁移不会再执行。请处理提示的冲突后重试取消，或完全退出并重新打开 Tunnelde 继续恢复。恢复副本会保留。",
     "retryCancellation": "重试取消",
     "incompleteCopy": "已保留中断或发生变化的暂存副本。请取消迁移以保留恢复副本，然后重新安排迁移。",

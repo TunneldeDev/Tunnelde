@@ -135,7 +135,8 @@ export function StorageSettings() {
       ) : null}
       {status?.lastError ? (
         <p className="settings-message is-error" role="alert">
-          {t("storage.migrationFailed")} {storageError(status.lastError)}
+          {t(cancelling ? "storage.cancellationFailed" : "storage.migrationFailed")}{" "}
+          {storageError(status.lastError)}
         </p>
       ) : null}
       {loading && !status ? (
