@@ -79,6 +79,7 @@
   color: var(--td-orange);
 }
 .runner-recovery__badge.is-creating,
+.runner-recovery__badge.is-writing,
 .runner-recovery__badge.is-uploading {
   color: var(--td-orange);
 }

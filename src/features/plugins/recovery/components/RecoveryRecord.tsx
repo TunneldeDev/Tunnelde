@@ -20,6 +20,10 @@ export function RecoveryRecord({
 }) {
   const { t, i18n } = useTranslation();
   const deployment = entry.runnerId === "deployment";
+  const configurationState = entry.configurationState;
+  const configurationUncertain =
+    !deployment &&
+    (configurationState === "creating" || configurationState === "writing");
   const directoryName = entry.directory
     .replace(/[\\/]+$/, "")
     .split(/[\\/]/)
@@ -52,6 +56,11 @@ export function RecoveryRecord({
                 {t(`runnerRecovery.status.${status}`)}
               </span>
             )}
+            {configurationUncertain && (
+              <span className={`runner-recovery__badge is-${configurationState}`}>
+                {t(`runnerRecovery.configurationStatus.${configurationState}`)}
+              </span>
+            )}
           </span>
         </summary>
         <div className="runner-recovery__detail">
@@ -65,10 +74,16 @@ export function RecoveryRecord({
           </dl>
           {!deployment && entry.configurationState && (
             <p className="settings-hint">
-              <strong>{t(`runnerRecovery.configurationStatus.${entry.configurationState}`)}</strong>
-              {" · "}
+              {!configurationUncertain && (
+                <>
+                  <strong>
+                    {t(`runnerRecovery.configurationStatus.${entry.configurationState}`)}
+                  </strong>
+                  {" · "}
+                </>
+              )}
               {t(
-                entry.configurationState === "creating" || entry.configurationState === "writing"
+                configurationUncertain
                   ? "runnerRecovery.incompleteConfigurationHint"
                   : "runnerRecovery.configurationHint",
               )}

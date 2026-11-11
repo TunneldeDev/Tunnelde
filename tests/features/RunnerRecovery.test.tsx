@@ -103,6 +103,8 @@ it.each([
       onAction={() => {}}
     />,
   );
+  if (state === "creating" || state === "writing")
+    expect(screen.getByText(label).closest("summary")).toBeTruthy();
   fireEvent.click(screen.getByText(entry.runnerId));
   expect(screen.getByText(label)).toBeTruthy();
   if (state === "creating" || state === "writing")
