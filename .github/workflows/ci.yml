@@ -230,6 +230,21 @@ jobs:
           TUNNELDE_LOCATION_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-locations.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_location_contract
           node scripts/ci/check-storage-locations-contract.mjs "$RUNNER_TEMP/host-storage-locations.json" .tmp/ci/storage-locations-consumer/sdk
 
+      # Recovery is a separate contract; retain the historical location consumer.
+      - name: Checkout host storage recovery SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: d5a9f19d548af4ef7722f8ac69d4cdd5b5e08b0d
+          path: .tmp/ci/storage-recovery-consumer
+          persist-credentials: false
+
+      - name: Check actual storage recovery against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_RECOVERY_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-recovery.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_recovery_contract
+          node scripts/ci/check-storage-recovery-contract.mjs "$RUNNER_TEMP/host-storage-recovery.json" .tmp/ci/storage-recovery-consumer/sdk
+
       - name: Checkout cancellable transport SDK
         uses: actions/checkout@v4
         with:
