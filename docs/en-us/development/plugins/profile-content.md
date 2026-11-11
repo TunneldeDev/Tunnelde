@@ -54,8 +54,9 @@ if (item) {
 }
 ```
 
-Use a transport that honors cancellation/deadlines; plain trusted-UI `api.call`
-alone does not guarantee this. Distribute the referenced generated preferences schema module,
+Use a transport that honors cancellation/deadlines. Current trusted-UI `api.call`
+supports them when its third options argument is forwarded; custom or historical
+transports need equivalent semantics. Distribute the referenced generated preferences schema module,
 profiles modules, runtime observation modules and declarations with the facade.
 No Node globals or user Node runtime are required. Results are detached and deeply
 frozen. Reads require an owner AbortSignal and a single total deadline (default
@@ -66,5 +67,5 @@ delays settlement and retains capacity. Errors stop without automatic retry.
 Independent DTOs and the machine schema are mirrored to the SDK. CI validates
 actual Rust-produced large Unicode/escaped content against the schema and SDK,
 in addition to frozen metadata and stable-core consumers. These methods remain
-experimental. Draft writes, atomic public CRUD and confirmed activation are separate
-work; existing native controls and `profiles.observe` retain their contracts.
+experimental. [Staged writes and confirmed activation](profile-mutations.md) require
+separate write permission; existing native controls and `profiles.observe` retain their contracts.

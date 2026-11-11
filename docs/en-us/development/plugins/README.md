@@ -768,3 +768,5 @@ Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bin
 [Plugin-owned storage observation](storage-observation.md).
 
 [Host storage location metadata and migration plans](storage-locations.md).
+
+- [Public profile writes and activation](profile-mutations.md)

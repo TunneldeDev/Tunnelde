@@ -44,7 +44,8 @@ if (item) {
 }
 ```
 
-使用支持取消与期限的传输；基础可信 UI 的 `api.call` 本身不保证这些语义。
+使用支持取消与期限的传输。当前可信 UI 的 `api.call` 在透传第三个 options 参数
+时支持这些语义；自定义或历史传输需要提供等价实现。
 随客户端分发所引用的 preferences/schema.mjs、profiles 模块、runtime observation
 模块及类型声明。不需要 Node 全局对象或用户 Node 运行时。结果为独立的深度冻结
 对象。读取必须绑定所属方的 AbortSignal，共用一次总期限，默认 30 秒，可设
@@ -53,5 +54,5 @@ if (item) {
 
 独立 DTO 和机器 Schema 自动镜像到 SDK。CI 使用真实 Rust 产生的大篇 Unicode/
 转义正文验证 Schema 和 SDK，继续检查冻结的元数据及稳定核心消费者。这些接口
-仍为实验状态；草稿写入、原子公共 CRUD 和经用户确认的激活另行实现。已有原生
-控件及 `profiles.observe` 契约保留。
+仍为实验状态；[草稿写入与确认启用](profile-mutations.md) 需要单独写权限。已有
+原生控件及 `profiles.observe` 契约保留。
