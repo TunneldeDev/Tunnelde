@@ -26,6 +26,7 @@ pub struct Entry {
     pub can_inspect: bool,
     pub can_stop: bool,
     pub can_forget: bool,
+    pub deployment_state: Option<&'static str>,
 }
 
 #[derive(Serialize)]

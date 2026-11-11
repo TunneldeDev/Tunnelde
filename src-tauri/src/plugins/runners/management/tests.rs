@@ -161,3 +161,34 @@ fn capability_projection_distinguishes_original_offline_changed_and_legacy_desti
     assert!(!deployment.can_stop);
     assert!(!deployment.can_inspect);
 }
+
+#[test]
+fn incomplete_deployment_is_visible_but_only_unsubmitted_reservations_can_be_forgotten() {
+    use super::{contracts::Action, mutation, projection::entry};
+    use crate::plugins::runners::deployment::journal::State;
+    let mut pending = record();
+    pending.runner_id = "deployment".into();
+    for state in [
+        State::Reserved,
+        State::Creating,
+        State::Uploading,
+        State::Ready,
+    ] {
+        pending.deployment_state = Some(state);
+        let view = entry(&pending, &[], None, false).unwrap();
+        assert_eq!(view.deployment_state, Some(state.name()));
+        assert_eq!(view.can_forget, state == State::Reserved);
+        assert!(!view.can_inspect && !view.can_stop && !view.can_handoff);
+        assert_eq!(
+            mutation::validate(&pending, Action::Forget).is_ok(),
+            state == State::Reserved
+        );
+    }
+    pending.deployment_state = Some(State::Reserved);
+    let old_token = query::token(&pending).unwrap();
+    pending.deployment_state = Some(State::Creating);
+    pending.advance().unwrap();
+    let mut records = vec![pending];
+    assert!(mutation::apply(&mut records, &old_token, Action::Forget).is_err());
+    assert_eq!(records.len(), 1);
+}

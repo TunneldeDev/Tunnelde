@@ -37,6 +37,11 @@ pub(super) fn entry(
         "offline"
     };
     let deployment = record.runner_id == "deployment";
+    let deployment_state = deployment.then(|| {
+        record
+            .deployment_state
+            .unwrap_or(super::super::deployment::journal::State::Ready)
+    });
     Ok(Entry {
         token: token(record)?,
         runner_id: record.runner_id.clone(),
@@ -73,6 +78,8 @@ pub(super) fn entry(
             && !record.stop_pending,
         can_inspect: !deployment && bound.is_ok(),
         can_stop: !deployment && record.terminal_status.is_none() && !record.stop_pending,
-        can_forget: !deployment && record.terminal_status.is_some() && !record.stop_pending,
+        can_forget: (deployment_state == Some(super::super::deployment::journal::State::Reserved))
+            || (!deployment && record.terminal_status.is_some() && !record.stop_pending),
+        deployment_state: deployment_state.map(|state| state.name()),
     })
 }

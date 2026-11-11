@@ -70,6 +70,7 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
     match method {
         "runners.list" => Ok(json!(repository::read(context)?
             .iter()
+            .filter(|record| record.deployment_ready())
             .map(contracts::Snapshot::from)
             .collect::<Vec<_>>())),
         "runners.deploy" => deployment::deploy(context, params).await,

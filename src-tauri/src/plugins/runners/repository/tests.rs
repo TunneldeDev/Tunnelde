@@ -166,3 +166,29 @@ fn duplicate_task_and_deployment_identities_are_preserved_and_rejected() {
     second.deployment.directory = "/other".into();
     validate_keys(&[first, second]).unwrap();
 }
+
+#[test]
+fn incomplete_deployment_survives_reload_and_stale_completion_cannot_replace_its_journal() {
+    use crate::plugins::runners::deployment::journal::State;
+    let scratch = Scratch::new();
+    let mut pending = record();
+    pending.runner_id = "deployment".into();
+    pending.deployment_state = Some(State::Creating);
+    save(&scratch.file(), std::slice::from_ref(&pending)).unwrap();
+    let mut records = load(&scratch.file()).unwrap();
+    assert!(!records[0].deployment_ready());
+    assert_eq!(records[0].deployment_state, Some(State::Creating));
+    records[0].deployment_state = Some(State::Uploading);
+    records[0].advance().unwrap();
+    assert!(!update_observed(&mut records, &pending, |record| {
+        record.deployment_state = Some(State::Ready);
+        record.advance()
+    })
+    .unwrap());
+    assert!(!records[0].deployment_ready());
+    save(&scratch.file(), &records).unwrap();
+    assert_eq!(
+        load(&scratch.file()).unwrap()[0].deployment_state,
+        Some(State::Uploading)
+    );
+}

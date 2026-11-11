@@ -1230,7 +1230,14 @@
       "exitUnconfirmed": "Process exit has not been confirmed. Keep the record until the original host confirms its state.",
       "invalidResponse": "The remote helper returned an invalid response. The saved record was preserved; check the software log.",
       "commandFailed": "The remote helper command failed: {{reason}}",
-      "noCommandDetails": "No error output was returned. Open the software log for diagnostics."
+      "noCommandDetails": "No error output was returned. Open the software log for diagnostics.",
+      "deploymentIncomplete": "This destination has an incomplete deployment. Review it in Settings → Plugins → Remote task recovery. Use a fresh directory; existing content is preserved.",
+      "helperCollision": "The plugin package contains a path reserved for the selected native helper. Update the plugin package before retrying.",
+      "preparationFailed": "The deployment preparation worker stopped unexpectedly. Open the software log for details.",
+      "binaryTooLarge": "The selected native helper exceeds the 64 MiB deployment limit.",
+      "packageTooLarge": "The plugin package exceeds the 32 MiB remote deployment limit.",
+      "explicitBinaryRequired": "Select an absolute path to a regular native helper file before deploying.",
+      "freshDirectoryRequired": "Choose a fresh remote directory. Existing files and deployment records are preserved."
     },
     "activation": {
       "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
@@ -2304,6 +2311,14 @@
       "failed": "Observed: failed",
       "notFound": "Observed: not found",
       "unresponsive": "Observed: unresponsive"
-    }
+    },
+    "deploymentStatus": {
+      "reserved": "Not submitted",
+      "creating": "Directory creation unconfirmed",
+      "uploading": "Upload incomplete",
+      "ready": "Deployment ready"
+    },
+    "incompleteDeploymentHint": "This deployment has not completed. Its mutation intent is saved, but remote files may be partial or an operation may still be outstanding. It cannot be reused or started. Use a fresh directory and keep this recovery record for inspection; no remote files are automatically deleted.",
+    "reservedDeploymentHint": "No remote mutation was submitted for this reservation. You can remove this local record after confirmation; an in-flight preparation cannot continue with the removed record."
   }
 }

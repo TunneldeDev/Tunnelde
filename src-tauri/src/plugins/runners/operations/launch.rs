@@ -46,6 +46,7 @@ pub(in crate::plugins::runners) async fn start(
             .iter()
             .find(|record| {
                 record.runner_id == "deployment"
+                    && record.deployment_ready()
                     && record.deployment.host_id == host
                     && record.deployment.directory == directory
                     && record.deployment.fingerprint == context.fingerprint
@@ -61,6 +62,7 @@ pub(in crate::plugins::runners) async fn start(
             launch_state: LaunchState::Reserved,
             controller_fingerprint: None,
             terminal_status: None,
+            deployment_state: None,
         };
         super::super::identity::verify(
             &record.deployment,

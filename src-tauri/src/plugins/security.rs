@@ -17,6 +17,7 @@ mod package;
 mod restart;
 pub(in crate::plugins) use dependencies::RuntimeRetirement;
 
+pub(super) use package::{deployment_snapshot, PackageSnapshot};
 pub(super) use package::{frontend_snapshot, FrontendSnapshot};
 
 pub const EVENT: &str = "plugin:security-changed";

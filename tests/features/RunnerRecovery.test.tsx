@@ -55,6 +55,40 @@ it("does not equate a saved record or connected SSH host with a running process"
   expect(screen.queryByRole("button", { name: "Remove local record", hidden: true })).toBeNull();
 });
 
+it.each([
+  ["reserved", "Not submitted"],
+  ["creating", "Directory creation unconfirmed"],
+  ["uploading", "Upload incomplete"],
+  ["ready", "Deployment ready"],
+] as const)(
+  "shows deployment %s without claiming a running process or allowing unsafe removal",
+  (state, label) => {
+    render(
+      <RecoveryRecord
+        entry={{
+          ...entry,
+          runnerId: "deployment",
+          deploymentState: state,
+          canInspect: false,
+          canStop: false,
+          canForget: state === "reserved",
+        }}
+        pending={false}
+        onAction={() => {}}
+      />,
+    );
+    expect(screen.getByText(label)).toBeTruthy();
+    fireEvent.click(screen.getByText("Deployment"));
+    expect(screen.queryByRole("button", { name: "Request stop" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Check remote status" })).toBeNull();
+    expect(!!screen.queryByRole("button", { name: "Remove local record" })).toBe(
+      state === "reserved",
+    );
+    if (state === "creating" || state === "uploading")
+      expect(screen.getByText(/cannot be reused or started/)).toBeTruthy();
+  },
+);
+
 it("keeps uncertain launch and saved stop feedback explicit without allowing forget or handoff", () => {
   const onAction = vi.fn();
   render(

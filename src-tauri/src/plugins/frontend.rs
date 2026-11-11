@@ -483,6 +483,7 @@ mod tests {
         security.native_ready(&module).unwrap();
         let registry = Registry::default();
         let snapshot = || FrontendSnapshot {
+            directories: Default::default(),
             digest: digest.clone(),
             assets: BTreeMap::new(),
             bytes: 0,
@@ -606,6 +607,7 @@ mod tests {
             .lease("sample", digest.clone(), permissions)
             .unwrap();
         let snapshot = || FrontendSnapshot {
+            directories: Default::default(),
             digest: digest.clone(),
             assets: BTreeMap::from([(
                 "index.mjs".into(),
