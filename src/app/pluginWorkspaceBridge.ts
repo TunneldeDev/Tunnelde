@@ -20,6 +20,9 @@ import { runEditorRequest } from "@/app/plugins/editorRequests";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 import { isIpcError } from "@/lib/api/types";
+import { storageLocationReview } from "@/app/plugins/storageLocationRequests";
+import { useStorage } from "@/store/storage";
+import { useRestartPrompt } from "@/store/restartPrompt";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -212,6 +215,13 @@ export async function runPluginWorkspaceRequest(
     }
     case "ui.confirm":
       return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params));
+    case "storage.locations.schedule":
+    case "storage.locations.cancel":
+      return confirmPlugin(
+        request.requestId,
+        request.pluginId,
+        storageLocationReview(method, params),
+      );
     default:
       throw new Error("unknownMethod");
   }
@@ -342,6 +352,19 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         (payload) => {
           if (payload.domain === "hosts") void refreshPluginHosts(lifetime);
           if (payload.domain === "sessions") void useSsh.getState().refresh();
+          if (payload.domain === "storage") {
+            void (async () => {
+              await useStorage.getState().refreshMetadata();
+              if (lifetime.aborted) return;
+              if (useStorage.getState().restartPending) useRestartPrompt.getState().show();
+              // Refresh inventory only if settings already requested it.
+              if (useStorage.getState().status) {
+                const alreadyLoading = useStorage.getState().loading;
+                await useStorage.getState().load();
+                if (alreadyLoading && !lifetime.aborted) await useStorage.getState().load();
+              }
+            })();
+          }
           if (payload.domain === "forwards") domainEvents.forwardsChanged();
           if (payload.domain === "history")
             domainEvents.historyChanged(payload.hostId ?? undefined);

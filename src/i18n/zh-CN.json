@@ -1482,7 +1482,9 @@
       "editorWrite": "修改编辑器缓冲区（不会自动保存）",
       "trustedUi": "在应用界面中加载受信任代码。",
       "backgroundTasksRead": "读取各功能的可见后台任务",
-      "backgroundTasksWrite": "调用可用的后台任务操作"
+      "backgroundTasksWrite": "调用可用的后台任务操作",
+      "storageLocationsRead": "读取全局存储位置及迁移计划（不含文件内容）",
+      "storageLocationsWrite": "经确认后计划或取消全局存储迁移"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -2084,6 +2086,17 @@
       "cache": "插件市场下载、目录缓存和临时文件。",
       "logs": "应用诊断日志。",
       "runners": "部署到远端机器的插件运行环境在本地保存的记录。"
+    },
+    "locations": {
+      "reviewSchedule": "是否计划以下存储位置变更？将在下次重启时应用，此操作不会立即重启。",
+      "reviewCancel": "是否取消这项存储迁移计划？已有数据和恢复文件会保留。",
+      "withData": "重启时复制已有数据",
+      "withoutData": "使用新位置，不复制已有数据",
+      "conflict": "存储位置已发生变化，请重新读取并审查计划。",
+      "recoveryRequired": "该迁移有需要恢复的数据，请先在存储设置中处理。",
+      "noPendingPlan": "当前没有待执行的存储迁移。",
+      "invalidState": "存储位置元数据无效。",
+      "unavailable": "无法访问存储位置元数据。"
     }
   },
   "tasks": {

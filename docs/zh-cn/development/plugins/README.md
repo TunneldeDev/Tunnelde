@@ -566,3 +566,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 已加载缓冲区的观察、分段读取和原子编辑：[编辑器缓冲区数据](editor-buffers.md)。
 
 [插件自有存储观察](storage-observation.md)。
+
+[宿主存储位置元数据与迁移计划](storage-locations.md).

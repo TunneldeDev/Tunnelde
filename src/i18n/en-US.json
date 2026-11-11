@@ -1482,7 +1482,9 @@
       "editorWrite": "Modify editor buffers (without saving automatically)",
       "trustedUi": "Load trusted code into the application interface.",
       "backgroundTasksRead": "Read visible background tasks across features",
-      "backgroundTasksWrite": "Invoke available background task actions"
+      "backgroundTasksWrite": "Invoke available background task actions",
+      "storageLocationsRead": "Read global storage locations and migration plans, without file contents",
+      "storageLocationsWrite": "Schedule or cancel global storage migrations with native confirmation"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -2084,6 +2086,17 @@
       "cache": "Marketplace downloads, catalogue cache and temporary files.",
       "logs": "Application diagnostic logs.",
       "runners": "Local records of plugin runtimes deployed to remote machines."
+    },
+    "locations": {
+      "reviewSchedule": "Schedule these storage location changes? They will apply on the next restart. No restart happens now.",
+      "reviewCancel": "Cancel this scheduled storage migration? Existing data and recovery artifacts will remain unchanged.",
+      "withData": "Copy existing data when restarting",
+      "withoutData": "Use the new location without copying existing data",
+      "conflict": "Storage locations changed. Read the current plan and review it again.",
+      "recoveryRequired": "This migration has recovery data. Review it in storage settings before continuing.",
+      "noPendingPlan": "There is no pending storage migration.",
+      "invalidState": "Storage location metadata is invalid.",
+      "unavailable": "Storage location metadata could not be accessed."
     }
   },
   "tasks": {
