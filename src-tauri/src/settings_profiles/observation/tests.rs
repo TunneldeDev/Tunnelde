@@ -259,9 +259,7 @@ fn oversized_native_save_preserves_profile_data_and_generation() {
             settings: json!({"private": "x".repeat(MAX_STORAGE_BYTES)}),
             updated_at: original[0].updated_at,
         };
-        let error = super::super::save(conn, &[oversized])
-            .err()
-            .expect("oversized save accepted");
+        let error = super::super::save(conn, &[oversized]).expect_err("oversized save accepted");
         assert!(error.to_string().contains("profiles.storageTooLarge"));
         assert_eq!(
             serde_json::to_value(super::super::load(conn)?)?,

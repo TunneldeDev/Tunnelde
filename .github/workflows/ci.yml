@@ -152,6 +152,20 @@ jobs:
       - name: Compare SDK parser with host discovery
         run: node scripts/ci/check-sdk-parser.mjs . .sdk-parser "$RUNNER_TEMP/plugin-api-describe.json"
 
+      - name: Checkout profile metadata SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 0d19b67a6b8c4e1d275d3c938f47040250fdb04c
+          path: .tmp/ci/profile-consumer
+          persist-credentials: false
+
+      - name: Check actual profile metadata against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_PROFILE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-profiles.json" cargo test --manifest-path src-tauri/Cargo.toml --lib maximum_metadata_fits_output_and_emits_real_protocol_fixtures
+          node scripts/ci/check-profile-contract.mjs "$RUNNER_TEMP/plugin-profiles.json" .tmp/ci/profile-consumer/sdk
+
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
 
