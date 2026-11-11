@@ -79,6 +79,7 @@ pub(super) fn entry(
             && bound.is_ok()
             && !record.stop_pending,
         can_inspect: !deployment && bound.is_ok(),
+        can_query_capabilities: record.deployment_ready() && bound.is_ok(),
         can_stop: !deployment && record.terminal_status.is_none() && !record.stop_pending,
         can_forget: (deployment_state == Some(super::super::deployment::journal::State::Reserved))
             || (!deployment

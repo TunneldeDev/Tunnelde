@@ -3,6 +3,7 @@ import { runnerRecoveryApi as client } from "@/lib/api/runners/recovery";
 import { translateError } from "@/lib/api/errors";
 import type {
   RecoveryAction,
+  RecoveryCapabilityObservation,
   RecoveryEntry,
   RecoveryObservation,
   RecoverySnapshot,
@@ -12,6 +13,9 @@ import type {
 export function useRecoveryPage(pluginId: string, offset: number) {
   const [snapshot, setSnapshot] = useState<RecoverySnapshot | null>(null);
   const [observations, setObservations] = useState<Record<string, RecoveryObservation>>({});
+  const [capabilities, setCapabilities] = useState<Record<string, RecoveryCapabilityObservation>>(
+    {},
+  );
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const active = useRef(false),
@@ -41,6 +45,19 @@ export function useRecoveryPage(pluginId: string, offset: number) {
           if (result?.observation) kept[result.observation.token] = result.observation;
           return kept;
         });
+        setCapabilities((previous) => {
+          const kept = Object.fromEntries(
+            Object.entries(previous).filter(([token]) =>
+              next.entries.some((entry) => entry.token === token),
+            ),
+          );
+          if (
+            result?.capabilities &&
+            next.entries.some((entry) => entry.token === result.capabilities?.token)
+          )
+            kept[result.capabilities.token] = result.capabilities;
+          return kept;
+        });
       } catch (error) {
         if (current()) setError(translateError(error));
       } finally {
@@ -64,6 +81,7 @@ export function useRecoveryPage(pluginId: string, offset: number) {
         if (current()) {
           setSnapshot(next);
           setObservations({});
+          setCapabilities({});
           setError(null);
         }
       })
@@ -85,6 +103,7 @@ export function useRecoveryPage(pluginId: string, offset: number) {
   return {
     snapshot,
     observations,
+    capabilities,
     pending,
     error,
     reload: () => run(),

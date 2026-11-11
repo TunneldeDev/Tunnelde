@@ -82,6 +82,7 @@ function RecoveryPage({
           key={JSON.stringify([entry.runnerId, entry.hostId, entry.directory])}
           entry={entry}
           observation={page.observations[entry.token]}
+          capabilities={page.capabilities[entry.token]}
           pending={page.pending || files.pending}
           onBrowse={() => void files.browse(entry)}
           onAction={(action) => void page.act(entry, action)}

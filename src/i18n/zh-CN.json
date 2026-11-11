@@ -2331,6 +2331,25 @@
     "incompleteConfigurationHint": "任务已停止或未找到，不代表配置文件写入已结束。请保留此恢复记录供核查；软件不会重新写入配置或自动删除文件。",
     "configurationHint": "配置准备与进程状态分别记录。移除本地恢复记录会保留远端文件。",
     "configurationPath": "配置文件",
-    "browseFiles": "打开远端文件"
+    "browseFiles": "打开远端文件",
+    "capabilities": {
+      "title": "辅助程序能力",
+      "check": "查询辅助程序能力",
+      "version": "辅助程序版本",
+      "protocols": "任务协议",
+      "features": "声明能力",
+      "none": "未声明",
+      "exitCode": "退出码 {{code}}",
+      "hint": "查询原主机上已记录的辅助程序，不代表任务已退出或残留文件归属已确认。原有状态查询和停止操作仍可使用。",
+      "failure": {
+        "transport": "无法连接原主机以查询辅助程序。",
+        "timeout": "辅助程序查询超过 5 秒时限。",
+        "outputTooLarge": "辅助程序响应超过 4096 字节。",
+        "missingExitStatus": "SSH 命令结束但未返回退出状态。",
+        "nonzeroExit": "所选辅助程序拒绝查询或执行失败，不能据此推断其版本。",
+        "invalidResponse": "辅助程序返回的能力元数据无效。",
+        "unsupportedSchema": "辅助程序使用了尚不支持的能力查询协议。"
+      }
+    }
   }
 }

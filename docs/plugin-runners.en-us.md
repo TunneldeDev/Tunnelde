@@ -77,3 +77,24 @@ Updating a plugin does not automatically transfer an older task to its new packa
 The experimental `runners.review` method accepts `{sessionId, runnerId, directory, kind: "destination" | "control"}` and returns `{reviewed: boolean}`. `destination` binds only an unreviewed legacy record; `control` hands one task to the currently authorized package fingerprint. Cancellation returns `false`; changed records, revoked permissions, changed connections or expired confirmation fail without applying the review. Check `api.describe` for availability before calling it. Existing `runners.list` fields stay unchanged and do not expose private identity or ownership metadata.
 
 Removing a task record is available only after confirmed terminal status and no pending stop. It removes local metadata only; remote files remain. An uncertain launch returning `notFound` does not qualify. Native actions use opaque tokens for the complete observed record, and recheck those tokens after confirmation so old pages cannot remove or mutate newer records.
+
+## Helper capability discovery
+
+In an expanded recovery record, **Check helper capabilities** queries only the
+recorded helper on the verified original destination. It is available for ready
+deployments and task records, independently of starting a plugin runtime. The
+query uses `--capabilities` with no task or configuration arguments, a 5-second
+time limit and a 4096-byte combined output limit. It never downloads or selects
+another helper or runtime.
+
+The result displays the helper version, supported runner protocols and declared
+features. Timeout, transport failure, excess output, absent exit status, nonzero
+exit, malformed metadata and unsupported schema are distinct results. A rejected
+query does not identify an old helper version; existing status and stop actions
+remain available. Unknown bounded features are informational. No query result
+settles a task, configuration write or deployment, transfers ownership, or permits
+artifact deletion. Results are transient and discarded when the record changes.
+
+The versioned envelope and compatibility rules are documented in the helper
+repository's `docs/capabilities.en-us.md`. This is a native recovery facility;
+public RPCs and stable plugin contracts are unchanged.

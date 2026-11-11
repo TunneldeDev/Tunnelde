@@ -120,6 +120,10 @@
   flex-basis: 100%;
   overflow-wrap: anywhere;
 }
+.runner-recovery__capabilities dl {
+  flex-basis: 100%;
+  margin: 0;
+}
 .runner-recovery__pagination {
   justify-content: flex-end;
   font-size: 12px;
