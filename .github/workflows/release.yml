@@ -11,6 +11,10 @@ on:
         description: Restore Rust caches; disable when recovering a cache service outage
         type: boolean
         default: true
+      platform:
+        description: Build all platforms or recover one platform in the existing draft
+        type: string
+        default: all
   workflow_dispatch:
     inputs:
       existing_tag:
@@ -21,6 +25,16 @@ on:
         description: Restore Rust caches; disable to rebuild from source
         type: boolean
         default: true
+      platform:
+        description: Recover one platform without rebuilding successful draft assets
+        type: choice
+        default: all
+        options:
+          - all
+          - linux-x86_64
+          - windows-x86_64
+          - macos-aarch64
+          - macos-x86_64
 
 concurrency:
   group: release-${{ inputs.existing_tag || github.ref_name }}
@@ -41,6 +55,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       body: ${{ steps.meta.outputs.body }}
       release_id: ${{ steps.draft.outputs.id }}
+      matrix: ${{ steps.platforms.outputs.matrix }}
     steps:
       - name: Validate draft tag
         env:
@@ -63,6 +78,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Checkout current release recovery tooling
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-tools
+          persist-credentials: false
+
+      - name: Select release platforms
+        id: platforms
+        env:
+          RELEASE_PLATFORM: ${{ inputs.platform }}
+        run: node .release-tools/scripts/release/publishing/platforms.mjs
 
       - name: Verify immutable tag against manifests and channel history
         env:
@@ -130,24 +158,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest
-            name: windows-x86_64
-            args: ""
-          # Build both architectures on Intel to avoid arm64 runner shortages.
-          - platform: macos-15-intel
-            name: macos-aarch64
-            target: aarch64-apple-darwin
-            arch: arm64
-            args: "--target aarch64-apple-darwin"
-          - platform: macos-15-intel
-            name: macos-x86_64
-            target: x86_64-apple-darwin
-            arch: x86_64
-            args: "--target x86_64-apple-darwin"
-          - platform: ubuntu-22.04
-            name: linux-x86_64
-            args: ""
+        include: ${{ fromJSON(needs.prepare.outputs.matrix) }}
     runs-on: ${{ matrix.platform }}
     steps:
       - name: Checkout
@@ -162,21 +173,6 @@ jobs:
           path: .release-tools
           persist-credentials: false
 
-      - name: Install Linux build dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        timeout-minutes: 10
-        run: |
-          # Use Ubuntu's primary archive when the runner's Azure mirror stalls.
-          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
-            if [ -f "${sources}" ]; then
-              sudo sed -i -E \
-                -e 's|mirror\+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu/|g' \
-                -e 's|https?://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "${sources}"
-            fi
-          done
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -187,6 +183,11 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
+
+      - name: Install Linux build dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        timeout-minutes: 14
+        run: sudo "$(command -v node)" .release-tools/scripts/ci/linux/install-dependencies.mjs
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable

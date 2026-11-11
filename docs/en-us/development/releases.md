@@ -160,6 +160,14 @@ version tag. **Release → existing_tag** resumes an already staged draft. Both 
 source; neither changes tags or rebuilds public packages. Development concurrency serializes only
 release-PR maintenance; Beta and version publication have independent workflow groups.
 
+If only one platform failed, dispatch **Release → Run workflow** with the same
+`existing_tag` and change `platform` from `all` to the failed platform. Recovery
+uses the current workflow's dependency installer and recovery tooling, while the
+application is built from the immutable tag. Successful draft assets from other
+platforms are retained. Complete desktop assets, signatures and updater metadata
+are still verified before publication. Linux uses the same bounded source fallback
+as CI, retains APT signature verification, and restores the runner's source configuration.
+
 Compiler timings remain optional Actions artifacts, never public desktop
 release downloads. The plugin marketplace repository has its own independent release process.
 
