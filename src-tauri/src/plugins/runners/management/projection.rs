@@ -60,7 +60,8 @@ pub(super) fn entry(
             .as_ref()
             .map(|value| value.server_key.clone()),
         stop_pending: record.stop_pending,
-        launch_uncertain: record.launch_state == LaunchState::Unconfirmed,
+        launch_uncertain: record.launch_state == LaunchState::Unconfirmed
+            && record.terminal_status.is_none(),
         terminal_status: record.terminal_status.map(|value| {
             match value {
                 super::super::model::TerminalState::Stopped => "stopped",

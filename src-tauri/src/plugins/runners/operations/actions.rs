@@ -2,7 +2,8 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::super::{
-    authorize, exec, field, host_id, lifecycle, optional, repository, HostContext, Record,
+    admission, authorize, exec, field, host_id, lifecycle, optional, repository, HostContext,
+    Record,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -68,6 +69,15 @@ pub(in crate::plugins::runners) async fn action(
     }
     let state = context.app.state::<AppState>();
     let _lease = state.runners.admit(&context.id, &id)?;
+    if method == "runners.status" && observed.admission.is_some() {
+        let receipt =
+            admission::request(context, &session, &observed, admission::Operation::Status).await?;
+        authorize(context, &["ssh.exec"])?;
+        if !repository::compare_update(context, &observed, |record| receipt.settle(record))? {
+            return Err(AppError::validation("plugin.runners.recordChanged"));
+        }
+        return Ok(json!({"status":receipt.status()}));
+    }
     let deployment = &observed.deployment;
     let mut args = vec![
         method.trim_start_matches("runners.").into(),
@@ -116,6 +126,20 @@ pub(in crate::plugins::runners) async fn stop_record(
     session: &str,
     record: &Record,
 ) -> AppResult<Value> {
+    if record.admission.is_some() {
+        let stopped =
+            admission::request(context, session, record, admission::Operation::Stop).await;
+        // A lost STOP acknowledgement can still leave a persisted fence. Only a
+        // separately validated receipt can settle it; never fall back to status.
+        let receipt =
+            admission::request(context, session, record, admission::Operation::Status).await?;
+        if !repository::compare_update(context, record, |current| receipt.settle(current))? {
+            return Err(AppError::validation("plugin.runners.recordChanged"));
+        }
+        return stopped.map(
+            |_| json!({"runnerId":record.runner_id,"stopRequested":true,"status":receipt.status()}),
+        );
+    }
     let deployment = &record.deployment;
     let args = |operation: &str| {
         vec![

@@ -70,6 +70,35 @@ revisioned state machine. An interrupted start remains uncertain and is never
 replayed. Legacy `runners.start`, configuration files and historical task recovery
 remain supported; selecting the new mode does not clean up old artifacts.
 
+## Closing admission after an uncertain launch
+
+For new `runners.startInitialized` tasks, the host also negotiates the selected
+helper's `runner.admission-fence.v1` feature. It saves a private task token,
+acknowledges reservation, then submits one fenced start. Full configuration input
+is validated before launch admission. Cancelling while stdin is still arriving
+prevents the delayed start from creating a process. Neither the RPC nor the plugin
+manifest needs a new field; tokens never enter public snapshots.
+
+Stop and status receipts must bind the task/token, use supported schema and states,
+exit successfully and fit within 4096 combined output bytes. The original SSH
+identity and complete local record are rechecked. Only confirmed closed admission
+plus `notFound` can settle an unconfirmed missing launch; ordinary `notFound`
+still cannot. Closing admission for a running task does not prove process exit.
+Reconnect retries stop/status only, including after the plugin has been removed.
+
+The helper retains bounded private admission journals and a stable cooperative
+lock. It refuses new task journals at the per-deployment limit of 4096 rather than
+evict cancellation evidence. Each journal is at most 1024 bytes; corruption,
+incomplete writes, links and unsupported locks require investigation. Missing
+reservations block start. This assumes cooperating commands share the same private
+deployment and the filesystem honors locks/flushes; arbitrary namespace replacement,
+disk rollback and power-loss guarantees are outside this contract. These receipts
+must not be deleted while delayed commands may exist.
+
+Existing initialized helpers without this feature retain the old transport.
+Existing tasks are never retrofitted with fencing based on a newer helper version.
+No admission receipt settles unknown historical SFTP writes or authorizes cleanup.
+
 ## Interrupted file configuration writes
 
 New tasks persist configuration phases independently of launch state: unsubmitted,

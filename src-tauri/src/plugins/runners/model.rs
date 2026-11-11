@@ -40,6 +40,8 @@ pub(super) struct Record {
     pub(super) configuration_state: Option<super::operations::configuration::journal::State>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) configuration_transport: Option<super::bootstrap::contracts::Configuration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) admission: Option<super::admission::Permit>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -91,7 +93,9 @@ impl Record {
 
     pub(super) fn settle(&mut self, status: &str) -> crate::error::AppResult<()> {
         let terminal = matches!(status, "stopped" | "failed")
-            || (status == "notFound" && self.launch_state != LaunchState::Unconfirmed);
+            || (status == "notFound"
+                && self.admission.is_none()
+                && self.launch_state != LaunchState::Unconfirmed);
         let confirmed = matches!(status, "running" | "starting" | "stopped" | "failed");
         let terminal_status = match status {
             "stopped" => Some(TerminalState::Stopped),

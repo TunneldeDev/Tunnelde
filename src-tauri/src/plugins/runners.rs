@@ -8,6 +8,7 @@ use crate::{
 use serde_json::{json, Value};
 use tauri::Manager;
 
+mod admission;
 pub(crate) mod bootstrap;
 mod capabilities;
 mod contracts;

@@ -7,6 +7,31 @@ fn record() -> Record {
 }
 
 #[test]
+fn closed_admission_terminal_observation_does_not_keep_an_uncertain_launch_warning() {
+    let mut task = record();
+    task.admission = Some(super::super::admission::Permit::new());
+    task.launch_state = super::super::model::LaunchState::Unconfirmed;
+    task.stop_pending = true;
+    assert!(
+        super::projection::entry(&task, &[], None, false)
+            .unwrap()
+            .launch_uncertain
+    );
+    task.stop_pending = false;
+    task.terminal_status = Some(super::super::model::TerminalState::NotFound);
+    let entry = super::projection::entry(&task, &[], None, false).unwrap();
+    assert!(!entry.launch_uncertain);
+    assert!(entry.can_forget);
+    task.configuration_state =
+        Some(super::super::operations::configuration::journal::State::Writing);
+    assert!(
+        !super::projection::entry(&task, &[], None, false)
+            .unwrap()
+            .can_forget
+    );
+}
+
+#[test]
 fn action_tokens_bind_all_private_metadata_and_never_reveal_it() {
     let original = record();
     let first = query::token(&original).unwrap();

@@ -10,7 +10,7 @@ pub(super) async fn require_support(
     context: &HostContext,
     session: &str,
     deployment: &Deployment,
-) -> AppResult<()> {
+) -> AppResult<bool> {
     if deployment
         .remote_runner
         .as_ref()
@@ -29,7 +29,7 @@ pub(super) async fn require_support(
         &super::identity::capture(&context.app, session)?,
     )?;
     if supports(&result) {
-        Ok(())
+        Ok(super::admission::supported(&result))
     } else {
         Err(AppError::validation(
             "plugin.runners.initializationUnsupported",
