@@ -2096,7 +2096,8 @@
       "recoveryRequired": "该迁移有需要恢复的数据，请先在存储设置中处理。",
       "noPendingPlan": "当前没有待执行的存储迁移。",
       "invalidState": "存储位置元数据无效。",
-      "unavailable": "无法访问存储位置元数据。"
+      "unavailable": "无法访问存储位置元数据。",
+      "busy": "存储设置正忙，请重新读取当前状态后重试。"
     }
   },
   "tasks": {

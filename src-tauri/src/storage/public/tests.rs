@@ -10,18 +10,25 @@ use crate::{
 use std::{collections::BTreeMap, path::PathBuf};
 
 struct Fixture {
+    _serial: std::sync::MutexGuard<'static, ()>,
     root: PathBuf,
     paths: Paths,
 }
 impl Fixture {
     fn new() -> Self {
+        static FIXTURES: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let serial = FIXTURES.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "tunnelde-location-contract-{}",
             uuid::Uuid::new_v4()
         ));
         std::fs::create_dir_all(root.join("home")).unwrap();
         let paths = Paths::new(root.join("home"), root.join("logs"), &BTreeMap::new(), None);
-        Self { root, paths }
+        Self {
+            _serial: serial,
+            root,
+            paths,
+        }
     }
     fn snapshot(&self) -> Snapshot {
         observe(&self.paths, Observe::default(), || Ok(()))
@@ -203,7 +210,7 @@ fn policy_checks_and_commit_fence_never_run_under_metadata_lock() {
     let f = Fixture::new();
     let check = || {
         let (send, receive) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
+        let worker = std::thread::spawn(move || {
             let lock = MUTATIONS.lock().unwrap();
             let _ = send.send(());
             drop(lock);
@@ -211,6 +218,7 @@ fn policy_checks_and_commit_fence_never_run_under_metadata_lock() {
         receive
             .recv_timeout(std::time::Duration::from_secs(5))
             .expect("policy called under metadata lock");
+        worker.join().unwrap();
         Ok(())
     };
     observe(&f.paths, Observe::default(), check).unwrap();
@@ -225,6 +233,26 @@ fn policy_checks_and_commit_fence_never_run_under_metadata_lock() {
         },
     )
     .unwrap();
+}
+
+#[test]
+fn commit_fence_fails_fast_instead_of_waiting_on_native_inventory() {
+    let f = Fixture::new();
+    let error = schedule(
+        &f.paths,
+        f.request(),
+        || Ok(()),
+        || Ok(()),
+        |save| {
+            let _native = MUTATIONS.lock().unwrap();
+            save()
+        },
+    )
+    .err()
+    .unwrap();
+    assert_eq!(error.to_string(), "storage.locations.busy");
+    assert!(f.snapshot().pending.is_none());
+    assert_eq!(std::fs::read_dir(&f.paths.home).unwrap().count(), 0);
 }
 
 #[test]

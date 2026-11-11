@@ -113,7 +113,8 @@ pub(super) async fn dispatch(
             let current = public::observe(&paths, Observe::default(), || {
                 ticket.check()?;
                 authorize(&worker, WRITE)
-            })?
+            })
+            .map_err(redacted)?
             .snapshot
             .ok_or_else(|| AppError::internal("storage.locations.unavailable"))?;
             encode(ChangeResult {
