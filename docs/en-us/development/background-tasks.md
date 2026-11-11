@@ -98,5 +98,21 @@ controls register a presentation with `registerTaskPresentation` from
 The file-transfer adapter owns reconnect, resume, speed limits and temporary-file cleanup;
 the common task window owns grouping, pagination, focus and geometry.
 
+Unacknowledged remote staging-directory creation has a separate persisted
+recovery ledger under `ssh/files/artifacts/retained/`. Its FULL SQLite transaction
+records the original transfer, exact host/user/port, directory and generation,
+creates an independent cleanup task and replaces the active generation together.
+The ledger and owner index are outside normal transfer checkpoint prefixes.
+Removing the original task cannot discard them. Missing task rows are rebuilt
+from the ledger, whose settlement overrides stale cleanup/UI snapshots.
+
+Only the matching server acknowledgement can change `unknown` to `created` or
+`rejected`. A disconnect, missing/empty directory or helper metadata listing is
+not settlement. Created generations allow validated empty-directory removal;
+rejected generations require no remote I/O. A retained task is never resumable,
+including one attributed to a plugin. Bounds are eight retained generations per
+original transfer and 128 globally. This internal recovery model does not add a
+public plugin RPC or grant control of a previous plugin runtime.
+
 This is a workbench integration API. It does not grant a plugin additional permissions or
 change the plugin protocol version. External plugin API stability is documented separately.
