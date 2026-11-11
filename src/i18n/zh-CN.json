@@ -40,7 +40,10 @@
     "cancelled": "文件读取已取消。",
     "workerFailed": "文件读取线程意外停止，请查看软件日志后重试。",
     "invalidPath": "请选择绝对路径指向的普通文件。",
-    "invalidRange": "请求的文件区间超过了读取限制。"
+    "invalidRange": "请求的文件区间超过了读取限制。",
+    "invalidReply": "远端文件服务返回了无效的读取响应。",
+    "metadataUnavailable": "远端文件服务未提供可读取的文件大小。",
+    "sourceChanged": "文件已不包含请求的区间，请重新打开后重试。"
   },
   "preview": {
     "previousPage": "上一页",
