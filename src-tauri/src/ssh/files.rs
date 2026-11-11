@@ -1054,6 +1054,8 @@ fn spawn_transfer_inner(
             durable::DurableTransfer {
                 id: id.clone(),
                 plugin_id: owner.as_ref().map(|lease| lease.id.clone()),
+                retained_creation: false,
+                retained_settlement: None,
                 direction: "transfer".into(),
                 name: file_name_of(&from.path),
                 from_session: from.session.clone(),

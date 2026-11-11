@@ -41,6 +41,7 @@ where
     F: FnOnce(Endpoint) -> Fut,
     Fut: std::future::Future<Output = AppResult<()>>,
 {
+    retained::rotate(app, id, to, record)?;
     require_creation_settled(id, to, record.as_ref())?;
     let Some(staging) = remote_staging(record.as_ref()) else {
         return Ok(());
@@ -138,7 +139,7 @@ where
 
 /// Validate an acknowledged or unsent directory before recording it prepared.
 /// Unacknowledged creations are rejected before reaching this metadata check.
-async fn validate_directory(
+pub(super) async fn validate_directory(
     sftp: &SftpSession,
     path: &str,
     metadata: russh_sftp::protocol::FileAttributes,
@@ -286,11 +287,12 @@ where
 
 /// Clear only the acknowledgement intent for this exact generation. An old
 /// observer must not recreate a removed checkpoint or acknowledge a replacement.
-fn settle_creation(
+pub(super) fn settle_creation(
     conn: &rusqlite::Connection,
     id: &str,
     to: &Endpoint,
     directory: &Endpoint,
+    created: bool,
 ) -> AppResult<bool> {
     let key = artifact_key(id, to);
     let saved: Option<String> = conn
@@ -298,16 +300,18 @@ fn settle_creation(
             row.get(0)
         })
         .optional()?;
-    let Some(saved) = saved else { return Ok(false) };
+    let Some(saved) = saved else {
+        return retained::settle(conn, id, to, directory, created);
+    };
     let mut record: ArtifactRecord = serde_json::from_str(&saved)?;
     let Some(staging) = remote_staging(Some(&record)) else {
-        return Ok(false);
+        return retained::settle(conn, id, to, directory, created);
     };
     if staging.prepared
         || !staging.creating
         || staging_directory(to, id, staging)?.path != directory.path
     {
-        return Ok(false);
+        return retained::settle(conn, id, to, directory, created);
     }
     if let ArtifactRecord::Current {
         staging: Some(staging),
@@ -315,8 +319,13 @@ fn settle_creation(
     } = &mut record
     {
         staging.creating = false;
+        if !created {
+            // A rejection can mean a foreign object already owns this path.
+            // Never adopt or clean that path on a subsequent attempt.
+            staging.generation = uuid::Uuid::new_v4().to_string();
+        }
     }
-    conn.execute(
+    let changed = conn.execute(
         "UPDATE settings SET value=?1,updated_at=?2 WHERE key=?3 AND value=?4",
         rusqlite::params![
             serde_json::to_string(&record)?,
@@ -324,9 +333,12 @@ fn settle_creation(
             key,
             saved
         ],
-    )
-    .map(|changed| changed == 1)
-    .map_err(Into::into)
+    )?;
+    if changed == 1 {
+        Ok(true)
+    } else {
+        retained::settle(conn, id, to, directory, created)
+    }
 }
 
 pub(in crate::ssh::files) async fn create_directory(
@@ -351,7 +363,7 @@ pub(in crate::ssh::files) async fn create_directory(
             // Both success and an explicit server rejection settle the mutation.
             app.state::<AppState>()
                 .db
-                .with(|conn| settle_creation(conn, &id, &to, &directory))?;
+                .with(|conn| settle_creation(conn, &id, &to, &directory, matches!(&reply, range_io::DirectoryCreation::Created)))?;
             if cancelled.load(Ordering::SeqCst) {
                 let _ = app.emit("sftp://changed", ());
                 let cleanup_app = app.clone();
