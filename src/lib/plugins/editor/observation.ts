@@ -1,8 +1,8 @@
-import { editorDocument } from "@/store/editors";
 import { useWorkspace } from "@/store/workspace";
 import type { EditorBufferObservation } from "@/lib/extensions/contracts/editor/data/observation";
 import type { EditorBufferMetadata } from "@/lib/extensions/contracts/editor/data/identity";
 import { bytes, identifier, object } from "./validation";
+import { readyBuffer } from "./source";
 
 /** Hash a captured public projection; no buffer content or permanent subscription cache. */
 export async function observeBuffer(input: unknown): Promise<EditorBufferObservation> {
@@ -17,7 +17,7 @@ export async function observeBuffer(input: unknown): Promise<EditorBufferObserva
       /\p{Cc}/u.test(params.revision))
   )
     throw new Error("invalid:revision");
-  const document = tabId ? editorDocument(tabId) : null;
+  const document = tabId ? readyBuffer(tabId) : null;
   const snapshot: EditorBufferMetadata | null = document
     ? {
         tabId: document.tabId,
