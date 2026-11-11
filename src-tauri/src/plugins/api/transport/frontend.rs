@@ -87,11 +87,19 @@ pub(in crate::plugins) async fn frontend_request(
             json!({"requestId":request_id,"pluginId":context.id,"method":method,"params":params}),
         )?;
         tokio::time::timeout(
-            Duration::from_secs(if matches!(method, "ui.confirm" | "__frontend.command") {
-                60
-            } else {
-                15
-            }),
+            Duration::from_secs(
+                if matches!(
+                    method,
+                    "ui.confirm"
+                        | "__frontend.command"
+                        | "storage.locations.schedule"
+                        | "storage.locations.cancel"
+                ) {
+                    60
+                } else {
+                    15
+                },
+            ),
             receiver,
         )
         .await
