@@ -182,6 +182,7 @@ jobs:
         run: |
           cargo build --locked --manifest-path .tmp/ci/helper-initialized/Cargo.toml --target-dir src-tauri/target
           TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml initialized_selected_helper_declares_supported_configuration -- --ignored
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib historical_selected_helper_does_not_support_artifact_observation -- --ignored
 
       - name: Checkout fenced helper protocol fixture
         uses: actions/checkout@v4
@@ -196,6 +197,20 @@ jobs:
         run: |
           cargo build --locked --manifest-path .tmp/ci/helper-fenced/Cargo.toml --target-dir src-tauri/target
           TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml selected_helper_admission_protocol_matches_host_contract -- --ignored
+
+      - name: Checkout artifact observation helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: a43115649c730489ab635d2403fa7097ea1c480c
+          path: .tmp/ci/helper-artifacts
+          persist-credentials: false
+
+      - name: Check actual helper artifact receipts against host recovery
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-artifacts/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib selected_helper_artifact_protocol_matches_host_contract -- --ignored
 
       - name: Checkout historical helper protocol fixture
         uses: actions/checkout@v4
