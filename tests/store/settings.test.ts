@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   settings: vi.fn(),
   appInfo: vi.fn(),
   updateSettings: vi.fn(),
+  applySettingsProfile: vi.fn(),
   resetSettings: vi.fn(),
   setLocale: vi.fn(),
   setLanguage: vi.fn(),
@@ -48,6 +49,47 @@ beforeEach(() => {
 });
 
 describe("settings persistence", () => {
+  it("orders profile activation with edits and preserves later optimistic patches", async () => {
+    const store = await fresh();
+    await store.getState().load();
+    const activated = deferred<Settings>();
+    mocks.applySettingsProfile.mockReturnValueOnce(activated.promise);
+    const request = { source: "saved" as const, id: "work", revision: "captured" };
+    const applying = store.getState().applyProfile(request);
+    request.revision = "mutated";
+    const edited = store.getState().update({ monoFontSize: 20 });
+    expect(store.getState().settings.theme).toBe(DEFAULT_SETTINGS.theme);
+    await vi.waitFor(() =>
+      expect(mocks.applySettingsProfile).toHaveBeenCalledWith({
+        source: "saved",
+        id: "work",
+        revision: "captured",
+      }),
+    );
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+    const saved = { ...DEFAULT_SETTINGS, theme: "light" as const };
+    mocks.updateSettings.mockResolvedValueOnce({ ...saved, monoFontSize: 20 });
+    activated.resolve(saved);
+    expect(await applying).toBe(true);
+    expect(store.getState().settings.monoFontSize).toBe(20);
+    expect(await edited).toBe(true);
+    expect(store.getState().settings).toEqual({ ...saved, monoFontSize: 20 });
+    expect(store.getState().saving).toBe(false);
+  });
+
+  it("keeps confirmed preferences and later edits when profile activation conflicts", async () => {
+    const store = await fresh();
+    await store.getState().load();
+    mocks.applySettingsProfile.mockRejectedValueOnce(new Error("profiles.conflict"));
+    const applying = store
+      .getState()
+      .applyProfile({ source: "saved", id: "work", revision: "stale" });
+    const edited = store.getState().update({ monoFontSize: 20 });
+    expect(await applying).toBe(false);
+    expect(await edited).toBe(true);
+    expect(store.getState().settings).toEqual({ ...DEFAULT_SETTINGS, monoFontSize: 20 });
+    expect(mocks.toast).toHaveBeenCalledWith("Error: profiles.conflict", "error");
+  });
   it("publishes readiness only after saved settings, language and colors have been applied", async () => {
     const saved: Settings = {
       ...DEFAULT_SETTINGS,

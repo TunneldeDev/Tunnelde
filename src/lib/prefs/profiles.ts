@@ -75,6 +75,14 @@ export interface SettingsProfile {
   settings: PortableSettings;
   updatedAt: number;
 }
+export interface SettingsProfilesSnapshot {
+  profiles: SettingsProfile[];
+  revision: string;
+  activeId: string | null;
+}
+export type ApplySettingsProfile =
+  | { source: "saved"; id: string; revision: string }
+  | { source: "import"; settings: PortableSettings };
 export interface SettingsDocument {
   format: "tunnelde-settings";
   version: 1;

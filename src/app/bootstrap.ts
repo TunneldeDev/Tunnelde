@@ -12,6 +12,7 @@ import { reportPluginExecutionFailure, usePluginSecurity } from "@/store/pluginS
 import { useTransfers } from "@/store/transfers";
 import { useEditorCleanup } from "@/store/editorCleanup";
 import { useSettings } from "@/store/settings";
+import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { createEventLifecycle, type Subscription } from "@/lib/events/lifecycle";
@@ -194,6 +195,13 @@ async function wireEvents(): Promise<void> {
           useSettings.getState().applyRemote(settings);
         }, signal),
       recover: () => useSettings.getState().load(),
+    },
+    {
+      register: (signal) =>
+        events.onSettingsProfilesChanged(() => {
+          void useSettingsProfiles.getState().refresh();
+        }, signal),
+      recover: () => useSettingsProfiles.getState().refresh(),
     },
     {
       register: (signal) =>

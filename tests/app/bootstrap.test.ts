@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   sessions: [] as SshSession[],
   toast: vi.fn(),
   settingsLoad: vi.fn(),
+  profileRefresh: vi.fn(async () => {}),
   settings: { theme: "dark", motion: "system", restoreWorkspace: true },
   updateRefresh: vi.fn(),
   securityLoad: vi.fn(),
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   events: {
     onPluginActivation: vi.fn(),
     onSettingsChanged: vi.fn(),
+    onSettingsProfilesChanged: vi.fn(),
     onUpdateState: vi.fn(),
     onNavigate: vi.fn(),
     onPluginState: vi.fn(),
@@ -59,6 +61,9 @@ vi.mock("@/store/settings", () => ({
       applyRemote: vi.fn(),
     }),
   },
+}));
+vi.mock("@/store/settingsProfiles", () => ({
+  useSettingsProfiles: { getState: () => ({ refresh: mocks.profileRefresh }) },
 }));
 vi.mock("@/store/updates", () => ({
   useUpdates: { getState: () => ({ refresh: mocks.updateRefresh, apply: vi.fn() }) },
@@ -131,6 +136,7 @@ beforeEach(() => {
   mocks.monitorForget.mockReset();
   mocks.sessions = [];
   mocks.settingsLoad.mockReset().mockResolvedValue(undefined);
+  mocks.profileRefresh.mockReset().mockResolvedValue(undefined);
   mocks.updateRefresh.mockReset().mockResolvedValue(undefined);
   mocks.securityLoad.mockReset().mockResolvedValue(undefined);
   mocks.pluginLoad.mockReset().mockResolvedValue(undefined);
@@ -148,6 +154,20 @@ afterEach(async () => {
 });
 
 describe("workspace startup and persistence", () => {
+  it("owns profile change subscriptions and recovers missed changes without eagerly reading profiles", async () => {
+    mocks.events.onSettingsProfilesChanged.mockRejectedValueOnce(new Error("listener failed"));
+    const { bootstrap, disposeBootstrap } = await fresh();
+    await bootstrap();
+    expect(mocks.profileRefresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.events.onSettingsProfilesChanged).toHaveBeenCalledTimes(2);
+    expect(mocks.profileRefresh).toHaveBeenCalledOnce();
+    const [receive, signal] = mocks.events.onSettingsProfilesChanged.mock.calls[1]!;
+    receive();
+    expect(mocks.profileRefresh).toHaveBeenCalledTimes(2);
+    disposeBootstrap();
+    expect(signal.aborted).toBe(true);
+  });
   it.each([false, true, undefined])(
     "cleans closed sessions while notifying only terminals (terminal=%s)",
     async (terminal) => {

@@ -122,6 +122,14 @@ profile as modified; **Update profile** explicitly replaces its snapshot after c
 Manage profiles provides rename, apply, per-profile export and delete. Deleting a snapshot keeps
 the current preferences. Names are unique, 1–64 characters, with up to 32 profiles stored locally.
 
+The host applies the saved profile at its current content revision, rather than using a
+previously downloaded UI snapshot. If the saved collection changes while you are choosing
+or confirming, application stops without changing preferences; refresh and review before
+retrying. Preferences and the active profile identity commit together. The identity
+survives restart and is synchronized across windows. Importing clears that identity;
+deleting the active profile keeps the applied preferences. Resetting or editing settings
+keeps the identity, with the profile shown as modified until it matches again.
+
 Import and export use native JSON file pickers. Export includes appearance, custom CSS, behavior,
 terminal, editor, file view, keyboard preferences and proxy metadata/feature routes. Proxy passwords
 remain in the local OS credential store and must be entered again on another computer.
