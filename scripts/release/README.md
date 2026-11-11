@@ -34,8 +34,8 @@ and recovery reject beta.10+, multipart Beta suffixes and compact betaNN names.
 Historical metadata remains readable and comparable; the updater accepts stable
 releases above already installed beta.10/11 builds. Nightly publication and recovery
 are disabled; historical Nightly versions remain readable for compatibility.
-See the version policy in [English](../../docs/versioning.en-us.md) /
-[简体中文](../../docs/versioning.zh-cn.md).
+See the version policy in [English](../../docs/en-us/development/versioning.md) /
+[简体中文](../../docs/zh-cn/development/versioning.md).
 
 The desktop updater has the same separation: `src-tauri/src/update/channels.rs` owns channel
 eligibility; `update/feeds.rs` discovers GitHub/custom feeds; `update.rs` owns state, checks,
@@ -43,4 +43,4 @@ download/install and event delivery.
 
 Run `node --test scripts/release/tests/*.test.mjs`, the release tests in
 `tests/lib/release.test.ts`, and updater tests before changing this flow. See
-[release operations](../../docs/releases.md) for triggers, credentials and recovery.
+[release operations](../../docs/en-us/development/releases.md) for triggers, credentials and recovery.
