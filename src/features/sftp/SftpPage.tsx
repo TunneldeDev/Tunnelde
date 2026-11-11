@@ -2445,7 +2445,11 @@ export function SftpPage({
                 ))
               : null}
             <div
-              className={cn("sftp-pane__scroll", columnView && "sftp-miller__column")}
+              className={cn(
+                "sftp-pane__scroll",
+                columnView && "sftp-miller__column",
+                dropTarget?.pane === id && dropTarget.path === "" && "is-drop",
+              )}
               key="current"
             >
               {columnView ? (
