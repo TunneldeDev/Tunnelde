@@ -1,4 +1,10 @@
-import { useEffect, useMemo, useSyncExternalStore, type ComponentType } from "react";
+import {
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { frontendRuntime } from "../../frontendRuntime";
 import type { FrontendViewProps } from "../../contracts/frontend/views";
 import type { ResourceScope } from "../scopes/contracts";
@@ -52,6 +58,7 @@ export function PluginRuntimeView({
   retain,
   validation,
   onFailure,
+  fallback,
 }: {
   View: ComponentType<FrontendViewProps>;
   viewProps: FrontendViewProps;
@@ -62,6 +69,7 @@ export function PluginRuntimeView({
   retain?: (release: () => void) => () => void;
   validation?: ViewValidation;
   onFailure: (error: unknown) => void;
+  fallback?: ReactNode;
 }) {
   const { pluginId, viewId } = viewProps;
   const mount = useMemo(
@@ -102,5 +110,7 @@ export function PluginRuntimeView({
       validation={validation}
       onFailure={onFailure}
     />
-  ) : null;
+  ) : (
+    fallback
+  );
 }
