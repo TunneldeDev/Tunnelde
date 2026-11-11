@@ -1,5 +1,5 @@
 //! Portable preferences and named snapshots. No host, credential, workspace or plugin data.
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{AppHandle, State};
@@ -15,8 +15,10 @@ const FORMAT: &str = "tunnelde-settings";
 const MAX_FILE_BYTES: usize = 512_000;
 const MAX_PROFILES: usize = 32;
 
+pub(crate) mod activation;
 mod files;
 pub(crate) mod observation;
+mod repository;
 
 // Deliberately explicit: newly added settings never become portable by accident.
 const PORTABLE_KEYS: &[&str] = &[
@@ -176,43 +178,11 @@ fn parse_document(text: &str) -> AppResult<SettingsDocument> {
 }
 
 fn load(conn: &Connection) -> AppResult<Vec<SettingsProfile>> {
-    let raw: Option<String> = conn
-        .query_row(
-            "SELECT value FROM settings WHERE key = ?1",
-            params![KEY],
-            |row| row.get(0),
-        )
-        .optional()?;
-    match raw {
-        Some(raw) => {
-            serde_json::from_str(&raw).map_err(|_| AppError::validation("profiles.invalidStorage"))
-        }
-        None => Ok(Vec::new()),
-    }
+    Ok(repository::read(conn)?.profiles)
 }
 
 fn save(conn: &Connection, profiles: &[SettingsProfile]) -> AppResult<()> {
-    let raw = serde_json::to_string(profiles)?;
-    if raw.len() > observation::MAX_STORAGE_BYTES {
-        return Err(AppError::validation("profiles.storageTooLarge"));
-    }
-    let transaction = conn.unchecked_transaction()?;
-    transaction.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        params![KEY, raw, now_ms()],
-    )?;
-    transaction.execute(
-        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        params![
-            observation::REVISION_KEY,
-            uuid::Uuid::new_v4().to_string(),
-            now_ms()
-        ],
-    )?;
-    transaction.commit()?;
-    Ok(())
+    repository::save(conn, profiles)
 }
 
 fn upsert(
@@ -259,20 +229,24 @@ pub fn settings_profiles_list(state: State<'_, AppState>) -> AppResult<Vec<Setti
 
 #[tauri::command]
 pub fn settings_profile_save(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: Option<String>,
     name: String,
     settings: Value,
 ) -> AppResult<Vec<SettingsProfile>> {
-    state.db.with(|conn| upsert(conn, id, name, settings))
+    let profiles = state.db.with(|conn| upsert(conn, id, name, settings))?;
+    activation::publish(&app);
+    Ok(profiles)
 }
 
 #[tauri::command]
 pub fn settings_profile_delete(
+    app: AppHandle,
     state: State<'_, AppState>,
     id: String,
 ) -> AppResult<Vec<SettingsProfile>> {
-    state.db.with(|conn| {
+    let profiles = state.db.with(|conn| {
         let mut profiles = load(conn)?;
         let before = profiles.len();
         profiles.retain(|profile| profile.id != id);
@@ -281,7 +255,9 @@ pub fn settings_profile_delete(
         }
         save(conn, &profiles)?;
         Ok(profiles)
-    })
+    })?;
+    activation::publish(&app);
+    Ok(profiles)
 }
 
 #[tauri::command]

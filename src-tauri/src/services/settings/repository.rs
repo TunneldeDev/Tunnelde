@@ -24,7 +24,16 @@ pub(super) fn revision(conn: &Connection, current: &Settings) -> AppResult<Strin
     }
 }
 
+#[cfg(test)]
 pub(super) fn save(conn: &Connection, next: &Settings) -> AppResult<String> {
+    save_with(conn, next, |_| Ok(()))
+}
+
+pub(super) fn save_with(
+    conn: &Connection,
+    next: &Settings,
+    extra: impl FnOnce(&Connection) -> AppResult<()>,
+) -> AppResult<String> {
     let revision = uuid::Uuid::new_v4().to_string();
     let transaction = conn.unchecked_transaction()?;
     crate::db::settings::save(&transaction, next)?;
@@ -33,6 +42,7 @@ pub(super) fn save(conn: &Connection, next: &Settings) -> AppResult<String> {
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
         params![REVISION_KEY, revision, crate::models::now_ms()],
     )?;
+    extra(&transaction)?;
     transaction.commit()?;
     Ok(revision)
 }

@@ -41,7 +41,7 @@ impl<'de> Deserialize<'de> for Items {
     }
 }
 
-pub(super) fn items(raw: &str) -> AppResult<Vec<Metadata>> {
+pub(in crate::settings_profiles) fn items(raw: &str) -> AppResult<Vec<Metadata>> {
     let invalid = || AppError::validation("profiles.invalidStorage");
     let Items(items) = serde_json::from_str::<Items>(raw).map_err(|_| invalid())?;
     let mut ids = HashSet::new();

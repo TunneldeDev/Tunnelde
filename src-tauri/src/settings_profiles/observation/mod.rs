@@ -1,6 +1,6 @@
 //! Conditional metadata reads share the native profile repository and SQLite snapshot.
 pub(crate) mod contracts;
-mod projection;
+pub(super) mod projection;
 use crate::error::{AppError, AppResult};
 use rusqlite::{Connection, OptionalExtension};
 use sha2::{Digest, Sha256};
