@@ -60,7 +60,7 @@ export async function checkProfileContentConsumer(fixture, sdk) {
   assert.deepEqual(
     await client.read(
       { id: fixture.catalogue.items[0].id, revision: fixture.catalogue.revision },
-      { signal: new AbortController().signal },
+      { signal: new globalThis.AbortController().signal },
     ),
     fixture.values,
   );
