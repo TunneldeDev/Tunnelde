@@ -200,6 +200,26 @@ fn structured_projection_redacts_credentials_preserves_numbers_and_bounds_utf8()
     assert!(!serde_json::to_string(&entry).unwrap().contains("private"));
 }
 #[test]
+fn diagnostic_timestamps_are_canonical_for_public_sdk_consumers() {
+    for value in [
+        "2026-11-11T10:00:00Z",
+        "2026-11-11t10:00:00z",
+        "2026-11-11 10:00:00+00:00",
+    ] {
+        let value = json!({"timestamp":value,"fields":{"message":"timestamp"}});
+        let entry = projection::diagnostic(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(
+            entry.timestamp.as_deref(),
+            Some("2026-11-11T10:00:00+00:00")
+        );
+    }
+    for value in ["not-a-date", "2026-11-11T10:00:60Z"] {
+        let value = json!({"timestamp":value,"fields":{"message":"timestamp"}});
+        let entry = projection::diagnostic(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert_eq!(entry.timestamp, None);
+    }
+}
+#[test]
 fn operation_retention_and_filtered_pagination_are_explicit() {
     let fixture = Fixture::new();
     for _ in 0..1002 {
@@ -261,7 +281,9 @@ fn emit_public_log_page_for_sdk() {
     let decimal = serde_json::json!({"level":"INFO","fields":{"message":"x".repeat(14200),"context":serde_json::json!({"values":vec![0.000001;240]}).to_string()}});
     // Stay inside the initial window so the producer marker remains visible.
     fixture.write(
-        &(line("producer→SDK") + &(serde_json::to_string(&decimal).unwrap() + "\n").repeat(14)),
+        &(line("producer→SDK")
+            + "{\"timestamp\":\"2026-11-11t10:00:00z\",\"fields\":{\"message\":\"canonical timestamp\"}}\n"
+            + &(serde_json::to_string(&decimal).unwrap() + "\n").repeat(14)),
     );
     let page = fixture.read(json!({}));
     if let Some(path) = std::env::var_os("TUNNELDE_LOG_CONTRACT_OUTPUT") {

@@ -2,11 +2,18 @@ use super::contracts::{identifier, Entry};
 use chrono::Datelike;
 use serde_json::{Map, Value};
 
-fn timestamp(value: &str) -> bool {
-    value.len() <= 64
-        && chrono::DateTime::parse_from_rfc3339(value).is_ok_and(|date| {
+fn timestamp(value: &str) -> Option<String> {
+    if value.len() > 64 {
+        return None;
+    }
+    chrono::DateTime::parse_from_rfc3339(value)
+        .ok()
+        .filter(|date| {
             (0..=9999).contains(&date.year()) && date.timestamp_subsec_nanos() < 1_000_000_000
         })
+        // Chrono also accepts lowercase t/z and a space separator. Return the
+        // shared canonical shape rather than leaking parser-specific variants.
+        .map(|date| date.to_rfc3339())
 }
 
 fn text(value: &str, limit: usize) -> (String, bool) {
@@ -42,8 +49,7 @@ pub fn diagnostic(bytes: &[u8]) -> Option<Entry> {
     let timestamp = record
         .get("timestamp")
         .and_then(Value::as_str)
-        .filter(|v| timestamp(v))
-        .map(str::to_owned);
+        .and_then(timestamp);
     let plugin_id = get("plugin_id")
         .and_then(Value::as_str)
         .filter(|v| identifier(v, 128))
