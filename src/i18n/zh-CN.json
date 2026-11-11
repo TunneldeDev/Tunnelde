@@ -35,6 +35,13 @@
     "status": "状态",
     "author": "作者"
   },
+  "fileRead": {
+    "busy": "仍有文件读取操作未结束，请等待完成后重试。",
+    "cancelled": "文件读取已取消。",
+    "workerFailed": "文件读取线程意外停止，请查看软件日志后重试。",
+    "invalidPath": "请选择绝对路径指向的普通文件。",
+    "invalidRange": "请求的文件区间超过了读取限制。"
+  },
   "preview": {
     "previousPage": "上一页",
     "nextPage": "下一页",

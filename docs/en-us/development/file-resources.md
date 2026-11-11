@@ -18,6 +18,27 @@ Closing a view never implies that a filesystem write stopped or rolled back.
 
 ## Preview ownership
 
+Local preview ranges, built-in text previews and plugin local text reads use the
+shared native reader in `src-tauri/src/services/files/read/`. It resolves intentional
+aliases, then opens a regular file with platform flags that reject final symlink,
+reparse and special-file replacements. It retains the opened handle and serializes
+seek/read pairs. Windows readers permit an existing log writer to continue writing;
+the editor's more restrictive publication handles remain separate. Ancestor path
+resolution still follows the OS and does not establish a filesystem sandbox.
+
+At most eight native blocking read/open workers may be queued or running together.
+Capacity belongs to the worker until it exits, even when its async caller times out
+or closes. Cancelled queued workers skip IO; a reader waiting for its cursor lock
+checks cancellation again after acquiring the lock. Already running filesystem IO
+can still finish. Saturation returns an explicit busy error without queuing more
+work. One byte read is bounded to 32 MiB, preserving existing whole-image previews;
+HTTP ranges remain capped at 1 MiB. Text-prefix reads retain the caller's existing
+limits and read one extra byte to detect oversize input. Files may change through
+other writers: these handles do not promise a consistent immutable snapshot.
+
+This native service adds no public RPC or plugin authority. Full public content and
+preview resources require separate lifetime, permission, transport and SDK contracts.
+
 Each provider preview gets a fresh host-generated ticket ID. Closing while native
 provider discovery is pending requests early close; a late successful open is
 closed again because registration can happen after the early request. Cleanup

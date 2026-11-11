@@ -35,6 +35,13 @@
     "status": "Status",
     "author": "Author"
   },
+  "fileRead": {
+    "busy": "File reads are still running. Wait for them to finish, then try again.",
+    "cancelled": "The file read was cancelled.",
+    "workerFailed": "The file reader stopped unexpectedly. Check the software log and try again.",
+    "invalidPath": "Choose a regular file using an absolute path.",
+    "invalidRange": "The requested file range exceeds the supported read limits."
+  },
   "preview": {
     "previousPage": "Previous page",
     "nextPage": "Next page",
