@@ -15,7 +15,7 @@ pub(crate) fn observe(
     let tx = conn.unchecked_transaction()?;
     // Check the stored byte length before returning a potentially large string to Rust.
     let raw: Option<Option<String>> = tx.query_row(
-        "SELECT CASE WHEN length(CAST(value AS BLOB)) <= ?2 THEN value END FROM settings WHERE key = ?1",
+        "SELECT CASE WHEN typeof(value) = 'text' AND length(CAST(value AS BLOB)) <= ?2 THEN value END FROM settings WHERE key = ?1",
         rusqlite::params![super::KEY, MAX_STORAGE_BYTES as i64], |row| row.get(0),
     ).optional()?;
     let items = match raw {
@@ -23,7 +23,7 @@ pub(crate) fn observe(
         Some(Some(raw)) => projection::items(&raw)?,
         Some(None) => return Err(AppError::validation("profiles.invalidStorage")),
     };
-    let nonce: Option<Option<String>> = tx.query_row("SELECT CASE WHEN length(CAST(value AS BLOB)) = 36 THEN value END FROM settings WHERE key = ?1", [REVISION_KEY], |row| row.get(0)).optional()?;
+    let nonce: Option<Option<String>> = tx.query_row("SELECT CASE WHEN typeof(value) = 'text' AND length(CAST(value AS BLOB)) = 36 THEN value END FROM settings WHERE key = ?1", [REVISION_KEY], |row| row.get(0)).optional()?;
     let nonce = match nonce {
         None => None,
         Some(Some(nonce)) => Some(nonce),

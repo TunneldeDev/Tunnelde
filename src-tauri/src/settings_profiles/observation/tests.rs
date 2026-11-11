@@ -273,3 +273,31 @@ fn oversized_native_save_preserves_profile_data_and_generation() {
     })
     .unwrap();
 }
+
+#[test]
+fn binary_storage_values_are_rejected_before_string_decoding() {
+    let db = Database::in_memory().unwrap();
+    db.with(|conn| {
+        let good = json!([{"id":"work","name":"Work","updatedAt":0,"settings":{}}]).to_string();
+        put_raw(conn, &good)?;
+        conn.execute(
+            "UPDATE settings SET value=CAST(value AS BLOB) WHERE key=?1",
+            [super::super::KEY],
+        )?;
+        let error = observe(conn, contracts::Observe::default())
+            .err()
+            .expect("binary profiles accepted");
+        assert!(error.to_string().contains("profiles.invalidStorage"));
+        put_raw(conn, &good)?;
+        conn.execute(
+            "INSERT INTO settings(key,value,updated_at) VALUES (?1,?2,0)",
+            rusqlite::params![REVISION_KEY, uuid::Uuid::new_v4().to_string().as_bytes()],
+        )?;
+        let error = observe(conn, contracts::Observe::default())
+            .err()
+            .expect("binary revision accepted");
+        assert!(error.to_string().contains("profiles.invalidStorage"));
+        Ok(())
+    })
+    .unwrap();
+}
