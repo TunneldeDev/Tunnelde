@@ -154,6 +154,8 @@ pub struct PluginManifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration:
         Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_runner: Option<super::runners::bootstrap::contracts::Manifest>,
     #[serde(default)]
     pub main: String,
     /// `theme` packages contribute data without an executable entry point.
@@ -248,6 +250,15 @@ impl PluginManifest {
             {
                 return Err(AppError::validation("plugin.frontend.invalid"));
             }
+        }
+        if self.remote_runner.is_some()
+            && (matches!(self.runtime.as_deref(), Some("theme" | "declarative"))
+                || !self
+                    .permissions
+                    .iter()
+                    .any(|permission| permission == "ssh.exec"))
+        {
+            return Err(AppError::validation("plugin.runners.invalidInitialization"));
         }
         if self.commands.iter().any(|command| command.frontend) && self.frontend.is_none() {
             return Err(AppError::validation("plugin.frontend.invalid"));
@@ -954,6 +965,31 @@ mod tests {
         );
         std::fs::write(dir.join(MANIFEST_FILE), payload).expect("manifest");
         load(dir).expect("valid manifest")
+    }
+
+    #[test]
+    fn initialized_remote_runner_requires_a_typed_executable_opt_in() {
+        let dir = temp_dir("remote-runner");
+        std::fs::write(dir.join("main.js"), "").unwrap();
+        let valid = serde_json::json!({"id":"remote","name":"Remote","version":"1.0.0","apiVersion":1,
+            "main":"main.js","permissions":["ssh.exec"],"remoteRunner":{"configuration":"initialize-v1"}});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(load(&dir).unwrap().remote_runner.is_some());
+        for (field, value) in [
+            ("permissions", serde_json::json!([])),
+            ("runtime", serde_json::json!("theme")),
+            ("remoteRunner", serde_json::json!({"configuration":"file"})),
+            (
+                "remoteRunner",
+                serde_json::json!({"configuration":"initialize-v1","fallback":true}),
+            ),
+        ] {
+            let mut bad = valid.clone();
+            bad[field] = value;
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert!(load(&dir).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn temp_dir(name: &str) -> PathBuf {

@@ -11,6 +11,8 @@ pub(super) struct Deployment {
     pub(super) executable: String,
     pub(super) runner: String,
     pub(super) entry: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) remote_runner: Option<super::bootstrap::contracts::Manifest>,
     #[serde(default)]
     pub(super) fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -36,6 +38,8 @@ pub(super) struct Record {
     pub(super) deployment_state: Option<super::deployment::journal::State>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) configuration_state: Option<super::operations::configuration::journal::State>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) configuration_transport: Option<super::bootstrap::contracts::Configuration>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

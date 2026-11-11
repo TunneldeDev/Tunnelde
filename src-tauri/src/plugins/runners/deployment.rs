@@ -118,6 +118,7 @@ pub(super) async fn deploy(context: &HostContext, params: Value) -> AppResult<Va
             &platform,
         ),
         entry: path_join(&directory, "remote-entry.mjs", &platform),
+        remote_runner: package.remote_runner.clone(),
         fingerprint: context.fingerprint.clone(),
         identity: Some(destination.clone()),
     };

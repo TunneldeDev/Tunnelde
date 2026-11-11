@@ -57,8 +57,10 @@ mod tests {
             "runnerId":"task", "stopPending":true,
             "runtimeOwner": { "bootId":"internal-process", "generation":37 },
             "controllerFingerprint":"private-controller", "terminalStatus":"failed",
+            "configurationTransport":"initialize-v1",
             "deployment": { "hostId":"host", "directory":"/tmp/plugin", "platform":"linux",
                 "executable":"runtime", "runner":"runner", "entry":"main",
+                "remoteRunner":{"configuration":"initialize-v1"},
                 "identity":{"hostId":"host","address":"private-address","serverKey":"private-key"} },
         }))
         .unwrap();
@@ -72,6 +74,14 @@ mod tests {
             .unwrap()
             .remove("controllerFingerprint");
         expected.as_object_mut().unwrap().remove("terminalStatus");
+        expected
+            .as_object_mut()
+            .unwrap()
+            .remove("configurationTransport");
+        expected["deployment"]
+            .as_object_mut()
+            .unwrap()
+            .remove("remoteRunner");
         expected["deployment"]
             .as_object_mut()
             .unwrap()

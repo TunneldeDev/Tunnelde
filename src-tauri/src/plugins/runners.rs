@@ -8,6 +8,7 @@ use crate::{
 use serde_json::{json, Value};
 use tauri::Manager;
 
+pub(crate) mod bootstrap;
 mod capabilities;
 mod contracts;
 mod coordinator;
@@ -75,7 +76,8 @@ pub async fn dispatch(context: &HostContext, method: &str, params: Value) -> App
             .map(contracts::Snapshot::from)
             .collect::<Vec<_>>())),
         "runners.deploy" => deployment::deploy(context, params).await,
-        "runners.start" => operations::start(context, params).await,
+        "runners.start" => operations::start(context, params, false).await,
+        "runners.startInitialized" => operations::start(context, params, true).await,
         "runners.review" => review::dispatch(context, params).await,
         _ => operations::action(context, method, params).await,
     }

@@ -169,6 +169,20 @@ jobs:
           cargo build --locked --manifest-path .tmp/ci/helper-current/Cargo.toml --target-dir src-tauri/target
           TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml current_selected_helper_discovery_matches_host_contract -- --ignored
 
+      - name: Checkout initialized helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: 18dfbe9d26de0471bb6e07df1f4a83db06887356
+          path: .tmp/ci/helper-initialized
+          persist-credentials: false
+
+      - name: Check initialized helper output against host negotiation
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-initialized/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml initialized_selected_helper_declares_supported_configuration -- --ignored
+
       - name: Checkout historical helper protocol fixture
         uses: actions/checkout@v4
         with:
