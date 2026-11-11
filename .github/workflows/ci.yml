@@ -164,6 +164,21 @@ jobs:
           TUNNELDE_PROFILE_CONTENT_OUTPUT="$RUNNER_TEMP/plugin-profile-content.json" cargo test --manifest-path src-tauri/Cargo.toml --lib large_public_body_emits_actual_segmented_sdk_interoperability_fixture
           node scripts/ci/check-profile-content.mjs "$RUNNER_TEMP/plugin-profile-content.json" .tmp/ci/profile-content-consumer/sdk
 
+      - name: Checkout profile mutation SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: ed0fdb1ed918ce7434b3a0df7894fcf8c9384331
+          path: .tmp/ci/profile-mutation-consumer
+          sparse-checkout: sdk
+          persist-credentials: false
+
+      - name: Check actual profile mutations against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_PROFILE_MUTATION_OUTPUT="$RUNNER_TEMP/plugin-profile-mutations.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_actual_public_profile_mutations_for_sdk
+          node scripts/ci/check-profile-mutations.mjs "$RUNNER_TEMP/plugin-profile-mutations.json" .tmp/ci/profile-mutation-consumer/sdk
+
       - name: Check actual profile metadata against schema and SDK
         timeout-minutes: 3
         run: |

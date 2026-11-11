@@ -56,8 +56,9 @@ The strict facade provides `observe(request?, {signal?,timeoutMs?})` and `subscr
 Distribute `sdk/profiles/`, `sdk/preferences/schema.mjs`, `sdk/runtime/observation/` and
 referenced declarations.
 No Node globals or runtime installation are required. Use an explicitly authorized
-transport that supports cancellation/deadlines; basic trusted-UI `api.call` alone
-does not provide that transport contract.
+transport that supports cancellation/deadlines. The current trusted-UI `api.call`
+supports these when its third options argument is forwarded; custom or historical
+transports must provide equivalent semantics.
 
 Subscriptions require an owner AbortSignal, allow eight per client and use serial
 reads/callbacks. The 1000–60000 ms interval (default 2000) starts after each read and
@@ -76,6 +77,7 @@ producer output against the schema and selected SDK consumer, plus catalogue/typ
 parity and historical consumers.
 
 Revision-bound [public content reads](profile-content.md) use an independent
-content token and SDK read method. Writes, activation, file import/export and durable
-subscriptions still need their own governance contracts; existing native controls
-and stable preference/editor APIs remain compatible.
+content token and SDK read method. [Staged writes and confirmed activation](profile-mutations.md)
+require separate write permission. File import/export and durable subscriptions
+remain separate contracts; existing native controls and stable preference/editor
+APIs remain compatible.
