@@ -245,6 +245,20 @@ jobs:
           TUNNELDE_RECOVERY_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-recovery.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_recovery_contract
           node scripts/ci/check-storage-recovery-contract.mjs "$RUNNER_TEMP/host-storage-recovery.json" .tmp/ci/storage-recovery-consumer/sdk
 
+      - name: Checkout live file browser SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 380b292873fe682bb01694d201e9ba02522ee5f9
+          path: .tmp/ci/file-browser-consumer
+          persist-credentials: false
+
+      - name: Check actual browser bridge against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_FILE_BROWSER_CONTRACT_OUTPUT="$RUNNER_TEMP/file-browser.json" pnpm exec vitest run tests/app/pluginFileBrowserContract.test.ts
+          node scripts/ci/check-file-browser-contract.mjs "$RUNNER_TEMP/file-browser.json" .tmp/ci/file-browser-consumer/sdk
+
       - name: Checkout cancellable transport SDK
         uses: actions/checkout@v4
         with:
