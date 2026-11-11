@@ -23,6 +23,7 @@
 - [主机菜单命令](plugins/host-menu.md)
 - [监控界面提供者](plugins/monitor-ui.md)
 - [公开偏好设置](plugins/preferences.md)
+- [Profile 元数据观察](plugins/profiles.md)
 - [进程管理提供者](plugins/processes-ui.md)
 - [快捷搜索结果提供者](plugins/quick-access-ui.md)
 - [插件](plugins/README.md)

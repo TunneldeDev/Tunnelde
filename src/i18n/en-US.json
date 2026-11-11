@@ -1777,6 +1777,7 @@
     "invalidValue": "The file contains a preference outside its supported range. No preferences were changed.",
     "unsupportedVersion": "This settings file format or version is not supported.",
     "tooLarge": "Settings files must be no larger than 512 KB.",
+    "storageTooLarge": "The saved profiles exceed the storage limit. Remove a profile or reduce its content.",
     "invalidStorage": "Saved profiles could not be read. Current settings are unaffected.",
     "notFound": "This profile no longer exists. Refresh the profiles and try again.",
     "limit": "You can save up to 32 settings profiles. Delete one to add another."
