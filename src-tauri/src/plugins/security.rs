@@ -27,6 +27,8 @@ pub const PERMISSIONS: &[&str] = &[
     "backgroundTasks.write",
     "log",
     "app.read",
+    "storage.locations.read",
+    "storage.locations.write",
     "settings.read",
     "settings.write",
     "hosts.read",
@@ -295,7 +297,8 @@ impl PluginSecurity {
 
     /// Linearize bounded synchronous mutations with revocation. Lock order is
     /// policy -> metadata -> database, matching permission persistence. The
-    /// callback must not reenter security, await, or perform external I/O.
+    /// callback must not reenter security or await. Only bounded local metadata
+    /// persistence is permitted; no resource traversal, network or process I/O.
     pub(super) fn with_authorized<T>(
         &self,
         lease: &Lease,

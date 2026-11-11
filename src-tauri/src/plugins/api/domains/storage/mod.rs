@@ -1,3 +1,4 @@
+mod locations;
 use crate::plugins::api::{authorize, field, HostContext};
 use crate::{
     error::{AppError, AppResult},
@@ -41,6 +42,9 @@ pub(in crate::plugins::api) async fn dispatch(
     method: &str,
     params: &Value,
 ) -> AppResult<Value> {
+    if method.starts_with("storage.locations.") {
+        return locations::dispatch(context, method, params.clone()).await;
+    }
     let root = context
         .app
         .state::<AppState>()
