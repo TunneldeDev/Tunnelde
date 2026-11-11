@@ -37,7 +37,40 @@ No partial directory is recursively deleted. Safe reconciliation of deployment a
 configuration artifacts remains a separate recovery operation; the journal alone
 does not prove that remote files have been cleaned up.
 
-## Interrupted configuration writes
+## Initialized configuration
+
+`runners.startInitialized` is a separate experimental method. Discover it through
+`api.describe` before deployment; older hosts must not be asked to interpret an
+extra argument to `runners.start`. A package opts in with
+`"remoteRunner": {"configuration": "initialize-v1"}` and declares `ssh.exec`.
+The host captures that declaration from the same approved byte snapshot uploaded
+to the deployment, and records it with the deployment fingerprint. An older
+deployment without the opt-in cannot use the new transport.
+
+Call with `{sessionId, directory, configuration, secrets?}`. Configuration must be
+an object of at most 200 KiB; secrets are a string map. The combined RPC still has
+the host's 256 KiB request limit. Before reserving a task, the host queries the
+exact recorded helper and requires runner protocol 1 and feature
+`runner.initialize-config.v1`. Failed or unsupported discovery never falls back
+to writing a configuration file. Authorization, the original destination and the
+exact deployment revision are checked again after discovery.
+
+The helper receives a bounded schema-version-1 stdin packet and explicit
+`--bootstrap initialize-v1`; no configuration values or secrets enter argv or
+host runner records. It requires EOF within 10 seconds and validates the entire
+packet before creating the task directory. The child is started with
+`--initialize-config` and receives `configurationTransport: "initialize-v1"`,
+`configuration` and `secrets` in its initialize request. Helper storage starts
+empty rather than being seeded from configuration. A plugin may still explicitly
+persist data, and this transport cannot guarantee what arbitrary plugin code,
+the selected runtime or operating-system crash handling writes to disk.
+
+Launch confirmation, pending stops and reconnect recovery use the existing
+revisioned state machine. An interrupted start remains uncertain and is never
+replayed. Legacy `runners.start`, configuration files and historical task recovery
+remain supported; selecting the new mode does not clean up old artifacts.
+
+## Interrupted file configuration writes
 
 New tasks persist configuration phases independently of launch state: unsubmitted,
 creation unconfirmed, write incomplete, and saved. Creation is exclusive with mode
@@ -96,5 +129,5 @@ settles a task, configuration write or deployment, transfers ownership, or permi
 artifact deletion. Results are transient and discarded when the record changes.
 
 The versioned envelope and compatibility rules are documented in the helper
-repository's `docs/capabilities.en-us.md`. This is a native recovery facility;
+repository's `docs/en-us/development/capabilities.md`. This is a native recovery facility;
 public RPCs and stable plugin contracts are unchanged.

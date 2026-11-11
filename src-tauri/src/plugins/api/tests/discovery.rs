@@ -61,7 +61,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "resources.identify",
             "resources.release",
             "resources.snapshot",
-            "runners.review"
+            "runners.review",
+            "runners.startInitialized"
         ]
     );
 }

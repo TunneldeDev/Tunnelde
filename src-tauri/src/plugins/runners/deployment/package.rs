@@ -6,6 +6,7 @@ use crate::{
 use std::{collections::BTreeSet, path::Path};
 
 pub(super) struct Package {
+    pub remote_runner: Option<super::super::bootstrap::contracts::Manifest>,
     pub directories: BTreeSet<String>,
     pub files: Vec<(String, std::sync::Arc<[u8]>)>,
 }
@@ -27,6 +28,23 @@ impl Package {
         if snapshot.digest != fingerprint {
             return Err(AppError::validation("pluginSecurity.changed"));
         }
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Declaration {
+            remote_runner: Option<super::super::bootstrap::contracts::Manifest>,
+        }
+        // Read the declaration from the very bytes whose fingerprint was approved
+        // and that will be uploaded, rather than rereading a mutable manifest.
+        let remote_runner = snapshot
+            .assets
+            .get(crate::plugins::manifest::MANIFEST_FILE)
+            .map(|bytes| {
+                serde_json::from_slice::<Declaration>(bytes)
+                    .map(|declaration| declaration.remote_runner)
+                    .map_err(|_| AppError::validation("plugin.runners.invalidInitialization"))
+            })
+            .transpose()?
+            .flatten();
         let helper = if platform == "windows" {
             "tunnelde-agent.exe"
         } else {
@@ -67,13 +85,46 @@ impl Package {
             }
             files.push((name, bytes));
         }
-        Ok(Self { directories, files })
+        Ok(Self {
+            remote_runner,
+            directories,
+            files,
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initialized_transport_is_bound_to_the_uploaded_approved_manifest() {
+        let root = std::env::temp_dir().join(format!(
+            "tunnelde-package-manifest-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let manifest = root.join(crate::plugins::manifest::MANIFEST_FILE);
+        std::fs::write(
+            &manifest,
+            br#"{"remoteRunner":{"configuration":"initialize-v1"}}"#,
+        )
+        .unwrap();
+        let fingerprint = crate::plugins::security::fingerprint(&root).unwrap();
+        let package = Package::capture(&root, &fingerprint, "posix").unwrap();
+        std::fs::write(&manifest, b"{}").unwrap();
+        assert_eq!(
+            package.remote_runner.unwrap().configuration,
+            super::super::super::bootstrap::contracts::Configuration::InitializeV1
+        );
+        assert!(Package::capture(&root, &fingerprint, "posix").is_err());
+        let fingerprint = crate::plugins::security::fingerprint(&root).unwrap();
+        assert!(Package::capture(&root, &fingerprint, "posix")
+            .unwrap()
+            .remote_runner
+            .is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn approved_bytes_are_retained_and_helper_names_cannot_be_overwritten() {
         let root =

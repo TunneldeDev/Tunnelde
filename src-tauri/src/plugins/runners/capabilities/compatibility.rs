@@ -41,3 +41,11 @@ fn historical_selected_helper_discovery_remains_unavailable() {
         serde_json::json!({"status":"unavailable", "reason":"nonzeroExit", "exitCode":1})
     );
 }
+
+#[test]
+#[ignore = "requires an explicitly built initialized helper; never infers support from a version"]
+fn initialized_selected_helper_declares_supported_configuration() {
+    assert!(super::super::bootstrap::supports(&classify(Ok(
+        selected_helper()
+    ))));
+}

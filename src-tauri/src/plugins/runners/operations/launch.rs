@@ -2,7 +2,8 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::super::{
-    authorize, exec, field, host_id, lifecycle, model::LaunchState, repository, HostContext, Record,
+    authorize, bootstrap, exec, field, host_id, lifecycle, model::LaunchState, repository,
+    HostContext, Record,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -20,27 +21,32 @@ impl Drop for RecoverOnDrop {
 pub(in crate::plugins::runners) async fn start(
     context: &HostContext,
     params: Value,
+    initialized: bool,
 ) -> AppResult<Value> {
-    let session: String = field(&params, "sessionId")?;
+    let (session, directory, config, initial) = if initialized {
+        let request = bootstrap::Request::parse(params)?;
+        let initial = request.envelope()?;
+        (request.session_id, request.directory, None, initial)
+    } else {
+        let session: String = field(&params, "sessionId")?;
+        let directory: String = field(&params, "directory")?;
+        let config = serde_json::to_vec(&field::<Value>(&params, "config")?)?;
+        let initial = format!(
+            "{}\n",
+            json!({"secrets":params.get("secrets").cloned().unwrap_or_else(||json!({}))})
+        );
+        if config.len() > 1024 * 1024 || initial.len() > 256 * 1024 {
+            return Err(AppError::validation("plugin.runners.inputTooLarge"));
+        }
+        (session, directory, Some(config), initial)
+    };
     let host = host_id(context, &session)?;
-    let directory: String = field(&params, "directory")?;
-    let config: Value = field(&params, "config")?;
-    let config = serde_json::to_vec(&config)?;
-    let initial = format!(
-        "{}\n",
-        json!({"secrets": params.get("secrets").cloned().unwrap_or_else(|| json!({}))})
-    );
-    if config.len() > 1024 * 1024 || initial.len() > 256 * 1024 {
-        return Err(AppError::validation("plugin.runners.inputTooLarge"));
-    }
     let id = uuid::Uuid::new_v4().to_string();
     let state = context.app.state::<AppState>();
     let _lease = state.runners.admit(&context.id, &id)?;
     let _recover = RecoverOnDrop(context.app.clone());
-    // The reservation precedes every remote side effect, including config creation.
-    let reserved = repository::transaction(context, |records| {
-        authorize(context, &["ssh.exec"])?;
-        let deployment = records
+    let selected = |records: &[Record]| {
+        records
             .iter()
             .find(|record| {
                 record.runner_id == "deployment"
@@ -49,8 +55,30 @@ pub(in crate::plugins::runners) async fn start(
                     && record.deployment.directory == directory
                     && record.deployment.fingerprint == context.fingerprint
             })
-            .map(|record| record.deployment.clone())
-            .ok_or_else(|| AppError::validation("plugin.runners.deployFirst"))?;
+            .cloned()
+            .ok_or_else(|| AppError::validation("plugin.runners.deployFirst"))
+    };
+    // Negotiate against the exact selected helper before reserving a task or
+    // creating configuration artifacts. No fallback to the legacy writer.
+    let negotiated = if initialized {
+        let observed = selected(&repository::read(context)?)?;
+        bootstrap::require_support(context, &session, &observed.deployment).await?;
+        Some(observed)
+    } else {
+        None
+    };
+    // The reservation precedes launch and configuration mutations; discovery
+    // above is read-only and never creates a task directory.
+    let reserved = repository::transaction(context, |records| {
+        authorize(context, &["ssh.exec"])?;
+        let selected = selected(records)?;
+        if negotiated
+            .as_ref()
+            .is_some_and(|observed| !observed.same_revision(&selected))
+        {
+            return Err(AppError::validation("plugin.runners.recordChanged"));
+        }
+        let deployment = selected.deployment;
         let record = Record {
             runner_id: id.clone(),
             deployment,
@@ -61,7 +89,13 @@ pub(in crate::plugins::runners) async fn start(
             controller_fingerprint: None,
             terminal_status: None,
             deployment_state: None,
-            configuration_state: Some(super::configuration::journal::State::Reserved),
+            configuration_state: if initialized {
+                None
+            } else {
+                Some(super::configuration::journal::State::Reserved)
+            },
+            configuration_transport: initialized
+                .then_some(bootstrap::contracts::Configuration::InitializeV1),
         };
         super::super::identity::verify(
             &record.deployment,
@@ -70,8 +104,13 @@ pub(in crate::plugins::runners) async fn start(
         records.push(record.clone());
         Ok(record)
     })?;
-    let (ready, config_path) =
-        super::configuration::write(context, &session, &reserved, &config).await?;
+    let (ready, transport_args) = if let Some(config) = config {
+        let (ready, path) =
+            super::configuration::write(context, &session, &reserved, &config).await?;
+        (ready, vec!["--config".into(), path])
+    } else {
+        (reserved, vec!["--bootstrap".into(), "initialize-v1".into()])
+    };
     let deployment = &ready.deployment;
     authorize(context, &["ssh.exec"])?;
     let mut dispatched = ready.clone();
@@ -84,26 +123,19 @@ pub(in crate::plugins::runners) async fn start(
     })? {
         return Err(AppError::validation("plugin.runners.stopPending"));
     }
-    let result = exec(
-        context,
-        &session,
-        deployment,
-        vec![
-            "start".into(),
-            "--directory".into(),
-            directory,
-            "--id".into(),
-            id.clone(),
-            "--config".into(),
-            config_path,
-            "--executable".into(),
-            deployment.executable.clone(),
-            "--entry".into(),
-            deployment.entry.clone(),
-        ],
-        Some(initial),
-    )
-    .await?;
+    let mut args = vec![
+        "start".into(),
+        "--directory".into(),
+        directory,
+        "--id".into(),
+        id.clone(),
+        "--executable".into(),
+        deployment.executable.clone(),
+        "--entry".into(),
+        deployment.entry.clone(),
+    ];
+    args.extend(transport_args);
+    let result = exec(context, &session, deployment, args, Some(initial)).await?;
     if result["runnerId"].as_str() != Some(&id) || result["status"].as_str() != Some("starting") {
         return Err(AppError::validation("plugin.runners.invalidResponse"));
     }
