@@ -183,6 +183,20 @@ jobs:
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
 
+      - name: Checkout host storage location SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 788266448f0e4cdb1c76e6383e805b0da1c49fde
+          path: .tmp/ci/storage-locations-consumer
+          persist-credentials: false
+
+      - name: Check actual storage locations against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_LOCATION_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-locations.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_location_contract
+          node scripts/ci/check-storage-locations-contract.mjs "$RUNNER_TEMP/host-storage-locations.json" .tmp/ci/storage-locations-consumer/sdk
+
       - name: Checkout cancellable transport SDK
         uses: actions/checkout@v4
         with:

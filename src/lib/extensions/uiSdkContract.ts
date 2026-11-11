@@ -43,3 +43,7 @@ export type * from "./contracts/editor/data/edits.js";
 export type * from "./contracts/storage/pluginData/json.js";
 export type * from "./contracts/storage/pluginData/snapshot.js";
 export type * from "./contracts/storage/pluginData/observation.js";
+export type * from "./contracts/storage/locations/location.js";
+export type * from "./contracts/storage/locations/snapshot.js";
+export type * from "./contracts/storage/locations/observation.js";
+export type * from "./contracts/storage/locations/mutation.js";

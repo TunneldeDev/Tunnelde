@@ -7,6 +7,7 @@ interface StorageStore {
   status: StorageStatus | null;
   restartPending: boolean;
   loadRestartPending: () => Promise<void>;
+  refreshMetadata: () => Promise<void>;
   loading: boolean;
   busy: boolean;
   error: string | null;
@@ -20,6 +21,7 @@ interface StorageStore {
 export const useStorage = create<StorageStore>((set, get) => {
   let loading: Promise<void> | null = null;
   let revision = 0;
+  let pendingRead = 0;
   const change = async (run: () => Promise<StorageStatus>) => {
     if (get().busy) return false;
     revision++;
@@ -42,12 +44,17 @@ export const useStorage = create<StorageStore>((set, get) => {
     loadRestartPending: async () => {
       if (!isTauri()) return;
       const started = revision;
+      const read = ++pendingRead;
       try {
         const restartPending = await api.storageRestartPending();
-        if (started === revision) set({ restartPending });
+        if (started === revision && read === pendingRead) set({ restartPending });
       } catch (failure) {
         console.warn("Could not check pending storage changes", failure);
       }
+    },
+    refreshMetadata: async () => {
+      revision++;
+      await get().loadRestartPending();
     },
     loading: false,
     busy: false,
