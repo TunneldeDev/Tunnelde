@@ -55,7 +55,10 @@ function prepare(content = "A😀中文\nZ") {
       },
     },
   });
-  useWorkspace.setState({ activeId: tabId });
+  useWorkspace.setState({
+    activeId: tabId,
+    tabs: [{ id: tabId, kind: "editor", title: "a.txt", hostId: null, pinned: false }],
+  });
 }
 
 beforeEach(() => {
@@ -128,6 +131,32 @@ it("returns unavailable metadata for closed, loading, errored and disconnected b
   }
   useEditors.getState().discard(tabId);
   expect(await observe({ tabId })).toMatchObject({ snapshot: null });
+});
+
+it("rejects retained editor state after its workspace tab closes or changes kind", async () => {
+  for (const kind of ["closed", "settings", "hidden"]) {
+    prepare();
+    const previous = identity();
+    if (kind === "closed") useWorkspace.getState().close(tabId);
+    else
+      useWorkspace.setState({
+        tabs: [
+          {
+            id: tabId,
+            kind: kind === "settings" ? "settings" : "editor",
+            title: "changed",
+            hostId: null,
+            pinned: false,
+            hidden: kind === "hidden",
+          },
+        ],
+      });
+    expect(editorDocument(tabId)).not.toBeNull();
+    expect(await observe({ tabId })).toMatchObject({ changed: true, snapshot: null });
+    await expect(range({ ...previous })).rejects.toThrow("editor.documentChanged");
+    await expect(edits([], { ...previous })).rejects.toThrow("editor.documentChanged");
+    expect(editorDocument(tabId)!.version).toBe(0);
+  }
 });
 
 it("reads a large buffer in bounded scalar-aligned pages and reaches EOF", async () => {
