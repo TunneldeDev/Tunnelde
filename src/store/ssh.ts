@@ -18,6 +18,8 @@ interface SshStore {
   connectingHostIds: string[];
   disconnectingSessionIds: string[];
   refresh: () => Promise<void>;
+  /** Record a native-accepted published connection before mounting its consumers. */
+  acceptSession: (session: SshSession) => void;
   connect: (
     request: SshConnectRequest,
     onError?: (error: unknown) => void,
@@ -32,6 +34,13 @@ export const useSsh = create<SshStore>((set, get) => ({
   connectingHostId: null,
   connectingHostIds: [],
   disconnectingSessionIds: [],
+
+  acceptSession: (session) => {
+    sessionVersion += 1;
+    set((state) => ({
+      sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
+    }));
+  },
 
   renameHost: (hostId, title) => {
     sessionVersion += 1;
@@ -74,10 +83,7 @@ export const useSsh = create<SshStore>((set, get) => ({
     const operation = (async () => {
       try {
         const session = await api.sshConnect(request);
-        sessionVersion += 1;
-        set((state) => ({
-          sessions: [...state.sessions.filter((item) => item.id !== session.id), session],
-        }));
+        get().acceptSession(session);
         if (!request.hostId.startsWith("source:"))
           void api.markHostUsed(request.hostId).catch(() => undefined);
         return session;
