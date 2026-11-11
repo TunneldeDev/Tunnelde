@@ -4,6 +4,7 @@ import i18n from "@/i18n/i18n";
 import { StorageSettings } from "@/features/settings/StorageSettings";
 import { useStorage } from "@/store/storage";
 import { sameStoragePath, type StorageStatus } from "@/lib/api/storage";
+import { useRestartPrompt } from "@/store/restartPrompt";
 
 const api = vi.hoisted(() => ({
   storageStatus: vi.fn(),
@@ -256,3 +257,36 @@ it("shows a cancelled staging recovery copy even before any migration has succee
   await screen.findByText("Recovery copy — Plugin data & chats");
   expect(screen.getByText("D:\\Recovery\\cancelled")).toBeTruthy();
 });
+
+it.each(["apply", "cancel"] as const)(
+  "distinguishes deferred %s from a failed recovery and offers restart timing",
+  async (action) => {
+    const deferred = status();
+    deferred.pending = {
+      id: "plan",
+      action,
+      restartRequested: true,
+      changes: [{ category: "database", target: "E:\\Database", migrate: true }],
+    };
+    deferred.lastError = "storage.verificationFailed";
+    api.storageStatus.mockResolvedValue(deferred);
+    useRestartPrompt.getState().close();
+    render(<StorageSettings />);
+    await screen.findByText("Storage recovery scheduled");
+    expect(
+      screen.getByText(/Previous recovery error \(new request has not run yet\):/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Storage cancellation needs recovery")).toBeNull();
+    expect(
+      screen.getByText(
+        action === "cancel"
+          ? "The next startup will continue cancelling this plan. Current storage locations remain active and recovery copies are retained."
+          : "The next startup will retry this migration. Current storage locations remain active.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose when to restart" }));
+    expect(useRestartPrompt.getState().open).toBe(true);
+    expect(api.storageCancel).not.toHaveBeenCalled();
+    useRestartPrompt.getState().close();
+  },
+);

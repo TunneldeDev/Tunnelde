@@ -21,6 +21,7 @@ import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 import { isIpcError } from "@/lib/api/types";
 import { storageLocationReview } from "@/app/plugins/storageLocationRequests";
+import { storageRecoveryReview } from "@/app/plugins/storageRecoveryRequests";
 import { profileActivationReview } from "@/app/plugins/profileActivationRequests";
 import { reconcileStorageMetadata } from "@/app/plugins/storageReconciliation";
 
@@ -217,6 +218,8 @@ export async function runPluginWorkspaceRequest(
       return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params));
     case "profiles.activate":
       return confirmPlugin(request.requestId, request.pluginId, profileActivationReview(params));
+    case "storage.recovery.request":
+      return confirmPlugin(request.requestId, request.pluginId, storageRecoveryReview(params));
     case "storage.locations.schedule":
     case "storage.locations.cancel":
       return confirmPlugin(

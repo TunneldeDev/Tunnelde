@@ -15,6 +15,8 @@ Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-
 
 Independent log reading grants and cancellable subscriptions: [persisted logs](logging.md).
 
+Confirmed deferred migration retry/cancellation and recorded copies: [host storage recovery](storage-recovery.md).
+
 Host metadata extensions use a versioned manifest schema and revision-checked storage. See [plugin host fields](host-fields.md).
 
 Plugin-owned settings, explicit schema migration and recovery: [plugin configuration](configuration.md).

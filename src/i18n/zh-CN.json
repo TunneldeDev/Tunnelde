@@ -1485,7 +1485,9 @@
       "backgroundTasksRead": "读取各功能的可见后台任务",
       "backgroundTasksWrite": "调用可用的后台任务操作",
       "storageLocationsRead": "读取全局存储位置及迁移计划（不含文件内容）",
-      "storageLocationsWrite": "经确认后计划或取消全局存储迁移"
+      "storageLocationsWrite": "经确认后计划或取消全局存储迁移",
+      "storageRecoveryRead": "读取存储恢复方向、错误状态及已记录的副本位置（不含内容）",
+      "storageRecoveryWrite": "经确认后安排下次启动重试或取消存储迁移"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -2090,7 +2092,21 @@
     "cancellationHint": "该迁移不会再执行。请处理提示的冲突后重试取消，或完全退出并重新打开 Tunnelde 继续恢复。恢复副本会保留。",
     "retryCancellation": "重试取消",
     "incompleteCopy": "已保留中断或发生变化的暂存副本。请取消迁移以保留恢复副本，然后重新安排迁移。",
-    "recovery": "为恢复保留的原位置",
+    "recovery": {
+      "invalidState": "存储恢复元数据无效，请查看软件日志。",
+      "conflict": "存储恢复状态已变化，请刷新后重新确认。",
+      "busy": "存储配置正在变更，请稍后重试。",
+      "noPendingPlan": "没有待恢复的存储计划。",
+      "unavailable": "暂时无法访问存储恢复信息，请查看软件日志。",
+      "reviewCancel": "允许此插件安排下次启动时取消这个存储计划吗？取消方向不能改回迁移。",
+      "reviewRetry": "允许此插件安排下次启动时重试这个存储迁移吗？",
+      "reviewBoundaries": "现在只保存恢复请求，不会立即重启或移动数据。现有恢复副本和上次错误会保留。记录的路径不代表文件仍存在或可以删除。",
+      "restartPending": "存储恢复已安排",
+      "cancelAtRestart": "下次启动将继续取消此计划。当前存储位置保持有效，恢复副本会保留。",
+      "retryAtRestart": "下次启动将重试此迁移。当前存储位置保持有效。",
+      "previousError": "上次恢复错误（尚未执行新请求）：",
+      "reviewRestart": "选择重启时间"
+    },
     "keptOriginals": "这些副本不再更新。请确认新位置的数据正常后，再手动清理原文件。",
     "boundaries": "系统钥匙串凭据、外部密钥、工作区、下载目标和远端文件保持原位置。小型位置索引 storage.json 保留在原应用数据目录，存储位置不参与设置配置档和导出。插件自行保存的绝对路径可能需要在插件中调整。",
     "migrationFailed": "迁移未完成，当前仍使用原位置。可取消计划并选择新的空目录，或排除冲突后完全重启以重试。",
@@ -2135,7 +2151,8 @@
       "invalidState": "存储位置元数据无效。",
       "unavailable": "无法访问存储位置元数据。",
       "busy": "存储设置正忙，请重新读取当前状态后重试。"
-    }
+    },
+    "recoveryCopies": "为恢复保留的原位置"
   },
   "tasks": {
     "title": "后台任务",

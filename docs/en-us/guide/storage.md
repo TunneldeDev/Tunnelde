@@ -57,3 +57,10 @@ parents, or guarantee recovery after physical disk failure; keep an external bac
 Location configuration is machine-specific and excluded from settings profiles and
 exports. System credentials, external key files, workspace files and remote files
 are not moved. See [settings](settings.md#storage-locations) for migration boundaries.
+
+An authorized plugin may ask you to schedule recovery for the next startup. Review
+the plugin name, direction and category paths in the confirmation. **Retry** retains
+the existing direction; a cancelling plan cannot be switched back to migration.
+The request does not restart the app or move data immediately. Settings shows
+**Storage recovery scheduled** and labels any previous error as historical until
+the next attempt runs. Use **Choose when to restart** to open restart choices.
