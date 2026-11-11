@@ -83,6 +83,21 @@ fn strict_request_and_cursor_scope() {
     }
     assert!(cursor::decode(Some(&"a".repeat(2049)), "ignored").is_err());
 }
+
+#[test]
+fn public_directory_scan_fails_explicitly_at_budget_without_changing_native_selection() {
+    let fixture = Fixture::new();
+    fixture.write(&line("current"));
+    // Use a small injected budget to exercise the same selection path cheaply.
+    std::fs::write(fixture.dir.join("unrelated"), "ignored").unwrap();
+    assert_eq!(
+        crate::logs::select_name(&fixture.dir, Some(1))
+            .unwrap_err()
+            .to_string(),
+        "logs.read.unavailable"
+    );
+    assert!(crate::logs::latest_name(&fixture.dir).unwrap().is_some());
+}
 #[test]
 fn pagination_filters_and_partial_tail_have_no_loss_or_duplicates() {
     let fixture = Fixture::new();

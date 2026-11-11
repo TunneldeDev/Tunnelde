@@ -78,7 +78,7 @@ pub(super) fn read(
     check: &impl Fn() -> AppResult<()>,
 ) -> AppResult<(bool, bool)> {
     check()?;
-    let Some(name) = crate::logs::latest_name(dir)? else {
+    let Some(name) = crate::logs::select_name(dir, Some(4096))? else {
         let reset = position.file.is_some();
         batch.gap |= reset;
         *position = Position::default();
