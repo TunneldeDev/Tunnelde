@@ -58,9 +58,23 @@ fn final_symlink_and_fifo_replacements_are_rejected_without_blocking() {
         .success());
     assert!(open_read(&fifo).is_err());
     // O_NONBLOCK avoids waiting for a FIFO writer; fstat rejects the handle.
+    // If the flag regresses, release the blocked open so the test fails instead
+    // of leaving a native CI worker hung indefinitely.
+    let rescue_path = fifo.clone();
+    let rescue = std::thread::spawn(move || {
+        use std::os::unix::fs::OpenOptionsExt;
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let _ = OpenOptions::new()
+            .write(true)
+            .custom_flags(rustix::fs::OFlags::NONBLOCK.bits() as i32)
+            .open(rescue_path);
+    });
     let started = std::time::Instant::now();
-    assert!(open_handle(&fifo).is_err());
-    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    let result = open_handle(&fifo);
+    let elapsed = started.elapsed();
+    rescue.join().unwrap();
+    assert!(result.is_err());
+    assert!(elapsed < std::time::Duration::from_secs(2));
     assert!(open_handle(Path::new("/dev/null")).is_err());
 }
 
