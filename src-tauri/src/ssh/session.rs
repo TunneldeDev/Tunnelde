@@ -21,9 +21,68 @@ use crate::state::AppState;
 pub const DATA_EVENT: &str = "ssh://data";
 pub const CLOSED_EVENT: &str = "ssh://closed";
 
+mod cleanup;
+mod identity;
+pub(crate) use cleanup::SessionDisposal;
+pub(crate) use identity::{trust_bound, SessionIdentity};
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const TERM: &str = "xterm-256color";
 const MAX_EARLY_OUTPUT: usize = 1024 * 1024;
+
+/// Setup can be cancelled during authentication, PTY setup or a later jump.
+/// Dropping a russh handle alone does not close channels retaining senders.
+#[derive(Default)]
+struct PendingRoute {
+    target: Option<Handle<ClientHandler>>,
+    jumps: Vec<Arc<Handle<ClientHandler>>>,
+}
+
+impl PendingRoute {
+    fn release(mut self) -> (Handle<ClientHandler>, Vec<Arc<Handle<ClientHandler>>>) {
+        (
+            self.target.take().expect("route target"),
+            std::mem::take(&mut self.jumps),
+        )
+    }
+}
+
+impl Drop for PendingRoute {
+    fn drop(&mut self) {
+        let target = self.target.take().map(Arc::new);
+        let jumps = std::mem::take(&mut self.jumps);
+        if target.is_some() || !jumps.is_empty() {
+            tauri::async_runtime::spawn(async move {
+                close_transports(
+                    target.iter().chain(jumps.iter().rev()).map(Arc::as_ref),
+                    None,
+                )
+                .await;
+            });
+        }
+    }
+}
+
+async fn close_transports<'a>(
+    connections: impl Iterator<Item = &'a Handle<ClientHandler>>,
+    session_id: Option<&str>,
+) {
+    for (hop, connection) in connections.enumerate() {
+        match tokio::time::timeout(
+            Duration::from_secs(1),
+            connection.disconnect(russh::Disconnect::ByApplication, "", "en"),
+        )
+        .await
+        {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) if !connection.is_closed() => {
+                tracing::warn!(session_id, hop, %error, "Cannot send SSH disconnect request");
+            }
+            Err(_) => tracing::warn!(session_id, hop, "SSH disconnect request timed out"),
+            _ => {}
+        }
+    }
+}
 
 fn default_cols() -> u32 {
     120
@@ -172,6 +231,10 @@ enum WriterMsg {
 }
 
 struct SessionHandle {
+    published: bool,
+    /// Publication alone does not transfer a plugin/dedicated transport to the user.
+    user_managed: bool,
+    server_key: String,
     info: SessionInfo,
     writer: mpsc::Sender<WriterMsg>,
     task: JoinHandle<()>,
@@ -187,6 +250,55 @@ pub struct SshManager {
 }
 
 impl SshManager {
+    pub(crate) fn user_managed(&self, id: &str) -> bool {
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(id)
+            .is_some_and(|session| {
+                session.published
+                    && session.user_managed
+                    && !session.handle.is_closed()
+                    && !session.task.is_finished()
+            })
+    }
+
+    /// Only explicit native acceptance/handoff may change transport eligibility.
+    pub(crate) fn publish_user_managed(&self, id: &str) -> AppResult<()> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let session = sessions
+            .get_mut(id)
+            .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
+            .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
+        session.published = true;
+        session.user_managed = true;
+        Ok(())
+    }
+    pub(crate) fn identity(&self, session_id: &str) -> AppResult<SessionIdentity> {
+        let sessions = self
+            .sessions
+            .lock()
+            .map_err(|_| AppError::internal("ssh.lock"))?;
+        let session = sessions
+            .get(session_id)
+            .filter(|session| {
+                session.published && !session.handle.is_closed() && !session.task.is_finished()
+            })
+            .ok_or_else(|| AppError::Ssh("ssh.sessionMissing".into()))?;
+        Ok(SessionIdentity {
+            host_id: session.info.host_id.clone(),
+            address: session.info.address.clone(),
+            server_key: session.server_key.clone(),
+        })
+    }
+    pub(crate) fn is_active(&self, session_id: &str) -> bool {
+        self.sessions
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(session_id)
+            .is_some_and(|session| !session.handle.is_closed() && !session.task.is_finished())
+    }
+
     fn insert(&self, handle: SessionHandle) {
         if let Ok(mut sessions) = self.sessions.lock() {
             sessions.insert(handle.info.id.clone(), handle);
@@ -217,11 +329,26 @@ impl SshManager {
     }
 
     fn remove(&self, session_id: &str) -> bool {
-        self.sessions
+        let removed = self
+            .sessions
             .lock()
             .ok()
-            .and_then(|mut sessions| sessions.remove(session_id))
-            .is_some()
+            .and_then(|mut sessions| sessions.remove(session_id));
+        if let Some(handle) = removed {
+            let session_id = session_id.to_owned();
+            tauri::async_runtime::spawn(async move {
+                close_transports(
+                    std::iter::once(&handle.handle)
+                        .chain(handle._jumps.iter().rev())
+                        .map(Arc::as_ref),
+                    Some(&session_id),
+                )
+                .await;
+            });
+            true
+        } else {
+            false
+        }
     }
 
     pub fn list(&self) -> Vec<SessionInfo> {
@@ -230,11 +357,25 @@ impl SshManager {
             .map(|sessions| {
                 sessions
                     .values()
-                    .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
+                    .filter(|session| {
+                        session.published
+                            && !session.handle.is_closed()
+                            && !session.task.is_finished()
+                    })
                     .map(|handle| handle.info.clone())
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    pub(crate) fn publish(&self, id: &str) -> AppResult<()> {
+        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let session = sessions
+            .get_mut(id)
+            .filter(|session| !session.handle.is_closed() && !session.task.is_finished())
+            .ok_or_else(|| AppError::validation("ssh.sessionMissing"))?;
+        session.published = true;
+        Ok(())
     }
 
     pub fn rename_host(&self, host_id: &str, title: &str) {
@@ -312,45 +453,13 @@ impl SshManager {
         Ok(())
     }
 
-    pub fn disconnect(&self, session_id: &str) -> bool {
+    pub(crate) fn begin_disconnect(&self, session_id: &str) -> Option<SessionDisposal> {
         let removed = self
             .sessions
             .lock()
-            .ok()
-            .and_then(|mut sessions| sessions.remove(session_id));
-        if let Some(handle) = removed {
-            let _ = handle.writer.try_send(WriterMsg::Close);
-            handle.task.abort();
-            // Dropping a terminal task or Handle does not close channels that
-            // already hold a sender. Close the entire transport explicitly,
-            // including private jump connections, outside the registry lock.
-            let session_id = session_id.to_owned();
-            tauri::async_runtime::spawn(async move {
-                for (hop, connection) in std::iter::once(&handle.handle)
-                    .chain(handle._jumps.iter().rev())
-                    .enumerate()
-                {
-                    match tokio::time::timeout(
-                        Duration::from_secs(1),
-                        connection.disconnect(russh::Disconnect::ByApplication, "", "en"),
-                    )
-                    .await
-                    {
-                        Ok(Ok(())) => {}
-                        Ok(Err(error)) if !connection.is_closed() => {
-                            tracing::warn!(%session_id, hop, %error, "Cannot send SSH disconnect request");
-                        }
-                        Err(_) => {
-                            tracing::warn!(%session_id, hop, "SSH disconnect request timed out");
-                        }
-                        _ => {}
-                    }
-                }
-            });
-            true
-        } else {
-            false
-        }
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(session_id)?;
+        Some(SessionDisposal::start(removed, session_id.to_owned()))
     }
 }
 
@@ -435,6 +544,9 @@ async fn authenticate(
         _ => {
             let password = match request.password.clone().filter(|value| !value.is_empty()) {
                 Some(password) => password,
+                None if host.id.starts_with(crate::plugins::host_sources::PREFIX) => {
+                    return Err(AppError::Ssh("ssh.passwordRequired".into()));
+                }
                 None => crate::vault::load(&host.id)?
                     .ok_or_else(|| AppError::Ssh("ssh.passwordRequired".into()))?,
             };
@@ -583,22 +695,31 @@ async fn probe_host(
     host: &Host,
     credentials: &HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
+    probe_host_bound(app, host, credentials, None).await
+}
+
+pub(crate) async fn probe_host_bound(
+    app: &AppHandle,
+    host: &Host,
+    credentials: &HashMap<String, HopCredential>,
+    destination: Option<&SessionIdentity>,
+) -> AppResult<HostKeyInfo> {
     let started = std::time::Instant::now();
-    let (handle, mut info, jumps, _) = open_route(app, host, credentials, true).await?;
+    let (mut route, mut info, _) = open_route(app, host, credentials, true, destination).await?;
     info.connection_time_ms = Some(started.elapsed().as_millis().min(u64::MAX as u128) as u64);
     // Probing never opens a terminal or authenticates the target. Explicitly close
     // its temporary connections rather than waiting for server-side timeouts.
-    let _ = tokio::time::timeout(Duration::from_secs(1), async {
-        let _ = handle
-            .disconnect(russh::Disconnect::ByApplication, "", "en")
-            .await;
-        for jump in jumps.iter().rev() {
-            let _ = jump
-                .disconnect(russh::Disconnect::ByApplication, "", "en")
-                .await;
-        }
-    })
+    // Keep the guard armed across the await: cancellation still closes every hop.
+    close_transports(
+        route
+            .target
+            .iter()
+            .chain(route.jumps.iter().rev().map(Arc::as_ref)),
+        None,
+    )
     .await;
+    route.target.take();
+    route.jumps.clear();
     Ok(info)
 }
 
@@ -607,10 +728,7 @@ pub async fn probe_route(
     host_id: &str,
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let host = app
-        .state::<AppState>()
-        .db
-        .with(|conn| db::hosts::find_host(conn, host_id))?;
+    let host = crate::services::hosts::resolve(app, host_id)?;
     probe_host(app, &host, &credentials).await
 }
 
@@ -619,12 +737,11 @@ async fn open_route(
     host: &Host,
     credentials: &HashMap<String, HopCredential>,
     probing: bool,
-) -> AppResult<(
-    Handle<ClientHandler>,
-    HostKeyInfo,
-    Vec<Arc<Handle<ClientHandler>>>,
-    Arc<super::forward::RemoteRoutes>,
-)> {
+    destination: Option<&SessionIdentity>,
+) -> AppResult<(PendingRoute, HostKeyInfo, Arc<super::forward::RemoteRoutes>)> {
+    if let Some(destination) = destination {
+        destination.verify_host(host)?;
+    }
     let state = app.state::<AppState>();
     let route = crate::network::route(app, &host.id)?;
     let mut ids = route.jump_hosts;
@@ -633,7 +750,7 @@ async fn open_route(
     if ids.len() > 9 || ids.iter().any(|id| !seen.insert(id.clone())) {
         return Err(AppError::validation("network.jumpCycle"));
     }
-    let mut jumps: Vec<Arc<Handle<ClientHandler>>> = Vec::new();
+    let mut pending = PendingRoute::default();
     for (index, id) in ids.iter().enumerate() {
         let node = if id == &host.id {
             host.clone()
@@ -643,7 +760,7 @@ async fn open_route(
         let known = state
             .db
             .with(|conn| db::known_hosts::find(conn, &node.host, node.port as i64))?;
-        let stream = match jumps.last() {
+        let stream = match pending.jumps.last() {
             Some(jump) => Some(Box::pin(
                 tokio::time::timeout(
                     CONNECT_TIMEOUT,
@@ -656,7 +773,9 @@ async fn open_route(
             ) as crate::network::Stream),
             None => None,
         };
-        let expected = if probing {
+        let expected = if let Some(destination) = destination.filter(|_| id == &host.id) {
+            Some(destination.server_key.clone())
+        } else if probing {
             None
         } else {
             Some(
@@ -667,7 +786,7 @@ async fn open_route(
                     .clone(),
             )
         };
-        let (mut handle, observed, remote_forwards) = open(
+        let (handle, observed, remote_forwards) = open(
             app,
             node.host.clone(),
             node.port,
@@ -676,6 +795,7 @@ async fn open_route(
             &route.proxy,
         )
         .await?;
+        pending.target = Some(handle);
         let status = match &known {
             None => HostKeyStatus::Unknown,
             Some(key) if key.fingerprint == observed.fingerprint => HostKeyStatus::Known,
@@ -690,13 +810,13 @@ async fn open_route(
             connection_time_ms: None,
         };
         if probing && (status != HostKeyStatus::Known || index + 1 == ids.len()) {
-            return Ok((handle, info, jumps, remote_forwards));
+            return Ok((pending, info, remote_forwards));
         }
         if status != HostKeyStatus::Known {
             return Err(AppError::Ssh(format!("ssh.hostKeyChanged: {}", node.name)));
         }
         if index + 1 == ids.len() {
-            return Ok((handle, info, jumps, remote_forwards));
+            return Ok((pending, info, remote_forwards));
         }
         let credential = credentials.get(&node.id).cloned().unwrap_or_default();
         let request = SshConnectRequest {
@@ -709,10 +829,19 @@ async fn open_route(
             cols: 120,
             rows: 32,
         };
-        tokio::time::timeout(CONNECT_TIMEOUT, authenticate(&mut handle, &node, &request))
-            .await
-            .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
-        jumps.push(Arc::new(handle));
+        tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            authenticate(
+                pending.target.as_mut().expect("route target"),
+                &node,
+                &request,
+            ),
+        )
+        .await
+        .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
+        pending
+            .jumps
+            .push(Arc::new(pending.target.take().expect("authenticated jump")));
     }
     Err(AppError::validation("network.invalid"))
 }
@@ -725,16 +854,14 @@ pub async fn trust_route(
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
     let state = app.state::<AppState>();
-    let host = state.db.with(|conn| db::hosts::find_host(conn, host_id))?;
+    let host = crate::services::hosts::resolve(app, host_id)?;
     let info = probe_host(app, &host, &credentials).await?;
     // Record only the key the user actually reviewed, never a newly observed key.
     if info.fingerprint != fingerprint || info.host_id != expected_host_id.unwrap_or(host_id) {
         return Err(AppError::Ssh("ssh.hostKeyChanged".into()));
     }
 
-    let approved = state
-        .db
-        .with(|conn| db::hosts::find_host(conn, &info.host_id))?;
+    let approved = crate::services::hosts::resolve(app, &info.host_id)?;
     state.db.with(|conn| {
         db::known_hosts::upsert(
             conn,
@@ -753,7 +880,25 @@ pub async fn trust_route(
 }
 
 pub async fn connect(app: AppHandle, request: SshConnectRequest) -> AppResult<SessionInfo> {
-    connect_for_auth(app, request, false).await
+    connect_for_auth(app, request, false, true, None).await
+}
+
+/// Held by its requester until explicitly published; native consumers cannot reuse it.
+pub(crate) async fn connect_unpublished(
+    app: AppHandle,
+    request: SshConnectRequest,
+) -> AppResult<SessionInfo> {
+    connect_for_auth(app, request, false, false, None).await
+}
+
+/// Recovery authenticates only the captured destination and keeps the connection
+/// private until its native caller accepts the exact recovery record.
+pub(crate) async fn connect_bound(
+    app: AppHandle,
+    request: SshConnectRequest,
+    destination: &SessionIdentity,
+) -> AppResult<SessionInfo> {
+    connect_for_auth(app, request, false, false, Some(destination)).await
 }
 
 /// Key setup must authenticate with the supplied password even for a host
@@ -762,30 +907,42 @@ pub(crate) async fn connect_with_password(
     app: AppHandle,
     request: SshConnectRequest,
 ) -> AppResult<SessionInfo> {
-    connect_for_auth(app, request, true).await
+    connect_for_auth(app, request, true, true, None).await
 }
 
 async fn connect_for_auth(
     app: AppHandle,
     request: SshConnectRequest,
     password_auth: bool,
+    published: bool,
+    destination: Option<&SessionIdentity>,
 ) -> AppResult<SessionInfo> {
     let state = app.state::<AppState>();
-    let mut host = state
-        .db
-        .with(|conn| db::hosts::find_host(conn, &request.host_id))?;
+    let mut host = crate::services::hosts::resolve(&app, &request.host_id)?;
     if password_auth {
         host.auth_method = "password".into();
     }
-    let (mut handle, _observed, jumps, remote_forwards) =
-        open_route(&app, &host, &request.jump_credentials, false).await?;
+    let (mut pending, observed, remote_forwards) =
+        open_route(&app, &host, &request.jump_credentials, false, destination).await?;
 
-    tokio::time::timeout(CONNECT_TIMEOUT, authenticate(&mut handle, &host, &request))
-        .await
-        .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
+    tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        authenticate(
+            pending.target.as_mut().expect("route target"),
+            &host,
+            &request,
+        ),
+    )
+    .await
+    .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
 
-    let terminal =
-        prepare_terminal(&handle, request.cols, request.rows, request.background).await?;
+    let terminal = prepare_terminal(
+        pending.target.as_ref().expect("route target"),
+        request.cols,
+        request.rows,
+        request.background,
+    )
+    .await?;
 
     let session_id = uuid::Uuid::new_v4().to_string();
     let info = SessionInfo {
@@ -804,6 +961,12 @@ async fn connect_for_auth(
         },
     };
 
+    // A withdrawn or changed source cannot finish a pending connection.
+    // PendingRoute still owns and closes every transport if resolution fails.
+    if host.id.starts_with(crate::plugins::host_sources::PREFIX) {
+        crate::services::hosts::resolve(&app, &host.id)?;
+    }
+    let (handle, jumps) = pending.release();
     let shared_handle = Arc::new(handle);
     let (tx, mut rx) = mpsc::channel::<WriterMsg>(64);
     let task_app = app.clone();
@@ -834,7 +997,9 @@ async fn connect_for_auth(
         let removed = if let Some(state) = task_app.try_state::<AppState>() {
             state.forwards.stop_session(&task_session);
             state.monitor.forget(&task_session);
-            state.ssh.remove(&task_session)
+            let removed = state.ssh.remove(&task_session);
+            state.plugins.forget_connection(&task_session);
+            removed
         } else {
             false
         };
@@ -853,6 +1018,9 @@ async fn connect_for_auth(
     });
 
     state.ssh.insert(SessionHandle {
+        published,
+        user_managed: published,
+        server_key: observed.fingerprint,
         _jumps: jumps,
         remote_forwards,
         info: info.clone(),
@@ -862,16 +1030,27 @@ async fn connect_for_auth(
     });
 
     tracing::info!(host = %host.name, session = %session_id, "ssh session opened");
-    let runner_app = app.clone();
-    tokio::spawn(async move {
-        crate::ssh::files::durable::on_reconnect(&runner_app).await;
-        crate::ssh::files::remote_editor::on_reconnect(&runner_app).await;
-        crate::plugins::runners::on_reconnect(&runner_app).await;
-    });
+    if published {
+        announce_connection(&app);
+    }
     Ok(info)
 }
 
+pub(crate) fn announce_connection(app: &AppHandle) {
+    let runner_app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::plugins::runners::on_reconnect(&runner_app).await;
+        crate::ssh::files::durable::on_reconnect(&runner_app).await;
+        crate::ssh::files::remote_editor::on_reconnect(&runner_app).await;
+    });
+}
+
 pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
+    let _ = begin_disconnect(app, session_id);
+    Ok(())
+}
+
+pub(crate) fn begin_disconnect(app: &AppHandle, session_id: &str) -> Option<SessionDisposal> {
     let state = app.state::<AppState>();
     state.forwards.stop_session(session_id);
     let cleanup_app = app.clone();
@@ -883,7 +1062,8 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
             .stop_session(&cleanup_session)
             .await;
     });
-    if state.ssh.disconnect(session_id) {
+    let disposal = state.ssh.begin_disconnect(session_id);
+    if disposal.is_some() {
         state.monitor.forget(session_id);
         let _ = app.emit(
             CLOSED_EVENT,
@@ -893,7 +1073,8 @@ pub fn disconnect(app: &AppHandle, session_id: &str) -> AppResult<()> {
             },
         );
     }
-    Ok(())
+    state.plugins.forget_connection(session_id);
+    disposal
 }
 
 pub fn attach(app: &AppHandle, session_id: &str) -> AppResult<()> {
@@ -1053,6 +1234,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn cancelling_setup_closes_target_and_jumps_even_with_retained_channels() {
+        let (client, _, server) = server(false, false).await;
+        let (jump, _, jump_server) = self::server(false, false).await;
+        let (unrelated, _, unrelated_server) = self::server(false, false).await;
+        let jump = Arc::new(jump);
+        let mut channel = client.channel_open_session().await.unwrap();
+        channel.data(&b"still connected"[..]).await.unwrap();
+        assert!(matches!(
+            channel.wait().await,
+            Some(ChannelMsg::Data { .. })
+        ));
+        let pending = PendingRoute {
+            target: Some(client),
+            jumps: vec![jump.clone()],
+        };
+        let (started, ready) = oneshot::channel();
+        let task = tokio::spawn(async move {
+            let _pending = pending;
+            started.send(()).unwrap();
+            std::future::pending::<()>().await;
+        });
+        ready.await.unwrap();
+        task.abort();
+        let _ = task.await;
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while channel.wait().await.is_some() {}
+            while !jump.is_closed() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("cancelled setup leaked a transport");
+        assert!(!unrelated.is_closed());
+        let _ = unrelated
+            .disconnect(russh::Disconnect::ByApplication, "", "en")
+            .await;
+        server.abort();
+        jump_server.abort();
+        unrelated_server.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_terminal_setup_disposes_the_authenticated_transport() {
+        let (client, _, server) = server(true, false).await;
+        let mut observer = client.channel_open_session().await.unwrap();
+        let result: AppResult<()> = async move {
+            let route = PendingRoute {
+                target: Some(client),
+                jumps: vec![],
+            };
+            prepare_terminal(route.target.as_ref().unwrap(), 80, 24, false).await?;
+            Ok(())
+        }
+        .await;
+        assert_eq!(result.unwrap_err().to_string(), "ssh.ptyRejected");
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while observer.wait().await.is_some() {}
+        })
+        .await
+        .expect("failed setup leaked its authenticated transport");
+        server.abort();
+    }
+
+    #[tokio::test]
     async fn disconnect_closes_owned_transport_and_jumps_even_with_live_channels() {
         let (client, _, server) = server(false, false).await;
         let (jump, _, jump_server) = self::server(false, false).await;
@@ -1072,6 +1317,9 @@ mod tests {
         let stopped = task.abort_handle();
         let manager = SshManager::default();
         manager.insert(SessionHandle {
+            published: false,
+            user_managed: false,
+            server_key: "SHA256:target".into(),
             info: SessionInfo {
                 id: "target".into(),
                 host_id: "host".into(),
@@ -1089,9 +1337,36 @@ mod tests {
             _jumps: vec![jump.clone()],
             remote_forwards: Arc::default(),
         });
-        assert!(manager.disconnect("target"));
-        assert!(!manager.disconnect("target"));
+        assert!(manager.list().is_empty());
+        assert!(manager.is_active("target"));
+        assert!(manager.handle("target").is_ok());
+        assert!(manager.identity("target").is_err());
+        manager.publish("target").unwrap();
+        assert!(!manager.user_managed("target"));
+        manager.publish_user_managed("target").unwrap();
+        assert!(manager.user_managed("target"));
+        assert_eq!(
+            manager.identity("target").unwrap(),
+            SessionIdentity {
+                host_id: "host".into(),
+                address: "qa@target:22".into(),
+                server_key: "SHA256:target".into(),
+            }
+        );
+        assert_eq!(manager.list().len(), 1);
+        assert!(manager.publish("missing").is_err());
+        manager
+            .begin_disconnect("target")
+            .unwrap()
+            .finish()
+            .await
+            .unwrap();
+        assert!(client.is_closed());
+        assert!(jump.is_closed());
+        assert!(stopped.is_finished());
+        assert!(manager.begin_disconnect("target").is_none());
         assert!(manager.handle("target").is_err());
+        assert!(manager.identity("target").is_err());
         assert!(manager.list().is_empty());
         let closed = tokio::time::timeout(Duration::from_secs(2), async {
             while !client.is_closed() || !jump.is_closed() || !stopped.is_finished() {
@@ -1120,6 +1395,49 @@ mod tests {
         assert!(tokio::time::timeout(Duration::from_secs(1), channel.wait())
             .await
             .is_ok());
+    }
+
+    #[tokio::test]
+    async fn natural_session_exit_also_closes_private_jump_transports() {
+        let (client, _, server) = server(false, false).await;
+        let (jump, _, jump_server) = self::server(false, false).await;
+        let client = Arc::new(client);
+        let jump = Arc::new(jump);
+        let (writer, _receiver) = mpsc::channel(1);
+        let task = tokio::spawn(async {});
+        let manager = SshManager::default();
+        manager.insert(SessionHandle {
+            published: true,
+            user_managed: true,
+            server_key: "SHA256:target".into(),
+            info: SessionInfo {
+                id: "ended".into(),
+                host_id: "host".into(),
+                title: "QA".into(),
+                address: "qa@localhost:22".into(),
+                cols: 80,
+                rows: 24,
+                connected_at: 0,
+                terminal: false,
+                purpose: None,
+            },
+            writer,
+            task,
+            handle: client.clone(),
+            _jumps: vec![jump.clone()],
+            remote_forwards: Arc::default(),
+        });
+        assert!(manager.remove("ended"));
+        assert!(!manager.remove("ended"));
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while !client.is_closed() || !jump.is_closed() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("natural session exit left a private transport active");
+        server.abort();
+        jump_server.abort();
     }
 
     #[tokio::test]

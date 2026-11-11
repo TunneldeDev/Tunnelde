@@ -1,3 +1,5 @@
+import { usePlugins } from "@/store/plugins";
+import { plugin as installedPlugin } from "../fixtures/plugins";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { chat } from "../fixtures/pluginChat";
@@ -16,6 +18,9 @@ import { useDialogs } from "@/store/dialogs";
 import type { Host } from "@/lib/api/types";
 
 beforeEach(async () => {
+  usePlugins.setState({
+    items: [{ ...installedPlugin, id: "assistant", status: "running", runtimeId: "boot:1" }],
+  });
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
   mock.run.mockResolvedValue({});
@@ -74,6 +79,7 @@ describe("assistant conversation history", () => {
         "assistant",
         "ai.session",
         expect.objectContaining({ action: "delete", sessionId: "session-2" }),
+        "boot:1",
       ),
     );
     expect(mock.run).toHaveBeenCalledTimes(1);
@@ -116,6 +122,7 @@ describe("assistant conversation history", () => {
       "assistant",
       "ai.session",
       expect.objectContaining({ action: "rename", sessionId: "session-2", title: "Project notes" }),
+      "boot:1",
     );
     expect(screen.getByRole("button", { name: "Conversation" }).textContent).toContain(
       "First conversation",

@@ -91,7 +91,7 @@ function HostDialog({
     host ? fromHost(host) : { ...EMPTY, groupId: groupId ?? "" },
   );
   const [route, setRoute] = useState<ConnectionRoute>({ proxy: "", jumpHosts: [] });
-  const [routeLoading, setRouteLoading] = useState(Boolean(host));
+  const [routeLoading, setRouteLoading] = useState(Boolean(host && !host.source));
   const [routeError, setRouteError] = useState("");
   const [keySource, setKeySource] = useState<"file" | "content">("file");
   const [errors, setErrors] = useState<{
@@ -106,13 +106,13 @@ function HostDialog({
   const [removePassword, setRemovePassword] = useState(false);
   const [credentialError, setCredentialError] = useState<string | null>(null);
   // If credential storage fails after creating a host, retry updates that host.
-  const persistedHost = useRef<Host | null>(host);
+  const persistedHost = useRef<Host | null>(host?.source ? null : host);
   const pendingSave = useRef(false);
   const tagInput = useRef<TagInputHandle>(null);
   const existingTags = useHosts((state) => state.hosts);
 
   useEffect(() => {
-    if (!host) return;
+    if (!host || host.source) return;
     let active = true;
     void api
       .credentialStatus(host.id)
@@ -128,7 +128,7 @@ function HostDialog({
   }, [host]);
 
   useEffect(() => {
-    if (!host) return;
+    if (!host || host.source) return;
     let active = true;
     api
       .connectionRoute(host.id)
@@ -214,7 +214,7 @@ function HostDialog({
       } else if (removePassword) {
         await api.credentialForget(saved.id);
       }
-      if (!host) openHost(saved);
+      if (!host || host.source) openHost(saved);
       setPassword("");
       onClose();
     } catch (cause) {
@@ -228,7 +228,9 @@ function HostDialog({
   return (
     <Dialog
       open
-      title={host ? t("host.editTitle") : t("host.newTitle")}
+      title={
+        host?.source ? t("hostSources.saveCopy") : host ? t("host.editTitle") : t("host.newTitle")
+      }
       closeLabel={t("common.close")}
       onClose={onClose}
       width={460}

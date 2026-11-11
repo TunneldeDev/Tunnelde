@@ -1,12 +1,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
-use std::io::Read;
 use std::path::Path;
 use std::sync::Mutex;
 
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::sync::watch;
 
@@ -14,12 +12,24 @@ use crate::db::Database;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod dependencies;
+mod package;
 mod restart;
+pub(in crate::plugins) use dependencies::RuntimeRetirement;
+
+pub(super) use package::{deployment_snapshot, PackageSnapshot};
+pub(super) use package::{frontend_snapshot, FrontendSnapshot};
 
 pub const EVENT: &str = "plugin:security-changed";
 pub const PERMISSIONS: &[&str] = &[
+    "ui.trusted",
+    "backgroundTasks.read",
+    "backgroundTasks.write",
     "log",
+    "logs.read",
     "app.read",
+    "storage.locations.read",
+    "storage.locations.write",
     "settings.read",
     "settings.write",
     "hosts.read",
@@ -75,6 +85,7 @@ struct Policy {
     recovery_suggested: bool,
     restarting: bool,
     revision: u64,
+    runtimes: dependencies::RuntimeDependencies,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -87,7 +98,7 @@ pub struct SecurityState {
     pub grants: BTreeMap<String, Vec<String>>,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lease {
     pub id: String,
     pub fingerprint: String,
@@ -98,6 +109,7 @@ pub struct Lease {
 pub struct PluginSecurity {
     inner: Mutex<Policy>,
     changed: watch::Sender<u64>,
+    boot_id: uuid::Uuid,
 }
 
 impl Default for PluginSecurity {
@@ -106,6 +118,7 @@ impl Default for PluginSecurity {
         Self {
             inner: Mutex::new(Policy::default()),
             changed,
+            boot_id: uuid::Uuid::new_v4(),
         }
     }
 }
@@ -191,6 +204,7 @@ impl PluginSecurity {
             grant.generation = policy.revision;
         }
         policy.saved = saved;
+        policy.runtimes = dependencies::RuntimeDependencies::default();
         self.notify(&mut policy);
         save(db, &policy.saved)
     }
@@ -234,6 +248,30 @@ impl PluginSecurity {
         generation: Option<u64>,
     ) -> AppResult<u64> {
         let policy = self.policy();
+        Self::authorize_policy(&policy, id, digest, declared, permission, generation)
+    }
+
+    fn authorize_policy(
+        policy: &Policy,
+        id: &str,
+        digest: &str,
+        declared: &[String],
+        permission: Option<&str>,
+        generation: Option<u64>,
+    ) -> AppResult<u64> {
+        let current = Self::authorize_grant(policy, id, digest, declared, permission, generation)?;
+        dependencies::validate(policy, id, digest, current)?;
+        Ok(current)
+    }
+
+    fn authorize_grant(
+        policy: &Policy,
+        id: &str,
+        digest: &str,
+        declared: &[String],
+        permission: Option<&str>,
+        generation: Option<u64>,
+    ) -> AppResult<u64> {
         if policy.saved.restricted {
             return Err(AppError::validation("pluginSecurity.blocked"));
         }
@@ -258,6 +296,40 @@ impl PluginSecurity {
         Ok(grant.generation)
     }
 
+    /// Linearize bounded synchronous mutations with revocation. Lock order is
+    /// policy -> metadata -> database, matching permission persistence. The
+    /// callback must not reenter security or await. Only bounded local metadata
+    /// persistence is permitted; no resource traversal, network or process I/O.
+    pub(super) fn with_authorized<T>(
+        &self,
+        lease: &Lease,
+        permissions: &[&str],
+        operation: impl FnOnce() -> AppResult<T>,
+    ) -> AppResult<T> {
+        let policy = self.policy();
+        Self::authorize_policy(
+            &policy,
+            &lease.id,
+            &lease.fingerprint,
+            &lease.permissions,
+            None,
+            Some(lease.generation),
+        )?;
+        for permission in permissions {
+            Self::authorize_policy(
+                &policy,
+                &lease.id,
+                &lease.fingerprint,
+                &lease.permissions,
+                Some(permission),
+                Some(lease.generation),
+            )?;
+        }
+        let result = operation();
+        drop(policy);
+        result
+    }
+
     pub fn lease(&self, id: &str, digest: String, declared: Vec<String>) -> AppResult<Lease> {
         let generation = self.authorize(id, &digest, &declared, None, None)?;
         Ok(Lease {
@@ -266,6 +338,10 @@ impl PluginSecurity {
             permissions: declared,
             generation,
         })
+    }
+
+    pub(in crate::plugins) fn lease_stamp(&self, lease: &Lease) -> String {
+        format!("{}:{}", self.boot_id, lease.generation)
     }
 
     pub async fn guard<T>(
@@ -320,10 +396,12 @@ impl PluginSecurity {
         for grant in policy.saved.grants.values_mut() {
             grant.generation = generation;
         }
+        policy.runtimes = dependencies::RuntimeDependencies::default();
         self.notify(&mut policy);
         persisted
     }
 
+    #[cfg(test)]
     pub fn set_permissions(
         &self,
         db: &Database,
@@ -331,6 +409,18 @@ impl PluginSecurity {
         digest: String,
         declared: &[String],
         permissions: Option<Vec<String>>,
+    ) -> AppResult<()> {
+        self.set_permissions_with_cleanup(db, id, digest, declared, permissions, |_| {})
+    }
+
+    pub(in crate::plugins) fn set_permissions_with_cleanup(
+        &self,
+        db: &Database,
+        id: &str,
+        digest: String,
+        declared: &[String],
+        permissions: Option<Vec<String>>,
+        cleanup: impl FnOnce(Vec<RuntimeRetirement>),
     ) -> AppResult<()> {
         if !super::manifest::valid_id(id) {
             return Err(AppError::validation("plugin.notFound"));
@@ -365,7 +455,10 @@ impl PluginSecurity {
             return persisted;
         }
         policy.saved = next;
+        let retired = dependencies::retire(&mut policy, id);
         self.notify(&mut policy);
+        drop(policy);
+        cleanup(retired);
         persisted
     }
 
@@ -395,10 +488,17 @@ impl PluginSecurity {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn invalidate(&self, id: &str) {
+        self.remove_grant(id);
+    }
+
+    pub(in crate::plugins) fn remove_grant(&self, id: &str) -> Vec<RuntimeRetirement> {
         let mut policy = self.policy();
+        let retired = dependencies::retire(&mut policy, id);
         policy.saved.grants.remove(id);
         self.notify(&mut policy);
+        retired
     }
 
     pub fn invalidate_runtimes(&self) {
@@ -408,19 +508,33 @@ impl PluginSecurity {
         for grant in policy.saved.grants.values_mut() {
             grant.generation = generation;
         }
+        policy.runtimes = dependencies::RuntimeDependencies::default();
         self.notify(&mut policy);
     }
 
+    #[cfg(test)]
     pub fn invalidate_runtime(&self, id: &str) {
-        let mut policy = self.policy();
-        policy.revision += 1;
-        let generation = policy.revision;
-        if let Some(grant) = policy.saved.grants.get_mut(id) {
-            grant.generation = generation;
-        }
-        self.notify(&mut policy);
+        self.retire_runtime(id);
     }
 
+    pub(in crate::plugins) fn retire_runtime(&self, id: &str) -> Vec<RuntimeRetirement> {
+        let mut policy = self.policy();
+        let retired = dependencies::retire(&mut policy, id);
+        self.notify(&mut policy);
+        retired
+    }
+
+    pub(in crate::plugins) fn retire_lease(&self, lease: &Lease) -> Vec<RuntimeRetirement> {
+        let mut policy = self.policy();
+        if !policy.runtimes.matches(lease) {
+            return vec![];
+        }
+        let retired = dependencies::retire(&mut policy, &lease.id);
+        self.notify(&mut policy);
+        retired
+    }
+
+    #[cfg(test)]
     pub fn cleanup_boundary(&self, id: &str) -> u64 {
         let policy = self.policy();
         policy
@@ -438,73 +552,7 @@ impl PluginSecurity {
 /// Hash paths and every installed byte, with the same resource bounds as ZIP
 /// installation. Symlinks and special files cannot be silently trusted.
 pub fn fingerprint(root: &Path) -> AppResult<String> {
-    fn visit(
-        root: &Path,
-        directory: &Path,
-        hasher: &mut Sha256,
-        files: &mut usize,
-        bytes: &mut u64,
-        depth: usize,
-    ) -> AppResult<()> {
-        if depth > 32 {
-            return Err(AppError::validation("pluginSecurity.packageInvalid"));
-        }
-        let mut entries = Vec::new();
-        for entry in std::fs::read_dir(directory)? {
-            if entries.len() >= 2000usize.saturating_sub(*files) {
-                return Err(AppError::validation("pluginSecurity.packageInvalid"));
-            }
-            entries.push(entry?);
-        }
-        entries.sort_by_key(|entry| entry.file_name());
-        for entry in entries {
-            *files += 1;
-            if *files > 2000 {
-                return Err(AppError::validation("pluginSecurity.packageInvalid"));
-            }
-            let kind = entry.file_type()?;
-            let path = entry.path();
-            let relative = path
-                .strip_prefix(root)
-                .map_err(|_| AppError::validation("pluginSecurity.packageInvalid"))?;
-            let name = relative
-                .to_str()
-                .ok_or_else(|| AppError::validation("pluginSecurity.packageInvalid"))?
-                .replace('\\', "/");
-            hasher.update((name.len() as u64).to_le_bytes());
-            hasher.update(name.as_bytes());
-            if kind.is_dir() {
-                hasher.update(b"directory");
-                visit(root, &path, hasher, files, bytes, depth + 1)?;
-            } else if kind.is_file() {
-                hasher.update(b"file");
-                let mut file = std::fs::File::open(path)?;
-                let size = file.metadata()?.len();
-                hasher.update(size.to_le_bytes());
-                let mut buffer = [0_u8; 64 * 1024];
-                loop {
-                    let read = file.read(&mut buffer)?;
-                    if read == 0 {
-                        break;
-                    }
-                    *bytes += read as u64;
-                    if *bytes > 64 * 1024 * 1024 {
-                        return Err(AppError::validation("pluginSecurity.packageInvalid"));
-                    }
-                    hasher.update(&buffer[..read]);
-                }
-            } else {
-                return Err(AppError::validation("pluginSecurity.packageInvalid"));
-            }
-        }
-        Ok(())
-    }
-    if std::fs::symlink_metadata(root)?.file_type().is_symlink() {
-        return Err(AppError::validation("pluginSecurity.packageInvalid"));
-    }
-    let mut hasher = Sha256::new();
-    visit(root, root, &mut hasher, &mut 0, &mut 0, 0)?;
-    Ok(format!("{:x}", hasher.finalize()))
+    package::fingerprint(root)
 }
 
 pub async fn fingerprint_async(root: std::path::PathBuf) -> AppResult<String> {
@@ -567,6 +615,74 @@ mod tests {
     use std::time::Duration;
 
     const DIGEST: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    #[tokio::test]
+    async fn authorization_failure_after_ready_result_disposes_that_resource() {
+        struct Resource(Arc<std::sync::atomic::AtomicUsize>);
+        impl Drop for Resource {
+            fn drop(&mut self) {
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            }
+        }
+        let db = Database::in_memory().unwrap();
+        let security = PluginSecurity::default();
+        let lease = grant(&security, &db, "resource", &["ssh.exec"]);
+        let disposed = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let result = security
+            .guard(&lease, async {
+                let resource = Resource(disposed.clone());
+                security.invalidate_runtime("resource");
+                Ok(resource)
+            })
+            .await;
+        assert!(result.is_err());
+        assert_eq!(disposed.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn synchronous_mutation_checks_all_permissions_and_serializes_revocation() {
+        let db = Arc::new(Database::in_memory().unwrap());
+        let security = Arc::new(PluginSecurity::default());
+        let lease = grant(&security, &db, "fields", &["hosts.read", "hosts.write"]);
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+        let (finish_tx, finish_rx) = std::sync::mpsc::channel();
+        let writer = {
+            let (security, lease) = (security.clone(), lease.clone());
+            std::thread::spawn(move || {
+                security.with_authorized(&lease, &["hosts.read", "hosts.write"], || {
+                    entered_tx.send(()).unwrap();
+                    finish_rx.recv().unwrap();
+                    Ok(())
+                })
+            })
+        };
+        entered_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        let (revoked_tx, revoked_rx) = std::sync::mpsc::channel();
+        let revoker = {
+            let (security, db) = (security.clone(), db.clone());
+            std::thread::spawn(move || {
+                security
+                    .set_permissions(&db, "fields", String::new(), &[], None)
+                    .unwrap();
+                revoked_tx.send(()).unwrap();
+            })
+        };
+        assert!(revoked_rx.recv_timeout(Duration::from_millis(20)).is_err());
+        finish_tx.send(()).unwrap();
+        writer.join().unwrap().unwrap();
+        revoker.join().unwrap();
+        assert!(security
+            .with_authorized::<()>(&lease, &["hosts.read"], || panic!(
+                "revoked operation executed"
+            ))
+            .is_err());
+        let readonly = grant(&security, &db, "read", &["hosts.read"]);
+        assert!(security
+            .with_authorized::<()>(&readonly, &["hosts.read", "hosts.write"], || panic!(
+                "ungranted operation executed"
+            ))
+            .is_err());
+    }
 
     pub(super) fn grant(
         security: &PluginSecurity,

@@ -1,0 +1,3356 @@
+{
+  "version": 1,
+  "methods": [
+    {
+      "name": "extensions.describe",
+      "permissions": [],
+      "params": "{}",
+      "description": "Discover implemented extension points, their domain, permissions, registration methods, composition and runtime ownership. The experimental directory is not a completeness or authorization claim; use api.describe for individual method contracts.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hostList.setDecorations",
+      "permissions": [
+        "hosts.read",
+        "workspace.write"
+      ],
+      "params": "{id:string,priority?:number,decorations:{hostId:string,badge?:string,description?:string,tooltip?:string,icon?:server|cloud|container|database|globe|code|terminal|shield|key|activity,tone?:neutral|info|success|warning|error}[]}",
+      "description": "Replace a runtime-owned collection of host-list decorations. Plain text, semantic colors and host-rendered icons; host names, addresses, connection state and actions remain intact. At most 256 distinct existing hosts per collection, 8 collections per plugin and 128 total. Empty decorations clears a collection. Higher priority wins icon/description; badges combine in deterministic order. Removed on stop, crash, revocation or restart; never modifies saved hosts.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hostList.removeDecorations",
+      "permissions": [
+        "hosts.read",
+        "workspace.write"
+      ],
+      "params": "{id:string}",
+      "description": "Remove only this plugin runtime's host decoration collection; returns false if absent. Requires the same permissions as registration.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tabBar.set",
+      "permissions": [],
+      "params": "{id:string,title:string,kind:button|select|text,priority?:number,icon?:string,command?:string,disabled?:boolean,when?:{tabKind?:string,tabId?:string},options?:{value:string,label:string}[],value?:string,placement?:leading|trailing,group?:string,tooltip?:string,showLabel?:boolean,checked?:boolean}",
+      "description": "Register or replace a bounded declarative tab-bar control owned by this runtime. Defaults to own plugin views and trailing placement; when:{} targets all tabs. Groups are plugin-scoped. showLabel keeps button text alongside its icon; checked is button-only, host-rendered, and acknowledged through set. Narrow panes move controls into an accessible overflow menu. Commands must belong to this plugin. Eight items per plugin, 128 total; removed on stop or revocation. Click context is advisory, never authorization.",
+      "stability": "stable",
+      "since": "0.32.0-beta.6",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "description": "Structural validity. Option values must also be unique and include the selected value; commands must belong to the approved runtime. Unknown properties are ignored. Full replacement, not a partial update.",
+          "type": "object",
+          "required": [
+            "id",
+            "title",
+            "kind"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+            },
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+            },
+            "kind": {
+              "enum": [
+                "button",
+                "select",
+                "text"
+              ]
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000,
+              "default": 0
+            },
+            "icon": {
+              "enum": [
+                "activity",
+                "check",
+                "alert",
+                "info",
+                "sync",
+                "terminal",
+                "cloud",
+                "code",
+                "plug",
+                "copy",
+                "clear",
+                "folder",
+                "file",
+                "wrap",
+                "follow",
+                "play",
+                "pause",
+                "filter",
+                null
+              ]
+            },
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "disabled": {
+              "type": "boolean",
+              "default": false
+            },
+            "when": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "tabKind": {
+                      "enum": [
+                        "welcome",
+                        "host",
+                        "terminal",
+                        "sftp",
+                        "editor",
+                        "history",
+                        "monitor",
+                        "plugin",
+                        "pluginDetail",
+                        "settings",
+                        "about",
+                        "updates",
+                        "knownHosts",
+                        "sidebar",
+                        null
+                      ]
+                    },
+                    "tabId": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512,
+                          "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "options": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "required": [
+                  "value",
+                  "label"
+                ],
+                "properties": {
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "default": []
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "placement": {
+              "enum": [
+                "leading",
+                "trailing"
+              ],
+              "default": "trailing"
+            },
+            "group": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tooltip": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "showLabel": {
+              "type": "boolean",
+              "default": false
+            },
+            "checked": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            }
+          },
+          "additionalProperties": true,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "button"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "command"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                  },
+                  "options": {
+                    "maxItems": 0
+                  },
+                  "value": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "text"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "command": {
+                    "type": "null"
+                  },
+                  "options": {
+                    "maxItems": 0
+                  },
+                  "value": {
+                    "type": "null"
+                  },
+                  "checked": {
+                    "type": "null"
+                  }
+                }
+              }
+            },
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "select"
+                  }
+                }
+              },
+              "then": {
+                "required": [
+                  "command",
+                  "options",
+                  "value"
+                ],
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                  },
+                  "options": {
+                    "minItems": 1
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128,
+                    "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                  },
+                  "checked": {
+                    "type": "null"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "resultSchema": {
+          "type": "null"
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.tabBar.invalidItem",
+          "plugin.tabBar.unknownCommand",
+          "plugin.tabBar.limit",
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.api.missing:id",
+          "plugin.api.invalid:id",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": [],
+        "commandContextSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "_locale",
+            "_tabBar"
+          ],
+          "properties": {
+            "_locale": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "_tabBar": {
+              "type": "object",
+              "required": [
+                "itemId",
+                "tabId",
+                "tabKind",
+                "paneId",
+                "value"
+              ],
+              "properties": {
+                "itemId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                },
+                "tabId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                "tabKind": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 32,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                "paneId": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 128,
+                      "pattern": "^(?=.*[^\\u0009-\\u000d\\u0020\\u0085\\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000])[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        }
+      }
+    },
+    {
+      "name": "tabBar.remove",
+      "permissions": [],
+      "params": "{id:string}",
+      "description": "Remove this runtime's tab-bar control; return false if absent. IDs are scoped to the plugin and runtime generation.",
+      "stability": "stable",
+      "since": "0.32.0-beta.6",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "type": "boolean"
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.tabBar.invalidItem",
+          "plugin.tabBar.unknownCommand",
+          "plugin.tabBar.limit",
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.api.missing:id",
+          "plugin.api.invalid:id",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "statusBar.set",
+      "permissions": [],
+      "params": "{id:string,text:string,alignment?:left|right,priority?:number,tooltip?:string,icon?:activity|check|alert|info|sync|terminal|cloud|code|plug,command?:string}",
+      "description": "Register or replace this runtime's status item. Eight per plugin, 128 total; plain text only. Click commands must be this plugin's non-editor, non-file-menu manifest commands. Items disappear on stop, revocation, crash or restart.",
+      "stability": "stable",
+      "since": "0.32.0-beta.1",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.statusBar.invalidItem",
+          "plugin.statusBar.unknownCommand",
+          "plugin.statusBar.limit",
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.api.missing:id",
+          "plugin.api.invalid:id",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": [],
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "id",
+            "text"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 128,
+              "pattern": "^(?=.*\\S)[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])",
+              "minLength": 1
+            },
+            "alignment": {
+              "enum": [
+                "left",
+                "right"
+              ],
+              "default": "left"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000,
+              "default": 0
+            },
+            "tooltip": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 1024,
+                  "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f\\u202a-\\u202e\\u2066-\\u2069]*$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "icon": {
+              "enum": [
+                "activity",
+                "check",
+                "alert",
+                "info",
+                "sync",
+                "terminal",
+                "cloud",
+                "code",
+                "plug",
+                null
+              ]
+            },
+            "command": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 128,
+                  "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "type": "null"
+        }
+      }
+    },
+    {
+      "name": "statusBar.remove",
+      "permissions": [],
+      "params": "{id:string}",
+      "description": "Remove this runtime's status item; return false when absent. IDs are scoped to the plugin and runtime generation.",
+      "stability": "stable",
+      "since": "0.32.0-beta.1",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.statusBar.invalidItem",
+          "plugin.statusBar.unknownCommand",
+          "plugin.statusBar.limit",
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.api.missing:id",
+          "plugin.api.invalid:id",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": [],
+        "inputSchema": {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "type": "boolean"
+        }
+      }
+    },
+    {
+      "name": "editor.active",
+      "permissions": [
+        "editor.read"
+      ],
+      "params": "{}",
+      "description": "Read the active ready editor document or null. Returns tabId, documentId, version, path, name, content and dirty. Maximum UTF-8 content 128KiB. Does not read files from disk.",
+      "stability": "stable",
+      "since": "0.29.0-beta.2",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "tabId",
+                "documentId",
+                "version",
+                "path",
+                "name",
+                "content",
+                "dirty"
+              ],
+              "properties": {
+                "tabId": {
+                  "type": "string"
+                },
+                "documentId": {
+                  "type": "string"
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "dirty": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "content": {
+                  "type": "string",
+                  "maxLength": 131072
+                }
+              },
+              "additionalProperties": true
+            }
+          ]
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable",
+          "plugin.api.busy",
+          "plugin.api.frontendTimeout",
+          "plugin.api.frontendClosed",
+          "plugin.api.requestExpired",
+          "plugin.api.frontend:editor.documentTooLarge"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "editor.replace",
+      "permissions": [
+        "editor.write"
+      ],
+      "params": "{tabId:string,documentId:string,version:number,text:string}",
+      "description": "Replace an open editor buffer only if the document identity and version still match. Maximum UTF-8 text 128KiB. Undoable; never saves automatically. Rejects stale, closed, loading or disconnected documents.",
+      "stability": "stable",
+      "since": "0.29.0-beta.2",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "tabId",
+            "documentId",
+            "version",
+            "text"
+          ],
+          "properties": {
+            "tabId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            "documentId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1024,
+              "not": {
+                "pattern": "\u0000"
+              }
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 131072
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "tabId",
+            "documentId",
+            "version",
+            "dirty"
+          ],
+          "properties": {
+            "tabId": {
+              "type": "string"
+            },
+            "documentId": {
+              "type": "string"
+            },
+            "version": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "dirty": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": true
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable",
+          "plugin.api.busy",
+          "plugin.api.frontendTimeout",
+          "plugin.api.frontendClosed",
+          "plugin.api.requestExpired",
+          "plugin.api.frontend:invalid:tabId",
+          "plugin.api.frontend:invalid:documentId",
+          "plugin.api.frontend:invalid:version",
+          "plugin.api.frontend:invalid:text",
+          "plugin.api.frontend:editor.documentChanged"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "mounts.browse",
+      "permissions": [
+        "mounts.read"
+      ],
+      "params": "{sessionId:string,path?:string}",
+      "description": "Browse directories through an authenticated SFTP session for the mount chooser.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "mounts.open",
+      "permissions": [
+        "mounts.write"
+      ],
+      "params": "{id:string}",
+      "description": "Open this plugin's mount in the system file manager.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "mounts.documentation",
+      "permissions": [
+        "mounts.read"
+      ],
+      "params": "{}",
+      "description": "Open platform SSHFS installation instructions in the system browser.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "mounts.dependencies",
+      "permissions": [
+        "mounts.read"
+      ],
+      "params": "{}",
+      "description": "Detect SSHFS and FUSE compatibility; never install software or drivers.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "mounts.list",
+      "permissions": [
+        "mounts.read"
+      ],
+      "params": "{}",
+      "description": "List this plugin's own SSHFS mounts.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "mounts.mount",
+      "permissions": [
+        "mounts.write"
+      ],
+      "params": "{sessionId:string,remotePath:string,mountPoint:string,readOnly?:boolean}",
+      "description": "Mount using an authenticated SSH subsystem and the host's proxy/jump route. Defaults read-only.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "mounts.unmount",
+      "permissions": [
+        "mounts.write"
+      ],
+      "params": "{id:string,force?:boolean}",
+      "description": "Unmount this plugin's own SSHFS filesystem; never terminate unrelated processes.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "forwards.list",
+      "permissions": [
+        "forwards.read"
+      ],
+      "params": "{}",
+      "description": "Read saved TCP forwarding rules and running status.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "forwards.save",
+      "permissions": [
+        "forwards.write"
+      ],
+      "params": "{rule:ForwardRule}",
+      "description": "Create or update a validated TCP forwarding rule; active rules must be stopped first.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "forwards.remove",
+      "permissions": [
+        "forwards.write"
+      ],
+      "params": "{id:string}",
+      "description": "Remove a saved forwarding rule and stop its active connections.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "forwards.start",
+      "permissions": [
+        "forwards.write"
+      ],
+      "params": "{id:string,sessionId:string}",
+      "description": "Start a saved forward through its host's active authenticated session; stopped on plugin revocation.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "forwards.stop",
+      "permissions": [
+        "forwards.write"
+      ],
+      "params": "{id:string}",
+      "description": "Stop a forwarding listener and its active connections.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.deploy",
+      "permissions": [
+        "ssh.exec",
+        "fs.read",
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,platform:posix|windows,directory:string,runnerPath:string,executable:string}",
+      "description": "After explicit confirmation, deploy an optional selected native helper and this plugin into a fresh user directory. Never install Node or modify services.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.start",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,directory:string,config:object,secrets?:object}",
+      "description": "Start a durable plugin runner using a previously approved deployment; secrets travel over SSH stdin, not files or argv.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.list",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{}",
+      "description": "Read this plugin's durable runner records, including stopPending for unreachable revoked tasks.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.send",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,runnerId:string,message:object}",
+      "description": "Enqueue an RPC request or approval response for this plugin's own remote runner.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.poll",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,runnerId:string,afterSeq?:number}",
+      "description": "Read sequenced durable runner events and pending approvals after reconnect.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.status",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,runnerId:string}",
+      "description": "Read this plugin's remote runner status.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "runners.stop",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,runnerId:string}",
+      "description": "Persist and request stopping a remote runner; does not claim that an unreachable process has stopped.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "events.publish",
+      "permissions": [],
+      "params": "{event:string,payload?:JSON}",
+      "description": "Emit an advisory UI event from the current approved runtime. Event names use 1-128 ASCII letters, digits, dot, underscore, colon or hyphen. Omitted payload becomes null; extra fields cannot replace host-supplied pluginId/generation. Shared 256KiB UTF-8 request budget. Return null on transport acceptance, not subscriber acknowledgement or durable delivery. No replay, cross-request completion order or permission grant is promised; consumers must check runtime generation.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "event"
+          ],
+          "properties": {
+            "event": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+            },
+            "payload": {}
+          },
+          "additionalProperties": true,
+          "description": "Additional fields are ignored; omitted payload becomes null. The independent shared request quota is 256KiB of serialized UTF-8 JSON."
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "null",
+          "description": "Transport acceptance only, not subscriber processing or durable delivery."
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.missing:event",
+          "plugin.api.invalid:event",
+          "plugin.api.invalidEvent",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": [
+          "plugin://event"
+        ],
+        "eventSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "pluginId",
+            "generation",
+            "event",
+            "payload"
+          ],
+          "properties": {
+            "pluginId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "generation": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "event": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+            },
+            "payload": {}
+          },
+          "additionalProperties": true,
+          "description": "Host-supplied identity and runtime generation. Advisory payload, no permission grant or replay. A recipient must reject a retired generation; concurrent calls need not complete in order."
+        }
+      }
+    },
+    {
+      "name": "secrets.get",
+      "permissions": [
+        "secrets"
+      ],
+      "params": "{key:string}",
+      "description": "Read this plugin's own OS-keyring secret; return string or null. Never exposes SSH credentials.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "secrets.set",
+      "permissions": [
+        "secrets"
+      ],
+      "params": "{key:string,value:string}",
+      "description": "Store this plugin's own secret in the operating system keyring, at most 16KiB.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "secrets.delete",
+      "permissions": [
+        "secrets"
+      ],
+      "params": "{key:string}",
+      "description": "Delete this plugin's own keyring secret.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.start",
+      "permissions": [],
+      "params": "{executable:string,args?:string[],cwd?:string,sessionId?:string,platform?:posix|windows,timeoutMs?:number}",
+      "description": "Start an explicitly selected executable; requires process.exec locally or ssh.exec remotely. Return taskId. Separate bounded stdout/stderr; default 30 minutes, maximum 24 hours.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.list",
+      "permissions": [],
+      "params": "{}",
+      "description": "List this runtime's own background processes.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.status",
+      "permissions": [],
+      "params": "{taskId:string}",
+      "description": "Read this runtime's own process status and exit code.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.readOutput",
+      "permissions": [],
+      "params": "{taskId:string,afterSeq?:number}",
+      "description": "Read bounded sequenced stdout/stderr events; truncated reports expired output.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.write",
+      "permissions": [],
+      "params": "{taskId:string,data:string}",
+      "description": "Write UTF-8 to this runtime's own process stdin; at most 128KiB.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.closeInput",
+      "permissions": [],
+      "params": "{taskId:string}",
+      "description": "Close this runtime's own process stdin.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tasks.cancel",
+      "permissions": [],
+      "params": "{taskId:string}",
+      "description": "Stop this runtime's own process; local process trees are terminated, remote server signal support may vary.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tools.invoke",
+      "permissions": [],
+      "params": "{method:string,params:object,mode:ask|approve|full|readOnly,scope:{sessionIds?:string[],hostIds?:string[],localRoots?:string[],remoteRoots?:{sessionId:string,path:string}[]},review?:{approved:boolean,reason:string},clientId?:string,requestId?:string}",
+      "description": "Execute an allowlisted AI/MCP tool after permission, target scope and approval checks. ReadOnly rejects every command and mutation. Review may only be supplied by a trusted plugin's independent reviewer.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tools.cancel",
+      "permissions": [],
+      "params": "{requestId:string}",
+      "description": "Cancel this plugin runtime's pending tool invocation. Undelivered SSH connections created by that invocation are closed; a completed invocation's delivered connection is unaffected. Already completed remote operations cannot be rolled back.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "tools.revokeClient",
+      "permissions": [],
+      "params": "{clientId:string}",
+      "description": "Permanently revoke this client ID for the current plugin runtime generation, cancel its pending tool invocations and release its tasks, transfers and SSH connections. Other clients, direct plugin connections, user-created connections and replacement runtimes are unaffected. A new client identity is required to resume.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "api.describe",
+      "permissions": [],
+      "params": "{}",
+      "description": "List the fixed versioned host API; every request still checks runtime authorization.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "title": "Plugin API discovery v1 response",
+          "description": "Compatibility floor for api.describe. Consumers must ignore unknown fields and stability values.",
+          "type": "object",
+          "required": [
+            "version",
+            "methods"
+          ],
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "methods": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "permissions",
+                  "params",
+                  "description"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "params": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "stability": {
+                    "type": "string"
+                  },
+                  "since": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "deprecated": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "log",
+      "permissions": [
+        "log"
+      ],
+      "params": "{message:string,level?:string,domain?:string,operation?:string,requestId?:string,fields?:object}",
+      "description": "Write a bounded local log at its requested severity; return null on acceptance, not durable delivery. Host supplies plugin identity and runtime generation; domain is plugin-scoped. Optional structured fields redact credential keys and URL credentials/query/fragment. Existing message/level calls remain supported; structured options require 0.33.0-beta.5 or later. Subject to configured log filter and nonblocking writer; never include secrets in message text.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "description": "Structural v1 request. UTF-8 encoded byte, nested field and runtime limits are enforced separately. Unknown top-level fields are ignored. Structured options require host 0.33.0-beta.5 or later.",
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "maxLength": 16384
+            },
+            "level": {
+              "enum": [
+                "trace",
+                "debug",
+                "info",
+                "warn",
+                "error",
+                "TRACE",
+                "DEBUG",
+                "INFO",
+                "WARN",
+                "ERROR",
+                "warning",
+                "WARNING"
+              ]
+            },
+            "domain": {
+              "$ref": "#/definitions/identifier"
+            },
+            "operation": {
+              "$ref": "#/definitions/identifier"
+            },
+            "requestId": {
+              "$ref": "#/definitions/identifier"
+            },
+            "fields": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64,
+                "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true,
+          "definitions": {
+            "identifier": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "minLength": 1,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]+$(?![\\s\\S])"
+            }
+          }
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "description": "Accepted for diagnostic logging, subject to level filters and a bounded lossy writer. Not an acknowledgement of durable storage. No event subscription is created.",
+          "type": "null"
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.invalid:log",
+          "logs.invalid:message",
+          "logs.invalid:domain",
+          "logs.invalid:operation",
+          "logs.invalid:requestId",
+          "logs.invalid:fields",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "app.info",
+      "permissions": [
+        "app.read"
+      ],
+      "params": "{}",
+      "description": "Read application metadata, platform and preference schema; no credentials.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "app.openExternal",
+      "permissions": [
+        "app.openExternal"
+      ],
+      "params": "{url:string}",
+      "description": "Open an http/https URL with the system browser.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "settings.get",
+      "permissions": [
+        "settings.read"
+      ],
+      "params": "{}",
+      "description": "Read application preferences.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "settings.update",
+      "permissions": [
+        "settings.write"
+      ],
+      "params": "{patch:object}",
+      "description": "Update and sanitize preferences through the normal settings service.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.snapshot",
+      "permissions": [
+        "hosts.read"
+      ],
+      "params": "{}",
+      "description": "Read saved host and group metadata; authentication secrets are never returned.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hostList.setColumn",
+      "permissions": [
+        "hosts.read",
+        "workspace.write"
+      ],
+      "params": "{id:string,label:string,type:text|number|boolean,width?:number,cells:array}",
+      "description": "Replace one runtime-owned host table column. Each cell is {hostId,value,tooltip?}; at most 256 distinct existing hosts, 512 code points per text value, finite numbers and booleans. At most 8 columns and 512 KiB serialized JSON per plugin, 128 columns and 4 MiB total. Width defaults to 140, range 64..480. Empty cells retain the column; missing cells display unset. Host identity and connection behavior stay host-owned. Stop, crash, replacement and revocation remove contributions; user display preferences remain.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hostList.removeColumn",
+      "permissions": [
+        "hosts.read",
+        "workspace.write"
+      ],
+      "params": "{id:string}",
+      "description": "Remove this runtime's host table column. Returns whether the current generation owned a matching column.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.setSource",
+      "permissions": [
+        "hosts.read",
+        "hosts.write"
+      ],
+      "params": "{id:string,label:string,entries:{id:string,name:string,host:string,port?:number,username:string,tags?:string[],note?:string}[]}",
+      "description": "Atomically replace runtime-owned, nonsecret discovered hosts. No connection or persistence is implied. At most 256 unique entries per source, 8 sources/512 entries per plugin, 128 sources/4096 entries and 4 MiB total. Host IDs bind owner, source and complete entry content, so stale dialogs cannot connect a changed target. Stop, crash and revocation remove discovery data; user-opened live connections remain user-owned. Connect using the normal SSH flow; save a copy to configure keys or persistent credentials.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.removeSource",
+      "permissions": [
+        "hosts.read",
+        "hosts.write"
+      ],
+      "params": "{id:string}",
+      "description": "Remove this runtime's discovery source; returns false when absent. Does not delete saved hosts, credentials or existing user connections.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.sourcesSnapshot",
+      "permissions": [
+        "hosts.read"
+      ],
+      "params": "{offset?:number,revision?:number}",
+      "description": "Read one active discovery source per page, with nonsecret entries and content-bound hostIds. Returns {revision,total,nextOffset,items:[{pluginId,pluginName,id,label,entries:[{hostId,id,name,host,port,username,tags,note}]}]}. Start at offset 0; pass revision with nextOffset. A changed revision rejects continuation; restart from zero. Separate from saved hosts.snapshot; bounded by one source and the shared request budget.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.getFields",
+      "permissions": [
+        "hosts.read"
+      ],
+      "params": "{hostId:string}",
+      "description": "Read this plugin's manifest hostFields schema and revisioned values for one existing host. Returns {schema,document}; document includes hostId, revision, schemaDigest, schemaVersion, storedSchemaVersion, schemaChanged and values. Retains values after schema changes; does not execute migration or expose another plugin's data. Nonsecret metadata only.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.setFields",
+      "permissions": [
+        "hosts.read",
+        "hosts.write"
+      ],
+      "params": "{hostId:string,expectedRevision:number,schemaDigest:string,values:object}",
+      "description": "Atomically replace this plugin's host fields against the current schema digest and revision. Declared text, number, boolean and select values only; missing keys unset values. No merge, implicit migration or secret storage. Returns {schema,document}; stale revisions/schemas fail without mutation. 32KiB per document, 4MiB values per plugin, 32MiB total. Host deletion cascades, uninstall retains data. Revocation is serialized with commit.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.create",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{input:HostInput}",
+      "description": "Create a validated saved host.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.update",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{id:string,input:HostInput}",
+      "description": "Replace a saved host's validated metadata.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.delete",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{id:string}",
+      "description": "Delete a saved host and forget its stored credential.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.markUsed",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{id:string}",
+      "description": "Update a saved host's last-used time.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "hosts.reorder",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{ids:string[]}",
+      "description": "Persist the order of saved hosts; at most 500 IDs.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "groups.create",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{input:GroupInput}",
+      "description": "Create a validated host group.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "groups.update",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{id:string,input:GroupInput}",
+      "description": "Update a validated host group.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "groups.delete",
+      "permissions": [
+        "hosts.write"
+      ],
+      "params": "{id:string}",
+      "description": "Delete a host group through the normal group service.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "sessions.list",
+      "permissions": [
+        "sessions.read"
+      ],
+      "params": "{}",
+      "description": "List active SSH session metadata; no passwords or private keys.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "hostId",
+              "title",
+              "address",
+              "cols",
+              "rows",
+              "connectedAt"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "hostId": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "cols": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "rows": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4294967295
+              },
+              "connectedAt": {
+                "type": "integer"
+              }
+            },
+            "additionalProperties": true
+          }
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "sessions.connect",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{request:SshConnectRequest}",
+      "description": "Connect a saved host with normal host-key verification; never auto-trust a server. The connection belongs to this runtime generation and closes on stop, crash, revocation or replacement unless explicitly transferred by sessions.requestHandoff. Through tools.invoke it also belongs to that client; client revocation or cancellation before result acceptance closes it. Pending and live connections share a limit of 8 per plugin and 64 total; connection setup has a 120-second deadline. Opening a terminal or file tab does not transfer ownership. User-created connections are unaffected.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "sessions.disconnect",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string}",
+      "description": "Disconnect an active SSH session.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "sessions.requestHandoff",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string}",
+      "description": "Ask the user in a native dialog to keep this runtime's live SSH connection independently of plugin/client lifetime. Returns true only after accepted ownership transfer, false on decline; expired, revoked, disconnected, foreign and pending-result resources fail. Does not open a tab, grant new access or persist the transport across application exit. Not available through tools.invoke.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "sessions.exec",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,command:string,timeoutMs?:number}",
+      "description": "Execute in a separate SSH channel; return stdout/stderr/exitCode/signal. Timeout 100–60000ms, output at most 1MiB.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "terminal.write",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,data:string}",
+      "description": "Write plain UTF-8 terminal input, including remote shell commands; the host handles transport encoding.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "terminal.resize",
+      "permissions": [
+        "ssh.exec"
+      ],
+      "params": "{sessionId:string,cols:number,rows:number}",
+      "description": "Resize the remote terminal through the validated session service.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.home",
+      "permissions": [
+        "fs.read"
+      ],
+      "params": "{}",
+      "description": "Read the local home directory path.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.list",
+      "permissions": [
+        "fs.read"
+      ],
+      "params": "{path?:string}",
+      "description": "List a local directory.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.readText",
+      "permissions": [
+        "fs.read"
+      ],
+      "params": "{path:string}",
+      "description": "Read a UTF-8 local text file, at most 512KiB; reject binary data.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.writeText",
+      "permissions": [
+        "fs.write"
+      ],
+      "params": "{path:string,content:string,baseline?:string}",
+      "description": "Atomically replace existing local UTF-8 text, at most 512KiB; optional baseline detects external edits.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.createFile",
+      "permissions": [
+        "fs.write"
+      ],
+      "params": "{path:string}",
+      "description": "Create an empty local file without replacing an existing file.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.mkdir",
+      "permissions": [
+        "fs.write"
+      ],
+      "params": "{path:string}",
+      "description": "Create a local directory.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.rename",
+      "permissions": [
+        "fs.write"
+      ],
+      "params": "{from:string,to:string,overwrite?:boolean}",
+      "description": "Rename a local file or directory; overwriting is opt-in.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.copy",
+      "permissions": [
+        "fs.read",
+        "fs.write"
+      ],
+      "params": "{from:string,to:string,overwrite?:boolean}",
+      "description": "Copy local files/directories through the existing copy service.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.local.delete",
+      "permissions": [
+        "fs.write"
+      ],
+      "params": "{path:string,isDir:boolean}",
+      "description": "Delete a local file or directory.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.list",
+      "permissions": [
+        "sftp.read"
+      ],
+      "params": "{sessionId:string,path?:string}",
+      "description": "List a remote directory using an active SSH session.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.resolveDirectory",
+      "permissions": [
+        "sftp.read"
+      ],
+      "params": "{sessionId:string,path?:string}",
+      "description": "Resolve the SSH account home and an optional working directory through SFTP without listing entries or executing a shell. Return {home,path}. Supports ~ and relative paths.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.readText",
+      "permissions": [
+        "sftp.read"
+      ],
+      "params": "{sessionId:string,path:string}",
+      "description": "Read remote UTF-8 text through the editor service; API response size limits apply.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.writeText",
+      "permissions": [
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,path:string,content:string,baseline?:string}",
+      "description": "Atomically replace existing remote text; optional baseline detects external edits.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.createFile",
+      "permissions": [
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,path:string}",
+      "description": "Create an empty remote file without replacing an existing file.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.mkdir",
+      "permissions": [
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,path:string}",
+      "description": "Create a remote directory.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.rename",
+      "permissions": [
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,from:string,to:string,overwrite?:boolean}",
+      "description": "Rename a remote file/directory; overwriting is opt-in.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.copy",
+      "permissions": [
+        "sftp.read",
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,from:string,to:string,overwrite?:boolean}",
+      "description": "Copy remote files/directories within a session.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.sftp.delete",
+      "permissions": [
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,path:string,isDir:boolean}",
+      "description": "Delete a remote file or directory.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.upload",
+      "permissions": [
+        "fs.read",
+        "sftp.write"
+      ],
+      "params": "{sessionId:string,localPath:string,remotePath:string,overwrite?:boolean}",
+      "description": "Copy a local file or directory to a remote path. Return transferId; cancellation, progress and file refresh use the normal transfer service. Revoking access or stopping this runtime cancels its active transfers.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.download",
+      "permissions": [
+        "sftp.read",
+        "fs.write"
+      ],
+      "params": "{sessionId:string,remotePath:string,localPath:string,overwrite?:boolean}",
+      "description": "Copy a remote file or directory to a local path. Return transferId; never remove the source. Revoking access or stopping this runtime cancels its active transfers.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.cancelTransfer",
+      "permissions": [],
+      "params": "{transferId:string}",
+      "description": "Cancel only a transfer owned by this plugin's current runtime. Return true if its active transfer was found; false for completed, missing or other owners' transfers.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "files.transferStatus",
+      "permissions": [],
+      "params": "{transferId:string}",
+      "description": "Read progress or the final TransferEvent for this runtime's own transfer; return null for missing, other-owner or expired IDs. The latest 256 completed plugin transfers are retained in memory.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "monitor.system",
+      "permissions": [
+        "monitor.read"
+      ],
+      "params": "{}",
+      "description": "Read local CPU, memory, disk and network statistics.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "monitor.stats",
+      "permissions": [
+        "monitor.read"
+      ],
+      "params": "{sessionId:string}",
+      "description": "Sample remote system statistics.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "monitor.processes",
+      "permissions": [
+        "monitor.read"
+      ],
+      "params": "{sessionId:string}",
+      "description": "List remote processes.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "monitor.kill",
+      "permissions": [
+        "monitor.write"
+      ],
+      "params": "{sessionId:string,pid:number}",
+      "description": "Send TERM to a remote process; protected process validation still applies.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "history.list",
+      "permissions": [
+        "history.read"
+      ],
+      "params": "{hostId:string,limit?:number}",
+      "description": "Read saved command history, at most 500 rows.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "history.record",
+      "permissions": [
+        "history.write"
+      ],
+      "params": "{hostId:string,command:string}",
+      "description": "Record a command for an existing saved host.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "history.delete",
+      "permissions": [
+        "history.write"
+      ],
+      "params": "{id:number}",
+      "description": "Delete one command-history entry.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "history.clear",
+      "permissions": [
+        "history.write"
+      ],
+      "params": "{hostId:string}",
+      "description": "Clear a saved host's command history.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.snapshot",
+      "permissions": [
+        "workspace.read"
+      ],
+      "params": "{}",
+      "description": "Read a detached v1 snapshot of live tabs, panes, active IDs and split layout, including hidden panels and file-pane metadata. No file contents, credentials or arbitrary store fields. Tab kinds and file-view option values are open vocabularies; tolerate unfamiliar values. The snapshot neither reserves resources nor grants their permissions.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "title": "Detached plugin workspace snapshot v1",
+          "description": "Live presentation metadata; no file contents, credentials or resource reservation. Ignore unknown fields and string option values.",
+          "type": "object",
+          "required": [
+            "tabs",
+            "panes",
+            "activeId",
+            "activePaneId",
+            "layout"
+          ],
+          "properties": {
+            "tabs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "kind",
+                  "title",
+                  "hostId",
+                  "pinned"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "hostId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "pinned": {
+                    "type": "boolean"
+                  },
+                  "preview": {
+                    "type": "boolean"
+                  },
+                  "hidden": {
+                    "type": "boolean"
+                  },
+                  "filePane": {
+                    "type": "object",
+                    "required": [
+                      "source",
+                      "path",
+                      "ownerSessionId"
+                    ],
+                    "properties": {
+                      "source": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "const": "local"
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          {
+                            "type": "object",
+                            "required": [
+                              "kind",
+                              "sessionId"
+                            ],
+                            "properties": {
+                              "kind": {
+                                "const": "remote"
+                              },
+                              "sessionId": {
+                                "type": "string"
+                              }
+                            },
+                            "additionalProperties": true
+                          }
+                        ]
+                      },
+                      "path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "ownerSessionId": {
+                        "type": "string"
+                      },
+                      "view": {
+                        "type": "object",
+                        "required": [
+                          "filesShowHidden",
+                          "filesFoldersFirst",
+                          "filesSortBy",
+                          "filesSortDirection"
+                        ],
+                        "properties": {
+                          "filesColumns": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "filesColumnWidths": {
+                            "type": "object",
+                            "required": [],
+                            "properties": {
+                              "name": {
+                                "type": "number"
+                              },
+                              "type": {
+                                "type": "number"
+                              },
+                              "size": {
+                                "type": "number"
+                              },
+                              "modified": {
+                                "type": "number"
+                              }
+                            },
+                            "additionalProperties": true
+                          },
+                          "filesLayout": {
+                            "type": "string"
+                          },
+                          "filesShowHidden": {
+                            "type": "boolean"
+                          },
+                          "filesFoldersFirst": {
+                            "type": "boolean"
+                          },
+                          "filesSortBy": {
+                            "type": "string"
+                          },
+                          "filesSortDirection": {
+                            "type": "string"
+                          },
+                          "filesGroupBy": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "remoteIdentity": {
+                        "type": "object",
+                        "required": [
+                          "hostId",
+                          "address"
+                        ],
+                        "properties": {
+                          "hostId": {
+                            "type": "string"
+                          },
+                          "address": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": true
+                      },
+                      "offline": {
+                        "type": "boolean"
+                      }
+                    },
+                    "additionalProperties": true
+                  },
+                  "fileSessionId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "panes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "tabIds",
+                  "activeId"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "tabIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "activeId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "locked": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "activeId": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "activePaneId": {
+              "type": "string"
+            },
+            "layout": {
+              "$ref": "#/definitions/layout"
+            }
+          },
+          "additionalProperties": true,
+          "definitions": {
+            "layout": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "paneId"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "pane"
+                    },
+                    "paneId": {
+                      "type": "string"
+                    }
+                  },
+                  "additionalProperties": true
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "id",
+                    "direction",
+                    "ratio",
+                    "first",
+                    "second"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "const": "split"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "direction": {
+                      "enum": [
+                        "row",
+                        "column"
+                      ]
+                    },
+                    "ratio": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "first": {
+                      "$ref": "#/definitions/layout"
+                    },
+                    "second": {
+                      "$ref": "#/definitions/layout"
+                    }
+                  },
+                  "additionalProperties": true
+                }
+              ]
+            }
+          }
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable",
+          "plugin.api.requestExpired",
+          "plugin.api.busy",
+          "plugin.api.frontendTimeout",
+          "plugin.api.frontendClosed"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "workspace.openPage",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{kind:welcome|settings|about|updates|knownHosts}",
+      "description": "Open or focus an existing application page.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.openHost",
+      "permissions": [
+        "workspace.write",
+        "hosts.read"
+      ],
+      "params": "{hostId:string}",
+      "description": "Open a saved host's details; never reveal an authentication secret.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.openTerminal",
+      "permissions": [
+        "workspace.write",
+        "sessions.read"
+      ],
+      "params": "{sessionId:string}",
+      "description": "Open a terminal tab for an already-connected session.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.openFiles",
+      "permissions": [
+        "workspace.write",
+        "sessions.read"
+      ],
+      "params": "{sessionId:string}",
+      "description": "Open a file browser for an already-connected session.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.openSidebar",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{view:hosts|plugins|knownHosts}",
+      "description": "Dock a list into the current workspace group.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.activate",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{tabId:string}",
+      "description": "Activate an existing tab and its group.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.close",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{tabId:string}",
+      "description": "Close a tab; dirty editors retain the normal user confirmation. Result reports pending confirmation.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.split",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{tabId:string,direction:row|column,position?:before|after,targetPaneId?:string}",
+      "description": "Move a tab into a split group.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.move",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{tabId:string,paneId:string,beforeTabId?:string|null}",
+      "description": "Move or reorder an existing tab.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.showQuickAccess",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{query?:string}",
+      "description": "Open Quick Access with an optional query. Never execute a command automatically.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.setPaneLocked",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{paneId:string,locked:boolean}",
+      "description": "Set the destination lock on an existing pane.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.resizeSplit",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{splitId:string,ratio:number}",
+      "description": "Resize an existing split with a ratio between 0.1 and 0.9.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "workspace.returnSidebar",
+      "permissions": [
+        "workspace.write"
+      ],
+      "params": "{view:hosts|plugins|knownHosts}",
+      "description": "Return a docked list to the sidebar.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "clipboard.readText",
+      "permissions": [
+        "clipboard.read"
+      ],
+      "params": "{}",
+      "description": "Read the system text clipboard.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "clipboard.writeText",
+      "permissions": [
+        "clipboard.write"
+      ],
+      "params": "{text:string}",
+      "description": "Replace the system text clipboard.",
+      "stability": "experimental",
+      "since": null,
+      "deprecated": null
+    },
+    {
+      "name": "storage.get",
+      "permissions": [],
+      "params": "{key:string}",
+      "description": "Read plugin-scoped JSON data. Keys use 1–128 ASCII letters, digits, dot, hyphen or underscore.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "key"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "not": {
+                "anyOf": [
+                  {
+                    "pattern": "[^A-Za-z0-9._-]"
+                  },
+                  {
+                    "enum": [
+                      "__proto__",
+                      "constructor",
+                      "prototype"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#"
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable",
+          "plugin.api.missing:key",
+          "plugin.api.invalid:key",
+          "plugin.api.invalidStorageKey",
+          "plugin.api.invalidStorage",
+          "plugin.api.storageTooLarge"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "storage.set",
+      "permissions": [],
+      "params": "{key:string,value:JSON}",
+      "description": "Persist plugin-scoped JSON data, at most 256KiB total per plugin.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "key",
+            "value"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "not": {
+                "anyOf": [
+                  {
+                    "pattern": "[^A-Za-z0-9._-]"
+                  },
+                  {
+                    "enum": [
+                      "__proto__",
+                      "constructor",
+                      "prototype"
+                    ]
+                  }
+                ]
+              }
+            },
+            "value": {}
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "null"
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable",
+          "plugin.api.missing:key",
+          "plugin.api.invalid:key",
+          "plugin.api.invalidStorageKey",
+          "plugin.api.invalidStorage",
+          "plugin.api.storageTooLarge",
+          "plugin.api.missing:value"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "storage.delete",
+      "permissions": [],
+      "params": "{key:string}",
+      "description": "Remove a key from plugin-scoped JSON data.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "key"
+          ],
+          "properties": {
+            "key": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "not": {
+                "anyOf": [
+                  {
+                    "pattern": "[^A-Za-z0-9._-]"
+                  },
+                  {
+                    "enum": [
+                      "__proto__",
+                      "constructor",
+                      "prototype"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "null"
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.responseTooLarge",
+          "plugin.timeout",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable",
+          "plugin.api.missing:key",
+          "plugin.api.invalid:key",
+          "plugin.api.invalidStorageKey",
+          "plugin.api.invalidStorage",
+          "plugin.api.storageTooLarge"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "ui.showMessage",
+      "permissions": [],
+      "params": "{message:string,kind?:info|success|error}",
+      "description": "Show a bounded plain-text notification prefixed with the installed plugin's identity. Returns null on acceptance, not durable delivery. Nonempty message, no NUL, at most 4000 UTF-16 units. Omitted/null kind defaults to info. No events or actions; notifications may expire or be displaced.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "description": "Nonempty plain text without NUL. Runtime limits count UTF-16 code units; the shared 256KiB UTF-8 request budget also applies. Additional fields are ignored.",
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4000,
+              "pattern": "^[^\\u0000]*$(?![\\s\\S])"
+            },
+            "kind": {
+              "enum": [
+                "info",
+                "success",
+                "error",
+                null
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "null",
+          "description": "Accepted for transient display, not durable delivery; no actions or events."
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.frontend:invalid:message",
+          "plugin.api.frontend:invalid:kind",
+          "plugin.api.frontend:requestCancelled",
+          "plugin.api.requestExpired",
+          "plugin.api.frontendTimeout",
+          "plugin.api.frontendClosed",
+          "plugin.api.busy",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": []
+      }
+    },
+    {
+      "name": "ui.confirm",
+      "permissions": [],
+      "params": "{message:string}",
+      "description": "Ask a plugin-identified plain-text confirmation without replacing an existing dialog. Returns true only on confirmation; dismiss, replacement or 55-second UI timeout returns false. Nonempty message, no NUL, at most 220Ki UTF-16 units and the shared 256KiB wire budget. Concurrent dialogs reject as busy; stopped/revoked/cancelled runtimes do not receive approval. No additional permissions are granted.",
+      "stability": "stable",
+      "since": "0.21.0",
+      "deprecated": null,
+      "contract": {
+        "version": 1,
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "description": "Nonempty plain text without NUL. Runtime limits count UTF-16 code units; the shared 256KiB UTF-8 request budget also applies. Additional fields are ignored.",
+          "type": "object",
+          "required": [
+            "message"
+          ],
+          "properties": {
+            "message": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 225280,
+              "pattern": "^[^\\u0000]*$(?![\\s\\S])"
+            }
+          },
+          "additionalProperties": true
+        },
+        "resultSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "boolean",
+          "description": "True only on confirmation; false on dismissal, replacement or 55-second UI expiry. Runtime expiry/revocation can instead reject."
+        },
+        "errorSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "data": {
+              "type": "object",
+              "required": [
+                "code"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "knownErrors": [
+          "plugin.api.invalidParams",
+          "plugin.api.frontend:invalid:message",
+          "plugin.api.frontend:dialog.busy",
+          "plugin.api.frontend:requestCancelled",
+          "plugin.api.requestExpired",
+          "plugin.api.frontendTimeout",
+          "plugin.api.frontendClosed",
+          "plugin.api.busy",
+          "pluginSecurity.blocked",
+          "pluginSecurity.changed",
+          "pluginSecurity.approvalRequired",
+          "pluginSecurity.permissionDenied",
+          "pluginSecurity.unavailable"
+        ],
+        "events": []
+      }
+    }
+  ]
+}

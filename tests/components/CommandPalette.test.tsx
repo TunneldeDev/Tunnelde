@@ -16,7 +16,7 @@ import { useSsh } from "@/store/ssh";
 import { useEditors } from "@/store/editors";
 import { useEditorLocation } from "@/store/editorLocation";
 import { api } from "@/lib/api/ipc";
-import type { PluginInfo, SshSession } from "@/lib/api/types";
+import type { Host, PluginInfo, SshSession } from "@/lib/api/types";
 
 beforeEach(() => {
   useQuickAccess.setState({ query: ">" });
@@ -41,8 +41,79 @@ beforeEach(() => {
 });
 
 describe("CommandPalette", () => {
+  it("pages all matching plugin commands instead of silently dropping results after 100", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "batch",
+          name: "Batch",
+          runtime: "node",
+          status: "stopped",
+          views: [],
+          commands: Array.from({ length: 145 }, (_, index) => ({
+            id: `item${index}`,
+            title: `Item ${index}`,
+          })),
+        } as unknown as PluginInfo,
+      ],
+    });
+    const start = vi.spyOn(usePlugins.getState(), "start");
+    useQuickAccess.getState().show(">Batch");
+    render(<CommandPalette />);
+    expect(screen.getAllByRole("option")).toHaveLength(100);
+    expect(screen.getByRole("status").textContent).toBe("1–100 / 145");
+    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
+    expect(screen.getAllByRole("option")).toHaveLength(45);
+    expect(screen.getByRole("status").textContent).toBe("101–145 / 145");
+    fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowUp" });
+    expect(screen.getAllByRole("option")).toHaveLength(100);
+    expect(screen.getAllByRole("option")[99]!.getAttribute("aria-selected")).toBe("true");
+    expect(start).not.toHaveBeenCalled();
+  });
+  it("reports the collected unsaved-content limit instead of silently hiding extra matches", () => {
+    useQuickAccess.getState().show("% match");
+    const tabId = "editor-local:C:/work/a.txt";
+    useEditors.setState({
+      entries: {
+        [tabId]: {
+          tabId,
+          sessionId: null,
+          path: "C:/work/a.txt",
+          name: "a.txt",
+          content: Array(101).fill("match").join("\n"),
+          baseline: "",
+          loading: false,
+          saving: false,
+          error: null,
+        },
+      },
+    });
+    render(<CommandPalette />);
+    expect(screen.getAllByRole("option")).toHaveLength(100);
+    expect(screen.getByRole("status").textContent).toContain("100 results");
+  });
+  it("keeps explicit host mode while inserting @tag presets", () => {
+    useQuickAccess.setState({ query: "@ " });
+    useHosts.setState({
+      hosts: [
+        {
+          id: "qa",
+          name: "QA host",
+          host: "192.0.2.1",
+          username: "qa",
+          tags: ["production"],
+          favorite: false,
+        } as Host,
+      ],
+    });
+    render(<CommandPalette />);
+    fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
+    fireEvent.click(screen.getByText("@tag:production").closest("button")!);
+    expect((screen.getByRole("combobox") as HTMLInputElement).value).toBe("@ @tag:production");
+    expect(screen.getByRole("option", { name: /^Connect · QA host/ })).toBeTruthy();
+  });
   it("applies file qualifiers to unsaved content without losing eligible draft results", async () => {
-    useQuickAccess.setState({ query: "% match ext:json" });
+    useQuickAccess.setState({ query: "% match @ext:json" });
     useSearchRoots.setState({
       roots: { files: [{ id: "root", path: "C:/work", sessionId: null }] },
     });
@@ -70,13 +141,13 @@ describe("CommandPalette", () => {
     render(<CommandPalette />);
     expect(screen.getAllByRole("option")).toHaveLength(1);
     expect(screen.getByRole("option").textContent).toContain("one.json");
-    fireEvent.change(screen.getByRole("combobox"), { target: { value: "% match ext:md" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "% match @ext:md" } });
     expect(screen.getAllByRole("option")).toHaveLength(1);
     expect(screen.getByRole("option").textContent).toContain("two.md");
   });
 
   it("keeps literal content whitespace and sends path/extension qualifiers to the traversal", async () => {
-    useQuickAccess.setState({ query: "% Foo  Bar ext:json,md -path:vendor" });
+    useQuickAccess.setState({ query: "% Foo  Bar @ext:json,md -@path:vendor" });
     useSearchRoots.setState({
       roots: { files: [{ id: "root", path: "C:/work", sessionId: null }] },
     });
@@ -96,7 +167,7 @@ describe("CommandPalette", () => {
   });
 
   it("supports qualifier-only file searches and exposes presets for commands", async () => {
-    useQuickAccess.setState({ query: "ext:json,md" });
+    useQuickAccess.setState({ query: "@ext:json,md" });
     useSearchRoots.setState({
       roots: { files: [{ id: "root", path: "C:/work", sessionId: null }] },
     });
@@ -118,7 +189,7 @@ describe("CommandPalette", () => {
     expect(await screen.findByRole("option", { name: /one.json/ })).toBeTruthy();
     expect(screen.getByRole("option", { name: /two.md/ })).toBeTruthy();
     fireEvent.change(screen.getByRole("combobox"), {
-      target: { value: ">category:Application restart" },
+      target: { value: ">@category:Application restart" },
     });
     expect(screen.getByRole("option", { name: /Restart Tunnelde/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Filter presets" })).toBeTruthy();

@@ -206,6 +206,25 @@ it("opens local recovery folders inside the application", () => {
   );
 });
 
+it("explains pending directory acknowledgement and permits a later cleanup retry", async () => {
+  const clear = vi.spyOn(transferApi, "clear").mockResolvedValue(null);
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      error: "sftp.transferCreationUnconfirmed",
+      artifactRecovery: "/tmp/.tunnelde-job.stage",
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(screen.getByText(/server has not confirmed creation/)).toBeTruthy();
+  expect(screen.getByText(/removing the directory yourself does not confirm/)).toBeTruthy();
+  expect(screen.getByText("/tmp/.tunnelde-job.stage")).toBeTruthy();
+  expect(screen.queryByText("Needs review")).toBeNull();
+  await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry cleanup" })));
+  expect(clear).toHaveBeenCalled();
+});
+
 it.each(["failed", "cleanupPending"] as const)(
   "preserves an unrecognized staging file and exposes its exact inspection folder: %s",
   async (status) => {

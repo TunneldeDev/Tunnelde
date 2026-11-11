@@ -6,6 +6,8 @@ import { translateError } from "@/lib/api/errors";
 import { formatBytes } from "@/lib/text/format";
 import type { TaskViewProps } from "./presentation";
 
+import { runBackgroundTaskAction } from "@/lib/tasks/registry";
+
 const ICONS = { cancel: X, pause: Pause, resume: Play, retry: RefreshCw, clear: Trash2 };
 
 export function BackgroundTaskRow({ task }: TaskViewProps) {
@@ -49,7 +51,7 @@ export function BackgroundTaskRow({ task }: TaskViewProps) {
                   setBusy(true);
                   setError(null);
                   void Promise.resolve()
-                    .then(action.run)
+                    .then(() => runBackgroundTaskAction(task, action.id))
                     .catch((error) => setError(translateError(error)))
                     .finally(() => setBusy(false));
                 }}

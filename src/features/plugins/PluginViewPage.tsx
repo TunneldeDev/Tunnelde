@@ -1,3 +1,4 @@
+import { withPluginInvocation, isPluginInvocationCancelled } from "@/lib/plugins/commands/runtime";
 import { Copy, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -23,6 +24,11 @@ import { PluginChat } from "./PluginChat";
 import { PluginMounts } from "./PluginMounts";
 import "@/styles/pluginTools.css";
 import { useViewState, useBackgroundGuard } from "@/lib/session/viewState";
+import { usePlugins } from "@/store/plugins";
+import { PluginComponentView } from "./PluginComponentView";
+import { useNavigation } from "@/store/navigation";
+import { useWorkspace } from "@/store/workspace";
+import { renderPluginView } from "@/lib/plugins/views/render";
 
 interface PluginViewPageProps {
   pluginId: string;
@@ -42,9 +48,38 @@ export function PluginViewPage({
   embedded,
   visible = true,
 }: PluginViewPageProps) {
+  const { t } = useTranslation();
+  const plugin = usePlugins((state) => state.items.find((item) => item.id === pluginId));
+  const view = plugin?.views.find((item) => item.id === viewId);
+  if (view?.provider)
+    return (
+      <EmptyState
+        title={t("providers.title")}
+        body={t("providers.hint")}
+        action={
+          <Button
+            onClick={() => {
+              useNavigation.getState().selectSettings("plugins");
+              useWorkspace.getState().openPage("settings");
+            }}
+          >
+            {t("settings.title")}
+          </Button>
+        }
+      />
+    );
+  if (plugin && view?.kind === "component")
+    return (
+      <PluginComponentView
+        key={`${pluginId}:${viewId}:${plugin.fingerprint ?? ""}`}
+        pluginId={pluginId}
+        viewId={viewId}
+        visible={visible}
+      />
+    );
   return (
     <PluginViewContent
-      key={JSON.stringify([pluginId, viewId])}
+      key={JSON.stringify([pluginId, viewId, plugin?.fingerprint, plugin?.runtimeId])}
       pluginId={pluginId}
       viewId={viewId}
       embedded={embedded}
@@ -59,19 +94,18 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
+  const renderRequest = useRef<AbortController | null>(null);
 
   const load = useCallback(
     (interactive = false) => {
       const current = ++requestId.current;
-      const render = () =>
-        api.pluginRenderView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language);
-      return (
-        interactive && isTauri()
-          ? authorizePluginAction(pluginId).then((allowed) =>
-              allowed && current === requestId.current ? render() : null,
-            )
-          : render()
-      )
+      renderRequest.current?.abort();
+      const controller = new AbortController();
+      renderRequest.current = controller;
+      return renderPluginView(pluginId, viewId, i18n.resolvedLanguage ?? i18n.language, {
+        interactive,
+        signal: controller.signal,
+      })
         .then((payload) => {
           if (current !== requestId.current) return;
           if (payload === null) return;
@@ -80,6 +114,7 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
           setError(null);
         })
         .catch((cause: unknown) => {
+          if (isPluginInvocationCancelled(cause)) return;
           reportPluginExecutionFailure(cause);
           if (current === requestId.current) setError(translateError(cause));
         })
@@ -92,6 +127,7 @@ function PluginViewContent({ pluginId, viewId, embedded, visible }: PluginViewPa
 
   const invalidate = useCallback(() => {
     ++requestId.current;
+    renderRequest.current?.abort();
   }, []);
 
   useEffect(() => {
@@ -244,10 +280,12 @@ function PluginToolForm({
   const [busy, setBusy] = useState<string | null>(null);
   useBackgroundGuard(busy !== null);
   const pending = useRef(false);
+  const invocation = useRef<AbortController | null>(null);
   const generation = useRef(0);
   useEffect(
     () => () => {
       ++generation.current;
+      invocation.current?.abort();
     },
     [],
   );
@@ -264,14 +302,31 @@ function PluginToolForm({
     }
     const current = ++generation.current;
     pending.current = true;
+    const controller = new AbortController();
+    invocation.current = controller;
     setBusy(action.id);
     setError(null);
     try {
-      if (isTauri() && !(await authorizePluginAction(pluginId))) return;
-      if (generation.current !== current) return;
-      const response = await api.pluginRun(pluginId, action.command, input);
+      const original = usePlugins.getState().items.find((item) => item.id === pluginId);
+      const response = await withPluginInvocation(
+        original,
+        async (plugin, signal, check) => {
+          if (isTauri() && !(await authorizePluginAction(pluginId, signal)))
+            throw new Error("plugin.permissionDenied");
+          check();
+          if (generation.current !== current) throw new Error("plugin.invocation.cancelled");
+          return api.pluginRun(pluginId, action.command, input, plugin.runtimeId ?? "");
+        },
+        controller.signal,
+      );
       if (generation.current === current) setResult(normalizeResult(response));
     } catch (cause) {
+      if (
+        isPluginInvocationCancelled(cause) ||
+        (cause instanceof Error &&
+          ["plugin.permissionDenied", "plugin.invocation.cancelled"].includes(cause.message))
+      )
+        return;
       reportPluginExecutionFailure(cause);
       if (generation.current === current) {
         setError(

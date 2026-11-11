@@ -29,6 +29,8 @@ export interface SettingDefinition {
     | "shortcuts"
     | "shortcutRules"
     | "network"
+    | "uiProviders"
+    | "hostList"
     | "updateUrl";
   hint?: MessageKey;
   options?: SettingOption[];
@@ -104,7 +106,7 @@ export const SETTINGS_GROUPS: Partial<Record<SettingsSection, readonly SettingsG
     {
       id: "layout",
       label: "settings.groups.layout",
-      keys: ["showStatusBar", "sidebarWidth", "rightPanel", "rightPanelWidth"],
+      keys: ["showStatusBar", "sidebarWidth", "rightPanel", "rightPanelWidth", "hostList"],
     },
     {
       id: "startup",
@@ -237,6 +239,20 @@ const cursorOptions = [
 
 /** Every editable preference appears here once: rendering, search and scoped reset share it. */
 export const SETTINGS_CATALOG: SettingDefinition[] = [
+  {
+    key: "hostList",
+    section: "workspace",
+    label: "hostColumns.view",
+    hint: "hostColumns.settingsHint",
+    kind: "hostList",
+  },
+  {
+    key: "uiProviders",
+    section: "plugins",
+    label: "providers.title",
+    hint: "providers.hint",
+    kind: "uiProviders",
+  },
   {
     key: "network",
     section: "network",

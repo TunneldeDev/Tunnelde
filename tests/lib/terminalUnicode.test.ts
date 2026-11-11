@@ -23,6 +23,7 @@ runInNewContext(readFileSync(require.resolve("@xterm/xterm"), "utf8"), {
   queueMicrotask,
   performance,
   process,
+  structuredClone,
 });
 const { Terminal } = xtermModule.exports;
 const serializeModule = { exports: {} as typeof SerializeModule };
@@ -156,10 +157,106 @@ describe("terminal window recreation", () => {
 });
 
 function createTerminal(modern = true) {
-  const terminal = new Terminal({ allowProposedApi: true, cols: 80, rows: 12 });
+  const terminal = new Terminal({
+    allowProposedApi: true,
+    cols: 80,
+    rows: 12,
+    vtExtensions: { kittyKeyboard: true },
+  });
   if (modern) terminal.loadAddon(new browserModule.exports.UnicodeGraphemesAddon());
   return terminal;
 }
+
+describe("enhanced keyboard negotiation", () => {
+  it("uses the distributed keyboard engine for modified keys, repeats, releases and legacy fallback", async () => {
+    const terminal = createTerminal();
+    const service = (
+      terminal as unknown as {
+        _core: {
+          _keyboardService: {
+            evaluateKeyDown(event: KeyboardEvent): { key?: string };
+            evaluateKeyUp(event: KeyboardEvent): { key?: string } | undefined;
+          };
+        };
+      }
+    )._core._keyboardService;
+    const enter = (modifiers: KeyboardEventInit = {}) =>
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        ...modifiers,
+      });
+    try {
+      expect(service.evaluateKeyDown(enter({ shiftKey: true })).key).toBe("\r");
+      await write(terminal, "\x1b[>7u");
+      for (const [modifiers, expected] of [
+        [{ shiftKey: true }, "\x1b[13;2u"],
+        [{ altKey: true }, "\x1b[13;3u"],
+        [{ ctrlKey: true }, "\x1b[13;5u"],
+        [{ metaKey: true }, "\x1b[13;9u"],
+        [{ shiftKey: true, ctrlKey: true }, "\x1b[13;6u"],
+        [{ shiftKey: true, repeat: true }, "\x1b[13;2:2u"],
+      ] as const)
+        expect(service.evaluateKeyDown(enter(modifiers)).key).toBe(expected);
+      // Enter releases are only requested together with the report-all flag.
+      expect(service.evaluateKeyUp(enter({ shiftKey: true }))?.key).toBeUndefined();
+      await write(terminal, "\x1b[>15u");
+      expect(
+        service.evaluateKeyUp(
+          new KeyboardEvent("keyup", {
+            key: "Enter",
+            code: "Enter",
+            keyCode: 13,
+            shiftKey: true,
+          }),
+        )?.key,
+      ).toBe("\x1b[13;2:3u");
+      await write(terminal, "\x1b[<u");
+      expect(
+        service.evaluateKeyDown(
+          new KeyboardEvent("keydown", { key: "i", code: "KeyI", keyCode: 73, ctrlKey: true }),
+        ).key,
+      ).toBe("\x1b[105;5u");
+      expect(
+        service.evaluateKeyDown(
+          new KeyboardEvent("keydown", { key: "Tab", code: "Tab", keyCode: 9 }),
+        ).key,
+      ).toBe("\t");
+      await write(terminal, "\x1b[<u");
+      expect(service.evaluateKeyDown(enter({ shiftKey: true })).key).toBe("\r");
+      expect(service.evaluateKeyUp(enter({ shiftKey: true }))).toBeUndefined();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it("negotiates and restores independent normal/alternate keyboard stacks without aliasing", async () => {
+    const original = createTerminal();
+    const restored = createTerminal();
+    const output: string[] = [];
+    original.onData((value) => output.push(value));
+    restored.onData((value) => output.push(value));
+    try {
+      await write(original, "\x1b[>1u\x1b[?u\x1b[?1049h\x1b[>7u\x1b[?u");
+      expect(output).toEqual(["\x1b[?1u", "\x1b[?7u"]);
+      const state = captureTerminalState(original);
+      await write(original, "\x1b[=3u");
+      expect(state.kittyKeyboard?.flags).toBe(7);
+      await write(restored, "\x1b[?1049h");
+      restoreTerminalState(restored, state);
+      await write(restored, "\x1b[?u\x1b[<u\x1b[?u\x1b[?1049l\x1b[?u");
+      expect(output.slice(2)).toEqual(["\x1b[?7u", "\x1b[?0u", "\x1b[?1u"]);
+      expect(state.kittyKeyboard?.flags).toBe(7);
+      expect(state.kittyKeyboard?.altStack).toHaveLength(1);
+      await write(restored, "\x1bc\x1b[?u");
+      expect(output.at(-1)).toBe("\x1b[?0u");
+    } finally {
+      original.dispose();
+      restored.dispose();
+    }
+  });
+});
 
 function write(terminal: Xterm, data: string | Uint8Array) {
   return new Promise<void>((resolve) => terminal.write(data, resolve));

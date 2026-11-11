@@ -4,6 +4,7 @@ import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { HostTree } from "@/components/layout/HostTree";
+import { ProviderSurface } from "./ProviderSurface";
 import { PluginsSidebar } from "@/features/plugins/PluginsSidebar";
 import { TrustedHostsSidebar } from "@/features/settings/TrustedHostsSidebar";
 import { SIDEBAR_MIME, sidebarTabId, sidebarViewOf, TAB_MIME } from "@/lib/session/sidebarDock";
@@ -130,7 +131,9 @@ export function SidebarContents() {
       : sidebarVisible && activeSidebar === view;
     return createPortal(
       view === "hosts" ? (
-        <HostTree />
+        <ProviderSurface target="hostList" visible={active} keepFallback>
+          <HostTree />
+        </ProviderSurface>
       ) : view === "forwarding" ? (
         <ForwardingPanel />
       ) : view === "tasks" ? (

@@ -5,7 +5,7 @@ import "@/i18n/i18n";
 import { SearchField } from "@/components/ui/form/SearchField";
 
 function Fixture({ disabled = false }: { disabled?: boolean }) {
-  const [value, setValue] = useState('hello "tag:literal"');
+  const [value, setValue] = useState('hello "@tag:literal"');
   return (
     <SearchField
       aria-label="Search fixture"
@@ -27,11 +27,11 @@ describe("shared search field", () => {
     const input = screen.getByRole("textbox", { name: "Search fixture" }) as HTMLInputElement;
     fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Comma tag/ }));
-    expect(input.value).toBe('hello "tag:literal" tag:"a,b"');
+    expect(input.value).toBe('hello "@tag:literal" @tag:"a,b"');
     await waitFor(() => expect(document.activeElement).toBe(input));
     fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Clear filters, keep search text" }));
-    expect(input.value).toBe('hello "tag:literal"');
+    expect(input.value).toBe('hello "@tag:literal"');
   });
 
   it("inserts an editable prefix as an ordinary menu item and clears the whole query", () => {
@@ -39,9 +39,26 @@ describe("shared search field", () => {
     const input = screen.getByRole("textbox") as HTMLInputElement;
     fireEvent.click(screen.getByRole("button", { name: "Filter presets" }));
     fireEvent.click(screen.getByRole("menuitem", { name: /By ID/ }));
-    expect(input.value).toBe('hello "tag:literal" id:');
+    expect(input.value).toBe('hello "@tag:literal" @id:');
     fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
     expect(input.value).toBe("");
+  });
+
+  it("does not mark bare fields as active and preserves them when selecting and clearing presets", () => {
+    render(<Fixture />);
+    const input = screen.getByRole("textbox") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'tag:"a,b"' } });
+    const funnel = screen.getByRole("button", { name: "Filter presets" });
+    expect(funnel.classList.contains("is-active")).toBe(false);
+    fireEvent.click(funnel);
+    expect(
+      screen.getByRole("menuitemcheckbox", { name: /Comma tag/ }).getAttribute("aria-checked"),
+    ).toBe("false");
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /Comma tag/ }));
+    expect(input.value).toBe('tag:"a,b" @tag:"a,b"');
+    fireEvent.click(funnel);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Clear filters, keep search text" }));
+    expect(input.value).toBe('tag:"a,b"');
   });
 
   it("disables presets and clear actions along with the input", () => {

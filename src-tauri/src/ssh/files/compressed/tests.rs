@@ -39,14 +39,43 @@ async fn transport_sampling_keeps_incompressible_and_tiny_files_on_sftp() {
     tokio::fs::write(&endpoint.path, vec![b'a'; 32768])
         .await
         .unwrap();
-    assert!(worthwhile(&endpoint, None).await.unwrap());
+    assert!(worthwhile(&endpoint, None, None).await.unwrap());
     tokio::fs::write(&endpoint.path, b"tiny").await.unwrap();
-    assert!(!worthwhile(&endpoint, None).await.unwrap());
+    assert!(!worthwhile(&endpoint, None, None).await.unwrap());
     let bytes: Vec<u8> = (0..32768).map(|_| rand::random()).collect();
     tokio::fs::write(&endpoint.path, &bytes).await.unwrap();
-    assert!(!worthwhile(&endpoint, None).await.unwrap());
+    assert!(!worthwhile(&endpoint, None, None).await.unwrap());
     assert_eq!(tokio::fs::read(&endpoint.path).await.unwrap(), bytes);
     tokio::fs::remove_dir_all(root).await.unwrap();
+}
+
+#[tokio::test]
+async fn transport_sampling_rejects_compressible_headers_and_checks_the_payload() {
+    let path = std::env::temp_dir().join(format!(
+        "tunnelde-compression-header-{}",
+        uuid::Uuid::new_v4()
+    ));
+    let endpoint = Endpoint {
+        session: None,
+        path: display_path(&path),
+    };
+    let mut seed = 0x12345678_u32;
+    let mut bytes: Vec<_> = (0..2 * 1024 * 1024 + 73)
+        .map(|_| {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            seed as u8
+        })
+        .collect();
+    bytes[..32768].fill(0);
+    tokio::fs::write(&path, &bytes).await.unwrap();
+    let selected = worthwhile(&endpoint, None, None).await.unwrap();
+    tokio::fs::remove_file(path).await.unwrap();
+    assert!(
+        !selected,
+        "a compressible header must not route an incompressible file through the optional worker"
+    );
 }
 
 #[test]
@@ -358,5 +387,34 @@ async fn archive_download_rejects_wrong_member_lengths_from_peer() {
         .await
         .is_err());
     drop(session);
+    fixture.await.unwrap();
+}
+
+#[tokio::test]
+async fn directory_creation_keeps_worker_rejections_distinct_from_lost_replies() {
+    let (client, server) = duplex(4096);
+    let fixture = tokio::spawn(async move {
+        let (input, mut output) = tokio::io::split(server);
+        let mut input = BufReader::new(input);
+        output.write_all(MAGIC).await.unwrap();
+        for rejected in [true, false] {
+            let request = header(&mut input).await;
+            assert_eq!(request["op"], "mkdir_private");
+            let response = json!({"id":request["id"],"size":0,"error":rejected.then_some("permission denied")});
+            output
+                .write_all(format!("{response}\n").as_bytes())
+                .await
+                .unwrap();
+        }
+    });
+    let session = Session::new(client).await.unwrap();
+    assert!(matches!(
+        session.create_private_directory("/denied").await.unwrap(),
+        range_io::DirectoryCreation::Rejected(_)
+    ));
+    assert!(matches!(
+        session.create_private_directory("/allowed").await.unwrap(),
+        range_io::DirectoryCreation::Created
+    ));
     fixture.await.unwrap();
 }

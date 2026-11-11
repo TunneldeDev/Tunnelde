@@ -1,5 +1,6 @@
 //! SSHFS transports reuse an authenticated SSH channel. No credentials or
 //! unauthenticated local listening sockets are exposed to the mount program.
+mod lifecycle;
 use crate::{
     error::{AppError, AppResult},
     ssh::SshManager,
@@ -728,6 +729,17 @@ impl MountRegistry {
         Ok(info)
     }
     pub async fn unmount(&self, owner: &str, id: &str, force: bool) -> AppResult<()> {
+        self.unmount_checked(owner, id, force, None, || Ok(()))
+            .await
+    }
+    async fn unmount_checked(
+        &self,
+        owner: &str,
+        id: &str,
+        force: bool,
+        generation: Option<u64>,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()> {
         let mut mounts = self.mounts.lock().await;
         let active = mounts
             .get_mut(id)
@@ -735,9 +747,12 @@ impl MountRegistry {
         if active.info.owner != owner {
             return Err(AppError::validation("mounts.notOwned"));
         }
+        if generation.is_some_and(|generation| active.generation != generation) {
+            return Err(AppError::validation("plugin.resources.unavailable"));
+        }
+        check()?;
         if !mount_visible(&active.info.mount_point).await? {
-            let _ = active.child.kill().await;
-            active.bridge.abort();
+            lifecycle::settle_process(active).await?;
             mounts.remove(id);
             return Ok(());
         }
@@ -787,8 +802,7 @@ impl MountRegistry {
             }
         }
         // Only the owned SSHFS process is stopped; other applications are never killed.
-        let _ = active.child.kill().await;
-        active.bridge.abort();
+        lifecycle::settle_process(active).await?;
         mounts.remove(id);
         Ok(())
     }

@@ -1,5 +1,7 @@
 # Tunnelde
 
+[Documentation / 文档](docs/README.md)
+
 [English](README.en-us.md)
 
 面向 Windows、macOS 和 Linux 的桌面 SSH 与 SFTP 工作台，由
@@ -16,7 +18,7 @@
 | Linux x64                         | AppImage 或 `.deb`，需要 WebKitGTK 4.1 | AppImage 支持应用内更新，deb 手动更新 |
 
 按 **F1** 打开快速访问：`>` 列出应用和已安装插件的命令，`%` 搜索选定本地或 SSH 目录中的文件内容，
-`@` 查找主机。**Ctrl/Cmd+P** 打开文件或已有标签页。已安装插件的命令可以直接执行，也可在
+`@ `（@ 后加空格）查找主机。**Ctrl/Cmd+P** 打开文件或已有标签页。已安装插件的命令可以直接执行，也可在
 “设置 → 快捷键”中绑定按键。本地和远端文本结果都在编辑器中定位到匹配行，保留未保存的文字；其他受支持的
 文件类型在预览中打开。搜索采用字面匹配，有范围限制，并支持取消。
 
@@ -26,12 +28,12 @@
 在**设置 → 更新**选择正式版或公测版，以及 GitHub 官方源或兼容的自定义 HTTPS 更新源。所有安装的默认渠道
 均为正式版，包括公测版安装。默认每天自动检查一次，下载和安装仍由用户手动触发。Windows 和 AppImage
 使用带更新签名的完整安装包。切换到正式版不会自动将较新的公测版降级。镜像及渠道要求见
-[更新发布说明](docs/releases.zh-cn.md)。
+[更新发布说明](docs/zh-cn/development/releases.md)。
 
 ## 工作台
 
-- 组织、搜索、标记、收藏和拖动排序主机。在搜索框使用 `tag:PublicNet`、`@tag PublicNet`、带引号的标签或
-  `is:favorite` 筛选；可以用鼠标或方向键与 Enter 选择标签建议。支持密码、密钥文件和粘贴私钥连接，
+- 组织、搜索、标记、收藏和拖动排序主机。在搜索框使用 `@tag:PublicNet`、`@tag:"生产 东区"` 或
+  `@is:favorite` 筛选；可以用鼠标或方向键与 Enter 选择标签建议。支持密码、密钥文件和粘贴私钥连接，
   可在编辑主机时保存密码，双击直接连接。未知或变更的主机密钥仍需要明确确认信任。
 - 终端基于 xterm.js，支持 ANSI 颜色、Unicode 字素宽度、等宽字体、原生剪贴板、可配置鼠标行为和实时命令历史。
 - 本地和远端文件视图相互独立，提供详情和 Finder 分栏视图。可展开路径层级、编辑完整路径、输入名称定位、
@@ -43,7 +45,7 @@
   状态栏的后台任务入口提供分组任务、展开详情和临时限速；任务列表可移动、调整大小并保留布局。
   优化传输采用有界 SFTP 请求流水线、自动分块和共享连接预算；在兼容的 SSH 主机上使用自适应压缩和
   有界内存归档减少小文件传输的往返请求。
-  行为与限制见[网络与存储](docs/network-storage.zh-cn.md)。
+  行为与限制见[网络与存储](docs/zh-cn/guide/network-storage.md)。
 - 将标签和侧栏面板拖入任意分栏。单击页面和插件详情时打开可替换的斜体预览标签；再次选择、双击标签或与
   页面控件交互后保留该标签。每个分栏有独立的预览标签。可锁定新页面的默认目标分栏，并收起、恢复停靠面板，
   保留位置和尺寸。
@@ -61,7 +63,7 @@
 插件可提供命令、面板、主题、文件工具、AI 助手等扩展。请浏览市场，并查看各插件的能力、运行时要求和权限。
 
 兼容的助手集成可在本地或已连接的 SSH 主机运行，初始化、认证、审批策略和保障能力因插件和执行位置而异，
-详见[助手指南](docs/ai-assistants.zh-cn.md)。可执行插件权限不等于对任意代码或 shell 命令提供操作系统沙箱。
+详见[助手指南](docs/zh-cn/guide/ai-assistants.md)。可执行插件权限不等于对任意代码或 shell 命令提供操作系统沙箱。
 使用系统 Node 运行时需要明确授权。
 
 可选的 `tunnelde-agent` 用于 MCP stdio 和高级持久远端 supervisor，由独立的
@@ -70,16 +72,16 @@
 
 ## 文档
 
-- [文件浏览、列布局及键盘导航](docs/files.zh-cn.md)
-- [设置与配置方案](docs/settings.zh-cn.md)
-- [代理、跳板机、传输及 SSHFS](docs/network-storage.zh-cn.md)
-- [键盘与鼠标快捷操作](docs/shortcuts.zh-cn.md)
-- [AI 本地与远端配置](docs/ai-assistants.zh-cn.md)
-- [插件概览与兼容性](docs/plugins-overview.zh-cn.md)
-- [插件开发与安全](docs/plugins.zh-cn.md)
-- [架构与数据位置](docs/architecture.zh-cn.md)
-- [故障排查](docs/troubleshooting.zh-cn.md)
-- [可选原生辅助程序](docs/native-helper.zh-cn.md)
+- [文件浏览、列布局及键盘导航](docs/zh-cn/guide/files.md)
+- [设置与配置方案](docs/zh-cn/guide/settings.md)
+- [代理、跳板机、传输及 SSHFS](docs/zh-cn/guide/network-storage.md)
+- [键盘与鼠标快捷操作](docs/zh-cn/guide/shortcuts.md)
+- [AI 本地与远端配置](docs/zh-cn/guide/ai-assistants.md)
+- [插件概览与兼容性](docs/zh-cn/guide/plugins.md)
+- [插件开发与安全](docs/zh-cn/development/plugins/README.md)
+- [架构与数据位置](docs/zh-cn/development/architecture.md)
+- [故障排查](docs/zh-cn/guide/troubleshooting.md)
+- [可选原生辅助程序](docs/zh-cn/development/native-helper.md)
 - [版本变更](CHANGELOG.md)
 
 各指南均提供对应的英文版本。
@@ -111,7 +113,7 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```text
 src/                 React 工作台、UI 组件、功能状态和国际化
 src-tauri/           Rust SSH/SFTP 核心、插件 API、原生集成和更新器
-examples/plugins/   最小插件示例
+tests/fixtures/     测试材料与冻结的插件兼容性样例
 scripts/            构建、验证、打包与发布工具
 docs/               用户和开发者文档
 ```
@@ -129,7 +131,7 @@ docs/               用户和开发者文档
 分发 Windows、Linux、Apple Silicon 和 Intel macOS 包。各渠道在安装包、签名及更新元数据验证完成前保留为
 草稿；公测版最终发布为 Pre-release，保留历史版本并且不会替换最新正式版。
 
-PR 约定见[贡献说明](CONTRIBUTING.md)，分支保护、自动化凭据和构建恢复见[发布指南](docs/releases.zh-cn.md)。
+PR 约定见[贡献说明](CONTRIBUTING.md)，分支保护、自动化凭据和构建恢复见[发布指南](docs/zh-cn/development/releases.md)。
 `pnpm build:local` 生成未签名的本地构建，无需更新签名密钥。
 
 ## 许可

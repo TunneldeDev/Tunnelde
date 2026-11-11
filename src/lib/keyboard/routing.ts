@@ -27,6 +27,22 @@ export interface ShortcutResult {
 }
 const COLLECTION = "tunnelde:collect-shortcuts";
 const results = new WeakMap<KeyboardEvent, ShortcutResult>();
+const shortcutReleases = new WeakMap<Element, Set<string>>();
+const physicalKey = (event: KeyboardEvent) => event.code || event.key.toLowerCase();
+const terminalTarget = (event: KeyboardEvent) =>
+  event
+    .composedPath()
+    .find(
+      (target): target is Element =>
+        target instanceof Element && target.classList.contains("terminal-host"),
+    );
+
+/** A consumed press must not leak a release into an enhanced terminal protocol. */
+export function consumeShortcutRelease(event: KeyboardEvent): boolean {
+  if (event.type !== "keyup") return false;
+  const terminal = terminalTarget(event);
+  return !!terminal && !!shortcutReleases.get(terminal)?.delete(physicalKey(event));
+}
 type Collector = { event: KeyboardEvent; candidates: ShortcutCandidate[] };
 
 export function shortcutRule(
@@ -73,6 +89,12 @@ export function executeShortcutCandidates(
     if (candidate.rule.propagation === "block") break;
   }
   if (consumed) {
+    const terminal = terminalTarget(event);
+    if (terminal) {
+      let releases = shortcutReleases.get(terminal);
+      if (!releases) shortcutReleases.set(terminal, (releases = new Set()));
+      releases.add(physicalKey(event));
+    }
     event.preventDefault();
     event.stopPropagation();
   }
@@ -119,6 +141,14 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
   const previous = results.get(event);
   if (previous) return previous;
   const empty = { handled: false, consumed: false };
+  // Window capture runs before the recorder's input handler. Leave the event
+  // untouched so the recorder can capture occupied bindings and handle Tab/Escape.
+  if (
+    event
+      .composedPath()
+      .some((target) => target instanceof Element && target.hasAttribute("data-shortcut-recorder"))
+  )
+    return empty;
   if (
     event.type !== "keydown" ||
     event.defaultPrevented ||
@@ -132,6 +162,10 @@ export function dispatchShortcuts(event: KeyboardEvent, includeWorkbench = true)
       ))
   )
     return empty;
+  if (event.type === "keydown") {
+    const terminal = terminalTarget(event);
+    if (terminal) shortcutReleases.get(terminal)?.delete(physicalKey(event));
+  }
   const settings = useSettings.getState().settings;
   const definitions = shortcutCommands(usePlugins.getState().items);
   const candidates: ShortcutCandidate[] = [];

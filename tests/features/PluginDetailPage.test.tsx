@@ -48,6 +48,66 @@ beforeEach(async () => {
   });
 });
 describe("plugin workspace details", () => {
+  it.each([1, 2, 99])("checks manifest admission %i for marketplace installation", (apiVersion) => {
+    usePlugins.setState({ items: [] });
+    useMarketplace.setState({
+      catalogues: { official: catalogue(official, [{ ...entry, apiVersion }]) },
+    });
+    render(<PluginDetailPage sourceId="official" pluginId={entry.id} />);
+    const install = screen.getByRole("button", { name: "Install" }) as HTMLButtonElement;
+    expect(install.disabled).toBe(apiVersion === 99);
+    expect(screen.queryByText(i18n.t("market.incompatibleApi")) !== null).toBe(apiVersion === 99);
+  });
+
+  it("shows required dependency IDs and version ranges from installed metadata", () => {
+    usePlugins.setState({
+      items: [
+        { ...plugin, apiVersion: 2, dependencies: [{ id: "shared-tools", version: "^1.0" }] },
+      ],
+    });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    expect(screen.getByText("shared-tools · ^1.0")).toBeTruthy();
+  });
+  it("keeps Stop available during a command and disables it only while stopping", () => {
+    const stop = vi.fn(async () => {});
+    usePlugins.setState({
+      items: [{ ...plugin, status: "running" }],
+      commandingIds: [plugin.id],
+      busyIds: [plugin.id],
+      stop,
+    });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    const button = screen.getByRole("button", { name: "Stop" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledWith(plugin.id);
+    act(() => usePlugins.setState({ commandingIds: [], stoppingIds: [plugin.id] }));
+    expect(button.disabled).toBe(true);
+  });
+  it("keeps cancellation available while activation is pending", () => {
+    const stop = vi.fn(async () => {});
+    usePlugins.setState({ startingIds: [plugin.id], busyIds: [plugin.id], stop });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    const button = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    expect(screen.getByText("Starting…")).toBeTruthy();
+    fireEvent.click(button);
+    expect(stop).toHaveBeenCalledWith(plugin.id);
+    expect(start).not.toHaveBeenCalled();
+  });
+  it("does not render an empty Open tool section for provider-only packages", () => {
+    usePlugins.setState({
+      items: [
+        {
+          ...plugin,
+          views: [{ id: "desktop", title: "Desktop", kind: "component", provider: "workbench" }],
+        },
+      ],
+    });
+    render(<PluginDetailPage sourceId="local" pluginId={plugin.id} />);
+    expect(screen.queryByRole("heading", { name: "Open tool" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Desktop" })).toBeNull();
+  });
   it("shows declared application and API requirements without relying on README text", () => {
     usePlugins.setState({
       items: [

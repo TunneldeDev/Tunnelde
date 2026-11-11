@@ -40,6 +40,27 @@ beforeEach(() => {
 });
 
 describe("SSH session lifecycle", () => {
+  it("publishes a native-accepted session synchronously and fences an older refresh", async () => {
+    let resolveSnapshot!: (sessions: SshSession[]) => void;
+    apiMock.sshSessions.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSnapshot = resolve;
+        }),
+    );
+    const old = useSsh.getState().refresh();
+    const accepted = { ...session, id: "native-accepted", terminal: false };
+    useSsh.getState().acceptSession(accepted);
+    expect(useSsh.getState().sessions).toContainEqual(accepted);
+    useSsh.getState().acceptSession({ ...accepted, title: "Updated" });
+    expect(useSsh.getState().sessions.filter((item) => item.id === accepted.id)).toHaveLength(1);
+    resolveSnapshot([]);
+    await old;
+    expect(useSsh.getState().sessions.find((item) => item.id === accepted.id)?.title).toBe(
+      "Updated",
+    );
+    expect(closeSession).not.toHaveBeenCalled();
+  });
   it("reconciles missed close notifications from an authoritative session snapshot", async () => {
     const connected = { ...session, id: "still-connected" };
     useSsh.setState({ sessions: [session, connected] });

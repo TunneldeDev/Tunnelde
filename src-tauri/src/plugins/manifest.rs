@@ -6,6 +6,9 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, AppResult};
 
 pub const API_VERSION: u32 = 1;
+/// Required dependencies change admission semantics. Old v1-only hosts reject
+/// these packages instead of silently ignoring their required dependencies.
+pub const DEPENDENCY_API_VERSION: u32 = 2;
 pub const MANIFEST_FILE: &str = "tunnelde-plugin.json";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,6 +16,8 @@ pub const MANIFEST_FILE: &str = "tunnelde-plugin.json";
 pub struct PluginCommand {
     pub id: String,
     pub title: String,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub frontend: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub keybindings: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -21,6 +26,8 @@ pub struct PluginCommand {
     pub editor: Option<EditorCommand>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file_menu: Option<FileMenuCommand>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub host_menu: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +105,8 @@ pub struct PluginView {
     pub kind: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -138,6 +147,15 @@ pub struct PluginManifest {
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dependencies: Vec<super::PluginDependency>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host_fields: Option<crate::services::host_fields::Schema>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub configuration:
+        Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_runner: Option<super::runners::bootstrap::contracts::Manifest>,
     #[serde(default)]
     pub main: String,
     /// `theme` packages contribute data without an executable entry point.
@@ -167,6 +185,8 @@ pub struct PluginManifest {
     pub file_previews: Vec<crate::preview::providers::Provider>,
     #[serde(default)]
     pub mounted_file_reveal: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frontend: Option<super::frontend::FrontendManifest>,
 }
 
 pub(super) fn valid_tags(tags: &[String]) -> bool {
@@ -200,6 +220,49 @@ pub fn load(dir: &Path) -> AppResult<PluginManifest> {
 
 impl PluginManifest {
     fn validate(&self, dir: &Path) -> AppResult<()> {
+        if !matches!(self.api_version, API_VERSION | DEPENDENCY_API_VERSION) {
+            return Err(AppError::validation("plugin.apiVersion.unsupported"));
+        }
+        if !self.dependencies.is_empty()
+            && (self.api_version != DEPENDENCY_API_VERSION
+                || self.runtime.as_deref() == Some("theme"))
+        {
+            return Err(AppError::validation("plugin.activation.declarationVersion"));
+        }
+        super::runtime::activation::validate_dependencies(&self.id, &self.dependencies)?;
+        if let Some(configuration) = &self.configuration {
+            configuration.validate()?;
+        }
+        if let Some(schema) = &self.host_fields {
+            schema.validate()?;
+            if !self
+                .permissions
+                .iter()
+                .any(|permission| permission == "hosts.read")
+            {
+                return Err(AppError::validation("hostFields.permissionRequired"));
+            }
+        }
+        if let Some(frontend) = &self.frontend {
+            frontend.validate(dir)?;
+            if self.runtime.as_deref() == Some("theme")
+                || !self.permissions.iter().any(|p| p == "ui.trusted")
+            {
+                return Err(AppError::validation("plugin.frontend.invalid"));
+            }
+        }
+        if self.remote_runner.is_some()
+            && (matches!(self.runtime.as_deref(), Some("theme" | "declarative"))
+                || !self
+                    .permissions
+                    .iter()
+                    .any(|permission| permission == "ssh.exec"))
+        {
+            return Err(AppError::validation("plugin.runners.invalidInitialization"));
+        }
+        if self.commands.iter().any(|command| command.frontend) && self.frontend.is_none() {
+            return Err(AppError::validation("plugin.frontend.invalid"));
+        }
         if self.mounted_file_reveal
             && (!self.permissions.iter().any(|p| p == "mounts.read")
                 || !self.permissions.iter().any(|p| p == "mounts.write")
@@ -221,9 +284,6 @@ impl PluginManifest {
         }
         if self.name.trim().is_empty() {
             return Err(AppError::validation("plugin.name.required"));
-        }
-        if self.api_version != API_VERSION {
-            return Err(AppError::validation("plugin.apiVersion.unsupported"));
         }
         if normalized_version(&self.version).is_none() {
             return Err(AppError::validation("plugin.version.invalid"));
@@ -252,10 +312,28 @@ impl PluginManifest {
             return Err(AppError::validation("plugin.engine.invalidRange"));
         }
         let mut command_ids = std::collections::HashSet::new();
+        if self
+            .commands
+            .iter()
+            .filter(|command| command.host_menu)
+            .count()
+            > 16
+        {
+            return Err(AppError::validation("plugin.command.invalid"));
+        }
         for command in &self.commands {
             if !valid_command_id(&command.id)
                 || command.title.trim().is_empty()
                 || !command_ids.insert(&command.id)
+                || (command.host_menu
+                    && (command.title.chars().count() > 120
+                        || command.title.chars().any(char::is_control)
+                        || command.editor.is_some()
+                        || command.file_menu.is_some()
+                        || !self
+                            .permissions
+                            .iter()
+                            .any(|permission| permission == "hosts.read")))
                 || !valid_keybindings(&command.keybindings)
                 || command
                     .mac_keybindings
@@ -317,6 +395,15 @@ impl PluginManifest {
             }
         }
         let mut view_ids = std::collections::HashSet::new();
+        if self
+            .views
+            .iter()
+            .filter(|view| view.provider.is_some())
+            .count()
+            > 8
+        {
+            return Err(AppError::validation("plugin.view.invalid"));
+        }
         for view in &self.views {
             if !valid_id(&view.id)
                 || view.title.trim().is_empty()
@@ -328,7 +415,64 @@ impl PluginManifest {
                 || view
                     .kind
                     .as_deref()
-                    .is_some_and(|v| !matches!(v, "chat" | "blocks"))
+                    .is_some_and(|v| !matches!(v, "chat" | "blocks" | "component"))
+                || (view.kind.as_deref() == Some("component") && self.frontend.is_none())
+                || view.provider.as_deref().is_some_and(|target| {
+                    !matches!(
+                        target,
+                        "hostList"
+                            | "workbench"
+                            | "fileBrowser"
+                            | "terminal"
+                            | "history"
+                            | "forwarding"
+                            | "monitor"
+                            | "backgroundTasks"
+                            | "processes"
+                            | "quickAccess"
+                            | "preferences"
+                    ) || view.kind.as_deref() != Some("component")
+                        || view.location.is_some()
+                        || view.title.chars().count() > 120
+                        || view.title.chars().any(char::is_control)
+                        || (target == "hostList"
+                            && !self.permissions.iter().any(|p| p == "hosts.read"))
+                        || (target == "fileBrowser"
+                            && ["fs.read", "sftp.read", "workspace.write"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "terminal"
+                            && ["sessions.read", "ssh.exec"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "preferences"
+                            && !self.permissions.iter().any(|p| p == "settings.read"))
+                        || (target == "backgroundTasks"
+                            && !self.permissions.iter().any(|p| p == "backgroundTasks.read"))
+                        || (matches!(target, "monitor" | "processes")
+                            && ["sessions.read", "monitor.read"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "forwarding"
+                            && ["hosts.read", "forwards.read"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "quickAccess"
+                            && [
+                                "hosts.read",
+                                "sessions.read",
+                                "fs.read",
+                                "sftp.read",
+                                "workspace.read",
+                                "editor.read",
+                            ]
+                            .iter()
+                            .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "history"
+                            && ["sessions.read", "history.read"]
+                                .iter()
+                                .any(|p| !self.permissions.iter().any(|v| v == p)))
+                })
                 || view.icon.as_deref().is_some_and(|v| {
                     !matches!(
                         v,
@@ -360,6 +504,19 @@ impl PluginManifest {
         }
         match self.runtime.as_deref() {
             None | Some("node") => {}
+            Some("frontend") => {
+                if self.frontend.is_none()
+                    || !self.main.is_empty()
+                    || self.engines.contains_key("node")
+                    || self
+                        .views
+                        .iter()
+                        .any(|view| view.kind.as_deref() != Some("component"))
+                {
+                    return Err(AppError::validation("plugin.frontend.invalid"));
+                }
+                return Ok(());
+            }
             Some("declarative") => {
                 if self.main.is_empty() || self.views.is_empty() || !self.commands.is_empty() {
                     return Err(AppError::validation("plugin.runtime.invalid"));
@@ -452,6 +609,224 @@ pub fn valid_command_id(value: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn host_menu_requires_read_permission_and_one_bounded_context() {
+        let dir = temp_dir("host-menu");
+        std::fs::write(dir.join("index.js"), "").unwrap();
+        let base = serde_json::json!({"id":"host-tool","name":"Host tool","version":"1.0.0",
+            "apiVersion":1,"main":"index.js","permissions":["hosts.read"],
+            "commands":[{"id":"inspect","title":"Inspect host","hostMenu":true}]});
+        let save = |value: &serde_json::Value| {
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(value).unwrap()).unwrap();
+            load(&dir)
+        };
+        let loaded = save(&base).unwrap();
+        assert!(loaded.commands[0].host_menu);
+        let mut legacy = base.clone();
+        legacy["commands"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("hostMenu");
+        assert!(!save(&legacy).unwrap().commands[0].host_menu);
+        assert!(serde_json::to_value(&save(&legacy).unwrap().commands[0])
+            .unwrap()
+            .get("hostMenu")
+            .is_none());
+        let mut invalid = base.clone();
+        invalid["permissions"] = serde_json::json!([]);
+        assert!(save(&invalid).is_err());
+        for field in ["editor", "fileMenu"] {
+            let mut invalid = base.clone();
+            invalid["permissions"] =
+                serde_json::json!(["hosts.read", "editor.read", "editor.write", "fs.read"]);
+            invalid["commands"][0][field] = if field == "editor" {
+                serde_json::json!({"extensions":["json"]})
+            } else {
+                serde_json::json!({"sources":["local"],"kinds":["file"]})
+            };
+            assert!(save(&invalid).is_err());
+        }
+        for title in ["x".repeat(121), "Inspect\nhost".to_owned()] {
+            let mut invalid = base.clone();
+            invalid["commands"][0]["title"] = title.into();
+            assert!(save(&invalid).is_err());
+        }
+        let mut maximum = base.clone();
+        maximum["commands"] = (0..16).map(|i| serde_json::json!({"id":format!("inspect-{i}"),"title":"Inspect","hostMenu":true})).collect();
+        assert!(save(&maximum).is_ok());
+        maximum["commands"]
+            .as_array_mut()
+            .unwrap()
+            .push(serde_json::json!({"id":"overflow","title":"Overflow","hostMenu":true}));
+        assert!(save(&maximum).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn frontend_entry_requires_explicit_trust_and_supports_pure_and_combined_runtimes() {
+        let root = temp_dir("trusted-frontend");
+        std::fs::create_dir(root.join("ui")).unwrap();
+        std::fs::write(root.join("ui/index.mjs"), "export function activate(){}").unwrap();
+        std::fs::write(root.join("backend.mjs"), "backend").unwrap();
+        let mut value = serde_json::json!({"id":"custom-ui","name":"UI","version":"1.0.0","apiVersion":1,
+            "runtime":"frontend","frontend":{"entry":"ui/index.mjs","sdk":"^0.1.0"},
+            "permissions":["ui.trusted"],"commands":[{"id":"hello","title":"Hello","frontend":true}],
+            "views":[{"id":"main","title":"Main","kind":"component"}]});
+        let save = |value: &serde_json::Value| {
+            std::fs::write(root.join(MANIFEST_FILE), serde_json::to_vec(value).unwrap()).unwrap();
+            load(&root)
+        };
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "workbench".into();
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "hostList".into();
+        assert!(save(&value).is_err());
+        value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "fileBrowser".into();
+        assert!(save(&value).is_err());
+        for omitted in ["fs.read", "sftp.read", "workspace.write"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "fs.read", "sftp.read", "workspace.write"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] =
+            serde_json::json!(["ui.trusted", "fs.read", "sftp.read", "workspace.write"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "terminal".into();
+        for omitted in ["ui.trusted", "sessions.read", "ssh.exec"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "ssh.exec"]
+                .into_iter()
+                .filter(|v| *v != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "ssh.exec"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "history".into();
+        for omitted in ["ui.trusted", "sessions.read", "history.read"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "sessions.read", "history.read"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "history.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "monitor".into();
+        for omitted in ["ui.trusted", "sessions.read", "monitor.read"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "sessions.read", "monitor.read"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "monitor.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "processes".into();
+        for omitted in ["ui.trusted", "sessions.read", "monitor.read"] {
+            value["permissions"] =
+                serde_json::json!(["ui.trusted", "sessions.read", "monitor.read"]
+                    .into_iter()
+                    .filter(|v| *v != omitted)
+                    .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "monitor.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "backgroundTasks".into();
+        for omitted in ["ui.trusted", "backgroundTasks.read"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "backgroundTasks.read"]
+                .into_iter()
+                .filter(|v| *v != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "backgroundTasks.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "forwarding".into();
+        value["views"][0]["provider"] = "preferences".into();
+        for omitted in ["ui.trusted", "settings.read"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "settings.read"]
+                .into_iter()
+                .filter(|p| *p != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "settings.read"]);
+        assert!(save(&value).is_ok());
+        value["permissions"] = serde_json::json!(["ui.trusted", "settings.read", "settings.write"]);
+        assert!(save(&value).is_ok());
+        let search_permissions = [
+            "ui.trusted",
+            "hosts.read",
+            "sessions.read",
+            "fs.read",
+            "sftp.read",
+            "workspace.read",
+            "editor.read",
+        ];
+        value["views"][0]["provider"] = "quickAccess".into();
+        value["permissions"] = serde_json::json!(search_permissions);
+        assert!(save(&value).is_ok());
+        for omitted in search_permissions {
+            value["permissions"] = serde_json::json!(search_permissions
+                .into_iter()
+                .filter(|p| *p != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["views"][0]["provider"] = "forwarding".into();
+        for omitted in ["ui.trusted", "hosts.read", "forwards.read"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read", "forwards.read"]
+                .into_iter()
+                .filter(|v| *v != omitted)
+                .collect::<Vec<_>>());
+            assert!(save(&value).is_err());
+        }
+        value["permissions"] = serde_json::json!(["ui.trusted", "hosts.read", "forwards.read"]);
+        assert!(save(&value).is_ok());
+        value["views"][0]["location"] = "sidebar".into();
+        assert!(save(&value).is_err());
+        value["views"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("location");
+        value["views"][0]["provider"] = "unknown".into();
+        assert!(save(&value).is_err());
+        value["views"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("provider");
+        value["permissions"] = serde_json::json!([]);
+        assert!(save(&value).is_err());
+        value["permissions"] = serde_json::json!(["ui.trusted"]);
+        value["runtime"] = "node".into();
+        value["main"] = "backend.mjs".into();
+        assert!(save(&value).is_ok());
+        for entry in [
+            "../ui/index.mjs",
+            "ui/../backend.mjs",
+            "ui//index.mjs",
+            "ui/index.mjs?x",
+            "ui/./index.mjs",
+        ] {
+            value["frontend"]["entry"] = entry.into();
+            assert!(save(&value).is_err(), "{entry}");
+        }
+        value["frontend"]["entry"] = "ui/index.mjs".into();
+        value["frontend"]["sdk"] = "not a range".into();
+        assert!(save(&value).is_err());
+        value["frontend"]["sdk"] = "^2.0.0".into();
+        let manifest = save(&value).unwrap();
+        assert!(manifest.frontend.unwrap().require_sdk().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use super::*;
 
     #[test]
@@ -592,12 +967,58 @@ mod tests {
         load(dir).expect("valid manifest")
     }
 
+    #[test]
+    fn initialized_remote_runner_requires_a_typed_executable_opt_in() {
+        let dir = temp_dir("remote-runner");
+        std::fs::write(dir.join("main.js"), "").unwrap();
+        let valid = serde_json::json!({"id":"remote","name":"Remote","version":"1.0.0","apiVersion":1,
+            "main":"main.js","permissions":["ssh.exec"],"remoteRunner":{"configuration":"initialize-v1"}});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(load(&dir).unwrap().remote_runner.is_some());
+        for (field, value) in [
+            ("permissions", serde_json::json!([])),
+            ("runtime", serde_json::json!("theme")),
+            ("remoteRunner", serde_json::json!({"configuration":"file"})),
+            (
+                "remoteRunner",
+                serde_json::json!({"configuration":"initialize-v1","fallback":true}),
+            ),
+        ] {
+            let mut bad = valid.clone();
+            bad[field] = value;
+            std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&bad).unwrap()).unwrap();
+            assert!(load(&dir).is_err());
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
     fn temp_dir(name: &str) -> PathBuf {
         let dir =
             std::env::temp_dir().join(format!("tunnelde-plugin-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("temp dir");
         dir
+    }
+
+    #[test]
+    fn host_fields_require_read_permission_and_validate_the_entire_schema() {
+        let dir = temp_dir("host-fields");
+        std::fs::write(dir.join("main.js"), "").unwrap();
+        let valid = serde_json::json!({"id":"metadata","name":"Metadata","version":"1.0.0","apiVersion":1,"main":"main.js","permissions":["hosts.read"],"hostFields":{"version":1,"fields":[{"id":"owner","label":"Owner","type":"text"}]}});
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&valid).unwrap()).unwrap();
+        assert!(load(&dir).unwrap().host_fields.is_some());
+        let mut bad = valid.clone();
+        bad["permissions"] = serde_json::json!([]);
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&bad).unwrap()).unwrap();
+        assert!(load(&dir)
+            .unwrap_err()
+            .to_string()
+            .contains("permissionRequired"));
+        let mut bad = valid;
+        bad["hostFields"]["fields"][0]["secret"] = true.into();
+        std::fs::write(dir.join(MANIFEST_FILE), serde_json::to_vec(&bad).unwrap()).unwrap();
+        assert!(load(&dir).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     fn theme_manifest() -> serde_json::Value {

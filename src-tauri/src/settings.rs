@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+pub mod host_list;
 
 pub const LANGUAGES: [&str; 3] = ["system", "zh-CN", "en-US"];
 pub const THEMES: [&str; 3] = ["dark", "light", "system"];
@@ -38,9 +39,18 @@ pub enum ShortcutPropagation {
     Block,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct UiProviderSelection {
+    pub plugin_id: String,
+    pub view_id: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Settings {
+    pub host_list: host_list::HostListPreferences,
+    pub ui_providers: BTreeMap<String, UiProviderSelection>,
     pub network: crate::network::NetworkSettings,
     pub keyboard_shortcuts: BTreeMap<String, Vec<String>>,
     pub shortcut_rules: BTreeMap<String, BTreeMap<String, ShortcutRule>>,
@@ -123,6 +133,8 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            host_list: host_list::HostListPreferences::default(),
+            ui_providers: BTreeMap::new(),
             network: crate::network::NetworkSettings::default(),
             keyboard_shortcuts: BTreeMap::new(),
             shortcut_rules: BTreeMap::new(),
@@ -253,6 +265,29 @@ impl Settings {
     /// Clamp and whitelist every field so a bad patch can never persist
     /// values that break the layout or the update state machine.
     pub fn sanitize(&mut self) {
+        self.host_list.sanitize();
+        self.ui_providers.retain(|target, selection| {
+            matches!(
+                target.as_str(),
+                "hostList"
+                    | "workbench"
+                    | "fileBrowser"
+                    | "terminal"
+                    | "history"
+                    | "forwarding"
+                    | "monitor"
+                    | "backgroundTasks"
+                    | "processes"
+                    | "quickAccess"
+                    | "preferences"
+            ) && [&selection.plugin_id, &selection.view_id].iter().all(|id| {
+                !id.is_empty()
+                    && id.len() <= 128
+                    && id.bytes().all(|b| {
+                        b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.' | b':')
+                    })
+            })
+        });
         let mut rule_count = 0;
         self.shortcut_rules.retain(|id, bindings| {
             if id.is_empty()
@@ -544,6 +579,36 @@ mod tests {
                 "system"
             }
         );
+    }
+
+    #[test]
+    fn provider_selections_are_bounded_and_unknown_targets_are_removed() {
+        let mut settings: Settings = serde_json::from_value(serde_json::json!({
+            "uiProviders": {
+                "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
+                "hostList": {"pluginId":"../invalid", "viewId":"hosts"},
+                "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
+                "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
+                "history": {"pluginId":"custom-ui", "viewId":"history"},
+                "credentials": {"pluginId":"custom-ui", "viewId":"secret"}
+            }
+        }))
+        .unwrap();
+        settings.sanitize();
+        let saved = serde_json::to_value(settings).unwrap();
+        assert_eq!(
+            saved["uiProviders"],
+            serde_json::json!({
+                "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
+                "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
+                "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
+                "history": {"pluginId":"custom-ui", "viewId":"history"}
+            })
+        );
+        assert!(serde_json::from_value::<Settings>(serde_json::json!({
+            "uiProviders":{"workbench":{"pluginId":"custom-ui","viewId":"desktop","extra":true}}
+        }))
+        .is_err());
     }
 
     #[test]

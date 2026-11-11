@@ -4,6 +4,8 @@ use russh_sftp::client::{rawsession::Limits, RawSftpSession};
 use std::ops::Range;
 use std::sync::atomic::AtomicU64;
 
+mod local_io;
+
 #[cfg(test)]
 mod live_tests;
 #[cfg(test)]
@@ -23,22 +25,105 @@ enum Backend {
     Compressed(super::compressed::Session),
 }
 
+/// Sampling happens before this source channel is shared with any writers.
+/// If OPEN/READ/CLOSE is interrupted, close the whole channel, including handles
+/// whose OPEN acknowledgement has not arrived yet. A failed sample is discarded.
+pub(super) struct SampleReader<'a> {
+    session: &'a DataSession,
+    handle: Option<String>,
+    finished: bool,
+}
+
+impl Drop for SampleReader<'_> {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.session.stop_reading();
+        }
+    }
+}
+
+impl<'a> SampleReader<'a> {
+    pub(super) async fn open(session: &'a DataSession, path: &str) -> AppResult<Self> {
+        let mut reader = Self {
+            session,
+            handle: None,
+            finished: false,
+        };
+        reader.handle = Some(session.open(path, false).await?);
+        Ok(reader)
+    }
+
+    pub(super) async fn region(&self, offset: u64, length: usize) -> AppResult<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(length);
+        while bytes.len() < length {
+            let remaining = length - bytes.len();
+            let requested = remaining.min(self.session.read_size);
+            let chunk = self
+                .session
+                .read(
+                    self.handle.as_deref().expect("sampling handle"),
+                    offset + bytes.len() as u64,
+                    requested,
+                )
+                .await?;
+            if chunk.is_empty() || chunk.len() > requested {
+                return Err(AppError::validation("sftp.resumeSourceChanged"));
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
+    }
+
+    pub(super) async fn finish(mut self) -> AppResult<()> {
+        self.session
+            .close(self.handle.as_deref().expect("sampling handle"))
+            .await?;
+        self.finished = true;
+        Ok(())
+    }
+}
+
+/// A server rejection is a terminal reply; a transport error is not.
+#[derive(Debug)]
+pub(super) enum DirectoryCreation {
+    Created,
+    Rejected(AppError),
+}
+
+impl DirectoryCreation {
+    pub(super) fn into_result(self) -> AppResult<()> {
+        match self {
+            Self::Created => Ok(()),
+            Self::Rejected(error) => Err(error),
+        }
+    }
+}
+
 impl DataSession {
     /// Set private permissions in MKDIR itself; a separate chmod leaves a crash
     /// window and cannot safely distinguish an interrupted create on restart.
-    pub(super) async fn create_private_directory(&self, path: &str) -> AppResult<()> {
+    pub(super) async fn create_private_directory(
+        &self,
+        path: &str,
+    ) -> AppResult<DirectoryCreation> {
         match &self.backend {
             Backend::Sftp(raw) => {
-                raw.mkdir(
-                    path,
-                    russh_sftp::protocol::FileAttributes {
-                        permissions: Some(0o700),
-                        ..Default::default()
-                    },
-                )
-                .await
-                .map_err(map_sftp)?;
-                Ok(())
+                match raw
+                    .mkdir(
+                        path,
+                        russh_sftp::protocol::FileAttributes {
+                            permissions: Some(0o700),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                {
+                    Ok(_) => Ok(DirectoryCreation::Created),
+                    Err(error @ russh_sftp::client::error::Error::Status(_)) => {
+                        Ok(DirectoryCreation::Rejected(map_sftp(error)))
+                    }
+                    Err(error) => Err(map_sftp(error)),
+                }
             }
             Backend::Compressed(worker) => worker.create_private_directory(path).await,
         }
@@ -245,7 +330,7 @@ impl Sessions {
     ) -> AppResult<Self> {
         // SFTP handles only belong to their channel. Share one negotiated data
         // channel for a same-session server copy; never infer identity by address.
-        let candidate = if settings.transfer_optimization
+        let mut candidate = if settings.transfer_optimization
             && source.session.is_some()
             && source.session == target.session
         {
@@ -274,15 +359,35 @@ impl Sessions {
         let enabled = settings.transfer_optimization
             && settings.transfer_compression
             && total_size >= 256 * 1024;
-        let compress = enabled
-            && matches!(
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(5),
-                    super::compressed::worthwhile(source, source_sftp),
+        if enabled && source.session.is_some() && candidate.is_none() {
+            candidate = Some(Arc::new(
+                DataSession::connect(
+                    app,
+                    source.session.as_deref().expect("remote source"),
+                    false,
+                    source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
                 )
-                .await,
-                Ok(Ok(true))
-            );
+                .await?,
+            ));
+        }
+        let compress = if enabled {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                super::compressed::worthwhile(source, source_sftp, candidate.as_deref()),
+            )
+            .await
+            {
+                Ok(Ok(helpful)) => helpful,
+                _ => {
+                    // Cancellation may close a read-only sampling channel.
+                    // Never reuse it after a failed or timed-out probe.
+                    candidate = None;
+                    false
+                }
+            }
+        } else {
+            false
+        };
         let source = match (&source.session, candidate.filter(|_| !compress)) {
             (_, Some(channel)) => Some(channel),
             (Some(id), None) => Some(Arc::new(
@@ -348,13 +453,12 @@ async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>
 
 async fn complete_packet(
     result: AppResult<(u64, Vec<u8>, usize)>,
-    writer: &mut Option<tokio::fs::File>,
+    writer: &mut Option<local_io::Writer>,
     transferred: &AtomicU64,
 ) -> AppResult<()> {
     let (offset, bytes, length) = result?;
     if let Some(writer) = writer {
-        writer.seek(std::io::SeekFrom::Start(offset)).await?;
-        writer.write_all(&bytes).await?;
+        writer.write(offset, &bytes).await?;
     }
     transferred.fetch_add(length as u64, Ordering::Relaxed);
     Ok(())
@@ -401,7 +505,10 @@ impl<'a> Files<'a> {
             Some(session) => match interruptible(cancel, session.open(&target.path, true)).await {
                 Ok(handle) => Some(handle),
                 Err(error) => {
-                    let _ = close_handle(&sessions.source, source_handle).await;
+                    // No writes have started. Do not hold up cancellation for
+                    // a read handle's CLOSE or abort other shared-channel users.
+                    let _ =
+                        interruptible(cancel, close_handle(&sessions.source, source_handle)).await;
                     return Err(error);
                 }
             },
@@ -534,7 +641,7 @@ impl<'a> Files<'a> {
 
     async fn prepare_packet(
         &self,
-        reader: &mut Option<tokio::fs::File>,
+        reader: &mut Option<local_io::Reader>,
         length: usize,
         stop: &AtomicBool,
     ) -> AppResult<(usize, Option<Vec<u8>>)> {
@@ -574,19 +681,12 @@ impl<'a> Files<'a> {
         transferred: &AtomicU64,
     ) -> AppResult<()> {
         let mut reader = if self.sessions.source.is_none() {
-            let mut file = tokio::fs::File::open(&self.source.path).await?;
-            file.seek(std::io::SeekFrom::Start(range.start)).await?;
-            Some(file)
+            Some(local_io::reader(&self.source.path, &range).await?)
         } else {
             None
         };
         let mut writer = if self.sessions.target.is_none() {
-            Some(
-                tokio::fs::OpenOptions::new()
-                    .write(true)
-                    .open(&self.target.path)
-                    .await?,
-            )
+            Some(local_io::Writer::open(&self.target.path).await?)
         } else {
             None
         };
@@ -653,7 +753,7 @@ impl<'a> Files<'a> {
         }
         if let Some(writer) = &mut writer {
             if let Err(failure) = writer.flush().await {
-                error.get_or_insert(failure.into());
+                error.get_or_insert(failure);
             }
         }
         if stop.load(Ordering::SeqCst) {

@@ -1,10 +1,12 @@
 import { create } from "zustand";
-import type { PluginInfo, PluginSecurityState } from "@/lib/api/types";
+import type { PluginSecurityState } from "@/lib/api/types";
+import type { PluginApproval } from "@/lib/plugins/activation/contracts";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import { pluginFailure } from "@/lib/plugins/errors";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
+import { ActivationDecision } from "@/lib/plugins/activation/decision";
 
 const INITIAL: PluginSecurityState = {
   restricted: false,
@@ -14,7 +16,7 @@ const INITIAL: PluginSecurityState = {
   grants: {},
 };
 
-export function hasPluginGrant(state: PluginSecurityState, plugin: PluginInfo): boolean {
+export function hasPluginGrant(state: PluginSecurityState, plugin: PluginApproval): boolean {
   return (
     Object.prototype.hasOwnProperty.call(state.grants, plugin.id) &&
     plugin.permissions.every((permission) => state.grants[plugin.id]!.includes(permission))
@@ -27,13 +29,13 @@ interface SecurityStore {
   loading: boolean;
   busy: boolean;
   error: string | null;
-  prompts: PluginInfo[];
+  prompts: PluginApproval[];
   failure: string | null;
   recoveryPrompt: "startup" | "failure" | null;
   recoveryDismissed: boolean;
   load: (force?: boolean) => Promise<void>;
   apply: (state: PluginSecurityState) => void;
-  ensure: (plugin: PluginInfo) => Promise<boolean>;
+  ensure: (plugin: PluginApproval, signal?: AbortSignal) => Promise<boolean>;
   approve: (id: string) => Promise<boolean>;
   deny: (id: string) => void;
   setRestricted: (enabled: boolean) => Promise<boolean>;
@@ -48,15 +50,10 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
   let mutation = false;
   let startupNotified = false;
   const failures = new Set<string>();
-  const requests = new Map<
-    string,
-    { plugin: PluginInfo; promise: Promise<boolean>; finish?: (allowed: boolean) => void }
-  >();
+  const requests = new Map<string, { plugin: PluginApproval; decision: ActivationDecision }>();
   const finish = (id: string, allowed: boolean) => {
     const request = requests.get(id);
-    requests.delete(id);
-    request?.finish?.(allowed);
-    set({ prompts: get().prompts.filter((plugin) => plugin.id !== id) });
+    request?.decision.finish(allowed);
   };
   const change = async (work: () => Promise<void>): Promise<boolean> => {
     if (mutation) return false;
@@ -113,41 +110,50 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
         if (state.restricted) finish(id, false);
       }
     },
-    ensure: (plugin) => {
+    ensure: (plugin, signal) => {
+      if (signal?.aborted) return Promise.resolve(false);
       if (plugin.runtime === "theme" || !isTauri()) return Promise.resolve(true);
       const existing = requests.get(plugin.id);
-      if (existing) return existing.promise;
-      const request: {
-        plugin: PluginInfo;
-        promise: Promise<boolean>;
-        finish?: (allowed: boolean) => void;
-      } = {
+      if (existing) {
+        if (
+          existing.plugin.fingerprint === plugin.fingerprint &&
+          existing.plugin.permissions.length === plugin.permissions.length &&
+          existing.plugin.permissions.every((value) => plugin.permissions.includes(value))
+        )
+          return existing.decision.wait(signal);
+        existing.decision.finish(false);
+      }
+      const request = {
         plugin: { ...plugin, permissions: [...plugin.permissions] },
-        promise: Promise.resolve(false),
+        decision: new ActivationDecision(() => {
+          if (requests.get(plugin.id) !== request) return;
+          requests.delete(plugin.id);
+          set({ prompts: get().prompts.filter((item) => item.id !== plugin.id) });
+        }),
       };
-      request.promise = Promise.resolve()
+      requests.set(plugin.id, request);
+      const result = request.decision.wait(signal);
+      void Promise.resolve()
         .then(async () => {
           await get().load();
-          if (requests.get(plugin.id) !== request) return false;
+          if (!request.decision.active) return;
           if (!get().ready) {
             toast(get().error ?? i18n.t("pluginSecurity.unavailable"), "error");
-            return false;
+            request.decision.finish(false);
+            return;
           }
           if (get().state.restricted) {
             toast(i18n.t("pluginSecurity.blocked"), "info");
-            return false;
+            request.decision.finish(false);
+            return;
           }
-          if (hasPluginGrant(get().state, plugin)) return true;
-          return new Promise<boolean>((resolve) => {
-            request.finish = resolve;
-            set((state) => ({ prompts: [...state.prompts, request.plugin] }));
-          });
+          if (hasPluginGrant(get().state, plugin)) request.decision.finish(true);
+          else set((state) => ({ prompts: [...state.prompts, request.plugin] }));
         })
-        .finally(() => {
-          if (requests.get(plugin.id) === request) requests.delete(plugin.id);
+        .catch(() => {
+          request.decision.finish(false);
         });
-      requests.set(plugin.id, request);
-      return request.promise;
+      return result;
     },
     approve: async (id) => {
       const request = requests.get(id);
@@ -205,8 +211,8 @@ export const usePluginSecurity = create<SecurityStore>((set, get) => {
   };
 });
 
-export const ensurePluginPermission = (plugin: PluginInfo) =>
-  usePluginSecurity.getState().ensure(plugin);
+export const ensurePluginPermission = (plugin: PluginApproval, signal?: AbortSignal) =>
+  usePluginSecurity.getState().ensure(plugin, signal);
 
 function errorMessage(error: unknown): string {
   return typeof error === "object" &&
@@ -229,11 +235,11 @@ export function reportPluginExecutionFailure(error: unknown): void {
 }
 
 /** Called by explicit tool actions; ordinary view rendering never opens consent dialogs. */
-export async function authorizePluginAction(id: string): Promise<boolean> {
+export async function authorizePluginAction(id: string, signal?: AbortSignal): Promise<boolean> {
   if (!isTauri()) return true;
   const { usePlugins } = await import("@/store/plugins");
   if (!usePlugins.getState().items.some((plugin) => plugin.id === id))
     await usePlugins.getState().load();
   const plugin = usePlugins.getState().items.find((plugin) => plugin.id === id);
-  return !!plugin && plugin.runtime !== "theme" && ensurePluginPermission(plugin);
+  return !!plugin && plugin.runtime !== "theme" && ensurePluginPermission(plugin, signal);
 }

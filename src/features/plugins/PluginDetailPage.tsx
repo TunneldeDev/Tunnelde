@@ -18,6 +18,8 @@ import { PluginMarkdown } from "./PluginMarkdown";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 import { PluginCommandResult } from "./PluginCommandResult";
 import { pluginTags, togglePluginTag } from "@/lib/plugins/discovery";
+import { openPluginAction } from "@/lib/plugins/actions";
+import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 
 export function requestMarketInstall(entry: MarketEntry, source: MarketSource, update: boolean) {
   const t = i18n.t.bind(i18n);
@@ -51,6 +53,8 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
     useMarketplace();
   const items = usePlugins((s) => s.items),
     busy = usePlugins((s) => s.busyIds.includes(pluginId));
+  const commanding = usePlugins((s) => s.commandingIds.includes(pluginId));
+  const starting = usePlugins((s) => s.startingIds.includes(pluginId));
   const output = usePlugins((s) => s.outputs[pluginId]);
   const loadPlugins = usePlugins((s) => s.load);
   useEffect(() => {
@@ -92,8 +96,7 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
       else useWorkspace.getState().openPluginView(pluginId, view.id, view.title);
     }
   };
-  const compatible =
-    entry?.apiVersion === undefined || entry.apiVersion === null || entry.apiVersion === 1;
+  const compatible = supportsManifestVersion(entry?.apiVersion);
   return (
     <div className="page plugin-detail">
       <header className="plugin-detail__head">
@@ -153,15 +156,15 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           <>
             {!themeOnly ? (
               <Button
-                disabled={busy || !!task}
-                leading={running ? <Square size={13} /> : <Play size={13} />}
+                disabled={(busy && !starting && !commanding) || !!task}
+                leading={running || starting ? <Square size={13} /> : <Play size={13} />}
                 onClick={() =>
-                  void (running
+                  void (running || starting
                     ? usePlugins.getState().stop(pluginId)
                     : usePlugins.getState().start(pluginId))
                 }
               >
-                {t(running ? "plugins.stop" : "plugins.start")}
+                {t(starting ? "common.cancel" : running ? "plugins.stop" : "plugins.start")}
               </Button>
             ) : null}
             <Button
@@ -180,16 +183,26 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
               {t("plugins.uninstall")}
             </Button>
             {!themeOnly ? (
-              <span className="plugin-detail__status">
+              <span className="plugin-detail__status" role="status" aria-live="polite">
                 <StatusDot
-                  tone={running ? "ok" : installed.status === "failed" ? "error" : "idle"}
+                  tone={
+                    starting
+                      ? "idle"
+                      : running
+                        ? "ok"
+                        : installed.status === "failed"
+                          ? "error"
+                          : "idle"
+                  }
                 />
                 {t(
-                  running
-                    ? "plugins.running"
-                    : installed.status === "failed"
-                      ? "plugins.failed"
-                      : "plugins.stopped",
+                  starting
+                    ? "plugins.starting"
+                    : running
+                      ? "plugins.running"
+                      : installed.status === "failed"
+                        ? "plugins.failed"
+                        : "plugins.stopped",
                 )}
               </span>
             ) : null}
@@ -257,6 +270,18 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
             <dd>{info.apiVersion}</dd>
           </div>
         ) : null}
+        {info.dependencies?.length ? (
+          <div>
+            <dt>{t("plugins.requiredDependencies")}</dt>
+            <dd>
+              {info.dependencies.map((dependency) => (
+                <div key={dependency.id}>
+                  {dependency.id} · {dependency.version}
+                </div>
+              ))}
+            </dd>
+          </div>
+        ) : null}
         {own ? (
           <div>
             <dt>{t("market.installedVersion")}</dt>
@@ -286,21 +311,23 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
           </div>
         </section>
       ) : null}
-      {own && !themeOnly && installed.views.length ? (
+      {own && !themeOnly && installed.views.some((view) => !view.provider) ? (
         <section className="plugin-detail__tools">
           <h2>{t("market.openTool")}</h2>
           <div className="settings-actions">
-            {installed.views.map((view) => (
-              <Button
-                key={view.id}
-                variant="primary"
-                disabled={busy || !!task}
-                leading={<ExternalLink size={13} />}
-                onClick={() => void openView(view)}
-              >
-                {view.title}
-              </Button>
-            ))}
+            {installed.views
+              .filter((view) => !view.provider)
+              .map((view) => (
+                <Button
+                  key={view.id}
+                  variant="primary"
+                  disabled={busy || !!task}
+                  leading={<ExternalLink size={13} />}
+                  onClick={() => void openView(view)}
+                >
+                  {view.title}
+                </Button>
+              ))}
           </div>
         </section>
       ) : null}
@@ -310,7 +337,11 @@ export function PluginDetailPage({ sourceId, pluginId }: { sourceId: string; plu
             <Button
               key={command.id}
               disabled={!running || busy}
-              onClick={() => void usePlugins.getState().run(pluginId, command.id)}
+              onClick={() =>
+                void (command.hostMenu
+                  ? openPluginAction({ id: pluginId, command: command.id })
+                  : usePlugins.getState().run(pluginId, command.id))
+              }
             >
               {command.title}
             </Button>

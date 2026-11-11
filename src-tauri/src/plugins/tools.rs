@@ -413,6 +413,22 @@ pub(super) fn authorize_client(context: &HostContext, client: &str) -> AppResult
     }
     Ok(())
 }
+
+/// Admission/publication and client revocation share this gate. Lock order:
+/// runtime policy -> client gate -> domain registry -> SSH manager. Never await,
+/// reenter security or perform I/O in the callback.
+pub(super) fn with_client_authorized<T>(
+    owner: &str,
+    generation: u64,
+    client: Option<&str>,
+    operation: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    let _gate = client_gate().lock().unwrap_or_else(|e| e.into_inner());
+    if client.is_some_and(|client| client_revoked(owner, generation, client)) {
+        return Err(AppError::validation("plugin.tools.clientRevoked"));
+    }
+    operation()
+}
 fn register_pending(key: &str, request: Pending) -> AppResult<()> {
     let _gate = client_gate()
         .lock()
@@ -491,6 +507,22 @@ fn cancel_pending(
     (count, owned)
 }
 struct PendingGuard(String, uuid::Uuid);
+
+/// Result acceptance and cancellation use the same gate. A cancellation that
+/// already removed this registration must win even if the operation just finished.
+fn accept_pending(key: &str, registration: uuid::Uuid) -> AppResult<()> {
+    let _gate = client_gate().lock().unwrap_or_else(|e| e.into_inner());
+    let mut requests = pending().lock().unwrap_or_else(|e| e.into_inner());
+    if requests
+        .get(key)
+        .is_none_or(|request| request.registration != registration)
+    {
+        return Err(AppError::validation("plugin.tools.cancelled"));
+    }
+    requests.remove(key);
+    Ok(())
+}
+
 impl Drop for PendingGuard {
     fn drop(&mut self) {
         let mut requests = pending().lock().unwrap_or_else(|e| e.into_inner());
@@ -530,12 +562,20 @@ pub async fn invoke(context: &HostContext, params: Value) -> AppResult<Value> {
             cancel: sender,
         },
     )?;
-    let _guard = PendingGuard(key, registration);
-    tokio::select! {
+    let _guard = PendingGuard(key.clone(), registration);
+    let mut connections = super::sessions::Request::new(context, registration);
+    let mut request_context = context.clone();
+    request_context.tool_request = Some(registration);
+    let result = tokio::select! {
         biased;
         _ = cancel => Err(AppError::validation("plugin.tools.cancelled")),
-        result = invoke_inner(context, params) => result,
+        result = invoke_inner(&request_context, params) => result,
+    };
+    if result.is_ok() {
+        accept_pending(&key, registration)?;
+        connections.accept();
     }
+    result
 }
 pub async fn cancel(context: &HostContext, method: &str, params: &Value) -> AppResult<Value> {
     let target: String = field(
@@ -551,6 +591,9 @@ pub async fn cancel(context: &HostContext, method: &str, params: &Value) -> AppR
     }
     let (count, owned) = cancel_pending(&context.id, context.generation, &target, method);
     if method == "tools.revokeClient" {
+        // Tombstone was published under the client gate before draining connections.
+        // Late completions either publish before this drain or fail their gate check.
+        super::sessions::remove_client(context, &target);
         for item in owned {
             if item.transfer {
                 let _ = Box::pin(super::api::dispatch(
@@ -953,6 +996,110 @@ mod tests {
             .unwrap()
             .retain(|item| item.plugin != plugin);
     }
+
+    #[test]
+    fn client_revocation_cannot_miss_connection_admission_or_publication() {
+        use super::super::{runtime::ownership as resources, security::Lease};
+        let plugin = uuid::Uuid::new_v4().to_string();
+        let lease = Lease {
+            id: plugin.clone(),
+            generation: 1,
+            fingerprint: "a".repeat(64),
+            permissions: vec![],
+        };
+        for publish in [false, true] {
+            for index in 0..32 {
+                let registry = resources::Registry::new(8, 64);
+                let client = format!("{publish}-{index}");
+                let request = uuid::Uuid::new_v4();
+                let scope = || {
+                    Some(resources::Scope {
+                        client: client.clone(),
+                        request,
+                    })
+                };
+                let reservation =
+                    publish.then(|| registry.reserve(lease.clone(), scope()).unwrap());
+                let barrier = std::sync::Barrier::new(2);
+                std::thread::scope(|threads| {
+                    let worker = threads.spawn(|| {
+                        barrier.wait();
+                        with_client_authorized(&plugin, 1, Some(&client), || {
+                            if let Some(reservation) = reservation {
+                                reservation
+                                    .commit("connected")
+                                    .map_err(|_| AppError::validation("revoked"))?;
+                                Ok(None)
+                            } else {
+                                registry.reserve(lease.clone(), scope()).map(Some)
+                            }
+                        })
+                    });
+                    barrier.wait();
+                    cancel_pending(&plugin, 1, &client, "tools.revokeClient");
+                    let removed = registry.remove_client(&plugin, 1, &client);
+                    let result = worker.join().unwrap();
+                    assert!(client_revoked(&plugin, 1, &client));
+                    if publish {
+                        assert_eq!(removed.len(), usize::from(result.is_ok()));
+                    } else if let Ok(Some(reservation)) = result {
+                        assert_eq!(reservation.commit("late"), Err("late"));
+                    }
+                    assert!(registry.remove_runtime(&plugin, |_| true).is_empty());
+                    assert!(with_client_authorized(&plugin, 1, Some(&client), || Ok(())).is_err());
+                    assert!(with_client_authorized(&plugin, 2, Some(&client), || Ok(())).is_ok());
+                    assert!(with_client_authorized(&plugin, 1, None, || Ok(())).is_ok());
+                });
+            }
+        }
+        resources()
+            .lock()
+            .unwrap()
+            .retain(|item| item.plugin != plugin);
+    }
+
+    #[test]
+    fn cancellation_and_result_acceptance_have_one_winner_and_isolate_reused_ids() {
+        let plugin = uuid::Uuid::new_v4().to_string();
+        let key = format!("{plugin}:1:request");
+        let register = || {
+            let registration = uuid::Uuid::new_v4();
+            let (cancel, receiver) = oneshot::channel();
+            register_pending(
+                &key,
+                Pending {
+                    registration,
+                    plugin: plugin.clone(),
+                    generation: 1,
+                    client: "client".into(),
+                    cancel,
+                },
+            )
+            .unwrap();
+            (registration, receiver)
+        };
+        for _ in 0..64 {
+            let (registration, _receiver) = register();
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|threads| {
+                let worker = threads.spawn(|| {
+                    barrier.wait();
+                    accept_pending(&key, registration)
+                });
+                barrier.wait();
+                let (cancelled, _) = cancel_pending(&plugin, 1, "request", "tools.cancel");
+                let accepted = worker.join().unwrap().is_ok();
+                assert_eq!(usize::from(accepted) + cancelled, 1);
+            });
+            assert!(!pending().lock().unwrap().contains_key(&key));
+        }
+        let (old, _receiver) = register();
+        cancel_pending(&plugin, 1, "request", "tools.cancel");
+        let (new, _receiver) = register();
+        assert!(accept_pending(&key, old).is_err());
+        accept_pending(&key, new).unwrap();
+        assert_eq!(cancel_pending(&plugin, 1, "request", "tools.cancel").0, 0);
+    }
     #[test]
     fn tool_scope_bounds_lists_and_values() {
         let mut scope = Scope::default();
@@ -978,6 +1125,7 @@ mod tests {
             "sessions.exec",
             "tasks.start",
             "terminal.write",
+            "sessions.requestHandoff",
             "files.local.delete",
             "files.upload",
         ] {
@@ -998,6 +1146,7 @@ mod tests {
             "settings.update",
             "clipboard.readText",
             "terminal.write",
+            "sessions.requestHandoff",
         ] {
             assert!(!allowed(method));
         }

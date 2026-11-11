@@ -1,20 +1,20 @@
+mod lifecycle;
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
 use super::session::ClientHandler;
-use crate::{
-    error::{AppError, AppResult},
-    state::AppState,
-};
+use crate::error::{AppError, AppResult};
+use crate::services::forwarding::contract::ForwardRule;
 use russh::{
     client::{self, ChannelOpenHandle},
     Channel,
 };
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
 use tokio::{
     io::{copy_bidirectional, AsyncRead, AsyncWrite},
     net::{TcpListener, TcpStream},
@@ -22,28 +22,9 @@ use tokio::{
 };
 
 const TIMEOUT: Duration = Duration::from_secs(15);
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ForwardRule {
-    pub id: String,
-    pub host_id: String,
-    pub name: String,
-    pub mode: String,
-    pub bind_host: String,
-    pub bind_port: u16,
-    pub target_host: String,
-    pub target_port: u16,
-}
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ForwardInfo {
-    #[serde(flatten)]
-    pub rule: ForwardRule,
-    pub session_id: Option<String>,
-    pub active: bool,
-}
 #[derive(Clone)]
 struct RemoteTarget {
+    admitted: Arc<AtomicBool>,
     host: String,
     port: u16,
     cancel: watch::Receiver<bool>,
@@ -104,6 +85,8 @@ async fn release_remote((handle, routes, host, port): RemoteForward) -> AppResul
 }
 
 struct ActiveForward {
+    admitted: Arc<AtomicBool>,
+    identity: String,
     session: String,
     owner: Option<String>,
     generation: Option<u64>,
@@ -148,6 +131,7 @@ pub struct ForwardRegistry {
     active: Mutex<HashMap<String, ActiveForward>>,
     revisions: Mutex<HashMap<String, u64>>,
     changed: watch::Sender<u64>,
+    notify: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 impl Default for ForwardRegistry {
     fn default() -> Self {
@@ -155,10 +139,66 @@ impl Default for ForwardRegistry {
             active: Mutex::new(HashMap::new()),
             revisions: Mutex::new(HashMap::new()),
             changed: watch::channel(0).0,
+            notify: None,
         }
     }
 }
 impl ForwardRegistry {
+    pub(crate) fn with_notifier(notify: impl Fn() + Send + Sync + 'static) -> Self {
+        Self {
+            notify: Some(Arc::new(notify)),
+            ..Default::default()
+        }
+    }
+    fn publish(&self) {
+        if let Some(notify) = &self.notify {
+            notify();
+        }
+    }
+    pub(crate) fn snapshot(&self) -> AppResult<HashMap<String, (String, String)>> {
+        Ok(self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?
+            .iter()
+            .map(|(id, item)| (id.clone(), (item.session.clone(), item.identity.clone())))
+            .collect())
+    }
+    /// Serialize persistence with listener admission, then notify outside both locks.
+    pub(crate) fn edit<T>(&self, id: &str, commit: impl FnOnce() -> AppResult<T>) -> AppResult<T> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        if active.contains_key(id) {
+            return Err(AppError::validation("forward.stopBeforeEdit"));
+        }
+        let result = commit()?;
+        self.invalidate(format!("rule:{id}"));
+        drop(active);
+        self.publish();
+        Ok(result)
+    }
+    pub(crate) fn remove_rule(
+        &self,
+        id: &str,
+        commit: impl FnOnce() -> AppResult<bool>,
+    ) -> AppResult<()> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        let changed = commit()?;
+        self.invalidate(format!("rule:{id}"));
+        let removed = active.remove(id);
+        drop(active);
+        let notify = changed || removed.is_some();
+        drop(removed);
+        if notify {
+            self.publish();
+        }
+        Ok(())
+    }
     fn invalidate(&self, key: String) {
         if let Ok(mut revisions) = self.revisions.lock() {
             *revisions.entry(key).or_default() += 1;
@@ -194,50 +234,102 @@ impl ForwardRegistry {
             })
             .unwrap_or(false)
     }
-    pub async fn stop(&self, id: &str) -> AppResult<()> {
-        let item = {
-            let mut m = self
-                .active
-                .lock()
-                .map_err(|_| AppError::internal("forward.lock"))?;
-            self.invalidate(format!("rule:{id}"));
-            m.remove(id)
-        };
-        if let Some(item) = item {
-            // Cleanup keeps running if an IPC/plugin caller is cancelled.
-            tauri::async_runtime::spawn(item.shutdown())
-                .await
-                .map_err(|_| AppError::internal("forward.stopFailed"))??;
+    pub(crate) fn take_checked(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<StoppedForward> {
+        self.take_inner(id, expected, None, check)
+    }
+    fn take_inner(
+        &self,
+        id: &str,
+        expected: Option<&str>,
+        owner: Option<(&str, u64)>,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<StoppedForward> {
+        let mut active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        check()?;
+        if owner.is_some_and(|(owner, generation)| {
+            active.get(id).is_none_or(|item| {
+                item.owner.as_deref() != Some(owner) || item.generation != Some(generation)
+            })
+        }) {
+            return Err(AppError::validation("plugin.resources.unavailable"));
         }
-        Ok(())
+        if expected
+            .is_some_and(|expected| active.get(id).is_none_or(|item| item.identity != expected))
+        {
+            return Err(AppError::validation("forward.changed"));
+        }
+        self.invalidate(format!("rule:{id}"));
+        let item = active.remove(id);
+        drop(active);
+        if item.is_some() {
+            self.publish();
+        }
+        // Spawn before returning so caller cancellation cannot interrupt cleanup.
+        Ok(StoppedForward(
+            item.map(|item| tauri::async_runtime::spawn(item.shutdown())),
+        ))
+    }
+    pub async fn stop(&self, id: &str) -> AppResult<()> {
+        self.take_checked(id, None, || Ok(()))?.finish().await
     }
     pub fn stop_session(&self, session: &str) {
         if let Ok(mut m) = self.active.lock() {
             self.invalidate(format!("session:{session}"));
+            let previous = m.len();
             m.retain(|_, item| item.session != session);
+            let changed = m.len() != previous;
+            drop(m);
+            if changed {
+                self.publish();
+            }
         }
     }
     pub fn stop_generation(&self, owner: &str, generation: u64) {
         if let Ok(mut active) = self.active.lock() {
+            let previous = active.len();
             active.retain(|_, item| {
                 item.owner.as_deref() != Some(owner) || item.generation != Some(generation)
             });
+            let changed = active.len() != previous;
+            drop(active);
+            if changed {
+                self.publish();
+            }
         }
     }
     pub fn stop_before_generation(&self, owner: &str, boundary: u64) {
         if let Ok(mut active) = self.active.lock() {
+            let previous = active.len();
             active.retain(|_, item| {
                 item.owner.as_deref() != Some(owner)
                     || item
                         .generation
                         .is_none_or(|generation| generation >= boundary)
             });
+            let changed = active.len() != previous;
+            drop(active);
+            if changed {
+                self.publish();
+            }
         }
     }
     pub fn stop_all(&self) {
         if let Ok(mut m) = self.active.lock() {
             self.invalidate(String::new());
+            let changed = !m.is_empty();
             m.clear();
+            drop(m);
+            if changed {
+                self.publish();
+            }
         }
     }
 }
@@ -255,7 +347,7 @@ pub async fn remote_channel(
     let Some(mut target) = target else {
         return;
     };
-    if *target.cancel.borrow() {
+    if !target.admitted.load(Ordering::Acquire) || *target.cancel.borrow() {
         return;
     }
     // Never await socket I/O inside russh's handler: its event loop also services SSH traffic.
@@ -264,135 +356,68 @@ pub async fn remote_channel(
             _ = target.cancel.changed() => return,
             result = tokio::time::timeout(TIMEOUT, TcpStream::connect((target.host.as_str(), target.port))) => match result { Ok(Ok(s)) => s, _ => return },
         };
-        if *target.cancel.borrow() {
+        if !target.admitted.load(Ordering::Acquire) || *target.cancel.borrow() {
             return;
         }
         reply.accept().await;
         relay(local, channel.into_stream(), target.cancel).await;
     });
 }
-fn validate(rule: &ForwardRule) -> AppResult<()> {
-    let host_valid = |s: &str| {
-        !s.is_empty()
-            && s.len() <= 253
-            && !s
-                .chars()
-                .any(|c| c.is_whitespace() || c.is_control() || "/\\@?#[]".contains(c))
-    };
-    if !["local", "remote"].contains(&rule.mode.as_str())
-        || rule.id.len() > 128
-        || rule.host_id.is_empty()
-        || rule.name.trim().is_empty()
-        || rule.name.len() > 120
-        || rule.bind_port == 0
-        || rule.target_port == 0
-        || !host_valid(&rule.bind_host)
-        || !host_valid(&rule.target_host)
-    {
-        return Err(AppError::validation("forward.invalid"));
-    }
-    Ok(())
+/// A prepared listener owns its cleanup until committed to the registry.
+pub(crate) struct PendingForward {
+    id: String,
+    ticket: Vec<(String, u64)>,
+    item: ActiveForward,
 }
-fn key(id: &str) -> String {
-    format!("forward:{id}")
-}
-fn rules(app: &AppHandle) -> AppResult<Vec<ForwardRule>> {
-    app.state::<AppState>().db.with(|conn| {
-        let mut stmt = conn.prepare(
-            "SELECT value FROM settings WHERE key LIKE 'forward:%' ORDER BY updated_at DESC",
-        )?;
-        let raw = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        let mut result = Vec::new();
-        for item in raw {
-            result.push(serde_json::from_str(&item?)?);
+impl PendingForward {
+    /// Callers can hold their authorization/scope locks before acquiring the registry.
+    pub(crate) fn commit(
+        self,
+        registry: &ForwardRegistry,
+        current: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()> {
+        let mut active = registry
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        if !registry.valid_ticket(&self.ticket) {
+            return Err(AppError::validation("forward.startCancelled"));
         }
-        Ok(result)
-    })
-}
-pub fn list(app: &AppHandle) -> AppResult<Vec<ForwardInfo>> {
-    let rules = rules(app)?;
-    let state = app.state::<AppState>();
-    let active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    Ok(rules
-        .into_iter()
-        .map(|rule| {
-            let session_id = active.get(&rule.id).map(|item| item.session.clone());
-            ForwardInfo {
-                active: session_id.is_some(),
-                session_id,
-                rule,
-            }
-        })
-        .collect())
-}
-pub fn save(app: &AppHandle, mut rule: ForwardRule) -> AppResult<ForwardRule> {
-    if rule.id.is_empty() {
-        rule.id = uuid::Uuid::new_v4().to_string();
-    }
-    validate(&rule)?;
-    let state = app.state::<AppState>();
-    let active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    if active.contains_key(&rule.id) {
-        return Err(AppError::validation("forward.stopBeforeEdit"));
-    }
-    let saved = state.db.with(|conn| {
-        crate::db::hosts::find_host(conn, &rule.host_id)?;
-        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![key(&rule.id), serde_json::to_string(&rule)?, crate::models::now_ms()])?;
-        Ok(rule.clone())
-    })?;
-    state.forwards.invalidate(format!("rule:{}", rule.id));
-    Ok(saved)
-}
-pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let mut active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    state.db.with(|conn| {
-        conn.execute("DELETE FROM settings WHERE key=?1", [key(id)])?;
+        current()?;
+        if active.contains_key(&self.id) {
+            return Err(AppError::validation("forward.alreadyActive"));
+        }
+        self.item.admitted.store(true, Ordering::Release);
+        active.insert(self.id, self.item);
+        drop(active);
+        registry.publish();
         Ok(())
-    })?;
-    state.forwards.invalidate(format!("rule:{id}"));
-    active.remove(id);
-    Ok(())
-}
-pub async fn start(app: &AppHandle, id: &str, session_id: &str) -> AppResult<()> {
-    start_owned(app, id, session_id, None).await
-}
-pub async fn start_owned(
-    app: &AppHandle,
-    id: &str,
-    session_id: &str,
-    owner: Option<(String, u64)>,
-) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    let mut changed = state.forwards.changed.subscribe();
-    let ticket = state.forwards.ticket(id, session_id)?;
-    let rule = rules(app)?
-        .into_iter()
-        .find(|r| r.id == id)
-        .ok_or_else(|| AppError::validation("forward.missing"))?;
-    validate(&rule)?;
-    if !state
-        .ssh
-        .list()
-        .iter()
-        .any(|s| s.id == session_id && s.host_id == rule.host_id)
-    {
-        return Err(AppError::validation("ssh.sessionMissing"));
     }
-    if state
-        .forwards
+}
+
+pub(crate) struct StoppedForward(Option<tauri::async_runtime::JoinHandle<AppResult<()>>>);
+impl StoppedForward {
+    pub(crate) async fn finish(self) -> AppResult<()> {
+        if let Some(task) = self.0 {
+            task.await
+                .map_err(|_| AppError::internal("forward.stopFailed"))??;
+        }
+        Ok(())
+    }
+}
+
+pub(crate) async fn prepare(
+    registry: &ForwardRegistry,
+    rule: &ForwardRule,
+    session_id: &str,
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
+    owner: Option<(String, u64)>,
+) -> AppResult<PendingForward> {
+    let id = &rule.id;
+    let mut changed = registry.changed.subscribe();
+    let ticket = registry.ticket(id, session_id)?;
+    if registry
         .active
         .lock()
         .map_err(|_| AppError::internal("forward.lock"))?
@@ -400,69 +425,27 @@ pub async fn start_owned(
     {
         return Err(AppError::validation("forward.alreadyActive"));
     }
-    let handle = state.ssh.handle(session_id)?;
-    let setup = open_forward(
-        handle,
-        state.ssh.remote_routes(session_id)?,
-        &rule,
-        session_id,
-        owner,
-    );
+    let setup = open_uncommitted_forward(handle, routes, rule, session_id, owner, false);
     tokio::pin!(setup);
     let item = loop {
         tokio::select! {
             result = &mut setup => break result?,
             _ = changed.changed() => {
-                if !state.forwards.valid_ticket(&ticket) { return Err(AppError::validation("forward.startCancelled")); }
+                if !registry.valid_ticket(&ticket) { return Err(AppError::validation("forward.startCancelled")); }
             }
         }
     };
-    // If the session closed during setup, dropping the item cancels all created resources.
-    let mut active = state
-        .forwards
-        .active
-        .lock()
-        .map_err(|_| AppError::internal("forward.lock"))?;
-    if !state.forwards.valid_ticket(&ticket) {
-        return Err(AppError::validation("forward.startCancelled"));
-    }
-    if !state.ssh.list().iter().any(|s| s.id == session_id) {
-        return Err(AppError::validation("ssh.sessionMissing"));
-    }
-    if !rules(app)?.iter().any(|saved| saved == &rule) {
-        return Err(AppError::validation("forward.missing"));
-    }
-    if active.contains_key(id) {
-        return Err(AppError::validation("forward.alreadyActive"));
-    }
-    active.insert(id.to_owned(), item);
-    Ok(())
-}
-
-#[tauri::command]
-pub fn forwarding_list(app: AppHandle) -> AppResult<Vec<ForwardInfo>> {
-    list(&app)
-}
-#[tauri::command]
-pub fn forwarding_save(app: AppHandle, rule: ForwardRule) -> AppResult<ForwardRule> {
-    save(&app, rule)
-}
-#[tauri::command]
-pub fn forwarding_remove(app: AppHandle, id: String) -> AppResult<()> {
-    remove(&app, &id)
-}
-#[tauri::command]
-pub async fn forwarding_start(app: AppHandle, id: String, session_id: String) -> AppResult<()> {
-    start(&app, &id, &session_id).await
-}
-#[tauri::command]
-pub async fn forwarding_stop(app: AppHandle, id: String) -> AppResult<()> {
-    app.state::<AppState>().forwards.stop(&id).await
+    Ok(PendingForward {
+        id: id.clone(),
+        ticket,
+        item,
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::forwarding::contract::validate;
     fn rule() -> ForwardRule {
         ForwardRule {
             id: "a".into(),
@@ -493,6 +476,8 @@ mod tests {
         reg.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                admitted: Arc::new(AtomicBool::new(true)),
+                identity: uuid::Uuid::new_v4().to_string(),
                 session: "session".into(),
                 owner: None,
                 generation: None,
@@ -508,6 +493,7 @@ mod tests {
         assert!(*rx.borrow());
     }
 }
+#[cfg(test)]
 async fn open_forward(
     handle: Arc<client::Handle<ClientHandler>>,
     routes: Arc<RemoteRoutes>,
@@ -515,6 +501,17 @@ async fn open_forward(
     session_id: &str,
     owner: Option<(String, u64)>,
 ) -> AppResult<ActiveForward> {
+    open_uncommitted_forward(handle, routes, rule, session_id, owner, true).await
+}
+async fn open_uncommitted_forward(
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
+    rule: &ForwardRule,
+    session_id: &str,
+    owner: Option<(String, u64)>,
+    published: bool,
+) -> AppResult<ActiveForward> {
+    let admitted = Arc::new(AtomicBool::new(published));
     let (owner, generation) = owner
         .map(|(id, generation)| (Some(id), Some(generation)))
         .unwrap_or_default();
@@ -523,6 +520,7 @@ async fn open_forward(
         let listener = TcpListener::bind((rule.bind_host.as_str(), rule.bind_port))
             .await
             .map_err(|_| AppError::validation("forward.bindFailed"))?;
+        let allowed = admitted.clone();
         let h = handle.clone();
         let host = rule.target_host.clone();
         let port = rule.target_port;
@@ -532,6 +530,9 @@ async fn open_forward(
                 let Ok((socket, origin)) = accepted else {
                     break;
                 };
+                if !allowed.load(Ordering::Acquire) {
+                    continue;
+                }
                 let h = h.clone();
                 let host = host.clone();
                 let mut c = cancelled.clone();
@@ -566,6 +567,7 @@ async fn open_forward(
                     entries.insert(
                         key,
                         RemoteTarget {
+                            admitted: admitted.clone(),
                             host: rule.target_host.clone(),
                             port: rule.target_port,
                             cancel: cancelled.clone(),
@@ -584,6 +586,8 @@ async fn open_forward(
         // Own cleanup before awaiting the request. Dropping an in-flight setup
         // must revoke the route and cancel a listener the server may yet accept.
         let pending = ActiveForward {
+            admitted,
+            identity: uuid::Uuid::new_v4().to_string(),
             session: session_id.to_owned(),
             owner,
             generation,
@@ -607,6 +611,8 @@ async fn open_forward(
         return Ok(pending);
     };
     Ok(ActiveForward {
+        admitted,
+        identity: uuid::Uuid::new_v4().to_string(),
         session: session_id.to_owned(),
         owner,
         generation,
@@ -618,3 +624,7 @@ async fn open_forward(
 #[cfg(test)]
 #[path = "forward_tests.rs"]
 mod protocol_tests;
+
+#[cfg(test)]
+#[path = "forward_registry_tests.rs"]
+mod registry_tests;

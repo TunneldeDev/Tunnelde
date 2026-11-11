@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "appearance",
+  "type": "object",
+  "properties": {
+    "theme": {
+      "type": "string",
+      "enum": [
+        "system",
+        "dark",
+        "light"
+      ]
+    },
+    "accent": {
+      "type": "string",
+      "maxLength": 129
+    },
+    "colors": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "activityBar": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "sidebar": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "titleBar": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "tabBar": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "editor": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "panel": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "statusBar": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "terminalBackground": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "terminalForeground": {
+          "type": "string",
+          "maxLength": 7
+        },
+        "terminalCursor": {
+          "type": "string",
+          "maxLength": 7
+        }
+      },
+      "additionalProperties": false
+    },
+    "density": {
+      "type": "string",
+      "enum": [
+        "comfortable",
+        "compact"
+      ]
+    },
+    "fontSize": {
+      "type": "integer",
+      "minimum": 11,
+      "maximum": 20
+    },
+    "monoFontSize": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 32
+    },
+    "monoFont": {
+      "type": "string",
+      "enum": [
+        "fira-code",
+        "jetbrains-mono",
+        "plex-mono",
+        "system"
+      ]
+    },
+    "motion": {
+      "type": "string",
+      "enum": [
+        "system",
+        "reduced",
+        "full"
+      ]
+    },
+    "userCss": {
+      "type": "string",
+      "maxLength": 200000,
+      "x-maxBytes": 200000
+    },
+    "titleBarStyle": {
+      "type": "string",
+      "enum": [
+        "system",
+        "compact"
+      ]
+    }
+  },
+  "required": [
+    "theme",
+    "accent",
+    "colors",
+    "density",
+    "fontSize",
+    "monoFontSize",
+    "monoFont",
+    "motion",
+    "userCss",
+    "titleBarStyle"
+  ],
+  "additionalProperties": false
+}

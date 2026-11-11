@@ -2,6 +2,7 @@ mod config;
 mod inventory;
 pub mod layout;
 mod migration;
+pub(crate) mod public;
 mod restore;
 
 use std::sync::Mutex;

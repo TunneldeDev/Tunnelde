@@ -18,6 +18,7 @@ pub mod bandwidth;
 mod batch;
 mod compressed;
 pub mod durable;
+mod lifecycle;
 #[cfg(windows)]
 mod local_directory_move;
 pub mod local_editor;
@@ -116,6 +117,7 @@ struct TransferState {
 }
 
 struct ActiveTransfer {
+    identity: String,
     cancel: Arc<AtomicBool>,
     owner: Option<TransferOwner>,
     event: TransferEvent,
@@ -224,6 +226,7 @@ impl TransferRegistry {
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
+                identity: uuid::Uuid::new_v4().to_string(),
                 cancel: flag,
                 owner,
                 event: TransferEvent {
@@ -289,22 +292,7 @@ impl TransferRegistry {
 
     /// Plugins can cancel only transfers created by their current runtime.
     pub fn cancel_owned(&self, id: &str, plugin_id: &str, generation: u64) -> bool {
-        let Ok(state) = self.inner.lock() else {
-            return false;
-        };
-        let Some(transfer) = state.active.get(id) else {
-            return false;
-        };
-        if transfer
-            .owner
-            .as_ref()
-            .is_some_and(|owner| owner.plugin_id == plugin_id && owner.generation == generation)
-        {
-            transfer.cancel();
-            true
-        } else {
-            false
-        }
+        self.cancel_owned_checked(id, plugin_id, generation, None)
     }
 
     pub fn status_owned(
@@ -336,10 +324,18 @@ impl TransferRegistry {
     /// An exited process must not leave background work running. Matching the
     /// generation prevents an older process from cancelling its replacement.
     pub fn cancel_plugin(&self, plugin_id: &str, generation: u64) {
+        self.cancel_plugin_matching(plugin_id, |value| value == generation);
+    }
+
+    pub(crate) fn cancel_plugin_before(&self, plugin_id: &str, boundary: u64) {
+        self.cancel_plugin_matching(plugin_id, |value| value < boundary);
+    }
+
+    fn cancel_plugin_matching(&self, plugin_id: &str, generation: impl Fn(u64) -> bool) {
         if let Ok(state) = self.inner.lock() {
             for transfer in state.active.values() {
                 if transfer.owner.as_ref().is_some_and(|owner| {
-                    owner.plugin_id == plugin_id && owner.generation == generation
+                    owner.plugin_id == plugin_id && generation(owner.generation)
                 }) {
                     transfer.cancel();
                 }
@@ -788,7 +784,8 @@ async fn finish(app: &AppHandle, id: &str, name: &str, outcome: &Outcome) {
         _ => None,
     };
     let artifact_recovery = match outcome {
-        Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path }) => Some(path.clone()),
+        Outcome::Failed(_, AppError::TransferArtifactUnrecognized { path })
+        | Outcome::Failed(_, AppError::TransferCreationUnconfirmed { path }) => Some(path.clone()),
         _ => None,
     };
     let has_recovery = recovery.is_some() || artifact_recovery.is_some();
@@ -1565,24 +1562,54 @@ async fn children(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<
     }
 }
 
-async fn make_dir(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+async fn make_dir(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+    cancel: Option<&AtomicBool>,
+) -> AppResult<()> {
+    if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
     match sftp {
-        Some(handle) => match handle.symlink_metadata(&endpoint.path).await {
-            Ok(metadata) if metadata.is_symlink() => {
-                Err(AppError::validation("sftp.symlinkUnsupported"))
+        Some(handle) => {
+            let metadata = interruptible(cancel, async {
+                match handle.symlink_metadata(&endpoint.path).await {
+                    Ok(metadata) => Ok(Some(metadata)),
+                    Err(russh_sftp::client::error::Error::Status(status))
+                        if status.status_code == StatusCode::NoSuchFile =>
+                    {
+                        Ok(None)
+                    }
+                    Err(error) => Err(map_sftp(error)),
+                }
+            })
+            .await?;
+            if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                return Err(AppError::Ssh(CANCELLED.into()));
             }
-            Ok(metadata) if metadata.is_dir() => Ok(()),
-            Ok(_) => Err(AppError::validation("sftp.typeConflict")),
-            Err(russh_sftp::client::error::Error::Status(status))
-                if status.status_code == StatusCode::NoSuchFile =>
-            {
-                handle.create_dir(&endpoint.path).await.map_err(map_sftp)
+            match metadata {
+                Some(metadata) if metadata.is_symlink() => {
+                    Err(AppError::validation("sftp.symlinkUnsupported"))
+                }
+                Some(metadata) if metadata.is_dir() => Ok(()),
+                Some(_) => Err(AppError::validation("sftp.typeConflict")),
+                None => {
+                    // Once sent, MKDIR must settle before cancellation is reported:
+                    // a late acknowledgement must not race cleanup or resume.
+                    handle.create_dir(&endpoint.path).await.map_err(map_sftp)?;
+                    if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                        return Err(AppError::Ssh(CANCELLED.into()));
+                    }
+                    Ok(())
+                }
             }
-            Err(error) => Err(map_sftp(error)),
-        },
+        }
         None => {
             reject_local_destination_link(Path::new(&endpoint.path))?;
             tokio::fs::create_dir_all(&endpoint.path).await?;
+            if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
+                return Err(AppError::Ssh(CANCELLED.into()));
+            }
             Ok(())
         }
     }
@@ -1662,7 +1689,7 @@ async fn copy_entry(
     let SourceMetadata::File(size, modified) =
         interruptible(Some(cancel), inspect_source(from, from_sftp)).await?
     else {
-        make_dir(to, to_sftp).await?;
+        make_dir(to, to_sftp, Some(cancel)).await?;
         let paths = interruptible(Some(cancel), children(from, from_sftp)).await?;
         // Overwrites reserve one commit channel per task. Keep their proven
         // sequential publication path until that protocol supports multiplexing.
@@ -2135,14 +2162,25 @@ async fn durable_copy_file(
     let preparation_meter = &*meter;
     let (temp, recovering_publication) =
         artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel, |directory| async move {
-            preparation_meter
+            let sessions = preparation_meter
                 .data_sessions(from, to, from_sftp, to_sftp, cancel)
-                .await?
+                .await?;
+            let target = sessions
                 .target
                 .as_ref()
-                .ok_or_else(|| AppError::internal("Missing staging data channel"))?
-                .create_private_directory(&directory.path)
-                .await
+                .ok_or_else(|| AppError::internal("Missing staging data channel"))?;
+            if cancel.load(Ordering::SeqCst) {
+                return Err(AppError::Ssh(CANCELLED.into()));
+            }
+            artifacts::create_directory(
+                preparation_meter.app,
+                id,
+                to,
+                directory,
+                target.clone(),
+                cancel,
+            )
+            .await
         })
         .await?;
     #[cfg(windows)]
@@ -3981,6 +4019,42 @@ mod tests {
     }
 
     #[test]
+    fn delayed_transfer_cleanup_keeps_new_runtime_and_user_transfers() {
+        let registry = TransferRegistry::default();
+        let mut flags = Vec::new();
+        for (id, plugin, generation) in [
+            ("old", Some("one"), 7),
+            ("new", Some("one"), 8),
+            ("newer", Some("one"), 9),
+            ("other", Some("two"), 7),
+            ("user", None, 0),
+        ] {
+            let flag = Arc::new(AtomicBool::new(false));
+            let (sender, _) = tokio::sync::watch::channel(false);
+            registry
+                .register(
+                    id,
+                    flag.clone(),
+                    plugin.map(|plugin| TransferOwner {
+                        plugin_id: plugin.into(),
+                        generation,
+                        cancelled: sender,
+                    }),
+                )
+                .unwrap();
+            flags.push(flag);
+        }
+        registry.cancel_plugin_before("one", 8);
+        assert_eq!(
+            flags
+                .iter()
+                .map(|flag| flag.load(Ordering::SeqCst))
+                .collect::<Vec<_>>(),
+            [true, false, false, false, false]
+        );
+    }
+
+    #[test]
     fn limits_background_transfers_per_plugin_without_limiting_user_transfers() {
         let registry = TransferRegistry::default();
         for index in 0..9 {
@@ -4531,6 +4605,9 @@ mod tests {
             replace_before_remove: AtomicBool,
             metadata_reads: AtomicUsize,
             directories_created: AtomicUsize,
+            hold_mkdir: AtomicBool,
+            mkdir_started: Notify,
+            release_mkdir: Notify,
             removals: AtomicUsize,
         }
 
@@ -4689,6 +4766,10 @@ mod tests {
                     .directories_created
                     .fetch_add(1, Ordering::SeqCst);
                 std::fs::create_dir(self.root.join(path)).map_err(io_status)?;
+                self.state.mkdir_started.notify_one();
+                if self.state.hold_mkdir.load(Ordering::SeqCst) {
+                    self.state.release_mkdir.notified().await;
+                }
                 Ok(status(id))
             }
 
@@ -5645,6 +5726,89 @@ mod tests {
         }
 
         #[tokio::test]
+        async fn directory_preparation_cancelled_metadata_never_sends_a_late_mkdir() {
+            let root = temp_root("directory-cancel-metadata");
+            let state = Arc::new(State::default());
+            state.hold_metadata.store(true, Ordering::SeqCst);
+            let sftp = client(&root, state.clone()).await;
+            let endpoint = Endpoint {
+                session: Some("test".into()),
+                path: "never-created".into(),
+            };
+            let cancel = AtomicBool::new(false);
+            let (result, ()) = tokio::time::timeout(std::time::Duration::from_millis(500), async {
+                tokio::join!(make_dir(&endpoint, Some(&sftp), Some(&cancel)), async {
+                    state.metadata_started.notified().await;
+                    cancel.store(true, Ordering::SeqCst);
+                })
+            })
+            .await
+            .expect("pause waited for directory metadata reply");
+            assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+            state.hold_metadata.store(false, Ordering::SeqCst);
+            state.release_metadata.notify_one();
+            // Wait behind the old reply on the same protocol channel. It must
+            // remain useful and the abandoned metadata cannot continue MKDIR.
+            assert!(sftp.symlink_metadata(&endpoint.path).await.is_err());
+            assert_eq!(state.directories_created.load(Ordering::SeqCst), 0);
+            assert!(!root.join(&endpoint.path).exists());
+            sftp.close().await.unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn directory_preparation_cancelled_before_poll_sends_no_requests() {
+            let root = temp_root("directory-already-cancelled");
+            let state = Arc::new(State::default());
+            let sftp = client(&root, state.clone()).await;
+            let endpoint = Endpoint {
+                session: Some("test".into()),
+                path: "never-created".into(),
+            };
+            let result = make_dir(&endpoint, Some(&sftp), Some(&AtomicBool::new(true))).await;
+            assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+            assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
+            assert_eq!(state.directories_created.load(Ordering::SeqCst), 0);
+            assert!(!root.join(&endpoint.path).exists());
+            sftp.close().await.unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
+        async fn directory_preparation_keeps_the_acknowledgement_of_an_already_sent_mkdir() {
+            let root = temp_root("directory-mkdir-drain");
+            let state = Arc::new(State::default());
+            state.hold_mkdir.store(true, Ordering::SeqCst);
+            let sftp = client(&root, state.clone()).await;
+            let endpoint = Endpoint {
+                session: Some("test".into()),
+                path: "acknowledged".into(),
+            };
+            let cancel = AtomicBool::new(false);
+            let operation = make_dir(&endpoint, Some(&sftp), Some(&cancel));
+            tokio::pin!(operation);
+            tokio::select! {
+                result = &mut operation => panic!("MKDIR was not awaited: {result:?}"),
+                () = state.mkdir_started.notified() => {}
+            }
+            cancel.store(true, Ordering::SeqCst);
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(100), &mut operation)
+                    .await
+                    .is_err()
+            );
+            state.release_mkdir.notify_one();
+            // The completed mutation is settled, then the caller observes its
+            // cancellation before starting traversal or another child write.
+            assert_eq!(operation.await.unwrap_err().to_string(), CANCELLED);
+            assert_eq!(state.directories_created.load(Ordering::SeqCst), 1);
+            assert!(root.join(&endpoint.path).is_dir());
+            sftp.close().await.unwrap();
+            std::fs::remove_dir(root.join(&endpoint.path)).unwrap();
+            std::fs::remove_dir(root).unwrap();
+        }
+
+        #[tokio::test]
         async fn directory_preparation_uses_one_lstat_without_following_links_or_truncating_files()
         {
             let root = temp_root("sftp-directory-metadata");
@@ -5663,6 +5827,7 @@ mod tests {
                         path: path.into(),
                     },
                     Some(&sftp),
+                    None,
                 )
                 .await;
                 match path {
@@ -5683,6 +5848,7 @@ mod tests {
                     path: "denied".into(),
                 },
                 Some(&sftp),
+                None,
             )
             .await
             .is_err());
@@ -5719,7 +5885,7 @@ mod tests {
                 session: Some("test".into()),
                 path: "link".into(),
             };
-            assert!(make_dir(&endpoint, Some(&sftp)).await.is_err());
+            assert!(make_dir(&endpoint, Some(&sftp), None).await.is_err());
             assert!(open_writer(&endpoint, Some(&sftp), true).await.is_err());
             assert_eq!(
                 std::fs::read_to_string(outside.join("preserved.txt")).unwrap(),
@@ -5885,6 +6051,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn directory_preparation_cancelled_local_does_not_create_parent_directories() {
+        let root = temp_root("cancelled-local-directory");
+        let endpoint = Endpoint {
+            session: None,
+            path: display_path(&root.join("parent/child")),
+        };
+        assert_eq!(
+            make_dir(&endpoint, None, Some(&AtomicBool::new(true)))
+                .await
+                .unwrap_err()
+                .to_string(),
+            CANCELLED
+        );
+        assert!(!root.join("parent").exists());
+        std::fs::remove_dir(root).unwrap();
+    }
+
+    #[tokio::test]
     async fn transfer_preparation_rejects_nested_destination_directory_links() {
         let root = temp_root("destination-link");
         let outside = root.join("outside");
@@ -5896,7 +6080,7 @@ mod tests {
             session: None,
             path: display_path(&link),
         };
-        assert!(make_dir(&endpoint, None).await.is_err());
+        assert!(make_dir(&endpoint, None, None).await.is_err());
         assert!(open_writer(&endpoint, None, true).await.is_err());
         assert!(scan::measure(&endpoint, None, 1).await.is_err());
         assert_eq!(
@@ -5921,7 +6105,7 @@ mod tests {
             session: None,
             path: display_path(&link),
         };
-        assert!(make_dir(&endpoint, None).await.is_err());
+        assert!(make_dir(&endpoint, None, None).await.is_err());
         assert!(open_writer(&endpoint, None, true).await.is_err());
         #[cfg(windows)]
         std::fs::remove_dir(link).unwrap();

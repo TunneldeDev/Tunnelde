@@ -19,6 +19,177 @@ struct Gate {
     finished: tokio::sync::Semaphore,
 }
 
+fn acknowledgement_db(to: &Endpoint) -> (rusqlite::Connection, ArtifactRecord, Endpoint) {
+    let conn = rusqlite::Connection::open_in_memory().unwrap();
+    conn.execute_batch("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL)").unwrap();
+    let mut saved = record(to);
+    if let ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    } = &mut saved
+    {
+        staging.prepared = false;
+        staging.opening = false;
+        staging.creating = true;
+    }
+    let directory = staging_directory(to, "job", remote_staging(Some(&saved)).unwrap()).unwrap();
+    conn.execute(
+        "INSERT INTO settings VALUES(?1,?2,0)",
+        rusqlite::params![
+            artifact_key("job", to),
+            serde_json::to_string(&saved).unwrap()
+        ],
+    )
+    .unwrap();
+    (conn, saved, directory)
+}
+
+#[tokio::test]
+async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
+    for before_create in [true, false] {
+        let to = Endpoint {
+            session: Some("remote".into()),
+            path: "/target".into(),
+        };
+        let (conn, _, directory) = acknowledgement_db(&to);
+        let conn = Arc::new(Mutex::new(conn));
+        let tree = Arc::new(Mutex::new(Tree::default()));
+        let gate = Arc::new(Gate {
+            before_create,
+            arrived: tokio::sync::Semaphore::new(0),
+            release: tokio::sync::Semaphore::new(0),
+            finished: tokio::sync::Semaphore::new(0),
+        });
+        let data = directory_client(tree.clone(), Some(gate.clone())).await;
+        let observer = client(tree.clone(), None).await;
+        let cancel = AtomicBool::new(false);
+        let done = Arc::new(tokio::sync::Semaphore::new(0));
+        let operation = {
+            let conn = conn.clone();
+            let to = to.clone();
+            let directory = directory.clone();
+            let done = done.clone();
+            async move {
+                let result = data.create_private_directory(&directory.path).await?;
+                assert!(settle_creation(
+                    &conn.lock().unwrap(),
+                    "job",
+                    &to,
+                    &directory
+                )?);
+                done.add_permits(1);
+                result.into_result()
+            }
+        };
+        let result = tokio::time::timeout(Duration::from_secs(1), async {
+            tokio::join!(await_creation(&cancel, || Ok(operation)), async {
+                gate.arrived.acquire().await.unwrap().forget();
+                cancel.store(true, Ordering::SeqCst);
+            })
+            .0
+        })
+        .await
+        .unwrap();
+        assert!(matches!(result,Err(AppError::Ssh(ref error)) if error == CANCELLED));
+        assert!(matches!(
+            cleanup_directory(&observer, &directory, true).await,
+            Err(AppError::TransferCreationUnconfirmed { .. })
+        ));
+        assert_eq!(
+            tree.lock().unwrap().directories.contains(&directory.path),
+            !before_create
+        );
+        gate.release.add_permits(1);
+        tokio::time::timeout(Duration::from_secs(1), done.acquire())
+            .await
+            .unwrap()
+            .unwrap()
+            .forget();
+        let raw: String = conn
+            .lock()
+            .unwrap()
+            .query_row(
+                "SELECT value FROM settings WHERE key=?1",
+                [artifact_key("job", &to)],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let settled: ArtifactRecord = serde_json::from_str(&raw).unwrap();
+        require_creation_settled("job", &to, Some(&settled)).unwrap();
+        cleanup_directory(&observer, &directory, false)
+            .await
+            .unwrap();
+        assert!(!tree.lock().unwrap().directories.contains(&directory.path));
+        observer.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
+async fn precancelled_creation_never_polls_or_spawns_the_mutation() {
+    let polled = Arc::new(AtomicBool::new(false));
+    let observed = polled.clone();
+    assert!(await_creation(&AtomicBool::new(true), || {
+        observed.store(true, Ordering::SeqCst);
+        Ok(async { Ok(()) })
+    })
+    .await
+    .is_err());
+    tokio::task::yield_now().await;
+    assert!(!polled.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn transport_failure_never_settles_the_creation_journal() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    let (conn, saved, _) = acknowledgement_db(&to);
+    let cancel = AtomicBool::new(false);
+    assert!(await_creation(&cancel, || Ok(async {
+        Err(AppError::Ssh("connection lost".into()))
+    }))
+    .await
+    .is_err());
+    let raw: String = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key=?1",
+            [artifact_key("job", &to)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(raw, serde_json::to_string(&saved).unwrap());
+    assert!(matches!(
+        require_creation_settled("job", &to, Some(&saved)),
+        Err(AppError::TransferCreationUnconfirmed { .. })
+    ));
+}
+
+#[test]
+fn late_acknowledgement_cannot_replace_a_new_generation_or_recreate_deleted_journals() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    let (conn, saved, directory) = acknowledgement_db(&to);
+    let (_, replacement, _) = acknowledgement_db(&to);
+    let raw = serde_json::to_string(&replacement).unwrap();
+    conn.execute("UPDATE settings SET value=?1", [&raw])
+        .unwrap();
+    assert!(!settle_creation(&conn, "job", &to, &directory).unwrap());
+    let actual: String = conn
+        .query_row("SELECT value FROM settings", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(actual, raw);
+    conn.execute("DELETE FROM settings", []).unwrap();
+    assert!(!settle_creation(&conn, "job", &to, &directory).unwrap());
+    assert!(require_creation_settled("job", &to, Some(&saved)).is_err());
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
 struct Server {
     tree: Arc<Mutex<Tree>>,
     gate: Option<Arc<Gate>>,
@@ -99,6 +270,10 @@ impl russh_sftp::server::Handler for Server {
         path: String,
         attrs: FileAttributes,
     ) -> Result<Status, StatusCode> {
+        if let Some(gate) = self.mkdir_gate.as_ref().filter(|gate| gate.before_create) {
+            gate.arrived.add_permits(1);
+            gate.release.acquire().await.unwrap().forget();
+        }
         {
             let mut tree = self.tree.lock().unwrap();
             if tree.directories.contains(&path) || tree.files.contains_key(&path) {
@@ -109,8 +284,10 @@ impl russh_sftp::server::Handler for Server {
             tree.directories.insert(path);
         }
         if let Some(gate) = &self.mkdir_gate {
-            gate.arrived.add_permits(1);
-            gate.release.acquire().await.unwrap().forget();
+            if !gate.before_create {
+                gate.arrived.add_permits(1);
+                gate.release.acquire().await.unwrap().forget();
+            }
             gate.finished.add_permits(1);
         }
         Ok(status(id))
@@ -219,7 +396,12 @@ async fn private_directory_creation_sets_permissions_without_a_chmod_window() {
         &observer,
         &directory,
         &AtomicBool::new(false),
-        |path| async move { data_ref.create_private_directory(&path.path).await },
+        |path| async move {
+            data_ref
+                .create_private_directory(&path.path)
+                .await?
+                .into_result()
+        },
     )
     .await
     .unwrap();
@@ -293,7 +475,7 @@ async fn length_probe_classifies_the_same_metadata_without_duplicate_round_trips
 }
 
 #[tokio::test]
-async fn restart_after_lost_mkdir_reply_adopts_only_the_empty_private_directory() {
+async fn lost_mkdir_reply_keeps_the_uncertain_creation_for_review() {
     let to = Endpoint {
         session: Some("remote".into()),
         path: "/target".into(),
@@ -306,6 +488,7 @@ async fn restart_after_lost_mkdir_reply_adopts_only_the_empty_private_directory(
     {
         staging.prepared = false;
         staging.opening = false;
+        staging.creating = true;
     }
     let restored: ArtifactRecord =
         serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
@@ -324,30 +507,28 @@ async fn restart_after_lost_mkdir_reply_adopts_only_the_empty_private_directory(
     let cancel = AtomicBool::new(false);
     tokio::select! {
         result = ensure_private_directory(&observer, &directory, &cancel, |path| async move {
-            data_ref.create_private_directory(&path.path).await
+            data_ref.create_private_directory(&path.path).await?.into_result()
         }) => panic!("MKDIR acknowledgement should be withheld: {result:?}"),
         permit = gate.arrived.acquire() => permit.unwrap().forget(),
     }
     drop(data); // Simulate termination before the private-directory checkpoint.
     assert_eq!(tree.lock().unwrap().modes[&directory.path], 0o40700);
-    ensure_private_directory(&observer, &directory, &AtomicBool::new(false), |_| async {
-        panic!("Recovery must validate the existing directory, never create or chmod it")
-    })
-    .await
-    .unwrap();
-    // A late reply cannot alter content subsequently written by the resumed task.
-    let part = part_from_record(&to, "job", Some(&restored)).unwrap();
-    tree.lock()
-        .unwrap()
-        .files
-        .insert(part.path.clone(), b"resumed contents".to_vec());
+    assert!(matches!(
+        require_creation_settled("job", &to, Some(&restored)),
+        Err(AppError::TransferCreationUnconfirmed { ref path }) if path == &directory.path
+    ));
+    assert!(cleanup_directory(&observer, &directory, true)
+        .await
+        .is_err());
+    assert!(tree.lock().unwrap().directories.contains(&directory.path));
     gate.release.add_permits(1);
     tokio::time::timeout(Duration::from_secs(1), gate.finished.acquire())
         .await
         .unwrap()
         .unwrap()
         .forget();
-    assert_eq!(tree.lock().unwrap().files[&part.path], b"resumed contents");
+    // Even an empty directory is retained until the creation is acknowledged.
+    assert!(tree.lock().unwrap().directories.contains(&directory.path));
     observer.close().await.unwrap();
 }
 
@@ -426,6 +607,7 @@ fn record(to: &Endpoint) -> ArtifactRecord {
             generation: uuid::Uuid::new_v4().to_string(),
             prepared: true,
             opening: true,
+            creating: false,
         }),
     }
 }
@@ -592,4 +774,121 @@ fn staging_generations_preserve_archive_and_publication_paths() {
         staging.generation = "../invalid".into();
     }
     assert!(part_from_record(&to, "job", Some(&saved)).is_err());
+}
+
+#[tokio::test]
+async fn cleanup_cannot_forget_a_directory_created_after_its_missing_path_check() {
+    let tree = Arc::new(Mutex::new(Tree::default()));
+    let observer = client(tree.clone(), None).await;
+    let gate = Arc::new(Gate {
+        before_create: true,
+        arrived: tokio::sync::Semaphore::new(0),
+        release: tokio::sync::Semaphore::new(0),
+        finished: tokio::sync::Semaphore::new(0),
+    });
+    let data = directory_client(tree.clone(), Some(gate.clone())).await;
+    let directory = Endpoint {
+        session: Some("remote".into()),
+        path: "/private-stage".into(),
+    };
+    let creation = data.create_private_directory(&directory.path);
+    tokio::pin!(creation);
+    tokio::select! {
+        result = &mut creation => panic!("MKDIR should still be queued: {result:?}"),
+        permit = gate.arrived.acquire() => permit.unwrap().forget(),
+    }
+    assert!(!tree.lock().unwrap().directories.contains(&directory.path));
+    let result = cleanup_directory(&observer, &directory, true).await;
+    // The server can still execute its queued MKDIR after our missing-path check.
+    gate.release.add_permits(1);
+    creation.await.unwrap().into_result().unwrap();
+    assert!(tree.lock().unwrap().directories.contains(&directory.path));
+    cleanup_directory(&observer, &directory, false)
+        .await
+        .unwrap();
+    assert!(!tree.lock().unwrap().directories.contains(&directory.path));
+    observer.close().await.unwrap();
+    assert!(
+        matches!(result, Err(AppError::TransferCreationUnconfirmed {ref path}) if path == &directory.path),
+        "Unacknowledged MKDIR must keep its recovery journal: {result:?}"
+    );
+}
+
+#[test]
+fn historical_unprepared_journals_never_assume_the_create_was_unsent() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    for prepared in [false, true] {
+        let raw = serde_json::json!({
+            "path":to.path,"identity":null,
+            "staging":{"generation":uuid::Uuid::new_v4().to_string(),"prepared":prepared,"opening":false}
+        });
+        let saved: ArtifactRecord = serde_json::from_value(raw).unwrap();
+        assert_eq!(
+            require_creation_settled("job", &to, Some(&saved)).is_ok(),
+            prepared
+        );
+        let restored: ArtifactRecord =
+            serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        assert_eq!(
+            require_creation_settled("job", &to, Some(&restored)).is_ok(),
+            prepared
+        );
+    }
+    let mut saved = record(&to);
+    if let ArtifactRecord::Current {
+        staging: Some(staging),
+        ..
+    } = &mut saved
+    {
+        staging.prepared = false;
+        staging.opening = false;
+        staging.creating = false;
+    }
+    assert!(require_creation_settled("job", &to, Some(&saved)).is_ok());
+}
+
+#[tokio::test]
+async fn acknowledged_directory_cleanup_is_retryable_and_keeps_foreign_contents() {
+    let tree = Arc::new(Mutex::new(Tree::default()));
+    let observer = client(tree.clone(), None).await;
+    let directory = Endpoint {
+        session: Some("remote".into()),
+        path: "/private-stage".into(),
+    };
+    tree.lock()
+        .unwrap()
+        .directories
+        .insert(directory.path.clone());
+    let foreign = directory.path.clone() + "/foreign";
+    tree.lock()
+        .unwrap()
+        .files
+        .insert(foreign.clone(), b"keep".to_vec());
+    assert!(cleanup_directory(&observer, &directory, false)
+        .await
+        .is_err());
+    assert_eq!(tree.lock().unwrap().files[&foreign], b"keep");
+    tree.lock().unwrap().files.remove(&foreign);
+    cleanup_directory(&observer, &directory, false)
+        .await
+        .unwrap();
+    // A lost successful RMDIR reply may be retried without a journal leak.
+    cleanup_directory(&observer, &directory, false)
+        .await
+        .unwrap();
+    assert!(!tree.lock().unwrap().directories.contains(&directory.path));
+    observer.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn acknowledged_mkdir_rejections_are_distinct_from_unconfirmed_transport_errors() {
+    let tree = Arc::new(Mutex::new(Tree::default()));
+    tree.lock().unwrap().directories.insert("/existing".into());
+    let data = directory_client(tree, None).await;
+    let reply = data.create_private_directory("/existing").await.unwrap();
+    assert!(matches!(reply, range_io::DirectoryCreation::Rejected(_)));
+    assert!(reply.into_result().is_err());
 }

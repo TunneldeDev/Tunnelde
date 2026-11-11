@@ -46,6 +46,42 @@ beforeEach(() => {
 });
 
 describe("host ordering", () => {
+  it("keeps current discovery during saved-host reload and excludes it from mutations", async () => {
+    const discovered = {
+      ...host("source:digest", 0),
+      source: {
+        pluginId: "inventory",
+        pluginName: "Inventory",
+        id: "cloud",
+        label: "Cloud",
+        entryId: "one",
+      },
+    };
+    useHosts.getState().setSourceHosts([discovered]);
+    let accept!: (value: { hosts: Host[]; groups: [] }) => void;
+    snapshot.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          accept = resolve;
+        }),
+    );
+    const loading = useHosts.getState().load();
+    useHosts.getState().setSourceHosts([]);
+    accept({ hosts: [host("alpha", 0)], groups: [] });
+    await loading;
+    expect(useHosts.getState().hosts.map((host) => host.id)).toEqual(["alpha"]);
+    useHosts.getState().setSourceHosts([discovered]);
+    useHosts.getState().moveHost(discovered.id, "alpha");
+    useHosts.getState().moveToGroup(discovered.id, null, true);
+    await useHosts.getState().toggleFavorite(discovered);
+    expect(await useHosts.getState().updateHost(discovered.id, discovered)).toBeNull();
+    expect(await useHosts.getState().deleteHost(discovered.id)).toBe(false);
+    expect(reorder).not.toHaveBeenCalled();
+    expect(update).not.toHaveBeenCalled();
+    snapshot.mockResolvedValue({ hosts: [host("alpha", 0)], groups: [] });
+    await useHosts.getState().load();
+    expect(useHosts.getState().hosts.map((host) => host.id)).toEqual(["alpha", discovered.id]);
+  });
   it("publishes a saved rename immediately while the host snapshot is still loading", async () => {
     let resolveSnapshot!: (value: { hosts: Host[]; groups: [] }) => void;
     snapshot.mockImplementation(

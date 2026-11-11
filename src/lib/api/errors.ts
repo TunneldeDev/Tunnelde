@@ -23,6 +23,43 @@ function translateKey(key: string): string | null {
 
 export function translateError(error: unknown): string {
   if (isIpcError(error)) {
+    const details = error.details;
+    if (error.message === "plugin.activation.missingDependency" && typeof details?.id === "string")
+      return translate("plugin.activation.missingDependencyDetails", { id: details.id });
+    if (
+      error.message === "plugin.activation.incompatibleDependency" &&
+      details &&
+      ["id", "required", "installed"].every((key) => typeof details[key] === "string")
+    )
+      return translate("plugin.activation.incompatibleDependencyDetails", details);
+    if (
+      error.message === "plugin.activation.cycle" &&
+      Array.isArray(details?.chain) &&
+      details.chain.every((item: unknown) => typeof item === "string")
+    )
+      return translate("plugin.activation.cycleDetails", { chain: details.chain.join(" → ") });
+    if (error.message.startsWith("configuration.invalidValue:")) {
+      return translate("configuration.invalidValue", {
+        field: error.message.slice("configuration.invalidValue:".length),
+      });
+    }
+    if (error.message.startsWith("preferences.invalidValue:")) {
+      return translate("preferences.invalidValue", {
+        field: error.message.slice("preferences.invalidValue:".length),
+      });
+    }
+    if (error.message.startsWith("hostFields.invalidValue:")) {
+      return translate("hostFields.invalidValue", {
+        field: error.message.slice("hostFields.invalidValue:".length),
+      });
+    }
+    if (
+      error.message === "plugin.frontend.sdkUnsupported" &&
+      typeof error.details?.required === "string" &&
+      typeof error.details.available === "string"
+    ) {
+      return translate("plugin.frontend.sdkUnsupportedDetails", error.details);
+    }
     if (error.code === "ssh" && error.details?.operation === "rename") {
       const details = error.details;
       if (["from", "to", "reason"].every((key) => typeof details[key] === "string")) {
@@ -63,6 +100,13 @@ export function translateError(error: unknown): string {
     if (error.message.startsWith("ssh.error:")) {
       return error.message.slice("ssh.error:".length).trim();
     }
+    if (error.message.startsWith("plugin.runners.commandFailed:")) {
+      return translate("plugin.runners.commandFailed", {
+        reason:
+          error.message.slice("plugin.runners.commandFailed:".length).trim() ||
+          translate("plugin.runners.noCommandDetails"),
+      });
+    }
     // SFTP wraps transport/protocol details; do not reduce every failure to
     // "SSH error", which prevents users from distinguishing reconnection,
     // permission and server failures.
@@ -83,7 +127,7 @@ export function translateError(error: unknown): string {
     return error.message;
   }
   if (error instanceof Error) {
-    return error.message;
+    return translateKey(error.message) ?? error.message;
   }
   return translate("error.generic");
 }

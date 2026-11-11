@@ -14,7 +14,14 @@ describe("packaged terminal styles", () => {
       }),
     );
     expect(directives["style-src"]).toContain("'unsafe-inline'");
-    expect(directives["script-src"]).toEqual(["'self'", "'wasm-unsafe-eval'"]);
+    expect(directives["script-src"]).toEqual([
+      "'self'",
+      "tunnelde-ui:",
+      "http://tunnelde-ui.localhost",
+      "'wasm-unsafe-eval'",
+    ]);
+    expect(directives["script-src"]).not.toContain("blob:");
+    expect(directives["script-src"]).not.toContain("https:");
     expect(directives["script-src"]).not.toContain("'unsafe-eval'");
     expect(directives["worker-src"]).toContain("'self'");
     expect(directives["object-src"]).toEqual(["'none'"]);

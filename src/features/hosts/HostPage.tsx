@@ -1,4 +1,5 @@
 import { ForwardingSection } from "@/features/forwarding/ForwardingSection";
+import { HostFieldsSection } from "./HostFieldsSection";
 import { FolderTree, Pencil, PlugZap, Star, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
@@ -48,7 +49,7 @@ function HostDetails({ host }: { host: Host }) {
 
   const duplicate = async () => {
     const copy = await createHost({
-      name: `${host.name} ${t("common.duplicate")}`,
+      name: host.source ? host.name : `${host.name} ${t("common.duplicate")}`,
       host: host.host,
       port: host.port,
       username: host.username,
@@ -61,7 +62,8 @@ function HostDetails({ host }: { host: Host }) {
     });
     if (copy) {
       try {
-        await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
+        if (!host.source)
+          await api.saveConnectionRoute(copy.id, await api.connectionRoute(host.id));
       } catch (error) {
         toast(translateError(error), "error");
       }
@@ -103,37 +105,41 @@ function HostDetails({ host }: { host: Host }) {
           >
             {t("sftp.title")}
           </Button>
-          <IconButton
-            label={host.favorite ? t("menu.unfavorite") : t("menu.favorite")}
-            active={host.favorite}
-            size="sm"
-            onClick={() => void toggleFavorite(host)}
-          >
-            <Star size={15} fill={host.favorite ? "currentColor" : "none"} />
-          </IconButton>
-          <IconButton label={t("common.edit")} size="sm" onClick={() => openHostDialog(host)}>
-            <Pencil size={15} />
-          </IconButton>
-          <IconButton
-            label={t("common.delete")}
-            size="sm"
-            danger
-            onClick={() =>
-              confirm({
-                title: t("host.deleteTitle"),
-                body: t("host.deleteBody", { name: host.name }),
-                confirmLabel: t("common.delete"),
-                danger: true,
-                onConfirm: async () => {
-                  if (await deleteHost(host.id)) {
-                    removeHostTab(host.id);
-                  }
-                },
-              })
-            }
-          >
-            <Trash2 size={15} />
-          </IconButton>
+          {!host.source && (
+            <>
+              <IconButton
+                label={host.favorite ? t("menu.unfavorite") : t("menu.favorite")}
+                active={host.favorite}
+                size="sm"
+                onClick={() => void toggleFavorite(host)}
+              >
+                <Star size={15} fill={host.favorite ? "currentColor" : "none"} />
+              </IconButton>
+              <IconButton label={t("common.edit")} size="sm" onClick={() => openHostDialog(host)}>
+                <Pencil size={15} />
+              </IconButton>
+              <IconButton
+                label={t("common.delete")}
+                size="sm"
+                danger
+                onClick={() =>
+                  confirm({
+                    title: t("host.deleteTitle"),
+                    body: t("host.deleteBody", { name: host.name }),
+                    confirmLabel: t("common.delete"),
+                    danger: true,
+                    onConfirm: async () => {
+                      if (await deleteHost(host.id)) {
+                        removeHostTab(host.id);
+                      }
+                    },
+                  })
+                }
+              >
+                <Trash2 size={15} />
+              </IconButton>
+            </>
+          )}
         </div>
       </header>
 
@@ -152,7 +158,15 @@ function HostDetails({ host }: { host: Host }) {
             label={t("host.lastUsed")}
             value={host.lastUsedAt ? formatRelative(host.lastUsedAt, locale) : t("common.never")}
           />
-          <Detail label={t("host.created")} value={formatDateTime(host.createdAt, locale)} />
+          {!host.source && (
+            <Detail label={t("host.created")} value={formatDateTime(host.createdAt, locale)} />
+          )}
+          {host.source && (
+            <Detail
+              label={t("hostSources.source")}
+              value={`${host.source.pluginName} · ${host.source.label}`}
+            />
+          )}
         </dl>
 
         {host.tags.length > 0 ? (
@@ -169,9 +183,10 @@ function HostDetails({ host }: { host: Host }) {
       </section>
 
       <ForwardingSection key={host.id} host={host} />
+      {!host.source && <HostFieldsSection key={`fields:${host.id}`} hostId={host.id} />}
       <div className="host-page__foot">
         <Button variant="secondary" onClick={() => void duplicate()}>
-          {t("common.duplicate")}
+          {t(host.source ? "hostSources.saveCopy" : "common.duplicate")}
         </Button>
         <span className="host-page__count">{t("status.hosts", { count: hosts.length })}</span>
       </div>

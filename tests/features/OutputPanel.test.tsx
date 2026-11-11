@@ -121,7 +121,12 @@ it("uses explicit shared-log domains for source and plugin filtering", () => {
     plugin: "example",
   });
   expect(
-    matchesOutput(entry, "domain:plugins.example.connection", "plugin:example level:ERROR", "WARN"),
+    matchesOutput(
+      entry,
+      "domain:plugins.example.connection",
+      "@plugin:example @level:ERROR",
+      "WARN",
+    ),
   ).toBe(true);
   expect(entry.message).toContain("request_id=req-1");
   expect(entry.message).not.toContain("domain=");

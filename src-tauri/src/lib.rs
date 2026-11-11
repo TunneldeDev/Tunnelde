@@ -9,6 +9,7 @@ mod network;
 mod platform;
 mod plugins;
 mod preview;
+mod services;
 mod settings;
 mod settings_profiles;
 mod ssh;
@@ -24,6 +25,39 @@ pub fn run() {
         .manage(window::StartupWindow::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
+        .manage(plugins::frontend::Registry::default())
+        .manage(plugins::forwarding::Registry::default())
+        .register_asynchronous_uri_scheme_protocol("tunnelde-ui", |context, request, responder| {
+            let app = context.app_handle().clone();
+            use tauri::Manager;
+            let Some(capacity) = app.state::<plugins::frontend::Registry>().request() else {
+                responder.respond(
+                    tauri::http::Response::builder()
+                        .status(429)
+                        .header("Cache-Control", "no-store")
+                        .body(Vec::<u8>::new())
+                        .unwrap(),
+                );
+                return;
+            };
+            let origin = if cfg!(dev) {
+                "http://localhost:1420"
+            } else if cfg!(target_os = "windows") {
+                "http://tauri.localhost"
+            } else {
+                "tauri://localhost"
+            };
+            tauri::async_runtime::spawn(async move {
+                let _capacity = capacity;
+                let state = app.state::<state::AppState>();
+                responder.respond(plugins::frontend::serve(
+                    &app.state::<plugins::frontend::Registry>(),
+                    &state.plugins.security,
+                    request,
+                    origin,
+                ));
+            });
+        })
         .register_asynchronous_uri_scheme_protocol("preview", |context, request, responder| {
             let app = context.app_handle().clone();
             let origin = if cfg!(dev) {
@@ -54,6 +88,10 @@ pub fn run() {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
                 window.state::<preview::Registry>().clear();
+                window
+                    .state::<plugins::frontend::Registry>()
+                    .clear(window.app_handle());
+                plugins::forwarding::clear(window.app_handle());
                 platform::background::destroyed(window.app_handle());
             }
         })
@@ -109,25 +147,57 @@ pub fn run() {
             ssh::files::durable::durable_transfer_pause,
             ssh::files::durable::durable_transfer_resume,
             ssh::files::bandwidth::transfer_set_speed_limit,
-            ssh::forward::forwarding_list,
-            ssh::forward::forwarding_save,
-            ssh::forward::forwarding_remove,
-            ssh::forward::forwarding_start,
-            ssh::forward::forwarding_stop,
+            plugins::forwarding::forwarding_provider_open,
+            plugins::forwarding::forwarding_provider_close,
+            plugins::forwarding::connection::forwarding_provider_connect,
+            plugins::forwarding::connection::forwarding_provider_accept_connection,
+            plugins::forwarding::connection::forwarding_provider_disconnect,
+            commands::forwarding::forwarding_list,
+            commands::forwarding::forwarding_save,
+            commands::forwarding::forwarding_remove,
+            commands::forwarding::forwarding_start,
+            commands::forwarding::forwarding_stop,
             network::connection_route_get,
             network::connection_route_save,
             network::proxy_password_save,
             network::proxy_test,
             network::diagnostics::proxy_test_quality,
             plugins::security::plugin_security_state,
+            plugins::runners::management::runner_recovery_owners,
+            plugins::runners::management::runner_recovery_snapshot,
+            plugins::runners::management::runner_recovery_action,
+            plugins::runners::management::browser::runner_recovery_browser_prepare,
+            plugins::runners::management::browser::runner_recovery_browser_cancel,
+            plugins::runners::management::browser::runner_recovery_browser_probe,
+            plugins::runners::management::browser::runner_recovery_browser_trust,
+            plugins::runners::management::browser::runner_recovery_browser_connect,
+            plugins::runners::management::browser::runner_recovery_browser_open,
             plugins::security::plugin_set_restricted,
             plugins::security::plugin_set_permissions,
             plugins::status_bar::plugin_status_bar_snapshot,
             plugins::status_bar::plugin_status_bar_execute,
             plugins::tab_bar::plugin_tab_bar_snapshot,
             plugins::tab_bar::plugin_tab_bar_execute,
+            plugins::host_list::plugin_host_list_snapshot,
+            plugins::host_columns::plugin_host_columns_snapshot,
+            plugins::host_sources::plugin_host_sources_snapshot,
+            plugins::host_fields::host_fields_get,
+            plugins::configuration::native::plugin_configuration_get,
+            plugins::configuration::native::plugin_configuration_update,
+            plugins::configuration::native::plugin_configuration_migrate,
+            plugins::configuration::native::plugin_configuration_backups,
+            plugins::configuration::native::plugin_configuration_restore,
+            plugins::configuration::native::plugin_configuration_delete_backup,
+            plugins::host_fields::host_fields_update,
             plugins::api::plugin_workspace_reply,
             plugins::api::plugin_workspace_authorize,
+            plugins::frontend::plugin_frontend_open,
+            plugins::frontend::plugin_frontend_ready,
+            plugins::frontend::plugin_frontend_close,
+            plugins::frontend::plugin_frontend_failed,
+            plugins::frontend::plugin_frontend_call,
+            plugins::frontend::requests::plugin_frontend_prepare_call,
+            plugins::frontend::requests::plugin_frontend_cancel_call,
             commands::app_info,
             storage::storage_status,
             storage::storage_restart_pending,
@@ -141,6 +211,8 @@ pub fn run() {
             commands::settings_update,
             commands::settings_reset,
             settings_profiles::settings_profiles_list,
+            settings_profiles::activation::settings_profiles_snapshot,
+            settings_profiles::activation::settings_profile_apply,
             settings_profiles::settings_profile_save,
             settings_profiles::settings_profile_delete,
             settings_profiles::settings_file_import,
@@ -219,6 +291,8 @@ pub fn run() {
             commands::remote_kill,
             commands::plugins_list,
             commands::plugin_start,
+            commands::plugin_prepare_start,
+            commands::plugin_activation_plan,
             commands::plugin_stop,
             commands::plugin_run,
             commands::plugin_open_dir,

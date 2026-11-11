@@ -1,5 +1,7 @@
 # Tunnelde
 
+[Documentation / 文档](docs/README.md)
+
 [简体中文](README.zh-cn.md)
 
 A desktop SSH and SFTP workbench for Windows, macOS and Linux, maintained by
@@ -16,7 +18,7 @@ Download a desktop installer from [GitHub Releases](https://github.com/TunneldeD
 | Linux x64                         | AppImage or `.deb`, WebKitGTK 4.1 required | In-app AppImage updates; manual deb updates     |
 
 Press **F1** for Quick Access: `>` lists application and installed plugin commands,
-`%` searches file contents in the selected local/SSH directory, and `@` finds hosts.
+`%` searches file contents in the selected local/SSH directory, and `@ ` (with a space) finds hosts.
 **Ctrl/Cmd+P** opens files and existing tabs. Installed plugin commands can be run
 directly here and assigned keys in Settings → Keyboard Shortcuts.
 Local and remote text results open the editor at the matching line, preserving unsaved
@@ -31,12 +33,12 @@ Update controls live in **Settings → Updates**: choose **Stable** or **Public 
 The update channel defaults to Stable, including on Beta installations.
 Automatic checks default to once daily; downloading and installing remain manual.
 Windows and AppImage use signed full-package updates. Switching to Stable never
-automatically downgrades a newer beta. See [update channels and mirrors](docs/releases.en-us.md#in-app-channels-sources-and-ota).
+automatically downgrades a newer beta. See [update channels and mirrors](docs/en-us/development/releases.md#in-app-channels-sources-and-ota).
 
 ## Workbench
 
 - Organize, search, tag, favorite and reorder hosts. Filter inside the search field with
-  `tag:PublicNet`, `@tag PublicNet`, quoted tags or `is:favorite`; choose tag suggestions
+  `@tag:PublicNet`, `@tag:"Production East"` or `@is:favorite`; choose tag suggestions
   with the mouse or arrow keys and Enter. Connect with passwords, key files
   or pasted private keys. Save passwords while editing a host and double click to
   connect directly; unknown or changed server keys still require explicit trust.
@@ -61,7 +63,7 @@ automatically downgrades a newer beta. See [update channels and mirrors](docs/re
   Optimized transfers use bounded SFTP request pipelines, automatic segmentation
   and shared connection budgets. Adaptive compression and bounded in-memory archives
   reduce small-file round trips on compatible SSH hosts.
-  See [network and storage](docs/network-storage.en-us.md) for behavior and limitations.
+  See [network and storage](docs/en-us/guide/network-storage.md) for behavior and limitations.
 - Drag tabs and sidebar panels into splits. Browse pages and plugin details in a reusable
   italic preview tab; select the same item again, double-click its tab, or interact with
   its controls to keep it open. Each pane has its own preview slot. Lock a pane as the
@@ -90,7 +92,7 @@ plugins and check each listing for its capabilities, runtime requirements and pe
 
 Supported assistant integrations can run locally or on a connected SSH host. Setup,
 authentication, approval modes and available safeguards vary by plugin and execution target;
-see the [assistant guide](docs/ai-assistants.en-us.md) for details. Executable plugin permissions
+see the [assistant guide](docs/en-us/guide/ai-assistants.md) for details. Executable plugin permissions
 are not an operating-system sandbox for arbitrary code or shell commands. Using a system
 Node runtime requires explicit consent.
 
@@ -101,17 +103,17 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 
 ## Documentation
 
-- File browser, column layouts and keyboard navigation: [English](docs/files.en-us.md) · [简体中文](docs/files.zh-cn.md)
+- File browser, column layouts and keyboard navigation: [English](docs/en-us/guide/files.md) · [简体中文](docs/zh-cn/guide/files.md)
 
-- Settings and profiles: [English](docs/settings.en-us.md) · [简体中文](docs/settings.zh-cn.md)
-- Proxies, jump hosts, transfers and SSHFS: [English](docs/network-storage.en-us.md) · [简体中文](docs/network-storage.zh-cn.md)
-- Keyboard and mouse shortcuts: [English](docs/shortcuts.en-us.md) · [简体中文](docs/shortcuts.zh-cn.md)
-- AI local/remote setup: [English](docs/ai-assistants.en-us.md) · [简体中文](docs/ai-assistants.zh-cn.md)
-- Plugin overview and compatibility: [English](docs/plugins-overview.en-us.md) · [简体中文](docs/plugins-overview.zh-cn.md)
-- Plugin development and security: [English](docs/plugins.en-us.md) · [简体中文](docs/plugins.zh-cn.md)
-- Architecture and data locations: [English](docs/architecture.en-us.md) · [简体中文](docs/architecture.zh-cn.md)
-- Troubleshooting: [English](docs/troubleshooting.en-us.md) · [简体中文](docs/troubleshooting.zh-cn.md)
-- [Optional native helper](docs/native-helper.en-us.md)
+- Settings and profiles: [English](docs/en-us/guide/settings.md) · [简体中文](docs/zh-cn/guide/settings.md)
+- Proxies, jump hosts, transfers and SSHFS: [English](docs/en-us/guide/network-storage.md) · [简体中文](docs/zh-cn/guide/network-storage.md)
+- Keyboard and mouse shortcuts: [English](docs/en-us/guide/shortcuts.md) · [简体中文](docs/zh-cn/guide/shortcuts.md)
+- AI local/remote setup: [English](docs/en-us/guide/ai-assistants.md) · [简体中文](docs/zh-cn/guide/ai-assistants.md)
+- Plugin overview and compatibility: [English](docs/en-us/guide/plugins.md) · [简体中文](docs/zh-cn/guide/plugins.md)
+- Plugin development and security: [English](docs/en-us/development/plugins/README.md) · [简体中文](docs/zh-cn/development/plugins/README.md)
+- Architecture and data locations: [English](docs/en-us/development/architecture.md) · [简体中文](docs/zh-cn/development/architecture.md)
+- Troubleshooting: [English](docs/en-us/guide/troubleshooting.md) · [简体中文](docs/zh-cn/guide/troubleshooting.md)
+- [Optional native helper](docs/en-us/development/native-helper.md)
 - [Changes by release](CHANGELOG.md)
 
 ## Development
@@ -139,7 +141,7 @@ Source layout:
 ```text
 src/                 React workbench, UI primitives, feature stores and i18n
 src-tauri/           Rust SSH/SFTP core, plugin APIs, native integration and updater
-examples/plugins/   Minimal plugin examples
+tests/fixtures/     Test inputs and frozen plugin compatibility samples
 scripts/            Build, validation, packaging and release tools
 docs/               User and developer documentation
 ```
@@ -163,7 +165,7 @@ stages a draft until all installers, signatures and update metadata pass verific
 versions publish as prereleases, preserve historical releases and never replace the latest stable.
 
 See [Contributing](CONTRIBUTING.md) for PR conventions and Release operations in
-[English](docs/releases.en-us.md) or [简体中文](docs/releases.zh-cn.md) for branch protection,
+[English](docs/en-us/development/releases.md) or [简体中文](docs/zh-cn/development/releases.md) for branch protection,
 automation credentials and build recovery.
 `pnpm build:local` creates an unsigned local build without requiring an updater signing key.
 

@@ -37,26 +37,47 @@ import { ForwardingSection, type ForwardRule } from "@/features/forwarding/Forwa
 import type { Host } from "@/lib/api/types";
 import { useSsh } from "@/store/ssh";
 import { useDialogs } from "@/store/dialogs";
+import { domainEvents } from "@/lib/events/domain";
 const copyMock = vi.hoisted(() => vi.fn());
 vi.mock("@/lib/session/clipboard", () => ({ copyText: copyMock }));
 const host = { id: "host", name: "server" } as Host;
-let rows: (ForwardRule & { active: boolean; sessionId: string | null })[];
+let rows: (ForwardRule & { active: boolean; sessionId: string | null; revision: string })[];
 beforeEach(() => {
   rows = [];
   copyMock.mockReset();
   invokeMock.mockReset().mockImplementation(async (command, args) => {
     if (command === "forwarding_list") return rows;
     if (command === "forwarding_save") {
-      rows = [{ ...args.rule, id: "rule", active: false, sessionId: null }];
+      if (
+        args.expectedRevision &&
+        rows.find((row) => row.id === args.rule.id)?.revision !== args.expectedRevision
+      )
+        throw { code: "validation", message: "forward.changed" };
+      rows = [
+        { ...args.rule, id: "rule", active: false, sessionId: null, revision: crypto.randomUUID() },
+      ];
       return rows[0];
     }
     if (command === "forwarding_start") {
+      if (
+        args.expectedRevision &&
+        rows.find((row) => row.id === args.id)?.revision !== args.expectedRevision
+      )
+        throw { code: "validation", message: "forward.changed" };
       rows = rows.map((r) =>
         r.id === args.id ? { ...r, active: true, sessionId: args.sessionId } : r,
       );
     }
     if (command === "forwarding_stop") {
       rows = rows.map((r) => ({ ...r, active: false, sessionId: null }));
+    }
+    if (command === "forwarding_remove") {
+      if (
+        args.expectedRevision &&
+        rows.find((row) => row.id === args.id)?.revision !== args.expectedRevision
+      )
+        throw { code: "validation", message: "forward.changed" };
+      rows = rows.filter((row) => row.id !== args.id);
     }
   });
   useSsh.setState({ sessions: [] });
@@ -74,13 +95,22 @@ it("starts multiple ports on the same forwarding connection and clears stale sta
     targetPort: 80,
     active: false,
     sessionId: null,
+    revision: "initial-version",
   }));
   render(<ForwardingSection host={host} />);
   fireEvent.click(await screen.findByRole("button", { name: "Start all" }));
   fireEvent.click(screen.getByRole("button", { name: "Connect forwarding" }));
   await waitFor(() => expect(screen.getAllByText("Running")).toHaveLength(2));
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "one", sessionId: "forward" });
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "two", sessionId: "forward" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
+    id: "one",
+    sessionId: "forward",
+    expectedRevision: "initial-version",
+  });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
+    id: "two",
+    sessionId: "forward",
+    expectedRevision: "initial-version",
+  });
   act(() => useSsh.setState({ sessions: [] }));
   await waitFor(() => expect(screen.queryAllByText("Running")).toHaveLength(0));
   expect(screen.getAllByText("Stopped")).toHaveLength(2);
@@ -97,6 +127,7 @@ it("continues starting other ports when one fails", async () => {
     targetPort: 80,
     active: false,
     sessionId: null,
+    revision: "initial-version",
   }));
   connect();
   const implementation = invokeMock.getMockImplementation()!;
@@ -108,7 +139,11 @@ it("continues starting other ports when one fails", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "Start all" }));
   expect((await screen.findByRole("alert")).textContent).toContain("one: Port occupied");
   expect(screen.getByText("Running")).toBeTruthy();
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "two", sessionId: "current" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
+    id: "two",
+    sessionId: "current",
+    expectedRevision: "initial-version",
+  });
 });
 it("keeps disconnect available when a background connection has no remaining rules", async () => {
   connect();
@@ -137,6 +172,7 @@ it("starts a saved rule using a dedicated connection, then stops it", async () =
   expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
     id: "rule",
     sessionId: "forward",
+    expectedRevision: expect.any(String),
   });
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await screen.findByText("Stopped");
@@ -184,7 +220,11 @@ it("explains endpoint ownership and never reuses a terminal session", async () =
   fireEvent.click(screen.getByRole("button", { name: "Start" }));
   fireEvent.click(screen.getByRole("button", { name: "Connect forwarding" }));
   await screen.findByText("Running");
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "rule", sessionId: "forward" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
+    id: "rule",
+    sessionId: "forward",
+    expectedRevision: expect.any(String),
+  });
 });
 
 const connect = () =>
@@ -226,7 +266,11 @@ it("saves and starts once, then offers editing and deletion in the rule menu", a
   fireEvent.change(screen.getByLabelText("Local listen port"), { target: { value: "15432" } });
   fireEvent.click(screen.getByRole("button", { name: "Save and start" }));
   await screen.findByText("Running");
-  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", { id: "rule", sessionId: "current" });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
+    id: "rule",
+    sessionId: "current",
+    expectedRevision: expect.any(String),
+  });
   expect(invokeMock.mock.calls.filter(([cmd]) => cmd === "forwarding_save")).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "Actions for 127.0.0.1:5432" }));
   expect((screen.getByRole("menuitem", { name: "Edit" }) as HTMLButtonElement).disabled).toBe(true);
@@ -354,15 +398,19 @@ it("keeps stopping feedback and actions disabled until the listener is released"
       targetPort: 80,
       active: true,
       sessionId: "current",
+      revision: "initial-version",
     },
   ];
   let release!: () => void;
   const implementation = invokeMock.getMockImplementation()!;
   invokeMock.mockImplementation(async (command, args) => {
-    if (command === "forwarding_stop")
+    if (command === "forwarding_stop") {
+      rows = rows.map((row) => ({ ...row, active: false, sessionId: null }));
+      domainEvents.forwardsChanged();
       await new Promise<void>((resolve) => {
         release = resolve;
       });
+    }
     return implementation(command, args);
   });
   render(<ForwardingSection host={host} />);
@@ -374,7 +422,139 @@ it("keeps stopping feedback and actions disabled until the listener is released"
     (screen.getByRole("button", { name: "Actions for Database" }) as HTMLButtonElement).disabled,
   ).toBe(true);
   expect(screen.queryByText("Stopped")).toBeNull();
+  expect(screen.queryByText("Starting…")).toBeNull();
   await act(async () => release());
   await screen.findByText("Stopped");
   expect((screen.getByRole("button", { name: "Start" }) as HTMLButtonElement).disabled).toBe(false);
+});
+
+const savedRule = () => ({
+  id: "rule",
+  hostId: "host",
+  name: "Database",
+  mode: "local" as const,
+  bindHost: "127.0.0.1",
+  bindPort: 15432,
+  targetHost: "127.0.0.1",
+  targetPort: 5432,
+  active: false,
+  sessionId: null,
+  revision: "original-version",
+});
+
+it("keeps an unsaved edit when another surface changes the same rule", async () => {
+  rows = [savedRule()];
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for Database" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Keep my edit" } });
+  rows = [{ ...savedRule(), name: "Saved elsewhere", revision: "new-version" }];
+  act(() => domainEvents.forwardsChanged());
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("changed or was deleted");
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Keep my edit");
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_save", {
+    rule: expect.objectContaining({ name: "Keep my edit" }),
+    expectedRevision: "original-version",
+  });
+  expect(rows[0]?.name).toBe("Saved elsewhere");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await screen.findByText("Saved elsewhere");
+});
+
+it("binds deletion confirmation to the version the user actually reviewed", async () => {
+  rows = [savedRule()];
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for Database" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+  const confirmation = vi.mocked(useDialogs.getState().confirm).mock.calls.at(-1)![0];
+  rows = [{ ...savedRule(), name: "Changed during confirmation", revision: "new-version" }];
+  await act(async () => {
+    await confirmation.onConfirm();
+  });
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_remove", {
+    id: "rule",
+    expectedRevision: "original-version",
+  });
+  expect(rows).toHaveLength(1);
+  await screen.findByText("Changed during confirmation");
+});
+
+it("does not apply a delayed exposure approval to a cancelled editor", async () => {
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  fireEvent.change(screen.getByLabelText("Local listen address"), { target: { value: "0.0.0.0" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const confirmation = vi.mocked(useDialogs.getState().confirm).mock.calls.at(-1)![0];
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "New draft" } });
+  await act(async () => {
+    await confirmation.onConfirm();
+  });
+  expect(invokeMock).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("New draft");
+});
+
+it("retires the editor and its pending approval when the host changes", async () => {
+  const view = render(<ForwardingSection host={host} />);
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  fireEvent.change(screen.getByLabelText("Local listen address"), { target: { value: "0.0.0.0" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const confirmation = vi.mocked(useDialogs.getState().confirm).mock.calls.at(-1)![0];
+  view.rerender(<ForwardingSection host={{ ...host, id: "other", name: "Other host" }} />);
+  await act(async () => {
+    await confirmation.onConfirm();
+  });
+  expect(invokeMock).not.toHaveBeenCalledWith("forwarding_save", expect.anything());
+  expect(screen.queryByRole("form")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Add forward" }));
+  expect((screen.getByLabelText("Local listen address") as HTMLInputElement).value).toBe(
+    "127.0.0.1",
+  );
+});
+
+it("shows a delayed deletion conflict even when the rule no longer exists", async () => {
+  rows = [savedRule()];
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for Database" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+  const confirmation = vi.mocked(useDialogs.getState().confirm).mock.calls.at(-1)![0];
+  rows = [];
+  act(() => domainEvents.forwardsChanged());
+  await screen.findByText("No forwarding rules yet");
+  await act(async () => {
+    await confirmation.onConfirm();
+  });
+  expect((await screen.findByRole("alert")).textContent).toContain("changed or was deleted");
+  expect(rows).toHaveLength(0);
+});
+
+it("does not resurrect a rule deleted while its editor was open", async () => {
+  rows = [savedRule()];
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Actions for Database" }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Edit" }));
+  fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Keep deleted draft" } });
+  rows = [];
+  act(() => domainEvents.forwardsChanged());
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("changed or was deleted");
+  expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("Keep deleted draft");
+  expect(rows).toHaveLength(0);
+});
+
+it("does not start a changed endpoint after the user finishes connecting", async () => {
+  rows = [savedRule()];
+  render(<ForwardingSection host={host} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Start" }));
+  rows = [{ ...savedRule(), targetPort: 9999, revision: "new-version" }];
+  fireEvent.click(screen.getByRole("button", { name: "Connect forwarding" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("changed or was deleted");
+  expect(rows[0]?.active).toBe(false);
+  expect(invokeMock).toHaveBeenCalledWith("forwarding_start", {
+    id: "rule",
+    sessionId: "forward",
+    expectedRevision: "original-version",
+  });
 });

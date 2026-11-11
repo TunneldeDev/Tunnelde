@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/form/Button";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
+import { supportsManifestVersion } from "@/lib/plugins/activation/compatibility";
 import { usePlugins } from "@/store/plugins";
 import { toast } from "@/store/toasts";
 
@@ -122,7 +123,7 @@ export function LocalPluginInstall({ request }: { request: number }) {
             </Button>
             <Button
               variant="primary"
-              disabled={!preview || preview.apiVersion !== 1 || busy}
+              disabled={!preview || !supportsManifestVersion(preview.apiVersion) || busy}
               onClick={() => void install()}
             >
               {t(busy ? "plugins.installing" : "plugins.install")}
@@ -162,7 +163,7 @@ export function LocalPluginInstall({ request }: { request: number }) {
                 </ul>
               </div>
             ) : null}
-            {preview.apiVersion !== 1 ? (
+            {!supportsManifestVersion(preview.apiVersion) ? (
               <p role="alert" className="panel__error">
                 {t("market.incompatibleApi")}
               </p>

@@ -390,12 +390,7 @@ pub async fn plugin_tab_bar_execute(
     })?;
     app.state::<AppState>()
         .plugins
-        .run_bound(
-            &item.lease.id,
-            &command,
-            Some(input),
-            Some(item.lease.generation),
-        )
+        .run_bound(&item.lease.id, &command, Some(input), &item.lease)
         .await
         .map_err(|error| match error {
             AppError::Validation(ref message) if message == "plugin.statusBar.expired" => {

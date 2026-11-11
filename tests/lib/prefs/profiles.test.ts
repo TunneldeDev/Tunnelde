@@ -1,8 +1,26 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
-import { portableSettings, profileMatches, sameSettings } from "@/lib/prefs/profiles";
+import {
+  PORTABLE_SETTING_KEYS,
+  portableSettings,
+  profileMatches,
+  sameSettings,
+} from "@/lib/prefs/profiles";
 
 describe("portable settings snapshots", () => {
+  it("keeps the native profile allowlist identical to the frontend export contract", () => {
+    const source = readFileSync(
+      "src-tauri/src/settings_profiles.rs",
+      "utf8",
+    );
+    const declaration = source.match(/const PORTABLE_KEYS: &\[&str\] = &\[([\s\S]*?)\];/);
+    expect(declaration, "native portable settings declaration").not.toBeNull();
+    const keys = [...declaration![1]!.matchAll(/"([A-Za-z]+)"/g)].map((match) => match[1]);
+    expect(new Set(keys).size).toBe(keys.length);
+    expect(keys.sort()).toEqual([...PORTABLE_SETTING_KEYS].sort());
+    expect(PORTABLE_SETTING_KEYS.every((key) => key in createDefaultSettings())).toBe(true);
+  });
   it("only copies explicitly portable preferences and isolates nested objects", () => {
     const settings = {
       ...createDefaultSettings("windows"),
@@ -37,6 +55,11 @@ describe("portable settings snapshots", () => {
     snapshot.keyboardShortcuts!["app.settings"]!.push("F2");
     expect(settings.colors.background).toBe("#123456");
     expect(settings.keyboardShortcuts["app.settings"]).toEqual(["Mod+Comma"]);
+    expect(snapshot.hostList).toEqual(settings.hostList);
+    snapshot.hostList!.order.push("plugin/inventory/cost");
+    snapshot.hostList!.widths.name = 240;
+    expect(settings.hostList.order).not.toContain("plugin/inventory/cost");
+    expect(settings.hostList.widths.name).toBeUndefined();
   });
 
   it("ignores JSON object ordering and runtime changes when matching a profile", () => {

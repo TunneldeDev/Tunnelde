@@ -110,10 +110,13 @@ export function HostSearch({
         <SearchFilterMenu
           query={query}
           onChange={onChange}
-          filterKeys={["tag", "is", "name", "host", "user", "port"]}
+          filterKeys={["tag", "is", "name", "host", "user", "port", "source", "plugin"]}
           focusInput={() => input.current?.focus()}
           presets={[
             { key: "is", value: "favorite", label: t("searchUi.favorite") },
+            { key: "is", value: "discovered", label: t("hostSources.discovered") },
+            { key: "source", value: "", label: t("hostSources.source") },
+            { key: "plugin", value: "", label: t("searchUi.plugin") },
             { key: "name", value: "", label: t("searchUi.name") },
             { key: "host", value: "", label: t("searchUi.host") },
             { key: "user", value: "", label: t("searchUi.user") },
@@ -147,7 +150,7 @@ export function HostSearch({
               >
                 <Tag size={13} aria-hidden="true" />
                 <span>{tag}</span>
-                <code>tag:</code>
+                <code>@tag:</code>
               </div>
             ))}
           </div>

@@ -6,6 +6,177 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.34.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.33.0...v0.34.0) - 2026-11-11
+
+### 更新概览 | Highlights
+
+- **plugins:** freeze notification and confirmation v1 contracts
+- **plugins:** freeze advisory event publication v1 contract
+- **plugins:** add host decorations and shared extension discovery
+- **plugins:** serve approved frontend assets with revocable leases
+- **plugins:** host trusted React views and frontend commands
+
+<details open>
+<summary>详细变更 | Details (134)</summary>
+
+### 新增 | New
+
+- **plugins:** freeze notification and confirmation v1 contracts ([#202](https://github.com/TunneldeDev/Tunnelde/pull/202)) @quyansiyuanwang
+- **plugins:** freeze advisory event publication v1 contract ([#211](https://github.com/TunneldeDev/Tunnelde/pull/211)) @quyansiyuanwang
+- **plugins:** add host decorations and shared extension discovery ([#216](https://github.com/TunneldeDev/Tunnelde/pull/216)) @quyansiyuanwang
+- **plugins:** serve approved frontend assets with revocable leases ([#220](https://github.com/TunneldeDev/Tunnelde/pull/220), [7ef9cb3](https://github.com/TunneldeDev/Tunnelde/commit/7ef9cb3cd2aed1c71a9ca3e7cbb99a411c31c9f9)) @quyansiyuanwang
+- **plugins:** host trusted React views and frontend commands ([#220](https://github.com/TunneldeDev/Tunnelde/pull/220), [b903deb](https://github.com/TunneldeDev/Tunnelde/commit/b903deb64b0ece8e84d2fbcf0d579256e4688ab6)) @quyansiyuanwang
+- **plugins:** contribute host menu commands through shared context dispatch ([#221](https://github.com/TunneldeDev/Tunnelde/pull/221)) @quyansiyuanwang
+- **plugins:** retain live workspace surfaces in user-selected UI providers ([#223](https://github.com/TunneldeDev/Tunnelde/pull/223)) @quyansiyuanwang
+- **plugins:** add revisioned host metadata fields ([#224](https://github.com/TunneldeDev/Tunnelde/pull/224)) @quyansiyuanwang
+- **hosts:** add configurable table columns and plugin contributions ([#225](https://github.com/TunneldeDev/Tunnelde/pull/225)) @quyansiyuanwang
+- **plugins:** transfer SSH connection ownership with native consent ([#229](https://github.com/TunneldeDev/Tunnelde/pull/229)) @quyansiyuanwang
+- **plugins:** integrate runtime host discovery sources ([#230](https://github.com/TunneldeDev/Tunnelde/pull/230)) @quyansiyuanwang
+- **plugins:** compose file browser providers with host panes ([#232](https://github.com/TunneldeDev/Tunnelde/pull/232)) @quyansiyuanwang
+- **plugins:** expose the live terminal through trusted UI providers ([#234](https://github.com/TunneldeDev/Tunnelde/pull/234), [339a314](https://github.com/TunneldeDev/Tunnelde/commit/339a31423d43df6201620e61c7ea0881bf5729e8)) @quyansiyuanwang
+- **plugins:** expose revisioned command history providers ([#236](https://github.com/TunneldeDev/Tunnelde/pull/236), [bbb6831](https://github.com/TunneldeDev/Tunnelde/commit/bbb68311496806fb537d276d26d657f7e1a37f5d)) @quyansiyuanwang
+- **forwarding:** authorize provider scopes and independent SSH admission ([#243](https://github.com/TunneldeDev/Tunnelde/pull/243), [2705a99](https://github.com/TunneldeDev/Tunnelde/commit/2705a99ae5ce52cde6ca76bae96242dc5c44c5c4)) @quyansiyuanwang
+- **plugins:** compose forwarding views with bounded domain contracts ([#243](https://github.com/TunneldeDev/Tunnelde/pull/243)) @quyansiyuanwang
+- **monitor:** expose shared charts through domain UI contracts ([#244](https://github.com/TunneldeDev/Tunnelde/pull/244)) @quyansiyuanwang
+- **plugins:** expose owned tasks and composable task views ([#245](https://github.com/TunneldeDev/Tunnelde/pull/245)) @quyansiyuanwang
+- **plugins:** expose confirmed process manager UI providers ([#246](https://github.com/TunneldeDev/Tunnelde/pull/246)) @quyansiyuanwang
+- **search:** separate quick access services and bounded UI providers ([#247](https://github.com/TunneldeDev/Tunnelde/pull/247)) @quyansiyuanwang
+- **settings:** add grouped preferences schema and revisioned updates ([#249](https://github.com/TunneldeDev/Tunnelde/pull/249)) @quyansiyuanwang
+- **settings:** support authorized preference form providers ([#250](https://github.com/TunneldeDev/Tunnelde/pull/250)) @quyansiyuanwang
+- **plugins:** add owned configuration schemas and recovery ([#251](https://github.com/TunneldeDev/Tunnelde/pull/251)) @quyansiyuanwang
+- **plugins:** expose owned runtime resource lifecycle ([#252](https://github.com/TunneldeDev/Tunnelde/pull/252)) @quyansiyuanwang
+- **plugins:** prepare bounded dependency activation plans ([#254](https://github.com/TunneldeDev/Tunnelde/pull/254), [b768405](https://github.com/TunneldeDev/Tunnelde/commit/b768405138093c23deb960ccfe265144e2e9a5b0)) @quyansiyuanwang
+- **plugins:** bind activation readiness and scoped retirement ([#254](https://github.com/TunneldeDev/Tunnelde/pull/254), [5ef8518](https://github.com/TunneldeDev/Tunnelde/commit/5ef851865f7a6047781f2505311c04a12391f488)) @quyansiyuanwang
+- **plugins:** coordinate shared startup through frontend readiness ([#255](https://github.com/TunneldeDev/Tunnelde/pull/255)) @quyansiyuanwang
+- **plugins:** activate reviewed dependency graphs ([#257](https://github.com/TunneldeDev/Tunnelde/pull/257), [f9abb9b](https://github.com/TunneldeDev/Tunnelde/commit/f9abb9b1183ca05f4a6aa0760c67c19da2a95320)) @quyansiyuanwang
+- **runners:** bind recovery to captured SSH destinations ([#259](https://github.com/TunneldeDev/Tunnelde/pull/259), [6328b11](https://github.com/TunneldeDev/Tunnelde/commit/6328b11aa54b01a36ce77f1feefe196d293b512a)) @quyansiyuanwang
+- **plugins:** add native remote task recovery controls ([#259](https://github.com/TunneldeDev/Tunnelde/pull/259), [743bcb5](https://github.com/TunneldeDev/Tunnelde/commit/743bcb5d28e0895d6ab81da56aa8b90ee3c79d67)) @quyansiyuanwang
+- **plugins:** compose UI resource scopes with shared budgets ([#260](https://github.com/TunneldeDev/Tunnelde/pull/260), [eab0a18](https://github.com/TunneldeDev/Tunnelde/commit/eab0a1809bd4cf1231fd334b77b1e6b81b841e13)) @quyansiyuanwang
+- **plugins:** bind UI resource scopes to committed view instances ([#261](https://github.com/TunneldeDev/Tunnelde/pull/261), [1df7a6e](https://github.com/TunneldeDev/Tunnelde/commit/1df7a6ea38cd053e485dbc9d048a712e0d9cd25f)) @quyansiyuanwang
+- **plugins:** identify exact owned resources by domain reference ([#262](https://github.com/TunneldeDev/Tunnelde/pull/262)) @quyansiyuanwang
+- **runners:** open recovery files on the verified original host ([#265](https://github.com/TunneldeDev/Tunnelde/pull/265), [11a90b1](https://github.com/TunneldeDev/Tunnelde/commit/11a90b1e03eeea47c7e8854ac1d406eb60d46824)) @quyansiyuanwang
+- **runners:** inspect explicitly selected helper capabilities ([#266](https://github.com/TunneldeDev/Tunnelde/pull/266), [5ae6cf2](https://github.com/TunneldeDev/Tunnelde/commit/5ae6cf2a3767c817f7f65c191fc522b32c2f48c4)) @quyansiyuanwang
+- **runners:** negotiate initialized remote configuration ([#270](https://github.com/TunneldeDev/Tunnelde/pull/270), [fc6dcbb](https://github.com/TunneldeDev/Tunnelde/commit/fc6dcbb61ea2c005886a72aa2761fd131ccec7c9)) @quyansiyuanwang
+- **settings:** add conditional public preference observation ([#272](https://github.com/TunneldeDev/Tunnelde/pull/272), [9e28b8a](https://github.com/TunneldeDev/Tunnelde/commit/9e28b8a03b7e0a279307e71b23c9c2a219d928fd)) @quyansiyuanwang
+- **editor:** expose versioned buffer data APIs ([#273](https://github.com/TunneldeDev/Tunnelde/pull/273), [e923fc9](https://github.com/TunneldeDev/Tunnelde/commit/e923fc932328b7f6bb8476de7ea0e8f9c4803903)) @quyansiyuanwang
+- **runners:** expose task-bound artifact metadata observation ([#274](https://github.com/TunneldeDev/Tunnelde/pull/274), [089c81f](https://github.com/TunneldeDev/Tunnelde/commit/089c81f947249a605ddd003414304d2fb59f8e6f)) @quyansiyuanwang
+- **profiles:** add transactional metadata observations ([#276](https://github.com/TunneldeDev/Tunnelde/pull/276), [dd29485](https://github.com/TunneldeDev/Tunnelde/commit/dd29485851d829330902614986353201bce32976)) @quyansiyuanwang
+- **plugins:** add scoped storage observation contracts ([#277](https://github.com/TunneldeDev/Tunnelde/pull/277), [75d6a5c](https://github.com/TunneldeDev/Tunnelde/commit/75d6a5c78ac011609ed7c5205f35ada435c97aea)) @quyansiyuanwang
+- **storage:** fence plugin-managed location plans ([#279](https://github.com/TunneldeDev/Tunnelde/pull/279), [e87a9ee](https://github.com/TunneldeDev/Tunnelde/commit/e87a9ee0e0978376a0388f1bc6b4a341fac58b98)) @quyansiyuanwang
+- **plugins:** review and expose host storage plans ([#279](https://github.com/TunneldeDev/Tunnelde/pull/279), [de08d1c](https://github.com/TunneldeDev/Tunnelde/commit/de08d1ccf4809dc28d2afd24340c166a1655693e)) @quyansiyuanwang
+- **logging:** expose permission-scoped persisted log pages ([#281](https://github.com/TunneldeDev/Tunnelde/pull/281), [fa51d2f](https://github.com/TunneldeDev/Tunnelde/commit/fa51d2f578e29b564fe28c1e57c2e08c913154bc)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **transfers:** buffer local segment IO without changing recovery windows ([#214](https://github.com/TunneldeDev/Tunnelde/pull/214)) @quyansiyuanwang
+- **hosts:** share validated domain operations across transports ([#217](https://github.com/TunneldeDev/Tunnelde/pull/217)) @quyansiyuanwang
+- **extensions:** own cancellable work and bounded resource cleanup ([#219](https://github.com/TunneldeDev/Tunnelde/pull/219)) @quyansiyuanwang
+- **history:** share committed mutations across native and plugin callers ([#235](https://github.com/TunneldeDev/Tunnelde/pull/235)) @quyansiyuanwang
+- **forwarding:** share domain contracts and committed state changes ([#237](https://github.com/TunneldeDev/Tunnelde/pull/237), [a2a8506](https://github.com/TunneldeDev/Tunnelde/commit/a2a8506bf94712d18e47cd9ccc32dc3f79b46bd0)) @quyansiyuanwang
+- **forwarding:** keep storage orchestration out of SSH transport ([#237](https://github.com/TunneldeDev/Tunnelde/pull/237)) @quyansiyuanwang
+- **plugins:** separate public UI contracts by domain ([#238](https://github.com/TunneldeDev/Tunnelde/pull/238)) @quyansiyuanwang
+- **plugins:** organize RPC discovery by domain ([#239](https://github.com/TunneldeDev/Tunnelde/pull/239), [0224cdd](https://github.com/TunneldeDev/Tunnelde/commit/0224cdde9a52e624834196a9fc2ea8945709ce86)) @quyansiyuanwang
+- **plugins:** split RPC adapters by domain ([#240](https://github.com/TunneldeDev/Tunnelde/pull/240), [5bbface](https://github.com/TunneldeDev/Tunnelde/commit/5bbface81798873403c939271dae0335810f807b)) @quyansiyuanwang
+- **extensions:** organize UI adapters by domain ([#242](https://github.com/TunneldeDev/Tunnelde/pull/242), [ba59e56](https://github.com/TunneldeDev/Tunnelde/commit/ba59e56ac4c742c0ee47be0ba7175262f9bf918b)) @quyansiyuanwang
+- **forwarding:** separate model, state, actions and views ([#242](https://github.com/TunneldeDev/Tunnelde/pull/242)) @quyansiyuanwang
+- **plugins:** separate activation engine lifecycle ([#254](https://github.com/TunneldeDev/Tunnelde/pull/254), [8964077](https://github.com/TunneldeDev/Tunnelde/commit/8964077141b475822c9aec28ca4a6ba2f3cbbf18)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **plugins:** cancel frontend requests before delayed UI opens ([#202](https://github.com/TunneldeDev/Tunnelde/pull/202), [eae0289](https://github.com/TunneldeDev/Tunnelde/commit/eae02899c57f04c738f655b07287e8fad717b1e3)) @quyansiyuanwang
+- **transfers:** interrupt cancelled preparation without abandoning mutations ([#209](https://github.com/TunneldeDev/Tunnelde/pull/209)) @quyansiyuanwang
+- **deps:** bump russh from 0.65.0 to 0.65.1 in /src-tauri ([#205](https://github.com/TunneldeDev/Tunnelde/pull/205))
+- **deps:** bump flate2 from 1.1.10 to 1.1.11 in /src-tauri ([#204](https://github.com/TunneldeDev/Tunnelde/pull/204))
+- **deps:** update translation and icon dependencies together ([#210](https://github.com/TunneldeDev/Tunnelde/pull/210)) @quyansiyuanwang
+- **plugins:** escape Unicode separators for historical SDK readers ([#211](https://github.com/TunneldeDev/Tunnelde/pull/211), [e8a1314](https://github.com/TunneldeDev/Tunnelde/commit/e8a1314172a7e01e0b3c1128b98606bb3738135c)) @quyansiyuanwang
+- **transfers:** retain unacknowledged staging directory creation ([#212](https://github.com/TunneldeDev/Tunnelde/pull/212)) @quyansiyuanwang
+- **transfers:** settle pending directory creation after cancellation ([#213](https://github.com/TunneldeDev/Tunnelde/pull/213)) @quyansiyuanwang
+- **transfers:** sample payload regions without SFTP prefetch ([#215](https://github.com/TunneldeDev/Tunnelde/pull/215)) @quyansiyuanwang
+- **search:** require at-prefixed qualifiers throughout the workbench ([#218](https://github.com/TunneldeDev/Tunnelde/pull/218), [712c983](https://github.com/TunneldeDev/Tunnelde/commit/712c9839276de8926cd2979dec2fda9a1b929dfa)) @quyansiyuanwang
+- **plugins:** fence frontend activation retirement and snapshot generations ([#220](https://github.com/TunneldeDev/Tunnelde/pull/220)) @quyansiyuanwang
+- **search:** preserve literal fields when editing shortcut filters ([#222](https://github.com/TunneldeDev/Tunnelde/pull/222)) @quyansiyuanwang
+- **plugins:** release SSH connections with runtime leases ([#226](https://github.com/TunneldeDev/Tunnelde/pull/226)) @quyansiyuanwang
+- **plugins:** release tool client SSH connections on cancellation ([#227](https://github.com/TunneldeDev/Tunnelde/pull/227)) @quyansiyuanwang
+- **ssh:** keep background connection cleanup notifications quiet ([#228](https://github.com/TunneldeDev/Tunnelde/pull/228)) @quyansiyuanwang
+- **shortcuts:** isolate shortcut recording from command routing ([#231](https://github.com/TunneldeDev/Tunnelde/pull/231)) @quyansiyuanwang
+- **terminal:** negotiate enhanced keyboard input through xterm ([#233](https://github.com/TunneldeDev/Tunnelde/pull/233), [423d429](https://github.com/TunneldeDev/Tunnelde/commit/423d42940e4a18382ffbdd8a5e93669827e0f852)) @quyansiyuanwang
+- **terminal:** hide the obsolete viewport after engine upgrade ([#233](https://github.com/TunneldeDev/Tunnelde/pull/233)) @quyansiyuanwang
+- **plugins:** clarify interface provider selection and recovery messages ([#234](https://github.com/TunneldeDev/Tunnelde/pull/234)) @quyansiyuanwang
+- **history:** use the shared error color token ([#236](https://github.com/TunneldeDev/Tunnelde/pull/236)) @quyansiyuanwang
+- **tests:** qualify Unix file read timeout ([#240](https://github.com/TunneldeDev/Tunnelde/pull/240)) @quyansiyuanwang
+- **forwarding:** reject stale rule edits and confirmations ([#241](https://github.com/TunneldeDev/Tunnelde/pull/241), [7e5b9d3](https://github.com/TunneldeDev/Tunnelde/commit/7e5b9d30e436fc25c728a7d6070ec9c89f9c19a9)) @quyansiyuanwang
+- **forwarding:** retire pending editor actions on host changes ([#241](https://github.com/TunneldeDev/Tunnelde/pull/241)) @quyansiyuanwang
+- **monitor:** retire samples after the last view closes ([#244](https://github.com/TunneldeDev/Tunnelde/pull/244), [e949a75](https://github.com/TunneldeDev/Tunnelde/commit/e949a75e4a38d92a27aa28d4c95c642612e6c2bb)) @quyansiyuanwang
+- **tasks:** scope source registration and serialize task actions ([#245](https://github.com/TunneldeDev/Tunnelde/pull/245), [dfa9ad6](https://github.com/TunneldeDev/Tunnelde/commit/dfa9ad6753cf2ab19337fe2e5471a458d4d13355)) @quyansiyuanwang
+- **monitor:** share process sampling across view lifetimes ([#246](https://github.com/TunneldeDev/Tunnelde/pull/246), [ad744e0](https://github.com/TunneldeDev/Tunnelde/commit/ad744e0c86aee55e9db2e1e00ee51b90a8b6173a)) @quyansiyuanwang
+- **plugins:** revalidate contributed actions after activation and consent ([#247](https://github.com/TunneldeDev/Tunnelde/pull/247), [64f82fc](https://github.com/TunneldeDev/Tunnelde/commit/64f82fc33fb3f35d16215cb5fedc5310914c076e)) @quyansiyuanwang
+- **settings:** serialize preference and updater metadata commits ([#248](https://github.com/TunneldeDev/Tunnelde/pull/248), [d29e1d2](https://github.com/TunneldeDev/Tunnelde/commit/d29e1d2e1f18c36cde063a13eb2ec23eee251643)) @quyansiyuanwang
+- **profiles:** preserve all portable shortcut and terminal settings ([#248](https://github.com/TunneldeDev/Tunnelde/pull/248)) @quyansiyuanwang
+- **updates:** reveal diagnostics from notification actions ([#253](https://github.com/TunneldeDev/Tunnelde/pull/253)) @quyansiyuanwang
+- **plugins:** cancel activation without reviving stale starts ([#254](https://github.com/TunneldeDev/Tunnelde/pull/254), [b42385c](https://github.com/TunneldeDev/Tunnelde/commit/b42385c4f5bb28051013067b5bb71074230be56a)) @quyansiyuanwang
+- **plugins:** bind queued commands to their running instance ([#254](https://github.com/TunneldeDev/Tunnelde/pull/254), [86a6ca8](https://github.com/TunneldeDev/Tunnelde/commit/86a6ca881ccffaa4e59ed173bddcbc10302fe7e1)) @quyansiyuanwang
+- **plugins:** bind view requests and wait for runtime readiness ([#254](https://github.com/TunneldeDev/Tunnelde/pull/254)) @quyansiyuanwang
+- **plugins:** preflight package and runtime before activation ([#256](https://github.com/TunneldeDev/Tunnelde/pull/256)) @quyansiyuanwang
+- **plugins:** allow supported dependency manifests in install UI ([#257](https://github.com/TunneldeDev/Tunnelde/pull/257)) @quyansiyuanwang
+- **runners:** persist cancellation and recover remote stops without global blocking ([#258](https://github.com/TunneldeDev/Tunnelde/pull/258)) @quyansiyuanwang
+- **runners:** keep native recovery confirmation details readable ([#259](https://github.com/TunneldeDev/Tunnelde/pull/259), [3adb3d8](https://github.com/TunneldeDev/Tunnelde/commit/3adb3d8bc4a825d9af9ac4e93ef22fd7cac66f65)) @quyansiyuanwang
+- **runners:** preserve remote recovery command errors ([#259](https://github.com/TunneldeDev/Tunnelde/pull/259)) @quyansiyuanwang
+- **plugins:** release scope capacity on invalid cancellation signals ([#260](https://github.com/TunneldeDev/Tunnelde/pull/260)) @quyansiyuanwang
+- **plugins:** retain native surfaces until provider scopes are ready ([#261](https://github.com/TunneldeDev/Tunnelde/pull/261)) @quyansiyuanwang
+- **plugins:** journal remote deployments before mutations ([#263](https://github.com/TunneldeDev/Tunnelde/pull/263), [2e50e2f](https://github.com/TunneldeDev/Tunnelde/commit/2e50e2ff0c1d472d1d25c7b46212cb9c6146da5f)) @quyansiyuanwang
+- **recovery:** distinguish deployment directories in summaries ([#263](https://github.com/TunneldeDev/Tunnelde/pull/263)) @quyansiyuanwang
+- **plugins:** journal configuration writes before runner launch ([#264](https://github.com/TunneldeDev/Tunnelde/pull/264), [c995108](https://github.com/TunneldeDev/Tunnelde/commit/c995108a56ef6c7c1de82e8309e71aa1446c31b1)) @quyansiyuanwang
+- **recovery:** surface unfinished config writes in summaries ([#264](https://github.com/TunneldeDev/Tunnelde/pull/264)) @quyansiyuanwang
+- **runners:** synchronize accepted sessions before opening file panes ([#265](https://github.com/TunneldeDev/Tunnelde/pull/265)) @quyansiyuanwang
+- **hosts:** fill the allocated sidebar and docked panel ([#269](https://github.com/TunneldeDev/Tunnelde/pull/269), [c1e158c](https://github.com/TunneldeDev/Tunnelde/commit/c1e158c33c75c7221582a914a71c7079cb745c2a)) @quyansiyuanwang
+- **files:** anchor focus and drop frames to the scroll viewport ([#269](https://github.com/TunneldeDev/Tunnelde/pull/269)) @quyansiyuanwang
+- **runners:** reconcile uncertain launches with durable admission ([#271](https://github.com/TunneldeDev/Tunnelde/pull/271), [66ad81f](https://github.com/TunneldeDev/Tunnelde/commit/66ad81f65fc729e33999cb4c2f236d97c7a95748)) @quyansiyuanwang
+- **editor:** reject buffers without an open editor tab ([#273](https://github.com/TunneldeDev/Tunnelde/pull/273), [adba274](https://github.com/TunneldeDev/Tunnelde/commit/adba274291d7b0072a3de882f7af3db064e4198c)) @quyansiyuanwang
+- **editor:** retain undo within the buffer size budget ([#273](https://github.com/TunneldeDev/Tunnelde/pull/273)) @quyansiyuanwang
+- **files:** share preview read lifetimes and release failed tickets ([#275](https://github.com/TunneldeDev/Tunnelde/pull/275), [1b66558](https://github.com/TunneldeDev/Tunnelde/commit/1b6655830f2554c6e2f53639f0720bc861ec8512)) @quyansiyuanwang
+- **editor:** fence saves and reconnect reads by document lifetime ([#275](https://github.com/TunneldeDev/Tunnelde/pull/275)) @quyansiyuanwang
+- **profiles:** validate storage and preserve contract compatibility ([#276](https://github.com/TunneldeDev/Tunnelde/pull/276)) @quyansiyuanwang
+- **plugins:** propagate cancellation to owned host requests ([#278](https://github.com/TunneldeDev/Tunnelde/pull/278), [3018441](https://github.com/TunneldeDev/Tunnelde/commit/301844175ac08b9727a6739ccb0fc4f8c9418427)) @quyansiyuanwang
+- **storage:** bound policy commits and redact review errors ([#279](https://github.com/TunneldeDev/Tunnelde/pull/279)) @quyansiyuanwang
+- **storage:** reconcile plans after event bridge recovery ([#280](https://github.com/TunneldeDev/Tunnelde/pull/280)) @quyansiyuanwang
+- **logging:** bound current-log directory selection ([#281](https://github.com/TunneldeDev/Tunnelde/pull/281), [d001b5b](https://github.com/TunneldeDev/Tunnelde/commit/d001b5bb215eef97d73bf44578ccc190b303c58d)) @quyansiyuanwang
+- **ci:** recover dependency installation from Ubuntu mirror failures ([#281](https://github.com/TunneldeDev/Tunnelde/pull/281), [c4cdad0](https://github.com/TunneldeDev/Tunnelde/commit/c4cdad0c0627f369f45da645e70a054807f26f74)) @quyansiyuanwang
+- **logging:** normalize timestamps for SDK consumers ([#281](https://github.com/TunneldeDev/Tunnelde/pull/281)) @quyansiyuanwang
+- **settings:** apply profiles atomically from saved revisions ([#282](https://github.com/TunneldeDev/Tunnelde/pull/282), [1dca8b5](https://github.com/TunneldeDev/Tunnelde/commit/1dca8b5445101a0c0a5740d26fc83113b48cdc0b)) @quyansiyuanwang
+- **settings:** synchronize profile selection and queued activation ([#282](https://github.com/TunneldeDev/Tunnelde/pull/282), [cd2b41e](https://github.com/TunneldeDev/Tunnelde/commit/cd2b41eba30b0a3a04798c02e9ee6cfbbd3f355a)) @quyansiyuanwang
+- **settings:** preserve newer events when activation responses arrive late ([#282](https://github.com/TunneldeDev/Tunnelde/pull/282)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **search:** update bilingual README filter examples ([#218](https://github.com/TunneldeDev/Tunnelde/pull/218), [c106584](https://github.com/TunneldeDev/Tunnelde/commit/c106584f6cb39be185f6cc14c2ac8bd55b094cb0)) @quyansiyuanwang
+- **plugins:** define the evidence required for a 1.0 release ([#236](https://github.com/TunneldeDev/Tunnelde/pull/236), [dd93c42](https://github.com/TunneldeDev/Tunnelde/commit/dd93c42fdef8f682e6db4a275f770a976d80aba0)) @quyansiyuanwang
+- **plugins:** align domain organization status with implementation ([#241](https://github.com/TunneldeDev/Tunnelde/pull/241), [f005650](https://github.com/TunneldeDev/Tunnelde/commit/f005650a43efc6cfcce36f0dca93d08704a969d9)) @quyansiyuanwang
+- organize guides by language and purpose ([#267](https://github.com/TunneldeDev/Tunnelde/pull/267)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **policy:** support explicit PR checks during event outages ([#218](https://github.com/TunneldeDev/Tunnelde/pull/218)) @quyansiyuanwang
+- **plugins:** pin the domain-aware SDK catalogue reader ([#239](https://github.com/TunneldeDev/Tunnelde/pull/239)) @quyansiyuanwang
+- **runners:** verify discovery against pinned helper generations ([#266](https://github.com/TunneldeDev/Tunnelde/pull/266)) @quyansiyuanwang
+- **runners:** pin the reviewed initialized helper ([#270](https://github.com/TunneldeDev/Tunnelde/pull/270)) @quyansiyuanwang
+- **runners:** verify fenced helper receipts across repositories ([#271](https://github.com/TunneldeDev/Tunnelde/pull/271)) @quyansiyuanwang
+- **settings:** register additive observation contracts ([#272](https://github.com/TunneldeDev/Tunnelde/pull/272)) @quyansiyuanwang
+- **runners:** verify current and historical artifact protocols ([#274](https://github.com/TunneldeDev/Tunnelde/pull/274)) @quyansiyuanwang
+- **profiles:** verify native output against the pinned SDK ([#276](https://github.com/TunneldeDev/Tunnelde/pull/276), [d61d758](https://github.com/TunneldeDev/Tunnelde/commit/d61d7580d7b41308ccd6715482491374592daf8d)) @quyansiyuanwang
+- **plugins:** verify native storage with pinned SDK consumer ([#277](https://github.com/TunneldeDev/Tunnelde/pull/277)) @quyansiyuanwang
+- **plugins:** pin cancellable SDK transport in native CI ([#278](https://github.com/TunneldeDev/Tunnelde/pull/278)) @quyansiyuanwang
+- **logging:** distinguish native wire and decoded decimal budgets ([#281](https://github.com/TunneldeDev/Tunnelde/pull/281), [18d34ea](https://github.com/TunneldeDev/Tunnelde/commit/18d34eaf8db44f6f9fcb73fc33b78b5a7cf5e756)) @quyansiyuanwang
+
+### 其他 | Other
+
+- remove duplicate legacy plugin example ([#268](https://github.com/TunneldeDev/Tunnelde/pull/268)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.33.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.32.0...v0.33.0) - 2026-11-09
 
 ### 更新概览 | Highlights

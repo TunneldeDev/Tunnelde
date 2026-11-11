@@ -1,8 +1,7 @@
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { useLayoutEffect, type ReactNode } from "react";
-import { createSubscriptionGroup } from "@/lib/events/bus";
-import { nativeEvents } from "@/lib/events/native";
+import { synchronizeContributions, nativeContributionSource } from "@/lib/plugins/contributionSync";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
 import type { MenuAction } from "@/components/ui/overlay/menuTypes";
 
@@ -45,76 +44,14 @@ export function useTabBarContribution(
 }
 
 export const usePluginTabBar = create<TabBarSnapshot>(() => ({ revision: -1, items: [] }));
-export async function wireTabBarContributions(signal: AbortSignal) {
-  let disposed = false;
-  let request = 0;
-  const accept = (snapshot: TabBarSnapshot) => {
-    if (!disposed && !signal.aborted && snapshot.revision >= usePluginTabBar.getState().revision)
-      usePluginTabBar.setState(snapshot);
-  };
-  const refresh = async () => {
-    const current = ++request;
-    try {
-      const snapshot = await invoke<TabBarSnapshot>("plugin_tab_bar_snapshot");
-      if (current === request) accept(snapshot);
-    } catch (error) {
-      if (!disposed && !signal.aborted)
-        console.error("Could not synchronize tab bar contributions", error);
-    }
-  };
-  const group = createSubscriptionGroup([
-    (lifetime) =>
-      nativeEvents.on(
-        "plugin://tab-bar-changed",
-        (snapshot) => {
-          ++request;
-          accept(snapshot);
-        },
-        lifetime,
-      ),
-    (lifetime) =>
-      nativeEvents.on(
-        "plugin:security-changed",
-        () => {
-          usePluginTabBar.setState({ items: [] });
-          void refresh();
-        },
-        lifetime,
-      ),
-    (lifetime) =>
-      nativeEvents.on(
-        "plugin://state",
-        () => {
-          void refresh();
-        },
-        lifetime,
-      ),
-    (lifetime) =>
-      nativeEvents.on(
-        "ui://resume",
-        () => {
-          void refresh();
-        },
-        lifetime,
-      ),
-  ]);
-  const dispose = () => {
-    disposed = true;
-    ++request;
-    group.dispose();
-  };
-  signal.addEventListener("abort", dispose, { once: true });
-  try {
-    if (!signal.aborted) {
-      await group.start();
-      await refresh();
-    }
-  } catch (error) {
-    dispose();
-    if (!signal.aborted) throw error;
-  }
-  return () => {
-    signal.removeEventListener("abort", dispose);
-    dispose();
-  };
+export function wireTabBarContributions(signal: AbortSignal) {
+  return synchronizeContributions<TabBarSnapshot>(
+    nativeContributionSource("plugin://tab-bar-changed", {
+      read: () => invoke("plugin_tab_bar_snapshot"),
+      apply: (snapshot) => usePluginTabBar.setState(snapshot),
+      clear: () => usePluginTabBar.setState({ items: [] }),
+      report: (error) => console.error("Could not synchronize tab bar contributions", error),
+    }),
+    signal,
+  );
 }

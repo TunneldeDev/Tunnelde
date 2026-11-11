@@ -42,6 +42,62 @@ beforeEach(async () => {
 });
 
 describe("plugin security authorization", () => {
+  it("cancels one caller without dismissing another caller's permission prompt", async () => {
+    const controller = new AbortController();
+    const first = usePluginSecurity.getState().ensure(plugin, controller.signal);
+    const second = usePluginSecurity.getState().ensure(plugin);
+    await vi.waitFor(() => expect(usePluginSecurity.getState().prompts).toHaveLength(1));
+    controller.abort();
+    expect(await first).toBe(false);
+    expect(usePluginSecurity.getState().prompts).toHaveLength(1);
+    expect(await usePluginSecurity.getState().approve(plugin.id)).toBe(true);
+    expect(await second).toBe(true);
+  });
+
+  it("closes the prompt when its last caller cancels and rejects stale approvals", async () => {
+    const controller = new AbortController();
+    const request = usePluginSecurity.getState().ensure(plugin, controller.signal);
+    await vi.waitFor(() => expect(usePluginSecurity.getState().prompts).toHaveLength(1));
+    controller.abort();
+    expect(await request).toBe(false);
+    expect(usePluginSecurity.getState().prompts).toEqual([]);
+    expect(await usePluginSecurity.getState().approve(plugin.id)).toBe(false);
+    expect(mock.api.pluginSetPermissions).not.toHaveBeenCalled();
+  });
+
+  it("cancels during security load without a late prompt, and keeps a later caller active", async () => {
+    const loading = deferred<PluginSecurityState>();
+    mock.api.pluginSecurityState.mockReturnValueOnce(loading.promise);
+    const controller = new AbortController();
+    const first = usePluginSecurity.getState().ensure(plugin, controller.signal);
+    await vi.waitFor(() => expect(mock.api.pluginSecurityState).toHaveBeenCalledOnce());
+    controller.abort();
+    expect(await first).toBe(false);
+    const second = usePluginSecurity.getState().ensure(plugin);
+    loading.resolve(state);
+    await vi.waitFor(() => expect(usePluginSecurity.getState().prompts).toEqual([plugin]));
+    usePluginSecurity.getState().deny(plugin.id);
+    expect(await second).toBe(false);
+  });
+
+  it("does not share a permission prompt across replaced contents or changed declarations", async () => {
+    const first = usePluginSecurity.getState().ensure(plugin);
+    await vi.waitFor(() => expect(usePluginSecurity.getState().prompts).toHaveLength(1));
+    const updated = { ...plugin, fingerprint: "changed", permissions: ["log"] };
+    const second = usePluginSecurity.getState().ensure(updated);
+    expect(await first).toBe(false);
+    await vi.waitFor(() => expect(usePluginSecurity.getState().prompts).toEqual([updated]));
+    await usePluginSecurity.getState().approve(plugin.id);
+    expect(await second).toBe(true);
+    expect(mock.api.pluginSetPermissions).toHaveBeenCalledWith(plugin.id, ["log"], "changed");
+  });
+
+  it("does no work for an already cancelled caller", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(await usePluginSecurity.getState().ensure(plugin, controller.signal)).toBe(false);
+    expect(mock.api.pluginSecurityState).not.toHaveBeenCalled();
+  });
   it("keeps the specific startup error in the recovery dialog", async () => {
     const { reportPluginExecutionFailure } = await import("@/store/pluginSecurity");
     reportPluginExecutionFailure({

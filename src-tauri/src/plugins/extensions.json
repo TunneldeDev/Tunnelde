@@ -1,0 +1,453 @@
+{
+  "version": 1,
+  "stability": "experimental",
+  "frontend": {
+    "sdkVersion": "0.1.0",
+    "stability": "experimental",
+    "trust": "host-context",
+    "permission": "ui.trusted",
+    "manifest": "frontend",
+    "runtime": "frontend",
+    "viewKind": "component",
+    "viewLifetimes": {
+      "member": "view.resources",
+      "ownership": "committed-view-instance",
+      "budget": "module-ancestors",
+      "hidden": "retained",
+      "retirement": "unmount-or-module-retirement",
+      "nativeOwnership": "unchanged"
+    },
+    "resourceScopes": {
+      "member": "resources.child",
+      "ownership": "module-descendants",
+      "budget": "shared-ancestors",
+      "defaultLimit": 128,
+      "maximumLimit": 4096,
+      "maximumDepth": 32,
+      "settlement": "retain-until-work-and-cleanup-settle",
+      "nativeOwnership": "unchanged"
+    },
+    "providers": {
+      "manifest": "views[].provider",
+      "targets": [
+        "hostList",
+        "workbench",
+        "fileBrowser",
+        "terminal",
+        "history",
+        "forwarding",
+        "monitor",
+        "backgroundTasks",
+        "processes",
+        "quickAccess",
+        "preferences"
+      ],
+      "selection": "explicit-user",
+      "hostListPermission": "hosts.read",
+      "fileBrowserPermissions": ["fs.read", "sftp.read", "workspace.write"],
+      "terminalPermissions": ["sessions.read", "ssh.exec"],
+      "historyPermissions": ["sessions.read", "history.read"],
+      "history": {
+        "context": "history",
+        "ownership": "host-panel",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "history.write",
+        "executePermission": "ssh.exec",
+        "recovery": "native-search-and-confirmation"
+      },
+      "terminal": {
+        "context": "terminal",
+        "ownership": "host-session",
+        "requiredSlot": "Screen",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "lineTextLimit": 4096,
+        "inputTextLimit": 65536,
+        "subscriptions": 16,
+        "notificationIntervalMs": 100,
+        "paging": "revision-bound",
+        "stream": "coalesced-dirty",
+        "recovery": "native-toolbar-and-screen"
+      },
+      "fileBrowser": {
+        "context": "fileBrowser",
+        "ownership": "host-pane",
+        "pageSize": 256,
+        "paging": "revision-bound",
+        "recovery": "native-path-and-actions"
+      },
+      "slots": ["Workspace", "Navigation", "Inspector", "StatusBar"],
+      "requiredSlot": "Workspace",
+      "limits": {
+        "perPlugin": 8
+      },
+      "fallback": "built-in",
+      "monitorPermissions": ["sessions.read", "monitor.read"],
+      "monitor": {
+        "context": "monitor",
+        "ownership": "host-view",
+        "presentations": ["page", "panel"],
+        "optionalSlot": "Charts",
+        "sampleLimit": 240,
+        "pageSize": 128,
+        "paging": "revision-bound",
+        "sampling": "shared-visible-consumers",
+        "refresh": "coalesced-existing-sampler"
+      },
+      "forwardingPermissions": ["hosts.read", "forwards.read"],
+      "forwarding": {
+        "context": "forwarding",
+        "ownership": "host-panel",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "forwards.write",
+        "connection": "independent-host-confirmation",
+        "acceptedOwnership": "plugin-runtime",
+        "recovery": "native-editor-and-confirmation"
+      },
+      "backgroundTasksPermissions": ["backgroundTasks.read"],
+      "backgroundTasks": {
+        "context": "backgroundTasks",
+        "ownership": "host-panel",
+        "presentations": ["floating", "embedded"],
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "backgroundTasks.write",
+        "visibility": "visible-tasks-only",
+        "recovery": "native-toolbar-and-confirmation"
+      },
+      "processesPermissions": ["sessions.read", "monitor.read"],
+      "processes": {
+        "context": "processes",
+        "ownership": "host-dialog",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "writePermission": "monitor.write",
+        "termination": "native-confirmation-with-live-authorization-and-identity",
+        "sampling": "shared-visible-consumers",
+        "query": "at-prefixed-filters"
+      },
+      "quickAccessPermissions": [
+        "hosts.read",
+        "sessions.read",
+        "fs.read",
+        "sftp.read",
+        "workspace.read",
+        "editor.read"
+      ],
+      "quickAccess": {
+        "context": "quickAccess",
+        "ownership": "host-dialog",
+        "optionalSlot": "Entries",
+        "pageSize": 128,
+        "pageTextLimit": 65536,
+        "paging": "revision-bound",
+        "invokePermission": "workspace.write",
+        "activation": "invoke-only-native-consent",
+        "recovery": "native-input-roots-and-dismissal"
+      },
+      "preferencesPermissions": ["settings.read"],
+      "preferences": {
+        "context": "preferences",
+        "ownership": "host-page",
+        "optionalSlot": "Fields",
+        "schema": "preferences.schema",
+        "read": "preferences.snapshot",
+        "update": "preferences.update",
+        "writePermission": "settings.write",
+        "concurrency": "persistent-revision",
+        "recovery": "native-search-navigation-and-trust"
+      }
+    },
+    "components": [
+      "Button",
+      "IconButton",
+      "Field",
+      "Input",
+      "Textarea",
+      "Switch",
+      "SearchField",
+      "EmptyState"
+    ],
+    "limits": {
+      "moduleBytes": 8388608,
+      "totalBytes": 33554432,
+      "owners": 16
+    },
+    "backgroundTasks": {
+      "context": "backgroundTasks",
+      "method": "run",
+      "ownership": "runtime",
+      "pendingLimit": 8,
+      "cancellation": "cooperative-settlement",
+      "hidden": "blocks-webview-suspension"
+    }
+  },
+  "runtime": {
+    "activation": {
+      "stability": "experimental",
+      "manifest": "dependencies",
+      "manifestApiVersion": 2,
+      "rpcApiVersion": 1,
+      "declaration": "required-installed-runtime",
+      "ordering": "dependencies-first",
+      "preflight": "whole-graph-before-engines",
+      "approval": "per-package-fingerprint-and-generation",
+      "sharing": "per-runtime-with-independent-waiters",
+      "retirement": "reverse-dependents",
+      "readyDependencies": "retained-after-root-failure",
+      "automaticInstallation": false,
+      "limits": {
+        "catalogue": 4096,
+        "dependencies": 16,
+        "packages": 64,
+        "edges": 256,
+        "depth": 32,
+        "rangeBytes": 160,
+        "requests": 16,
+        "blockingWorkers": 16,
+        "preflightTimeoutMs": 60000
+      }
+    },
+    "resources": {
+      "identify": "resources.identify",
+      "snapshot": "resources.snapshot",
+      "release": "resources.release",
+      "stability": "experimental",
+      "ownership": "current-runtime",
+      "kinds": ["connection", "forward", "mount", "task", "transfer"],
+      "states": ["owned", "releaseRequested", "cleanupRequired"],
+      "pageSize": 128,
+      "pageBytes": 65536,
+      "observationLimit": 4096,
+      "operationLimitPerPlugin": 4,
+      "operationLimitTotal": 16,
+      "observationTimeoutMs": 5000,
+      "paging": "revision-bound",
+      "cancellation": "cooperative-settlement",
+      "persistence": false
+    }
+  },
+  "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
+  "domains": [
+    { "id": "runtime", "namespaces": ["resources"] },
+    { "id": "configuration", "namespaces": ["configuration"] },
+    {
+      "id": "platform",
+      "namespaces": ["api", "extensions", "app"]
+    },
+    {
+      "id": "hosts",
+      "namespaces": ["hosts", "groups", "hostList", "sessions"]
+    },
+    {
+      "id": "files",
+      "namespaces": ["files", "editor", "clipboard"]
+    },
+    {
+      "id": "terminal",
+      "namespaces": ["terminal", "history"]
+    },
+    {
+      "id": "remote",
+      "namespaces": ["forwards", "mounts", "runners", "tools"]
+    },
+    {
+      "id": "tasks",
+      "namespaces": ["tasks"]
+    },
+    {
+      "id": "monitor",
+      "namespaces": ["monitor"]
+    },
+    {
+      "id": "workbench",
+      "namespaces": ["workspace", "ui", "statusBar", "tabBar"]
+    },
+    {
+      "id": "preferences",
+      "namespaces": ["settings", "preferences", "profiles", "storage"]
+    },
+    {
+      "id": "governance",
+      "namespaces": ["events", "log", "logs", "secrets"]
+    }
+  ],
+  "points": [
+    {
+      "id": "plugin.configuration",
+      "domain": "configuration",
+      "layer": "data",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "manifest": "configuration",
+        "read": "configuration.snapshot",
+        "replace": "configuration.update"
+      },
+      "ownership": "manifest",
+      "permissions": [],
+      "writePermissions": [],
+      "limits": {
+        "groups": 16,
+        "fields": 64,
+        "schemaBytes": 65536,
+        "documentBytes": 65536,
+        "backups": 8,
+        "totalBytes": 67108864
+      },
+      "persistence": "plugin-data",
+      "concurrency": "uuid-revision-and-schema-digest",
+      "secrets": false
+    },
+    {
+      "id": "hosts.sources",
+      "domain": "hosts",
+      "layer": "data",
+      "stability": "experimental",
+      "composition": "merge",
+      "ownership": "runtime",
+      "registration": {
+        "set": "hosts.setSource",
+        "remove": "hosts.removeSource",
+        "read": "hosts.sourcesSnapshot"
+      },
+      "permissions": ["hosts.read", "hosts.write"],
+      "readPermissions": ["hosts.read"],
+      "identity": "owner-source-content-sha256",
+      "persistence": false,
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "entriesPerSource": 256,
+        "entriesPerPlugin": 512,
+        "entriesTotal": 4096,
+        "serializedBytesTotal": 4194304
+      }
+    },
+    {
+      "id": "hostList.columns",
+      "domain": "hosts",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "ownership": "runtime",
+      "registration": {
+        "set": "hostList.setColumn",
+        "remove": "hostList.removeColumn"
+      },
+      "permissions": ["hosts.read", "workspace.write"],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "cellsPerColumn": 256,
+        "textCodePoints": 512,
+        "serializedBytesPerPlugin": 524288,
+        "serializedBytesTotal": 4194304
+      }
+    },
+    {
+      "id": "hosts.fields",
+      "domain": "hosts",
+      "layer": "data",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "manifest": "hostFields",
+        "read": "hosts.getFields",
+        "replace": "hosts.setFields"
+      },
+      "ownership": "manifest",
+      "permissions": ["hosts.read"],
+      "writePermissions": ["hosts.read", "hosts.write"],
+      "limits": {
+        "fieldsPerPlugin": 32,
+        "documentBytes": 32768,
+        "pluginBytes": 4194304,
+        "totalBytes": 33554432,
+        "pluginDocuments": 2048,
+        "totalDocuments": 16384
+      },
+      "persistence": "plugin-host",
+      "concurrency": "revision-and-schema-digest",
+      "secrets": false
+    },
+    {
+      "id": "hostList.menu",
+      "domain": "hosts",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "manifest": "commands[].hostMenu"
+      },
+      "ownership": "manifest",
+      "permissions": ["hosts.read"],
+      "limits": {
+        "perPlugin": 16,
+        "total": 128
+      }
+    },
+    {
+      "id": "hostList.decorations",
+      "domain": "hosts",
+      "layer": "presentation",
+      "stability": "experimental",
+      "composition": "merge",
+      "registration": {
+        "set": "hostList.setDecorations",
+        "remove": "hostList.removeDecorations"
+      },
+      "ownership": "runtime",
+      "permissions": ["hosts.read", "workspace.write"],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128,
+        "entriesPerCollection": 256
+      }
+    },
+    {
+      "id": "statusBar.items",
+      "domain": "workbench",
+      "layer": "presentation",
+      "stability": "stable",
+      "composition": "merge",
+      "registration": {
+        "set": "statusBar.set",
+        "remove": "statusBar.remove"
+      },
+      "ownership": "runtime",
+      "permissions": [],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128
+      }
+    },
+    {
+      "id": "tabBar.items",
+      "domain": "workbench",
+      "layer": "presentation",
+      "stability": "stable",
+      "composition": "merge",
+      "registration": {
+        "set": "tabBar.set",
+        "remove": "tabBar.remove"
+      },
+      "ownership": "runtime",
+      "permissions": [],
+      "limits": {
+        "perPlugin": 8,
+        "total": 128
+      }
+    }
+  ]
+}

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_updater::{Update, UpdaterExt};
 
-use crate::db;
 use crate::error::{AppError, AppResult, UpdateSourceFailure};
 use crate::models::now_ms;
 use crate::settings::Settings;
@@ -399,7 +398,7 @@ async fn run_check(app: &AppHandle, force: bool) -> AppResult<UpdateState> {
     }
     next.last_checked = Some(now_ms());
     *service.update.write() = next;
-    persist_last_check(app);
+    persist_last_check(app).await;
     service.update.publish(app);
     Ok(service.update.snapshot())
 }
@@ -538,14 +537,9 @@ pub fn spawn_auto_check(app: &AppHandle) {
     });
 }
 
-fn persist_last_check(app: &AppHandle) {
-    let service = app.state::<AppState>();
-    let mut settings = service.settings();
-    settings.last_update_check = Some(now_ms());
-    if let Err(error) = service.db.with(|conn| db::settings::save(conn, &settings)) {
+async fn persist_last_check(app: &AppHandle) {
+    if let Err(error) = crate::services::settings::record_update_check(app, now_ms()).await {
         tracing::warn!(%error, "failed to persist the update check timestamp");
-    } else {
-        service.set_settings(settings);
     }
 }
 

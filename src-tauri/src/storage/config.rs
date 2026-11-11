@@ -53,22 +53,42 @@ pub fn load(home: &Path) -> AppResult<Config> {
     }
 }
 
-pub fn save(home: &Path, config: &Config) -> AppResult<()> {
+/// Synced temporary metadata; publishing is a separate, short commit step.
+pub(super) struct Prepared {
+    temporary: PathBuf,
+    destination: PathBuf,
+}
+impl Prepared {
+    pub(super) fn publish(&self) -> AppResult<()> {
+        std::fs::rename(&self.temporary, &self.destination)?;
+        Ok(())
+    }
+}
+impl Drop for Prepared {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.temporary);
+    }
+}
+pub(super) fn prepare(home: &Path, config: &Config) -> AppResult<Prepared> {
     use std::io::Write;
+    let bytes = serde_json::to_vec_pretty(config)?;
+    if bytes.len() > 128 * 1024 {
+        return Err(AppError::validation("storage.invalidConfig"));
+    }
     std::fs::create_dir_all(home)?;
     let temporary = home.join(format!(".storage-{}.tmp", uuid::Uuid::new_v4()));
-    let result = (|| {
-        let mut file = std::fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&temporary)?;
-        file.write_all(&serde_json::to_vec_pretty(config)?)?;
-        file.sync_all()?;
-        std::fs::rename(&temporary, home.join("storage.json"))?;
-        Ok::<_, AppError>(())
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(temporary);
-    }
-    result
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&temporary)?;
+    let prepared = Prepared {
+        temporary,
+        destination: home.join("storage.json"),
+    };
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    Ok(prepared)
+}
+pub fn save(home: &Path, config: &Config) -> AppResult<()> {
+    prepare(home, config)?.publish()
 }

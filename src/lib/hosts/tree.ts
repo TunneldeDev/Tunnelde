@@ -11,7 +11,31 @@ export interface HostGroupNode {
 export function buildHostTree(groups: Group[], hosts: Host[], query: string) {
   const filter = parseHostQuery(query);
   const visible = hosts.filter((host) => matchesHostQuery(host, filter));
-  const rest = visible.filter((host) => !host.favorite);
+  const rest = visible.filter((host) => !host.favorite && !host.source);
+  const sources = new Map<string, HostGroupNode>();
+  for (const host of visible) {
+    if (!host.source) continue;
+    const key = JSON.stringify([host.source.pluginId, host.source.id]);
+    let node = sources.get(key);
+    if (!node) {
+      node = {
+        group: {
+          id: `source-group:${key}`,
+          name: `${host.source.label} · ${host.source.pluginName}`,
+          parentId: null,
+          sortOrder: 0,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        hosts: [],
+        children: [],
+        count: 0,
+      };
+      sources.set(key, node);
+    }
+    node.hosts.push(host);
+    node.count++;
+  }
   const groupIds = new Set(groups.map((group) => group.id));
   const byGroup = new Map<string, Host[]>();
   const byParent = new Map<string, Group[]>();
@@ -49,7 +73,8 @@ export function buildHostTree(groups: Group[], hosts: Host[], query: string) {
   groups.filter((group) => !visited.has(group.id)).forEach(add);
 
   return {
-    favorites: visible.filter((host) => host.favorite),
+    sources: [...sources.values()],
+    favorites: visible.filter((host) => host.favorite && !host.source),
     ungrouped: rest.filter((host) => !host.groupId || !groupIds.has(host.groupId)),
     groups: tree,
   };

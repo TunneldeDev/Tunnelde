@@ -52,8 +52,11 @@ export const searchText = (value: SearchValue): string =>
     .toLowerCase();
 const normalizedKey = (key: string) => key.replace(/^@/, "").toLowerCase();
 
+/** Public query syntax always requires @; callers may use bare metadata keys. */
+export const searchFilterPrefix = (key: string): string => `@${normalizedKey(key)}:`;
+
 function qualifier(token: string, keys: ReadonlySet<string>) {
-  const match = /^(-?)@?([a-z][\w-]*):(.+)$/i.exec(token);
+  const match = /^(-?)@([a-z][\w-]*):(.+)$/i.exec(token);
   if (!match || !keys.has(match[2]!.toLowerCase())) return null;
   const values = tokens(match[3]!, true).map(decode).filter(Boolean);
   return values.length ? { key: match[2]!.toLowerCase(), values, exclude: !!match[1] } : null;
@@ -74,7 +77,7 @@ function rewriteTokens(
   return result.trim();
 }
 
-/** Unknown and unfinished qualifiers remain literal. Repeated fields intersect; commas mean OR. */
+/** Only @field:value is a qualifier. Bare, unknown and unfinished fields remain literal. */
 export function parseSearchQuery(query: string, keys: readonly string[]): SearchQuery {
   const allowed = new Set(keys.map(normalizedKey));
   const result: SearchQuery = { text: [], filters: [] };
@@ -91,6 +94,32 @@ export function parseSearchQuery(query: string, keys: readonly string[]): Search
 export function clearSearchFilters(query: string, keys: readonly string[]): string {
   const allowed = new Set(keys.map(normalizedKey));
   return rewriteTokens(query, (token) => (qualifier(token, allowed) ? null : token));
+}
+
+/** Specialized filters share token boundaries and preserve every unconsumed literal. */
+export function rewriteSearchFilters(
+  query: string,
+  keys: readonly string[],
+  rewrite: (filter: SearchFilter, raw: string) => string | null,
+): string {
+  const allowed = new Set(keys.map(normalizedKey));
+  return rewriteTokens(query, (token) => {
+    if (token === "&") return null;
+    const filter = qualifier(token, allowed);
+    return filter ? rewrite(filter, token) : token;
+  });
+}
+
+/** Complete only a final, unquoted @field: token; quoted literals stay untouched. */
+export function searchFilterCompletion(
+  query: string,
+  key: string,
+): { start: number; value: string } | null {
+  const token = tokens(query).at(-1);
+  if (!token || !query.endsWith(token)) return null;
+  const match = /^@([a-z][\w-]*):(.*)$/i.exec(token);
+  if (!match || match[1]!.toLowerCase() !== normalizedKey(key)) return null;
+  return { start: query.length - token.length, value: decode(match[2]!) };
 }
 
 /** Literal backend searches keep case and repeated whitespace; qualifiers are UI metadata. */
@@ -135,11 +164,12 @@ export function toggleSearchFilter(
   exclusive = false,
 ): string {
   const allowed = new Set([normalizedKey(key)]);
+  const prefix = searchFilterPrefix(key);
   const raw = tokens(query);
   if (!value)
-    return raw.some((token) => token === key + ":")
+    return raw.some((token) => token.toLowerCase() === prefix)
       ? query
-      : query.trimEnd() + (query.trim() ? " " : "") + key + ":";
+      : query.trimEnd() + (query.trim() ? " " : "") + prefix;
   const current = raw.map((token) => qualifier(token, allowed));
   const needle = searchText(value);
   const selected = current.some(
@@ -162,7 +192,7 @@ export function toggleSearchFilter(
       : null;
   });
   if ((exclusive && !selected) || (last < 0 && !selected))
-    next += (next ? " " : "") + key + ":" + encode(value);
+    next += (next ? " " : "") + prefix + encode(value);
   return next;
 }
 

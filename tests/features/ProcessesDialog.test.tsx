@@ -1,12 +1,13 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useSsh } from "@/store/ssh";
 import type { RemoteProcess } from "@/lib/api/types";
 
 const { remoteProcesses, remoteKill } = vi.hoisted(() => ({
   remoteProcesses: vi.fn(),
   remoteKill: vi.fn(),
 }));
-vi.mock("@/lib/api/ipc", () => ({ api: { remoteProcesses, remoteKill } }));
+vi.mock("@/lib/api/ipc", () => ({ isTauri: () => false, api: { remoteProcesses, remoteKill } }));
 import i18n from "@/i18n/i18n";
 import { ProcessesDialog } from "@/features/monitor/ProcessesDialog";
 import { useDialogs } from "@/store/dialogs";
@@ -29,6 +30,17 @@ const process = (overrides: Partial<RemoteProcess> = {}): RemoteProcess => ({
   ...overrides,
 });
 beforeEach(async () => {
+  useSsh.setState({
+    sessions: ["s", "old", "new", "other"].map((id) => ({
+      id,
+      hostId: id,
+      title: id,
+      connectedAt: 0,
+      address: "localhost",
+      cols: 80,
+      rows: 24,
+    })),
+  });
   remoteProcesses.mockReset();
   remoteKill.mockReset().mockResolvedValue(undefined);
   await i18n.changeLanguage("en-US");
@@ -151,4 +163,47 @@ describe("process manager", () => {
     );
     expect(screen.queryByRole("region", { name: "Process details" })).toBeNull();
   });
+});
+
+it("consumes each native confirmation once even before a pending kill resolves", async () => {
+  remoteProcesses.mockResolvedValue([process()]);
+  let resolve!: () => void;
+  remoteKill.mockImplementationOnce(
+    () =>
+      new Promise<void>((done) => {
+        resolve = done;
+      }),
+  );
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  fireEvent.click(await screen.findByText("worker"));
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  const confirmation = useDialogs.getState().dialog;
+  if (confirmation.kind !== "confirm") throw Error("missing confirmation");
+  let pending!: Promise<void>;
+  act(() => {
+    pending = confirmation.onConfirm() as Promise<void>;
+  });
+  await act(async () => confirmation.onConfirm());
+  expect(remoteKill).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    resolve();
+    await pending;
+  });
+  await act(async () => confirmation.onConfirm());
+  expect(remoteKill).toHaveBeenCalledTimes(1);
+});
+
+it("does not act on a reused PID while confirmation is open", async () => {
+  remoteProcesses
+    .mockResolvedValueOnce([process()])
+    .mockResolvedValue([process({ startedAtTicks: 999 })]);
+  render(<ProcessesDialog sessionId="s" onClose={() => undefined} />);
+  fireEvent.click(await screen.findByText("worker"));
+  fireEvent.click(screen.getByRole("button", { name: "Stop" }));
+  const confirmation = useDialogs.getState().dialog;
+  if (confirmation.kind !== "confirm") throw Error("missing confirmation");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "Process details" })).toBeNull());
+  await act(async () => confirmation.onConfirm());
+  expect(remoteKill).not.toHaveBeenCalled();
 });

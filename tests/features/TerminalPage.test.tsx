@@ -106,6 +106,9 @@ vi.mock("@xterm/xterm", () => ({
       selections.push(callback);
       return { dispose: vi.fn() };
     });
+    onWriteParsed = vi.fn(() => ({ dispose: vi.fn() }));
+    onScroll = vi.fn(() => ({ dispose: vi.fn() }));
+    onResize = vi.fn(() => ({ dispose: vi.fn() }));
     attachCustomKeyEventHandler = vi.fn((callback: (event: KeyboardEvent) => boolean) => {
       keyboard.push(callback);
     });
@@ -721,7 +724,7 @@ describe("terminal clipboard", () => {
   it("copies the captured selection even if a TUI redraw clears it before the debounce", async () => {
     useSettings.setState({ settings: { ...DEFAULT_SETTINGS, terminalCopyOnSelect: true } });
     render(<TerminalPage sessionId="s1" active={false} />);
-    await waitFor(() => expect(selections).toHaveLength(1));
+    await waitFor(() => expect(selections).toHaveLength(2));
     vi.useFakeTimers();
     const terminal = instances[0]!;
     terminal.hasSelection.mockReturnValue(true);
@@ -773,7 +776,7 @@ describe("terminal clipboard", () => {
 
   it("debounces copy-on-select without stealing focus, and honors disabling and cleanup", async () => {
     const view = render(<TerminalPage sessionId="s1" active={false} />);
-    await waitFor(() => expect(selections).toHaveLength(1));
+    await waitFor(() => expect(selections).toHaveLength(2));
     vi.useFakeTimers();
     const terminal = instances[0]!;
     terminal.hasSelection.mockReturnValue(true);
@@ -964,6 +967,53 @@ describe("terminal clipboard", () => {
       const before = apiMock.sshWrite.mock.calls.length;
       expect(keyboard[0]!(composing)).toBe(true);
       expect(apiMock.sshWrite).toHaveBeenCalledTimes(before);
+    } finally {
+      if (original) Object.defineProperty(navigator, "platform", original);
+      else Reflect.deleteProperty(navigator, "platform");
+    }
+  });
+
+  it("lets negotiated keyboard encoding own editing defaults unless the user customizes them", async () => {
+    const original = Object.getOwnPropertyDescriptor(navigator, "platform");
+    Object.defineProperty(navigator, "platform", { configurable: true, value: "MacIntel" });
+    try {
+      render(<TerminalPage sessionId="s1" active />);
+      await waitFor(() => expect(keyboard).toHaveLength(1));
+      const instance = instances[0]!;
+      Object.assign(instance, { _core: { coreService: { kittyKeyboard: { flags: 7 } } } });
+      const press = () =>
+        new KeyboardEvent("keydown", {
+          key: "ArrowLeft",
+          metaKey: true,
+          cancelable: true,
+        });
+      expect(keyboard[0]!(press())).toBe(true);
+      expect(apiMock.sshWrite).not.toHaveBeenCalled();
+      act(() =>
+        useSettings.setState({
+          settings: {
+            ...useSettings.getState().settings,
+            keyboardShortcuts: { "terminal.lineStart": ["Meta+ArrowLeft"] },
+          },
+        }),
+      );
+      expect(keyboard[0]!(press())).toBe(false);
+      expect(apiMock.sshWrite).toHaveBeenLastCalledWith("s1", encodeBase64("\x01"));
+      act(() =>
+        useSettings.setState({
+          settings: {
+            ...useSettings.getState().settings,
+            keyboardShortcuts: {},
+            shortcutRules: {
+              "terminal.lineStart": {
+                "Meta+ArrowLeft": { priority: 100, propagation: "continue" },
+              },
+            },
+          },
+        }),
+      );
+      expect(keyboard[0]!(press())).toBe(true);
+      expect(apiMock.sshWrite).toHaveBeenCalledTimes(2);
     } finally {
       if (original) Object.defineProperty(navigator, "platform", original);
       else Reflect.deleteProperty(navigator, "platform");
