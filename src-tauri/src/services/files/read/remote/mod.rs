@@ -21,6 +21,10 @@ struct Opened {
 pub struct RemoteReader(Arc<Opened>);
 
 impl RemoteReader {
+    pub fn retire(&self) {
+        let _ = self.0.raw.close_session();
+    }
+
     pub async fn close(self) {
         // The channel closes even if awaiting CLOSE is cancelled or fails.
         struct Closing<'a>(&'a RawSftpSession);

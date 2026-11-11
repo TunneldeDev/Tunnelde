@@ -71,6 +71,7 @@ fn changed_domain(method: &str) -> Option<&'static str> {
     match method {
         "sessions.connect" | "sessions.disconnect" | "sessions.requestHandoff" => Some("sessions"),
         name if name.starts_with("files.")
+            && !name.starts_with("files.content.")
             && !matches!(
                 name,
                 "files.upload"

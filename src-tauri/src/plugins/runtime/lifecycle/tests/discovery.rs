@@ -12,7 +12,14 @@ fn discovery_matches_implemented_limits_and_keeps_lifecycle_methods_experimental
     assert_eq!(lifecycle["observationTimeoutMs"], 5000);
     assert_eq!(
         lifecycle["kinds"],
-        serde_json::json!(["connection", "forward", "mount", "task", "transfer"])
+        serde_json::json!([
+            "connection",
+            "forward",
+            "mount",
+            "task",
+            "transfer",
+            "fileContent"
+        ])
     );
     assert_eq!(
         lifecycle["states"],

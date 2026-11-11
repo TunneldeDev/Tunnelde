@@ -7,6 +7,7 @@ mod engines;
 mod events;
 mod extensions;
 pub mod file_icons;
+mod files;
 pub mod forwarding;
 pub mod frontend;
 mod host;
@@ -212,6 +213,7 @@ pub struct PluginsManager {
     host_columns: contributions::Registry<host_columns::Column>,
     host_sources: contributions::Registry<host_sources::Source>,
     sessions: Arc<runtime::ownership::Registry<String>>,
+    file_content: files::content::Content,
     profile_drafts: Arc<crate::settings_profiles::mutations::drafts::Registry>,
 }
 
@@ -380,6 +382,7 @@ impl PluginsManager {
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
             sessions: runtime::ownership::Registry::new(8, 64),
+            file_content: files::content::Content::default(),
             profile_drafts: Arc::default(),
         }
     }
