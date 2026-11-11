@@ -55,6 +55,7 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "configuration.schema",
             "configuration.snapshot",
             "configuration.update",
+            "preferences.observe",
             "preferences.schema",
             "preferences.snapshot",
             "preferences.update",

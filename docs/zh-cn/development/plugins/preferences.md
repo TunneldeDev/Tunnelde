@@ -2,7 +2,7 @@
 
 [English](../../../en-us/development/plugins/preferences.md)
 
-`preferences.schema`、`preferences.snapshot`、`preferences.update` 是 API v1
+`preferences.schema`、`preferences.snapshot`、`preferences.observe`、`preferences.update` 是 API v1
 的实验接口。读取需要 `settings.read`，写入需要 `settings.write`，并遵循普通插件审批和生命周期检查；不要求可信前端代码。
 旧的 `settings.get/update` 保留现有兼容行为和内部字段名。
 
@@ -47,10 +47,33 @@ const after = await host.call("preferences.update", {
 并恢复已预备的标题栏变化。提交后通知和外部清理在数据库事务之外执行。
 这些接口不承诺回滚外部副作用，也不代表已实现插件自定义 Schema 与迁移。
 
+## 无需设置页面的变更观察
+
+首次调用 `preferences.observe({})` 获取快照，再将返回的不透明 `revision` 传给同一方法。
+版本未变时只返回 `{version: 1, revision, changed: false}`，不包含值与默认值；
+变化时返回 `changed: true` 与 `snapshot`，外层与快照中的版本一致。
+读取共用设置写入的串行边界，不会拼出跨提交的值与版本。每次读取（包括等待其他写入后）
+均重新验证 `settings.read` 和运行授权。输入版本限制为 1–128 UTF-8 字节，不接受控制字符、null 或未知字段。
+
+市场 SDK 的 `sdk/preferences/client.mjs` 提供 `createPreferencesClient(host)`。
+`subscribe(receive, {signal, intervalMs?})` 必须绑定所属功能的 `AbortSignal`，无需打开页面。
+首次回调返回脱离内部状态、深冻结的快照，此后仅在版本变化后通知。
+每个客户端最多八个订阅；间隔为 1000–60000ms，默认 2000ms，从上次读取和异步回调均完成后计算，
+不会重叠请求或回调。每次读取使用 10000ms 超时；传输必须实现 `host.call` 的取消和超时选项。
+
+`stop()` 与所属功能取消均阻止迟到回调，取消正在等待的读取或定时器。
+`done` 在待决传输与回调结算后完成，不拒绝 Promise；结果原因为 `stopped`、`aborted` 或
+`failed`（附 `error`）。错误会停止订阅，不自动重试。已取消但尚未结算的工作仍占配额。
+回调自行创建的工作应由消费者负责取消；将所属信号绑定到视图/插件销毁，并检查 `done` 的失败结果。
+
+这是最新状态观察：中间提交可能合并，纯元数据保存也会轮换全局版本。
+它不是审计日志、持久事件游标或逐次提交交付保证。不注册服务端监听，不广播内部设置，不重试写入。
+旧宿主应通过 `api.describe` 检测 `preferences.observe`；缺失时返回错误，不隐式回退到内部 `settings.get`。
+
 ## 契约维护
 
 宿主服务位于 `services/settings/preferences/`，分别由 `contracts`、`mapping`、
-`schema`、`projection`、`update` 负责信封、映射、结构校验、读取投影和修改适配。
+`schema`、`projection`、`observation`、`update` 负责信封、映射、结构校验、读取投影、条件观察和修改适配。
 各领域分别维护 JSON Schema 和映射。RPC 适配器与接口目录放在各自的
 `settings/preferences` 子目录，不承担设置业务规则。
 

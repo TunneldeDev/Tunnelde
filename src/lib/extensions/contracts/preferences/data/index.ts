@@ -14,3 +14,4 @@ export type * from "./values.js";
 export type * from "./snapshot.js";
 export type * from "./update.js";
 export type * from "./schema.js";
+export type * from "./observation.js";
