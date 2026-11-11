@@ -150,8 +150,8 @@
     "newGroup": "新建分组",
     "empty": "暂无主机",
     "noResults": "无匹配结果",
-    "searchPlaceholder": "搜索主机 · tag:生产环境",
-    "searchHint": "使用 tag:标签 或 is:favorite 筛选，可与主机名、地址组合。",
+    "searchPlaceholder": "搜索主机 · @tag:生产环境",
+    "searchHint": "使用 @tag:标签 或 @is:favorite 筛选，可与主机名、地址组合。",
     "clearSearch": "清空主机搜索"
   },
   "host": {
@@ -473,6 +473,7 @@
     "configureProxy": "配置应用更新代理",
     "showLogs": "打开输出日志",
     "viewDiagnostics": "查看更新详情",
+    "sourcesUnavailableNotification": "暂时无法检查更新，请查看详情了解失败原因和处理方式。",
     "platformUnavailable": "更新清单中没有适用于当前系统与架构的安装包。"
   },
   "about": {
@@ -765,6 +766,7 @@
     "backupDestination": "原目标位置",
     "backupLastKnownHint": "上次发现的恢复位置，请确认文件仍在此处。",
     "transferArtifactUnrecognized": "无法确认临时路径上的文件是此任务最初创建的文件，已保留。请先检查，确认不再需要时自行删除，再重试清理。",
+    "transferCreationUnconfirmed": "服务器尚未确认临时目录的创建结果。Tunnelde 运行期间收到确认后会重试清理；连接中断或程序重启后，结果可能仍无法确认，自行删除目录也不能证明旧请求已结束。已保留恢复记录和路径。",
     "transferArtifactPath": "待检查的临时文件",
     "resizePanels": "调整文件面板大小",
     "detachPanel": "作为独立面板打开",
@@ -888,12 +890,14 @@
     "reviewChanges": "对比更改"
   },
   "plugins": {
+    "requiredDependencies": "必需插件",
     "search": "搜索插件",
     "installedTab": "已安装",
     "reload": "重新扫描",
     "openFolder": "打开目录",
     "empty": "未安装插件",
     "start": "启动",
+    "starting": "正在启动…",
     "stop": "停止",
     "running": "运行中",
     "stopped": "已停止",
@@ -996,6 +1000,8 @@
     "timeout": "远端监控请求超时。"
   },
   "pluginView": {
+    "hostChanged": "该主机已被修改或删除，请重新打开主机菜单后重试。",
+    "hostRequired": "请先打开主机详情、终端或远端文件标签页，再运行此主机命令。",
     "title": "插件",
     "refresh": "刷新",
     "empty": "暂无内容",
@@ -1082,7 +1088,9 @@
     "noRoot": "打开文件管理器，或选择一个本地文件夹后搜索。",
     "typeMore": "输入至少 2 个字符以搜索此目录。",
     "limits": "搜索最多返回 100 条结果，扫描 4,000 个条目或 15 秒；跳过隐藏目录、构建目录及链接。已跳过文件：{{count}}。",
-    "localPreview": "本地文件预览（只读）"
+    "localPreview": "本地文件预览（只读）",
+    "previousPage": "上一页",
+    "nextPage": "下一页"
   },
   "window": {
     "controls": "窗口控制",
@@ -1116,7 +1124,7 @@
     "source": "来源",
     "author": "发布者",
     "unknownAuthor": "未知发布者",
-    "queryHint": "搜索插件 · tag:tools,preview",
+    "queryHint": "搜索插件 · @tag:tools,preview",
     "tunneldeVersion": "Tunnelde 版本要求",
     "apiVersion": "插件 API 版本",
     "declarativeRuntime": "声明式（无需 Node.js）",
@@ -1197,6 +1205,60 @@
     "consentRequired": "使用本机 Node 前需要你的授权。"
   },
   "plugin": {
+    "runners": {
+      "busy": "此远端任务正在处理其他请求，请稍后重试；已保存的停止请求会在后台继续处理。",
+      "stopPending": "停止请求尚未得到远端确认；确认完成前无法发送新消息。",
+      "inputTooLarge": "远端任务配置或消息超过大小限制。",
+      "invalidInitialization": "远端任务初始化参数无效。请检查插件包和配置；私人配置值未写入日志。",
+      "initializationNotDeclared": "此部署中的插件未声明支持初始化配置。请更新插件，并使用全新目录重新部署。",
+      "initializationUnsupported": "所选远端辅助程序未能确认支持初始化配置。请检查连接，并为新的部署选择兼容的辅助程序。已有任务仍可查看或停止。",
+      "revisionExhausted": "远端任务记录无法继续更新，请打开软件日志查看详情。",
+      "invalidMetadata": "无法读取已保存的远端任务记录，原文件已保留，请查看软件日志。",
+      "metadataTooLarge": "已保存的远端任务记录超过大小限制，原文件已保留。",
+      "tooManyTasks": "此插件的远端任务记录已达到数量上限。",
+      "notFound": "此插件在该主机上没有对应的远端任务。",
+      "deployFirst": "请先部署并初始化远端运行器，再启动任务。",
+      "timeout": "远端任务未及时响应，当前状态尚不确定；已保存的停止请求会继续重试。",
+      "identityReviewRequired": "此旧任务尚未核对目标身份，请前往设置 → 插件 → 远端任务恢复，核对原主机。",
+      "destinationChanged": "连接地址或主机密钥与任务原目标不同，请重新连接原主机。",
+      "destinationAmbiguous": "此保存主机的多个连接指向不同目标，请仅保留原目标的连接后再核对。",
+      "controlReviewRequired": "此任务由其他版本的插件控制，请在远端任务恢复中明确交接控制权后再继续。",
+      "identityAlreadyReviewed": "此任务已绑定目标，核对操作无法覆盖原身份。",
+      "controlUnavailable": "当前任务状态不允许此操作，请刷新恢复记录。",
+      "controlAlreadyReviewed": "当前插件已持有此任务的控制权，请刷新恢复记录。",
+      "reviewBusy": "另一个恢复确认窗口尚未关闭，请处理后再试。",
+      "reviewExpired": "确认已过期，未应用恢复更改。",
+      "reviewClosed": "确认窗口已关闭，未应用恢复更改。",
+      "recordChanged": "操作期间恢复记录已变化，请刷新后重新核对。",
+      "exitUnconfirmed": "尚未确认进程退出，请保留记录，直至原主机确认任务状态。",
+      "invalidResponse": "远端辅助程序返回了无效响应，已保留原记录，请查看软件日志。",
+      "commandFailed": "远端辅助程序执行失败：{{reason}}",
+      "noCommandDetails": "远端未返回错误输出，请打开软件日志查看诊断信息。",
+      "deploymentIncomplete": "此目标有一条未完成部署。请在设置 → 插件 → 远端任务恢复中查看，并选择全新的目录重试；已有内容会保留。",
+      "configurationIncomplete": "配置文件的创建或写入结果尚未确认。即使未找到任务，也需保留恢复记录；远端文件不会被删除。",
+      "helperCollision": "插件包包含与所选原生运行器重名的保留路径，请先更新插件包。",
+      "preparationFailed": "部署准备进程意外结束，请打开软件日志查看详情。",
+      "binaryTooLarge": "所选原生运行器超过 64 MiB 的部署限制。",
+      "packageTooLarge": "插件包超过 32 MiB 的远端部署限制。",
+      "explicitBinaryRequired": "部署前请选择原生运行器常规文件的绝对路径。",
+      "freshDirectoryRequired": "请选择全新的远端目录；已有文件和部署记录会保留。",
+      "browserExpired": "恢复文件连接已过期或取消，请重新点击打开远端文件。"
+    },
+    "activation": {
+      "missingDependency": "缺少必需的插件，请检查依赖并安装后重试。",
+      "missingDependencyDetails": "未安装必需的插件“{{id}}”。请先安装再重试；本次未自动下载或启动依赖。",
+      "incompatibleDependency": "已安装的依赖插件不符合版本要求。",
+      "incompatibleDependencyDetails": "依赖插件“{{id}}”要求 {{required}}，当前安装的是 {{installed}}。请安装兼容版本后重试。",
+      "cycle": "插件之间存在循环依赖，无法一起启动。",
+      "cycleDetails": "插件循环依赖：{{chain}}。请更新相关插件后重试。",
+      "limit": "插件依赖图超出了支持的数量或深度。",
+      "invalidDependencies": "插件声明的运行依赖无效。",
+      "declarationVersion": "必需运行依赖要求清单 apiVersion 为 2，且插件具有可执行运行环境。",
+      "dependencyUnavailable": "必需的插件未能就绪。",
+      "failed": "插件启动意外失败，请打开软件日志查看详情。",
+      "cleanupFailed": "无法确认插件启动清理已完成，请查看软件日志并重启软件后重试。",
+      "closed": "插件启动连接已关闭，请查看软件日志后重试。"
+    },
     "statusBar": {
       "invalidItem": "插件提供的状态栏项目无效。",
       "unknownCommand": "此插件的状态栏命令不可用。",
@@ -1227,6 +1289,111 @@
       "limit": "插件已达到标签栏控件数量上限。",
       "expired": "标签栏控件已失效，请使用更新后的控件。",
       "invalidContext": "此标签栏控件不适用于当前标签页。"
+    },
+    "sessions": {
+      "notOwned": "此连接已不归当前插件运行代次管理，可能已断开或已由你保留。",
+      "resultPending": "此连接尚未交付给客户端。请等待连接请求完成后再保留。",
+      "confirmationBusy": "已有连接保留确认窗口，请先关闭该窗口再发起新的请求。",
+      "confirmationExpired": "连接保留请求已过期，请关闭原确认窗口后重试。",
+      "confirmationClosed": "连接保留窗口未返回确认结果，连接仍由插件管理。"
+    },
+    "resources": {
+      "limit": "插件连接已达上限（每个插件 8 条、总计 64 条，含连接中的请求）。请断开不再使用的连接后重试。",
+      "observationLimit": "运行资源观测超出数量上限，请通过对应领域接口释放不再使用的资源。",
+      "invalidRequest": "运行资源请求无效，请使用不透明句柄或绑定修订的分页参数。",
+      "changed": "运行资源已变化，请从第一页重新获取后再继续。",
+      "unavailable": "当前插件运行已不再拥有此资源，请刷新资源列表。",
+      "busy": "运行资源操作繁忙（每插件最多 4 项，全局最多 16 项），请等待现有清理完成。",
+      "workerFailed": "运行资源清理失败，请打开软件日志查看详情。",
+      "cleanupIncomplete": "SSH 连接已从列表移除，但底层传输未在期限内完成关闭，请查看软件日志。"
+    },
+    "hostList": {
+      "invalidDecoration": "主机装饰无效，请检查字段、长度和支持的图标。",
+      "hostNotFound": "贡献引用的主机已不存在，请刷新主机列表。",
+      "limit": "主机贡献配额已达上限，请移除不再使用的贡献或减少数据后重试。",
+      "invalidColumn": "插件提供的主机表格列无效，请检查字段类型、主机 ID 和列数据限制。"
+    },
+    "frontend": {
+      "invalid": "可信界面声明无效。请使用插件内的 ui/*.mjs 入口、兼容的 SDK 版本范围，并声明 ui.trusted 权限。",
+      "invalidSdkRange": "插件声明的界面 SDK 版本范围无效。",
+      "sdkUnsupported": "此插件需要其他版本的界面 SDK。请检查兼容的插件或应用更新。",
+      "sdkUnsupportedDetails": "此插件需要界面 SDK {{required}}，当前应用提供 {{available}}。",
+      "sdkMismatch": "界面会话与当前应用或插件不匹配，请重启插件。",
+      "busy": "正在处理的插件界面操作过多，请稍后重试。",
+      "expired": "此插件界面会话已失效，请重启插件。",
+      "unavailable": "此插件没有可用的前端模块。",
+      "snapshot": "无法加载已批准的插件界面资源，请查看软件日志。",
+      "assetsTooLarge": "插件界面资源超过每个插件 8 MiB 的限制。",
+      "undeclaredContribution": "插件前端尝试注册清单中未声明的视图或命令。",
+      "duplicateContribution": "插件前端重复注册了同一视图或命令。",
+      "missingActivate": "插件前端模块必须导出 activate 函数。",
+      "viewUnavailable": "插件已启动，但未注册此视图。请刷新或查看软件日志。",
+      "commandUnavailable": "插件尚未注册此前端命令。",
+      "activationFailed": "插件界面激活失败，请查看软件日志并重启插件。",
+      "missingWorkspace": "工作台提供者未保留工作区挂载，已恢复内置界面。",
+      "duplicateSurface": "界面提供者重复挂载了同一个宿主表面。",
+      "userSelectionRequired": "请在设置中选择界面提供者。插件不能通过设置 API 修改该选择。"
+    },
+    "fileBrowser": {
+      "busy": "文件面板正在加载或暂不可用，请等待完成。",
+      "changed": "文件面板已变更或关闭，请使用最新修订。",
+      "invalid": "插件提供的文件面板路径、选择或分页参数无效。"
+    },
+    "hostSources": {
+      "invalid": "插件提供的主机来源无效。请检查条目 ID、地址、用户名及数量限制；此接口不接受凭据和私钥路径。",
+      "limit": "动态主机来源已超出来源数量、条目数量或存储限额。",
+      "unavailable": "此动态主机已不可用或信息已变更。请刷新主机列表后重新打开连接。",
+      "changed": "读取过程中主机来源列表已变更，请从第一页重新读取。"
+    },
+    "terminal": {
+      "unavailable": "此终端尚未就绪或已关闭，请等待连接完成或重新打开。",
+      "invalid": "插件提供的终端分页、订阅或输入参数无效。",
+      "changed": "终端缓冲区已变化，请读取当前修订并重新分页。",
+      "subscriptionLimit": "已达到终端订阅数量上限。",
+      "missingScreen": "终端提供者未持续挂载屏幕，已恢复内置终端。"
+    },
+    "forwarding": {
+      "expired": "此转发视图已失效，请重新打开后重试。",
+      "changed": "转发状态已变化，请刷新视图后重试。",
+      "busy": "转发操作正在进行，或视图需要刷新。",
+      "invalid": "转发请求与当前主机或修订不匹配。",
+      "permissionDenied": "此提供者没有修改端口转发的权限。"
+    },
+    "monitor": {
+      "changed": "监控视图已变化，请使用当前快照重试。",
+      "invalid": "监控分页请求无效。",
+      "inactive": "请在已连接且可见的监控页面刷新。"
+    },
+    "history": {
+      "invalid": "历史请求无效，请使用当前列表中的记录。",
+      "changed": "历史记录或会话已变化，请读取最新快照后重试。",
+      "busy": "历史记录正在加载或暂不可用，请刷新后再操作。",
+      "permissionDenied": "此历史记录提供者没有执行该操作的权限。"
+    },
+    "backgroundTasks": {
+      "invalid": "后台任务请求或进度无效。",
+      "changed": "任务列表已变化，请使用当前任务重试。",
+      "actionUnavailable": "此任务操作不可用或已禁用。",
+      "inactive": "此任务已结束或执行已取消。",
+      "limit": "此插件已有八个尚未结束的后台任务。",
+      "busy": "此任务操作正在执行。"
+    },
+    "processes": {
+      "changed": "进程视图已变更，请使用当前快照重试。",
+      "invalid": "进程操作参数无效。",
+      "unavailable": "当前视图无法终止此进程，请刷新后重试。",
+      "permissionDenied": "此界面提供者没有终止进程的权限。",
+      "providerInactive": "所选进程界面提供者已失效，请使用当前提供者或原生界面重试。"
+    },
+    "quickAccess": {
+      "changed": "搜索结果已变化，请重新选择当前结果。",
+      "invalid": "搜索请求参数无效。",
+      "permissionDenied": "此提供者缺少 workspace.write 权限，无法执行命令。"
+    },
+    "preferences": {
+      "changed": "设置页面已变化，请读取当前页面后重试。",
+      "permissionDenied": "此插件需要 settings.write 权限才能修改设置。",
+      "invalid": "设置更新参数无效，请提供版本与要替换的字段。"
     }
   },
   "themes": {
@@ -1283,6 +1450,7 @@
     "dismiss": "关闭建议",
     "permission": {
       "log": "向应用日志写入插件消息。",
+      "logsRead": "读取应用及其他插件的诊断与操作日志。日志可能包含敏感信息。",
       "appRead": "读取应用和操作系统信息。",
       "settingsRead": "读取应用偏好设置。",
       "settingsWrite": "修改应用偏好设置。",
@@ -1312,7 +1480,12 @@
       "forwardsRead": "查看已保存的端口转发规则",
       "forwardsWrite": "管理、启动本地或远程端口转发",
       "editorRead": "读取已打开编辑器中的文档",
-      "editorWrite": "修改编辑器缓冲区（不会自动保存）"
+      "editorWrite": "修改编辑器缓冲区（不会自动保存）",
+      "trustedUi": "在应用界面中加载受信任代码。",
+      "backgroundTasksRead": "读取各功能的可见后台任务",
+      "backgroundTasksWrite": "调用可用的后台任务操作",
+      "storageLocationsRead": "读取全局存储位置及迁移计划（不含文件内容）",
+      "storageLocationsWrite": "经确认后计划或取消全局存储迁移"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -1322,7 +1495,8 @@
       "workspace": "工作区与剪贴板",
       "application": "应用设置",
       "other": "其他能力"
-    }
+    },
+    "trustedUiWarning": "此插件与 Tunnelde 共享 JavaScript 上下文，能够超出所声明的 API 权限访问界面和原生桥。请只批准信任的代码与发布者。受限模式会阻止加载；停止不能撤销已有副作用或中断正在执行的代码。"
   },
   "pluginChat": {
     "chooseSession": "选择已连接的 SSH 会话",
@@ -1606,8 +1780,11 @@
     "invalidValue": "文件中有超出支持范围的设置值，未更改任何偏好。",
     "unsupportedVersion": "不支持此设置文件的格式或版本。",
     "tooLarge": "设置文件不能超过 512 KB。",
+    "storageTooLarge": "已保存的配置超出存储限制，请删除部分配置或减少其内容。",
     "invalidStorage": "无法读取已保存的方案，当前设置不受影响。",
     "notFound": "此方案已不存在，请刷新方案后重试。",
+    "conflict": "已保存的方案发生变化，请刷新列表、确认后重试；未更改任何偏好。",
+    "invalidRequest": "方案请求无效，请刷新方案后重试。",
     "limit": "最多可保存 32 个设置方案，请先删除一个再新增。"
   },
   "search": {
@@ -1689,6 +1866,7 @@
     "testUpdatesRoute": "软件更新当前线路"
   },
   "pluginErrors": {
+    "packageFailure": "{{pluginId}}：{{error}}",
     "hostVersionMismatch": "插件版本 {{pluginVersion}} 要求 Tunnelde {{required}}，当前软件为 {{hostVersion}}。请更新 Tunnelde 或安装兼容的插件版本。检查未通过，尚未启动运行环境。",
     "hostVersionUnsupported": "此插件不支持当前 Tunnelde 版本。请在插件详情中查看版本要求，再更新软件或安装兼容的插件版本。",
     "startFailed": "无法启动 {{name}}：{{error}}",
@@ -1735,6 +1913,7 @@
     "bindFailed": "无法监听此地址和端口，可能已被占用。",
     "remoteRejected": "SSH 服务器拒绝了远程转发或未响应，请检查其转发策略和监听地址。",
     "startCancelled": "转发启动已取消。",
+    "changed": "此转发规则已被其他页面修改或删除，未保存的草稿会保留。请重新打开规则，查看当前内容后重试。",
     "stopFailed": "无法确认监听端口已释放。请先断开此主机的转发连接，再重试。",
     "localEndpoint": "本机",
     "remoteEndpoint": "远端",
@@ -1910,6 +2089,18 @@
       "cache": "插件市场下载、目录缓存和临时文件。",
       "logs": "应用诊断日志。",
       "runners": "部署到远端机器的插件运行环境在本地保存的记录。"
+    },
+    "locations": {
+      "reviewSchedule": "是否计划以下存储位置变更？将在下次重启时应用，此操作不会立即重启。",
+      "reviewCancel": "是否取消这项存储迁移计划？已有数据和恢复文件会保留。",
+      "withData": "重启时复制已有数据",
+      "withoutData": "使用新位置，不复制已有数据",
+      "conflict": "存储位置已发生变化，请重新读取并审查计划。",
+      "recoveryRequired": "该迁移有需要恢复的数据，请先在存储设置中处理。",
+      "noPendingPlan": "当前没有待执行的存储迁移。",
+      "invalidState": "存储位置元数据无效。",
+      "unavailable": "无法访问存储位置元数据。",
+      "busy": "存储设置正忙，请重新读取当前状态后重试。"
     }
   },
   "tasks": {
@@ -1981,5 +2172,205 @@
     "sessions": "活动 SSH 连接",
     "plugins": "运行中的插件",
     "actions": "输出操作"
+  },
+  "providers": {
+    "forwarding": "端口转发",
+    "monitor": "性能监控",
+    "title": "界面提供者",
+    "hint": "为主机列表、文件浏览器、终端、历史记录或工作台选择已安装的扩展。切换时保留已打开的页面和会话，可在此处、F1 命令或恢复栏中恢复内置界面。",
+    "hostList": "主机列表",
+    "fileBrowser": "文件浏览器",
+    "workbench": "工作台",
+    "builtin": "内置",
+    "unavailable": "不可用",
+    "fallback": "所选提供者不可用，已使用内置界面。",
+    "restore": "恢复内置界面",
+    "terminal": "终端",
+    "history": "命令历史",
+    "backgroundTasks": "后台任务",
+    "processes": "进程管理",
+    "quickAccess": "快捷搜索",
+    "preferences": "设置表单"
+  },
+  "hostFields": {
+    "title": "插件主机字段",
+    "hint": "按插件分组的可选元数据，保存在本机。请勿填写密码或密钥。编辑字段不会启动插件。",
+    "reloadTitle": "重新加载已保存字段？",
+    "reloadBody": "放弃尚未保存的修改，并读取最新保存值。",
+    "reload": "重新加载",
+    "outdated": "已保存的值在其他位置发生了变化。当前草稿已保留；若保存提示冲突，请重新加载后再修改。",
+    "schemaChanged": "此插件修改了字段结构，原有值已保留。请先检查原值，再为当前字段准备草稿。",
+    "storedValues": "原先保存的值",
+    "reconcile": "准备更新字段",
+    "reconcileBody": "保留符合当前结构的值，从草稿中移除不兼容或已删除的字段。只有点击保存后才会修改已存数据。",
+    "unset": "未设置",
+    "unsetValue": "取消设置",
+    "yes": "是",
+    "no": "否",
+    "invalidField": "请输入符合字段类型和限制的值。",
+    "saved": "已保存",
+    "invalid": "主机字段结构或请求无效。",
+    "limit": "主机字段存储已达到上限。",
+    "revisionLimit": "此元数据文档已达到修订次数上限。",
+    "hostNotFound": "此主机已不存在。",
+    "conflict": "字段已在其他位置修改，当前草稿已保留。请重新加载保存值后再修改。",
+    "notDeclared": "此插件已不再声明主机字段。",
+    "invalidValue": "字段“{{field}}”的值不符合类型或范围限制。",
+    "permissionRequired": "声明主机字段需要 hosts.read 权限。"
+  },
+  "hostColumns": {
+    "view": "主机视图与列",
+    "tree": "树形视图",
+    "table": "表格视图",
+    "reset": "重置列",
+    "moveHint": "单击排序，拖动调整顺序；Alt+左/右移动此列。",
+    "resize": "调整 {{name}} 列宽",
+    "settingsHint": "选择主机视图；在主机面板的列菜单中选择显示列，拖动列名调整顺序、拖动分隔线调整宽度。"
+  },
+  "hostSources": {
+    "discovered": "动态发现的主机",
+    "source": "主机来源",
+    "saveCopy": "另存为我的主机",
+    "connectionHint": "此主机由插件提供。可输入凭据建立本次连接；如需配置私钥或记住凭据，请先另存为自己的主机。",
+    "configureHint": "将此动态主机另存为自己的主机后，即可配置持久转发规则、私钥及主机设置。"
+  },
+  "preferences": {
+    "invalidValue": "偏好设置值无效：{{field}}。",
+    "staleRevision": "偏好设置已发生变化，请读取新快照后重新保存。"
+  },
+  "configuration": {
+    "title": "插件配置",
+    "hint": "无需启动插件即可编辑其声明的设置。更改需明确保存；凭据请使用密钥 API 保存。",
+    "search": "搜索插件设置",
+    "searchPlaceholder": "搜索设置 · @plugin:插件标识 @group:general",
+    "groupFilter": "按分组筛选",
+    "fieldFilter": "按字段筛选",
+    "emptyValue": "（空值）",
+    "backups": "配置备份",
+    "backupsHint": "每个插件最多保留 8 份备份。迁移和恢复会保留旧值，不再需要的备份请明确删除。",
+    "noBackups": "暂无备份。",
+    "storedValues": "查看已存储的值",
+    "restore": "恢复备份",
+    "restoreBody": "恢复这份配置？当前配置将先行备份，未保存的编辑将丢弃。较旧的 Schema 可能需要再次迁移。",
+    "deleteBackup": "删除备份",
+    "deleteBackupBody": "永久删除这份配置备份？未保存的设置将保留。",
+    "reload": "重新加载已保存设置",
+    "reloadBody": "丢弃未保存的编辑，重新读取插件配置？",
+    "unsaved": "有未保存的更改",
+    "saved": "无未保存的更改",
+    "outdated": "配置已在其他位置更改，草稿已保留。若保存时发生修订冲突，请重新加载后检查。",
+    "migrationRequired": "已存储的 Schema v{{stored}} 需要迁移到 v{{current}}，原有值已保留。",
+    "incompatible": "已存储的 Schema v{{stored}} 与 v{{current}} 不兼容。为保护数据已阻止编辑，请安装兼容版本或包含匹配迁移的插件版本。",
+    "migrate": "迁移配置",
+    "migrateBody": "应用插件声明的数据迁移？原值将与迁移在同一事务中备份，不会运行插件代码。",
+    "invalidValue": "{{field}} 的值无效，请检查类型及声明的限制。",
+    "invalidSchema": "插件声明的配置 Schema 无效或包含不支持的结构。",
+    "invalidValues": "请提供所有已声明的配置字段，不得包含未知字段。",
+    "invalidRequest": "配置请求缺少字段或包含不支持的字段。",
+    "limit": "配置超过单文档或存储容量限制。",
+    "conflict": "配置自读取后已发生变化，草稿已保留。请重新加载并检查后再保存。",
+    "schemaChanged": "已安装插件的配置 Schema 已变化，请重新加载插件设置。",
+    "migrationUnavailable": "没有适用于当前已存储配置的迁移。",
+    "migrationConflict": "迁移将覆盖已有值或引用了不存在的字段，原有配置已保留。",
+    "backupLimit": "8 个备份位置均已占用，请审查并删除不再需要的备份后再迁移或恢复。",
+    "backupNotFound": "这份配置备份已不存在。",
+    "notDeclared": "此插件未声明可配置设置。",
+    "corrupt": "配置数据无效，未覆盖原数据。请打开软件日志并保留插件数据以便恢复。",
+    "storageVersion": "此配置数据库由更高版本的软件创建，请使用兼容版本。",
+    "reason": {
+      "migration": "迁移前",
+      "restore": "恢复前"
+    },
+    "workerFailed": "配置处理线程意外停止，请重试；若再次出现，请查看软件日志。"
+  },
+  "runnerRecovery": {
+    "title": "远端任务恢复",
+    "description": "无需启动插件即可管理已保存的远端任务。存在记录不代表进程正在运行。停止和移除记录需要确认，并会保留远端文件。",
+    "plugin": "记录所属插件（包含已卸载插件）",
+    "empty": "没有已保存的远端任务记录。",
+    "limited": "已达到目录扫描上限，可能仍有其他插件的记录未列出。",
+    "recordCount_one": "{{count}} 条已保存记录",
+    "recordCount_other": "{{count}} 条已保存记录",
+    "deployment": "部署记录",
+    "directory": "远端目录",
+    "host": "保存的主机 ID",
+    "serverKey": "主机密钥",
+    "unreviewed": "尚未记录，需核对原目标",
+    "packageChanged": "已安装插件与此任务的控制版本不同。仍可在此检查和停止；继续控制需要明确交接给当前已授权的插件。",
+    "stopHint": "停止请求已保存，原目标连通后将重试清理。这不代表远端进程已经退出。",
+    "uncertainHint": "启动确认曾丢失。如果启动仍可能延迟发生，即使返回“未找到”也无法确认任务已退出。",
+    "legacyHint": "旧记录未捕获目标身份。请连接任务原来的主机，明确核对地址和主机密钥后再检查或清理。",
+    "changedHint": "可用连接与原地址或主机密钥不同。请重新连接原目标；核对操作不能覆盖已经绑定的身份。",
+    "inspect": "检查远端状态",
+    "reviewDestination": "核对原目标",
+    "handoff": "交接控制权",
+    "stop": "请求停止",
+    "forget": "移除本地记录",
+    "openLog": "打开软件日志",
+    "previous": "上一页",
+    "next": "下一页",
+    "page": "第 {{page}} 页",
+    "checkedAt": "检查于 {{time}}",
+    "connection": {
+      "connected": "原目标已连接",
+      "offline": "未连接",
+      "legacy": "目标待核对",
+      "ambiguous": "存在多个目标",
+      "changed": "目标已变化"
+    },
+    "status": {
+      "unknown": "尚未检查",
+      "stopPending": "停止待确认",
+      "uncertain": "启动结果未知",
+      "stopped": "已确认停止",
+      "failed": "已确认失败",
+      "notFound": "已确认不存在"
+    },
+    "observed": {
+      "starting": "观测状态：正在启动",
+      "running": "观测状态：正在运行",
+      "stopping": "观测状态：正在停止",
+      "stopped": "观测状态：已停止",
+      "failed": "观测状态：失败",
+      "notFound": "观测状态：未找到",
+      "unresponsive": "观测状态：无响应"
+    },
+    "deploymentStatus": {
+      "reserved": "尚未提交",
+      "creating": "目录创建待确认",
+      "uploading": "上传未完成",
+      "ready": "部署就绪"
+    },
+    "incompleteDeploymentHint": "此部署尚未完成。操作意图已保存，但远端文件可能不完整，也可能仍有操作尚未确认，不能复用或启动。请使用全新目录重试，并保留此记录供检查；软件不会自动删除远端文件。",
+    "reservedDeploymentHint": "这条预留记录尚未提交任何远端修改。确认后可移除本地记录；正在准备的请求无法继续使用已移除记录。",
+    "configurationStatus": {
+      "reserved": "配置尚未提交",
+      "creating": "配置创建待确认",
+      "writing": "配置写入未完成",
+      "ready": "配置已保存"
+    },
+    "incompleteConfigurationHint": "任务已停止或未找到，不代表配置文件写入已结束。请保留此恢复记录供核查；软件不会重新写入配置或自动删除文件。",
+    "configurationHint": "配置准备与进程状态分别记录。移除本地恢复记录会保留远端文件。",
+    "configurationPath": "配置文件",
+    "browseFiles": "打开远端文件",
+    "capabilities": {
+      "title": "辅助程序能力",
+      "check": "查询辅助程序能力",
+      "version": "辅助程序版本",
+      "protocols": "任务协议",
+      "features": "声明能力",
+      "none": "未声明",
+      "exitCode": "退出码 {{code}}",
+      "hint": "查询原主机上已记录的辅助程序，不代表任务已退出或残留文件归属已确认。原有状态查询和停止操作仍可使用。",
+      "failure": {
+        "transport": "无法连接原主机以查询辅助程序。",
+        "timeout": "辅助程序查询超过 5 秒时限。",
+        "outputTooLarge": "辅助程序响应超过 4096 字节。",
+        "missingExitStatus": "SSH 命令结束但未返回退出状态。",
+        "nonzeroExit": "所选辅助程序拒绝查询或执行失败，不能据此推断其版本。",
+        "invalidResponse": "辅助程序返回的能力元数据无效。",
+        "unsupportedSchema": "辅助程序使用了尚不支持的能力查询协议。"
+      }
+    }
   }
 }

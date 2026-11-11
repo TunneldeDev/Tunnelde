@@ -385,6 +385,86 @@ async fn local_stop_returns_only_after_port_can_be_rebound() {
     drop(rebound);
     server.abort();
 }
+
+#[tokio::test]
+async fn domain_admission_rejects_stale_state_and_publishes_only_accepted_listeners() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let (handle, routes, server) = fixture().await;
+    let (echo_port, echo_task) = echo().await;
+    let count = Arc::new(AtomicUsize::new(0));
+    let received = count.clone();
+    let registry = ForwardRegistry::with_notifier(move || {
+        received.fetch_add(1, Ordering::SeqCst);
+    });
+    for (index, mode) in ["local", "remote"].into_iter().enumerate() {
+        let rule = ForwardRule {
+            id: mode.into(),
+            host_id: "host".into(),
+            name: mode.into(),
+            mode: mode.into(),
+            bind_host: "127.0.0.1".into(),
+            bind_port: free_port().await,
+            target_host: "127.0.0.1".into(),
+            target_port: echo_port,
+        };
+        let rejected = prepare(
+            &registry,
+            &rule,
+            "session",
+            handle.clone(),
+            routes.clone(),
+            Some(("plugin".into(), 1)),
+        )
+        .await
+        .unwrap()
+        .commit(&registry, || Err(AppError::validation("forward.missing")));
+        assert!(
+            matches!(rejected, Err(AppError::Validation(message)) if message == "forward.missing")
+        );
+        assert!(registry.snapshot().unwrap().is_empty());
+        assert_eq!(count.load(Ordering::SeqCst), index * 2);
+        tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if let Ok(listener) = TcpListener::bind(("127.0.0.1", rule.bind_port)).await {
+                    drop(listener);
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+            while !routes.entries.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .unwrap();
+        prepare(
+            &registry,
+            &rule,
+            "session",
+            handle.clone(),
+            routes.clone(),
+            Some(("plugin".into(), 1)),
+        )
+        .await
+        .unwrap()
+        .commit(&registry, || Ok(()))
+        .unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), index * 2 + 1);
+        assert_eq!(
+            registry
+                .snapshot()
+                .unwrap()
+                .get(&rule.id)
+                .map(|(session, _)| session.as_str()),
+            Some("session")
+        );
+        drop(roundtrip(rule.bind_port).await);
+        registry.stop(&rule.id).await.unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), index * 2 + 2);
+    }
+    server.abort();
+    echo_task.abort();
+}
 async fn echo() -> (u16, JoinHandle<()>) {
     let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -567,6 +647,7 @@ fn remote_routes_reject_unknown_and_ambiguous_bindings() {
     let routes = RemoteRoutes::default();
     let (_tx, rx) = watch::channel(false);
     let target = RemoteTarget {
+        admitted: Arc::new(AtomicBool::new(true)),
         host: "localhost".into(),
         port: 80,
         cancel: rx,
@@ -707,4 +788,99 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
     .await
     .unwrap();
     server.abort();
+}
+
+#[tokio::test]
+async fn prepared_local_and_remote_listeners_close_on_drop_and_denied_commit() {
+    let (client, routes, server) = fixture().await;
+    let registry = ForwardRegistry::default();
+    for mode in ["local", "remote"] {
+        for deny in [false, true] {
+            let port = free_port().await;
+            let rule = ForwardRule {
+                id: format!("{mode}-{deny}"),
+                host_id: "h".into(),
+                name: "pending".into(),
+                mode: mode.into(),
+                bind_host: "127.0.0.1".into(),
+                bind_port: port,
+                target_host: "127.0.0.1".into(),
+                target_port: 80,
+            };
+            let pending = prepare(
+                &registry,
+                &rule,
+                "session",
+                client.clone(),
+                routes.clone(),
+                Some(("plugin".into(), 1)),
+            )
+            .await
+            .unwrap();
+            assert!(registry.snapshot().unwrap().is_empty());
+            if deny {
+                assert!(pending
+                    .commit(&registry, || Err(AppError::validation("revoked")))
+                    .is_err());
+            } else {
+                drop(pending);
+            }
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    if TcpStream::connect(("127.0.0.1", port)).await.is_err() {
+                        break;
+                    }
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+            })
+            .await
+            .unwrap();
+            assert!(registry.snapshot().unwrap().is_empty());
+        }
+    }
+    server.abort();
+}
+
+#[tokio::test]
+async fn prepared_listeners_cannot_relay_until_the_authorized_commit() {
+    let (client, routes, server) = fixture().await;
+    let registry = ForwardRegistry::default();
+    let (echo_port, echo_task) = echo().await;
+    for mode in ["local", "remote"] {
+        let port = free_port().await;
+        let rule = ForwardRule {
+            id: mode.into(),
+            host_id: "h".into(),
+            name: "gated".into(),
+            mode: mode.into(),
+            bind_host: "127.0.0.1".into(),
+            bind_port: port,
+            target_host: "127.0.0.1".into(),
+            target_port: echo_port,
+        };
+        let pending = prepare(
+            &registry,
+            &rule,
+            "session",
+            client.clone(),
+            routes.clone(),
+            None,
+        )
+        .await
+        .unwrap();
+        let mut socket = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+        let _ = socket.write_all(b"before authorization").await;
+        let mut byte = [0; 1];
+        let read = tokio::time::timeout(Duration::from_millis(150), socket.read(&mut byte)).await;
+        assert!(
+            !matches!(read, Ok(Ok(n)) if n > 0),
+            "uncommitted listener relayed data"
+        );
+        pending.commit(&registry, || Ok(())).unwrap();
+        let socket = roundtrip(port).await;
+        registry.stop(&rule.id).await.unwrap();
+        assert_closed(socket, port).await;
+    }
+    server.abort();
+    echo_task.abort();
 }

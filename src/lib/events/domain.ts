@@ -8,6 +8,7 @@ export interface FilesChanged {
 }
 interface DomainEvents {
   "tunnelde:history-changed": { hostId?: string };
+  "tunnelde:forwarding-changed": null;
   "tunnelde:files-changed": FilesChanged;
 }
 
@@ -16,7 +17,9 @@ const bus = createEventBus<DomainEvents>(
   async (name, receive) => {
     const changed = (event: Event) => {
       const detail: unknown = (event as CustomEvent<unknown>).detail;
-      if (name === "tunnelde:history-changed") {
+      if (name === "tunnelde:forwarding-changed") {
+        void receive(null);
+      } else if (name === "tunnelde:history-changed") {
         const hostId = (detail as { hostId?: unknown } | null)?.hostId;
         void receive(typeof hostId === "string" ? { hostId } : {});
       } else {
@@ -37,6 +40,12 @@ const bus = createEventBus<DomainEvents>(
 );
 
 export const domainEvents = {
+  forwardsChanged() {
+    window.dispatchEvent(new CustomEvent("tunnelde:forwarding-changed"));
+  },
+  onForwards(handler: Handler<null>, signal?: AbortSignal) {
+    return bus.on("tunnelde:forwarding-changed", handler, signal);
+  },
   historyChanged(hostId?: string) {
     window.dispatchEvent(new CustomEvent("tunnelde:history-changed", { detail: { hostId } }));
   },

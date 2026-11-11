@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/form/Field";
 import type { MenuAction } from "@/components/ui/overlay/Menu";
 import {
   parseShortcutQuery,
+  clearShortcutFilters,
   toggleShortcutFilter,
   type ShortcutFilterKey,
 } from "@/lib/keyboard/query";
@@ -90,7 +91,7 @@ export function KeyboardShortcuts() {
       separatorBefore: true,
       disabled: !hasFilters,
       onSelect: () => {
-        setQuery(filters.text);
+        setQuery(clearShortcutFilters(query));
         requestSearchFocus((request) => request + 1);
       },
     },
@@ -351,6 +352,7 @@ export function KeyboardShortcuts() {
                   <Input
                     autoFocus
                     readOnly
+                    data-shortcut-recorder
                     aria-label={t("shortcuts.record" as ParseKeys)}
                     value={draft ? displayShortcut(draft) : ""}
                     placeholder={t("shortcuts.record" as ParseKeys)}

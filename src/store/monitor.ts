@@ -8,27 +8,40 @@ import { useMonitorHistory } from "@/store/monitorHistory";
 export interface MonitorEntry {
   stats: RemoteStats | null;
   error: string | null;
+  loading?: boolean;
 }
 
 const EMPTY: MonitorEntry = { stats: null, error: null };
-const pending = new Map<string, Promise<void>>();
+const pending = new Map<string, { version: number; promise: Promise<void> }>();
 const versions = new Map<string, number>();
 
 interface MonitorStore {
   entries: Record<string, MonitorEntry>;
   sample: (sessionId: string) => Promise<void>;
+  retire: (sessionId: string) => void;
   forget: (sessionId: string) => void;
 }
 
-export const useMonitor = create<MonitorStore>((set) => ({
+export const useMonitor = create<MonitorStore>((set, get) => ({
   entries: {},
 
-  sample: (sessionId) => {
+  sample: (sessionId): Promise<void> => {
+    const version = versions.get(sessionId) ?? 0;
     const existing = pending.get(sessionId);
     if (existing) {
-      return existing;
+      if (existing.version === version) return existing.promise;
+      // A newly visible owner waits for a retired transport, then samples afresh.
+      // If that owner also leaves while waiting, do not start hidden work.
+      return existing.promise.then(() => {
+        if ((versions.get(sessionId) ?? 0) === version) return get().sample(sessionId);
+      });
     }
-    const version = versions.get(sessionId) ?? 0;
+    set((state) => ({
+      entries: {
+        ...state.entries,
+        [sessionId]: { ...(state.entries[sessionId] ?? EMPTY), loading: true },
+      },
+    }));
     const request = (async () => {
       try {
         const stats = await api.remoteStats(sessionId);
@@ -39,7 +52,7 @@ export const useMonitor = create<MonitorStore>((set) => ({
           return {
             entries: {
               ...state.entries,
-              [sessionId]: { stats, error: null },
+              [sessionId]: { stats, error: null, loading: false },
             },
           };
         });
@@ -63,22 +76,32 @@ export const useMonitor = create<MonitorStore>((set) => ({
             [sessionId]: {
               ...(state.entries[sessionId] ?? EMPTY),
               error: translateError(error),
+              loading: false,
             },
           },
         }));
       }
     })().finally(() => {
-      if (pending.get(sessionId) === request) {
+      if (pending.get(sessionId)?.promise === request) {
         pending.delete(sessionId);
       }
     });
-    pending.set(sessionId, request);
+    pending.set(sessionId, { version, promise: request });
     return request;
   },
 
-  forget: (sessionId) => {
+  retire: (sessionId) => {
     versions.set(sessionId, (versions.get(sessionId) ?? 0) + 1);
-    pending.delete(sessionId);
+    set((state) => {
+      const entry = state.entries[sessionId];
+      return entry?.loading
+        ? { entries: { ...state.entries, [sessionId]: { ...entry, loading: false } } }
+        : state;
+    });
+  },
+
+  forget: (sessionId) => {
+    get().retire(sessionId);
     useMonitorHistory.getState().clear(sessionId);
     set((state) => {
       const next = { ...state.entries };

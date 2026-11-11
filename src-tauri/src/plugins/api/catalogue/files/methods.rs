@@ -1,0 +1,26 @@
+use super::ApiMethod;
+
+pub const METHODS: &[ApiMethod] = &[
+    method!("files.local.home", ["fs.read"], "{}", "Read the local home directory path."),
+    method!("files.local.list", ["fs.read"], "{path?:string}", "List a local directory."),
+    method!("files.local.readText", ["fs.read"], "{path:string}", "Read a UTF-8 local text file, at most 512KiB; reject binary data."),
+    method!("files.local.writeText", ["fs.write"], "{path:string,content:string,baseline?:string}", "Atomically replace existing local UTF-8 text, at most 512KiB; optional baseline detects external edits."),
+    method!("files.local.createFile", ["fs.write"], "{path:string}", "Create an empty local file without replacing an existing file."),
+    method!("files.local.mkdir", ["fs.write"], "{path:string}", "Create a local directory."),
+    method!("files.local.rename", ["fs.write"], "{from:string,to:string,overwrite?:boolean}", "Rename a local file or directory; overwriting is opt-in."),
+    method!("files.local.copy", ["fs.read", "fs.write"], "{from:string,to:string,overwrite?:boolean}", "Copy local files/directories through the existing copy service."),
+    method!("files.local.delete", ["fs.write"], "{path:string,isDir:boolean}", "Delete a local file or directory."),
+    method!("files.sftp.list", ["sftp.read"], "{sessionId:string,path?:string}", "List a remote directory using an active SSH session."),
+    method!("files.sftp.resolveDirectory", ["sftp.read"], "{sessionId:string,path?:string}", "Resolve the SSH account home and an optional working directory through SFTP without listing entries or executing a shell. Return {home,path}. Supports ~ and relative paths."),
+    method!("files.sftp.readText", ["sftp.read"], "{sessionId:string,path:string}", "Read remote UTF-8 text through the editor service; API response size limits apply."),
+    method!("files.sftp.writeText", ["sftp.write"], "{sessionId:string,path:string,content:string,baseline?:string}", "Atomically replace existing remote text; optional baseline detects external edits."),
+    method!("files.sftp.createFile", ["sftp.write"], "{sessionId:string,path:string}", "Create an empty remote file without replacing an existing file."),
+    method!("files.sftp.mkdir", ["sftp.write"], "{sessionId:string,path:string}", "Create a remote directory."),
+    method!("files.sftp.rename", ["sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Rename a remote file/directory; overwriting is opt-in."),
+    method!("files.sftp.copy", ["sftp.read", "sftp.write"], "{sessionId:string,from:string,to:string,overwrite?:boolean}", "Copy remote files/directories within a session."),
+    method!("files.sftp.delete", ["sftp.write"], "{sessionId:string,path:string,isDir:boolean}", "Delete a remote file or directory."),
+    method!("files.upload", ["fs.read", "sftp.write"], "{sessionId:string,localPath:string,remotePath:string,overwrite?:boolean}", "Copy a local file or directory to a remote path. Return transferId; cancellation, progress and file refresh use the normal transfer service. Revoking access or stopping this runtime cancels its active transfers."),
+    method!("files.download", ["sftp.read", "fs.write"], "{sessionId:string,remotePath:string,localPath:string,overwrite?:boolean}", "Copy a remote file or directory to a local path. Return transferId; never remove the source. Revoking access or stopping this runtime cancels its active transfers."),
+    method!("files.cancelTransfer", [], "{transferId:string}", "Cancel only a transfer owned by this plugin's current runtime. Return true if its active transfer was found; false for completed, missing or other owners' transfers."),
+    method!("files.transferStatus", [], "{transferId:string}", "Read progress or the final TransferEvent for this runtime's own transfer; return null for missing, other-owner or expired IDs. The latest 256 completed plugin transfers are retained in memory."),
+];

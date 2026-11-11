@@ -85,9 +85,8 @@ it("bounds bulk clear concurrency, continues after errors and leaves hidden or u
   expect(calls).toHaveLength(4);
   for (let index = 0; index < 3; index++) {
     finishes.splice(0).forEach((finish) => finish());
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    // Wait for observable worker progress, independent of action guard promise depth.
+    if (index < 2) await vi.waitFor(() => expect(calls).toHaveLength(Math.min(10, 8 + index * 2)));
   }
   expect(await clearing).toHaveLength(1);
   expect(peak).toBe(4);

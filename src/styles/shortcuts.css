@@ -27,6 +27,21 @@
   flex: 1;
   min-width: 0;
 }
+.td-palette__list > .provider-content {
+  display: block;
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.td-palette__paging {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-top: 1px solid var(--td-border);
+  color: var(--td-muted);
+  font-size: 11px;
+}
 .td-palette__item {
   height: auto;
   min-height: 32px;

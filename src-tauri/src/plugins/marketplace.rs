@@ -103,6 +103,8 @@ pub struct MarketEntry {
     pub runtime: Option<String>,
     #[serde(default)]
     pub api_version: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dependencies: Option<Vec<super::PluginDependency>>,
     #[serde(default)]
     pub engines: std::collections::BTreeMap<String, String>,
     #[serde(default)]
@@ -111,7 +113,12 @@ pub struct MarketEntry {
 
 impl MarketEntry {
     fn valid(&self) -> bool {
-        super::manifest::valid_tags(&self.tags)
+        self.dependencies.as_ref().is_none_or(|dependencies| {
+            (dependencies.is_empty()
+                || (self.api_version == Some(super::manifest::DEPENDENCY_API_VERSION)
+                    && self.runtime.as_deref() != Some("theme")))
+                && super::runtime::activation::validate_dependencies(&self.id, dependencies).is_ok()
+        }) && super::manifest::valid_tags(&self.tags)
             && super::manifest::valid_id(&self.id)
             && !self.name.trim().is_empty()
             && self.name.len() <= 160
@@ -122,10 +129,12 @@ impl MarketEntry {
             && self.description.as_ref().is_none_or(|s| s.len() <= 4000)
             && self.readme.as_ref().is_none_or(|s| s.len() <= 100_000)
             && self.author.as_ref().is_none_or(|s| s.len() <= 160)
-            && self
-                .runtime
-                .as_deref()
-                .is_none_or(|runtime| matches!(runtime, "node" | "wasm" | "theme" | "declarative"))
+            && self.runtime.as_deref().is_none_or(|runtime| {
+                matches!(
+                    runtime,
+                    "node" | "wasm" | "theme" | "declarative" | "frontend"
+                )
+            })
             && self.engines.len() <= 8
             && self
                 .engines
@@ -354,6 +363,10 @@ fn validate_identity(
         || entry
             .api_version
             .is_some_and(|version| manifest.api_version != version)
+        || entry
+            .dependencies
+            .as_ref()
+            .is_some_and(|dependencies| dependencies != &manifest.dependencies)
         || !entry
             .engines
             .iter()
@@ -366,6 +379,33 @@ fn validate_identity(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dependency_metadata_is_bounded_versioned_and_pinned_to_downloaded_manifests() {
+        let declaration = serde_json::json!({"id":"tool", "name":"Tool", "version":"1.0.0", "runtime":"node", "apiVersion":2,
+            "url":"https://example.org/tool.zip", "sha256":"a".repeat(64), "dependencies":[{"id":"shared","version":"^1"}]});
+        let entry: super::MarketEntry = serde_json::from_value(declaration.clone()).unwrap();
+        assert!(entry.valid());
+        let mut manifest: crate::plugins::manifest::PluginManifest = serde_json::from_value(serde_json::json!({
+            "id":"tool", "name":"Tool", "version":"1.0.0", "runtime":"node", "apiVersion":2, "main":"main.mjs", "dependencies":[{"id":"shared","version":"^1"}]
+        })).unwrap();
+        super::validate_identity(&entry, &manifest).unwrap();
+        manifest.dependencies.clear();
+        assert!(super::validate_identity(&entry, &manifest).is_err());
+        for (key, value) in [
+            ("apiVersion", serde_json::json!(1)),
+            ("runtime", serde_json::json!("theme")),
+            (
+                "dependencies",
+                serde_json::json!([{"id":"tool","version":"^1"}]),
+            ),
+        ] {
+            let mut invalid = declaration.clone();
+            invalid[key] = value;
+            assert!(!serde_json::from_value::<super::MarketEntry>(invalid)
+                .unwrap()
+                .valid());
+        }
+    }
     use super::*;
 
     #[test]

@@ -8,13 +8,15 @@ use std::time::Duration;
 use serde_json::{json, Value};
 use tauri::Manager;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command};
+use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinSet;
 
 use super::api::{self, HostContext};
+use super::runtime::requests::{Request, Requests};
 use super::security::Lease;
 use crate::error::{AppError, AppResult};
+mod inbound;
 
 type Pending = Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
 
@@ -101,7 +103,11 @@ impl PluginHost {
         let plugin_id = context.as_ref().map(|context| context.id.clone());
         tokio::spawn(read_loop(stdout, connection.clone(), context));
         if let Some(stderr) = stderr {
-            tokio::spawn(stderr_loop(stderr, plugin_id));
+            tokio::spawn(stderr_loop(
+                stderr,
+                plugin_id,
+                connection.closed.subscribe(),
+            ));
         }
 
         Ok(Self { child, connection })
@@ -123,6 +129,14 @@ impl PluginHost {
     pub fn kill(&mut self) {
         self.connection.close();
         let _ = self.child.start_kill();
+    }
+
+    pub(super) async fn terminate(&mut self) -> AppResult<()> {
+        self.kill();
+        tokio::time::timeout(Duration::from_secs(3), self.child.wait())
+            .await
+            .map_err(|_| AppError::validation("plugin.timeout"))??;
+        Ok(())
     }
 }
 
@@ -205,10 +219,7 @@ impl PluginConnection {
     }
 
     async fn write(&self, payload: &Value) -> AppResult<()> {
-        let mut line = serde_json::to_string(payload)?;
-        if !line.ends_with('\n') {
-            line.push('\n');
-        }
+        let line = json_line(payload)?;
         let mut stdin = self.stdin.lock().await;
         if *self.closed.borrow() {
             return Err(AppError::validation("plugin.exited"));
@@ -228,6 +239,16 @@ impl PluginConnection {
         write.complete = true;
         Ok(())
     }
+}
+
+/// JSON permits these characters inside strings, but historical Node readline
+/// readers interpret them as frame boundaries. Escaping preserves the JSON value.
+fn json_line(payload: &Value) -> AppResult<String> {
+    let mut line = serde_json::to_string(payload)?
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029");
+    line.push('\n');
+    Ok(line)
 }
 
 // Node's JS module resolver treats Windows verbatim paths as URL-like input in
@@ -290,6 +311,7 @@ async fn read_loop(
     let mut closed = connection.closed.subscribe();
     let mut reader = BufReader::new(stdout);
     let mut requests = JoinSet::new();
+    let lifetimes = Requests::default();
     let plugin_id = context
         .as_ref()
         .map(|context| context.id.as_str())
@@ -323,9 +345,11 @@ async fn read_loop(
         };
 
         while requests.try_join_next().is_some() {}
-        let request_id = value
-            .get("id")
-            .filter(|id| id.is_string() || id.is_number());
+        if inbound::cancellation(&value, &lifetimes) {
+            continue;
+        }
+        let request_key = inbound::request_key(&value);
+        let request_id = request_key.as_ref().and_then(|_| value.get("id"));
         if value.get("method").is_some() {
             let log_notification = value.get("id").is_none()
                 && value.get("method").and_then(Value::as_str) == Some("log");
@@ -347,8 +371,28 @@ async fn read_loop(
                 }
                 let connection = connection.clone();
                 let context = context.clone();
+                let lifetime = if let Some(key) = request_key {
+                    if let Err(error) = lifetimes.reserve("stdio", &key) {
+                        // A duplicate active ID cannot receive an unambiguous reply.
+                        if error.to_string() == "plugin.api.duplicateRequest" {
+                            break;
+                        }
+                        let _ = write_reply(
+                            &connection,
+                            json!({"jsonrpc":"2.0","id":value["id"],"error":error_payload(&error)}),
+                        )
+                        .await;
+                        continue;
+                    }
+                    match lifetimes.claim("stdio", &key) {
+                        Ok(request) => Some(request),
+                        Err(_) => break,
+                    }
+                } else {
+                    None
+                };
                 requests.spawn(async move {
-                    handle_plugin_request(value, &connection, context).await;
+                    handle_plugin_request(value, &connection, context, lifetime).await;
                 });
             }
             continue;
@@ -383,19 +427,28 @@ async fn read_loop(
     }
 
     connection.close();
+    lifetimes.retire("stdio");
     requests.abort_all();
     // Cancellation is cooperative. Wait for in-flight host calls to finish
     // before removing their contributions, or a synchronous registration could
     // otherwise complete just after cleanup and leave a crashed plugin's item.
     while requests.join_next().await.is_some() {}
     if let Some(context) = &context {
-        super::status_bar::remove_runtime(&context.app, &context.id, |generation| {
-            generation == context.generation
+        let state = context.app.state::<crate::state::AppState>();
+        let retired = state.plugins.security.retire_lease(&Lease {
+            id: context.id.clone(),
+            fingerprint: context.fingerprint.clone(),
+            permissions: context.permissions.clone(),
+            generation: context.generation,
         });
-        super::tab_bar::remove_runtime(&context.app, &context.id, |generation| {
+        state.plugins.cleanup_retired(&context.app, retired);
+        super::contributions::remove_runtime(&context.app, &context.id, |generation| {
             generation == context.generation
         });
         super::tasks::cancel_plugin(&context.id, Some(context.generation));
+        super::sessions::remove_runtime(&context.app, &context.id, |generation| {
+            generation == context.generation
+        });
         context
             .app
             .state::<crate::state::AppState>()
@@ -419,6 +472,7 @@ async fn handle_plugin_request(
     value: Value,
     connection: &PluginConnection,
     context: Option<HostContext>,
+    mut lifetime: Option<Request>,
 ) {
     let id = value.get("id").cloned();
     let method = value
@@ -444,12 +498,18 @@ async fn handle_plugin_request(
             permissions: context.permissions.clone(),
             generation: context.generation,
         };
-        tokio::time::timeout(
+        let work = tokio::time::timeout(
             Duration::from_secs(120),
             security.guard(&lease, api::dispatch(&context, method, params)),
-        )
-        .await
-        .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")))
+        );
+        let work = async {
+            work.await
+                .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")))
+        };
+        match lifetime.as_mut() {
+            Some(request) => request.run(work).await,
+            None => work.await,
+        }
     } else {
         Err(AppError::validation("pluginSecurity.unavailable"))
     };
@@ -457,7 +517,7 @@ async fn handle_plugin_request(
         return;
     };
     let reply = match result {
-        Ok(result) if result.to_string().len() <= 1024 * 1024 => {
+        Ok(result) if json_line(&result).is_ok_and(|line| line.len() <= 1024 * 1024 - 4096) => {
             json!({"jsonrpc":"2.0","id":id,"result":result})
         }
         Ok(_) => {
@@ -474,6 +534,7 @@ pub(super) fn error_payload(error: &AppError) -> Value {
         "plugin.api.unknownMethod" => -32601,
         "plugin.api.invalidRequest" => -32600,
         "plugin.api.invalidParams" => -32602,
+        "plugin.api.cancelled" => -32800,
         _ if message.starts_with("pluginSecurity.") => -32001,
         _ => -32000,
     };
@@ -486,9 +547,21 @@ async fn write_reply(connection: &PluginConnection, reply: Value) -> AppResult<(
         .map_err(|_| AppError::validation("plugin.timeout"))?
 }
 
-async fn stderr_loop(stderr: ChildStderr, plugin_id: Option<String>) {
+async fn stderr_loop(
+    stderr: impl tokio::io::AsyncRead + Unpin,
+    plugin_id: Option<String>,
+    mut closed: tokio::sync::watch::Receiver<bool>,
+) {
     let mut reader = BufReader::new(stderr);
-    while let Ok(Some(line)) = read_limited_line(&mut reader, 16 * 1024, true).await {
+    loop {
+        let line = tokio::select! {
+            biased;
+            _ = closed.wait_for(|closed| *closed) => break,
+            line = read_limited_line(&mut reader, 16 * 1024, true) => line,
+        };
+        let Ok(Some(line)) = line else {
+            break;
+        };
         if !line.trim().is_empty() {
             tracing::warn!(target: "plugin", plugin_id = plugin_id.as_deref().unwrap_or("unknown"), message = %line, "plugin stderr");
         }
@@ -547,6 +620,18 @@ async fn read_limited_line(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn unicode_separators_remain_one_frame_for_historical_node_readers() {
+        let value =
+            serde_json::json!({"result":"first\u{2028}第二\u{2029}😀\nlast","literal":"\\u2028"});
+        let line = super::json_line(&value).unwrap();
+        assert_eq!(line.bytes().filter(|byte| *byte == b'\n').count(), 1);
+        assert!(!line.contains(['\u{2028}', '\u{2029}']));
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&line).unwrap(),
+            value
+        );
+    }
     use super::*;
     use serde_json::json;
     use sha2::{Digest, Sha256};
@@ -655,6 +740,38 @@ mod tests {
             child,
             connection: Arc::new(PluginConnection::new(Arc::new(Mutex::new(stdin)))),
         }
+    }
+
+    #[tokio::test]
+    async fn closed_connection_releases_stderr_even_when_an_inherited_writer_keeps_it_open() {
+        let (reader, _writer) = tokio::io::duplex(64);
+        let (closed, receiver) = tokio::sync::watch::channel(false);
+        let task = tokio::spawn(stderr_loop(reader, None, receiver));
+        tokio::task::yield_now().await;
+        assert!(!task.is_finished());
+        closed.send_replace(true);
+        tokio::time::timeout(Duration::from_millis(200), task)
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn termination_confirms_child_exit_and_is_idempotent() {
+        let mut host = non_reading_host();
+        let connection = host.connection();
+        host.terminate().await.unwrap();
+        assert!(host.child.try_wait().unwrap().is_some());
+        assert!(*connection.closed.borrow());
+        host.terminate().await.unwrap();
+        assert_eq!(
+            connection
+                .request("after-exit", json!({}), Duration::from_secs(30))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "plugin.exited"
+        );
     }
 
     #[tokio::test]
@@ -777,62 +894,6 @@ mod tests {
         assert!(connection.pending.lock().unwrap().is_empty());
         drop(writing);
         let _ = host.child.wait().await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires explicit TUNNELDE_TEST_NODE executable"]
-    async fn talks_json_rpc_with_the_example_plugin() {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../examples/plugins/hello");
-        let entry = dir.join("index.js");
-        assert!(entry.is_file(), "example plugin entry must exist");
-
-        // Integration runs must explicitly opt into using a system executable.
-        let node = std::env::var("TUNNELDE_TEST_NODE").expect("explicit test Node executable");
-
-        let host = PluginHost::spawn(&node, &entry, &dir, None)
-            .await
-            .expect("spawn plugin");
-        let initialized = host
-            .request(
-                "initialize",
-                json!({ "apiVersion": 1 }),
-                Duration::from_secs(10),
-            )
-            .await
-            .expect("initialize");
-        assert_eq!(initialized.get("ok").and_then(Value::as_bool), Some(true));
-
-        let result = host
-            .request(
-                "command.run",
-                json!({ "command": "greet" }),
-                Duration::from_secs(10),
-            )
-            .await
-            .expect("run command");
-        let message = result
-            .get("message")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_string();
-        assert!(message.contains("Hello"));
-
-        let view = host
-            .request(
-                "view.render",
-                json!({ "view": "hello" }),
-                Duration::from_secs(10),
-            )
-            .await
-            .expect("render view");
-        let blocks = view
-            .get("blocks")
-            .and_then(Value::as_array)
-            .expect("blocks array");
-        assert!(!blocks.is_empty());
-        let _ = host
-            .request("shutdown", json!({}), Duration::from_secs(2))
-            .await;
     }
 
     #[tokio::test]

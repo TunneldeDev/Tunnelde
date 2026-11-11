@@ -288,6 +288,11 @@
 .settings-section__body {
   max-width: none;
 }
+/* Preference forms size to their contents inside the shared page scroller. */
+.settings-section__body > .provider-content {
+  flex: 0 0 auto;
+  overflow: visible;
+}
 .settings-section__intro {
   margin: 0 0 18px;
   color: var(--td-muted);

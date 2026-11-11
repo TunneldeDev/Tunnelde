@@ -1,5 +1,7 @@
 # Tunnelde
 
+[Documentation / 文档](docs/README.md)
+
 A desktop SSH and SFTP workbench for Windows, macOS and Linux.
 
 面向 Windows、macOS 和 Linux 的桌面 SSH 与 SFTP 工作台。
@@ -37,22 +39,22 @@ Plugins can contribute commands, panels, themes, file tools and other integratio
 插件可提供命令、面板、主题、文件工具等扩展；市场及插件包由独立的
 [Tunnelde Hub](https://github.com/TunneldeDev/Tunnelde-hub) 仓库维护。
 
-Read the plugin overview in [English](docs/plugins-overview.en-us.md) or [简体中文](docs/plugins-overview.zh-cn.md).
+Read the plugin overview in [English](docs/en-us/guide/plugins.md) or [简体中文](docs/zh-cn/guide/plugins.md).
 
 ## Documentation
 
-| Guide / 指南                                         | English                                  | 简体中文                                  |
-| ---------------------------------------------------- | ---------------------------------------- | ----------------------------------------- |
-| Installation and overview / 安装与概览               | [English](README.en-us.md)               | [简体中文](README.zh-cn.md)               |
-| File browser / 文件管理                              | [English](docs/files.en-us.md)           | [简体中文](docs/files.zh-cn.md)           |
-| Settings and profiles / 设置与配置方案               | [English](docs/settings.en-us.md)        | [简体中文](docs/settings.zh-cn.md)        |
-| Network, transfers and forwarding / 网络、传输与转发 | [English](docs/network-storage.en-us.md) | [简体中文](docs/network-storage.zh-cn.md) |
-| Keyboard shortcuts / 快捷键                          | [English](docs/shortcuts.en-us.md)       | [简体中文](docs/shortcuts.zh-cn.md)       |
-| Monitoring / 性能监控                                | [English](docs/monitoring.en-us.md)      | [简体中文](docs/monitoring.zh-cn.md)      |
-| Updates / 更新                                       | [English](docs/updates.en-us.md)         | [简体中文](docs/updates.zh-cn.md)         |
-| Plugin development / 插件开发                        | [English](docs/plugins.en-us.md)         | [简体中文](docs/plugins.zh-cn.md)         |
-| Architecture / 架构                                  | [English](docs/architecture.en-us.md)    | [简体中文](docs/architecture.zh-cn.md)    |
-| Troubleshooting / 故障排查                           | [English](docs/troubleshooting.en-us.md) | [简体中文](docs/troubleshooting.zh-cn.md) |
+| Guide / 指南                                         | English                                             | 简体中文                                             |
+| ---------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------- |
+| Installation and overview / 安装与概览               | [English](README.en-us.md)                          | [简体中文](README.zh-cn.md)                          |
+| File browser / 文件管理                              | [English](docs/en-us/guide/files.md)                | [简体中文](docs/zh-cn/guide/files.md)                |
+| Settings and profiles / 设置与配置方案               | [English](docs/en-us/guide/settings.md)             | [简体中文](docs/zh-cn/guide/settings.md)             |
+| Network, transfers and forwarding / 网络、传输与转发 | [English](docs/en-us/guide/network-storage.md)      | [简体中文](docs/zh-cn/guide/network-storage.md)      |
+| Keyboard shortcuts / 快捷键                          | [English](docs/en-us/guide/shortcuts.md)            | [简体中文](docs/zh-cn/guide/shortcuts.md)            |
+| Monitoring / 性能监控                                | [English](docs/en-us/guide/monitoring.md)           | [简体中文](docs/zh-cn/guide/monitoring.md)           |
+| Updates / 更新                                       | [English](docs/en-us/guide/updates.md)              | [简体中文](docs/zh-cn/guide/updates.md)              |
+| Plugin development / 插件开发                        | [English](docs/en-us/development/plugins/README.md) | [简体中文](docs/zh-cn/development/plugins/README.md) |
+| Architecture / 架构                                  | [English](docs/en-us/development/architecture.md)   | [简体中文](docs/zh-cn/development/architecture.md)   |
+| Troubleshooting / 故障排查                           | [English](docs/en-us/guide/troubleshooting.md)      | [简体中文](docs/zh-cn/guide/troubleshooting.md)      |
 
 ## Development
 

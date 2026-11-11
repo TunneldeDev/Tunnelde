@@ -243,7 +243,7 @@ pub async fn plugin_status_bar_execute(
             &item.lease.id,
             &command,
             Some(json!({"_locale":locale})),
-            Some(item.lease.generation),
+            &item.lease,
         )
         .await
 }

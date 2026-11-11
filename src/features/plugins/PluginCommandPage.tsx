@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { usePlugins } from "@/store/plugins";
+import { openPluginAction } from "@/lib/plugins/actions";
 import { PluginCommandResult } from "./PluginCommandResult";
 import { PluginRestrictedAction } from "./PluginSecuritySection";
 
@@ -20,7 +21,11 @@ export function PluginCommandPage({ pluginId }: { pluginId: string }) {
           <Button
             key={command.id}
             disabled={busy}
-            onClick={() => void usePlugins.getState().run(pluginId, command.id)}
+            onClick={() =>
+              void (command.hostMenu
+                ? openPluginAction({ id: pluginId, command: command.id })
+                : usePlugins.getState().run(pluginId, command.id))
+            }
           >
             {command.title}
           </Button>

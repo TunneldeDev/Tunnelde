@@ -14,12 +14,16 @@ import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
+import { useStorage } from "@/store/storage";
+import { useRestartPrompt } from "@/store/restartPrompt";
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
   listen: vi.fn(),
   hostsSnapshot: vi.fn(),
   sshSessions: vi.fn(),
+  storageRestartPending: vi.fn(),
+  storageStatus: vi.fn(),
   toast: vi.fn(),
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
   cleanups: [] as Array<ReturnType<typeof vi.fn>>,
@@ -62,6 +66,8 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(undefined);
   mocks.hostsSnapshot.mockReset().mockResolvedValue({ hosts: [host], groups: [] });
   mocks.sshSessions.mockReset().mockResolvedValue([session]);
+  mocks.storageRestartPending.mockReset().mockResolvedValue(false);
+  mocks.storageStatus.mockReset();
   mocks.toast.mockReset();
   mocks.handlers.clear();
   mocks.cleanups.length = 0;
@@ -81,6 +87,8 @@ beforeEach(() => {
   });
   useHosts.setState({ hosts: [], groups: [], loaded: false });
   useSsh.setState({ sessions: [] });
+  useStorage.setState({ status: null, restartPending: false, loading: false, busy: false });
+  useRestartPrompt.getState().close();
   useEditors.setState({ entries: {} });
   useDialogs.getState().close();
   usePlugins.setState({ items: [{ id: "example.tool", name: "Installed tool" } as PluginInfo] });
@@ -183,6 +191,45 @@ afterEach(() => {
 });
 
 describe("plugin workspace bridge authorization and live state", () => {
+  it("opens authoritative discovered hosts and preserves discovery when opening a saved host", async () => {
+    const discovered = {
+      revision: 1,
+      items: [
+        {
+          pluginId: "inventory",
+          pluginName: "Inventory",
+          id: "cloud",
+          label: "Cloud",
+          entries: [
+            {
+              id: "one",
+              hostId: "source:digest",
+              name: "Node",
+              host: "192.0.2.1",
+              username: "qa",
+              port: 22,
+            },
+          ],
+        },
+      ],
+    };
+    mocks.invoke.mockImplementation(async (method) =>
+      method === "plugin_host_sources_snapshot" ? discovered : undefined,
+    );
+    await runPluginWorkspaceRequest(request("workspace.openHost", { hostId: "source:digest" }));
+    expect(useWorkspace.getState().tabs.some((tab) => tab.hostId === "source:digest")).toBe(true);
+    expect(
+      useHosts.getState().hosts.find((item) => item.id === "source:digest")?.source?.pluginId,
+    ).toBe("inventory");
+    await runPluginWorkspaceRequest(request("workspace.openHost", { hostId: host.id }));
+    expect(useHosts.getState().hosts.some((item) => item.id === "source:digest")).toBe(true);
+    mocks.invoke.mockImplementation(async (method) =>
+      method === "plugin_host_sources_snapshot" ? { revision: 2, items: [] } : undefined,
+    );
+    await expect(
+      runPluginWorkspaceRequest(request("workspace.openHost", { hostId: "source:digest" })),
+    ).rejects.toThrow("hostSources.unavailable");
+  });
   it("reconciles host titles and invalidates local and remote views after event recovery", async () => {
     useWorkspace.getState().openHost(host);
     mocks.hostsSnapshot.mockResolvedValue({
@@ -190,10 +237,12 @@ describe("plugin workspace bridge authorization and live state", () => {
       groups: [],
     });
     const files = vi.fn(),
-      history = vi.fn();
+      history = vi.fn(),
+      forwards = vi.fn();
     const lifetime = new AbortController();
     window.addEventListener("tunnelde:files-changed", files, { signal: lifetime.signal });
     window.addEventListener("tunnelde:history-changed", history, { signal: lifetime.signal });
+    window.addEventListener("tunnelde:forwarding-changed", forwards, { signal: lifetime.signal });
     try {
       await reconcilePluginWorkspace(lifetime.signal);
       expect(useWorkspace.getState().tabs[0]?.title).toBe("Recovered name");
@@ -202,9 +251,32 @@ describe("plugin workspace bridge authorization and live state", () => {
         { kind: "remote", sessionId: session.id },
       ]);
       expect(history).toHaveBeenCalledOnce();
+      expect(forwards).toHaveBeenCalledOnce();
     } finally {
       lifetime.abort();
     }
+  });
+
+  it("recovers storage metadata and the restart prompt alongside the other domain snapshots", async () => {
+    mocks.storageRestartPending.mockResolvedValue(true);
+    await reconcilePluginWorkspace(new AbortController().signal);
+    expect(useStorage.getState().restartPending).toBe(true);
+    expect(useRestartPrompt.getState().open).toBe(true);
+    expect(mocks.storageStatus).not.toHaveBeenCalled();
+  });
+
+  it("handles live storage invalidations using the same metadata reconciliation", async () => {
+    cleanup = await wirePluginWorkspaceBridge();
+    mocks.storageRestartPending.mockResolvedValue(true);
+    emit("plugin://domain-changed", { domain: "storage" });
+    await settle();
+    expect(useRestartPrompt.getState().open).toBe(true);
+    mocks.storageRestartPending.mockResolvedValue(false);
+    emit("plugin://domain-changed", { domain: "storage" });
+    await settle();
+    expect(useStorage.getState().restartPending).toBe(false);
+    expect(useRestartPrompt.getState().open).toBe(false);
+    expect(mocks.storageStatus).not.toHaveBeenCalled();
   });
 
   it("opens a query without executing it and applies pane locks idempotently", async () => {
@@ -381,6 +453,88 @@ describe("plugin workspace bridge authorization and live state", () => {
 });
 
 describe("plugin dialog and listener lifecycle", () => {
+  it("preserves an IPC failure's actual message across the frontend reply", async () => {
+    cleanup = await wirePluginWorkspaceBridge();
+    mocks.invoke.mockImplementation((name) =>
+      name === "plugin_workspace_authorize"
+        ? Promise.reject({ code: "validation", message: "pluginSecurity.permissionDenied" })
+        : Promise.resolve(),
+    );
+    emit("plugin://workspace-request", request("ui.showMessage", { message: "Should not run" }));
+    await settle();
+    expect(mocks.toast).not.toHaveBeenCalled();
+    expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+      requestId: "request-one",
+      result: null,
+      error: "pluginSecurity.permissionDenied",
+    });
+  });
+  it.each(["ui.confirm", "ui.showMessage", "workspace.showQuickAccess"])(
+    "does not execute %s when cancellation arrives during authorization",
+    async (method) => {
+      cleanup = await wirePluginWorkspaceBridge();
+      const authorization = deferred<void>();
+      mocks.invoke.mockImplementation((name) =>
+        name === "plugin_workspace_authorize" ? authorization.promise : Promise.resolve(),
+      );
+      useQuickAccess.getState().close();
+      emit("plugin://workspace-request", request(method, { message: "Continue?", query: ">" }));
+      emit("plugin://workspace-cancelled", { requestId: "request-one" });
+      authorization.resolve();
+      await settle();
+      expect(useDialogs.getState().dialog.kind).toBe("none");
+      expect(mocks.toast).not.toHaveBeenCalled();
+      expect(useQuickAccess.getState().query).toBe(null);
+      expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+        requestId: "request-one",
+        result: null,
+        error: "requestCancelled",
+      });
+    },
+  );
+
+  it("does not open a late dialog after its bridge is disposed during authorization", async () => {
+    cleanup = await wirePluginWorkspaceBridge();
+    const authorization = deferred<void>();
+    mocks.invoke.mockImplementation((name) =>
+      name === "plugin_workspace_authorize" ? authorization.promise : Promise.resolve(),
+    );
+    emit("plugin://workspace-request", request("ui.confirm", { message: "Continue?" }));
+    cleanup();
+    authorization.resolve();
+    await settle();
+    expect(useDialogs.getState().dialog.kind).toBe("none");
+    expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+      requestId: "request-one",
+      result: null,
+      error: "requestCancelled",
+    });
+  });
+
+  it.each(["workspace.openHost", "workspace.openFiles", "workspace.openTerminal"])(
+    "cancels %s while its metadata lookup is in flight",
+    async (method) => {
+      cleanup = await wirePluginWorkspaceBridge();
+      const metadata = deferred<unknown>();
+      if (method === "workspace.openHost") mocks.hostsSnapshot.mockReturnValue(metadata.promise);
+      else mocks.sshSessions.mockReturnValue(metadata.promise);
+      emit(
+        "plugin://workspace-request",
+        request(method, { hostId: host.id, sessionId: session.id }),
+      );
+      await settle();
+      emit("plugin://workspace-cancelled", { requestId: "request-one" });
+      metadata.resolve(method === "workspace.openHost" ? { hosts: [host], groups: [] } : [session]);
+      await settle();
+      expect(useWorkspace.getState().tabs).toEqual([]);
+      expect(mocks.invoke).toHaveBeenCalledWith("plugin_workspace_reply", {
+        requestId: "request-one",
+        result: null,
+        error: "requestCancelled",
+      });
+    },
+  );
+
   it("identifies plugin notifications using the installed name", async () => {
     await runPluginWorkspaceRequest(
       request("ui.showMessage", { message: "Done", kind: "success" }),
@@ -492,23 +646,33 @@ describe("plugin dialog and listener lifecycle", () => {
 
   it("refreshes host names and forwards file and history changes to open views", async () => {
     cleanup = await wirePluginWorkspaceBridge();
+    useSsh.setState({ sessions: [session] });
     useWorkspace.getState().openHost(host);
     mocks.hostsSnapshot.mockResolvedValue({ hosts: [{ ...host, name: "Renamed" }], groups: [] });
     emit("plugin://domain-changed", { domain: "hosts" });
     await settle();
     expect(useWorkspace.getState().tabs[0]?.title).toBe("Renamed");
+    expect(useSsh.getState().sessions.find((item) => item.hostId === host.id)?.title).toBe(
+      "Renamed",
+    );
     const files = vi.fn();
     const history = vi.fn();
+    const forwards = vi.fn();
     window.addEventListener("tunnelde:files-changed", files);
     window.addEventListener("tunnelde:history-changed", history);
+    window.addEventListener("tunnelde:forwarding-changed", forwards);
     emit("plugin://domain-changed", { domain: "files", sessionId: session.id });
-    emit("plugin://domain-changed", { domain: "history" });
+    emit("plugin://domain-changed", { domain: "history", hostId: "history-host" });
+    emit("plugin://domain-changed", { domain: "forwards" });
     expect(files.mock.calls[0]?.[0].detail).toEqual({
       source: { kind: "remote", sessionId: session.id },
       origin: "plugin-api",
     });
     expect(history).toHaveBeenCalledTimes(1);
+    expect(forwards).toHaveBeenCalledOnce();
+    expect((history.mock.calls[0]![0] as CustomEvent).detail).toEqual({ hostId: "history-host" });
     window.removeEventListener("tunnelde:files-changed", files);
     window.removeEventListener("tunnelde:history-changed", history);
+    window.removeEventListener("tunnelde:forwarding-changed", forwards);
   });
 });

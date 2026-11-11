@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "monitoring",
+  "type": "object",
+  "properties": {
+    "intervalMs": {
+      "type": "integer",
+      "enum": [
+        1000,
+        2000,
+        3000,
+        5000,
+        10000,
+        30000
+      ]
+    }
+  },
+  "required": [
+    "intervalMs"
+  ],
+  "additionalProperties": false
+}

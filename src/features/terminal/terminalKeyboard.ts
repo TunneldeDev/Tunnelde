@@ -28,6 +28,13 @@ export function terminalEditingSequence(
   return sequences.find(([id]) => matchesCommand(event, id, overrides))?.[1] ?? null;
 }
 
-export function terminalSequenceFor(id: string): string | null {
+export function terminalSequenceFor(
+  id: string,
+  enhancedKeyboard = false,
+  customized = false,
+): string | null {
+  // Native protocol encoding wins over legacy desktop defaults. An explicit
+  // user binding/rule can still opt into the shell editing command.
+  if (enhancedKeyboard && !customized) return null;
   return sequences.find(([command]) => command === id)?.[1] ?? null;
 }

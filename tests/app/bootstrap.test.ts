@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TabRecord } from "@/lib/api/types";
+import type { SshSession, TabRecord } from "@/lib/api/types";
 
 const mocks = vi.hoisted(() => ({
   mainWindowSnapshot: vi.fn(),
@@ -7,8 +7,12 @@ const mocks = vi.hoisted(() => ({
   saveTabs: vi.fn(),
   hostLoad: vi.fn(),
   sshRefresh: vi.fn(),
+  sshForget: vi.fn(),
+  monitorForget: vi.fn(),
+  sessions: [] as SshSession[],
   toast: vi.fn(),
   settingsLoad: vi.fn(),
+  profileRefresh: vi.fn(async () => {}),
   settings: { theme: "dark", motion: "system", restoreWorkspace: true },
   updateRefresh: vi.fn(),
   securityLoad: vi.fn(),
@@ -18,7 +22,9 @@ const mocks = vi.hoisted(() => ({
   editorCleanupList: vi.fn(async () => []),
   hosts: [] as { id: string }[],
   events: {
+    onPluginActivation: vi.fn(),
     onSettingsChanged: vi.fn(),
+    onSettingsProfilesChanged: vi.fn(),
     onUpdateState: vi.fn(),
     onNavigate: vi.fn(),
     onPluginState: vi.fn(),
@@ -39,7 +45,13 @@ vi.mock("@/store/hosts", () => ({
   useHosts: { getState: () => ({ load: mocks.hostLoad, hosts: mocks.hosts }) },
 }));
 vi.mock("@/store/ssh", () => ({
-  useSsh: { getState: () => ({ refresh: mocks.sshRefresh, sessions: [], forget: vi.fn() }) },
+  useSsh: {
+    getState: () => ({
+      refresh: mocks.sshRefresh,
+      sessions: mocks.sessions,
+      forget: mocks.sshForget,
+    }),
+  },
 }));
 vi.mock("@/store/settings", () => ({
   useSettings: {
@@ -50,13 +62,26 @@ vi.mock("@/store/settings", () => ({
     }),
   },
 }));
+vi.mock("@/store/settingsProfiles", () => ({
+  useSettingsProfiles: { getState: () => ({ refresh: mocks.profileRefresh }) },
+}));
 vi.mock("@/store/updates", () => ({
   useUpdates: { getState: () => ({ refresh: mocks.updateRefresh, apply: vi.fn() }) },
 }));
-vi.mock("@/store/monitor", () => ({ useMonitor: { getState: () => ({ forget: vi.fn() }) } }));
+vi.mock("@/store/monitor", () => ({
+  useMonitor: { getState: () => ({ forget: mocks.monitorForget }) },
+}));
 vi.mock("@/store/plugins", () => ({
   usePlugins: {
-    getState: () => ({ apply: vi.fn(), load: mocks.pluginLoad, start: mocks.pluginStart }),
+    subscribe: vi.fn(() => vi.fn()),
+    getState: () => ({
+      items: [],
+      stoppingIds: [],
+      apply: vi.fn(),
+      load: mocks.pluginLoad,
+      refreshActivation: mocks.pluginLoad,
+      start: mocks.pluginStart,
+    }),
   },
 }));
 vi.mock("@/store/pluginSecurity", () => ({
@@ -107,7 +132,11 @@ beforeEach(() => {
   mocks.saveTabs.mockReset().mockResolvedValue(undefined);
   mocks.hostLoad.mockReset().mockResolvedValue(true);
   mocks.sshRefresh.mockReset().mockResolvedValue(undefined);
+  mocks.sshForget.mockReset();
+  mocks.monitorForget.mockReset();
+  mocks.sessions = [];
   mocks.settingsLoad.mockReset().mockResolvedValue(undefined);
+  mocks.profileRefresh.mockReset().mockResolvedValue(undefined);
   mocks.updateRefresh.mockReset().mockResolvedValue(undefined);
   mocks.securityLoad.mockReset().mockResolvedValue(undefined);
   mocks.pluginLoad.mockReset().mockResolvedValue(undefined);
@@ -125,6 +154,58 @@ afterEach(async () => {
 });
 
 describe("workspace startup and persistence", () => {
+  it("owns profile change subscriptions and recovers missed changes without eagerly reading profiles", async () => {
+    mocks.events.onSettingsProfilesChanged.mockRejectedValueOnce(new Error("listener failed"));
+    const { bootstrap, disposeBootstrap } = await fresh();
+    await bootstrap();
+    expect(mocks.profileRefresh).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.events.onSettingsProfilesChanged).toHaveBeenCalledTimes(2);
+    expect(mocks.profileRefresh).toHaveBeenCalledOnce();
+    const [receive, signal] = mocks.events.onSettingsProfilesChanged.mock.calls[1]!;
+    receive();
+    expect(mocks.profileRefresh).toHaveBeenCalledTimes(2);
+    disposeBootstrap();
+    expect(signal.aborted).toBe(true);
+  });
+  it.each([false, true, undefined])(
+    "cleans closed sessions while notifying only terminals (terminal=%s)",
+    async (terminal) => {
+      const session = {
+        id: "closed",
+        hostId: "host",
+        title: "Test",
+        address: "qa@localhost:22",
+        rows: 24,
+        cols: 80,
+        connectedAt: 1,
+        terminal,
+      } satisfies SshSession;
+      mocks.sessions = [session];
+      const { bootstrap, useWorkspace } = await fresh();
+      await bootstrap();
+      const close = vi.spyOn(useWorkspace.getState(), "closeSession");
+      const listener = mocks.events.onSshClosed.mock.calls[0]![0];
+      listener({ sessionId: session.id });
+      expect(mocks.sshForget).toHaveBeenCalledWith(session.id);
+      expect(mocks.monitorForget).toHaveBeenCalledWith(session.id);
+      expect(close).toHaveBeenCalledWith(session.id);
+      if (terminal === false) expect(mocks.toast).not.toHaveBeenCalled();
+      else expect(mocks.toast).toHaveBeenCalledWith("ssh.sessionEnded", "info");
+      close.mockRestore();
+    },
+  );
+
+  it("does not announce duplicate or already forgotten SSH closures", async () => {
+    const { bootstrap } = await fresh();
+    await bootstrap();
+    const listener = mocks.events.onSshClosed.mock.calls[0]![0];
+    listener({ sessionId: "already-forgotten" });
+    expect(mocks.sshForget).toHaveBeenCalledWith("already-forgotten");
+    expect(mocks.monitorForget).toHaveBeenCalledWith("already-forgotten");
+    expect(mocks.toast).not.toHaveBeenCalled();
+  });
+
   it("does not delay first presentation for background update status", async () => {
     const update = deferred<void>();
     mocks.updateRefresh.mockReturnValueOnce(update.promise);

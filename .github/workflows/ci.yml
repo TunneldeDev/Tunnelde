@@ -51,6 +51,9 @@ jobs:
       - name: Check translation catalogues
         run: pnpm i18n:check
 
+      - name: Check public preference contracts
+        run: node scripts/contracts/preferences/generate.mjs --check
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -100,18 +103,8 @@ jobs:
         run: node scripts/ci/reset-rust-cache.mjs src-tauri
 
       - name: Install Linux build dependencies
-        timeout-minutes: 10
-        run: |
-          # Use Ubuntu's primary archive when the runner's Azure mirror stalls.
-          for sources in /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
-            if [ -f "${sources}" ]; then
-              sudo sed -i -E \
-                -e 's|mirror\+file:/etc/apt/apt-mirrors\.txt|https://archive.ubuntu.com/ubuntu/|g' \
-                -e 's|https?://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "${sources}"
-            fi
-          done
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 -o DPkg::Lock::Timeout=60 install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf sshfs openssh-sftp-server
+        timeout-minutes: 14
+        run: sudo "$(command -v node)" scripts/ci/linux/install-dependencies.mjs
 
       - name: Build frontend
         run: |
@@ -133,7 +126,8 @@ jobs:
           node scripts/ci/check-plugin-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json"
           TUNNELDE_EDITOR_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-editor.json" pnpm exec vitest run tests/app/pluginEditorContract.test.ts
           TUNNELDE_WORKSPACE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-workspace.json" pnpm exec vitest run tests/app/pluginWorkspaceContract.test.ts
-          TUNNELDE_EDITOR_CONTRACT_INPUT="$RUNNER_TEMP/plugin-editor.json" TUNNELDE_WORKSPACE_CONTRACT_INPUT="$RUNNER_TEMP/plugin-workspace.json" TUNNELDE_CORE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-core.json" cargo test --manifest-path src-tauri/Cargo.toml emit_core_contract_responses
+          TUNNELDE_UI_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-ui.json" pnpm exec vitest run tests/app/pluginUiContract.test.ts
+          TUNNELDE_EDITOR_CONTRACT_INPUT="$RUNNER_TEMP/plugin-editor.json" TUNNELDE_WORKSPACE_CONTRACT_INPUT="$RUNNER_TEMP/plugin-workspace.json" TUNNELDE_UI_CONTRACT_INPUT="$RUNNER_TEMP/plugin-ui.json" TUNNELDE_CORE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-core.json" cargo test --manifest-path src-tauri/Cargo.toml emit_core_contract_responses
           node scripts/ci/check-core-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json" "$RUNNER_TEMP/plugin-core.json"
           node scripts/ci/check-legacy-sdk.mjs "$RUNNER_TEMP/plugin-core.json"
 
@@ -141,15 +135,155 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: TunneldeDev/Tunnelde-hub
-          ref: 193ce451db4b318dd8d20080a094c7037a0734db
+          ref: d677bdb4ef814eac5210c23a7327271ab6e5ce30
           path: .sdk-parser
           persist-credentials: false
 
       - name: Compare SDK parser with host discovery
         run: node scripts/ci/check-sdk-parser.mjs . .sdk-parser "$RUNNER_TEMP/plugin-api-describe.json"
 
+      - name: Checkout profile metadata SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 0d19b67a6b8c4e1d275d3c938f47040250fdb04c
+          path: .tmp/ci/profile-consumer
+          persist-credentials: false
+
+      - name: Check actual profile metadata against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_PROFILE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-profiles.json" cargo test --manifest-path src-tauri/Cargo.toml --lib maximum_metadata_fits_output_and_emits_real_protocol_fixtures
+          node scripts/ci/check-profile-contract.mjs "$RUNNER_TEMP/plugin-profiles.json" .tmp/ci/profile-consumer/sdk
+
+      - name: Checkout plugin storage SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: b640d22c177a71410ec69bcc08f6dc89a31f2f38
+          path: .tmp/ci/storage-consumer
+          persist-credentials: false
+
+      - name: Check actual plugin storage against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_STORAGE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-storage.json" cargo test --manifest-path src-tauri/Cargo.toml --lib maximum_storage_and_unicode_emit_actual_sdk_interoperability_fixture
+          node scripts/ci/check-storage-contract.mjs "$RUNNER_TEMP/plugin-storage.json" .tmp/ci/storage-consumer/sdk
+
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
+
+      - name: Checkout persisted log SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 8e67ccfa45003e5ccdc8246a44093684c1ac5b29
+          path: .tmp/ci/logging-consumer
+          persist-credentials: false
+
+      - name: Check actual persisted logs against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_LOG_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-logs.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_public_log_page_for_sdk
+          node scripts/ci/check-logging-contract.mjs "$RUNNER_TEMP/plugin-logs.json" .tmp/ci/logging-consumer/sdk
+
+      - name: Checkout host storage location SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 788266448f0e4cdb1c76e6383e805b0da1c49fde
+          path: .tmp/ci/storage-locations-consumer
+          persist-credentials: false
+
+      - name: Check actual storage locations against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_LOCATION_CONTRACT_OUTPUT="$RUNNER_TEMP/host-storage-locations.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_host_storage_location_contract
+          node scripts/ci/check-storage-locations-contract.mjs "$RUNNER_TEMP/host-storage-locations.json" .tmp/ci/storage-locations-consumer/sdk
+
+      - name: Checkout cancellable transport SDK
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: 404f019e0d3552358e5504b34b993573a6d22983
+          path: .tmp/ci/cancellation-sdk
+          persist-credentials: false
+
+      - name: Check actual SDK cancellation against native request lifetime
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_TEST_NODE="$(command -v node)" TUNNELDE_TEST_CANCEL_SDK="$GITHUB_WORKSPACE/.tmp/ci/cancellation-sdk/sdk/tunnelde-plugin.mjs" cargo test --manifest-path src-tauri/Cargo.toml --lib current_sdk_control_frames_cancel_native_owned_futures_and_preserve_next_reply -- --ignored
+
+      - name: Checkout current helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: 2020a1dd35d6c784e09e3ab0fdc71d6962a0ed04
+          path: .tmp/ci/helper-current
+          persist-credentials: false
+
+      - name: Check current helper output against host decoder
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-current/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml current_selected_helper_discovery_matches_host_contract -- --ignored
+
+      - name: Checkout initialized helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: 8119d0dbac1140b2a987b32df933d5c46a2425cd
+          path: .tmp/ci/helper-initialized
+          persist-credentials: false
+
+      - name: Check initialized helper output against host negotiation
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-initialized/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml initialized_selected_helper_declares_supported_configuration -- --ignored
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib historical_selected_helper_does_not_support_artifact_observation -- --ignored
+
+      - name: Checkout fenced helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: dfc9e1b812992d850d5b6faa0abe1273cd26db2e
+          path: .tmp/ci/helper-fenced
+          persist-credentials: false
+
+      - name: Check actual helper admission receipts against host recovery
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-fenced/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml selected_helper_admission_protocol_matches_host_contract -- --ignored
+
+      - name: Checkout artifact observation helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: a43115649c730489ab635d2403fa7097ea1c480c
+          path: .tmp/ci/helper-artifacts
+          persist-credentials: false
+
+      - name: Check actual helper artifact receipts against host recovery
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-artifacts/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib selected_helper_artifact_protocol_matches_host_contract -- --ignored
+
+      - name: Checkout historical helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: a094e0341b9a7a131681041857014404008e0200
+          path: .tmp/ci/helper-historical
+          persist-credentials: false
+
+      - name: Check historical helper rejection remains explicit
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-historical/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml historical_selected_helper_discovery_remains_unavailable -- --ignored
 
       - name: Test real SSHFS mount when FUSE is available
         run: |
@@ -186,6 +320,8 @@ jobs:
       - run: pnpm build
       - name: Test macOS platform behavior
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib mac_mount_device_reports_existing_filesystem_and_rejects_missing_path
@@ -227,6 +363,8 @@ jobs:
       - run: pnpm build
       - name: Test Windows file operations and guarded backup cleanup
         run: |
+          cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::file_ops

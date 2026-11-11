@@ -1,10 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchQuery } from "@/lib/search/query";
+import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
 import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
-import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
+import type {
+  ApplySettingsProfile,
+  PortableSettings,
+  SettingsDocument,
+  SettingsProfile,
+  SettingsProfilesSnapshot,
+} from "@/lib/prefs/profiles";
+import type {
+  ActivationPlan,
+  FrontendActivation,
+  PackageReview,
+  StartPermit,
+} from "@/lib/plugins/activation/contracts";
 
 import type {
   AppInfo,
@@ -67,6 +80,10 @@ export interface OutputSnapshot {
 }
 
 export const api = {
+  hostFields: (pluginId: string, hostId: string) =>
+    invoke<HostFieldsSnapshot>("host_fields_get", { pluginId, hostId }),
+  updateHostFields: (pluginId: string, update: HostFieldsUpdate) =>
+    invoke<HostFieldsSnapshot>("host_fields_update", { pluginId, update }),
   logsRead: () => invoke<LogSnapshot>("logs_read"),
   logsOutputRead: (cursor: OutputCursor | null) =>
     invoke<OutputSnapshot>("logs_output_read", { cursor }),
@@ -101,6 +118,9 @@ export const api = {
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("settings_update", { patch }),
   resetSettings: () => invoke<Settings>("settings_reset"),
   settingsProfiles: () => invoke<SettingsProfile[]>("settings_profiles_list"),
+  settingsProfilesSnapshot: () => invoke<SettingsProfilesSnapshot>("settings_profiles_snapshot"),
+  applySettingsProfile: (request: ApplySettingsProfile) =>
+    invoke<Settings>("settings_profile_apply", { request }),
   saveSettingsProfile: (id: string | null, name: string, settings: PortableSettings) =>
     invoke<SettingsProfile[]>("settings_profile_save", { id, name, settings }),
   deleteSettingsProfile: (id: string) =>
@@ -200,7 +220,15 @@ export const api = {
     permissions: string[] | null,
     expectedFingerprint: string | null,
   ) => invoke<void>("plugin_set_permissions", { id, permissions, expectedFingerprint }),
-  pluginStart: (id: string) => invoke<PluginInfo>("plugin_start", { id }),
+  pluginPrepareStart: (
+    id: string,
+    expectedFingerprint: string,
+    expectedPackages: PackageReview[],
+  ) => invoke<StartPermit>("plugin_prepare_start", { id, expectedFingerprint, expectedPackages }),
+  pluginActivationPlan: (id: string, expectedFingerprint: string) =>
+    invoke<ActivationPlan>("plugin_activation_plan", { id, expectedFingerprint }),
+  pluginStart: (id: string, permit: StartPermit | null) =>
+    invoke<PluginInfo>("plugin_start", { id, permit }),
   pluginStop: (id: string) => invoke<PluginInfo>("plugin_stop", { id }),
   pluginInstall: (path: string) => invoke<PluginInfo>("plugin_install", { path }),
   pluginInspect: (path: string) =>
@@ -217,10 +245,10 @@ export const api = {
   pluginPickArchive: () => invoke<string | null>("plugin_pick_archive"),
   pluginUninstall: (id: string) => invoke<void>("plugin_uninstall", { id }),
   pluginReload: () => invoke<PluginInfo[]>("plugin_reload"),
-  pluginRenderView: (id: string, view: string, locale?: string) =>
-    invoke<unknown>("plugin_render_view", { id, view, locale: locale ?? null }),
-  pluginRun: (id: string, command: string, input?: Record<string, unknown>) =>
-    invoke<unknown>("plugin_run", { id, command, input: input ?? null }),
+  pluginRenderView: (id: string, view: string, locale: string | undefined, runtimeId: string) =>
+    invoke<unknown>("plugin_render_view", { id, view, locale: locale ?? null, runtimeId }),
+  pluginRun: (id: string, command: string, input: Record<string, unknown>, runtimeId: string) =>
+    invoke<unknown>("plugin_run", { id, command, input, runtimeId }),
   pluginOpenDir: () => invoke<void>("plugin_open_dir"),
   marketplaceInstall: (id: string, sha256: string, data: string) =>
     invoke<PluginInfo>("marketplace_install", { id, sha256, data }),
@@ -330,6 +358,12 @@ export const api = {
 };
 
 export const events = {
+  onSettingsProfilesChanged: (cb: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("settings-profiles://changed", cb, signal),
+  onPluginActivation: (
+    handler: (request: FrontendActivation) => void,
+    signal?: AbortSignal,
+  ): Promise<UnlistenFn> => nativeEvents.on("plugin://activate-frontend", handler, signal),
   onEditorCleanupChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
     nativeEvents.on("editor://cleanup-changed", handler, signal),
   onTransfersChanged: (handler: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>

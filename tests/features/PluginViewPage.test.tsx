@@ -1,3 +1,4 @@
+import { plugin as installedPlugin } from "../fixtures/plugins";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -25,12 +26,102 @@ vi.mock("@/features/plugins/PluginChat", () => ({
 
 import "@/i18n/i18n";
 import { PluginViewPage } from "@/features/plugins/PluginViewPage";
+import { usePlugins } from "@/store/plugins";
 beforeEach(() => {
   nativeMock.mockReturnValue(false);
   authorizeMock.mockReset().mockResolvedValue(true);
+  usePlugins.setState({
+    stoppingIds: [],
+    items: ["example", "json-formatter", "tool", "first", "second", "ai", "hello"].map((id) => ({
+      ...installedPlugin,
+      id,
+      status: "running",
+      runtimeId: "boot:1",
+    })),
+  });
 });
 
 describe("PluginViewPage", () => {
+  it("binds rendering to its runtime and drops a late response after a same-package restart", async () => {
+    let finish!: (value: unknown) => void;
+    apiMock.pluginRenderView.mockReset().mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<PluginViewPage pluginId="example" viewId="main" />);
+    expect(apiMock.pluginRenderView).toHaveBeenCalledWith("example", "main", "en-US", "boot:1");
+    apiMock.pluginRenderView.mockResolvedValueOnce({
+      blocks: [{ type: "text", text: "New runtime" }],
+    });
+    act(() =>
+      usePlugins.setState((state) => ({
+        items: state.items.map((item) =>
+          item.id === "example" ? { ...item, runtimeId: "boot:2" } : item,
+        ),
+      })),
+    );
+    expect(await screen.findByText("New runtime")).toBeTruthy();
+    await act(async () => finish({ blocks: [{ type: "text", text: "Old runtime" }] }));
+    expect(screen.queryByText("Old runtime")).toBeNull();
+    expect(screen.getByText("New runtime")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("cancels a refresh waiting for consent on unmount and ignores late approval", async () => {
+    nativeMock.mockReturnValue(true);
+    apiMock.pluginRenderView.mockReset().mockResolvedValue({ blocks: [] });
+    let approve!: (value: boolean) => void;
+    authorizeMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          approve = resolve;
+        }),
+    );
+    const page = render(<PluginViewPage pluginId="example" viewId="main" />);
+    await screen.findByText("No content");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    const signal = authorizeMock.mock.calls[0]![1] as AbortSignal;
+    expect(signal.aborted).toBe(false);
+    page.unmount();
+    expect(signal.aborted).toBe(true);
+    await act(async () => approve(true));
+    expect(apiMock.pluginRenderView).toHaveBeenCalledOnce();
+  });
+
+  it("clears retired view blocks when stopped and never renders a stopped plugin", async () => {
+    apiMock.pluginRenderView
+      .mockReset()
+      .mockResolvedValue({ blocks: [{ type: "text", text: "Active content" }] });
+    render(<PluginViewPage pluginId="example" viewId="main" />);
+    await screen.findByText("Active content");
+    act(() =>
+      usePlugins.setState((state) => ({
+        items: state.items.map((item) =>
+          item.id === "example" ? { ...item, status: "stopped", runtimeId: null } : item,
+        ),
+      })),
+    );
+    await waitFor(() => expect(screen.queryByText("Active content")).toBeNull());
+    expect(apiMock.pluginRenderView).toHaveBeenCalledOnce();
+  });
+
+  it("does not mount a workbench provider as an ordinary plugin view", () => {
+    usePlugins.setState({
+      items: [
+        {
+          id: "layout",
+          views: [{ id: "desktop", kind: "component", provider: "workbench" }],
+        },
+      ] as never,
+    });
+    apiMock.pluginRenderView.mockClear();
+    render(<PluginViewPage pluginId="layout" viewId="desktop" />);
+    expect(screen.getByText("Interface providers")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeTruthy();
+    expect(apiMock.pluginRenderView).not.toHaveBeenCalled();
+  });
   it("passes visibility to mounted chats without reloading their view", async () => {
     apiMock.pluginRenderView.mockClear().mockResolvedValue({
       blocks: [{ type: "chat", id: "chat", commands: { send: "send", stop: "stop" } }],
@@ -82,6 +173,7 @@ describe("PluginViewPage", () => {
         "example",
         "configure",
         expect.objectContaining({ token: "example-private-token" }),
+        "boot:1",
       ),
     );
   });
@@ -203,7 +295,9 @@ describe("PluginViewPage", () => {
     await screen.findByLabelText("JSON input");
     expect(authorizeMock).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Format" }));
-    await waitFor(() => expect(authorizeMock).toHaveBeenCalledWith("json-formatter"));
+    await waitFor(() =>
+      expect(authorizeMock).toHaveBeenCalledWith("json-formatter", expect.any(AbortSignal)),
+    );
     expect(apiMock.pluginRun).not.toHaveBeenCalled();
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Format" }) as HTMLButtonElement).disabled).toBe(
@@ -220,6 +314,30 @@ describe("PluginViewPage", () => {
     expect(authorizeMock).toHaveBeenCalledTimes(2);
   });
 
+  it("does not publish a form response from a replaced runtime with identical plugin bytes", async () => {
+    let finish!: (value: unknown) => void;
+    apiMock.pluginRenderView.mockResolvedValue(interactive);
+    apiMock.pluginRun.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(<PluginViewPage pluginId="json-formatter" viewId="main" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Format" }));
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    act(() =>
+      usePlugins.setState({
+        items: [
+          { ...installedPlugin, id: "json-formatter", status: "running", runtimeId: "boot:2" },
+        ],
+      }),
+    );
+    await act(async () => finish({ text: "retired result" }));
+    expect(screen.queryByDisplayValue("retired result")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("runs host-rendered fields and copies results only on explicit request", async () => {
     apiMock.pluginRenderView.mockResolvedValue(interactive);
     apiMock.pluginRun.mockResolvedValue({ text: '{\n  "a": 1\n}' });
@@ -231,11 +349,16 @@ describe("PluginViewPage", () => {
     fireEvent.click(screen.getByRole("option", { name: "4 spaces" }));
     fireEvent.click(screen.getByRole("button", { name: "Format" }));
     await waitFor(() =>
-      expect(apiMock.pluginRun).toHaveBeenLastCalledWith("json-formatter", "pretty", {
-        source: '{"a":1}',
-        indent: "4",
-        _locale: expect.stringMatching(/^en/),
-      }),
+      expect(apiMock.pluginRun).toHaveBeenLastCalledWith(
+        "json-formatter",
+        "pretty",
+        {
+          source: '{"a":1}',
+          indent: "4",
+          _locale: expect.stringMatching(/^en/),
+        },
+        "boot:1",
+      ),
     );
     const output = await screen.findByLabelText("Result");
     expect((output as HTMLTextAreaElement).value).toBe('{\n  "a": 1\n}');

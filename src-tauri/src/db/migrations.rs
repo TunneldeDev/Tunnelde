@@ -83,4 +83,15 @@ CREATE INDEX idx_history_host ON command_history(host_id, executed_at DESC);
 ALTER TABLE hosts ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0;
 CREATE INDEX idx_hosts_order ON hosts(sort_order);
 "#,
+    r#"
+CREATE TABLE host_plugin_fields (
+    plugin_id TEXT NOT NULL,
+    host_id TEXT NOT NULL REFERENCES hosts(id) ON DELETE CASCADE,
+    revision INTEGER NOT NULL CHECK (revision BETWEEN 1 AND 9007199254740991),
+    schema_version INTEGER NOT NULL CHECK (schema_version BETWEEN 1 AND 65535),
+    schema_digest TEXT NOT NULL,
+    values_json TEXT NOT NULL,
+    PRIMARY KEY (plugin_id, host_id)
+);
+"#,
 ];

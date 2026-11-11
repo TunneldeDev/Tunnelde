@@ -18,6 +18,7 @@ import { openPluginAction } from "@/lib/plugins/actions";
 
 const plugin = {
   id: "formatter",
+  runtimeId: "boot:1",
   name: "Formatter",
   runtime: "node",
   status: "running",
@@ -58,6 +59,21 @@ beforeEach(async () => {
 });
 
 describe("editor document contracts and contributed formatters", () => {
+  it("rejects a formatter package replaced while activation consent is pending", async () => {
+    const document = editorDocument(tabId)!;
+    const pending = deferred<void>();
+    usePlugins.setState({ items: [{ ...plugin, status: "stopped" }] });
+    const start = vi.spyOn(usePlugins.getState(), "start").mockImplementation(async () => {
+      await pending.promise;
+      usePlugins.setState({ items: [{ ...plugin, fingerprint: "replaced" }] });
+    });
+    const operation = runEditorPlugin(provider, document);
+    await vi.waitFor(() => expect(start).toHaveBeenCalledOnce());
+    pending.resolve();
+    expect(await operation).toBe(false);
+    expect(api.pluginRun).not.toHaveBeenCalled();
+    expect(useEditors.getState().entries[tabId]?.content).toBe(document.content);
+  });
   it("formats directly into the dirty buffer with one-step undo and redo; never saves", async () => {
     const document = editorDocument(tabId)!;
     expect(await runEditorPlugin(provider, document)).toBe(true);
@@ -68,6 +84,7 @@ describe("editor document contracts and contributed formatters", () => {
         source: document.content,
         document: expect.objectContaining({ documentId: document.documentId, version: 0 }),
       }),
+      "boot:1",
     );
     expect(useEditors.getState().entries[tabId]?.content).toContain("9007199254740993");
     expect(useEditors.getState().isDirty(tabId)).toBe(true);
@@ -177,6 +194,7 @@ describe("editor document contracts and contributed formatters", () => {
       plugin.id,
       "format",
       expect.objectContaining({ document: expect.objectContaining({ tabId }) }),
+      "boot:1",
     );
     expect(useEditors.getState().entries[tabId]?.content).toBe("formatted original");
   });

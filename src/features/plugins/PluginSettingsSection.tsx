@@ -14,6 +14,7 @@ import { toast } from "@/store/toasts";
 import { NodeRuntimeSection } from "./NodeRuntimeSection";
 import { PluginError } from "./PluginError";
 import { PluginSecuritySection } from "./PluginSecuritySection";
+import { RunnerRecoverySection } from "./recovery/components/RunnerRecoverySection";
 
 export function PluginSettingsSection() {
   const { t } = useTranslation();
@@ -50,6 +51,7 @@ export function PluginSettingsSection() {
   return (
     <div className="plugin-settings">
       <PluginSecuritySection />
+      <RunnerRecoverySection />
       <section className="settings-subsection" aria-label={t("market.sources")}>
         <div className="settings-section__head">
           <h3 className="settings-subtitle">{t("market.sources")}</h3>

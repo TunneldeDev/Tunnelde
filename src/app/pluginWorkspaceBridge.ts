@@ -8,20 +8,20 @@ import { api } from "@/lib/api/ipc";
 import { closeTab } from "@/lib/session/tabActions";
 import { sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
 import { useDialogs } from "@/store/dialogs";
-import {
-  useEditors,
-  editorDocument,
-  replaceEditorDocument,
-  EDITOR_DOCUMENT_MAX_BYTES,
-} from "@/store/editors";
+import { useEditors } from "@/store/editors";
 import { useHosts } from "@/store/hosts";
+import { sourceHosts, type HostSourcesSnapshot } from "@/lib/hosts/sources";
 import { usePlugins } from "@/store/plugins";
 import { useSsh } from "@/store/ssh";
-import { toast, type ToastVariant } from "@/store/toasts";
+import { toast } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
-import { pluginEditorDocument, pluginEditorWriteResult } from "@/lib/plugins/editor";
+import { runEditorRequest } from "@/app/plugins/editorRequests";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
+import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
+import { isIpcError } from "@/lib/api/types";
+import { storageLocationReview } from "@/app/plugins/storageLocationRequests";
+import { reconcileStorageMetadata } from "@/app/plugins/storageReconciliation";
 
 export interface PluginWorkspaceRequest {
   requestId: string;
@@ -55,32 +55,32 @@ export function pluginWorkspaceSnapshot() {
   return projectPluginWorkspace({ tabs, panes, activeId, activePaneId, layout });
 }
 
-export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest): Promise<unknown> {
-  await authorize(request.requestId);
+export async function runPluginWorkspaceRequest(
+  request: PluginWorkspaceRequest,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const authorizeRequest = async () => {
+    if (signal?.aborted) throw new Error("requestCancelled");
+    await authorize(request.requestId);
+    if (signal?.aborted) throw new Error("requestCancelled");
+  };
+  await authorizeRequest();
   const { method, params } = request;
+  if (method.startsWith("editor.")) return runEditorRequest(method, params, authorizeRequest);
   const workspace = useWorkspace.getState();
   switch (method) {
-    case "editor.active": {
-      const document = workspace.activeId ? editorDocument(workspace.activeId) : null;
-      if (document && new TextEncoder().encode(document.content).length > EDITOR_DOCUMENT_MAX_BYTES)
-        throw new Error("editor.documentTooLarge");
-      return pluginEditorDocument(document);
-    }
-    case "editor.replace": {
-      const tabId = text(params, "tabId"),
-        documentId = text(params, "documentId");
-      if (!Number.isSafeInteger(params.version) || (params.version as number) < 0)
-        throw new Error("invalid:version");
-      if (
-        typeof params.text !== "string" ||
-        new TextEncoder().encode(params.text).length > EDITOR_DOCUMENT_MAX_BYTES
-      )
-        throw new Error("invalid:text");
-      const document = replaceEditorDocument(
-        { tabId, documentId, version: params.version as number },
-        params.text,
+    case "__frontend.command": {
+      const plugin = usePlugins.getState().items.find((item) => item.id === request.pluginId);
+      if (!plugin) throw new Error("plugin.notFound");
+      if (!plugin.runtimeId || plugin.runtimeId !== text(params, "runtimeId"))
+        throw new Error("pluginSecurity.changed");
+      const { frontendRuntime } = await import("@/lib/extensions/frontendRuntime");
+      return frontendRuntime.run(
+        plugin,
+        text(params, "command"),
+        (params.input ?? {}) as Record<string, unknown>,
+        signal,
       );
-      return pluginEditorWriteResult(document);
     }
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();
@@ -120,11 +120,25 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
     }
     case "workspace.openHost": {
       const hostId = text(params, "hostId");
+      if (hostId.startsWith("source:")) {
+        const discovered = await invoke<HostSourcesSnapshot>("plugin_host_sources_snapshot");
+        await authorizeRequest();
+        const hosts = sourceHosts(discovered);
+        const host = hosts.find((item) => item.id === hostId);
+        if (!host) throw new Error("plugin.hostSources.unavailable");
+        useHosts.getState().setSourceHosts(hosts);
+        useWorkspace.getState().openHost(host, { preview: false });
+        break;
+      }
       const snapshot = await api.hostsSnapshot();
-      await authorize(request.requestId);
+      await authorizeRequest();
       const host = snapshot.hosts.find((item) => item.id === hostId);
       if (!host) throw new Error("host.notFound");
-      useHosts.setState({ ...snapshot, loaded: true });
+      useHosts.setState((state) => ({
+        groups: snapshot.groups,
+        hosts: [...snapshot.hosts, ...state.hosts.filter((item) => item.source)],
+        loaded: true,
+      }));
       useWorkspace.getState().openHost(host, { preview: false });
       break;
     }
@@ -132,7 +146,7 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
     case "workspace.openFiles": {
       const sessionId = text(params, "sessionId");
       const sessions = await api.sshSessions();
-      await authorize(request.requestId);
+      await authorizeRequest();
       const session = sessions.find((item) => item.id === sessionId);
       if (!session) throw new Error("ssh.sessionMissing");
       if (method === "workspace.openTerminal" && session.terminal === false)
@@ -191,20 +205,21 @@ export async function runPluginWorkspaceRequest(request: PluginWorkspaceRequest)
       break;
     }
     case "ui.showMessage": {
-      const message = text(params, "message", 4000),
-        kind = optionalText(params, "kind") ?? "info";
-      if (!["info", "success", "error"].includes(kind)) throw new Error("invalid:kind");
+      const { message, kind } = pluginMessage(params);
       const name =
         usePlugins.getState().items.find((plugin) => plugin.id === request.pluginId)?.name ??
         request.pluginId;
-      toast(`${i18n.t("pluginApi.messageTitle", { name })}: ${message}`, kind as ToastVariant);
+      toast(`${i18n.t("pluginApi.messageTitle", { name })}: ${message}`, kind);
       return null;
     }
     case "ui.confirm":
+      return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params));
+    case "storage.locations.schedule":
+    case "storage.locations.cancel":
       return confirmPlugin(
         request.requestId,
         request.pluginId,
-        text(params, "message", 220 * 1024),
+        storageLocationReview(method, params),
       );
     default:
       throw new Error("unknownMethod");
@@ -253,6 +268,14 @@ async function refreshPluginHosts(signal?: AbortSignal): Promise<void> {
   const loaded = await useHosts.getState().load();
   if (!loaded || signal?.aborted) return;
   const current = useHosts.getState().hosts;
+  for (const host of current) {
+    if (
+      useSsh
+        .getState()
+        .sessions.some((session) => session.hostId === host.id && session.title !== host.name)
+    )
+      useSsh.getState().renameHost(host.id, host.name);
+  }
   for (const tab of useWorkspace.getState().tabs) {
     if (tab.kind !== "host" || !tab.hostId) continue;
     const host = current.find((item) => item.id === tab.hostId);
@@ -263,9 +286,15 @@ async function refreshPluginHosts(signal?: AbortSignal): Promise<void> {
 
 /** Reconcile domain invalidations missed while the bridge was unavailable. */
 export async function reconcilePluginWorkspace(signal: AbortSignal): Promise<void> {
-  await Promise.all([refreshPluginHosts(signal), useSsh.getState().refresh()]);
+  if (signal.aborted) return;
+  await Promise.all([
+    refreshPluginHosts(signal),
+    useSsh.getState().refresh(),
+    reconcileStorageMetadata(signal),
+  ]);
   if (signal.aborted) return;
   domainEvents.historyChanged();
+  domainEvents.forwardsChanged();
   domainEvents.filesChanged({ source: { kind: "local" }, origin: "event-recovery" });
   for (const session of useSsh.getState().sessions)
     domainEvents.filesChanged({
@@ -276,26 +305,37 @@ export async function reconcilePluginWorkspace(signal: AbortSignal): Promise<voi
 
 export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<UnlistenFn> {
   if (signal?.aborted) return () => {};
+  const pendingRequests = new Map<string, AbortController>();
+  let disposed = false;
   const group = createSubscriptionGroup([
     (lifetime) =>
       nativeEvents.on(
         "plugin://workspace-request",
         (payload) => {
+          if (disposed || pendingRequests.has(payload.requestId)) return;
+          const controller = new AbortController();
+          pendingRequests.set(payload.requestId, controller);
           void (async () => {
             try {
-              const result = await runPluginWorkspaceRequest(payload);
+              const result = await runPluginWorkspaceRequest(payload, controller.signal);
               await invoke("plugin_workspace_reply", {
                 requestId: payload.requestId,
                 result,
                 error: null,
               });
             } catch (error) {
-              const message = error instanceof Error ? error.message : "requestFailed";
+              const message = isIpcError(error)
+                ? error.message
+                : error instanceof Error
+                  ? error.message
+                  : "requestFailed";
               await invoke("plugin_workspace_reply", {
                 requestId: payload.requestId,
                 result: null,
                 error: message,
               }).catch(() => {});
+            } finally {
+              pendingRequests.delete(payload.requestId);
             }
           })();
         },
@@ -305,6 +345,7 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
       nativeEvents.on(
         "plugin://workspace-cancelled",
         (payload) => {
+          pendingRequests.get(payload.requestId)?.abort();
           pendingConfirmations.get(payload.requestId)?.();
         },
         lifetime,
@@ -315,7 +356,10 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         (payload) => {
           if (payload.domain === "hosts") void refreshPluginHosts(lifetime);
           if (payload.domain === "sessions") void useSsh.getState().refresh();
-          if (payload.domain === "history") domainEvents.historyChanged();
+          if (payload.domain === "storage") return reconcileStorageMetadata(lifetime);
+          if (payload.domain === "forwards") domainEvents.forwardsChanged();
+          if (payload.domain === "history")
+            domainEvents.historyChanged(payload.hostId ?? undefined);
           if (payload.domain === "files")
             domainEvents.filesChanged({
               source: payload.sessionId
@@ -327,12 +371,13 @@ export async function wirePluginWorkspaceBridge(signal?: AbortSignal): Promise<U
         lifetime,
       ),
   ]);
-  let disposed = false;
   const cleanup = () => {
     if (disposed) return;
     disposed = true;
     signal?.removeEventListener("abort", cleanup);
     group.dispose();
+    for (const controller of pendingRequests.values()) controller.abort();
+    pendingRequests.clear();
     for (const cancel of pendingConfirmations.values()) cancel();
   };
   signal?.addEventListener("abort", cleanup, { once: true });

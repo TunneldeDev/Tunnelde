@@ -7,6 +7,45 @@ afterEach(async () => {
 });
 
 describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
+  it("keeps dependency identity, version and original detailed runtime errors", async () => {
+    await i18n.changeLanguage(language);
+    const missing = pluginFailure({
+      code: "validation",
+      message: "plugin.activation.missingDependency",
+      details: { id: "shared" },
+    });
+    expect(missing).toContain("shared");
+    const mismatch = pluginFailure({
+      code: "validation",
+      message: "plugin.activation.incompatibleDependency",
+      details: { id: "shared", required: "^2.0", installed: "1.0.0" },
+    });
+    for (const value of ["shared", "^2.0", "1.0.0"]) expect(mismatch).toContain(value);
+    const context = pluginFailure({
+      code: "validation",
+      message: "plugin.engine.unsupported",
+      details: {
+        pluginVersion: "1.0.0",
+        hostVersion: "0.33.0",
+        required: ">=0.34.0",
+        activation: { pluginId: "shared", stage: "preflight" },
+      },
+    });
+    for (const value of ["shared", "1.0.0", "0.33.0", ">=0.34.0"]) expect(context).toContain(value);
+  });
+  it("preserves structured UI SDK version requirements", async () => {
+    await i18n.changeLanguage(language);
+    const message = pluginFailure({
+      code: "validation",
+      message: "plugin.frontend.sdkUnsupported",
+      details: { required: "^2.0.0", available: "0.1.0" },
+    });
+    expect(message).toContain("^2.0.0");
+    expect(message).toContain("0.1.0");
+    expect(pluginFailure(new Error("plugin.frontend.sdkUnsupported"))).toBe(
+      i18n.t("plugin.frontend.sdkUnsupported"),
+    );
+  });
   it("explains exact version requirements and supports errors from older hosts", async () => {
     await i18n.changeLanguage(language);
     const details = { pluginVersion: "1.8.1", hostVersion: "0.32.0-beta.6", required: ">=0.33.0" };
@@ -35,10 +74,16 @@ describe.each(["en-US", "zh-CN"])("plugin startup errors in %s", (language) => {
       "node.incompatible",
       "plugin.api.invalidStorage",
       "plugin.api.busy",
+      "plugin.activation.failed",
+      "plugin.activation.cleanupFailed",
+      "plugin.activation.closed",
     ] as const) {
       expect(pluginFailure(new Error(message))).toBe(i18n.t(message));
       expect(pluginFailure({ code: "validation", message })).toBe(i18n.t(message));
       expect(pluginFailure(new Error(`plugin.error: ${message}`))).toBe(i18n.t(message));
+      expect(pluginFailure({ code: "validation", message: `plugin.api.frontend:${message}` })).toBe(
+        i18n.t(message),
+      );
     }
   });
 

@@ -1,3 +1,5 @@
+pub mod forwarding;
+
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -84,13 +86,6 @@ pub struct AppInfo {
     schema: SettingsSchema,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HostsSnapshot {
-    groups: Vec<Group>,
-    hosts: Vec<Host>,
-}
-
 #[tauri::command]
 pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
     let package = app.package_info();
@@ -116,103 +111,17 @@ pub fn app_info(app: AppHandle, state: State<'_, AppState>) -> AppInfo {
 
 #[tauri::command]
 pub fn settings_get(state: State<'_, AppState>) -> Settings {
-    state.settings()
+    crate::services::settings::read(&state)
 }
 
 #[tauri::command]
-pub fn settings_update(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    patch: Value,
-) -> AppResult<Settings> {
-    let previous = state.settings();
-    let mut base = serde_json::to_value(&previous)?;
-    let colors = patch.get("colors").cloned();
-    let keyboard_shortcuts = patch.get("keyboardShortcuts").cloned();
-    let shortcut_rules = patch.get("shortcutRules").cloned();
-    let network = patch.get("network").cloned();
-    merge_json(&mut base, patch);
-    if let Some(colors) = colors {
-        base["colors"] = colors;
-    }
-    if let Some(keyboard_shortcuts) = keyboard_shortcuts {
-        base["keyboardShortcuts"] = keyboard_shortcuts;
-    }
-    if let Some(shortcut_rules) = shortcut_rules {
-        base["shortcutRules"] = shortcut_rules;
-    }
-    if let Some(network) = network {
-        base["network"] = network;
-    }
-    let mut next: Settings = serde_json::from_value(base)
-        .map_err(|error| AppError::validation(format!("settings.invalid: {error}")))?;
-    next.sanitize();
-    next.network.validate()?;
-    update::validate_preferences(&next)?;
-    update::validate_settings_change(&previous, &next, &state.update.snapshot())?;
-
-    let title_bar_changed = next.title_bar_style != previous.title_bar_style;
-    if title_bar_changed {
-        crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
-    }
-    if let Err(error) = state.db.with(|conn| db::settings::save(conn, &next)) {
-        if title_bar_changed {
-            let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
-        }
-        return Err(error);
-    }
-    for profile in &previous.network.profiles {
-        if !next
-            .network
-            .profiles
-            .iter()
-            .any(|current| current.id == profile.id)
-        {
-            if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
-                tracing::warn!(%error, "could not remove deleted proxy credential");
-            }
-        }
-    }
-    state.set_settings(next.clone());
-    crate::platform::window::apply_theme(&app, &next.theme);
-    crate::platform::window::apply_background_dock_preference(&app);
-    let _ = app.emit("settings://changed", &next);
-    Ok(next)
+pub async fn settings_update(app: AppHandle, patch: Value) -> AppResult<Settings> {
+    crate::services::settings::update(&app, patch).await
 }
 
 #[tauri::command]
-pub fn settings_reset(app: AppHandle, state: State<'_, AppState>) -> AppResult<Settings> {
-    let previous = state.settings();
-    let mut next = Settings::default();
-    next.sanitize();
-    update::validate_settings_change(&previous, &next, &state.update.snapshot())?;
-    let title_bar_changed = next.title_bar_style != previous.title_bar_style;
-    if title_bar_changed {
-        crate::platform::window::apply_title_bar_style(&app, &next.title_bar_style)?;
-    }
-    if let Err(error) = state.db.with(|conn| db::settings::save(conn, &next)) {
-        if title_bar_changed {
-            let _ = crate::platform::window::apply_title_bar_style(&app, &previous.title_bar_style);
-        }
-        return Err(error);
-    }
-    for profile in &previous.network.profiles {
-        if !next
-            .network
-            .profiles
-            .iter()
-            .any(|current| current.id == profile.id)
-        {
-            if let Err(error) = crate::vault::forget(&format!("proxy:{}", profile.id)) {
-                tracing::warn!(%error, "could not remove deleted proxy credential");
-            }
-        }
-    }
-    state.set_settings(next.clone());
-    crate::platform::window::apply_theme(&app, &next.theme);
-    crate::platform::window::apply_background_dock_preference(&app);
-    let _ = app.emit("settings://changed", &next);
-    Ok(next)
+pub async fn settings_reset(app: AppHandle) -> AppResult<Settings> {
+    crate::services::settings::reset(&app).await
 }
 
 #[tauri::command]
@@ -227,79 +136,70 @@ pub fn set_locale(app: AppHandle, state: State<'_, AppState>, locale: String) ->
 }
 
 #[tauri::command]
-pub fn hosts_snapshot(state: State<'_, AppState>) -> AppResult<HostsSnapshot> {
-    state.db.with(|conn| {
-        Ok(HostsSnapshot {
-            groups: db::hosts::list_groups(conn)?,
-            hosts: db::hosts::list_hosts(conn)?,
-        })
-    })
+pub fn hosts_snapshot(state: State<'_, AppState>) -> AppResult<crate::services::hosts::Snapshot> {
+    crate::services::hosts::snapshot(&state.db)
 }
 
 #[tauri::command]
-pub fn host_create(state: State<'_, AppState>, input: HostInput) -> AppResult<Host> {
-    let draft = input.validate()?;
-    let host = state.db.with(|conn| db::hosts::create_host(conn, &draft))?;
-    crate::logs::record(&state.db, "host.create", Some(&host.id));
-    Ok(host)
+pub fn host_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: HostInput,
+) -> AppResult<Host> {
+    crate::services::hosts::service(&app, &state).create(input)
 }
 
 #[tauri::command]
-pub fn host_update(state: State<'_, AppState>, id: String, input: HostInput) -> AppResult<Host> {
-    let draft = input.validate()?;
-    let host = state
-        .db
-        .with(|conn| db::hosts::update_host(conn, &id, &draft))?;
-    state.ssh.rename_host(&id, &host.name);
-    crate::logs::record(&state.db, "host.update", Some(&id));
-    Ok(host)
+pub fn host_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    input: HostInput,
+) -> AppResult<Host> {
+    crate::services::hosts::service(&app, &state).update(&id, input)
 }
 
 #[tauri::command]
-pub fn host_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    let host = state.db.with(|conn| db::hosts::find_host(conn, &id))?;
-    state.db.with(|conn| {
-        db::hosts::delete_host(conn, &id)?;
-        conn.execute("DELETE FROM settings WHERE key=?1", [format!("route:{id}")])?;
-        Ok(())
-    })?;
-    let _ = crate::vault::forget(&host.id);
-    crate::logs::record(&state.db, "host.delete", Some(&id));
-    Ok(())
+pub fn host_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).delete(&id)
 }
 
 #[tauri::command]
-pub fn host_mark_used(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    state.db.with(|conn| db::hosts::mark_used(conn, &id))
+pub fn host_mark_used(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).mark_used(&id)
 }
 
 #[tauri::command]
-pub fn hosts_reorder(state: State<'_, AppState>, ids: Vec<String>) -> AppResult<()> {
-    if ids.len() > 500 {
-        return Err(AppError::validation("host.orderTooLarge"));
-    }
-    state.db.with(|conn| db::hosts::reorder_hosts(conn, &ids))
+pub fn hosts_reorder(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    ids: Vec<String>,
+) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).reorder(&ids)
 }
 
 #[tauri::command]
-pub fn group_create(state: State<'_, AppState>, input: GroupInput) -> AppResult<Group> {
-    let (name, parent_id) = input.validate()?;
-    state
-        .db
-        .with(|conn| db::hosts::create_group(conn, &name, parent_id.as_deref()))
+pub fn group_create(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    input: GroupInput,
+) -> AppResult<Group> {
+    crate::services::hosts::service(&app, &state).create_group(input)
 }
 
 #[tauri::command]
-pub fn group_update(state: State<'_, AppState>, id: String, input: GroupInput) -> AppResult<Group> {
-    let (name, parent_id) = input.validate()?;
-    state
-        .db
-        .with(|conn| db::hosts::update_group(conn, &id, &name, parent_id.as_deref()))
+pub fn group_update(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    input: GroupInput,
+) -> AppResult<Group> {
+    crate::services::hosts::service(&app, &state).update_group(&id, input)
 }
 
 #[tauri::command]
-pub fn group_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
-    state.db.with(|conn| db::hosts::delete_group(conn, &id))
+pub fn group_delete(app: AppHandle, state: State<'_, AppState>, id: String) -> AppResult<()> {
+    crate::services::hosts::service(&app, &state).delete_group(&id)
 }
 
 #[tauri::command]
@@ -901,10 +801,46 @@ pub async fn plugins_list(app: AppHandle) -> AppResult<Vec<plugins::PluginInfo>>
 }
 
 #[tauri::command]
-pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::PluginInfo> {
+pub fn plugin_activation_plan(
+    app: AppHandle,
+    id: String,
+    expected_fingerprint: String,
+) -> AppResult<plugins::ActivationPlan> {
+    app.state::<AppState>()
+        .plugins
+        .activation_plan(&id, &expected_fingerprint)
+}
+
+#[tauri::command]
+pub fn plugin_prepare_start(
+    app: AppHandle,
+    id: String,
+    expected_fingerprint: String,
+    expected_packages: Option<Vec<plugins::PackageReview>>,
+) -> AppResult<plugins::StartPermit> {
     let state = app.state::<AppState>();
-    let result = state.plugins.start(&app, &id).await;
+    match expected_packages {
+        Some(packages) => {
+            state
+                .plugins
+                .prepare_reviewed_start(&id, &expected_fingerprint, &packages)
+        }
+        None => state.plugins.prepare_start(&id, &expected_fingerprint),
+    }
+}
+
+#[tauri::command]
+pub async fn plugin_start(
+    app: AppHandle,
+    id: String,
+    permit: plugins::StartPermit,
+) -> AppResult<plugins::PluginInfo> {
+    let state = app.state::<AppState>();
+    let result = state.plugins.start(&app, &id, &permit).await;
     if let Err(error) = &result {
+        let (affected_id, activation_stage) =
+            error.activation_package().unwrap_or((&id, "startup"));
+        let error = error.original();
         // Do not persist untrusted plugin output or user paths in diagnostic logs.
         let detail = error.to_string();
         let reason = detail.split(':').next().unwrap_or("");
@@ -920,9 +856,15 @@ pub async fn plugin_start(app: AppHandle, id: String) -> AppResult<plugins::Plug
             ..
         } = error
         {
-            tracing::warn!(plugin_id = %id, reason, stage = "compatibility", plugin_version, host_version, required_host = required, action = "update_application_or_install_compatible_plugin", "plugin start failed");
+            tracing::warn!(plugin_id = affected_id, requested_plugin_id = %id, activation_stage, reason, stage = "compatibility", plugin_version, host_version, required_host = required, action = "update_application_or_install_compatible_plugin", "plugin start failed");
+        } else if let AppError::PluginUiSdkUnsupported {
+            required,
+            available,
+        } = error
+        {
+            tracing::warn!(plugin_id = affected_id, requested_plugin_id = %id, activation_stage, reason, stage = "ui-sdk-compatibility", required_sdk = required, available_sdk = available, action = "update_application_or_install_compatible_plugin", "plugin start failed");
         } else {
-            tracing::warn!(plugin_id = %id, reason, error_code = error.code(), stage = "startup", "plugin start failed");
+            tracing::warn!(plugin_id = affected_id, requested_plugin_id = %id, activation_stage, reason, error_code = error.code(), stage = "startup", "plugin start failed");
         }
     }
     result
@@ -940,9 +882,10 @@ pub async fn plugin_run(
     id: String,
     command: String,
     input: Option<Value>,
+    runtime_id: String,
 ) -> AppResult<Value> {
     let state = app.state::<AppState>();
-    state.plugins.run(&id, &command, input).await
+    state.plugins.run(&id, &command, input, &runtime_id).await
 }
 
 /// Lets the user pick the folder that contains a plugin.
@@ -1027,35 +970,32 @@ pub fn plugin_open_dir(app: AppHandle) -> AppResult<()> {
 
 #[tauri::command]
 pub fn history_record(
+    app: AppHandle,
     state: State<'_, AppState>,
     host_id: String,
     command: String,
-) -> AppResult<Option<db::history::HistoryEntry>> {
-    state.db.with(|conn| {
-        db::hosts::find_host(conn, &host_id)?;
-        db::history::record(conn, &host_id, &command)
-    })
+) -> AppResult<Option<crate::services::history::Entry>> {
+    crate::services::history::service(&app, &state).record(&host_id, &command)
 }
 
 #[tauri::command]
 pub fn history_list(
+    app: AppHandle,
     state: State<'_, AppState>,
     host_id: String,
     limit: Option<i64>,
-) -> AppResult<Vec<db::history::HistoryEntry>> {
-    state
-        .db
-        .with(|conn| db::history::list(conn, &host_id, limit.unwrap_or(200)))
+) -> AppResult<Vec<crate::services::history::Entry>> {
+    crate::services::history::service(&app, &state).list(&host_id, limit)
 }
 
 #[tauri::command]
-pub fn history_delete(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    state.db.with(|conn| db::history::delete(conn, id))
+pub fn history_delete(app: AppHandle, state: State<'_, AppState>, id: i64) -> AppResult<()> {
+    crate::services::history::service(&app, &state).delete(id)
 }
 
 #[tauri::command]
-pub fn history_clear(state: State<'_, AppState>, host_id: String) -> AppResult<()> {
-    state.db.with(|conn| db::history::clear(conn, &host_id))
+pub fn history_clear(app: AppHandle, state: State<'_, AppState>, host_id: String) -> AppResult<()> {
+    crate::services::history::service(&app, &state).clear(&host_id)
 }
 
 #[tauri::command]
@@ -1078,11 +1018,12 @@ pub async fn plugin_render_view(
     id: String,
     view: String,
     locale: Option<String>,
+    runtime_id: String,
 ) -> AppResult<Value> {
     let state = app.state::<AppState>();
     state
         .plugins
-        .render_view(&id, &view, locale.as_deref())
+        .render_view(&id, &view, locale.as_deref(), &runtime_id)
         .await
 }
 
@@ -1390,20 +1331,4 @@ pub fn app_open_data_dir(app: AppHandle) -> AppResult<()> {
     app.opener()
         .open_path(state.data_dir.to_string_lossy().into_owned(), None::<&str>)
         .map_err(|error| AppError::Internal(error.to_string()))
-}
-
-fn merge_json(base: &mut Value, patch: Value) {
-    match (base, patch) {
-        (Value::Object(base_map), Value::Object(patch_map)) => {
-            for (key, value) in patch_map {
-                match base_map.get_mut(&key) {
-                    Some(slot) if slot.is_object() && value.is_object() => merge_json(slot, value),
-                    _ => {
-                        base_map.insert(key, value);
-                    }
-                }
-            }
-        }
-        (slot, value) => *slot = value,
-    }
 }

@@ -14,9 +14,12 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks }));
 vi.mock("@/store/toasts", () => ({ toast: mocks.toast }));
-vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key } }));
+vi.mock("@/i18n/i18n", () => ({ default: { t: (key: string) => key, exists: () => false } }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { resolvedLanguage: "en-US" } }),
+}));
+vi.mock("@/features/history/HistorySurface", () => ({
+  HistorySurface: ({ children }: { children: React.ReactNode }) => children,
 }));
 const entry = (id: number, command: string): HistoryEntry => ({
   id,
@@ -92,7 +95,7 @@ describe("history changes from other views and plugins", () => {
     expect(mocks.historyList).toHaveBeenCalledTimes(2);
   });
 
-  it("ignores an older request that resolves after a newer refresh", async () => {
+  it("queues one fresh read after an invalidation during an older request", async () => {
     let resolveOld!: (entries: HistoryEntry[]) => void;
     mocks.historyList.mockReturnValueOnce(
       new Promise((resolve) => {
@@ -102,8 +105,9 @@ describe("history changes from other views and plugins", () => {
     render(<HistoryPage sessionId="session" />);
     mocks.historyList.mockResolvedValue([entry(2, "latest command")]);
     act(() => window.dispatchEvent(new Event("tunnelde:history-changed")));
-    await screen.findByText("latest command");
+    expect(mocks.historyList).toHaveBeenCalledOnce();
     await act(async () => resolveOld([entry(1, "outdated command")]));
+    await screen.findByText("latest command");
     expect(screen.queryByText("outdated command")).toBeNull();
     expect(screen.getByText("latest command")).toBeTruthy();
   });
@@ -114,6 +118,6 @@ describe("history changes from other views and plugins", () => {
     mocks.historyList.mockReturnValue(new Promise(() => {}));
     act(() => useSsh.setState({ sessions: [session("two")] }));
     await waitFor(() => expect(screen.queryByText("first command")).toBeNull());
-    expect(mocks.historyList).toHaveBeenLastCalledWith("two");
+    expect(mocks.historyList).toHaveBeenLastCalledWith("two", 500);
   });
 });

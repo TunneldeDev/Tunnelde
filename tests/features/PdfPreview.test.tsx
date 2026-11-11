@@ -29,6 +29,14 @@ beforeEach(async () => {
 });
 
 describe("PDF preview continuity", () => {
+  it("notifies the ticket owner when document decoding fails", async () => {
+    const error = new Error("Invalid PDF");
+    getDocument.mockReturnValueOnce({ ...loading, promise: Promise.reject(error) });
+    const onError = vi.fn();
+    render(<PdfPreview url="preview://localhost/invalid" size={1000} onError={onError} />);
+    await waitFor(() => expect(onError).toHaveBeenCalledExactlyOnceWith(error));
+  });
+
   it("keeps the document, current page and zoom when translating the controls", async () => {
     const view = render(<PdfPreview url="preview://localhost/document" size={1000} />);
     await waitFor(() => expect(page.render).toHaveBeenCalledTimes(1));

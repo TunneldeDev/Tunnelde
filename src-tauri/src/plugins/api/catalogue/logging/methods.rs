@@ -1,0 +1,6 @@
+use super::ApiMethod;
+
+pub const METHODS: &[ApiMethod] = &[
+    method!("logs.read", ["logs.read"], "{source?:'diagnostics'|'operations',cursor?:string,filter?:{domains?:string[],plugins?:string[],levels?:string[],text?:string},limit?:number}", "Read bounded persisted structured log pages under an independent grant covering application and other plugins. Opaque cursors are bound to owner/runtime/process/source/filter, never select paths. Reports gaps/reset on rotation, truncation or malformed records; partial tails wait for append. Initial diagnostics start within recent 256KiB of current log; operations retention1000. Page<=128KiB, limit1..200(default100). Not reliable audit delivery. See logging read schema for exact wire contract."),
+    stable_method!("log", ["log"], "{message:string,level?:string,domain?:string,operation?:string,requestId?:string,fields?:object}", "Write a bounded local log at its requested severity; return null on acceptance, not durable delivery. Host supplies plugin identity and runtime generation; domain is plugin-scoped. Optional structured fields redact credential keys and URL credentials/query/fragment. Existing message/level calls remain supported; structured options require 0.33.0-beta.5 or later. Subject to configured log filter and nonblocking writer; never include secrets in message text.", "0.21.0"),
+];

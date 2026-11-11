@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "files",
+  "type": "object",
+  "properties": {
+    "showHidden": {
+      "type": "boolean"
+    },
+    "foldersFirst": {
+      "type": "boolean"
+    },
+    "sortBy": {
+      "type": "string",
+      "enum": [
+        "name",
+        "size",
+        "modified"
+      ]
+    },
+    "sortDirection": {
+      "type": "string",
+      "enum": [
+        "asc",
+        "desc"
+      ]
+    },
+    "iconTheme": {
+      "type": "string",
+      "maxLength": 129
+    },
+    "preload": {
+      "type": "boolean"
+    },
+    "preloadCount": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 32
+    }
+  },
+  "required": [
+    "showHidden",
+    "foldersFirst",
+    "sortBy",
+    "sortDirection",
+    "iconTheme",
+    "preload",
+    "preloadCount"
+  ],
+  "additionalProperties": false
+}

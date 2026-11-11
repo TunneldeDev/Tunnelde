@@ -10,10 +10,14 @@ import { useNavigation } from "@/store/navigation";
 export function PluginPermissionList({ permissions }: { permissions: string[] }) {
   const { t } = useTranslation();
   const descriptions = {
+    "ui.trusted": "pluginSecurity.permission.trustedUi",
     log: "pluginSecurity.permission.log",
+    "logs.read": "pluginSecurity.permission.logsRead",
     "app.read": "pluginSecurity.permission.appRead",
     "settings.read": "pluginSecurity.permission.settingsRead",
     "settings.write": "pluginSecurity.permission.settingsWrite",
+    "storage.locations.read": "pluginSecurity.permission.storageLocationsRead",
+    "storage.locations.write": "pluginSecurity.permission.storageLocationsWrite",
     "hosts.read": "pluginSecurity.permission.hostsRead",
     "hosts.write": "pluginSecurity.permission.hostsWrite",
     "sessions.read": "pluginSecurity.permission.sessionsRead",
@@ -38,6 +42,8 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
     secrets: "pluginSecurity.permission.secrets",
     "mounts.read": "pluginSecurity.permission.mountsRead",
     "mounts.write": "pluginSecurity.permission.mountsWrite",
+    "backgroundTasks.read": "pluginSecurity.permission.backgroundTasksRead",
+    "backgroundTasks.write": "pluginSecurity.permission.backgroundTasksWrite",
     "forwards.read": "pluginSecurity.permission.forwardsRead",
     "forwards.write": "pluginSecurity.permission.forwardsWrite",
   } as const;
@@ -98,7 +104,12 @@ export function PluginPermissionGate() {
         {plugin.sourceUrl ?? plugin.path}
       </p>
       <PluginPermissionList permissions={plugin.permissions} />
-      {plugin.runtime !== "declarative" && (
+      {plugin.frontend && (
+        <p role="note" className="panel__error">
+          {t("pluginSecurity.trustedUiWarning")}
+        </p>
+      )}
+      {!["declarative", "frontend"].includes(plugin.runtime ?? "node") && (
         <p className="settings-hint">
           {t(
             plugin.runtime === "wasm" ? "pluginSecurity.wasmWarning" : "pluginSecurity.nodeWarning",

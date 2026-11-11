@@ -1,32 +1,46 @@
 pub mod api;
 pub mod config;
+pub mod configuration;
 mod contributions;
 mod declarative;
 mod engines;
+mod events;
+mod extensions;
 pub mod file_icons;
+pub mod forwarding;
+pub mod frontend;
 mod host;
+pub mod host_columns;
+pub mod host_fields;
+pub mod host_list;
+pub mod host_sources;
 mod logging;
 pub mod manifest;
 pub mod marketplace;
 pub mod network;
 pub mod node;
 pub mod runners;
+mod runtime;
 pub mod security;
+mod sessions;
 pub mod status_bar;
 pub mod tab_bar;
 pub mod tasks;
 mod tools;
 pub mod wasm;
 
+pub use runtime::activation::{ActivationPlan, PackageReview, PluginDependency, StartPermit};
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::Duration;
 
 use serde::Serialize;
-use serde_json::{json, Value};
-use tauri::{AppHandle, Emitter, Manager};
-use tokio::sync::Mutex;
+use serde_json::Value;
+use tauri::{AppHandle, Manager};
+use tokio::sync::{Mutex, RwLock};
 
 use crate::error::{AppError, AppResult};
 use crate::plugins::host::PluginHost;
@@ -34,9 +48,6 @@ use crate::plugins::manifest::{PluginCommand, PluginManifest, PluginTheme, Plugi
 use crate::plugins::wasm::WasmPlugin;
 
 pub const STATE_EVENT: &str = "plugin://state";
-const START_TIMEOUT: Duration = Duration::from_secs(8);
-const CALL_TIMEOUT: Duration = Duration::from_secs(20);
-const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,10 +60,17 @@ pub enum PluginStatus {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
+    /// Immutable installed metadata for internal planning. Never crosses IPC.
+    #[serde(skip)]
+    pub(in crate::plugins) package_manifest: Arc<PluginManifest>,
     pub id: String,
     pub name: String,
     pub version: String,
     pub api_version: u32,
+    pub dependencies: Vec<PluginDependency>,
+    pub host_fields: Option<crate::services::host_fields::Schema>,
+    pub configuration:
+        Option<crate::services::plugin_configuration::contracts::schema::Declaration>,
     pub description: Option<String>,
     pub commands: Vec<PluginCommand>,
     pub views: Vec<PluginView>,
@@ -72,6 +90,8 @@ pub struct PluginInfo {
     pub file_previews: Vec<crate::preview::providers::Provider>,
     pub mounted_file_reveal: bool,
     pub fingerprint: String,
+    pub runtime_id: Option<String>,
+    pub frontend: Option<frontend::FrontendManifest>,
 }
 
 struct Instance {
@@ -85,6 +105,8 @@ struct Instance {
     readme: Option<String>,
     node_source: Option<String>,
     fingerprint: String,
+    runtime_lease: Option<security::Lease>,
+    runtime_id: Option<String>,
 }
 
 impl Instance {
@@ -105,6 +127,8 @@ impl Instance {
             readme,
             node_source: None,
             fingerprint,
+            runtime_lease: None,
+            runtime_id: None,
         };
         if instance.is_wasm() {
             match instance.load_wasm() {
@@ -123,21 +147,7 @@ impl Instance {
     }
 
     fn require_runtime(&self) -> AppResult<()> {
-        if let Some(range) = self.manifest.engines.get("tunnelde") {
-            let compatible = engines::supports_host(range, env!("CARGO_PKG_VERSION"));
-            if !compatible {
-                return Err(AppError::PluginEngineUnsupported {
-                    plugin_id: self.manifest.id.clone(),
-                    plugin_version: self.manifest.version.clone(),
-                    host_version: env!("CARGO_PKG_VERSION").into(),
-                    required: range.clone(),
-                });
-            }
-        }
-        if self.manifest.runtime.as_deref() == Some("theme") {
-            return Err(AppError::validation("plugin.theme.noRuntime"));
-        }
-        Ok(())
+        self.manifest.require_runtime()
     }
 
     fn load_wasm(&self) -> AppResult<WasmPlugin> {
@@ -148,10 +158,14 @@ impl Instance {
 
     fn info(&self) -> PluginInfo {
         PluginInfo {
+            package_manifest: Arc::new(self.manifest.clone()),
             id: self.manifest.id.clone(),
             name: self.manifest.name.clone(),
             version: self.manifest.version.clone(),
             api_version: self.manifest.api_version,
+            dependencies: self.manifest.dependencies.clone(),
+            host_fields: self.manifest.host_fields.clone(),
+            configuration: self.manifest.configuration.clone(),
             description: self.manifest.description.clone(),
             commands: self.manifest.commands.clone(),
             views: self.manifest.views.clone(),
@@ -175,65 +189,34 @@ impl Instance {
             mounted_file_reveal: self.manifest.mounted_file_reveal,
             tags: self.manifest.tags.clone(),
             fingerprint: self.fingerprint.clone(),
+            runtime_id: (self.status == PluginStatus::Running)
+                .then(|| self.runtime_id.clone())
+                .flatten(),
+            frontend: self.manifest.frontend.clone(),
         }
     }
 }
 
 pub struct PluginsManager {
+    runtime_app: std::sync::OnceLock<AppHandle>,
+    starts: Arc<runtime::activation::execution::coordination::Coordinator>,
     dir: PathBuf,
     plugins: Mutex<HashMap<String, Arc<Mutex<Instance>>>>,
-    mutations: Mutex<()>,
+    mutations: RwLock<()>,
     snapshots: std::sync::RwLock<HashMap<String, PluginInfo>>,
-    runtime_sources: std::sync::RwLock<HashMap<String, String>>,
+    runtime_sources: std::sync::RwLock<HashMap<String, (String, security::Lease)>>,
     pub(super) security: Arc<security::PluginSecurity>,
     status_bar: contributions::Registry<status_bar::StatusBarItem>,
     tab_bar: contributions::Registry<tab_bar::TabBarItem>,
+    host_list: contributions::Registry<host_list::DecorationSet>,
+    host_columns: contributions::Registry<host_columns::Column>,
+    host_sources: contributions::Registry<host_sources::Source>,
+    sessions: Arc<runtime::ownership::Registry<String>>,
 }
 
 impl PluginsManager {
-    pub fn revoke_background(&self, app: &AppHandle, id: &str) {
-        self.security.invalidate_runtime(id);
-        tasks::cancel_plugin(id, None);
-        self.stop_network_resources(app, id);
-        self.stop_remote_runners(app, id);
-    }
-    fn stop_network_resources(&self, app: &AppHandle, id: &str) {
-        let boundary = self.security.cleanup_boundary(id);
-        status_bar::remove_runtime(app, id, |generation| generation < boundary);
-        tab_bar::remove_runtime(app, id, |generation| generation < boundary);
-        app.state::<crate::state::AppState>()
-            .forwards
-            .stop_before_generation(id, boundary);
-        let cleanup_app = app.clone();
-        let cleanup_owner = id.to_owned();
-        tauri::async_runtime::spawn(async move {
-            cleanup_app
-                .state::<crate::state::AppState>()
-                .mounts
-                .stop_before_generation(&cleanup_owner, boundary)
-                .await;
-        });
-    }
-    fn stop_remote_runners(&self, app: &AppHandle, id: &str) {
-        let info = self
-            .snapshots
-            .read()
-            .unwrap_or_else(|error| error.into_inner())
-            .get(id)
-            .cloned();
-        if let Some(info) = info {
-            let context = api::HostContext {
-                app: app.clone(),
-                id: info.id,
-                fingerprint: info.fingerprint,
-                permissions: info.permissions,
-                generation: 0,
-                tool_client: None,
-            };
-            tokio::spawn(async move {
-                runners::revoke(&context).await;
-            });
-        }
+    pub(crate) fn forget_connection(&self, session_id: &str) {
+        self.sessions.forget(|id| id == session_id);
     }
 
     pub fn initialize_security(&self, db: &crate::db::Database, locked: bool) -> AppResult<()> {
@@ -271,11 +254,16 @@ impl PluginsManager {
     ) -> AppResult<()> {
         if permissions.is_none() {
             // Revoke before waiting for an instance's in-flight command mutex.
-            return self
-                .security
-                .set_permissions(db, id, String::new(), &[], None);
+            return self.security.set_permissions_with_cleanup(
+                db,
+                id,
+                String::new(),
+                &[],
+                None,
+                |retired| self.cleanup_policy_retirement(retired),
+            );
         }
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         let info = self
             .snapshots
             .read()
@@ -290,37 +278,14 @@ impl PluginsManager {
         if permissions.is_some() && expected_fingerprint.as_deref() != Some(digest.as_str()) {
             return Err(AppError::validation("pluginSecurity.changed"));
         }
-        self.security
-            .set_permissions(db, id, digest, &info.permissions, permissions)
-    }
-
-    pub async fn stop_immediately(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        self.security.invalidate_runtime(id);
-        tasks::cancel_plugin(id, None);
-        self.stop_network_resources(app, id);
-        self.stop_remote_runners(app, id);
-        self.remember_source(id, None);
-        let handle = self.instance(id).await?;
-        let mut instance = handle.lock().await;
-        if let Some(mut host) = instance.host.take() {
-            host.kill();
-        }
-        instance.wasm = None;
-        instance.node_source = None;
-        instance.status = PluginStatus::Stopped;
-        instance.error = None;
-        let info = instance.info();
-        self.remember(&info);
-        drop(instance);
-        let _ = app.emit(STATE_EVENT, &info);
-        Ok(info)
-    }
-
-    pub async fn stop_all_immediately(&self, app: &AppHandle) {
-        let ids: Vec<_> = self.plugins.lock().await.keys().cloned().collect();
-        for id in ids {
-            let _ = self.stop_immediately(app, &id).await;
-        }
+        self.security.set_permissions_with_cleanup(
+            db,
+            id,
+            digest,
+            &info.permissions,
+            permissions,
+            |retired| self.cleanup_policy_retirement(retired),
+        )
     }
 
     pub fn force_cli_restricted(&self, app: &AppHandle, db: &crate::db::Database) {
@@ -400,14 +365,20 @@ impl PluginsManager {
             }
         }
         Self {
+            runtime_app: std::sync::OnceLock::new(),
+            starts: runtime::activation::execution::coordination::Coordinator::new(),
             dir,
             plugins: Mutex::new(plugins),
-            mutations: Mutex::new(()),
+            mutations: RwLock::new(()),
             snapshots: std::sync::RwLock::new(snapshots),
             runtime_sources: std::sync::RwLock::new(HashMap::new()),
             security: Arc::new(security::PluginSecurity::default()),
             status_bar: contributions::Registry::default(),
             tab_bar: contributions::Registry::default(),
+            host_list: contributions::Registry::with_limit_error("plugin.hostList.limit"),
+            host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
+            host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
+            sessions: runtime::ownership::Registry::new(8, 64),
         }
     }
 
@@ -419,6 +390,31 @@ impl PluginsManager {
             .map_or_else(|| id.to_owned(), |item| item.name.clone())
     }
 
+    pub(super) fn with_host_fields<T>(
+        &self,
+        id: &str,
+        fingerprint: Option<&str>,
+        operation: impl FnOnce(&crate::services::host_fields::Schema) -> AppResult<T>,
+    ) -> AppResult<T> {
+        // Keep the installed schema stable through the bounded DB operation.
+        // Package replacement/removal cannot interleave between validation and commit.
+        let snapshots = self
+            .snapshots
+            .read()
+            .unwrap_or_else(|error| error.into_inner());
+        let plugin = snapshots
+            .get(id)
+            .ok_or_else(|| AppError::validation("plugin.notFound"))?;
+        if fingerprint.is_some_and(|value| value != plugin.fingerprint) {
+            return Err(AppError::validation("pluginSecurity.changed"));
+        }
+        let schema = plugin
+            .host_fields
+            .as_ref()
+            .ok_or_else(|| AppError::validation("hostFields.notDeclared"))?;
+        operation(schema)
+    }
+
     pub(super) fn status_bar_command(&self, id: &str, command: &str) -> bool {
         self.snapshots
             .read()
@@ -426,7 +422,10 @@ impl PluginsManager {
             .get(id)
             .is_some_and(|item| {
                 item.commands.iter().any(|entry| {
-                    entry.id == command && entry.editor.is_none() && entry.file_menu.is_none()
+                    entry.id == command
+                        && entry.editor.is_none()
+                        && entry.file_menu.is_none()
+                        && !entry.host_menu
                 })
             })
     }
@@ -458,7 +457,7 @@ impl PluginsManager {
             .unwrap_or_else(|error| error.into_inner())
             .remove(id);
     }
-    fn remember_source(&self, id: &str, source: Option<String>) {
+    fn remember_source(&self, id: &str, source: Option<(String, security::Lease)>) {
         let mut sources = self
             .runtime_sources
             .write()
@@ -476,394 +475,6 @@ impl PluginsManager {
             .get(id)
             .cloned()
             .ok_or_else(|| AppError::NotFound("plugin.notFound".into()))
-    }
-    pub async fn start(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        let handle = self.instance(id).await?;
-        let mut instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-        instance.require_runtime()?;
-        let lease = self.security.lease(
-            id,
-            security::fingerprint_async(instance.dir.clone()).await?,
-            instance.manifest.permissions.clone(),
-        )?;
-        let state = app.state::<crate::state::AppState>();
-        self.security.mark_running(&state.db)?;
-
-        if instance.manifest.runtime.as_deref() == Some("declarative") {
-            instance.status = PluginStatus::Running;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            drop(instance);
-            let _ = app.emit(STATE_EVENT, &info);
-            return Ok(info);
-        }
-
-        if instance.is_wasm() {
-            // The module is preloaded when the plugin is scanned, but a stop
-            // drops it, so reload on demand to keep start idempotent.
-            if instance.wasm.is_none() {
-                match instance.load_wasm() {
-                    Ok(wasm) => instance.wasm = Some(wasm),
-                    Err(error) => {
-                        instance.status = PluginStatus::Failed;
-                        instance.error = Some(error.to_string());
-                        let info = instance.info();
-                        self.remember(&info);
-                        drop(instance);
-                        let _ = app.emit(STATE_EVENT, &info);
-                        return Ok(info);
-                    }
-                }
-            }
-            instance.status = PluginStatus::Running;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            drop(instance);
-            let _ = app.emit(STATE_EVENT, &info);
-            return Ok(info);
-        }
-
-        if instance.host.is_some() {
-            return Ok(instance.info());
-        }
-
-        let config = state.db.with(config::load)?;
-        let runtime = self
-            .security
-            .guard(
-                &lease,
-                node::resolve(
-                    state
-                        .storage
-                        .dir(crate::storage::layout::Category::Runtimes),
-                    config.node_path.as_deref().map(Path::new),
-                    config.node_system_allowed,
-                ),
-            )
-            .await
-            .inspect_err(|_| {
-                self.remember_source(id, None);
-            })?;
-        if !runtime.compatible {
-            return Err(AppError::validation("node.required"));
-        }
-        let node = runtime
-            .path
-            .ok_or_else(|| AppError::validation("node.required"))?;
-        if let Some(range) = instance.manifest.engines.get("node") {
-            let version = runtime
-                .version
-                .as_deref()
-                .and_then(|value| semver::Version::parse(value.trim_start_matches('v')).ok());
-            if !version.is_some_and(|version| {
-                semver::VersionReq::parse(range).is_ok_and(|req| req.matches(&version))
-            }) {
-                return Err(AppError::validation("node.incompatible"));
-            }
-        }
-        let entry = manifest::entry_path(&instance.dir, &instance.manifest.main)?;
-        self.remember_source(id, runtime.source.clone());
-        if matches!(
-            runtime.source.as_deref(),
-            Some("environment" | "path" | "registry" | "shell")
-        ) && !state.db.with(config::load)?.node_system_allowed
-        {
-            self.remember_source(id, None);
-            return Err(AppError::validation("node.required"));
-        }
-        self.security
-            .authorize(
-                id,
-                &lease.fingerprint,
-                &lease.permissions,
-                None,
-                Some(lease.generation),
-            )
-            .inspect_err(|_| self.remember_source(id, None))?;
-        let host = self
-            .security
-            .guard(
-                &lease,
-                PluginHost::spawn(
-                    &node,
-                    &entry,
-                    &instance.dir,
-                    Some(api::HostContext {
-                        app: app.clone(),
-                        id: id.into(),
-                        fingerprint: lease.fingerprint.clone(),
-                        permissions: lease.permissions.clone(),
-                        generation: lease.generation,
-                        tool_client: None,
-                    }),
-                ),
-            )
-            .await
-            .inspect_err(|_| self.remember_source(id, None))?;
-
-        let initialized = self
-            .security
-            .guard(
-                &lease,
-                host.request(
-                    "initialize",
-                    json!({
-                        "apiVersion": manifest::API_VERSION,
-                        "pluginId": instance.manifest.id,
-                        "permissions": instance.manifest.permissions,
-                        "hostApiVersion": 1,
-                    }),
-                    START_TIMEOUT,
-                ),
-            )
-            .await;
-
-        if let Err(error) = self.security.authorize(
-            id,
-            &lease.fingerprint,
-            &lease.permissions,
-            None,
-            Some(lease.generation),
-        ) {
-            let mut host = host;
-            host.kill();
-            self.remember_source(id, None);
-            instance.status = PluginStatus::Stopped;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            drop(instance);
-            let _ = app.emit(STATE_EVENT, &info);
-            return Err(error);
-        }
-
-        match initialized {
-            Ok(_) => {
-                instance.host = Some(host);
-                instance.node_source = runtime.source;
-                instance.status = PluginStatus::Running;
-                instance.error = None;
-            }
-            Err(error) => {
-                let detail = error.to_string();
-                let reason = detail.split(':').next().unwrap_or("plugin.error");
-                tracing::warn!(plugin_id = %id, reason, "plugin initialization failed");
-                let mut host = host;
-                host.kill();
-                self.remember_source(id, None);
-                instance.status = PluginStatus::Failed;
-                instance.error = Some(error.to_string());
-            }
-        }
-
-        let info = instance.info();
-        self.remember(&info);
-        drop(instance);
-        let _ = app.emit(STATE_EVENT, &info);
-        Ok(info)
-    }
-
-    pub async fn stop(&self, app: &AppHandle, id: &str) -> AppResult<PluginInfo> {
-        self.security.invalidate_runtime(id);
-        tasks::cancel_plugin(id, None);
-        self.stop_network_resources(app, id);
-        self.stop_remote_runners(app, id);
-        self.remember_source(id, None);
-        let handle = self.instance(id).await?;
-        let mut instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-
-        if let Some(mut host) = instance.host.take() {
-            let _ = host
-                .request("shutdown", json!({}), Duration::from_secs(2))
-                .await;
-            host.kill();
-        }
-        instance.wasm = None;
-        instance.node_source = None;
-        instance.status = PluginStatus::Stopped;
-        instance.error = None;
-
-        let info = instance.info();
-        self.remember(&info);
-        drop(instance);
-        let _ = app.emit(STATE_EVENT, &info);
-        Ok(info)
-    }
-
-    pub async fn stop_system_nodes(&self, app: &AppHandle) {
-        let ids: Vec<_> = self
-            .runtime_sources
-            .read()
-            .unwrap_or_else(|error| error.into_inner())
-            .iter()
-            .filter(|(_, source)| {
-                matches!(
-                    source.as_str(),
-                    "environment" | "path" | "registry" | "shell"
-                )
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in ids {
-            self.security.invalidate_runtime(&id);
-            self.revoke_background(app, &id);
-            self.remember_source(&id, None);
-            let Ok(handle) = self.instance(&id).await else {
-                continue;
-            };
-            let mut instance = handle.lock().await;
-            if !matches!(
-                instance.node_source.as_deref(),
-                Some("environment" | "path" | "registry" | "shell")
-            ) {
-                continue;
-            }
-            if let Some(mut host) = instance.host.take() {
-                host.kill();
-            }
-            instance.node_source = None;
-            self.remember_source(&id, None);
-            instance.status = PluginStatus::Stopped;
-            instance.error = None;
-            let info = instance.info();
-            self.remember(&info);
-            drop(instance);
-            let _ = app.emit(STATE_EVENT, info);
-        }
-    }
-
-    pub async fn render_view(
-        &self,
-        id: &str,
-        view: &str,
-        locale: Option<&str>,
-    ) -> AppResult<Value> {
-        let handle = self.instance(id).await?;
-        let instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-        instance.require_runtime()?;
-        let lease = self.security.lease(
-            id,
-            security::fingerprint_async(instance.dir.clone()).await?,
-            instance.manifest.permissions.clone(),
-        )?;
-        if instance.manifest.runtime.as_deref() == Some("declarative") {
-            if !instance.manifest.views.iter().any(|item| item.id == view) {
-                return Err(AppError::NotFound("plugin.view.notFound".into()));
-            }
-            return declarative::render(&instance.dir, &instance.manifest.main, view);
-        }
-        if instance.is_wasm() {
-            let result = wasm_call(
-                &instance,
-                json!({ "method": "render", "view": view, "locale": locale }),
-                &self.security,
-                &lease,
-            );
-            self.security.authorize(
-                id,
-                &lease.fingerprint,
-                &lease.permissions,
-                None,
-                Some(lease.generation),
-            )?;
-            return result;
-        }
-        let host = instance
-            .host
-            .as_ref()
-            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?
-            .connection();
-        // An async plugin reply must not hold up its other commands/views or
-        // lifecycle changes. This transport remains bound to the captured lease.
-        drop(instance);
-
-        self.security
-            .guard(
-                &lease,
-                host.request(
-                    "view.render",
-                    json!({ "view": view, "locale": locale }),
-                    CALL_TIMEOUT,
-                ),
-            )
-            .await
-    }
-
-    pub async fn run(&self, id: &str, command: &str, input: Option<Value>) -> AppResult<Value> {
-        self.run_bound(id, command, input, None).await
-    }
-
-    pub(super) async fn run_bound(
-        &self,
-        id: &str,
-        command: &str,
-        input: Option<Value>,
-        expected_generation: Option<u64>,
-    ) -> AppResult<Value> {
-        if input
-            .as_ref()
-            .is_some_and(|value| !value.is_object() || value.to_string().len() > 256 * 1024)
-        {
-            return Err(AppError::validation("plugin.input.invalid"));
-        }
-        let handle = self.instance(id).await?;
-        let instance = handle.lock().await;
-        if instance.retired {
-            return Err(AppError::NotFound("plugin.notFound".into()));
-        }
-        instance.require_runtime()?;
-        let lease = self.security.lease(
-            id,
-            security::fingerprint_async(instance.dir.clone()).await?,
-            instance.manifest.permissions.clone(),
-        )?;
-        if expected_generation.is_some_and(|generation| generation != lease.generation) {
-            return Err(AppError::validation("plugin.statusBar.expired"));
-        }
-        if instance.is_wasm() {
-            let result = wasm_call(
-                &instance,
-                json!({ "method": "run", "command": command, "input": input }),
-                &self.security,
-                &lease,
-            );
-            self.security.authorize(
-                id,
-                &lease.fingerprint,
-                &lease.permissions,
-                None,
-                Some(lease.generation),
-            )?;
-            return result;
-        }
-        let host = instance
-            .host
-            .as_ref()
-            .ok_or_else(|| AppError::Validation("plugin.notRunning".into()))?
-            .connection();
-        drop(instance);
-
-        self.security
-            .guard(
-                &lease,
-                host.request(
-                    "command.run",
-                    json!({ "command": command, "input": input }),
-                    COMMAND_TIMEOUT,
-                ),
-            )
-            .await
     }
 }
 
@@ -1027,7 +638,7 @@ impl PluginsManager {
         source: &config::MarketSource,
         update: bool,
     ) -> AppResult<PluginInfo> {
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         let manifest = manifest::load(root)?;
         let target = self.dir.join(&manifest.id);
         let backup = self.dir.join(format!(".backup-{}", manifest.id));
@@ -1078,9 +689,7 @@ impl PluginsManager {
         }
         if update {
             if let Some(old) = previous.as_mut() {
-                if let Some(mut host) = old.host.take() {
-                    host.kill();
-                }
+                old.terminate_host().await?;
                 old.wasm = None;
                 old.status = PluginStatus::Stopped;
                 old.error = None;
@@ -1101,7 +710,7 @@ impl PluginsManager {
             }
         };
         let instance = Instance::new(copied, target);
-        self.security.invalidate(&instance.manifest.id);
+        self.invalidate_plugin(&instance.manifest.id);
         self.remember_source(&instance.manifest.id, None);
         let info = instance.info();
         self.remember(&info);
@@ -1149,7 +758,7 @@ impl PluginsManager {
     }
 
     async fn install_from(&self, root: &Path) -> AppResult<PluginInfo> {
-        let _mutation = self.mutations.lock().await;
+        let _mutation = self.mutations.write().await;
         let manifest = manifest::load(root)?;
         let target = self.dir.join(&manifest.id);
         if target.exists() {
@@ -1184,7 +793,7 @@ impl PluginsManager {
         }
 
         let instance = Instance::new(copied, target);
-        self.security.invalidate(&instance.manifest.id);
+        self.invalidate_plugin(&instance.manifest.id);
         self.remember_source(&instance.manifest.id, None);
         let info = instance.info();
         self.remember(&info);
@@ -1196,14 +805,12 @@ impl PluginsManager {
     }
 
     pub async fn uninstall(&self, id: &str) -> AppResult<()> {
-        let _mutation = self.mutations.lock().await;
-        self.security.invalidate(id);
+        let _mutation = self.mutations.write().await;
+        self.invalidate_plugin(id);
         self.remember_source(id, None);
         let handle = self.instance(id).await?;
         let mut instance = handle.lock().await;
-        if let Some(mut host) = instance.host.take() {
-            host.kill();
-        }
+        instance.terminate_host().await?;
         instance.node_source = None;
         instance.wasm = None;
         instance.status = PluginStatus::Stopped;
@@ -1217,19 +824,19 @@ impl PluginsManager {
     }
 
     pub async fn reload(&self) -> Vec<PluginInfo> {
-        let _mutation = self.mutations.lock().await;
+        self.starts.cancel_all();
+        let _mutation = self.mutations.write().await;
         self.security.invalidate_runtimes();
         self.runtime_sources
             .write()
             .unwrap_or_else(|error| error.into_inner())
             .clear();
-        let handles: Vec<_> = self.plugins.lock().await.values().cloned().collect();
-        for handle in handles {
-            let mut instance = handle.lock().await;
-            if let Some(mut host) = instance.host.take() {
-                host.kill();
-            }
-            instance.retired = true;
+        if let Err(error) = self.quiesce_catalogue().await {
+            tracing::error!(
+                error_code = error.code(),
+                "plugin reload retained engines with unconfirmed termination"
+            );
+            return self.list().await;
         }
         let fresh = Self::load(self.dir.clone());
         *self
@@ -1593,13 +1200,13 @@ mod tests {
         assert_eq!(info.themes[1].accent.as_deref(), Some("#0088ff"));
         assert_eq!(manager.list().await[0].themes.len(), 2);
         assert!(manager
-            .run("theme-pack", "run", None)
+            .run("theme-pack", "run", None, "")
             .await
             .unwrap_err()
             .to_string()
             .contains("plugin.theme.noRuntime"));
         assert!(manager
-            .render_view("theme-pack", "panel", None)
+            .render_view("theme-pack", "panel", None, "")
             .await
             .unwrap_err()
             .to_string()
@@ -1676,7 +1283,7 @@ mod tests {
         );
         assert!(list[0].permissions.is_empty());
         assert_eq!(list[0].runtime, "theme");
-        assert!(restored.run("file-icons", "run", None).await.is_err());
+        assert!(restored.run("file-icons", "run", None, "").await.is_err());
         assert_eq!(node::probe_count_for_test(), probes);
         restored.uninstall("file-icons").await.unwrap();
         assert!(restored.list().await.is_empty());
@@ -1700,7 +1307,7 @@ mod tests {
             assert!(theme.icons.contains_key(&theme.extensions[extension]));
         }
         assert!(info.permissions.is_empty());
-        assert!(manager.run("file-icons", "run", None).await.is_err());
+        assert!(manager.run("file-icons", "run", None, "").await.is_err());
         manager.uninstall("file-icons").await.unwrap();
         std::fs::remove_dir_all(root).unwrap();
     }
@@ -1721,7 +1328,7 @@ mod tests {
                 .iter()
                 .any(|provider| provider.matches(&format!("test.{extension}"))));
         }
-        assert!(manager.run("file-previews", "run", None).await.is_err());
+        assert!(manager.run("file-previews", "run", None, "").await.is_err());
         let restored = PluginsManager::load(root.join("installed"));
         assert_eq!(restored.list().await[0].file_previews.len(), 6);
         restored.uninstall("file-previews").await.unwrap();
@@ -1833,14 +1440,32 @@ mod tests {
             .set_permissions(&db, "two", Some(vec![]), Some(two.fingerprint))
             .await
             .unwrap();
-        manager.instance("two").await.unwrap().lock().await.status = PluginStatus::Running;
+        let runtime_id = {
+            let handle = manager.instance("two").await.unwrap();
+            let mut instance = handle.lock().await;
+            let lease = manager
+                .security
+                .lease("two", instance.fingerprint.clone(), vec![])
+                .unwrap();
+            let activation = manager.security.begin_runtime(&lease, &[], false).unwrap();
+            manager.security.native_ready(&lease).unwrap();
+            activation.commit();
+            instance.runtime_id = Some(manager.security.lease_stamp(&lease));
+            instance.runtime_lease = Some(lease);
+            instance.status = PluginStatus::Running;
+            let info = instance.info();
+            manager.remember(&info);
+            info.runtime_id.unwrap()
+        };
         let first = manager.instance("one").await.unwrap();
         let _busy = first.lock().await;
         // The stub returns invalid JSON; reaching that response still proves
         // the second command acquired its own lock without waiting on "one".
-        let result =
-            tokio::time::timeout(Duration::from_millis(200), manager.run("two", "test", None))
-                .await;
+        let result = tokio::time::timeout(
+            Duration::from_millis(200),
+            manager.run("two", "test", None, &runtime_id),
+        )
+        .await;
         assert!(result
             .unwrap()
             .unwrap_err()

@@ -5,9 +5,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 mod staging;
-use staging::{
-    missing, prepare_remote_staging, remote_staging, retire_remote_staging, staging_directory,
-};
+pub(super) use staging::create_directory;
+use staging::{prepare_remote_staging, remote_staging, retire_remote_staging, staging_directory};
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
@@ -47,6 +46,9 @@ struct RemoteStaging {
     generation: String,
     prepared: bool,
     opening: bool,
+    // Older unprepared journals cannot prove whether MKDIR was sent.
+    #[serde(default = "staging::unacknowledged_creation")]
+    creating: bool,
 }
 
 impl ArtifactRecord {
@@ -149,13 +151,10 @@ pub(super) async fn finish_staging(
     };
     let sftp = sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?;
     let directory = staging_directory(to, id, staging)?;
-    interruptible(Some(cancel), async {
-        match sftp.remove_dir(&directory.path).await {
-            Ok(()) => Ok(()),
-            Err(error) if missing(&error) => Ok(()),
-            Err(error) => Err(map_sftp(error)),
-        }
-    })
+    interruptible(
+        Some(cancel),
+        staging::cleanup_directory(sftp, &directory, !staging.prepared && staging.creating),
+    )
     .await
 }
 
@@ -590,6 +589,7 @@ pub(super) fn record(app: &AppHandle, id: &str, to: &Endpoint, fresh: bool) -> A
                     generation: uuid::Uuid::new_v4().to_string(),
                     prepared: false,
                     opening: false,
+                    creating: false,
                 }),
         })?,
     )
@@ -658,6 +658,7 @@ async fn cleanup_file(
         Sha256::digest(to.path.as_bytes())
     );
     let artifact = artifact_record(app, id, to)?;
+    staging::require_creation_settled(id, to, artifact.as_ref())?;
     if remote_staging(artifact.as_ref()).is_some_and(|staging| staging.opening) {
         return retire_remote_staging(
             id,

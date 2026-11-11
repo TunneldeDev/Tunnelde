@@ -27,6 +27,7 @@ import { taskPresentation } from "./presentation";
 import { BackgroundTaskRow } from "./BackgroundTaskRow";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
+import { BackgroundTasksSurface } from "./components/BackgroundTasksSurface";
 import "./backgroundTasks.css";
 
 export function BackgroundTaskStatusButton({ floating = false }: { floating?: boolean }) {
@@ -356,22 +357,24 @@ function BackgroundPanelContent({ embedded = false }: { embedded?: boolean }) {
             </IconButton>
           ) : null}
         </div>
-        <div className="background-panel__body">
-          {!items.length ? (
-            <p className="background-panel__empty">{t("tasks.empty")}</p>
-          ) : (
-            <>
-              <TaskGroup name={t("tasks.inProgress")} items={active} now={now} />
-              <TaskGroup name={t("tasks.attention")} items={attention} now={now} />
-              <TaskGroup
-                name={t("tasks.finished")}
-                items={finished}
-                now={now}
-                defaultOpen={false}
-              />
-            </>
-          )}
-        </div>
+        <BackgroundTasksSurface entries={allItems} embedded={embedded} visible={visible}>
+          <div className="background-panel__body">
+            {!items.length ? (
+              <p className="background-panel__empty">{t("tasks.empty")}</p>
+            ) : (
+              <>
+                <TaskGroup name={t("tasks.inProgress")} items={active} now={now} />
+                <TaskGroup name={t("tasks.attention")} items={attention} now={now} />
+                <TaskGroup
+                  name={t("tasks.finished")}
+                  items={finished}
+                  now={now}
+                  defaultOpen={false}
+                />
+              </>
+            )}
+          </div>
+        </BackgroundTasksSurface>
         {!embedded &&
           (["n", "e", "s", "w", "ne", "nw", "se", "sw"] as const).map((edge) => (
             <div

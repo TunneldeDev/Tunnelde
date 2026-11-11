@@ -9,6 +9,8 @@ use crate::{db::Database, error::AppResult, models::now_ms, state::AppState};
 const MAX_BYTES: u64 = 256 * 1024;
 const MAX_AUDIT: i64 = 1000;
 
+pub(crate) mod read;
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
@@ -151,8 +153,17 @@ pub fn record(db: &Database, action: &'static str, target: Option<&str>) {
 }
 
 pub(crate) fn latest_name(dir: &Path) -> AppResult<Option<String>> {
+    select_name(dir, None)
+}
+
+/// Public plugin reads have a separate metadata work budget; native Output
+/// retains its existing selection behavior and wire contract.
+fn select_name(dir: &Path, limit: Option<usize>) -> AppResult<Option<String>> {
     let mut names = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
+    for (index, entry) in std::fs::read_dir(dir)?.enumerate() {
+        if limit.is_some_and(|limit| index >= limit) {
+            return Err(crate::error::AppError::validation("logs.read.unavailable"));
+        }
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
         let suffix = name

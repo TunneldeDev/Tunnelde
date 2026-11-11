@@ -94,6 +94,45 @@ beforeEach(() => {
 });
 
 describe("Node runtime setup", () => {
+  it("cancels an individual wait without closing setup needed by another plugin", async () => {
+    render(<NodeRuntimeGate />);
+    const controller = new AbortController();
+    let first!: Promise<boolean>;
+    let second!: Promise<boolean>;
+    await act(async () => {
+      first = ensureNodeRuntime(controller.signal);
+      second = ensureNodeRuntime();
+    });
+    await screen.findByRole("dialog");
+    act(() => controller.abort());
+    expect(await first).toBe(false);
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "common.close" }));
+    expect(await second).toBe(false);
+  });
+
+  it("closes setup on last cancellation and ignores its late detection", async () => {
+    render(<NodeRuntimeGate />);
+    const old = deferred<typeof missing | typeof ready>();
+    mock.api.nodeDetect.mockReturnValueOnce(old.promise);
+    const controller = new AbortController();
+    const first = ensureNodeRuntime(controller.signal);
+    controller.abort();
+    expect(await first).toBe(false);
+    const second = ensureNodeRuntime();
+    await screen.findByRole("dialog");
+    await act(async () => old.resolve(ready));
+    expect(screen.queryByRole("dialog")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "common.close" }));
+    expect(await second).toBe(false);
+  });
+
+  it("does not detect Node for an already cancelled caller", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    expect(await ensureNodeRuntime(controller.signal)).toBe(false);
+    expect(mock.api.nodeDetect).not.toHaveBeenCalled();
+  });
   it("does not check or open first-use setup while restricted", async () => {
     usePluginSecurity.setState({
       state: { ...usePluginSecurity.getState().state, restricted: true },

@@ -175,13 +175,13 @@
 /* ---------- sidebar ---------- */
 
 .sidebar {
-  width: var(--td-sidebar-w);
-  flex: 0 0 var(--td-sidebar-w);
+  width: 100%;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   background: var(--td-panel);
-  border-right: 1px solid var(--td-border);
 }
 
 .sidebar__head {
@@ -446,6 +446,8 @@
 }
 
 .host-row__name {
+  min-width: 0;
+  flex: 1 1 auto;
   font-size: 12.5px;
   color: var(--td-text);
   overflow: hidden;
@@ -460,6 +462,71 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.host-row__heading {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.host-decoration__icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.host-decoration__badges {
+  flex: 0 0 42%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  max-width: 48%;
+  overflow: hidden;
+}
+
+.host-decoration__badge {
+  min-width: 0;
+  max-width: 8em;
+  padding: 1px 4px;
+  border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+  border-radius: 3px;
+  font-size: 9px;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-decoration__overflow {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: var(--td-muted);
+}
+
+.host-decoration__description {
+  margin-top: 2px;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.host-decoration--neutral {
+  color: var(--td-muted);
+}
+.host-decoration--info {
+  color: var(--td-accent);
+}
+.host-decoration--success {
+  color: var(--td-green);
+}
+.host-decoration--warning {
+  color: var(--td-orange);
+}
+.host-decoration--error {
+  color: var(--td-red);
 }
 
 .host-row__star {
@@ -545,6 +612,30 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--td-faint);
+}
+
+/* Monitoring scrolls with its host page/panel, including provider content. */
+.monitor-surface {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-width: 0;
+  gap: 8px;
+}
+
+.monitor-surface > .provider-content {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.monitor-page > .monitor-surface {
+  gap: 12px;
+}
+
+.monitor-panel-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .panel__body {
@@ -2039,6 +2130,12 @@
   height: 100%;
 }
 
+/* xterm 6.1 uses its scrollable element; the retained legacy viewport is empty.
+   Hide it so its old native scrollbar/background cannot cover the bottom row. */
+.terminal-surface .xterm > .xterm-viewport {
+  display: none;
+}
+
 /* ---------- connect dialog ---------- */
 
 .connect {
@@ -2752,6 +2849,21 @@
   min-height: 0;
   overflow-y: auto;
   padding: 4px 0;
+}
+
+.history-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  color: var(--td-red);
+  font-size: 12px;
+}
+
+.history-error > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .history-empty {

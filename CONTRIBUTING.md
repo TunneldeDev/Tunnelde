@@ -67,4 +67,10 @@ from the current dev snapshot. Nightly publication is disabled; use `pnpm build:
 development testing. Beta never replaces the stable updater channel. Do not edit or contribute to the generated
 release branch; it is rebuilt from the latest `dev` and `main` refs.
 
-See [Release operations](docs/releases.md) for configuration and failed-build recovery.
+See [Release operations](docs/en-us/development/releases.md) for configuration and failed-build recovery.
+
+## Documentation structure / 文档结构
+
+Follow the [documentation directory guide](docs/README.md): language first, then purpose. Keep translated paths aligned and update links when moving pages.
+
+遵循[文档目录说明](docs/README.md)：先按语言、再按用途归档；保持翻译路径对应，移动文档时同步更新链接。

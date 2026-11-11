@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { captureFileTarget } from "@/lib/files/resources/target";
 import type { FsSource } from "@/lib/api/types";
 
 export interface PreviewFile {
@@ -15,6 +16,6 @@ export const useFilePreview = create<{
 }>((set) => ({
   file: null,
   show: (path, line = 0, column = 0, source = { kind: "local" }) =>
-    set({ file: { path, line, column, source } }),
+    set({ file: { ...captureFileTarget(path, source), line, column } }),
   close: () => set({ file: null }),
 }));

@@ -6,6 +6,7 @@ import { IconButton } from "./Button";
 import {
   clearSearchFilters,
   parseSearchQuery,
+  searchFilterPrefix,
   searchText,
   toggleSearchFilter,
 } from "@/lib/search/query";
@@ -55,7 +56,7 @@ export function SearchFilterMenu({
   const actions: MenuAction[] = items ?? [
     ...presets.map((preset) => ({
       label: preset.label,
-      description: `${preset.key}:${/[\s,"\\]/.test(preset.value) ? JSON.stringify(preset.value) : preset.value}`,
+      description: `${searchFilterPrefix(preset.key)}${/[\s,"\\]/.test(preset.value) ? JSON.stringify(preset.value) : preset.value}`,
       checked: preset.value
         ? parsed.filters.some(
             (filter) =>

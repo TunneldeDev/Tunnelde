@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use russh::ChannelMsg;
 use serde_json::{json, Value};
-use tauri::{Emitter, Manager};
+use tauri::Manager;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::process::Command;
 use tokio::sync::{mpsc, watch};
@@ -13,6 +13,9 @@ use tokio::sync::{mpsc, watch};
 use super::api::{authorize, field, optional, HostContext};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+
+mod lifecycle;
+pub(super) use lifecycle::{cancel_owned_resource, owned_resources};
 
 const MAX_BUFFER: usize = 4 * 1024 * 1024;
 const MAX_EVENTS: usize = 4096;
@@ -103,15 +106,24 @@ fn publish(
         }
         event
     };
-    if authorize(context, &[]).is_ok() {
-        let _ = context.app.emit("plugin://event", json!({"pluginId":context.id,"generation":context.generation,"event":"task","payload":payload}));
-    }
+    let _ = super::events::emit(context, "task", payload);
 }
 
 pub fn cancel_plugin(plugin: &str, generation: Option<u64>) {
-    for task in lock().values().filter(|task| {
-        task.plugin == plugin && generation.is_none_or(|generation| task.generation == generation)
-    }) {
+    cancel_matching(plugin, |value| {
+        generation.is_none_or(|generation| value == generation)
+    });
+}
+
+pub(super) fn cancel_before_generation(plugin: &str, boundary: u64) {
+    cancel_matching(plugin, |value| value < boundary);
+}
+
+fn cancel_matching(plugin: &str, generation: impl Fn(u64) -> bool) {
+    for task in lock()
+        .values()
+        .filter(|task| task.plugin == plugin && generation(task.generation))
+    {
         task.cancel.send_replace(true);
     }
 }

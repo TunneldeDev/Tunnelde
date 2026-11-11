@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { readFile } from "node:fs/promises";
-import { createInterface } from "node:readline";
+import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { createPlugin } from "../../tests/fixtures/plugin-compat/core-sdk-v1/sdk.mjs";
 
@@ -9,7 +9,20 @@ assert.ok(process.argv[2], "Pass the samples emitted by emit_core_contract_respo
 const { samples } = JSON.parse(await readFile(process.argv[2], "utf8"));
 const input = new PassThrough();
 const output = new PassThrough();
-const lines = createInterface({ input: output });
+// Observe the actual LF protocol, including raw U+2028/U+2029 emitted by old SDKs.
+// readline would split those legal JSON string characters and corrupt evidence.
+const lines = new EventEmitter();
+let buffered = "";
+output.setEncoding("utf8");
+output.on("data", (chunk) => {
+  buffered += chunk;
+  let end;
+  while ((end = buffered.indexOf("\n")) >= 0) {
+    const line = buffered.slice(0, end);
+    buffered = buffered.slice(end + 1);
+    lines.emit("line", line);
+  }
+});
 const plugin = createPlugin({}, { input, output });
 let roundtrips = 0;
 let rejections = 0;
@@ -48,7 +61,9 @@ try {
         jsonrpc: "2.0",
         id: request.id,
         ...(failed ? { error: sample.error } : { result: sample.result }),
-      }) + "\n",
+      })
+        .replaceAll("\u2028", "\\u2028")
+        .replaceAll("\u2029", "\\u2029") + "\n",
     );
     const response = await settled;
     if (failed) {
@@ -64,7 +79,7 @@ try {
   }
 } finally {
   plugin.close();
-  lines.close();
+  lines.removeAllListeners();
   input.destroy();
   output.destroy();
 }

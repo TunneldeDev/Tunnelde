@@ -1,3 +1,4 @@
+import type { HostSourcesSnapshot } from "@/lib/hosts/sources";
 import { listen } from "@tauri-apps/api/event";
 import { reportError } from "@/lib/diagnostics";
 import type {
@@ -16,8 +17,17 @@ import { createEventBus } from "./bus";
 
 import type { StatusBarSnapshot } from "@/lib/plugins/statusBar";
 import type { TabBarSnapshot } from "@/lib/plugins/tabBar";
+import type { HostDecorationSnapshot } from "@/lib/plugins/hostList";
+import type { HostColumnsSnapshot } from "@/lib/hosts/columns";
+import type { FrontendActivation } from "@/lib/plugins/activation/contracts";
 
 export interface NativeEvents {
+  "plugin://activate-frontend": FrontendActivation;
+  "plugin://configuration-changed": { pluginId: string; revision: string; schemaDigest: string };
+  "plugin://host-columns-changed": HostColumnsSnapshot;
+  "plugin://host-sources-changed": HostSourcesSnapshot;
+  "hosts://fields-changed": { pluginId: string; hostId: string; revision: number };
+  "plugin://host-list-changed": HostDecorationSnapshot;
   "plugin://tab-bar-changed": TabBarSnapshot;
   "plugin://status-bar-changed": StatusBarSnapshot;
   "plugin://event": PluginEvent;
@@ -25,6 +35,7 @@ export interface NativeEvents {
   "plugins://download": PluginDownload;
   "plugins://config": PluginConfig;
   "settings://changed": Settings;
+  "settings-profiles://changed": null;
   "update://state": UpdateState;
   "ui://navigate": string;
   "ui://suspend": number;
@@ -35,7 +46,7 @@ export interface NativeEvents {
   "sftp://transfer": TransferEvent;
   "sftp://changed": null;
   "editor://cleanup-changed": null;
-  "plugin://domain-changed": { domain: string; sessionId?: string | null };
+  "plugin://domain-changed": { domain: string; sessionId?: string | null; hostId?: string | null };
   "plugin://workspace-request": {
     requestId: string;
     pluginId: string;

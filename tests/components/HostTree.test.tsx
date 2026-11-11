@@ -1,7 +1,13 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import "@/i18n/i18n";
+import { useHostDecorations } from "@/store/hostDecorations";
+import { usePlugins } from "@/store/plugins";
+import { plugin } from "../fixtures/plugins";
+import { indexHostDecorations } from "@/lib/plugins/hostList";
+import { useHostColumns } from "@/store/hostColumns";
+import { defaultHostListPreferences, indexHostColumns } from "@/lib/hosts/columns";
 import { HostTree } from "@/components/layout/HostTree";
 import type { Group, Host } from "@/lib/api/types";
 import { useDialogs } from "@/store/dialogs";
@@ -44,6 +50,9 @@ const group = (id: string, parentId: string | null = null): Group => ({
 });
 
 beforeEach(() => {
+  usePlugins.setState({ items: [] });
+  useHostDecorations.setState({ revision: -1, byHost: new Map() });
+  useHostColumns.setState({ revision: -1, columns: [] });
   useContextMenu.setState({ menu: null });
   useHosts.setState({ hosts: [host("a", "alpha", 0), host("b", "beta", 1)], groups: [] });
   useDialogs.setState({
@@ -65,6 +74,121 @@ beforeEach(() => {
 });
 
 describe("HostTree keyboard navigation", () => {
+  it("shows source identity and provides connection and save-copy actions without saved-host mutations", () => {
+    const discovered: Host = {
+      ...host("source:digest", "Dynamic node", 0),
+      source: {
+        pluginId: "inventory",
+        pluginName: "Inventory",
+        id: "cloud",
+        label: "Cloud nodes",
+        entryId: "one",
+      },
+    };
+    useHosts.getState().setSourceHosts([discovered]);
+    render(
+      <>
+        <HostTree />
+        <ContextMenuHost />
+      </>,
+    );
+    expect(screen.getByText("Cloud nodes · Inventory")).toBeTruthy();
+    const row = document.querySelector('[data-host-id="source:digest"]')!;
+    expect(row.getAttribute("draggable")).toBe("false");
+    fireEvent.contextMenu(row);
+    expect(screen.getByRole("menuitem", { name: "Save as my host" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "Delete" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "Edit" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Connect" }));
+    expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(discovered, "terminal");
+  });
+  it("renders typed plugin table cells, follows sorting with keyboard navigation and keeps the same host actions", async () => {
+    const preferences = defaultHostListPreferences();
+    preferences.view = "table";
+    preferences.sort = { key: "plugin/inventory/cost", direction: "asc" };
+    useSettings.setState({
+      settings: { ...DEFAULT_SETTINGS, hostDirectConnect: false, hostList: preferences },
+    });
+    useHostColumns.setState({
+      columns: indexHostColumns([
+        {
+          pluginId: "inventory",
+          pluginName: "Inventory",
+          id: "cost",
+          label: "Budget",
+          type: "number",
+          cells: [
+            { hostId: "a", value: 10 },
+            { hostId: "b", value: 0 },
+          ],
+        },
+      ]),
+    });
+    render(<HostTree />);
+    const grid = screen.getByRole("treegrid");
+    expect(
+      Array.from(grid.querySelectorAll("[data-host-id]")).map((row) =>
+        row.getAttribute("data-host-id"),
+      ),
+    ).toEqual(["b", "a"]);
+    expect(screen.getByRole("columnheader", { name: /Budget/ }).getAttribute("aria-sort")).toBe(
+      "ascending",
+    );
+    expect(screen.getByRole("gridcell", { name: "0" })).toBeTruthy();
+    fireEvent.keyDown(grid, { key: "Home" });
+    fireEvent.keyDown(grid, { key: "Enter" });
+    expect(useWorkspace.getState().tabs.some((tab) => tab.hostId === "b")).toBe(true);
+    fireEvent.doubleClick(grid.querySelector('[data-host-id="a"]')!);
+    expect(useDialogs.getState().openConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "a" }),
+      "terminal",
+    );
+    act(() => useHostColumns.setState({ columns: [] }));
+    expect(screen.queryByRole("columnheader", { name: /Budget/ })).toBeNull();
+    expect(useSettings.getState().settings.hostList.sort).toEqual(preferences.sort);
+    expect(screen.getAllByRole("row")).toHaveLength(3);
+  });
+  it("uses the same mandatory-@ search rules in the table and retains an empty-state add action", () => {
+    useSettings.setState({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        hostList: { ...defaultHostListPreferences(), view: "table" },
+      },
+    });
+    useHosts.setState({
+      hosts: [{ ...host("a", "alpha", 0), tags: ["production"] }, host("b", "beta", 1)],
+    });
+    render(<HostTree />);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "tag:production" } });
+    expect(document.querySelectorAll("[data-host-id]")).toHaveLength(0);
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "@tag:production" } });
+    expect(document.querySelectorAll("[data-host-id]")).toHaveLength(1);
+    act(() => useHosts.setState({ hosts: [] }));
+    expect(screen.getAllByRole("button", { name: "New host" }).length).toBeGreaterThan(1);
+  });
+  it("adds attributed plugin actions to both pointer and more menus and removes them on uninstall", () => {
+    const contribution = {
+      ...plugin,
+      commands: [{ id: "inspect", title: "Inspect host", hostMenu: true }],
+      permissions: ["hosts.read"],
+    };
+    usePlugins.setState({ items: [contribution] });
+    render(
+      <>
+        <HostTree />
+        <ContextMenuHost />
+      </>,
+    );
+    const row = screen.getAllByRole("treeitem")[0]!;
+    fireEvent.contextMenu(row);
+    const action = screen.getByRole("menuitem", { name: "Inspect host" });
+    expect(action.textContent).toContain(plugin.name);
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(row.querySelector("button")!);
+    expect(screen.getByRole("menuitem", { name: "Inspect host" })).toBeTruthy();
+    act(() => usePlugins.setState({ items: [] }));
+    expect(screen.queryByRole("menuitem", { name: "Inspect host" })).toBeNull();
+  });
   it("renders hosts at every group depth and counts all descendants", () => {
     useHosts.setState({
       groups: [
@@ -102,7 +226,7 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Root / }));
     expect(screen.queryByRole("treeitem")).toBeNull();
     const search = screen.getByRole("combobox");
-    fireEvent.change(search, { target: { value: "tag:production" } });
+    fireEvent.change(search, { target: { value: "@tag:production" } });
     expect(screen.getByRole("treeitem").textContent).toContain("Deep host");
     expect(screen.queryByRole("button", { name: /^Unrelated / })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Child / }));
@@ -116,7 +240,7 @@ describe("HostTree keyboard navigation", () => {
     expect(screen.queryByRole("treeitem")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Root / }));
     expect(screen.getByRole("treeitem")).toBeTruthy();
-    fireEvent.change(search, { target: { value: "tag:production" } });
+    fireEvent.change(search, { target: { value: "@tag:production" } });
     expect(screen.getByRole("treeitem")).toBeTruthy();
   });
 
@@ -173,7 +297,7 @@ describe("HostTree keyboard navigation", () => {
     const input = screen.getByRole("combobox", { name: "Search hosts" });
     fireEvent.focus(input);
     expect(screen.getAllByRole("option")).toHaveLength(2);
-    fireEvent.change(input, { target: { value: "@tag PublicNet" } });
+    fireEvent.change(input, { target: { value: "@tag:PublicNet" } });
     expect(screen.getAllByRole("treeitem")).toHaveLength(1);
     expect(screen.getByRole("treeitem").textContent).toContain("alpha");
     fireEvent.click(screen.getByRole("button", { name: "Clear host search" }));
@@ -189,16 +313,16 @@ describe("HostTree keyboard navigation", () => {
     });
     render(<HostTree />);
     const input = screen.getByRole("combobox");
-    fireEvent.change(input, { target: { value: "alpha tag:Pub" } });
+    fireEvent.change(input, { target: { value: "alpha @tag:Pub" } });
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
-    expect((input as HTMLInputElement).value).toBe("alpha tag:PublicNet ");
+    expect((input as HTMLInputElement).value).toBe("alpha @tag:PublicNet ");
     expect(screen.getAllByRole("treeitem")).toHaveLength(1);
-    fireEvent.change(input, { target: { value: "tag:Pub" } });
+    fireEvent.change(input, { target: { value: "@tag:Pub" } });
     expect(screen.getByRole("listbox")).toBeTruthy();
     fireEvent.keyDown(input, { key: "Escape" });
     expect(screen.queryByRole("listbox")).toBeNull();
-    expect((input as HTMLInputElement).value).toBe("tag:Pub");
+    expect((input as HTMLInputElement).value).toBe("@tag:Pub");
   });
 
   it("keeps creation actions in the header and search below without repeating app branding", () => {
@@ -360,4 +484,36 @@ describe("HostTree keyboard navigation", () => {
     fireEvent.keyDown(screen.getAllByRole("menuitem")[0]!, { key: "Escape" });
     expect(useDialogs.getState().openConnect).not.toHaveBeenCalled();
   });
+});
+
+it("decorations preserve host identity, address and actions while changes update mounted rows", () => {
+  const source = {
+    id: "health",
+    pluginId: "plugin",
+    pluginName: "Health provider",
+    priority: 10,
+    decorations: [
+      {
+        hostId: "a",
+        badge: "Ready",
+        description: "Healthy",
+        tooltip: null,
+        icon: "server" as const,
+        tone: "success" as const,
+      },
+    ],
+  };
+  useHostDecorations.setState({ revision: 1, byHost: indexHostDecorations([source]) });
+  const { container, rerender } = render(<HostTree />);
+  const row = container.querySelector('[data-host-id="a"]')!;
+  expect(row.querySelector(".host-row__name")!.textContent).toBe("alpha");
+  expect(row.querySelector(".host-row__meta")!.textContent).toContain("a.example.com");
+  expect(row.querySelector(".host-row__actions")).not.toBeNull();
+  expect(row.querySelector(".host-decoration__badge")!.textContent).toBe("Ready");
+  act(() => {
+    useHostDecorations.setState({ revision: 2, byHost: new Map() });
+  });
+  rerender(<HostTree />);
+  expect(row.querySelector(".host-decoration__badge")).toBeNull();
+  expect(row.querySelector(".host-row__name")!.textContent).toBe("alpha");
 });

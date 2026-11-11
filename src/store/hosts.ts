@@ -13,6 +13,7 @@ interface HostsStore {
   loaded: boolean;
   loading: boolean;
   load: () => Promise<boolean>;
+  setSourceHosts: (hosts: Host[]) => void;
   createHost: (input: HostInput) => Promise<Host | null>;
   updateHost: (id: string, input: HostInput) => Promise<Host | null>;
   deleteHost: (id: string) => Promise<boolean>;
@@ -98,6 +99,8 @@ export const useHosts = create<HostsStore>((set, get) => ({
   hosts: [],
   loaded: false,
   loading: false,
+  setSourceHosts: (hosts) =>
+    set((state) => ({ hosts: [...state.hosts.filter((host) => !host.source), ...hosts] })),
 
   load: async () => {
     if (running) await new Promise<void>((resolve) => idleWaiters.push(resolve));
@@ -107,7 +110,12 @@ export const useHosts = create<HostsStore>((set, get) => ({
     try {
       const snapshot = await api.hostsSnapshot();
       if (request !== snapshotVersion || revision !== editVersion) return false;
-      set({ groups: snapshot.groups, hosts: snapshot.hosts, loaded: true, loading: false });
+      set((state) => ({
+        groups: snapshot.groups,
+        hosts: [...snapshot.hosts, ...state.hosts.filter((host) => host.source)],
+        loaded: true,
+        loading: false,
+      }));
       return true;
     } catch (error) {
       if (request !== snapshotVersion || revision !== editVersion) return false;
@@ -130,6 +138,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
   },
 
   updateHost: async (id, input) => {
+    if (get().hosts.find((host) => host.id === id)?.source) return null;
     try {
       const host = await api.updateHost(id, input);
       editVersion++;
@@ -148,6 +157,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
   },
 
   deleteHost: async (id) => {
+    if (get().hosts.find((host) => host.id === id)?.source) return false;
     try {
       await api.deleteHost(id);
       await get().load();
@@ -166,7 +176,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
     const current = get().hosts;
     const dragged = current.find((host) => host.id === dragId);
     const target = current.find((host) => host.id === targetId);
-    if (!dragged || !target) {
+    if (!dragged || !target || dragged.source || target.source) {
       return;
     }
     const rest = current.filter((host) => host.id !== dragId);
@@ -181,7 +191,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
     }));
     editVersion++;
     set({ hosts: next, loading: false });
-    const order = next.map((host) => host.id);
+    const order = next.filter((host) => !host.source).map((host) => host.id);
     if (dragged.groupId !== placed.groupId || dragged.favorite !== placed.favorite) {
       persistPlacement(dragId, placed, order);
     } else queueMutation(() => api.hostsReorder(order));
@@ -191,7 +201,7 @@ export const useHosts = create<HostsStore>((set, get) => ({
     if (groupId && !get().groups.some((group) => group.id === groupId)) return;
     const current = get().hosts;
     const host = current.find((item) => item.id === id);
-    if (!host || (host.groupId === groupId && host.favorite === favorite)) return;
+    if (!host || host.source || (host.groupId === groupId && host.favorite === favorite)) return;
     const next = [...current.filter((item) => item.id !== id), { ...host, groupId, favorite }].map(
       (item, index) => ({ ...item, sortOrder: index }),
     );
@@ -200,13 +210,13 @@ export const useHosts = create<HostsStore>((set, get) => ({
     persistPlacement(
       id,
       { groupId, favorite },
-      next.map((item) => item.id),
+      next.filter((item) => !item.source).map((item) => item.id),
     );
   },
 
   toggleFavorite: async (host) => {
     const latest = get().hosts.find((item) => item.id === host.id);
-    if (!latest) return;
+    if (!latest || latest.source) return;
     const favorite = !latest.favorite;
     editVersion++;
     set((state) => ({

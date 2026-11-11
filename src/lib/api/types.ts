@@ -1,3 +1,7 @@
+import type { HostSourceReference } from "@/lib/hosts/sources";
+import type { HostFieldsSchema } from "@/lib/hosts/fields";
+import type { ConfigurationSchema } from "@/lib/extensions/contracts/configuration/schema";
+import type { HostListPreferences } from "@/lib/hosts/columns";
 import type { ShortcutRules } from "@/lib/keyboard/routing";
 import type { NetworkSettings } from "./network";
 export type Language = "system" | "zh-CN" | "en-US";
@@ -29,6 +33,7 @@ export type ColorRegion =
 export type ColorOverrides = Partial<Record<ColorRegion, string>>;
 
 export interface Settings {
+  hostList: HostListPreferences;
   network: NetworkSettings;
   keyboardShortcuts: Record<string, string[]>;
   shortcutRules: ShortcutRules;
@@ -62,6 +67,22 @@ export interface Settings {
   preloadCount: number;
   motion: MotionPreference;
   showStatusBar: boolean;
+  uiProviders: Partial<
+    Record<
+      | "hostList"
+      | "workbench"
+      | "fileBrowser"
+      | "terminal"
+      | "history"
+      | "forwarding"
+      | "monitor"
+      | "backgroundTasks"
+      | "processes"
+      | "quickAccess"
+      | "preferences",
+      { pluginId: string; viewId: string }
+    >
+  >;
   restoreWorkspace: boolean;
   hostActivation: HostActivation;
   hostDirectConnect: boolean;
@@ -130,6 +151,7 @@ export interface Group {
 export type AuthMethod = "password" | "key" | "agent" | "keyboardInteractive";
 
 export interface Host {
+  source?: HostSourceReference;
   id: string;
   groupId: string | null;
   name: string;
@@ -430,6 +452,9 @@ export interface TextFile {
 export type PluginStatus = "stopped" | "running" | "failed";
 
 export interface PluginCommand {
+  frontend?: boolean;
+  /** Offer this command in a saved host's menu; requires hosts.read. */
+  hostMenu?: boolean;
   id: string;
   title: string;
   keybindings?: string[];
@@ -447,8 +472,20 @@ export interface PluginView {
   id: string;
   title: string;
   location?: "sidebar" | "workspace";
-  kind?: "chat" | "blocks";
+  kind?: "chat" | "blocks" | "component";
   icon?: string;
+  provider?:
+    | "hostList"
+    | "workbench"
+    | "fileBrowser"
+    | "terminal"
+    | "history"
+    | "forwarding"
+    | "monitor"
+    | "backgroundTasks"
+    | "processes"
+    | "quickAccess"
+    | "preferences";
 }
 
 export interface PluginEvent {
@@ -468,8 +505,9 @@ export interface MarketEntry {
   sha256: string;
   author?: string | null;
   readme?: string | null;
-  runtime?: "node" | "wasm" | "theme" | "declarative" | null;
+  runtime?: "node" | "wasm" | "theme" | "declarative" | "frontend" | null;
   apiVersion?: number | null;
+  dependencies?: Array<{ id: string; version: string }>;
   engines?: Record<string, string>;
   sourceId?: string;
 }
@@ -508,11 +546,15 @@ export interface NodeRuntimeInfo {
 }
 
 export interface PluginInfo {
+  hostFields?: HostFieldsSchema | null;
+  configuration?: ConfigurationSchema | null;
   tags?: string[];
   id: string;
   name: string;
   version: string;
   apiVersion: number;
+  /** Required installed runtime dependencies. Admission v2 rejects older hosts. */
+  dependencies?: Array<{ id: string; version: string }>;
   description: string | null;
   commands: PluginCommand[];
   views: PluginView[];
@@ -521,7 +563,10 @@ export interface PluginInfo {
   error: string | null;
   path: string;
   fingerprint?: string;
-  runtime?: "node" | "wasm" | "theme" | "declarative";
+  /** Internal process-bound invocation identity. Never persisted or granted by plugins. */
+  runtimeId?: string | null;
+  runtime?: "node" | "wasm" | "theme" | "declarative" | "frontend";
+  frontend?: { entry: string; sdk: string } | null;
   themes?: PluginTheme[];
   fileIconThemes?: PluginFileIconTheme[];
   filePreviews?: PluginFilePreview[];

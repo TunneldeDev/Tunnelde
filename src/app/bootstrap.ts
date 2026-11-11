@@ -12,6 +12,7 @@ import { reportPluginExecutionFailure, usePluginSecurity } from "@/store/pluginS
 import { useTransfers } from "@/store/transfers";
 import { useEditorCleanup } from "@/store/editorCleanup";
 import { useSettings } from "@/store/settings";
+import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace, workspaceRecords } from "@/store/workspace";
 import { createEventLifecycle, type Subscription } from "@/lib/events/lifecycle";
@@ -19,6 +20,9 @@ import type { Dispose } from "@/lib/events/bus";
 import { reconcilePluginWorkspace, wirePluginWorkspaceBridge } from "./pluginWorkspaceBridge";
 import { restoreBackgroundSnapshot } from "./backgroundWindow";
 import { registerBackgroundTaskSources } from "./backgroundTaskSources";
+import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
+import { createPluginActivationBridge } from "./plugins/activationBridge";
+import { reportError } from "@/lib/diagnostics";
 
 let startup: Promise<void> | undefined;
 let persistTimer: number | undefined;
@@ -64,7 +68,16 @@ async function start(signal: AbortSignal): Promise<void> {
   const initialTabs = useWorkspace.getState().tabs;
   window.addEventListener("contextmenu", (event) => event.preventDefault(), { signal });
 
-  if (isTauri()) await wireEvents();
+  if (isTauri()) {
+    cleanups.push(() => frontendRuntime.dispose());
+    cleanups.push(
+      usePlugins.subscribe((state) => {
+        frontendRuntime.reconcile(state.items, false);
+        for (const id of state.stoppingIds) frontendRuntime.stop(id);
+      }),
+    );
+    await wireEvents();
+  }
   if (signal.aborted) return;
 
   await useSettings.getState().load();
@@ -162,7 +175,16 @@ function pruneMissingHosts(): void {
 }
 
 async function wireEvents(): Promise<void> {
+  const activation = createPluginActivationBridge({
+    subscribe: (handler, signal) => events.onPluginActivation(handler, signal),
+    read: () => usePlugins.getState(),
+    load: (request) => usePlugins.getState().refreshActivation(request),
+    ensure: (plugin) => frontendRuntime.ensure(plugin),
+    report: (error) => reportError("plugins.activation", "frontend-request", error),
+  });
+  cleanups.push(() => activation.dispose());
   const subscriptions: Subscription[] = [
+    activation.subscription,
     {
       register: (signal) => wirePluginWorkspaceBridge(signal),
       recover: reconcilePluginWorkspace,
@@ -173,6 +195,13 @@ async function wireEvents(): Promise<void> {
           useSettings.getState().applyRemote(settings);
         }, signal),
       recover: () => useSettings.getState().load(),
+    },
+    {
+      register: (signal) =>
+        events.onSettingsProfilesChanged(() => {
+          void useSettingsProfiles.getState().refresh();
+        }, signal),
+      recover: () => useSettingsProfiles.getState().refresh(),
     },
     {
       register: (signal) =>
@@ -196,6 +225,7 @@ async function wireEvents(): Promise<void> {
     {
       register: (signal) =>
         events.onPluginState((payload) => {
+          if (payload.status !== "running") frontendRuntime.stop(payload.id);
           usePlugins.getState().apply(payload);
           if (payload.status === "failed" && payload.error)
             reportPluginExecutionFailure({ code: "validation", message: payload.error });
@@ -204,7 +234,10 @@ async function wireEvents(): Promise<void> {
     },
     {
       register: (signal) =>
-        events.onPluginSecurity((payload) => usePluginSecurity.getState().apply(payload), signal),
+        events.onPluginSecurity((payload) => {
+          frontendRuntime.reconcileSecurity(payload);
+          usePluginSecurity.getState().apply(payload);
+        }, signal),
       recover: () => usePluginSecurity.getState().load(true),
     },
     {
@@ -231,13 +264,13 @@ async function wireEvents(): Promise<void> {
     {
       register: (signal) =>
         events.onSshClosed((payload) => {
-          const known = useSsh
+          const session = useSsh
             .getState()
-            .sessions.some((session) => session.id === payload.sessionId);
+            .sessions.find((session) => session.id === payload.sessionId);
           useSsh.getState().forget(payload.sessionId);
           useMonitor.getState().forget(payload.sessionId);
           useWorkspace.getState().closeSession(payload.sessionId);
-          if (known) toast(i18n.t("ssh.sessionEnded"), "info");
+          if (session && session.terminal !== false) toast(i18n.t("ssh.sessionEnded"), "info");
         }, signal),
       recover: () => useSsh.getState().refresh(),
     },

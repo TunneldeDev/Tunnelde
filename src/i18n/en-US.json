@@ -150,8 +150,8 @@
     "newGroup": "New group",
     "empty": "No hosts",
     "noResults": "No matches",
-    "searchPlaceholder": "Search hosts · tag:production",
-    "searchHint": "Filter with tag:name or is:favorite. Combine with a host name or address.",
+    "searchPlaceholder": "Search hosts · @tag:production",
+    "searchHint": "Filter with @tag:name or @is:favorite. Combine with a host name or address.",
     "clearSearch": "Clear host search"
   },
   "host": {
@@ -473,6 +473,7 @@
     "configureProxy": "Configure update proxy",
     "showLogs": "Open output logs",
     "viewDiagnostics": "View update details",
+    "sourcesUnavailableNotification": "Unable to check for updates. View details for the cause and available next steps.",
     "platformUnavailable": "The update manifest does not contain a package for this platform."
   },
   "about": {
@@ -765,6 +766,7 @@
     "backupDestination": "Original destination",
     "backupLastKnownHint": "Last detected recovery location; check that the files are still there.",
     "transferArtifactUnrecognized": "The file at the temporary path cannot be identified as this task's original file. It was preserved. Inspect it, remove it yourself only if no longer needed, then retry cleanup.",
+    "transferCreationUnconfirmed": "The server has not confirmed creation of the temporary directory. Cleanup will retry if confirmation arrives while Tunnelde is running. After a connection loss or restart, the outcome may remain unknown; removing the directory yourself does not confirm that the old request has finished. The recovery record and path are preserved.",
     "transferArtifactPath": "Temporary file to inspect",
     "resizePanels": "Resize file panels",
     "detachPanel": "Open as an independent panel",
@@ -888,12 +890,14 @@
     "reviewChanges": "Compare changes"
   },
   "plugins": {
+    "requiredDependencies": "Required plugins",
     "search": "Search plugins",
     "installedTab": "Installed",
     "reload": "Reload",
     "openFolder": "Open folder",
     "empty": "No plugins installed",
     "start": "Start",
+    "starting": "Starting…",
     "stop": "Stop",
     "running": "Running",
     "stopped": "Stopped",
@@ -996,6 +1000,8 @@
     "timeout": "Remote monitoring timed out."
   },
   "pluginView": {
+    "hostChanged": "This host was changed or removed. Reopen its menu and try again.",
+    "hostRequired": "Open a host, terminal or remote file tab before running this host command.",
     "title": "Plugin",
     "refresh": "Refresh",
     "empty": "No content",
@@ -1082,7 +1088,9 @@
     "noRoot": "Open a file browser or choose a local folder to search.",
     "typeMore": "Type at least 2 characters to search this directory.",
     "limits": "Search is bounded to 100 results, 4,000 entries and 15 seconds. Hidden/build folders and links are excluded. Skipped files: {{count}}.",
-    "localPreview": "Local file preview (read-only)"
+    "localPreview": "Local file preview (read-only)",
+    "previousPage": "Previous page",
+    "nextPage": "Next page"
   },
   "window": {
     "controls": "Window controls",
@@ -1116,7 +1124,7 @@
     "source": "Source",
     "author": "Publisher",
     "unknownAuthor": "Unknown publisher",
-    "queryHint": "Search plugins · tag:tools,preview",
+    "queryHint": "Search plugins · @tag:tools,preview",
     "tunneldeVersion": "Tunnelde version",
     "apiVersion": "Plugin API version",
     "declarativeRuntime": "Declarative (no Node.js required)",
@@ -1197,6 +1205,60 @@
     "consentRequired": "Your permission is required before using system Node."
   },
   "plugin": {
+    "runners": {
+      "busy": "This runner is handling another request. Try again shortly; saved stop requests continue in the background.",
+      "stopPending": "A stop request is pending confirmation from the remote runner. New messages are blocked until it settles.",
+      "inputTooLarge": "The runner configuration or message exceeds its size limit.",
+      "invalidInitialization": "The remote runner initialization is invalid. Check the plugin package and configuration; private values were not logged.",
+      "initializationNotDeclared": "This deployed plugin does not declare initialized configuration support. Update the plugin and deploy it to a fresh directory.",
+      "initializationUnsupported": "The selected remote helper did not confirm initialized configuration support. Check its connection and select a compatible helper for a fresh deployment. Existing tasks can still be inspected or stopped.",
+      "revisionExhausted": "The runner record cannot accept another revision. Open the application log for details.",
+      "invalidMetadata": "The saved runner records could not be read. They were preserved; open the application log for details.",
+      "metadataTooLarge": "The saved runner records exceed the size limit. They were preserved.",
+      "tooManyTasks": "This plugin has reached its remote runner record limit.",
+      "notFound": "This plugin has no matching runner on that host.",
+      "deployFirst": "Deploy and initialize the remote runner before starting a task.",
+      "timeout": "The remote runner did not respond in time. Its state is unknown; saved stop requests will be retried.",
+      "identityReviewRequired": "This older task has no verified destination. Review its original host in Settings → Plugins → Remote task recovery.",
+      "destinationChanged": "The connection address or server key differs from this task’s original destination. Reconnect the original host.",
+      "destinationAmbiguous": "Multiple connections point to different destinations for this saved host. Keep only the original destination connected before reviewing.",
+      "controlReviewRequired": "This task belongs to an earlier plugin package. Review a control handoff in Remote task recovery before continuing.",
+      "identityAlreadyReviewed": "This task already has a bound destination. Review cannot replace it.",
+      "controlUnavailable": "This action is unavailable for the current task state. Refresh its recovery record.",
+      "controlAlreadyReviewed": "This package already controls the task. Refresh its recovery record.",
+      "reviewBusy": "Another native recovery confirmation is open. Close it before retrying.",
+      "reviewExpired": "The confirmation expired. No recovery change was applied.",
+      "reviewClosed": "The confirmation closed before a decision. No recovery change was applied.",
+      "recordChanged": "This recovery record changed while the operation was pending. Refresh and review it again.",
+      "exitUnconfirmed": "Process exit has not been confirmed. Keep the record until the original host confirms its state.",
+      "invalidResponse": "The remote helper returned an invalid response. The saved record was preserved; check the software log.",
+      "commandFailed": "The remote helper command failed: {{reason}}",
+      "noCommandDetails": "No error output was returned. Open the software log for diagnostics.",
+      "deploymentIncomplete": "This destination has an incomplete deployment. Review it in Settings → Plugins → Remote task recovery. Use a fresh directory; existing content is preserved.",
+      "configurationIncomplete": "Configuration creation or writing remains unconfirmed. Keep the recovery record even if no task was found; remote files are preserved.",
+      "helperCollision": "The plugin package contains a path reserved for the selected native helper. Update the plugin package before retrying.",
+      "preparationFailed": "The deployment preparation worker stopped unexpectedly. Open the software log for details.",
+      "binaryTooLarge": "The selected native helper exceeds the 64 MiB deployment limit.",
+      "packageTooLarge": "The plugin package exceeds the 32 MiB remote deployment limit.",
+      "explicitBinaryRequired": "Select an absolute path to a regular native helper file before deploying.",
+      "freshDirectoryRequired": "Choose a fresh remote directory. Existing files and deployment records are preserved.",
+      "browserExpired": "This recovery file connection expired or was cancelled. Open remote files again."
+    },
+    "activation": {
+      "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
+      "missingDependencyDetails": "Required plugin “{{id}}” is not installed. Install it before retrying; no dependencies were downloaded or started.",
+      "incompatibleDependency": "An installed dependency does not satisfy this plugin's version requirement.",
+      "incompatibleDependencyDetails": "Dependency “{{id}}” requires {{required}}, but {{installed}} is installed. Install a compatible version before retrying.",
+      "cycle": "These plugins have a circular dependency and cannot start together.",
+      "cycleDetails": "Circular plugin dependency: {{chain}}. Update the affected plugins before retrying.",
+      "limit": "This plugin's dependency graph exceeds the supported size or depth.",
+      "invalidDependencies": "This plugin declares invalid runtime dependencies.",
+      "declarationVersion": "Required runtime dependencies need manifest apiVersion 2 and an executable plugin runtime.",
+      "dependencyUnavailable": "A required plugin could not become ready.",
+      "failed": "Plugin startup failed unexpectedly. Open the software log for details.",
+      "cleanupFailed": "Plugin startup cleanup could not be confirmed. Open the software log and restart the application before retrying.",
+      "closed": "The plugin startup connection closed. Check the software log and try again."
+    },
     "statusBar": {
       "invalidItem": "The plugin supplied an invalid status bar item.",
       "unknownCommand": "The plugin's status bar command is unavailable.",
@@ -1227,6 +1289,111 @@
       "limit": "The plugin reached the tab bar control limit.",
       "expired": "This tab bar control has expired. Try the updated control.",
       "invalidContext": "This tab bar control is unavailable for the current tab."
+    },
+    "sessions": {
+      "notOwned": "This connection is no longer owned by this plugin runtime. It may have closed or already been kept by you.",
+      "resultPending": "This connection is still being delivered to its client. Wait for the connection request to finish before keeping it.",
+      "confirmationBusy": "A connection ownership confirmation is already open. Close it before requesting another.",
+      "confirmationExpired": "The connection ownership request expired. Close its confirmation and try again.",
+      "confirmationClosed": "The connection ownership confirmation closed without a decision. The connection remains managed by its plugin."
+    },
+    "resources": {
+      "limit": "Plugin connection limit reached (8 per plugin, 64 total, including pending requests). Disconnect unused connections before retrying.",
+      "observationLimit": "Runtime resource observation exceeds its bounded limit. Release unused resources through their domain APIs.",
+      "invalidRequest": "Invalid runtime resource request. Use an opaque handle or a revision-bound page.",
+      "changed": "Runtime resources changed. Refresh from the first page before continuing.",
+      "unavailable": "This resource is no longer owned by the current plugin runtime. Refresh the resource list.",
+      "busy": "Runtime resource operations are busy (4 per plugin, 16 total). Wait for existing cleanup to finish.",
+      "workerFailed": "Runtime resource cleanup failed. Open the application log for details.",
+      "cleanupIncomplete": "The SSH connection was removed, but transport closure did not finish before its deadline. Check the application log."
+    },
+    "hostList": {
+      "invalidDecoration": "Invalid host decoration. Check its fields, length and supported icon.",
+      "hostNotFound": "A host referenced by this contribution no longer exists. Refresh the host list.",
+      "limit": "Host contribution quota reached. Remove unused contributions or reduce their data before retrying.",
+      "invalidColumn": "The plugin supplied an invalid host table column. Check its field type, host IDs and column limits."
+    },
+    "frontend": {
+      "invalid": "Invalid trusted UI declaration. Use a local ui/*.mjs entry, a compatible SDK range and the ui.trusted permission.",
+      "invalidSdkRange": "The plugin declares an invalid UI SDK version range.",
+      "sdkUnsupported": "This plugin requires another UI SDK version. Check for a compatible plugin or application update.",
+      "sdkUnsupportedDetails": "This plugin requires UI SDK {{required}}; this application provides {{available}}.",
+      "sdkMismatch": "The frontend session does not match this application or plugin. Restart the plugin.",
+      "busy": "Too many plugin UI operations are in progress. Wait for them to finish, then retry.",
+      "expired": "This plugin UI session has expired. Restart the plugin.",
+      "unavailable": "This plugin has no available frontend module.",
+      "snapshot": "The approved plugin UI assets could not be loaded. Check the software log.",
+      "assetsTooLarge": "The plugin UI assets exceed the 8 MiB package limit.",
+      "undeclaredContribution": "The frontend tried to register a view or command absent from its manifest.",
+      "duplicateContribution": "The frontend registered the same view or command more than once.",
+      "missingActivate": "The frontend module must export an activate function.",
+      "viewUnavailable": "The plugin finished starting but did not register this view. Refresh it or check the software log.",
+      "commandUnavailable": "The plugin has not registered this frontend command.",
+      "activationFailed": "The plugin UI failed to activate. Check the software log and restart the plugin.",
+      "missingWorkspace": "The workbench provider did not keep its workspace mounted. The built-in interface has been restored.",
+      "duplicateSurface": "The interface provider mounted a host surface more than once.",
+      "userSelectionRequired": "Choose interface providers in Settings. Plugins cannot change this selection through the settings API."
+    },
+    "fileBrowser": {
+      "busy": "This file panel is loading or unavailable. Wait for it to finish.",
+      "changed": "This file panel changed or closed. Use its latest revision.",
+      "invalid": "The plugin supplied an invalid file-panel path, selection or page."
+    },
+    "hostSources": {
+      "invalid": "The plugin supplied an invalid host source. Check entry IDs, addresses, usernames and size limits. Credentials and private-key paths are not accepted.",
+      "limit": "The active host sources exceed their source, entry or storage limits.",
+      "unavailable": "This discovered host is no longer available or its details changed. Refresh the host list and reopen the connection.",
+      "changed": "The host source list changed while reading it. Restart from the first page."
+    },
+    "terminal": {
+      "unavailable": "This terminal is not ready or has closed. Wait for it to connect or reopen it.",
+      "invalid": "The plugin supplied an invalid terminal page, subscription or input.",
+      "changed": "The terminal buffer changed. Read the current revision and restart pagination.",
+      "subscriptionLimit": "The terminal subscription limit has been reached.",
+      "missingScreen": "The terminal provider did not keep its screen mounted. The built-in terminal has been restored."
+    },
+    "forwarding": {
+      "expired": "This forwarding view is no longer active. Reopen it and retry.",
+      "changed": "Forwarding state changed. Refresh the view and retry.",
+      "busy": "A forwarding operation is already in progress or the view needs to refresh.",
+      "invalid": "The forwarding request does not match this host or revision.",
+      "permissionDenied": "This provider does not have permission to change port forwarding."
+    },
+    "monitor": {
+      "changed": "This monitoring view has changed. Use the current snapshot and retry.",
+      "invalid": "The monitoring page request is invalid.",
+      "inactive": "Monitoring refresh requires a visible, connected page."
+    },
+    "history": {
+      "invalid": "Invalid history request. Use an entry from the current page.",
+      "changed": "History or its session changed. Read a fresh snapshot and try again.",
+      "busy": "History is loading or unavailable. Refresh before changing entries.",
+      "permissionDenied": "This history provider does not have permission for this action."
+    },
+    "backgroundTasks": {
+      "invalid": "The background task request or progress is invalid.",
+      "changed": "The task list changed. Use the current task and try again.",
+      "actionUnavailable": "This task action is unavailable or disabled.",
+      "inactive": "This task has settled or its execution has been cancelled.",
+      "limit": "This plugin already has eight pending background tasks.",
+      "busy": "This task action is already pending."
+    },
+    "processes": {
+      "changed": "This process view has changed. Use the current snapshot and retry.",
+      "invalid": "The process request is invalid.",
+      "unavailable": "This process cannot be stopped from the current view. Refresh and retry.",
+      "permissionDenied": "This provider does not have permission to stop processes.",
+      "providerInactive": "The selected process provider is no longer active. Use the current provider or the built-in view."
+    },
+    "quickAccess": {
+      "changed": "These search results have changed. Select a current result.",
+      "invalid": "This search request is invalid.",
+      "permissionDenied": "This provider cannot invoke commands without workspace.write."
+    },
+    "preferences": {
+      "changed": "These preferences changed. Read the current page and try again.",
+      "permissionDenied": "This plugin requires settings.write to change preferences.",
+      "invalid": "Invalid preference update. Provide the revision and field replacements."
     }
   },
   "themes": {
@@ -1283,6 +1450,7 @@
     "dismiss": "Dismiss suggestion",
     "permission": {
       "log": "Write plugin messages to the application log.",
+      "logsRead": "Read application and other plugins' diagnostic and operation logs. Logs may contain sensitive information.",
       "appRead": "Read application and operating-system information.",
       "settingsRead": "Read application preferences.",
       "settingsWrite": "Change application preferences.",
@@ -1312,7 +1480,12 @@
       "forwardsRead": "View saved port forwarding rules",
       "forwardsWrite": "Manage and start local or remote port forwarding",
       "editorRead": "Read documents in open editors",
-      "editorWrite": "Modify editor buffers (without saving automatically)"
+      "editorWrite": "Modify editor buffers (without saving automatically)",
+      "trustedUi": "Load trusted code into the application interface.",
+      "backgroundTasksRead": "Read visible background tasks across features",
+      "backgroundTasksWrite": "Invoke available background task actions",
+      "storageLocationsRead": "Read global storage locations and migration plans, without file contents",
+      "storageLocationsWrite": "Schedule or cancel global storage migrations with native confirmation"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -1322,7 +1495,8 @@
       "workspace": "Workspace and clipboard",
       "application": "Application settings",
       "other": "Other capabilities"
-    }
+    },
+    "trustedUiWarning": "This plugin runs in the same JavaScript context as Tunnelde. It can access the interface and native bridge beyond declared API permissions. Only approve code and publishers you trust. Restricted mode prevents loading; stopping cannot undo side effects or interrupt already executing code."
   },
   "pluginChat": {
     "chooseSession": "Choose a connected SSH session",
@@ -1606,8 +1780,11 @@
     "invalidValue": "The file contains a preference outside its supported range. No preferences were changed.",
     "unsupportedVersion": "This settings file format or version is not supported.",
     "tooLarge": "Settings files must be no larger than 512 KB.",
+    "storageTooLarge": "The saved profiles exceed the storage limit. Remove a profile or reduce its content.",
     "invalidStorage": "Saved profiles could not be read. Current settings are unaffected.",
     "notFound": "This profile no longer exists. Refresh the profiles and try again.",
+    "conflict": "Saved profiles changed. Refresh the list, review it and try again. No preferences were changed.",
+    "invalidRequest": "The profile request is invalid. Refresh the profiles and try again.",
     "limit": "You can save up to 32 settings profiles. Delete one to add another."
   },
   "search": {
@@ -1689,6 +1866,7 @@
     "testUpdatesRoute": "Current update route"
   },
   "pluginErrors": {
+    "packageFailure": "{{pluginId}}: {{error}}",
     "hostVersionMismatch": "This plugin version ({{pluginVersion}}) requires Tunnelde {{required}}; you are running {{hostVersion}}. Update Tunnelde or install a compatible plugin version. Startup stopped before launching a runtime.",
     "hostVersionUnsupported": "This plugin does not support this Tunnelde version. Check the version requirement in Plugin details, then update Tunnelde or install a compatible plugin version.",
     "startFailed": "Could not start {{name}}: {{error}}",
@@ -1735,6 +1913,7 @@
     "bindFailed": "Could not listen on that address and port. It may already be in use.",
     "remoteRejected": "The SSH server rejected the remote forward or did not respond. Check its forwarding policy and listen address.",
     "startCancelled": "Port forward startup was cancelled.",
+    "changed": "This forwarding rule changed or was deleted elsewhere. Any unsaved draft has been kept. Reopen the rule and review its current values before retrying.",
     "stopFailed": "Could not confirm that the listening port was released. Disconnect this host's forwarding connection before trying again.",
     "localEndpoint": "Local",
     "remoteEndpoint": "Remote",
@@ -1910,6 +2089,18 @@
       "cache": "Marketplace downloads, catalogue cache and temporary files.",
       "logs": "Application diagnostic logs.",
       "runners": "Local records of plugin runtimes deployed to remote machines."
+    },
+    "locations": {
+      "reviewSchedule": "Schedule these storage location changes? They will apply on the next restart. No restart happens now.",
+      "reviewCancel": "Cancel this scheduled storage migration? Existing data and recovery artifacts will remain unchanged.",
+      "withData": "Copy existing data when restarting",
+      "withoutData": "Use the new location without copying existing data",
+      "conflict": "Storage locations changed. Read the current plan and review it again.",
+      "recoveryRequired": "This migration has recovery data. Review it in storage settings before continuing.",
+      "noPendingPlan": "There is no pending storage migration.",
+      "invalidState": "Storage location metadata is invalid.",
+      "unavailable": "Storage location metadata could not be accessed.",
+      "busy": "Storage settings are busy. Read the latest state and retry."
     }
   },
   "tasks": {
@@ -1981,5 +2172,205 @@
     "sessions": "Active SSH connections",
     "plugins": "Running plugins",
     "actions": "Output actions"
+  },
+  "providers": {
+    "forwarding": "Port forwarding",
+    "monitor": "Performance monitor",
+    "title": "Interface providers",
+    "hint": "Choose installed extensions for the host list, file browser, terminal, history or workbench. Switching keeps open pages and sessions. Restore the built-in interface here, from F1, or from the recovery bar.",
+    "hostList": "Host list",
+    "fileBrowser": "File browser",
+    "workbench": "Workbench",
+    "builtin": "Built-in",
+    "unavailable": "Unavailable",
+    "fallback": "Using the built-in interface: the selected provider is unavailable.",
+    "restore": "Restore built-in interface",
+    "terminal": "Terminal",
+    "history": "Command history",
+    "backgroundTasks": "Background tasks",
+    "processes": "Process manager",
+    "quickAccess": "Quick access",
+    "preferences": "Preference forms"
+  },
+  "hostFields": {
+    "title": "Plugin host fields",
+    "hint": "Optional metadata grouped by plugin. Saved locally; never enter passwords or secrets. Editing fields does not start a plugin.",
+    "reloadTitle": "Reload saved fields?",
+    "reloadBody": "Discard your unsaved changes and load the latest saved values.",
+    "reload": "Reload",
+    "outdated": "Saved values changed elsewhere. Your draft is retained; reload before retrying if saving reports a conflict.",
+    "schemaChanged": "This plugin changed its field structure. Existing values are preserved. Review them before preparing a draft for the current fields.",
+    "storedValues": "Previously saved values",
+    "reconcile": "Prepare updated fields",
+    "reconcileBody": "Keep values valid under the current field structure and remove incompatible or removed fields from the draft. Saved data changes only after you click Save.",
+    "unset": "Not set",
+    "unsetValue": "Unset",
+    "yes": "Yes",
+    "no": "No",
+    "invalidField": "Enter a value that matches this field’s type and limits.",
+    "saved": "Saved",
+    "invalid": "The host field schema or request is invalid.",
+    "limit": "The host field storage limit was reached.",
+    "revisionLimit": "This metadata document reached its revision limit.",
+    "hostNotFound": "This host no longer exists.",
+    "conflict": "These fields changed elsewhere. Your draft is retained. Reload the saved values before trying again.",
+    "notDeclared": "This plugin no longer declares host fields.",
+    "invalidValue": "The value for field “{{field}}” does not match its type or limits.",
+    "permissionRequired": "Host field declarations require the hosts.read permission."
+  },
+  "hostColumns": {
+    "view": "Host view and columns",
+    "tree": "Tree view",
+    "table": "Table view",
+    "reset": "Reset columns",
+    "moveHint": "Click to sort; drag to reorder. Alt+Left/Right moves this column.",
+    "resize": "Resize {{name}} column",
+    "settingsHint": "Choose a view here; use the column menu in the host panel to show columns, drag headers to reorder, and drag dividers to resize."
+  },
+  "hostSources": {
+    "discovered": "Discovered hosts",
+    "source": "Host source",
+    "saveCopy": "Save as my host",
+    "connectionHint": "This host is supplied by a plugin. Sign in for this connection, or save a copy to configure a private key and remember credentials.",
+    "configureHint": "Save a copy of this discovered host to configure persistent forwarding rules, private keys and host settings."
+  },
+  "preferences": {
+    "invalidValue": "Invalid preference value: {{field}}.",
+    "staleRevision": "Preferences changed. Read a new snapshot before saving again."
+  },
+  "configuration": {
+    "title": "Plugin configuration",
+    "hint": "Edit declared plugin settings without starting the plugin. Save changes explicitly; store credentials through the secrets API.",
+    "search": "Search plugin settings",
+    "searchPlaceholder": "Search settings · @plugin:identifier @group:general",
+    "groupFilter": "Filter by group",
+    "fieldFilter": "Filter by field",
+    "emptyValue": "(empty)",
+    "backups": "Configuration backups",
+    "backupsHint": "Up to 8 backups are retained per plugin. Migration and restoration preserve the previous values. Delete backups explicitly when no longer needed.",
+    "noBackups": "No backups yet.",
+    "storedValues": "View stored values",
+    "restore": "Restore backup",
+    "restoreBody": "Restore these saved values? The current configuration will be backed up first. Unsaved edits will be discarded. An older schema may require migration afterwards.",
+    "deleteBackup": "Delete backup",
+    "deleteBackupBody": "Permanently delete this configuration backup? Unsaved settings will be preserved.",
+    "reload": "Reload saved settings",
+    "reloadBody": "Discard unsaved edits and reload the saved plugin configuration?",
+    "unsaved": "Unsaved changes",
+    "saved": "No unsaved changes",
+    "outdated": "Configuration changed elsewhere. Your draft is preserved. Reload before saving if there is a revision conflict.",
+    "migrationRequired": "Stored schema v{{stored}} needs migration to v{{current}}. Your values have been retained.",
+    "incompatible": "Stored schema v{{stored}} is incompatible with v{{current}}. Editing is blocked to protect your values. Install a compatible plugin or a version with a matching migration.",
+    "migrate": "Migrate configuration",
+    "migrateBody": "Apply this plugin's declared data migration? The original values will be backed up atomically. No plugin code will run.",
+    "invalidValue": "Invalid value for {{field}}. Check its type and declared limits.",
+    "invalidSchema": "The plugin declares an invalid or unsupported configuration schema.",
+    "invalidValues": "Provide every declared configuration field and no unknown fields.",
+    "invalidRequest": "The configuration request contains missing or unsupported fields.",
+    "limit": "Configuration exceeds the document or storage limit.",
+    "conflict": "Configuration changed since it was read. Your draft is preserved. Reload and review before saving again.",
+    "schemaChanged": "The installed configuration schema changed. Reload the plugin settings.",
+    "migrationUnavailable": "No compatible migration is available for the saved configuration.",
+    "migrationConflict": "The migration would overwrite existing data or refers to a missing field. Saved values were preserved.",
+    "backupLimit": "All 8 backup slots are occupied. Review and delete an unneeded backup before migrating or restoring.",
+    "backupNotFound": "This configuration backup no longer exists.",
+    "notDeclared": "This plugin does not declare configurable settings.",
+    "corrupt": "The configuration data is invalid. It has not been overwritten. Open the software log and preserve your plugin data for recovery.",
+    "storageVersion": "This configuration database was created by a newer application. Use a compatible version.",
+    "reason": {
+      "migration": "Before migration",
+      "restore": "Before restoration"
+    },
+    "workerFailed": "The configuration worker stopped unexpectedly. Retry and inspect the software log if it happens again."
+  },
+  "runnerRecovery": {
+    "title": "Remote task recovery",
+    "description": "Review saved remote tasks without starting a plugin. A record does not prove that a process is running. Stopping and removing records require confirmation; remote files are preserved.",
+    "plugin": "Record owner (including removed plugins)",
+    "empty": "No saved remote task records.",
+    "limited": "Discovery reached its directory scan limit. Additional owners may not be listed.",
+    "recordCount_one": "{{count}} saved record",
+    "recordCount_other": "{{count}} saved records",
+    "deployment": "Deployment",
+    "directory": "Remote directory",
+    "host": "Saved host ID",
+    "serverKey": "Server key",
+    "unreviewed": "Not recorded — review required",
+    "packageChanged": "The installed plugin package differs from this task’s controller. Inspect and stop remain available here; continuing control requires explicit handoff to an approved package.",
+    "stopHint": "The stop request is saved. Cleanup retries when the original destination is connected. This does not confirm that the process has exited.",
+    "uncertainHint": "The launch acknowledgement was lost. Even “not found” cannot confirm exit while a delayed launch remains possible.",
+    "legacyHint": "This older record has no captured destination identity. Connect its original host and explicitly review the address and server key before inspection or cleanup.",
+    "changedHint": "The available connection differs from the saved address or server key. Reconnect the original destination; review cannot replace an already bound identity.",
+    "inspect": "Check remote status",
+    "reviewDestination": "Review original destination",
+    "handoff": "Hand over control",
+    "stop": "Request stop",
+    "forget": "Remove local record",
+    "openLog": "Open software log",
+    "previous": "Previous",
+    "next": "Next",
+    "page": "Page {{page}}",
+    "checkedAt": "Checked {{time}}",
+    "connection": {
+      "connected": "Original host connected",
+      "offline": "Offline",
+      "legacy": "Destination unreviewed",
+      "ambiguous": "Multiple destinations",
+      "changed": "Destination changed"
+    },
+    "status": {
+      "unknown": "Not checked",
+      "stopPending": "Stop pending",
+      "uncertain": "Launch uncertain",
+      "stopped": "Confirmed stopped",
+      "failed": "Confirmed failed",
+      "notFound": "Confirmed absent"
+    },
+    "observed": {
+      "starting": "Observed: starting",
+      "running": "Observed: running",
+      "stopping": "Observed: stopping",
+      "stopped": "Observed: stopped",
+      "failed": "Observed: failed",
+      "notFound": "Observed: not found",
+      "unresponsive": "Observed: unresponsive"
+    },
+    "deploymentStatus": {
+      "reserved": "Not submitted",
+      "creating": "Directory creation unconfirmed",
+      "uploading": "Upload incomplete",
+      "ready": "Deployment ready"
+    },
+    "incompleteDeploymentHint": "This deployment has not completed. Its mutation intent is saved, but remote files may be partial or an operation may still be outstanding. It cannot be reused or started. Use a fresh directory and keep this recovery record for inspection; no remote files are automatically deleted.",
+    "reservedDeploymentHint": "No remote mutation was submitted for this reservation. You can remove this local record after confirmation; an in-flight preparation cannot continue with the removed record.",
+    "configurationStatus": {
+      "reserved": "Configuration not submitted",
+      "creating": "Configuration creation unconfirmed",
+      "writing": "Configuration write incomplete",
+      "ready": "Configuration saved"
+    },
+    "incompleteConfigurationHint": "A stopped or missing task does not prove that configuration writes have finished. Keep this recovery record for inspection; the configuration is not rewritten or automatically deleted.",
+    "configurationHint": "This records configuration preparation separately from the process status. Removing the local recovery record preserves remote files.",
+    "configurationPath": "Configuration file",
+    "browseFiles": "Open remote files",
+    "capabilities": {
+      "title": "Helper capabilities",
+      "check": "Check helper capabilities",
+      "version": "Helper version",
+      "protocols": "Runner protocols",
+      "features": "Declared features",
+      "none": "None declared",
+      "exitCode": "exit {{code}}",
+      "hint": "This checks the recorded helper on the original host. It does not confirm task exit or artifact ownership. Existing status and stop actions remain available.",
+      "failure": {
+        "transport": "The helper query could not reach the original host.",
+        "timeout": "The helper query exceeded its 5-second time limit.",
+        "outputTooLarge": "The helper response exceeded 4096 bytes.",
+        "missingExitStatus": "The SSH command ended without an exit status.",
+        "nonzeroExit": "The selected helper rejected the query or failed. This does not identify its version.",
+        "invalidResponse": "The helper returned invalid capability metadata.",
+        "unsupportedSchema": "The helper uses an unsupported capability schema."
+      }
+    }
   }
 }

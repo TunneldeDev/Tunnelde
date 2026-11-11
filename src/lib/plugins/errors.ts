@@ -4,8 +4,23 @@ import { isIpcError } from "@/lib/api/types";
 
 /** Plugin state events store strings, while rejected IPC calls carry error objects. */
 export function pluginFailure(error: unknown): string {
+  const message = formatFailure(error);
+  const context = isIpcError(error) ? error.details?.activation : null;
+  if (
+    context &&
+    typeof context === "object" &&
+    "pluginId" in context &&
+    typeof context.pluginId === "string"
+  )
+    return i18n.t("pluginErrors.packageFailure", { pluginId: context.pluginId, error: message });
+  return message;
+}
+
+function formatFailure(error: unknown): string {
   let message = isIpcError(error) ? error.message : error instanceof Error ? error.message : "";
   if (message.startsWith("plugin.error: ")) message = message.slice("plugin.error: ".length);
+  if (message.startsWith("plugin.api.frontend:"))
+    message = message.slice("plugin.api.frontend:".length);
   if (message === "plugin exited" || message === "plugin.exited")
     return i18n.t("pluginErrors.exited");
   if (message.startsWith("plugin.spawn: "))
@@ -14,9 +29,11 @@ export function pluginFailure(error: unknown): string {
     return `${i18n.t("pluginErrors.write")}: ${message.slice("plugin.write: ".length)}`;
   if (message === "plugin.timeout") return i18n.t("pluginErrors.timeout");
   if (!message) return translateError(error);
-  if (message === "plugin.engine.unsupported")
+  if (message === "plugin.engine.unsupported" || message === "plugin.frontend.sdkUnsupported")
     return translateError(isIpcError(error) ? error : { code: "validation", message });
   // Recreate the structured error for localization keys delivered through status events.
-  const translated = translateError({ code: "validation", message });
+  const translated = translateError(
+    isIpcError(error) ? { ...error, message } : { code: "validation", message },
+  );
   return translated === i18n.t("error.validation") ? message : translated;
 }

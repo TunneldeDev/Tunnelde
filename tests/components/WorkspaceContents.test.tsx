@@ -1,5 +1,5 @@
 import { act, createEvent, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PaneLayout } from "@/components/layout/PaneLayout";
@@ -9,13 +9,20 @@ import { useWorkspace } from "@/store/workspace";
 const { mounted, unmounted } = vi.hoisted(() => ({ mounted: vi.fn(), unmounted: vi.fn() }));
 vi.mock("@/features/terminal/TerminalPage", () => ({
   TerminalPage: ({ sessionId }: { sessionId: string }) => {
+    const [value, setValue] = useState("scrollback");
     useEffect(() => {
       mounted(sessionId);
       return () => {
         unmounted(sessionId);
       };
     }, [sessionId]);
-    return <textarea aria-label={`terminal ${sessionId}`} defaultValue="scrollback" />;
+    return (
+      <textarea
+        aria-label={`terminal ${sessionId}`}
+        value={value}
+        onChange={(event) => setValue(event.target.value)}
+      />
+    );
   },
 }));
 vi.mock("@/features/plugins/PluginViewPage", () => ({
