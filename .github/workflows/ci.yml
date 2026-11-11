@@ -150,6 +150,20 @@ jobs:
           path: .tmp/ci/profile-consumer
           persist-credentials: false
 
+      - name: Checkout profile content SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: e7104faeee49aa570578ce0b4eb4d4f3af893552
+          path: .tmp/ci/profile-content-consumer
+          persist-credentials: false
+
+      - name: Check actual large profile contents against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_PROFILE_CONTENT_OUTPUT="$RUNNER_TEMP/plugin-profile-content.json" cargo test --manifest-path src-tauri/Cargo.toml --lib large_public_body_emits_actual_segmented_sdk_interoperability_fixture
+          node scripts/ci/check-profile-content.mjs "$RUNNER_TEMP/plugin-profile-content.json" .tmp/ci/profile-content-consumer/sdk
+
       - name: Check actual profile metadata against schema and SDK
         timeout-minutes: 3
         run: |

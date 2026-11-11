@@ -17,6 +17,17 @@ pub(crate) fn describe() -> contracts::Schema {
     }
 }
 
+/// Independent public fields for a saved profile. Provider selections and other
+/// private native fields never cross this boundary. Legacy bodies that cannot
+/// satisfy the current public schema are rejected rather than silently repaired.
+pub(crate) fn profile_values(settings: &crate::settings::Settings) -> AppResult<serde_json::Value> {
+    let values = projection::values(settings)?;
+    for (id, value) in values.as_object().expect("public preference groups") {
+        schema::check(&schema::groups()[id], value, id)?;
+    }
+    Ok(values)
+}
+
 impl Writer<'_> {
     pub(crate) fn observe_preferences(
         &self,
