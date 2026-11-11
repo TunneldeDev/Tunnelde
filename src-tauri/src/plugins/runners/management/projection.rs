@@ -79,7 +79,11 @@ pub(super) fn entry(
         can_inspect: !deployment && bound.is_ok(),
         can_stop: !deployment && record.terminal_status.is_none() && !record.stop_pending,
         can_forget: (deployment_state == Some(super::super::deployment::journal::State::Reserved))
-            || (!deployment && record.terminal_status.is_some() && !record.stop_pending),
+            || (!deployment
+                && record.terminal_status.is_some()
+                && !record.stop_pending
+                && !record.configuration_uncertain()),
         deployment_state: deployment_state.map(|state| state.name()),
+        configuration_state: record.configuration_state.map(|state| state.name()),
     })
 }

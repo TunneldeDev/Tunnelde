@@ -34,6 +34,9 @@ pub(super) fn validate(record: &Record, action: Action) -> AppResult<()> {
         return Err(AppError::validation("plugin.runners.controlUnavailable"));
     }
     match action {
+        Action::Forget if record.configuration_uncertain() => Err(AppError::validation(
+            "plugin.runners.configurationIncomplete",
+        )),
         Action::Forget if record.stop_pending || record.terminal_status.is_none() => {
             Err(AppError::validation("plugin.runners.exitUnconfirmed"))
         }

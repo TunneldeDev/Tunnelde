@@ -192,3 +192,27 @@ fn incomplete_deployment_is_visible_but_only_unsubmitted_reservations_can_be_for
     assert!(mutation::apply(&mut records, &old_token, Action::Forget).is_err());
     assert_eq!(records.len(), 1);
 }
+
+#[test]
+fn terminal_task_status_does_not_prove_config_writes_have_settled() {
+    use super::{contracts::Action, mutation, projection::entry};
+    use crate::plugins::runners::operations::configuration::journal::State;
+    let mut task = record();
+    task.launch_state = crate::plugins::runners::model::LaunchState::Reserved;
+    task.stop_pending = true;
+    for state in [State::Creating, State::Writing] {
+        task.configuration_state = Some(state);
+        task.settle("notFound").unwrap();
+        assert!(task.terminal_status.is_some());
+        assert!(!task.stop_pending);
+        let view = entry(&task, &[], None, false).unwrap();
+        assert_eq!(view.configuration_state, Some(state.name()));
+        assert!(!view.can_forget);
+        assert!(mutation::validate(&task, Action::Forget).is_err());
+    }
+    for state in [Some(State::Reserved), Some(State::Ready), None] {
+        task.configuration_state = state;
+        assert!(entry(&task, &[], None, false).unwrap().can_forget);
+        assert!(mutation::validate(&task, Action::Forget).is_ok());
+    }
+}

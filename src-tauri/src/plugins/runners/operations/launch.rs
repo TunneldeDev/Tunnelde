@@ -1,10 +1,8 @@
 use serde_json::{json, Value};
 use tauri::Manager;
-use tokio::io::AsyncWriteExt;
 
 use super::super::{
-    authorize, exec, field, host_id, lifecycle, model::LaunchState, path_join, repository,
-    HostContext, Record,
+    authorize, exec, field, host_id, lifecycle, model::LaunchState, repository, HostContext, Record,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -63,6 +61,7 @@ pub(in crate::plugins::runners) async fn start(
             controller_fingerprint: None,
             terminal_status: None,
             deployment_state: None,
+            configuration_state: Some(super::configuration::journal::State::Reserved),
         };
         super::super::identity::verify(
             &record.deployment,
@@ -71,35 +70,15 @@ pub(in crate::plugins::runners) async fn start(
         records.push(record.clone());
         Ok(record)
     })?;
-    let deployment = &reserved.deployment;
-    let config_path = path_join(
-        &directory,
-        &format!("config-{id}.json"),
-        &deployment.platform,
-    );
-    let sftp = crate::ssh::files::session(&context.app, &session).await?;
-    let mut file = sftp
-        .create(&config_path)
-        .await
-        .map_err(|error| AppError::Ssh(error.to_string()))?;
-    file.write_all(&config).await?;
-    file.shutdown().await?;
-    if deployment.platform != "windows" {
-        sftp.set_metadata(
-            &config_path,
-            russh_sftp::protocol::FileAttributes {
-                permissions: Some(0o600),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(|error| AppError::Ssh(error.to_string()))?;
-    }
+    let (ready, config_path) =
+        super::configuration::write(context, &session, &reserved, &config).await?;
+    let deployment = &ready.deployment;
     authorize(context, &["ssh.exec"])?;
-    let mut dispatched = reserved.clone();
+    let mut dispatched = ready.clone();
     dispatched.launch_state = LaunchState::Unconfirmed;
     dispatched.advance()?;
-    if !repository::compare_update(context, &reserved, |record| {
+    if !repository::compare_update(context, &ready, |record| {
+        authorize(context, &["ssh.exec"])?;
         *record = dispatched.clone();
         Ok(())
     })? {

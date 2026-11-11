@@ -63,6 +63,17 @@ export function RecoveryRecord({
             <dt>{t("runnerRecovery.serverKey")}</dt>
             <dd>{entry.serverKey ?? t("runnerRecovery.unreviewed")}</dd>
           </dl>
+          {!deployment && entry.configurationState && (
+            <p className="settings-hint">
+              <strong>{t(`runnerRecovery.configurationStatus.${entry.configurationState}`)}</strong>
+              {" · "}
+              {t(
+                entry.configurationState === "creating" || entry.configurationState === "writing"
+                  ? "runnerRecovery.incompleteConfigurationHint"
+                  : "runnerRecovery.configurationHint",
+              )}
+            </p>
+          )}
           {deployment && entry.deploymentState && entry.deploymentState !== "ready" && (
             <p className="settings-hint">
               {t(

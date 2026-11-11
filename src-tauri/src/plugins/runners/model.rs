@@ -34,6 +34,8 @@ pub(super) struct Record {
     pub(super) terminal_status: Option<TerminalState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(super) deployment_state: Option<super::deployment::journal::State>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) configuration_state: Option<super::operations::configuration::journal::State>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +57,11 @@ pub(super) enum LaunchState {
 }
 
 impl Record {
+    pub(super) fn configuration_uncertain(&self) -> bool {
+        self.configuration_state
+            .is_some_and(|state| state.uncertain())
+    }
+
     pub(super) fn deployment_ready(&self) -> bool {
         self.runner_id != "deployment"
             || self.deployment_state.is_none()

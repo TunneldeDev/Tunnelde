@@ -37,6 +37,22 @@ No partial directory is recursively deleted. Safe reconciliation of deployment a
 configuration artifacts remains a separate recovery operation; the journal alone
 does not prove that remote files have been cleaned up.
 
+## Interrupted configuration writes
+
+New tasks persist configuration phases independently of launch state: unsubmitted,
+creation unconfirmed, write incomplete, and saved. Creation is exclusive with mode
+0600 at OPEN; an existing file is never truncated or changed with a later path-based
+chmod. The bounded writer checks authorization and the exact task revision between
+chunks, after close and before dispatching the helper. A newer stop prevents a late
+write completion from launching the task. Recovery never replays configuration writes.
+
+The native recovery screen displays these phases without configuration values or
+secrets. A task reporting `notFound` or stopped does not settle an unconfirmed OPEN,
+WRITE or CLOSE; such records cannot be forgotten. A saved configuration is not proof
+of process startup or artifact cleanup. Explicitly removing an eligible terminal
+record retains remote files. Historical records remain readable without inferring
+configuration state; `runners.list` and the selected helper protocol are unchanged.
+
 ## Recovery and package changes
 
 Open **Settings → Plugins → Remote task recovery** to discover records, including those belonging to stopped or uninstalled plugins. The host can check status and save stop intent without launching the plugin or selecting Node. Records are paged in groups of 32. A saved record or connected SSH transport is not proof that the task is running; remote observations show their check time. Offline, changed, ambiguous and unreviewed destinations remain distinct.
