@@ -29,6 +29,7 @@
 - [Plugins](plugins/README.md)
 - [Durable remote runners](plugins/runners.md)
 - [Runtime resource lifecycle](plugins/runtime-resources.md)
+- [Plugin request cancellation](plugins/request-cancellation.md)
 - [Plugin status bar API](plugins/status-bar.md)
 - [Tab bar contributions](plugins/tab-bar.md)
 - [Terminal provider (experimental)](plugins/terminal.md)

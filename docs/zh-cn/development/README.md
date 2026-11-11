@@ -29,6 +29,7 @@
 - [插件](plugins/README.md)
 - [持久远端运行器](plugins/runners.md)
 - [运行资源生命周期](plugins/runtime-resources.md)
+- [取消插件调用](plugins/request-cancellation.md)
 - [插件底栏 API](plugins/status-bar.md)
 - [标签栏扩展](plugins/tab-bar.md)
 - [终端提供者（实验性）](plugins/terminal.md)

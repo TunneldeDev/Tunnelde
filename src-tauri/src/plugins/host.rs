@@ -13,8 +13,10 @@ use tokio::sync::{oneshot, Mutex};
 use tokio::task::JoinSet;
 
 use super::api::{self, HostContext};
+use super::runtime::requests::{Request, Requests};
 use super::security::Lease;
 use crate::error::{AppError, AppResult};
+mod inbound;
 
 type Pending = Arc<StdMutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>>;
 
@@ -309,6 +311,7 @@ async fn read_loop(
     let mut closed = connection.closed.subscribe();
     let mut reader = BufReader::new(stdout);
     let mut requests = JoinSet::new();
+    let lifetimes = Requests::default();
     let plugin_id = context
         .as_ref()
         .map(|context| context.id.as_str())
@@ -342,9 +345,11 @@ async fn read_loop(
         };
 
         while requests.try_join_next().is_some() {}
-        let request_id = value
-            .get("id")
-            .filter(|id| id.is_string() || id.is_number());
+        if inbound::cancellation(&value, &lifetimes) {
+            continue;
+        }
+        let request_key = inbound::request_key(&value);
+        let request_id = request_key.as_ref().and_then(|_| value.get("id"));
         if value.get("method").is_some() {
             let log_notification = value.get("id").is_none()
                 && value.get("method").and_then(Value::as_str) == Some("log");
@@ -366,8 +371,28 @@ async fn read_loop(
                 }
                 let connection = connection.clone();
                 let context = context.clone();
+                let lifetime = if let Some(key) = request_key {
+                    if let Err(error) = lifetimes.reserve("stdio", &key) {
+                        // A duplicate active ID cannot receive an unambiguous reply.
+                        if error.to_string() == "plugin.api.duplicateRequest" {
+                            break;
+                        }
+                        let _ = write_reply(
+                            &connection,
+                            json!({"jsonrpc":"2.0","id":value["id"],"error":error_payload(&error)}),
+                        )
+                        .await;
+                        continue;
+                    }
+                    match lifetimes.claim("stdio", &key) {
+                        Ok(request) => Some(request),
+                        Err(_) => break,
+                    }
+                } else {
+                    None
+                };
                 requests.spawn(async move {
-                    handle_plugin_request(value, &connection, context).await;
+                    handle_plugin_request(value, &connection, context, lifetime).await;
                 });
             }
             continue;
@@ -402,6 +427,7 @@ async fn read_loop(
     }
 
     connection.close();
+    lifetimes.retire("stdio");
     requests.abort_all();
     // Cancellation is cooperative. Wait for in-flight host calls to finish
     // before removing their contributions, or a synchronous registration could
@@ -446,6 +472,7 @@ async fn handle_plugin_request(
     value: Value,
     connection: &PluginConnection,
     context: Option<HostContext>,
+    mut lifetime: Option<Request>,
 ) {
     let id = value.get("id").cloned();
     let method = value
@@ -471,12 +498,18 @@ async fn handle_plugin_request(
             permissions: context.permissions.clone(),
             generation: context.generation,
         };
-        tokio::time::timeout(
+        let work = tokio::time::timeout(
             Duration::from_secs(120),
             security.guard(&lease, api::dispatch(&context, method, params)),
-        )
-        .await
-        .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")))
+        );
+        let work = async {
+            work.await
+                .unwrap_or_else(|_| Err(AppError::validation("plugin.timeout")))
+        };
+        match lifetime.as_mut() {
+            Some(request) => request.run(work).await,
+            None => work.await,
+        }
     } else {
         Err(AppError::validation("pluginSecurity.unavailable"))
     };
@@ -501,6 +534,7 @@ pub(super) fn error_payload(error: &AppError) -> Value {
         "plugin.api.unknownMethod" => -32601,
         "plugin.api.invalidRequest" => -32600,
         "plugin.api.invalidParams" => -32602,
+        "plugin.api.cancelled" => -32800,
         _ if message.starts_with("pluginSecurity.") => -32001,
         _ => -32000,
     };

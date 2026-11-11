@@ -13,6 +13,7 @@ use super::api::HostContext;
 use super::security::{FrontendSnapshot, Lease, PluginSecurity, RuntimeRetirement};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+pub(crate) mod requests;
 
 pub const UI_SDK_VERSION: &str = "0.1.0";
 
@@ -80,6 +81,7 @@ struct Module {
 }
 
 pub struct Registry {
+    calls: super::runtime::requests::Requests,
     modules: Mutex<HashMap<String, Module>>,
     requests: Arc<Semaphore>,
     snapshots: Arc<Semaphore>,
@@ -88,6 +90,7 @@ pub struct Registry {
 impl Default for Registry {
     fn default() -> Self {
         Self {
+            calls: Default::default(),
             modules: Mutex::new(HashMap::new()),
             requests: Arc::new(Semaphore::new(16)),
             snapshots: Arc::new(Semaphore::new(2)),
@@ -106,7 +109,13 @@ impl Registry {
         let mut modules = self.modules.lock().unwrap_or_else(|e| e.into_inner());
         valid(&lease)?;
         let before: Vec<_> = modules.keys().cloned().collect();
-        modules.retain(|_, item| valid(&item.lease).is_ok());
+        modules.retain(|token, item| {
+            let keep = valid(&item.lease).is_ok();
+            if !keep {
+                self.calls.retire(token);
+            }
+            keep
+        });
         // A recreated WebView may reopen the same runtime; retire its old URL.
         let bytes: usize = modules
             .values()
@@ -129,10 +138,13 @@ impl Registry {
                 bytes: snapshot.bytes,
             },
         );
-        let retired = before
+        let retired: Vec<_> = before
             .into_iter()
             .filter(|token| !modules.contains_key(token))
             .collect();
+        for token in &retired {
+            self.calls.retire(token);
+        }
         Ok((token, retired))
     }
 
@@ -163,7 +175,13 @@ impl Registry {
         self.modules
             .lock()
             .unwrap_or_else(|e| e.into_inner())
-            .retain(|_, item| item.lease.id != owner || !generation(item.lease.generation));
+            .retain(|token, item| {
+                let keep = item.lease.id != owner || !generation(item.lease.generation);
+                if !keep {
+                    self.calls.retire(token);
+                }
+                keep
+            });
     }
 
     fn drain(
@@ -174,6 +192,7 @@ impl Registry {
         let mut tokens = Vec::with_capacity(modules.len());
         let mut retired = Vec::new();
         for (token, module) in modules.drain() {
+            self.calls.retire(&token);
             retired.extend(closed(&module.lease, &token));
             tokens.push(token);
         }
@@ -310,6 +329,7 @@ pub fn plugin_frontend_close(app: AppHandle, registry: State<'_, Registry>, toke
             .security
             .frontend_closed(&module.lease, &token)
     });
+    registry.calls.retire(&token);
     drop(modules);
     state.plugins.cleanup_retired(&app, retired);
     super::forwarding::remove_token(&app, &token);
@@ -351,8 +371,20 @@ pub async fn plugin_frontend_call(
     token: String,
     method: String,
     params: Value,
+    request_id: Option<String>,
 ) -> AppResult<Value> {
-    let lease = app.state::<Registry>().lease(&token)?;
+    let (lease, mut lifetime) = app.state::<Registry>().with_lease(&token, |lease| {
+        let id = match request_id {
+            Some(id) => id,
+            None => {
+                let id = uuid::Uuid::new_v4().to_string();
+                app.state::<Registry>().calls.reserve(&token, &id)?;
+                id
+            }
+        };
+        let request = app.state::<Registry>().calls.claim(&token, &id)?;
+        Ok((lease.clone(), request))
+    })?;
     let state = app.state::<AppState>();
     authorized(&state.plugins.security, &lease)?;
     let context = HostContext {
@@ -364,11 +396,11 @@ pub async fn plugin_frontend_call(
         tool_client: None,
         tool_request: None,
     };
-    let result = state
+    let work = state
         .plugins
         .security
-        .guard(&lease, super::api::dispatch(&context, &method, params))
-        .await?;
+        .guard(&lease, super::api::dispatch(&context, &method, params));
+    let result = lifetime.run(work).await?;
     if app.state::<Registry>().lease(&token)?.generation != lease.generation {
         return Err(AppError::validation("plugin.frontend.expired"));
     }
@@ -498,6 +530,7 @@ mod tests {
                 opened,
             )
             .unwrap();
+        registry.calls.reserve(&first, "old-request").unwrap();
         let (second, _) = registry
             .insert(
                 module.clone(),
@@ -506,6 +539,8 @@ mod tests {
                 opened,
             )
             .unwrap();
+        assert!(registry.calls.claim(&first, "old-request").is_err());
+        registry.calls.reserve(&second, "current-request").unwrap();
         assert!(registry
             .with_lease(&first, |lease| security.frontend_ready(lease, &first))
             .is_err());
@@ -522,6 +557,7 @@ mod tests {
         pending.commit();
         let (tokens, retired) =
             registry.drain(|lease, token| security.frontend_closed(lease, token));
+        assert!(registry.calls.claim(&second, "current-request").is_err());
         assert_eq!(tokens.as_slice(), std::slice::from_ref(&second));
         assert_eq!(
             retired
