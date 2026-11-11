@@ -30,6 +30,8 @@ pub const PERMISSIONS: &[&str] = &[
     "app.read",
     "storage.locations.read",
     "storage.locations.write",
+    "storage.recovery.read",
+    "storage.recovery.write",
     "settings.read",
     "settings.write",
     "hosts.read",

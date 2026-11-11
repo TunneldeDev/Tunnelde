@@ -81,7 +81,9 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "storage.locations.cancel",
             "storage.locations.observe",
             "storage.locations.schedule",
-            "storage.observe"
+            "storage.observe",
+            "storage.recovery.observe",
+            "storage.recovery.request"
         ]
     );
 }
