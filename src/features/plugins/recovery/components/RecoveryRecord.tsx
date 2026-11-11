@@ -12,18 +12,19 @@ export function RecoveryRecord({
   observation,
   pending,
   onAction,
+  onBrowse,
 }: {
   entry: RecoveryEntry;
   observation?: RecoveryObservation;
   pending: boolean;
   onAction: (action: RecoveryAction) => void;
+  onBrowse?: () => void;
 }) {
   const { t, i18n } = useTranslation();
   const deployment = entry.runnerId === "deployment";
   const configurationState = entry.configurationState;
   const configurationUncertain =
-    !deployment &&
-    (configurationState === "creating" || configurationState === "writing");
+    !deployment && (configurationState === "creating" || configurationState === "writing");
   const directoryName = entry.directory
     .replace(/[\\/]+$/, "")
     .split(/[\\/]/)
@@ -67,6 +68,12 @@ export function RecoveryRecord({
           <dl>
             <dt>{t("runnerRecovery.directory")}</dt>
             <dd>{entry.directory}</dd>
+            {entry.configurationPath && (
+              <>
+                <dt>{t("runnerRecovery.configurationPath")}</dt>
+                <dd>{entry.configurationPath}</dd>
+              </>
+            )}
             <dt>{t("runnerRecovery.host")}</dt>
             <dd>{entry.hostId}</dd>
             <dt>{t("runnerRecovery.serverKey")}</dt>
@@ -123,6 +130,11 @@ export function RecoveryRecord({
             </div>
           )}
           <div className="runner-recovery__actions">
+            {entry.canBrowse && onBrowse && (
+              <Button size="sm" disabled={pending} onClick={onBrowse}>
+                {t("runnerRecovery.browseFiles")}
+              </Button>
+            )}
             {entry.canInspect && (
               <Button size="sm" disabled={pending} onClick={() => onAction("inspect")}>
                 {t("runnerRecovery.inspect")}

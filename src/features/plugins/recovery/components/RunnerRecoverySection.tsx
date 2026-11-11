@@ -9,6 +9,8 @@ import { translateError } from "@/lib/api/errors";
 import type { RecoveryOwners } from "@/lib/runners/recovery/contracts";
 import { useRecoveryPage } from "../runtime/useRecoveryPage";
 import { RecoveryRecord } from "./RecoveryRecord";
+import { ConnectDialog } from "@/features/connect/ConnectDialog";
+import { useRecoveryFiles } from "../runtime/useRecoveryFiles";
 import "./recovery.css";
 
 function RecoveryError({ message }: { message: string }) {
@@ -42,6 +44,7 @@ function RecoveryPage({
 }) {
   const { t } = useTranslation();
   const page = useRecoveryPage(pluginId, offset);
+  const files = useRecoveryFiles(pluginId);
   return (
     <div aria-busy={page.pending}>
       <div className="runner-recovery__toolbar">
@@ -60,6 +63,17 @@ function RecoveryPage({
         </Button>
       </div>
       {page.error && <RecoveryError message={page.error} />}
+      {files.error && <RecoveryError message={files.error} />}
+      {files.connection && (
+        <ConnectDialog
+          host={files.connection.host}
+          after="background"
+          verification={files.verification}
+          connectSession={files.connect}
+          onConnected={files.connected}
+          onClose={files.cancel}
+        />
+      )}
       {page.snapshot?.entries.length === 0 && (
         <p className="settings-hint">{t("runnerRecovery.empty")}</p>
       )}
@@ -68,7 +82,8 @@ function RecoveryPage({
           key={JSON.stringify([entry.runnerId, entry.hostId, entry.directory])}
           entry={entry}
           observation={page.observations[entry.token]}
-          pending={page.pending}
+          pending={page.pending || files.pending}
+          onBrowse={() => void files.browse(entry)}
           onAction={(action) => void page.act(entry, action)}
         />
       ))}

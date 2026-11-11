@@ -55,6 +55,22 @@ it("does not equate a saved record or connected SSH host with a running process"
   expect(screen.queryByRole("button", { name: "Remove local record", hidden: true })).toBeNull();
 });
 
+it("shows the derived configuration path and a direct native file-browser action", () => {
+  const browse = vi.fn();
+  render(
+    <RecoveryRecord
+      entry={{ ...entry, canBrowse: true, configurationPath: "/tasks/one/config-task.json" }}
+      pending={false}
+      onAction={() => {}}
+      onBrowse={browse}
+    />,
+  );
+  fireEvent.click(screen.getByText("task"));
+  expect(screen.getByText("/tasks/one/config-task.json")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Open remote files" }));
+  expect(browse).toHaveBeenCalledOnce();
+});
+
 it.each([
   ["reserved", "Not submitted"],
   ["creating", "Directory creation unconfirmed"],

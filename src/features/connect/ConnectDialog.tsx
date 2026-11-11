@@ -1,5 +1,5 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -37,6 +37,15 @@ interface ConnectDialogProps {
   purpose?: "forwarding";
   /** Optional exclusive host acquisition, with its own native lifetime. */
   connectSession?: (request: SshConnectRequest) => Promise<SshSession>;
+  /** Native verification for acquisitions pinned to a previously captured target. */
+  verification?: {
+    probe: (credentials: SshConnectRequest["jumpCredentials"]) => Promise<HostKeyInfo>;
+    trust: (
+      fingerprint: string,
+      credentials: SshConnectRequest["jumpCredentials"],
+      expectedHostId?: string,
+    ) => Promise<HostKeyInfo>;
+  };
   onConnected?: (session: SshSession) => void | Promise<void>;
 }
 
@@ -62,6 +71,7 @@ function HostConnectDialog({
   onConnected,
   purpose,
   connectSession,
+  verification,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
@@ -88,6 +98,11 @@ function HostConnectDialog({
   const [error, setError] = useState<string | null>(initialError ?? null);
   const alive = useRef(true);
   const pending = useRef(false);
+  const probeHost = useCallback(
+    (credentials?: SshConnectRequest["jumpCredentials"]) =>
+      verification ? verification.probe(credentials ?? {}) : api.sshProbe(host.id, credentials),
+    [host.id, verification],
+  );
 
   useEffect(() => {
     alive.current = true;
@@ -98,8 +113,7 @@ function HostConnectDialog({
 
   useEffect(() => {
     let alive = true;
-    api
-      .sshProbe(host.id)
+    probeHost()
       .then((info) => {
         if (!alive) {
           return;
@@ -120,7 +134,7 @@ function HostConnectDialog({
     return () => {
       alive = false;
     };
-  }, [host.id]);
+  }, [host.id, probeHost]);
 
   useEffect(() => {
     if (host.source) return;
@@ -165,7 +179,7 @@ function HostConnectDialog({
     setError(null);
     setTrusted(false);
     try {
-      const info = await api.sshProbe(host.id, jumpCredentials);
+      const info = await probeHost(jumpCredentials);
       if (alive.current) {
         setProbe(info);
         setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
@@ -193,16 +207,18 @@ function HostConnectDialog({
     setError(null);
     let approved = false;
     try {
-      const info = await (probe.hostId
-        ? api.sshTrust(
-            host.id,
-            probe.fingerprint,
-            jumpIds.length ? jumpCredentials : undefined,
-            probe.hostId,
-          )
-        : jumpIds.length
-          ? api.sshTrust(host.id, probe.fingerprint, jumpCredentials)
-          : api.sshTrust(host.id, probe.fingerprint));
+      const info = await (verification
+        ? verification.trust(probe.fingerprint, jumpCredentials, probe.hostId)
+        : probe.hostId
+          ? api.sshTrust(
+              host.id,
+              probe.fingerprint,
+              jumpIds.length ? jumpCredentials : undefined,
+              probe.hostId,
+            )
+          : jumpIds.length
+            ? api.sshTrust(host.id, probe.fingerprint, jumpCredentials)
+            : api.sshTrust(host.id, probe.fingerprint));
       if (!alive.current) {
         return;
       }
@@ -213,7 +229,7 @@ function HostConnectDialog({
       if (!finalHost) {
         setProbing(true);
         try {
-          const next = await api.sshProbe(host.id, jumpCredentials);
+          const next = await probeHost(jumpCredentials);
           if (alive.current) {
             setProbe(next);
             approved = next.status === "known" && (!next.hostId || next.hostId === host.id);
@@ -228,7 +244,7 @@ function HostConnectDialog({
         setError(translateError(cause));
         if (isIpcError(cause) && cause.message === "ssh.hostKeyChanged") {
           try {
-            const info = await api.sshProbe(host.id, jumpCredentials);
+            const info = await probeHost(jumpCredentials);
             if (alive.current) {
               setProbe(info);
               setTrusted(info.status === "known" && (!info.hostId || info.hostId === host.id));
@@ -290,6 +306,7 @@ function HostConnectDialog({
       }
       return;
     }
+    if (!alive.current) return;
     if (!host.source && interactive && remember && password.length > 0) {
       try {
         await api.credentialSave(host.id, password);
@@ -534,16 +551,18 @@ function HostConnectDialog({
           ) : null}
         </div>
 
-        <ConnectionQuality
-          hostId={host.id}
-          credentials={jumpCredentials}
-          enabled={trusted && !probing && !busy}
-          onTesting={setTesting}
-          onKeyError={() => {
-            setTrusted(false);
-            void verifyRoute();
-          }}
-        />
+        {!verification && (
+          <ConnectionQuality
+            hostId={host.id}
+            credentials={jumpCredentials}
+            enabled={trusted && !probing && !busy}
+            onTesting={setTesting}
+            onKeyError={() => {
+              setTrusted(false);
+              void verifyRoute();
+            }}
+          />
+        )}
 
         {interactive ? (
           <>
