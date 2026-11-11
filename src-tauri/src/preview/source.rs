@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
 use crate::error::{AppError, AppResult};
@@ -25,7 +23,7 @@ impl Drop for RemoteSession {
 }
 
 pub enum Source {
-    Local(tokio::fs::File),
+    Local(crate::services::files::read::LocalReader),
     Remote {
         file: Box<russh_sftp::client::fs::File>,
         session: RemoteSession,
@@ -47,16 +45,9 @@ impl Source {
             }
             Self::remote(crate::ssh::files::session(app, session_id).await?, path).await
         } else {
-            let path = Path::new(path);
-            if !path.is_absolute() || !tokio::fs::metadata(path).await?.is_file() {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            let file = tokio::fs::File::open(path).await?;
-            let metadata = file.metadata().await?;
-            if !metadata.is_file() {
-                return Err(AppError::validation("preview.invalidPath"));
-            }
-            Ok((Self::Local(file), metadata.len()))
+            let (reader, size) =
+                crate::services::files::read::LocalReader::open(path.into()).await?;
+            Ok((Self::Local(reader), size))
         }
     }
 
@@ -100,18 +91,18 @@ impl Source {
     }
 
     pub async fn read(&mut self, start: u64, len: u64) -> AppResult<Vec<u8>> {
-        let mut bytes = vec![0; len as usize];
+        if len > crate::services::files::read::MAX_READ_BYTES || start.checked_add(len).is_none() {
+            return Err(AppError::validation("fileRead.invalidRange"));
+        }
         match self {
-            Self::Local(file) => {
-                file.seek(std::io::SeekFrom::Start(start)).await?;
-                file.read_exact(&mut bytes).await?;
-            }
+            Self::Local(reader) => reader.read(start, len).await,
             Self::Remote { file, .. } => {
+                let mut bytes = vec![0; len as usize];
                 file.seek(std::io::SeekFrom::Start(start)).await?;
                 file.read_exact(&mut bytes).await?;
+                Ok(bytes)
             }
         }
-        Ok(bytes)
     }
 
     pub async fn close(self) {

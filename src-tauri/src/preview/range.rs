@@ -1,5 +1,5 @@
 pub const MAX_RANGE: u64 = 1024 * 1024;
-pub const MAX_WHOLE: u64 = 32 * 1024 * 1024;
+pub const MAX_WHOLE: u64 = crate::services::files::read::MAX_READ_BYTES;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ByteRange {
