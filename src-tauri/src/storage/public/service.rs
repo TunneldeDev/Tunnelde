@@ -24,6 +24,14 @@ fn lock() -> AppResult<std::sync::MutexGuard<'static, ()>> {
         .lock()
         .map_err(|_| AppError::internal("storage.lock"))
 }
+fn commit_lock() -> AppResult<std::sync::MutexGuard<'static, ()>> {
+    // Never retain the global plugin policy while waiting for a native settings
+    // inventory/validation operation to release the storage lock.
+    MUTATIONS.try_lock().map_err(|error| match error {
+        std::sync::TryLockError::WouldBlock => AppError::validation("storage.locations.busy"),
+        std::sync::TryLockError::Poisoned(_) => AppError::internal("storage.lock"),
+    })
+}
 fn native(changes: &[Change]) -> AppResult<Vec<config::Change>> {
     if changes.is_empty() || changes.len() > 8 {
         return Err(AppError::validation("storage.invalidPlan"));
@@ -115,7 +123,7 @@ pub(crate) fn schedule(
     let snapshot = projection::snapshot(paths, &config)?;
     let prepared = config::prepare(&paths.home, &config)?;
     persist(&|| {
-        let _lock = lock()?;
+        let _lock = commit_lock()?;
         compare(paths, &load(paths)?, &request.revision)?;
         commit()?;
         prepared.publish()
@@ -147,7 +155,7 @@ pub(crate) fn cancel(
     let snapshot = projection::snapshot(paths, &config)?;
     let prepared = config::prepare(&paths.home, &config)?;
     persist(&|| {
-        let _lock = lock()?;
+        let _lock = commit_lock()?;
         compare(paths, &load(paths)?, &request.revision)?;
         commit()?;
         prepared.publish()

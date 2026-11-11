@@ -2096,7 +2096,8 @@
       "recoveryRequired": "This migration has recovery data. Review it in storage settings before continuing.",
       "noPendingPlan": "There is no pending storage migration.",
       "invalidState": "Storage location metadata is invalid.",
-      "unavailable": "Storage location metadata could not be accessed."
+      "unavailable": "Storage location metadata could not be accessed.",
+      "busy": "Storage settings are busy. Read the latest state and retry."
     }
   },
   "tasks": {

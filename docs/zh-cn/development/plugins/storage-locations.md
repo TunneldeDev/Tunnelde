@@ -29,3 +29,5 @@ const result = await client.schedule(
 取消尚未开始的计划需要其准确修订号。需要恢复的计划返回 `storage.locations.recoveryRequired` 并保留，交由原生恢复处理。成功修改返回 `{version:1,outcome:"scheduled"|"cancelled",snapshot}`；用户拒绝时返回 `dismissed` 和重新读取的快照。计划成功后显示常规重启提示，不会自动重启或立即迁移。在发布围栏前取消请求可以阻止配置提交；提交后的取消不回滚，丢失回复时应重新读取状态。临时元数据在策略围栏外完成同步，拒绝时清理。原生最多四项未结束操作，包含尚未退出的阻塞线程及待确认操作；超额返回 `plugin.api.busy`。
 
 机器 Schema 位于 `src-tauri/src/plugins/api/domains/storage/locations/schema.json`，独立 DTO 位于 `contracts/storage/locations/`，自动镜像到 SDK 并检查偏差。快照最多 127 KiB，回复及持久化配置最多 128 KiB。测试将真实原生输出、Schema 与实际 SDK 消费者联检。这些保证针对计划元数据，不代表迁移恢复、文件修改及跨卷操作全部安全；接口仍为实验状态。
+
+若原生存储操作占用写锁，提交围栏返回 `storage.locations.busy`，不持有插件策略锁等待目录扫描；请重新读取状态后重试。
