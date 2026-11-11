@@ -306,6 +306,14 @@ it("bounds aggregate replacement bytes, final document bytes and version overflo
     "editor.documentTooLarge",
   );
   await edits([{ start: 0, end: 1, text: "b" }]);
+  for (const original of ["a".repeat(2 * 1024 * 1024 + 1), "中".repeat(699051)]) {
+    prepare(original);
+    await expect(edits([{ start: 0, end: original.length, text: "small" }])).rejects.toThrow(
+      "editor.documentTooLarge",
+    );
+    expect(editorDocument(tabId)!.content).toBe(original);
+    expect(undoEditorEdit(tabId)).toBe(false);
+  }
   prepare();
   useEditors.setState({
     entries: {

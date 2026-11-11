@@ -10,6 +10,10 @@ export function applyBufferEdits(input: unknown): EditorBufferEditsResult {
   if (!Array.isArray(params.edits) || params.edits.length > 128) throw new Error("invalid:edits");
   const document = currentBuffer(reference),
     original = document.content;
+  // The existing undo store retains at most 4MiB UTF-16 text per history.
+  // Bounding the original too ensures a successful batch actually keeps its undo step.
+  if (original.length > 2 * 1024 * 1024 || bytes(original) > 2 * 1024 * 1024)
+    throw new Error("editor.documentTooLarge");
   let lastStart = -1,
     lastEnd = 0,
     replacementBytes = 0;

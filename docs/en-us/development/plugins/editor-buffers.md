@@ -47,8 +47,9 @@ include unsaved text. Stale requests fail; restart pagination from fresh metadat
 
 An edit is `{start, end, text}` against the original buffer. Supply at most 128,
 ascending, nonoverlapping edits with distinct starts and scalar boundaries.
-Well-formed Unicode replacement text totals at most 64 KiB UTF-8; the resulting
-buffer must fit 2 MiB UTF-8, matching native saves. The complete batch validates
+Well-formed Unicode replacement text totals at most 64 KiB UTF-8; both
+original and resulting buffers must each fit 2 MiB UTF-8, matching native saves
+and the undo history budget. The complete batch validates
 before one compare-and-swap mutation and one undo step. Empty/same-text batches
 preserve version/history. Changed batches increment once; exhausted safe integer
 versions fail before editing. Results contain `{schemaVersion: 1, tabId,
