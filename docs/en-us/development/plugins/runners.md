@@ -160,3 +160,32 @@ artifact deletion. Results are transient and discarded when the record changes.
 The versioned envelope and compatibility rules are documented in the helper
 repository's `docs/en-us/development/capabilities.md`. This is a native recovery facility;
 public RPCs and stable plugin contracts are unchanged.
+
+## Native artifact metadata observation
+
+The native `runner_recovery_action` also accepts `artifacts`. This is an API
+foundation without an added UI control or public plugin RPC. It requires the exact
+recovery token and original SSH identity, with a per-task admission lease spanning
+capability discovery and metadata inspection. Each awaited observation, including
+failures, is followed by a new record/target check before another request or result.
+
+Only initialized tasks with an original admission token and no historical file
+configuration phase qualify. Older tasks return `unsupported/legacyTask`; a selected
+helper without the explicit artifact feature returns `unsupported/helperCapability`.
+Transport and bounded decoding failures remain distinct. No helper is automatically
+downloaded, selected or upgraded. Published helper 0.27.0 predates this feature.
+
+The optional transient `artifacts` outcome contains the recovery token, check time
+and result. An observed result has nullable admission, `consistency: "pointInTime"`,
+`cleanupAuthorized: false`, and a missing/present/unavailable snapshot. Present
+snapshots contain fixed known names, types, decimal byte-size strings and a count
+of other immediate entries. Arbitrary names, paths, admission/request tokens,
+contents, raw stderr and credential-bearing diagnostics are excluded. Enumeration
+is capped at 256 children; combined output at 16 KiB; the artifact request at 12 s.
+
+This does not settle a process, launch, configuration write or filesystem mutation,
+even when the directory is missing. It does not prove artifact ownership or safe
+deletion. It never changes recovery metadata, removes remote files or enables
+forgetting uncertain historical writes. Explicit durable compensation is separate
+unfinished work. See the helper's `docs/en-us/development/runner-artifacts.md` for
+the versioned request/receipt and non-atomic filesystem consistency limits.

@@ -1,5 +1,8 @@
 /** Native recovery DTOs. Saved records are not proof that a process is running. */
 import type { Host, SshSession } from "@/lib/api/types";
+import type { RecoveryArtifactObservation } from "./artifacts";
+import type { RecoveryCapabilityObservation } from "./capabilities";
+export type { RecoveryCapabilityObservation } from "./capabilities";
 export interface RecoveryOwners {
   ids: string[];
   limited: boolean;
@@ -35,7 +38,7 @@ export interface RecoverySnapshot {
   nextOffset: number | null;
 }
 export type RecoveryAction =
-  "inspect" | "capabilities" | "stop" | "reviewDestination" | "handoff" | "forget";
+  "inspect" | "capabilities" | "artifacts" | "stop" | "reviewDestination" | "handoff" | "forget";
 export interface RecoveryRequest {
   pluginId: string;
   token: string;
@@ -51,34 +54,7 @@ export interface RecoveryOutcome {
   accepted: boolean;
   observation: RecoveryObservation | null;
   capabilities?: RecoveryCapabilityObservation;
-}
-
-export interface RecoveryCapabilityObservation {
-  token: string;
-  checkedAt: number;
-  result:
-    | {
-        status: "available";
-        envelope: {
-          schemaVersion: number;
-          helper: string;
-          helperVersion: string;
-          runnerProtocols: number[];
-          features: string[];
-        };
-      }
-    | {
-        status: "unavailable";
-        reason:
-          | "transport"
-          | "timeout"
-          | "outputTooLarge"
-          | "missingExitStatus"
-          | "nonzeroExit"
-          | "invalidResponse"
-          | "unsupportedSchema";
-        exitCode?: number;
-      };
+  artifacts?: RecoveryArtifactObservation;
 }
 
 export interface RecoveryBrowserRequest {
