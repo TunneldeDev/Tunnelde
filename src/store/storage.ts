@@ -7,7 +7,7 @@ interface StorageStore {
   status: StorageStatus | null;
   restartPending: boolean;
   loadRestartPending: () => Promise<void>;
-  refreshMetadata: () => Promise<void>;
+  refreshMetadata: (signal?: AbortSignal) => Promise<void>;
   loading: boolean;
   busy: boolean;
   error: string | null;
@@ -22,6 +22,13 @@ export const useStorage = create<StorageStore>((set, get) => {
   let loading: Promise<void> | null = null;
   let revision = 0;
   let pendingRead = 0;
+  const readRestartPending = async (signal?: AbortSignal) => {
+    if (!isTauri() || signal?.aborted) return;
+    const started = revision;
+    const read = ++pendingRead;
+    const restartPending = await api.storageRestartPending();
+    if (!signal?.aborted && started === revision && read === pendingRead) set({ restartPending });
+  };
   const change = async (run: () => Promise<StorageStatus>) => {
     if (get().busy) return false;
     revision++;
@@ -42,19 +49,17 @@ export const useStorage = create<StorageStore>((set, get) => {
     status: null,
     restartPending: false,
     loadRestartPending: async () => {
-      if (!isTauri()) return;
-      const started = revision;
-      const read = ++pendingRead;
       try {
-        const restartPending = await api.storageRestartPending();
-        if (started === revision && read === pendingRead) set({ restartPending });
+        await readRestartPending();
       } catch (failure) {
         console.warn("Could not check pending storage changes", failure);
       }
     },
-    refreshMetadata: async () => {
+    refreshMetadata: async (signal) => {
+      if (signal?.aborted) return;
       revision++;
-      await get().loadRestartPending();
+      // Propagate failures so bridge recovery can retry its authoritative read.
+      await readRestartPending(signal);
     },
     loading: false,
     busy: false,
