@@ -93,6 +93,14 @@ impl Prepared<'_> {
     /// Bounded durable commit only: safe inside the caller's final authorization
     /// lock. Window work, keychain cleanup and events run outside that lock.
     pub(crate) fn persist(&mut self) -> AppResult<()> {
+        self.persist_with(|_| Ok(()))
+    }
+    /// Domain-owned companion rows must commit or roll back with preferences.
+    /// The callback does database work only; effects publish after the transaction.
+    pub(crate) fn persist_with(
+        &mut self,
+        extra: impl FnOnce(&rusqlite::Connection) -> AppResult<()>,
+    ) -> AppResult<()> {
         if self.committed {
             return Ok(());
         }
@@ -100,7 +108,7 @@ impl Prepared<'_> {
             .writer
             .state
             .db
-            .with(|conn| super::repository::save(conn, &self.next))?;
+            .with(|conn| super::repository::save_with(conn, &self.next, extra))?;
         self.writer.state.set_settings(self.next.clone());
         self.revision = Some(revision);
         self.committed = true;

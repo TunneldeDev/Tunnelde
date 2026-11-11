@@ -211,6 +211,8 @@ pub fn run() {
             commands::settings_update,
             commands::settings_reset,
             settings_profiles::settings_profiles_list,
+            settings_profiles::activation::settings_profiles_snapshot,
+            settings_profiles::activation::settings_profile_apply,
             settings_profiles::settings_profile_save,
             settings_profiles::settings_profile_delete,
             settings_profiles::settings_file_import,

@@ -2,6 +2,41 @@ use super::*;
 use crate::db::Database;
 
 #[test]
+fn companion_failure_rolls_back_preferences_revision_and_selection() {
+    Database::in_memory()
+        .unwrap()
+        .with(|conn| {
+            let initial = Settings::default();
+            let before = save(conn, &initial)?;
+            conn.execute(
+                "INSERT INTO settings(key,value,updated_at) VALUES('test.profile.selection','old',0)",
+                [],
+            )?;
+            let mut next = initial.clone();
+            next.theme = "light".into();
+            let result = save_with(conn, &next, |tx| {
+                tx.execute("UPDATE settings SET value='new' WHERE key='test.profile.selection'", [])?;
+                Err(crate::error::AppError::validation("profiles.conflict"))
+            });
+            assert_eq!(result.err().unwrap().to_string(), "profiles.conflict");
+            assert_eq!(revision(conn, &initial)?, before);
+            assert_eq!(crate::db::settings::load(conn)?.theme, initial.theme);
+            let selected: String = conn.query_row(
+                "SELECT value FROM settings WHERE key='test.profile.selection'", [], |row| row.get(0),
+            )?;
+            assert_eq!(selected, "old");
+            let after = save_with(conn, &next, |tx| {
+                tx.execute("UPDATE settings SET value='new' WHERE key='test.profile.selection'", [])?;
+                Ok(())
+            })?;
+            assert_ne!(after, before);
+            assert_eq!(crate::db::settings::load(conn)?.theme, next.theme);
+            Ok(())
+        })
+        .unwrap();
+}
+
+#[test]
 fn legacy_reads_do_not_write_and_every_commit_prevents_aba() {
     let database = Database::in_memory().unwrap();
     database
