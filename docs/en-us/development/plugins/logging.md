@@ -60,6 +60,8 @@ required. File handles reject selected symlinks/reparse points and nonregular fi
 On an initial diagnostic read, only the current host-selected daily log is considered,
 starting within its latest 256 KiB; older bytes set `gap`. Subsequent reads scan at most
 256 KiB/2048 records and preserve the first matching entry that did not fit in the page.
+Selecting the current log examines at most 4096 directory entries; excess entries fail explicitly
+with `logs.read.unavailable` rather than selecting an incomplete candidate set.
 Incomplete tails wait for an append; overlong lines are discarded incrementally. File
 identity and the 64 bytes preceding the position detect ordinary replacement/truncation;
 these are best-effort append-log checks, not a snapshot or proof against arbitrary in-place
