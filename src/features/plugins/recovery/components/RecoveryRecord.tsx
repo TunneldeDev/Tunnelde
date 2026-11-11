@@ -20,6 +20,10 @@ export function RecoveryRecord({
 }) {
   const { t, i18n } = useTranslation();
   const deployment = entry.runnerId === "deployment";
+  const directoryName = entry.directory
+    .replace(/[\\/]+$/, "")
+    .split(/[\\/]/)
+    .at(-1);
   const status = entry.stopPending
     ? "stopPending"
     : (entry.terminalStatus ?? (entry.launchUncertain ? "uncertain" : "unknown"));
@@ -30,7 +34,10 @@ export function RecoveryRecord({
           <ChevronRight size={14} aria-hidden="true" />
           <span className="runner-recovery__identity">
             <strong>{deployment ? t("runnerRecovery.deployment") : entry.runnerId}</strong>
-            <small>{entry.address ?? entry.hostId}</small>
+            <small title={deployment ? entry.directory : undefined}>
+              {entry.address ?? entry.hostId}
+              {deployment && directoryName ? ` · ${directoryName}` : ""}
+            </small>
           </span>
           <span className="runner-recovery__badges">
             <span className={`runner-recovery__badge is-${entry.connection}`}>

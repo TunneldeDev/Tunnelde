@@ -78,6 +78,7 @@ it.each([
       />,
     );
     expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.getByText("user@server:22 · one")).toBeTruthy();
     fireEvent.click(screen.getByText("Deployment"));
     expect(screen.queryByRole("button", { name: "Request stop" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Check remote status" })).toBeNull();
