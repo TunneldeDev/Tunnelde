@@ -42,7 +42,7 @@ changed: false}`。token 为 1–128 UTF-8 字节，不含控制字符。revisio
 
 每项编辑为原始缓冲区上的 `{start, end, text}`。最多 128 项，起点升序、
 不重叠、起点不重复、范围不切开代理对。替换文本为良构 Unicode，合计最多
-64 KiB UTF-8；最终缓冲区最多 2 MiB UTF-8，与原生保存限制一致。先验证整个
+64 KiB UTF-8；原始和最终缓冲区均最多 2 MiB UTF-8，与原生保存和撤销预算一致。先验证整个
 批次，再进行一次身份/版本比较和修改，一次撤销恢复整个批次。空批次或文本未变化
 时不修改版本/历史；变化时版本只增加一次，安全整数版本耗尽时先报错再修改。
 返回 `{schemaVersion: 1, tabId, documentId, version, dirty, utf16Length}`，

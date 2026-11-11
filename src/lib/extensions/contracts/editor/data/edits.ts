@@ -7,6 +7,7 @@ export interface EditorBufferEdit {
   readonly text: string;
 }
 
+/** Both original and resulting buffers must fit 2MiB UTF-8 to retain one undo step. */
 export interface EditorBufferEditsRequest extends EditorBufferIdentity {
   /** At most 128, ascending, nonoverlapping, distinct start offsets. */
   readonly edits: ReadonlyArray<EditorBufferEdit>;
