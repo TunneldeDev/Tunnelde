@@ -8,7 +8,7 @@ export interface ProfileReadRequest {
 }
 
 /** Concatenating text in nextOffset order yields public PreferenceValues JSON.
- * No private settings, provider selections, runtime metadata or credentials.
+ * Omits private provider selections, runtime metadata and separate secret stores.
  */
 export interface ProfileContentChunk {
   readonly version: 1;

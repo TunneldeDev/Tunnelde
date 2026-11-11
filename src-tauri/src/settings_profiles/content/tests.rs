@@ -109,7 +109,7 @@ fn public_content_is_detached_from_private_fields_and_current_selection() {
         },
     );
     let revision = saved(&db, settings);
-    let initial = db.with(|conn| catalogue(conn, || Ok(()))).unwrap();
+    let initial = catalogue(&db, || Ok(())).unwrap();
     assert_eq!(initial.active_id, None);
     assert_eq!(initial.items.len(), 1);
     let (text, _) = collect(&db, &revision, 7);
@@ -126,7 +126,7 @@ fn public_content_is_detached_from_private_fields_and_current_selection() {
         Ok(())
     })
     .unwrap();
-    let after = db.with(|conn| catalogue(conn, || Ok(()))).unwrap();
+    let after = catalogue(&db, || Ok(())).unwrap();
     assert_eq!(after.active_id.as_deref(), Some("work"));
     assert_eq!(after.revision, revision);
     assert_eq!(collect(&db, &revision, MAX_CHUNK_BYTES).0, text);
@@ -175,7 +175,7 @@ fn revisions_fence_cache_hits_legacy_writes_and_same_content_aba() {
         Ok(())
     })
     .unwrap();
-    let empty = db.with(|conn| catalogue(conn, || Ok(()))).unwrap();
+    let empty = catalogue(&db, || Ok(())).unwrap();
     assert_eq!(
         read(&db, request(&empty.revision, 0, 4), || Ok(()))
             .err()
@@ -195,13 +195,7 @@ fn invalid_legacy_contents_do_not_break_metadata_or_get_silently_repaired() {
             ..Settings::default()
         },
     );
-    assert_eq!(
-        db.with(|conn| catalogue(conn, || Ok(())))
-            .unwrap()
-            .items
-            .len(),
-        1
-    );
+    assert_eq!(catalogue(&db, || Ok(())).unwrap().items.len(), 1);
     assert_eq!(
         read(&db, request(&revision, 0, 4), || Ok(()))
             .err()
@@ -219,6 +213,22 @@ fn invalid_legacy_contents_do_not_break_metadata_or_get_silently_repaired() {
         .unwrap(),
         200_001
     );
+}
+
+#[test]
+fn catalogue_checks_release_the_shared_database_between_stages() {
+    let db = Database::in_memory().unwrap();
+    let revision = saved(&db, Settings::default());
+    let checks = Cell::new(0);
+    let response = catalogue(&db, || {
+        db.with(|_| Ok(()))?;
+        checks.set(checks.get() + 1);
+        Ok(())
+    })
+    .unwrap();
+    assert!(checks.get() >= 3);
+    assert_eq!(response.revision, revision);
+    assert_eq!(response.items.len(), 1);
 }
 
 #[test]
@@ -285,7 +295,7 @@ fn full_native_storage_bound_remains_readable_without_a_new_import_file_limit() 
         Ok(())
     })
     .unwrap();
-    let cat = db.with(|conn| catalogue(conn, || Ok(()))).unwrap();
+    let cat = catalogue(&db, || Ok(())).unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(&collect(&db, &cat.revision, MAX_CHUNK_BYTES).0).unwrap()
             ["appearance"]["theme"],
@@ -309,7 +319,7 @@ fn large_public_body_emits_actual_segmented_sdk_interoperability_fixture() {
     assert!(text.len() > super::super::MAX_FILE_BYTES);
     assert!(pages.len() > 1);
     let values: Value = serde_json::from_str(&text).unwrap();
-    let cat = db.with(|conn| catalogue(conn, || Ok(()))).unwrap();
+    let cat = catalogue(&db, || Ok(())).unwrap();
     if let Some(path) = std::env::var_os("TUNNELDE_PROFILE_CONTENT_OUTPUT") {
         std::fs::write(
             path,

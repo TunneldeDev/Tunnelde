@@ -7,15 +7,23 @@ use crate::{
     error::{AppError, AppResult},
     settings_profiles::{observation::contracts::Metadata, repository},
 };
-use rusqlite::Connection;
+fn capture(db: &crate::db::Database) -> AppResult<repository::Captured> {
+    db.with(|conn| {
+        let tx = conn.unchecked_transaction()?;
+        let captured = repository::capture(&tx)?;
+        tx.commit()?;
+        Ok(captured)
+    })
+}
 
 pub(crate) fn catalogue(
-    conn: &Connection,
+    db: &crate::db::Database,
     check: impl Fn() -> AppResult<()>,
 ) -> AppResult<Catalogue> {
     check()?;
-    let tx = conn.unchecked_transaction()?;
-    let saved = repository::read(&tx)?;
+    let captured = capture(db)?;
+    check()?;
+    let saved = captured.decode()?;
     let response = Catalogue {
         version: 1,
         revision: saved.revision,
@@ -31,7 +39,6 @@ pub(crate) fn catalogue(
             .collect(),
     };
     check()?;
-    tx.commit()?;
     Ok(response)
 }
 
@@ -43,17 +50,17 @@ pub(crate) fn read(
     request.validate()?;
     check()?;
     // All repository rows (including the nonce/selection) share one SQLite read.
-    let profile = db.with(|conn| {
-        let tx = conn.unchecked_transaction()?;
-        let saved = repository::check(&tx, &request.revision)?;
-        let profile = saved
-            .profiles
-            .into_iter()
-            .find(|p| p.id == request.id)
-            .ok_or_else(|| AppError::NotFound("profiles.notFound".into()))?;
-        tx.commit()?;
-        Ok(profile)
-    })?;
+    let captured = capture(db)?;
+    check()?;
+    let saved = captured.decode()?;
+    if saved.revision != request.revision {
+        return Err(AppError::validation("profiles.conflict"));
+    }
+    let profile = saved
+        .profiles
+        .into_iter()
+        .find(|p| p.id == request.id)
+        .ok_or_else(|| AppError::NotFound("profiles.notFound".into()))?;
     check()?;
     let cached = cache::shared()
         .lock()

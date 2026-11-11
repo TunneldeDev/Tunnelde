@@ -17,7 +17,9 @@ content revision.
 UTF-8 bytes; `limit` is 4–65536 and the starting offset must be a character
 boundary. Follow `nextOffset` until null, then parse the concatenated text as JSON.
 The result has the 11 public `PreferenceValues` groups and their schemas. It omits
-private provider selections, runtime metadata, credentials and native storage keys.
+private provider selections, runtime metadata, separate secret stores and native
+storage keys. Proxy usernames and configured update URLs are public preferences;
+`settings.read` therefore permits reading those saved values.
 Do not interpret it as a native Settings document.
 
 Escaping may shorten a segment so its encoded response stays within 128 KiB.
