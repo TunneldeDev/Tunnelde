@@ -18,7 +18,7 @@ fn discovery_matches_implemented_limits_and_keeps_lifecycle_methods_experimental
         lifecycle["states"],
         serde_json::json!(["owned", "releaseRequested", "cleanupRequired"])
     );
-    for action in ["snapshot", "release"] {
+    for action in ["snapshot", "identify", "release"] {
         let name = lifecycle[action].as_str().unwrap();
         let method = crate::plugins::api::method_info(name).unwrap();
         assert!(method.permissions.is_empty());

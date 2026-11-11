@@ -1,6 +1,7 @@
 use super::{
     adapters,
     contracts::{
+        identify::Reference,
         release::{Request, Response},
         snapshot::Query,
     },
@@ -23,6 +24,17 @@ pub(in crate::plugins) async fn dispatch(
 ) -> AppResult<Value> {
     let permit = super::admission::acquire(&context.id)?;
     match method {
+        "resources.identify" => {
+            let reference: Reference = parse(params)?;
+            reference.validate()?;
+            let resource = tokio::time::timeout(
+                super::OBSERVATION_TIMEOUT,
+                adapters::identify(context, &reference),
+            )
+            .await
+            .map_err(|_| AppError::validation("plugin.resources.busy"))??;
+            Ok(serde_json::to_value(resource)?)
+        }
         "resources.snapshot" => {
             let query = parse::<Query>(params)?;
             let items = collect(context).await?;

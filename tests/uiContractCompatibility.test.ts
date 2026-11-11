@@ -103,6 +103,7 @@ describe("public UI contract boundaries", () => {
       "PreferenceWorkspace",
       "RuntimeResource",
       "RuntimeResourceKind",
+      "RuntimeResourceReference",
       "RuntimeResourceRelease",
       "RuntimeResourceReleased",
       "RuntimeResourceState",
