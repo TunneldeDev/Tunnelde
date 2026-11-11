@@ -20,8 +20,8 @@ const request = ajv.compile({
 export function checkLoggingContract(page) {
   assert.equal(validate(page), true, "Log producer violates its schema");
   assert(
-    Buffer.byteLength(JSON.stringify(page)) <= 128 * 1024,
-    "Log page exceeds its response bound",
+    Buffer.byteLength(JSON.stringify(page)) <= 256 * 1024,
+    "Log page exceeds its decoded work bound",
   );
   for (const value of [
     {},
@@ -44,7 +44,9 @@ export function checkLoggingContract(page) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [fixturePath, sdk] = process.argv.slice(2);
   assert(fixturePath && sdk, "Expected native fixture and SDK directory");
-  const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
+  const wire = await readFile(fixturePath);
+  assert(wire.length <= 128 * 1024, "Native log wire exceeds its response bound");
+  const fixture = JSON.parse(wire.toString("utf8"));
   checkLoggingContract(fixture);
   const { createLoggingClient } = await import(
     pathToFileURL(join(resolve(sdk), "logging/client.mjs")).href
