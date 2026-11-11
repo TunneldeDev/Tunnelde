@@ -1232,6 +1232,7 @@
       "commandFailed": "远端辅助程序执行失败：{{reason}}",
       "noCommandDetails": "远端未返回错误输出，请打开软件日志查看诊断信息。",
       "deploymentIncomplete": "此目标有一条未完成部署。请在设置 → 插件 → 远端任务恢复中查看，并选择全新的目录重试；已有内容会保留。",
+      "configurationIncomplete": "配置文件的创建或写入结果尚未确认。即使未找到任务，也需保留恢复记录；远端文件不会被删除。",
       "helperCollision": "插件包包含与所选原生运行器重名的保留路径，请先更新插件包。",
       "preparationFailed": "部署准备进程意外结束，请打开软件日志查看详情。",
       "binaryTooLarge": "所选原生运行器超过 64 MiB 的部署限制。",
@@ -2319,6 +2320,14 @@
       "ready": "部署就绪"
     },
     "incompleteDeploymentHint": "此部署尚未完成。操作意图已保存，但远端文件可能不完整，也可能仍有操作尚未确认，不能复用或启动。请使用全新目录重试，并保留此记录供检查；软件不会自动删除远端文件。",
-    "reservedDeploymentHint": "这条预留记录尚未提交任何远端修改。确认后可移除本地记录；正在准备的请求无法继续使用已移除记录。"
+    "reservedDeploymentHint": "这条预留记录尚未提交任何远端修改。确认后可移除本地记录；正在准备的请求无法继续使用已移除记录。",
+    "configurationStatus": {
+      "reserved": "配置尚未提交",
+      "creating": "配置创建待确认",
+      "writing": "配置写入未完成",
+      "ready": "配置已保存"
+    },
+    "incompleteConfigurationHint": "任务已停止或未找到，不代表配置文件写入已结束。请保留此恢复记录供核查；软件不会重新写入配置或自动删除文件。",
+    "configurationHint": "配置准备与进程状态分别记录。移除本地恢复记录会保留远端文件。"
   }
 }

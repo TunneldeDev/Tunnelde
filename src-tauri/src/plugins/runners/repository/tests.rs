@@ -192,3 +192,27 @@ fn incomplete_deployment_survives_reload_and_stale_completion_cannot_replace_its
         Some(State::Uploading)
     );
 }
+
+#[test]
+fn configuration_journal_survives_restart_and_newer_stop_wins_over_a_late_close() {
+    use crate::plugins::runners::operations::configuration::journal::State;
+    let scratch = Scratch::new();
+    let mut observed = record();
+    observed.configuration_state = Some(State::Writing);
+    observed.launch_state = LaunchState::Reserved;
+    observed.stop_pending = true;
+    save(&scratch.file(), std::slice::from_ref(&observed)).unwrap();
+    let mut records = load(&scratch.file()).unwrap();
+    assert_eq!(records[0].configuration_state, Some(State::Writing));
+    records[0].advance().unwrap();
+    assert!(!update_observed(&mut records, &observed, |record| {
+        record.configuration_state = Some(State::Ready);
+        record.advance()
+    })
+    .unwrap());
+    assert!(records[0].configuration_uncertain());
+    records[0].settle("notFound").unwrap();
+    save(&scratch.file(), &records).unwrap();
+    assert!(load(&scratch.file()).unwrap()[0].configuration_uncertain());
+    assert!(record().configuration_state.is_none());
+}

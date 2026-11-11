@@ -90,6 +90,26 @@ it.each([
   },
 );
 
+it.each([
+  ["reserved", "Configuration not submitted"],
+  ["creating", "Configuration creation unconfirmed"],
+  ["writing", "Configuration write incomplete"],
+  ["ready", "Configuration saved"],
+] as const)("shows private config %s separately from process state", (state, label) => {
+  render(
+    <RecoveryRecord
+      entry={{ ...entry, configurationState: state, terminalStatus: "notFound", canForget: false }}
+      pending={false}
+      onAction={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByText(entry.runnerId));
+  expect(screen.getByText(label)).toBeTruthy();
+  if (state === "creating" || state === "writing")
+    expect(screen.getByText(/does not prove that configuration writes have finished/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Remove local record" })).toBeNull();
+});
+
 it("keeps uncertain launch and saved stop feedback explicit without allowing forget or handoff", () => {
   const onAction = vi.fn();
   render(

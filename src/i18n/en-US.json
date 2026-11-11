@@ -1232,6 +1232,7 @@
       "commandFailed": "The remote helper command failed: {{reason}}",
       "noCommandDetails": "No error output was returned. Open the software log for diagnostics.",
       "deploymentIncomplete": "This destination has an incomplete deployment. Review it in Settings → Plugins → Remote task recovery. Use a fresh directory; existing content is preserved.",
+      "configurationIncomplete": "Configuration creation or writing remains unconfirmed. Keep the recovery record even if no task was found; remote files are preserved.",
       "helperCollision": "The plugin package contains a path reserved for the selected native helper. Update the plugin package before retrying.",
       "preparationFailed": "The deployment preparation worker stopped unexpectedly. Open the software log for details.",
       "binaryTooLarge": "The selected native helper exceeds the 64 MiB deployment limit.",
@@ -2319,6 +2320,14 @@
       "ready": "Deployment ready"
     },
     "incompleteDeploymentHint": "This deployment has not completed. Its mutation intent is saved, but remote files may be partial or an operation may still be outstanding. It cannot be reused or started. Use a fresh directory and keep this recovery record for inspection; no remote files are automatically deleted.",
-    "reservedDeploymentHint": "No remote mutation was submitted for this reservation. You can remove this local record after confirmation; an in-flight preparation cannot continue with the removed record."
+    "reservedDeploymentHint": "No remote mutation was submitted for this reservation. You can remove this local record after confirmation; an in-flight preparation cannot continue with the removed record.",
+    "configurationStatus": {
+      "reserved": "Configuration not submitted",
+      "creating": "Configuration creation unconfirmed",
+      "writing": "Configuration write incomplete",
+      "ready": "Configuration saved"
+    },
+    "incompleteConfigurationHint": "A stopped or missing task does not prove that configuration writes have finished. Keep this recovery record for inspection; the configuration is not rewritten or automatically deleted.",
+    "configurationHint": "This records configuration preparation separately from the process status. Removing the local recovery record preserves remote files."
   }
 }
