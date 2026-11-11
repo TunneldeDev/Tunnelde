@@ -173,7 +173,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: TunneldeDev/Tunnelde-agent
-          ref: 18dfbe9d26de0471bb6e07df1f4a83db06887356
+          ref: 8119d0dbac1140b2a987b32df933d5c46a2425cd
           path: .tmp/ci/helper-initialized
           persist-credentials: false
 
