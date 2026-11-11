@@ -2,8 +2,8 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 use super::super::{
-    authorize, bootstrap, exec, field, host_id, lifecycle, model::LaunchState, repository,
-    HostContext, Record,
+    admission, authorize, bootstrap, exec, field, host_id, lifecycle, model::LaunchState,
+    repository, HostContext, Record,
 };
 use crate::{
     error::{AppError, AppResult},
@@ -60,12 +60,12 @@ pub(in crate::plugins::runners) async fn start(
     };
     // Negotiate against the exact selected helper before reserving a task or
     // creating configuration artifacts. No fallback to the legacy writer.
-    let negotiated = if initialized {
+    let (negotiated, fenced) = if initialized {
         let observed = selected(&repository::read(context)?)?;
-        bootstrap::require_support(context, &session, &observed.deployment).await?;
-        Some(observed)
+        let fenced = bootstrap::require_support(context, &session, &observed.deployment).await?;
+        (Some(observed), fenced)
     } else {
-        None
+        (None, false)
     };
     // The reservation precedes launch and configuration mutations; discovery
     // above is read-only and never creates a task directory.
@@ -96,6 +96,7 @@ pub(in crate::plugins::runners) async fn start(
             },
             configuration_transport: initialized
                 .then_some(bootstrap::contracts::Configuration::InitializeV1),
+            admission: fenced.then(admission::Permit::new),
         };
         super::super::identity::verify(
             &record.deployment,
@@ -104,12 +105,30 @@ pub(in crate::plugins::runners) async fn start(
         records.push(record.clone());
         Ok(record)
     })?;
+    if reserved.admission.is_some() {
+        let receipt =
+            admission::request(context, &session, &reserved, admission::Operation::Reserve).await?;
+        authorize(context, &["ssh.exec"])?;
+        if !receipt.reserved() || !repository::compare_update(context, &reserved, |_| Ok(()))? {
+            return Err(AppError::validation("plugin.runners.stopPending"));
+        }
+    }
     let (ready, transport_args) = if let Some(config) = config {
         let (ready, path) =
             super::configuration::write(context, &session, &reserved, &config).await?;
         (ready, vec!["--config".into(), path])
     } else {
-        (reserved, vec!["--bootstrap".into(), "initialize-v1".into()])
+        let args = if let Some(permit) = &reserved.admission {
+            vec![
+                "--bootstrap".into(),
+                "initialize-fenced-v1".into(),
+                "--admission".into(),
+                permit.token()?.into(),
+            ]
+        } else {
+            vec!["--bootstrap".into(), "initialize-v1".into()]
+        };
+        (reserved, args)
     };
     let deployment = &ready.deployment;
     authorize(context, &["ssh.exec"])?;

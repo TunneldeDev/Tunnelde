@@ -108,20 +108,37 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
     }
     let _lease = state.runners.admit(&context.id, &observed.runner_id)?;
     still_selected(&context, &observed)?;
-    let result = super::super::exec(
-        &context,
-        &session,
-        &observed.deployment,
-        vec![
-            "status".into(),
-            "--directory".into(),
-            observed.deployment.directory.clone(),
-            "--id".into(),
-            observed.runner_id.clone(),
-        ],
-        None,
-    )
-    .await?;
+    let fenced = if observed.admission.is_some() {
+        Some(
+            super::super::admission::request(
+                &context,
+                &session,
+                &observed,
+                super::super::admission::Operation::Status,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+    let result = if let Some(receipt) = &fenced {
+        serde_json::json!({"status":receipt.status()})
+    } else {
+        super::super::exec(
+            &context,
+            &session,
+            &observed.deployment,
+            vec![
+                "status".into(),
+                "--directory".into(),
+                observed.deployment.directory.clone(),
+                "--id".into(),
+                observed.runner_id.clone(),
+            ],
+            None,
+        )
+        .await?
+    };
     let status = result["status"]
         .as_str()
         .filter(|status| {
@@ -139,7 +156,11 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
         .ok_or_else(|| AppError::validation("plugin.runners.invalidResponse"))?;
     let mut settled = observed.clone();
     if !repository::compare_update(&context, &observed, |record| {
-        record.settle(status)?;
+        if let Some(receipt) = &fenced {
+            receipt.settle(record)?;
+        } else {
+            record.settle(status)?;
+        }
         settled = record.clone();
         Ok(())
     })? {

@@ -54,6 +54,7 @@ pub(super) fn reserve(context: &HostContext, deployment: Deployment) -> AppResul
         deployment_state: Some(State::Reserved),
         configuration_state: None,
         configuration_transport: None,
+        admission: None,
     };
     repository::transaction(context, |records| {
         authorize(context, &["ssh.exec", "fs.read", "sftp.write"])?;
