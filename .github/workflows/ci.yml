@@ -142,6 +142,21 @@ jobs:
       - name: Compare SDK parser with host discovery
         run: node scripts/ci/check-sdk-parser.mjs . .sdk-parser "$RUNNER_TEMP/plugin-api-describe.json"
 
+      - name: Checkout file content SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: bcc4a862de16d756ab2ad71e2b59656a3ac67c60
+          path: .tmp/ci/file-content-consumer
+          sparse-checkout: sdk
+          persist-credentials: false
+
+      - name: Check actual native file content against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_FILE_CONTENT_OUTPUT="$RUNNER_TEMP/plugin-file-content.json" cargo test --manifest-path src-tauri/Cargo.toml --lib emit_actual_file_content_contracts
+          node scripts/ci/check-file-content-contract.mjs "$RUNNER_TEMP/plugin-file-content.json" .tmp/ci/file-content-consumer/sdk
+
       - name: Checkout profile metadata SDK consumer
         uses: actions/checkout@v4
         with:
@@ -379,6 +394,7 @@ jobs:
       - name: Test macOS platform behavior
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
@@ -426,6 +442,7 @@ jobs:
       - name: Test Windows file operations and guarded backup cleanup
         run: |
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text

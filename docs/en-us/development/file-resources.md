@@ -37,8 +37,8 @@ HTTP ranges remain capped at 1 MiB. Text-prefix reads retain the caller's existi
 limits and read one extra byte to detect oversize input. Files may change through
 other writers: these handles do not promise a consistent immutable snapshot.
 
-This native service adds no public RPC or plugin authority. Full public content and
-preview resources require separate lifetime, permission, transport and SDK contracts.
+The native service itself grants no plugin authority. The separate public content
+resource boundary below owns its permissions, lifetime and bounded transport.
 
 Remote previews use the same source service, with a dedicated read-only SFTP
 channel and opened handle. Each READ carries an explicit offset and exact bounded
@@ -58,7 +58,7 @@ individual replies to 15 seconds, and whole reads to 30 seconds.
 SFTP v3 does not provide local `O_NOFOLLOW` guarantees or control over a server's
 blocked filesystem operations. Closing a channel requests remote resource release;
 it does not prove that server-side OS IO stopped. These sources pin handles, not
-immutable file contents, and do not add public content or preview RPCs.
+immutable file contents, and grant no authority independently of the public resource boundary.
 
 Each provider preview gets a fresh host-generated ticket ID. Closing while native
 provider discovery is pending requests early close; a late successful open is
@@ -96,3 +96,40 @@ baseline checks remain necessary; this lifetime layer is not a write transaction
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves
 and a complete shared file data/subscription contract remain separate work.
+
+## Public read-only content resources (experimental)
+
+The `files.content` API provides bytes to ordinary frontend or stdio plugins without
+host preview ticket IDs or an implicit SSH target. `prepare` takes an explicit
+`{source:{kind:"local"},path}` or `{source:{kind:"remote",sessionId},path}` and
+checks only the corresponding `fs.read` or `sftp.read` grant. Paths are absolute.
+Preparation reserves an empty descriptor for 20 seconds and performs no file IO.
+`open` claims its returned `contentId` exactly once. The SDK knows this ID before
+IO starts, so cancellation can close it even if the open response is lost. A close
+that overtakes open removes its prerequisite; a late success cannot reinstall it.
+Unknown preparation responses own no file or channel and expire.
+
+`read` accepts safe integer byte offsets and lengths from 1 to 49152, clamped at
+the opened size. Results contain canonical base64, decoded byte count and EOF.
+The SDK validates these fields and returns `Uint8Array`. The opened size must fit
+JavaScript's safe integer range. Handles pin file identity, not an immutable content
+snapshot; truncation or modification can change or fail subsequent reads.
+
+Use `createFileContentClient` from `sdk/files/content/client.mjs`. Pass an owner
+`AbortSignal` to `open`; aborting that owner or calling the returned `close()`
+retires the resource. Each client and host runtime permit eight handles; the host
+permits 64 in total, sharing the native eight-worker IO admission. Reads renew a
+60-second idle lease; `observe` and `subscribe` observe lifetime and do not renew it
+or watch filesystem changes. Deadlines reject operations immediately; a single
+host sweeper reclaims idle handles within the next second. Close is idempotent.
+Native worker permits remain held until actual IO settles after cancellation.
+
+Descriptors and opened sources participate in `resources.snapshot`,
+`resources.identify({kind:"fileContent",id:contentId})` and `resources.release`.
+Every operation checks runtime ownership independently of IDs. Runtime stop,
+permission revocation and restricted mode retire its handles. Releasing an opened
+resource may report `cancellationRequested`: retiring a dedicated SFTP channel or
+local handle is not proof of stopping already-running OS IO. Parent SSH connections
+remain intact. Scoped AI tool allowlists are unchanged pending separate handle and
+path-scope contracts. Public preview-panel observation and mutation transactions
+remain separate work; these methods do not expand the stable API set.
