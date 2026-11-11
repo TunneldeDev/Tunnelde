@@ -8,6 +8,7 @@ export type * from "./contracts/frontend/views.js";
 export type * from "./contracts/history/provider.js";
 export type * from "./contracts/terminal/surface.js";
 export type * from "./contracts/files/browser.js";
+export type * from "./contracts/files/content.js";
 export type * from "./contracts/workbench/slots.js";
 export type * from "./contracts/frontend/providers.js";
 export type * from "./contracts/frontend/lifecycle.js";

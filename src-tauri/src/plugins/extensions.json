@@ -224,7 +224,7 @@
       "release": "resources.release",
       "stability": "experimental",
       "ownership": "current-runtime",
-      "kinds": ["connection", "forward", "mount", "task", "transfer"],
+      "kinds": ["connection", "forward", "mount", "task", "transfer", "fileContent"],
       "states": ["owned", "releaseRequested", "cleanupRequired"],
       "pageSize": 128,
       "pageBytes": 65536,

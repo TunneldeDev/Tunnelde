@@ -1,0 +1,238 @@
+{
+  "version": 1,
+  "methods": {
+    "files.content.prepare": {
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "path"],
+        "properties": {
+          "source": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind"],
+                "properties": {
+                  "kind": {
+                    "const": "local"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "sessionId"],
+                "properties": {
+                  "kind": {
+                    "const": "remote"
+                  },
+                  "sessionId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                }
+              }
+            ]
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32768
+          }
+        }
+      },
+      "resultSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "contentId", "leaseMs"],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "leaseMs": {
+            "const": 20000
+          }
+        }
+      }
+    },
+    "files.content.open": {
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contentId"],
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        }
+      },
+      "resultSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "contentId", "state", "size", "chunkBytes", "leaseMs"],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "state": {
+            "const": "open"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "chunkBytes": {
+            "const": 49152
+          },
+          "leaseMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        }
+      }
+    },
+    "files.content.read": {
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contentId", "offset", "length"],
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 49152
+          }
+        }
+      },
+      "resultSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "contentId", "offset", "bytes", "data", "eof"],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 49152
+          },
+          "data": {
+            "type": "string",
+            "maxLength": 65536
+          },
+          "eof": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "files.content.close": {
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contentId"],
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        }
+      },
+      "resultSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "closed"],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "closed": {
+            "const": true
+          }
+        }
+      }
+    },
+    "files.content.observe": {
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contentId"],
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          }
+        }
+      },
+      "resultSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["version", "contentId", "state", "size", "chunkBytes", "leaseMs"],
+        "properties": {
+          "version": {
+            "const": 1
+          },
+          "contentId": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+          },
+          "state": {
+            "enum": ["prepared", "opening", "open", "closed"]
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "chunkBytes": {
+            "const": 49152
+          },
+          "leaseMs": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        }
+      }
+    }
+  }
+}

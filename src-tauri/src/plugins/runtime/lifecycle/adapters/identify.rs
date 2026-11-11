@@ -2,12 +2,15 @@ use super::super::contracts::{
     handle::{Kind, Resource},
     identify::Reference,
 };
-use super::{connections, forwarding, mounts, tasks, transfers, unavailable, Entry, Target};
+use super::{
+    connections, content, forwarding, mounts, tasks, transfers, unavailable, Entry, Target,
+};
 use crate::{error::AppResult, plugins::api::HostContext};
 
 impl Target {
     fn matches_reference(&self, reference: &Reference) -> bool {
         let id = match (self, reference.kind) {
+            (Self::FileContent { id, .. }, Kind::FileContent) => id,
             (Self::Connection { session, .. }, Kind::Connection) => session,
             (Self::Forward { rule, .. }, Kind::Forward) => rule,
             (Self::Mount(id), Kind::Mount) | (Self::Task(id), Kind::Task) => id,
@@ -33,6 +36,7 @@ pub(in crate::plugins::runtime::lifecycle) async fn identify(
     reference: &Reference,
 ) -> AppResult<Resource> {
     let entries = match reference.kind {
+        Kind::FileContent => content::collect(context)?,
         Kind::Connection => connections::collect(context)?,
         Kind::Forward => forwarding::collect(context)?,
         Kind::Mount => mounts::collect(context).await?,

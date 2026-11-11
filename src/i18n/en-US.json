@@ -1411,6 +1411,10 @@
       "changed": "These preferences changed. Read the current page and try again.",
       "permissionDenied": "This plugin requires settings.write to change preferences.",
       "invalid": "Invalid preference update. Provide the revision and field replacements."
+    },
+    "fileContent": {
+      "invalid": "Invalid file content request. Choose an absolute file path and a supported byte range.",
+      "unavailable": "This file content handle is closed, expired or belongs to a different plugin runtime. Prepare and open it again."
     }
   },
   "themes": {
