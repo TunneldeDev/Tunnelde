@@ -6,6 +6,12 @@ import { toast } from "@/store/toasts";
 import i18n from "@/i18n/i18n";
 import { isIpcError } from "@/lib/api/types";
 
+import {
+  createFileReadResource,
+  readFileText,
+  type FileReadResource,
+} from "@/lib/files/resources/read";
+
 export const EDITOR_DOCUMENT_MAX_BYTES = 128 * 1024;
 
 export interface EditorEntry {
@@ -15,6 +21,8 @@ export interface EditorEntry {
   name: string;
   content: string;
   baseline: string;
+  /** False until a successful initial read; older checkpoints infer it from load state. */
+  baselineLoaded?: boolean;
   loading: boolean;
   saving: boolean;
   error: string | null;
@@ -46,7 +54,26 @@ interface EditorsStore {
 }
 
 const versions = new Map<string, symbol>();
-const saves = new Map<string, Promise<boolean>>();
+const saves = new Map<string, { version: symbol; operation: Promise<boolean> }>();
+const reads = new Map<string, FileReadResource>();
+function cancelRead(tabId: string) {
+  const resource = reads.get(tabId);
+  reads.delete(tabId);
+  resource?.scope.dispose();
+}
+function beginRead(tabId: string, sessionId: string | null, path: string) {
+  cancelRead(tabId);
+  const resource = createFileReadResource(
+    path,
+    sessionId === null ? { kind: "local" } : { kind: "remote", sessionId },
+  );
+  reads.set(tabId, resource);
+  return resource;
+}
+function finishRead(tabId: string, resource: FileReadResource) {
+  if (reads.get(tabId) === resource) reads.delete(tabId);
+  resource.scope.dispose();
+}
 type EditHistory = { undo: string[]; redo: string[]; typedAt: number };
 const histories = new Map<string, EditHistory>();
 
@@ -194,6 +221,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
 
   open: async (tabId, sessionId, path) => {
     histories.delete(tabId);
+    saves.delete(tabId);
+    const resource = beginRead(tabId, sessionId, path);
     const version = Symbol();
     versions.set(tabId, version);
     set((state) => ({
@@ -206,6 +235,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           name: fileName(path),
           content: "",
           baseline: "",
+          baselineLoaded: false,
           loading: true,
           saving: false,
           error: null,
@@ -217,10 +247,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     }));
 
     try {
-      const file =
-        sessionId === null
-          ? await api.localReadText(path)
-          : await api.sftpReadText(sessionId, path);
+      const content = await readFileText(resource, "editor");
       if (versions.get(tabId) !== version) return;
       set((state) => {
         const current = state.entries[tabId];
@@ -232,8 +259,9 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             ...state.entries,
             [tabId]: {
               ...current,
-              content: file.content,
-              baseline: file.content,
+              content,
+              baseline: content,
+              baselineLoaded: true,
               loading: false,
             },
           },
@@ -253,6 +281,8 @@ export const useEditors = create<EditorsStore>((set, get) => ({
           },
         };
       });
+    } finally {
+      finishRead(tabId, resource);
     }
   },
 
@@ -279,12 +309,14 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   },
 
   save: (tabId) => {
-    const pending = saves.get(tabId);
-    if (pending) return pending;
     const current = get().entries[tabId];
     if (!current || current.loading || current.error || current.disconnected) {
       return Promise.resolve(false);
     }
+    const version = versions.get(tabId) ?? Symbol();
+    versions.set(tabId, version);
+    const pending = saves.get(tabId);
+    if (pending?.version === version) return pending.operation;
     if (current.content === current.baseline) {
       return Promise.resolve(true);
     }
@@ -293,8 +325,6 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       entries: { ...state.entries, [tabId]: { ...current, saving: true } },
     }));
 
-    const version = versions.get(tabId) ?? Symbol();
-    versions.set(tabId, version);
     const submitted = current.content;
     const operation = (async () => {
       try {
@@ -347,11 +377,11 @@ export const useEditors = create<EditorsStore>((set, get) => ({
         });
         toast(translateError(error), "error");
         return false;
-      } finally {
-        if (versions.get(tabId) === version) saves.delete(tabId);
       }
-    })();
-    saves.set(tabId, operation);
+    })().finally(() => {
+      if (saves.get(tabId)?.operation === operation) saves.delete(tabId);
+    });
+    saves.set(tabId, { version, operation });
     return operation;
   },
 
@@ -385,6 +415,7 @@ export const useEditors = create<EditorsStore>((set, get) => ({
   },
 
   discard: (tabId) => {
+    cancelRead(tabId);
     histories.delete(tabId);
     versions.delete(tabId);
     saves.delete(tabId);
@@ -405,9 +436,16 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       const entries = { ...state.entries };
       for (const [id, entry] of Object.entries(entries)) {
         if (entry.sessionId !== sessionId) continue;
+        cancelRead(id);
         versions.set(id, Symbol());
         saves.delete(id);
-        entries[id] = { ...entry, disconnected: true, saving: false };
+        entries[id] = {
+          ...entry,
+          baselineLoaded: entry.baselineLoaded ?? (!entry.loading && !entry.error),
+          disconnected: true,
+          saving: false,
+          loading: false,
+        };
       }
       return { entries };
     }),
@@ -416,11 +454,19 @@ export const useEditors = create<EditorsStore>((set, get) => ({
     const current = get().entries[tabId];
     if (!current || !current.disconnected) return "failed";
     const version = versions.get(tabId);
+    const resource = beginRead(tabId, sessionId, current.path);
     try {
-      const file = await api.sftpReadText(sessionId, current.path);
+      const content = await readFileText(resource, "editor");
       const entry = get().entries[tabId];
-      if (!entry || versions.get(tabId) !== version || !entry.disconnected) return "failed";
-      if (file.content !== entry.baseline && !acceptChanges) return "conflict";
+      if (
+        !entry ||
+        versions.get(tabId) !== version ||
+        !entry.disconnected ||
+        reads.get(tabId) !== resource
+      )
+        return "failed";
+      const baselineLoaded = entry.baselineLoaded ?? (!entry.loading && !entry.error);
+      if (baselineLoaded && content !== entry.baseline && !acceptChanges) return "conflict";
       versions.set(tabId, Symbol());
       set((state) => ({
         entries: {
@@ -430,7 +476,12 @@ export const useEditors = create<EditorsStore>((set, get) => ({
             sessionId,
             documentId: crypto.randomUUID(),
             version: 0,
-            baseline: file.content,
+            content: baselineLoaded || entry.content !== entry.baseline ? entry.content : content,
+            baseline: content,
+            baselineLoaded: true,
+            loading: false,
+            saveFailure: undefined,
+            saveConflict: false,
             disconnected: false,
             error: null,
           },
@@ -438,8 +489,15 @@ export const useEditors = create<EditorsStore>((set, get) => ({
       }));
       return "ready";
     } catch (error) {
-      toast(translateError(error), "error");
+      if (
+        reads.get(tabId) === resource &&
+        versions.get(tabId) === version &&
+        !resource.scope.signal.aborted
+      )
+        toast(translateError(error), "error");
       return "failed";
+    } finally {
+      finishRead(tabId, resource);
     }
   },
 }));

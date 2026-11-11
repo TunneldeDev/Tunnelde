@@ -7,6 +7,7 @@
 - [Background tasks](background-tasks.md)
 - [Optional native helper](native-helper.md)
 - [Shared panel layouts](panel-layout.md)
+- [File read and preview lifetimes](file-resources.md)
 - [Plugin dependencies and activation](plugins/activation.md)
 - [Plugin API compatibility and security](plugins/api.md)
 - [Background task extensions](plugins/background-tasks.md)
