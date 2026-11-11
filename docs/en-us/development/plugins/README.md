@@ -762,3 +762,5 @@ Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bin
 [Experimental terminal component and subscriptions](terminal.md).
 
 [Experimental command-history component and bounded pages](history.md).
+
+[Plugin-owned storage observation](storage-observation.md).

@@ -564,3 +564,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 [实验性命令历史组件与有界分页](history.md)。
 
 已加载缓冲区的观察、分段读取和原子编辑：[编辑器缓冲区数据](editor-buffers.md)。
+
+[插件自有存储观察](storage-observation.md)。

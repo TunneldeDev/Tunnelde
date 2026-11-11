@@ -166,6 +166,20 @@ jobs:
           TUNNELDE_PROFILE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-profiles.json" cargo test --manifest-path src-tauri/Cargo.toml --lib maximum_metadata_fits_output_and_emits_real_protocol_fixtures
           node scripts/ci/check-profile-contract.mjs "$RUNNER_TEMP/plugin-profiles.json" .tmp/ci/profile-consumer/sdk
 
+      - name: Checkout plugin storage SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: b640d22c177a71410ec69bcc08f6dc89a31f2f38
+          path: .tmp/ci/storage-consumer
+          persist-credentials: false
+
+      - name: Check actual plugin storage against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_STORAGE_CONTRACT_OUTPUT="$RUNNER_TEMP/plugin-storage.json" cargo test --manifest-path src-tauri/Cargo.toml --lib maximum_storage_and_unicode_emit_actual_sdk_interoperability_fixture
+          node scripts/ci/check-storage-contract.mjs "$RUNNER_TEMP/plugin-storage.json" .tmp/ci/storage-consumer/sdk
+
       - name: Test current and historical plugin transports
         run: TUNNELDE_TEST_NODE="$(command -v node)" cargo test --manifest-path src-tauri/Cargo.toml talks_json_rpc_with_the_ -- --ignored
 
