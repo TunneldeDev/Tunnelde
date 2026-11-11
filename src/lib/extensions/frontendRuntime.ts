@@ -240,6 +240,29 @@ export function createFrontendRuntime(transport: FrontendTransport) {
         : undefined;
     },
     token: (id: string) => runtimes.get(id)?.token,
+    /** Admit a committed view only against its exact activated module and renderer. */
+    viewScope(
+      id: string,
+      viewId: string,
+      token: string | undefined,
+      component: ComponentType<FrontendViewProps>,
+      fingerprint?: string,
+    ): ResourceScope {
+      const runtime = runtimes.get(id);
+      if (
+        !runtime ||
+        !token ||
+        runtime.token !== token ||
+        !runtime.activated ||
+        runtime.retiring ||
+        runtime.scope.signal.aborted ||
+        !transport.current(runtime.plugin) ||
+        (fingerprint !== undefined && runtime.plugin.fingerprint !== fingerprint) ||
+        runtime.views.get(viewId) !== component
+      )
+        throw new ResourceScopeClosed();
+      return runtime.scope.child();
+    },
     /** Domain providers use the selected runtime's existing transport and quotas. */
     async call<T>(
       id: string,

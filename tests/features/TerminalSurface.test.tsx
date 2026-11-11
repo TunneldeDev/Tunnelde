@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { StrictMode, useEffect, useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -60,6 +61,7 @@ function Provider({ terminal }: FrontendViewProps) {
   );
 }
 beforeEach(() => {
+  mockCommittedViewScopes();
   vi.clearAllMocks();
   subscribers.clear();
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, uiProviders: {} } });

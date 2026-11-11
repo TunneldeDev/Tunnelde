@@ -15,6 +15,7 @@ import { usePlugins } from "@/store/plugins";
 import { hasPluginGrant, usePluginSecurity } from "@/store/pluginSecurity";
 import { isTauri } from "@/lib/api/ipc";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
+import { PluginRuntimeView } from "@/lib/extensions/runtime/views/PluginRuntimeView";
 import { selectedUiProvider } from "@/lib/extensions/providers";
 import type { FrontendProviderTarget } from "@/lib/extensions/contracts/frontend/providers";
 import type { FrontendWorkbenchSlots } from "@/lib/extensions/contracts/workbench/slots";
@@ -162,16 +163,10 @@ export function ProviderSurface({
     // A module token changes once after open; re-check the currently selected generation.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [available, identity, failed, View, token, selection]);
-  useEffect(() => {
-    if (!View || !validate) return;
-    const check = () => {
-      if (!validate()) fail(new Error(validationError));
-    };
-    check();
-    // Observe mount ownership, never terminal/editor DOM mutations at output frequency.
-    return subscribe?.(check);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [View, identity, validate, subscribe, validationError]);
+  const validation = useMemo(
+    () => validate && { check: validate, subscribe, error: validationError },
+    [validate, subscribe, validationError],
+  );
   const reset = () => {
     const next = { ...useSettings.getState().settings.uiProviders };
     delete next[target];
@@ -180,6 +175,8 @@ export function ProviderSurface({
   const active = !!View;
   const [selectionEpoch, setSelectionEpoch] = useState(0);
   const committedLease = useRef<object | null>(null);
+  const fileSessionId =
+    fileBrowser?.snapshot.source.kind === "remote" ? fileBrowser.snapshot.source.sessionId : null;
   const accessLease = useMemo(
     () => createProviderLease(),
     // A context is owned by this exact provider generation and terminal bridge.
@@ -190,6 +187,11 @@ export function ProviderSurface({
       View,
       active,
       terminal,
+      fileBrowser?.snapshot.paneId,
+      fileBrowser?.snapshot.source.kind,
+      fileSessionId,
+      history?.snapshot.sessionId,
+      history?.snapshot.hostId,
       forwarding?.snapshot.hostId,
       monitor?.snapshot.sessionId,
       processes?.snapshot.sessionId,
@@ -347,21 +349,30 @@ export function ProviderSurface({
       {active ? (
         <div className="provider-content">
           <ProviderBoundary key={`${identity}:${token}`} onFailure={fail}>
-            {/* eslint-disable-next-line react-hooks/static-components */}
-            <View
-              pluginId={selected!.plugin.id}
-              viewId={selected!.view.id}
-              visible={visible}
-              workbench={slots}
-              fileBrowser={files}
-              terminal={terminalContext}
-              history={historyContext}
-              forwarding={forwardingContext}
-              monitor={monitorContext}
-              backgroundTasks={backgroundTasksContext}
-              processes={processesContext}
-              quickAccess={quickAccessContext}
-              preferences={preferencesContext}
+            <PluginRuntimeView
+              View={View}
+              token={token || undefined}
+              fingerprint={selected!.plugin.fingerprint}
+              owner={accessLease}
+              beforeOpen={() => checkAccess(false)}
+              retain={accessLease.retain}
+              validation={validation || undefined}
+              onFailure={fail}
+              viewProps={{
+                pluginId: selected!.plugin.id,
+                viewId: selected!.view.id,
+                visible,
+                workbench: slots,
+                fileBrowser: files,
+                terminal: terminalContext,
+                history: historyContext,
+                forwarding: forwardingContext,
+                monitor: monitorContext,
+                backgroundTasks: backgroundTasksContext,
+                processes: processesContext,
+                quickAccess: quickAccessContext,
+                preferences: preferencesContext,
+              }}
             />
           </ProviderBoundary>
         </div>

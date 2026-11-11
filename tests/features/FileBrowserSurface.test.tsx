@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { useEffect, useLayoutEffect } from "react";
@@ -10,6 +11,7 @@ import { useSettings } from "@/store/settings";
 import { usePlugins } from "@/store/plugins";
 import { usePluginSecurity } from "@/store/pluginSecurity";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import type { UiResourceScope } from "@/lib/extensions/contracts/runtime/resources";
 
 const plugin = {
   id: "files-ui",
@@ -69,6 +71,7 @@ const props = {
   actions,
 };
 beforeEach(() => {
+  mockCommittedViewScopes();
   vi.clearAllMocks();
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, uiProviders: {} } });
   usePlugins.setState({ items: [plugin] });
@@ -83,6 +86,39 @@ afterEach(() => {
 function choose() {
   act(() => useSettings.setState((s) => ({ settings: { ...s.settings, uiProviders: selected } })));
 }
+
+it("retains the scope on directory refresh but retires it on source or remote-session changes", () => {
+  const scopes: UiResourceScope[] = [];
+  vi.mocked(frontendRuntime.view).mockReturnValue(function Scoped(props: FrontendViewProps) {
+    useEffect(() => {
+      scopes.push(props.resources!);
+    }, [props.resources]);
+    return <Provider {...props} />;
+  });
+  choose();
+  const content = (
+    source = props.source as FrontendFileBrowser["snapshot"]["source"],
+    path = "/work",
+  ) => (
+    <FileBrowserSurface {...props} source={source} path={path}>
+      <Rows />
+    </FileBrowserSurface>
+  );
+  const ui = render(content());
+  const row = screen.getByLabelText("retained row");
+  ui.rerender(content(props.source, "/other"));
+  expect(scopes).toHaveLength(1);
+  expect(scopes[0]!.signal.aborted).toBe(false);
+  ui.rerender(content({ kind: "remote", sessionId: "one" }));
+  expect(scopes).toHaveLength(2);
+  expect(scopes[0]!.signal.aborted).toBe(true);
+  ui.rerender(content({ kind: "remote", sessionId: "two" }));
+  expect(scopes).toHaveLength(3);
+  expect(scopes[1]!.signal.aborted).toBe(true);
+  expect(scopes[2]!.signal.aborted).toBe(false);
+  expect(screen.getByLabelText("retained row")).toBe(row);
+  expect(mounted).toHaveBeenCalledOnce();
+});
 
 it("composes live host rows, preserves their DOM on restore and fences the old context", () => {
   render(

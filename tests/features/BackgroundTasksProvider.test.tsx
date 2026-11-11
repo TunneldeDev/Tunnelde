@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -35,6 +36,7 @@ function Provider({ backgroundTasks }: FrontendViewProps) {
   return <section aria-label="Custom task view">{omit ? "Entries omitted" : <Entries />}</section>;
 }
 beforeEach(async () => {
+  mockCommittedViewScopes();
   await i18n.changeLanguage("en-US");
   omit = false;
   retry.mockReset();

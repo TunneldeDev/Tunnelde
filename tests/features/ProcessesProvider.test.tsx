@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -36,6 +37,7 @@ function Provider({ processes }: FrontendViewProps) {
   return <section aria-label="custom processes">{omit ? "Entries omitted" : <Entries />}</section>;
 }
 beforeEach(async () => {
+  mockCommittedViewScopes();
   await i18n.changeLanguage("en-US");
   omit = false;
   remoteProcesses

@@ -2,6 +2,7 @@ import { Component, useEffect, useState, useSyncExternalStore, type ReactNode } 
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
+import { PluginRuntimeView } from "@/lib/extensions/runtime/views/PluginRuntimeView";
 import { translateError } from "@/lib/api/errors";
 import { reportError } from "@/lib/diagnostics";
 import { usePlugins } from "@/store/plugins";
@@ -85,9 +86,13 @@ export function PluginComponentView({
           pluginId={pluginId}
           fallback={fallback}
         >
-          {/* Registry references remain identical for the module lifetime; no component is created here. */}
-          {/* eslint-disable-next-line react-hooks/static-components */}
-          <View pluginId={pluginId} viewId={viewId} visible={visible} />
+          <PluginRuntimeView
+            View={View}
+            viewProps={{ pluginId, viewId, visible }}
+            token={token}
+            fingerprint={plugin?.fingerprint}
+            onFailure={setError}
+          />
         </ViewBoundary>
       ) : (
         <p role="status">

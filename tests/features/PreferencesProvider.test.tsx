@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -63,6 +64,7 @@ function Fixture({ query = "", visible = true }: { query?: string; visible?: boo
   );
 }
 beforeEach(() => {
+  mockCommittedViewScopes();
   omit = false;
   useSettings.setState({
     settings: { ...DEFAULT_SETTINGS, uiProviders: selection },

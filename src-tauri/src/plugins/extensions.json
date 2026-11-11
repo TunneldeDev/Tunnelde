@@ -9,6 +9,14 @@
     "manifest": "frontend",
     "runtime": "frontend",
     "viewKind": "component",
+    "viewLifetimes": {
+      "member": "view.resources",
+      "ownership": "committed-view-instance",
+      "budget": "module-ancestors",
+      "hidden": "retained",
+      "retirement": "unmount-or-module-retirement",
+      "nativeOwnership": "unchanged"
+    },
     "resourceScopes": {
       "member": "resources.child",
       "ownership": "module-descendants",

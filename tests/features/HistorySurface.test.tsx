@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { StrictMode, useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -56,6 +57,7 @@ const props = {
   actions,
 };
 beforeEach(() => {
+  mockCommittedViewScopes();
   vi.clearAllMocks();
   actions.validate.mockReturnValue(true);
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, uiProviders: {} } });

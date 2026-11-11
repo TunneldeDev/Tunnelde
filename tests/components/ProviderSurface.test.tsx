@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { createPortal } from "react-dom";
 import { useState, useEffect } from "react";
@@ -64,6 +65,7 @@ function Fixture() {
   );
 }
 beforeEach(() => {
+  mockCommittedViewScopes();
   mounted.mockClear();
   unmounted.mockClear();
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, uiProviders: {} } });

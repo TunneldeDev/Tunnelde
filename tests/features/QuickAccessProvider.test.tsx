@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useLayoutEffect } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -54,6 +55,7 @@ function Provider({ quickAccess }: FrontendViewProps) {
   return <section aria-label="custom search">{omit ? "Entries omitted" : <Entries />}</section>;
 }
 beforeEach(() => {
+  mockCommittedViewScopes();
   omit = false;
   useSettings.setState({
     settings: { ...DEFAULT_SETTINGS, uiProviders: selection },

@@ -237,3 +237,48 @@ interrupt trusted code, and do not undo remote operations. Closing a UI scope
 alone does not stop a durable task or erase its recovery record. Use the explicit
 native lifecycle and recovery APIs for those operations. Asynchronous cleanup is
 observed, not a sequential transaction or a promise that process exit completed.
+
+## Host-owned view resources
+
+Hosts advertising `frontend.viewLifetimes` pass optional `resources` in
+`FrontendViewProps`. Each committed ordinary view or selected provider instance
+receives a separate module descendant. Older hosts omit this property; check the
+capability and provide an explicit fallback when supporting them.
+
+```js
+function View({ resources }) {
+  React.useEffect(() => {
+    if (!resources) return;
+    const timer = setInterval(refresh, 1000);
+    return resources.use(() => clearInterval(timer));
+  }, [resources]);
+  return React.createElement("div", null, "View content");
+}
+```
+
+Register resources in effects or event handlers, never during render. Return the
+individual release callback from an effect so that effect replay or dependency
+changes also clean it. The host additionally disposes forgotten registrations when
+the view actually unmounts, its renderer fails or its runtime retires. Host-effect
+replay uses a fresh scope; a closed scope never becomes active again.
+
+Hiding or moving retained content preserves the same scope. Closing and reopening
+creates another scope; same-ID sibling instances remain independent. A provider
+selection change, including a batched A → B → A change, retires the old scope.
+Changing the bound terminal, file source/session, history session, forwarding host,
+monitor session or process session also changes that provider's lifetime. Ordinary
+directory refreshes and changing `visible` do not. Only actual retained mounts
+preserve lifetime: a layout operation that unmounts React content closes it.
+
+The host allocates only after commit, checks the exact module token, fingerprint
+and registered renderer, and shares the module's resource budget. Quota exhaustion
+reports through the existing error/recovery UI without restarting siblings. Native
+Workspace/Screen validation starts after the provider has actually mounted; their
+portal owners retain editor state, terminal buffers and SSH connections during
+selection and recovery.
+
+`context.resources` remains module-owned. `props.resources` does not implicitly
+adopt native handles, cancel RPC transport or stop durable/background tasks.
+Wrap asynchronous view work with `run` or `acquire` to reject late delivery and
+clean late results; underlying uncooperative work remains charged until settlement.
+Use the explicit native ownership/recovery APIs when retiring those resources.
