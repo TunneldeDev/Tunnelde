@@ -15,6 +15,13 @@ pub(super) async fn dispatch(
     use crate::services::settings::{preferences, writer};
     let state = context.app.state::<AppState>();
     match method {
+        "preferences.observe" => {
+            let request: preferences::contracts::Observe = serde_json::from_value(params)
+                .map_err(|_| AppError::validation("plugin.api.invalid:params"))?;
+            let writer = writer(&context.app, &state).await;
+            authorize(context, &["settings.read"])?;
+            encode(writer.observe_preferences(request)?)
+        }
         "preferences.schema" | "preferences.snapshot" => {
             if params.as_object().is_none_or(|fields| !fields.is_empty()) {
                 return Err(AppError::validation("plugin.api.invalid:params"));

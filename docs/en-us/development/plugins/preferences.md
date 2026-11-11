@@ -2,7 +2,7 @@
 
 [简体中文](../../../zh-cn/development/plugins/preferences.md)
 
-`preferences.schema`, `preferences.snapshot` and `preferences.update` are
+`preferences.schema`, `preferences.snapshot`, `preferences.observe` and `preferences.update` are
 experimental API v1 methods. Reads require `settings.read`; writes require
 `settings.write`, in addition to the ordinary plugin approval and lifecycle checks.
 They do not require trusted frontend code. `settings.get/update` retain their
@@ -61,10 +61,44 @@ title-bar changes are restored. Post-commit notifications and external cleanup
 are outside the database transaction. These methods do not promise rollback of
 external effects, plugin-defined schemas or migrations.
 
+## Observing changes without a settings page
+
+Call `preferences.observe({})` for an initial snapshot. Thereafter pass its opaque
+`revision` to the same method. A matching revision returns exactly
+`{version: 1, revision, changed: false}` without values or defaults. Otherwise the
+result contains `changed: true` and `snapshot`, with the same revision in both
+envelopes. Reads use the shared writer, so a response cannot mix values and a
+revision from different commits. Each call rechecks `settings.read` and runtime
+authorization, including after waiting for a writer. Revision input must contain
+1–128 UTF-8 bytes without control characters; null and unknown fields are rejected.
+
+The marketplace SDK provides `createPreferencesClient(host)` from
+`sdk/preferences/client.mjs`. `subscribe(receive, {signal, intervalMs?})` requires
+an owner `AbortSignal`; it works without opening an application page. Its first
+callback receives a detached frozen snapshot. Subsequent polls emit only after a
+revision change. At most eight subscriptions per client are allowed; the interval
+is 1000–60000ms (default 2000), measured after the previous read and asynchronous
+callback settle. Each transport read has a 10000ms timeout. Use an authorized
+transport that implements `host.call` cancellation and timeout options.
+
+`stop()` and owner abort suppress late callbacks and cancel the pending read or
+timer. `done` resolves after pending transport/callback settlement, with reason
+`stopped`, `aborted` or `failed` (and `error` for failure); it does not reject.
+Errors stop the subscription without retries. Cancelled work counts toward the
+quota until it settles. Consumers must stop any work they start inside callbacks.
+Bind the owner to view/plugin disposal and inspect `done` failures.
+
+This observes latest state: intermediate commits can coalesce, and metadata-only
+saves also rotate the global revision. It is not an audit log, durable event
+cursor or per-commit delivery guarantee. No server listener is registered, no
+internal settings payload is broadcast, and writes are never retried. On older
+hosts, detect `preferences.observe` through `api.describe`; a missing method is
+an error, not an implicit fallback to internal `settings.get`.
+
 ## Contract maintenance
 
 Host services live under `services/settings/preferences/`, separating `contracts`,
-`mapping`, `schema`, `projection` and `update`. Each group owns a JSON schema and
+`mapping`, `schema`, `projection`, `observation` and `update`. Each group owns a JSON schema and
 mapping. RPC adapters and method discovery live under their respective
 `settings/preferences` directories; they do not contain preference business rules.
 
