@@ -95,13 +95,17 @@ export const useSettings = create<SettingsStore>((set, get) => {
     const task = queue.then(async () => {
       let ok = true;
       try {
-        confirmed = isTauri()
+        const revision = remoteRevision;
+        const saved = isTauri()
           ? await (profile
               ? api.applySettingsProfile(profile)
               : reset
                 ? api.resetSettings()
                 : api.updateSettings(patch))
           : { ...confirmed, ...patch };
+        // Native events can overtake their invocation response. A confirmed
+        // later event must not be replaced by an older write's return value.
+        if (revision === remoteRevision) confirmed = saved;
         set({ error: null });
       } catch (error) {
         ok = false;

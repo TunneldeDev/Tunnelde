@@ -49,6 +49,38 @@ beforeEach(() => {
 });
 
 describe("settings persistence", () => {
+  it.each(["profile", "write", "reset"] as const)(
+    "keeps newer native events when a %s response arrives late",
+    async (kind) => {
+      const store = await fresh();
+      await store.getState().load();
+      const response = deferred<Settings>();
+      mocks.applySettingsProfile.mockReturnValueOnce(response.promise);
+      mocks.updateSettings.mockReturnValueOnce(response.promise);
+      mocks.resetSettings.mockReturnValueOnce(response.promise);
+      const task =
+        kind === "profile"
+          ? store.getState().applyProfile({ source: "saved", id: "work", revision: "captured" })
+          : kind === "write"
+            ? store.getState().update({ monoFontSize: 20 })
+            : store.getState().reset();
+      await vi.waitFor(() =>
+        expect(
+          kind === "profile"
+            ? mocks.applySettingsProfile
+            : kind === "write"
+              ? mocks.updateSettings
+              : mocks.resetSettings,
+        ).toHaveBeenCalledOnce(),
+      );
+      const newer = { ...DEFAULT_SETTINGS, theme: "light" as const, monoFontSize: 23 };
+      store.getState().applyRemote(newer);
+      response.resolve({ ...DEFAULT_SETTINGS, monoFontSize: 20 });
+      await task;
+      expect(store.getState().settings).toEqual(newer);
+      expect(store.getState().saving).toBe(false);
+    },
+  );
   it("orders profile activation with edits and preserves later optimistic patches", async () => {
     const store = await fresh();
     await store.getState().load();
