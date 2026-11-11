@@ -80,6 +80,9 @@ pub(super) async fn execute(app: &AppHandle, request: Request) -> AppResult<Outc
     if matches!(request.action, Action::Capabilities) {
         return super::capabilities::inspect(&context, &session, &observed, &request.token).await;
     }
+    if matches!(request.action, Action::Artifacts) {
+        return super::artifacts::inspect(&context, &session, &observed, &request.token).await;
+    }
     if matches!(request.action, Action::ReviewDestination | Action::Handoff) {
         let control = matches!(request.action, Action::Handoff);
         if control {

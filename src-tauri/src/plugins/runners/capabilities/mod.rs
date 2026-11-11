@@ -25,7 +25,9 @@ pub(super) async fn observe(
     classify(response)
 }
 
-fn classify(response: std::result::Result<transport::Output, transport::Failure>) -> Result {
+pub(super) fn classify(
+    response: std::result::Result<transport::Output, transport::Failure>,
+) -> Result {
     let failed = |reason, exit_code| Result::Unavailable { reason, exit_code };
     match response {
         Err(transport::Failure::Timeout) => failed(Reason::Timeout, None),

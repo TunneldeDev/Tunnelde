@@ -47,6 +47,7 @@ pub struct Snapshot {
 pub enum Action {
     Inspect,
     Capabilities,
+    Artifacts,
     Stop,
     ReviewDestination,
     Handoff,
@@ -77,4 +78,6 @@ pub struct Outcome {
     pub observation: Option<Observation>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<super::super::capabilities::contracts::Observation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<super::super::artifacts::contracts::Observation>,
 }

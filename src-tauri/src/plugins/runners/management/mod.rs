@@ -1,5 +1,6 @@
 //! Host-owned recovery remains available without executing a plugin runtime.
 mod actions;
+mod artifacts;
 pub(crate) mod browser;
 mod capabilities;
 mod contracts;

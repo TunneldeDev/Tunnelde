@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use tauri::Manager;
 
 mod admission;
+mod artifacts;
 pub(crate) mod bootstrap;
 mod capabilities;
 mod contracts;
