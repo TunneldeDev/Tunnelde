@@ -13,7 +13,8 @@
 `{version:1,id,revision,offset,totalBytes,text,nextOffset}`。位置和上限均按 UTF-8
 字节计算；`limit` 为 4–65536，起点必须是字符边界。沿 `nextOffset` 读取至 null，
 拼接 text 后解析 JSON，得到遵循公共 Schema 的 11 个 `PreferenceValues` 分组。
-不返回私有提供者选择、运行元数据、凭据或原生存储键，不能当作原生 Settings 文档。
+不返回私有提供者选择、运行元数据、独立密钥库或原生存储键，不能当作原生 Settings
+文档。代理用户名和配置的更新 URL 属于公共偏好，`settings.read` 允许读取这些保存值。
 
 JSON 转义可能使分段缩短，以保持编码响应不超过 128 KiB；每篇正文最多 16515072
 字节。原有原生集合及导入文件的限制不变，不以导入文件上限缩小旧保存正文的范围。

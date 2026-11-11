@@ -40,9 +40,7 @@ pub(super) async fn dispatch(
             };
             (match request {
                 Some(request) => content::read(&state.db, request, check).and_then(encode),
-                None => state
-                    .db
-                    .with(|conn| encode(content::catalogue(conn, check)?)),
+                None => content::catalogue(&state.db, check).and_then(encode),
             })
             .map_err(|error| {
                 let message = error.to_string();

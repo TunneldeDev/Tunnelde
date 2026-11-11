@@ -11,6 +11,31 @@ fn one() -> SettingsProfile {
 }
 
 #[test]
+fn captured_body_and_selection_are_immutable_after_database_changes() {
+    let db = Database::in_memory().unwrap();
+    let captured = db
+        .with(|conn| {
+            save(conn, &[one()])?;
+            select(conn, Some("work"))?;
+            capture(conn)
+        })
+        .unwrap();
+    db.with(|conn| save(conn, &[])).unwrap();
+    let previous = captured.decode().unwrap();
+    assert_eq!(previous.profiles.len(), 1);
+    assert_eq!(previous.profiles[0].id, "work");
+    assert_eq!(previous.active_id.as_deref(), Some("work"));
+    db.with(|conn| {
+        let current = read(conn)?;
+        assert_ne!(current.revision, previous.revision);
+        assert!(current.profiles.is_empty());
+        assert!(current.active_id.is_none());
+        Ok(())
+    })
+    .unwrap();
+}
+
+#[test]
 fn legacy_native_body_keeps_the_original_total_storage_limit() {
     Database::in_memory()
         .unwrap()
