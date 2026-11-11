@@ -801,6 +801,7 @@
     "columnHeaderHint": "单击按此列排序，拖动列名调整列的顺序",
     "retainedCreationTask": "临时目录 · {{name}}",
     "retainedCreationPath": "临时目录路径",
+    "retainedCreationChanged": "临时目录中有其他数据，或其类型、权限与预期不符。目录已保留，请检查内容后再重试清理。",
     "retainedCreationUnknown": "旧的目录创建请求尚未确认结果。此记录保留准确路径，原传输可使用新的临时目录继续。收到旧请求的确认前无法清理此目录。",
     "retainedCreationSettled": "旧请求已结束。请重试清理空临时目录，或清除被拒绝的请求记录；其他文件会保留。",
     "retainedCreationInvalid": "保留的操作记录或主机身份不匹配。请保留记录并查看软件日志。",

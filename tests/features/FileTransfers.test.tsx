@@ -93,6 +93,26 @@ it("applies a task limit and retains it across progress events", async () => {
   expect(useTransfers.getState().items[0]?.speedLimitKib).toBe(128);
 });
 
+it("explains preserved retained directory contents without misidentifying it as a transfer file", () => {
+  useTransfers.setState((state) => ({
+    items: state.items.map((item) => ({
+      ...item,
+      status: "cleanupPending",
+      retainedCreation: true,
+      retainedSettlement: "created",
+      artifactRecovery: "/old.stage",
+      error: "sftp.transferArtifactUnrecognized",
+    })),
+  }));
+  render(<FileTransfers />);
+  expect(
+    screen.getByText(/directory contains other data or has an unexpected type or permissions/),
+  ).toBeTruthy();
+  expect(screen.getByText("Needs review")).toBeTruthy();
+  expect(screen.queryByText(/cannot be identified as this task's original file/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+});
+
 it("shows plugin attribution and cancellation without offering pause or unauthorized retry", () => {
   useTransfers.setState((state) => ({
     items: state.items.map((item) => ({ ...item, pluginId: "uploader" })),
