@@ -1,4 +1,5 @@
 /** Native recovery DTOs. Saved records are not proof that a process is running. */
+import type { Host, SshSession } from "@/lib/api/types";
 export interface RecoveryOwners {
   ids: string[];
   limited: boolean;
@@ -9,6 +10,8 @@ export interface RecoveryEntry {
   runnerId: string;
   hostId: string;
   directory: string;
+  configurationPath?: string | null;
+  canBrowse?: boolean;
   address: string | null;
   serverKey: string | null;
   stopPending: boolean;
@@ -45,4 +48,18 @@ export interface RecoveryObservation {
 export interface RecoveryOutcome {
   accepted: boolean;
   observation: RecoveryObservation | null;
+}
+
+export interface RecoveryBrowserRequest {
+  id: string;
+  pluginId: string;
+  token: string;
+}
+export interface RecoveryBrowserPlan {
+  host: Host | null;
+}
+export interface RecoveryBrowserTarget {
+  session: SshSession;
+  directory: string;
+  acquired: boolean;
 }

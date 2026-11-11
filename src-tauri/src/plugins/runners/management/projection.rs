@@ -47,6 +47,8 @@ pub(super) fn entry(
         runner_id: record.runner_id.clone(),
         host_id: record.deployment.host_id.clone(),
         directory: record.deployment.directory.clone(),
+        configuration_path: configuration_path(record),
+        can_browse: !legacy,
         address: record
             .deployment
             .identity
@@ -85,5 +87,23 @@ pub(super) fn entry(
                 && !record.configuration_uncertain()),
         deployment_state: deployment_state.map(|state| state.name()),
         configuration_state: record.configuration_state.map(|state| state.name()),
+    })
+}
+
+fn configuration_path(record: &Record) -> Option<String> {
+    (record.configuration_state.is_some()
+        && record.runner_id != "deployment"
+        && !record.runner_id.is_empty()
+        && record.runner_id.len() <= 128
+        && record
+            .runner_id
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"-_".contains(&c)))
+    .then(|| {
+        super::super::path_join(
+            &record.deployment.directory,
+            &format!("config-{}.json", record.runner_id),
+            &record.deployment.platform,
+        )
     })
 }

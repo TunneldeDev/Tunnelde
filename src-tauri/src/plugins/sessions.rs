@@ -73,7 +73,7 @@ pub(super) async fn connect(
         .guard(&lease, async {
             let session = tokio::time::timeout(
                 Duration::from_secs(120),
-                crate::commands::ssh_connect(context.app.clone(), request),
+                crate::ssh::session::connect_unpublished(context.app.clone(), request),
             )
             .await
             .map_err(|_| AppError::Ssh("ssh.timeout".into()))??;
@@ -95,7 +95,8 @@ pub(super) async fn connect(
                 || {
                     reservation
                         .commit(session.id.clone())
-                        .map_err(|_| AppError::validation("pluginSecurity.changed"))
+                        .map_err(|_| AppError::validation("pluginSecurity.changed"))?;
+                    state.ssh.publish(&session.id)
                 },
             )
         })?;
@@ -104,6 +105,8 @@ pub(super) async fn connect(
     if !state.ssh.is_active(&session.id) {
         return Err(AppError::Ssh("ssh.sessionMissing".into()));
     }
+    crate::logs::record(&state.db, "ssh.connect", Some(&session.host_id));
+    crate::ssh::session::announce_connection(&context.app);
     Ok(pending.session.take().expect("accepted connection"))
 }
 
@@ -251,6 +254,7 @@ pub(super) async fn request_handoff(context: &HostContext, session_id: String) -
             .sessions
             .handoff(&context.id, context.generation, &ownership)
             .ok_or_else(|| AppError::validation("plugin.sessions.notOwned"))?;
+        state.ssh.publish_user_managed(&session_id)?;
         Ok(())
     })?;
     tracing::info!(plugin_id=%context.id, generation=context.generation, session_id=%session_id,

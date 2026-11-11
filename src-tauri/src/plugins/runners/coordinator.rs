@@ -9,6 +9,7 @@ const PLUGIN_LIMIT: usize = 4;
 
 #[derive(Default)]
 pub(crate) struct Coordinator {
+    pub(super) browsers: super::management::browser::registry::Registry,
     pub(super) metadata: Mutex<()>,
     active: Arc<Mutex<HashMap<(String, String), bool>>>,
     pub(super) recovery: Mutex<Recovery>,

@@ -48,6 +48,34 @@ const host: Host = {
   updatedAt: 0,
 };
 
+it("uses pinned native key verification without probing, trusting or testing an unbound destination", async () => {
+  const verification = {
+    probe: vi
+      .fn()
+      .mockResolvedValue({ hostId: host.id, fingerprint: "SHA256:pinned", status: "unknown" }),
+    trust: vi
+      .fn()
+      .mockResolvedValue({ hostId: host.id, fingerprint: "SHA256:pinned", status: "known" }),
+  };
+  render(
+    <ConnectDialog
+      host={host}
+      after="background"
+      verification={verification}
+      connectSession={vi.fn()}
+      onClose={() => {}}
+    />,
+  );
+  await screen.findByText("SHA256:pinned");
+  fireEvent.click(screen.getByRole("button", { name: "Trust and continue" }));
+  await waitFor(() =>
+    expect(verification.trust).toHaveBeenCalledWith("SHA256:pinned", {}, host.id),
+  );
+  expect(apiMock.sshProbe).not.toHaveBeenCalled();
+  expect(apiMock.sshTrust).not.toHaveBeenCalled();
+  expect(screen.queryByText("Connection quality")).toBeNull();
+});
+
 it("uses an exclusive requester and reports acceptance errors without leaving the dialog busy", async () => {
   const request = vi.fn().mockResolvedValue({ id: "exclusive", hostId: host.id });
   const accepted = vi.fn().mockRejectedValueOnce(Error("provider revoked"));

@@ -1238,7 +1238,8 @@
       "binaryTooLarge": "所选原生运行器超过 64 MiB 的部署限制。",
       "packageTooLarge": "插件包超过 32 MiB 的远端部署限制。",
       "explicitBinaryRequired": "部署前请选择原生运行器常规文件的绝对路径。",
-      "freshDirectoryRequired": "请选择全新的远端目录；已有文件和部署记录会保留。"
+      "freshDirectoryRequired": "请选择全新的远端目录；已有文件和部署记录会保留。",
+      "browserExpired": "恢复文件连接已过期或取消，请重新点击打开远端文件。"
     },
     "activation": {
       "missingDependency": "缺少必需的插件，请检查依赖并安装后重试。",
@@ -2328,6 +2329,8 @@
       "ready": "配置已保存"
     },
     "incompleteConfigurationHint": "任务已停止或未找到，不代表配置文件写入已结束。请保留此恢复记录供核查；软件不会重新写入配置或自动删除文件。",
-    "configurationHint": "配置准备与进程状态分别记录。移除本地恢复记录会保留远端文件。"
+    "configurationHint": "配置准备与进程状态分别记录。移除本地恢复记录会保留远端文件。",
+    "configurationPath": "配置文件",
+    "browseFiles": "打开远端文件"
   }
 }

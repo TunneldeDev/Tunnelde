@@ -1238,7 +1238,8 @@
       "binaryTooLarge": "The selected native helper exceeds the 64 MiB deployment limit.",
       "packageTooLarge": "The plugin package exceeds the 32 MiB remote deployment limit.",
       "explicitBinaryRequired": "Select an absolute path to a regular native helper file before deploying.",
-      "freshDirectoryRequired": "Choose a fresh remote directory. Existing files and deployment records are preserved."
+      "freshDirectoryRequired": "Choose a fresh remote directory. Existing files and deployment records are preserved.",
+      "browserExpired": "This recovery file connection expired or was cancelled. Open remote files again."
     },
     "activation": {
       "missingDependency": "A required plugin is not installed. Review this plugin's dependencies before retrying.",
@@ -2328,6 +2329,8 @@
       "ready": "Configuration saved"
     },
     "incompleteConfigurationHint": "A stopped or missing task does not prove that configuration writes have finished. Keep this recovery record for inspection; the configuration is not rewritten or automatically deleted.",
-    "configurationHint": "This records configuration preparation separately from the process status. Removing the local recovery record preserves remote files."
+    "configurationHint": "This records configuration preparation separately from the process status. Removing the local recovery record preserves remote files.",
+    "configurationPath": "Configuration file",
+    "browseFiles": "Open remote files"
   }
 }

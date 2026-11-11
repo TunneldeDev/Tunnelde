@@ -11,6 +11,27 @@ fn lease(owner: &str, generation: u64) -> Lease {
 }
 
 #[test]
+fn native_reuse_detection_includes_pending_and_accepted_resources_across_owners() {
+    let registry = Registry::new(4, 8);
+    let request = uuid::Uuid::new_v4();
+    let scope = Scope {
+        client: "client".into(),
+        request,
+    };
+    registry
+        .reserve(lease("one", 1), Some(scope))
+        .unwrap()
+        .commit("private")
+        .unwrap();
+    assert!(registry.contains(|id| id == &"private"));
+    assert!(registry.owned("one", 1).is_empty());
+    registry.accept_request("one", 1, request);
+    assert!(registry.contains(|id| id == &"private"));
+    registry.remove_runtime("one", |_| true);
+    assert!(!registry.contains(|id| id == &"private"));
+}
+
+#[test]
 fn pending_and_live_resources_share_bounded_budgets() {
     let registry = Registry::new(2, 3);
     let pending = registry.reserve(lease("one", 1), None).unwrap();

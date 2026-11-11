@@ -14,6 +14,8 @@ pub struct Entry {
     pub runner_id: String,
     pub host_id: String,
     pub directory: String,
+    pub configuration_path: Option<String>,
+    pub can_browse: bool,
     pub address: Option<String>,
     pub server_key: Option<String>,
     pub stop_pending: bool,

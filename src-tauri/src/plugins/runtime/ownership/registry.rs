@@ -18,6 +18,15 @@ pub(in crate::plugins) struct Registry<T> {
 }
 
 impl<T> Registry<T> {
+    /// Includes unaccepted values: native consumers must never silently borrow
+    /// a transport still governed by any plugin runtime or pending request.
+    pub fn contains(&self, matches: impl Fn(&T) -> bool) -> bool {
+        self.entries
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .values()
+            .any(|entry| entry.value.as_ref().is_some_and(&matches))
+    }
     /// Accepted live values only. Pending results remain owned but cannot be
     /// controlled through a different public call before result acceptance.
     pub fn owned(&self, owner: &str, generation: u64) -> Vec<(Ownership, T)>

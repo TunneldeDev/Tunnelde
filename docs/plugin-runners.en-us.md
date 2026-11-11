@@ -57,6 +57,19 @@ configuration state; `runners.list` and the selected helper protocol are unchang
 
 Open **Settings → Plugins → Remote task recovery** to discover records, including those belonging to stopped or uninstalled plugins. The host can check status and save stop intent without launching the plugin or selecting Node. Records are paged in groups of 32. A saved record or connected SSH transport is not proof that the task is running; remote observations show their check time. Offline, changed, ambiguous and unreviewed destinations remain distinct.
 
+**Open remote files** opens the recorded deployment directory in the regular file
+browser and shows the derived configuration path when preparation was recorded.
+It reuses a matching user-managed SSH connection. Plugin-owned and dedicated
+forwarding connections are excluded. Otherwise, the normal credential and trust
+dialog creates an independent background connection to the original saved host.
+The captured address and server key are checked before target authentication;
+editing the host or trusting a different key cannot redirect this action. The
+exact recovery record is checked again before opening the browser. Cancelling or
+closing the recovery page disposes unaccepted connections, and abandoned requests
+expire after 15 minutes. An accepted connection is managed by the user and survives
+plugin stop, removal and restricted mode. The entry grants no automatic deletion
+or artifact ownership: ordinary file-browser actions retain their usual behavior.
+
 Older records have no captured destination. They remain readable, but inspection and remote cleanup require explicitly reviewing the original address and key in a native confirmation. When different connections exist for the same saved host, the host refuses to guess which one owns an older record. Review cannot replace an already captured identity. Binding an older record with a pending stop can immediately resume that existing cleanup intent.
 
 Updating a plugin does not automatically transfer an older task to its new package. **Hand over control** requires the currently installed package's existing `ssh.exec` approval and native consent for that specific task. It preserves the original deployment, code and permissions; it does not clear pending stops, launch work, send a prompt, or replay approval. Confirmed terminal tasks and tasks with pending stops cannot be handed over.

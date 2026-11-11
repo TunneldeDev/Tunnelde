@@ -26,6 +26,22 @@ fn action_tokens_bind_all_private_metadata_and_never_reveal_it() {
 }
 
 #[test]
+fn recovery_paths_do_not_invent_unprepared_configs_or_accept_a_path_as_task_id() {
+    let mut task = record();
+    let project = |record: &Record| super::projection::entry(record, &[], None, false).unwrap();
+    assert!(project(&task).configuration_path.is_none());
+    assert!(!project(&task).can_browse);
+    task.configuration_state =
+        Some(crate::plugins::runners::operations::configuration::journal::State::Writing);
+    assert_eq!(
+        project(&task).configuration_path.as_deref(),
+        Some("/runner/config-task.json")
+    );
+    task.runner_id = "../elsewhere".into();
+    assert!(project(&task).configuration_path.is_none());
+}
+
+#[test]
 fn owner_discovery_includes_uninstalled_plugins_and_ignores_unrelated_files() {
     let directory =
         std::env::temp_dir().join(format!("tunnelde-recovery-{}", uuid::Uuid::new_v4()));
