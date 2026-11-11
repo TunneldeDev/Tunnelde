@@ -191,7 +191,9 @@ export function TransferTask({
       ) : null}
       {item.error ? (
         <p className="transfer-task__error">
-          {translateError({ code: "ssh", message: item.error })}
+          {item.retainedCreation && item.error === "sftp.transferArtifactUnrecognized"
+            ? t("sftp.retainedCreationChanged")
+            : translateError({ code: "ssh", message: item.error })}
         </p>
       ) : null}
       {item.backupRecovery ? (

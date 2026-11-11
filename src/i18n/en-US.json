@@ -801,6 +801,7 @@
     "columnHeaderHint": "Click to sort; drag to reorder columns.",
     "retainedCreationTask": "Temporary directory · {{name}}",
     "retainedCreationPath": "Temporary directory",
+    "retainedCreationChanged": "The temporary directory contains other data or has an unexpected type or permissions. It was preserved. Inspect its contents before retrying cleanup.",
     "retainedCreationUnknown": "The old directory creation has no confirmed result. This record keeps its exact path while the original transfer can continue with a fresh temporary directory. It cannot be cleaned until the old request is confirmed.",
     "retainedCreationSettled": "The old request has finished. Retry cleanup to remove its empty temporary directory or clear a rejected request. Other files are preserved.",
     "retainedCreationInvalid": "The retained operation record or its host identity does not match. Keep the record and review the application log.",
