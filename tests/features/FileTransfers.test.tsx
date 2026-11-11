@@ -40,6 +40,44 @@ beforeEach(async () => {
   });
 });
 
+it.each(["unknown", "rejected"] as const)(
+  "retained %s cleanup shows its exact path without transfer progress or a connection dialog",
+  async (settlement) => {
+    const item = {
+      ...useTransfers.getState().items[0]!,
+      retainedCreation: true,
+      retainedSettlement: settlement,
+      status: "cleanupPending" as const,
+      toHostId: "disconnected-host",
+      fromHostId: null,
+      toAddress: "user@server:22",
+      toPath: "/target/file",
+      artifactRecovery: "/target/.old.stage",
+      error:
+        settlement === "unknown" ? "sftp.retainedCreationUnknown" : "sftp.retainedCreationSettled",
+    };
+    useTransfers.setState({ items: [item] });
+    const clear = vi
+      .spyOn(transferApi, "clear")
+      .mockResolvedValue(settlement === "rejected" ? null : item);
+    render(<FileTransfers />);
+    expect(screen.getByRole("article", { name: "Temporary directory · file" })).toBeTruthy();
+    expect(screen.getByText("user@server:22:/target/.old.stage")).toBeTruthy();
+    expect(screen.queryByRole("progressbar")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Resume transfer" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Temporary directory · file" }));
+    expect(screen.queryByText(/Remaining:/)).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Retry cleanup" })));
+    expect(clear).toHaveBeenCalledWith("job");
+    expect(screen.queryByRole("dialog", { name: /Connect|连接/ })).toBeNull();
+    if (settlement === "rejected") {
+      expect(screen.queryByRole("article")).toBeNull();
+    } else {
+      expect(screen.getByRole("article", { name: "Temporary directory · file" })).toBeTruthy();
+    }
+  },
+);
+
 it("applies a task limit and retains it across progress events", async () => {
   const save = vi.spyOn(transferApi, "setSpeedLimit").mockResolvedValue(undefined);
   render(<FileTransfers />);
