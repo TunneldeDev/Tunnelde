@@ -2,14 +2,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "@/lib/api/ipc";
 import { editorDocument, undoEditorEdit, useEditors } from "@/store/editors";
+import { useToasts } from "@/store/toasts";
 
 const id = "editor:s1:/a.txt";
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((done) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((done, fail) => {
     resolve = done;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 };
 const state = () => useEditors.getState();
 
@@ -166,5 +169,123 @@ describe("editor requests", () => {
     expect(state().entries[id]?.baseline).toBe("remote change");
     expect(state().entries[id]?.sessionId).toBe("s2");
     expect(api.sftpWriteText).not.toHaveBeenCalled();
+  });
+
+  it("allows the reopened document to save while an old write still runs and settles", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "old draft");
+    const oldWrite = deferred<void>();
+    const newWrite = deferred<void>();
+    vi.mocked(api.sftpWriteText)
+      .mockReturnValueOnce(oldWrite.promise)
+      .mockReturnValueOnce(newWrite.promise);
+    const oldSave = state().save(id);
+    // Same tab reuse without discard used to keep the old promise forever.
+    await state().open(id, "s2", "/different.txt");
+    state().change(id, "new draft");
+    const newSave = state().save(id);
+    expect(newSave).not.toBe(oldSave);
+    expect(api.sftpWriteText).toHaveBeenLastCalledWith(
+      "s2",
+      "/different.txt",
+      "new draft",
+      "original",
+    );
+    oldWrite.resolve();
+    expect(await oldSave).toBe(false);
+    expect(state().save(id)).toBe(newSave);
+    expect(state().entries[id]).toMatchObject({
+      saving: true,
+      baseline: "original",
+      content: "new draft",
+    });
+    newWrite.resolve();
+    expect(await newSave).toBe(true);
+    state().change(id, "next draft");
+    expect(await state().save(id)).toBe(true);
+    expect(api.sftpWriteText).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retain a rejected synchronous save after the failure is fixed", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "draft");
+    vi.mocked(api.sftpWriteText).mockImplementationOnce(() => {
+      throw new Error("IPC unavailable");
+    });
+    expect(await state().save(id)).toBe(false);
+    expect(await state().save(id)).toBe(true);
+    expect(api.sftpWriteText).toHaveBeenCalledTimes(2);
+  });
+
+  it("settles a disconnected initial load without waiting for its old IPC and fills it on reconnect", async () => {
+    const oldRead = deferred<{ content: string; size: number }>();
+    vi.mocked(api.sftpReadText).mockReturnValueOnce(oldRead.promise);
+    const initial = state().open(id, "s1", "/a.txt");
+    state().markDisconnected("s1");
+    await initial;
+    expect(state().entries[id]).toMatchObject({
+      loading: false,
+      disconnected: true,
+      baselineLoaded: false,
+    });
+    expect(await state().reconnect(id, "s2")).toBe("ready");
+    expect(state().entries[id]).toMatchObject({
+      content: "original",
+      baseline: "original",
+      loading: false,
+      disconnected: false,
+      baselineLoaded: true,
+    });
+    oldRead.resolve({ content: "stale", size: 5 });
+    await new Promise<void>((done) => setTimeout(done, 0));
+    expect(state().entries[id]?.content).toBe("original");
+  });
+
+  it("preserves a draft made after an interrupted initial read when reconnecting", async () => {
+    const read = deferred<{ content: string; size: number }>();
+    vi.mocked(api.sftpReadText).mockReturnValueOnce(read.promise);
+    const initial = state().open(id, "s1", "/a.txt");
+    state().markDisconnected("s1");
+    await initial;
+    state().change(id, "disconnected draft");
+    expect(await state().reconnect(id, "s2")).toBe("ready");
+    expect(state().entries[id]).toMatchObject({
+      content: "disconnected draft",
+      baseline: "original",
+      loading: false,
+    });
+    read.resolve({ content: "late", size: 4 });
+    expect(await state().save(id)).toBe(true);
+    expect(api.sftpWriteText).toHaveBeenCalledWith(
+      "s2",
+      "/a.txt",
+      "disconnected draft",
+      "original",
+    );
+  });
+
+  it("lets the latest reconnect intent win and suppresses older failures", async () => {
+    await state().open(id, "s1", "/a.txt");
+    state().change(id, "local draft");
+    state().markDisconnected("s1");
+    const older = deferred<{ content: string; size: number }>();
+    const newer = deferred<{ content: string; size: number }>();
+    vi.mocked(api.sftpReadText)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise);
+    const first = state().reconnect(id, "s2");
+    const second = state().reconnect(id, "s3");
+    expect(await first).toBe("failed");
+    newer.resolve({ content: "original", size: 8 });
+    expect(await second).toBe("ready");
+    useToasts.setState({ items: [] });
+    older.reject(new Error("stale connection failure"));
+    await new Promise<void>((done) => setTimeout(done, 0));
+    expect(useToasts.getState().items).toHaveLength(0);
+    expect(state().entries[id]).toMatchObject({
+      sessionId: "s3",
+      content: "local draft",
+      baseline: "original",
+    });
   });
 });
