@@ -109,7 +109,11 @@ pub(in crate::plugins::runners) async fn forget(
     record: &Record,
 ) -> AppResult<bool> {
     let chinese = app.state::<AppState>().locale().starts_with("zh");
-    let (title, text, yes, no) = if chinese {
+    let (title, text, yes, no) = if record.runner_id == "deployment" && chinese {
+        ("移除尚未提交的部署记录？", "这条记录尚未提交远端创建请求。仅移除本地预留记录；不会删除远端内容。正在准备的请求会因记录已变更而终止。", "移除记录", "取消")
+    } else if record.runner_id == "deployment" {
+        ("Remove the unsubmitted deployment record?", "No remote creation request has been submitted for this reservation. Remove only the local record; remote content is preserved. A preparing request will stop because its record has changed.", "Remove record", "Cancel")
+    } else if chinese {
         (
             "移除已结束任务的本地记录？",
             "仅移除这条本地恢复记录，不删除远端文件，也不会停止其他任务。",

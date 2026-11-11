@@ -36,7 +36,11 @@ export function RecoveryRecord({
             <span className={`runner-recovery__badge is-${entry.connection}`}>
               {t(`runnerRecovery.connection.${entry.connection}`)}
             </span>
-            {!deployment && (
+            {deployment ? (
+              <span className={`runner-recovery__badge is-${entry.deploymentState ?? "ready"}`}>
+                {t(`runnerRecovery.deploymentStatus.${entry.deploymentState ?? "ready"}`)}
+              </span>
+            ) : (
               <span className={`runner-recovery__badge is-${status}`}>
                 {t(`runnerRecovery.status.${status}`)}
               </span>
@@ -52,6 +56,15 @@ export function RecoveryRecord({
             <dt>{t("runnerRecovery.serverKey")}</dt>
             <dd>{entry.serverKey ?? t("runnerRecovery.unreviewed")}</dd>
           </dl>
+          {deployment && entry.deploymentState && entry.deploymentState !== "ready" && (
+            <p className="settings-hint">
+              {t(
+                entry.deploymentState === "reserved"
+                  ? "runnerRecovery.reservedDeploymentHint"
+                  : "runnerRecovery.incompleteDeploymentHint",
+              )}
+            </p>
+          )}
           {entry.controlChanged && (
             <p className="settings-hint">{t("runnerRecovery.packageChanged")}</p>
           )}

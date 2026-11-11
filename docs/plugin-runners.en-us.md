@@ -12,6 +12,31 @@ Metadata updates use bounded reads and writes, atomic replacement, and revisions
 
 This lifecycle does not make the runner API stable, replace active resource handles, grant access to other plugins, or validate account-specific AI configuration. Remote deployment, initialization and credentials still require the appropriate authorization.
 
+## Interrupted deployment
+
+Before a remote mutation, the host durably reserves the deployment and records its
+phase. It records directory creation intent before sending `MKDIR`, acknowledges
+that creation before uploading, and marks the deployment ready only after every
+file closes successfully and authorization is checked again. Package bytes come
+from one bounded snapshot matching the approved fingerprint; the selected helper
+is limited to 64 MiB and the package snapshot to 32 MiB. Uploads create files
+exclusively and refuse a package path that collides with the native helper.
+
+The native recovery screen distinguishes an unsubmitted reservation, unconfirmed
+directory creation, incomplete upload and ready deployment. An incomplete deployment
+is omitted from `runners.list`, cannot satisfy `runners.start`, and cannot be reused
+by `runners.deploy`; the latter returns `plugin.runners.deploymentIncomplete`.
+Existing ready records and public listing fields remain compatible. Only a reservation
+that has not submitted a remote mutation can be removed after native confirmation;
+the exact-record check prevents a delayed confirmation from removing a later phase.
+
+Disconnecting or restarting does not promote an incomplete record to ready. A path
+existing on reconnect does not prove ownership or settle a lost mutation response.
+Use a fresh directory to deploy again and preserve the recovery record for inspection.
+No partial directory is recursively deleted. Safe reconciliation of deployment and
+configuration artifacts remains a separate recovery operation; the journal alone
+does not prove that remote files have been cleaned up.
+
 ## Recovery and package changes
 
 Open **Settings → Plugins → Remote task recovery** to discover records, including those belonging to stopped or uninstalled plugins. The host can check status and save stop intent without launching the plugin or selecting Node. Records are paged in groups of 32. A saved record or connected SSH transport is not proof that the task is running; remote observations show their check time. Offline, changed, ambiguous and unreviewed destinations remain distinct.

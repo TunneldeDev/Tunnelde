@@ -21,6 +21,7 @@ export interface RecoveryEntry {
   canInspect: boolean;
   canStop: boolean;
   canForget: boolean;
+  deploymentState?: "reserved" | "creating" | "uploading" | "ready" | null;
 }
 export interface RecoverySnapshot {
   pluginId: string;

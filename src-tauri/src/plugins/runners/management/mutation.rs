@@ -25,6 +25,12 @@ pub(super) fn index(records: &[Record], token: &str) -> AppResult<usize> {
 
 pub(super) fn validate(record: &Record, action: Action) -> AppResult<()> {
     if record.runner_id == "deployment" {
+        if matches!(action, Action::Forget)
+            && record.deployment_state
+                == Some(crate::plugins::runners::deployment::journal::State::Reserved)
+        {
+            return Ok(());
+        }
         return Err(AppError::validation("plugin.runners.controlUnavailable"));
     }
     match action {

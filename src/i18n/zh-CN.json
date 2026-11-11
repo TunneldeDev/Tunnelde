@@ -1230,7 +1230,14 @@
       "exitUnconfirmed": "尚未确认进程退出，请保留记录，直至原主机确认任务状态。",
       "invalidResponse": "远端辅助程序返回了无效响应，已保留原记录，请查看软件日志。",
       "commandFailed": "远端辅助程序执行失败：{{reason}}",
-      "noCommandDetails": "远端未返回错误输出，请打开软件日志查看诊断信息。"
+      "noCommandDetails": "远端未返回错误输出，请打开软件日志查看诊断信息。",
+      "deploymentIncomplete": "此目标有一条未完成部署。请在设置 → 插件 → 远端任务恢复中查看，并选择全新的目录重试；已有内容会保留。",
+      "helperCollision": "插件包包含与所选原生运行器重名的保留路径，请先更新插件包。",
+      "preparationFailed": "部署准备进程意外结束，请打开软件日志查看详情。",
+      "binaryTooLarge": "所选原生运行器超过 64 MiB 的部署限制。",
+      "packageTooLarge": "插件包超过 32 MiB 的远端部署限制。",
+      "explicitBinaryRequired": "部署前请选择原生运行器常规文件的绝对路径。",
+      "freshDirectoryRequired": "请选择全新的远端目录；已有文件和部署记录会保留。"
     },
     "activation": {
       "missingDependency": "缺少必需的插件，请检查依赖并安装后重试。",
@@ -2304,6 +2311,14 @@
       "failed": "观测状态：失败",
       "notFound": "观测状态：未找到",
       "unresponsive": "观测状态：无响应"
-    }
+    },
+    "deploymentStatus": {
+      "reserved": "尚未提交",
+      "creating": "目录创建待确认",
+      "uploading": "上传未完成",
+      "ready": "部署就绪"
+    },
+    "incompleteDeploymentHint": "此部署尚未完成。操作意图已保存，但远端文件可能不完整，也可能仍有操作尚未确认，不能复用或启动。请使用全新目录重试，并保留此记录供检查；软件不会自动删除远端文件。",
+    "reservedDeploymentHint": "这条预留记录尚未提交任何远端修改。确认后可移除本地记录；正在准备的请求无法继续使用已移除记录。"
   }
 }

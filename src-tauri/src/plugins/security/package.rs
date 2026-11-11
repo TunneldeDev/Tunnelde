@@ -1,6 +1,6 @@
 //! Hash and capture the same bytes: an approved package cannot change between
 //! fingerprint validation and serving executable frontend assets.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
@@ -11,16 +11,21 @@ use crate::error::{AppError, AppResult};
 
 const MAX_FRONTEND_BYTES: usize = 8 * 1024 * 1024;
 
-pub(crate) struct FrontendSnapshot {
+pub(crate) struct PackageSnapshot {
     pub digest: String,
     pub assets: BTreeMap<String, Arc<[u8]>>,
     pub bytes: usize,
+    pub directories: BTreeSet<String>,
 }
+pub(crate) type FrontendSnapshot = PackageSnapshot;
 
 struct Capture<'a> {
     prefix: &'a str,
     assets: BTreeMap<String, Arc<[u8]>>,
     bytes: usize,
+    limit: usize,
+    limit_error: &'static str,
+    directories: BTreeSet<String>,
 }
 
 fn visit(
@@ -61,6 +66,9 @@ fn visit(
         hasher.update(name.as_bytes());
         if kind.is_dir() {
             hasher.update(b"directory");
+            if let Some(c) = capture.as_mut().filter(|c| name.starts_with(c.prefix)) {
+                c.directories.insert(name[c.prefix.len()..].into());
+            }
             visit(root, &path, hasher, files, bytes, depth + 1, capture)?;
         } else if kind.is_file() {
             hasher.update(b"file");
@@ -83,16 +91,20 @@ fn visit(
                 if retain {
                     let c = capture.as_mut().expect("capture selected");
                     c.bytes += read;
-                    if c.bytes > MAX_FRONTEND_BYTES {
-                        return Err(AppError::validation("plugin.frontend.assetsTooLarge"));
+                    if c.bytes > c.limit {
+                        return Err(AppError::validation(c.limit_error));
                     }
                     content.extend_from_slice(&buffer[..read]);
                 }
             }
             if retain {
                 let c = capture.as_mut().expect("capture selected");
-                c.assets
-                    .insert(name[c.prefix.len()..].into(), content.into());
+                if c.assets
+                    .insert(name[c.prefix.len()..].into(), content.into())
+                    .is_some()
+                {
+                    return Err(AppError::validation("pluginSecurity.packageInvalid"));
+                }
             }
         } else {
             return Err(AppError::validation("pluginSecurity.packageInvalid"));
@@ -115,17 +127,39 @@ pub(super) fn fingerprint(root: &Path) -> AppResult<String> {
 }
 
 pub(crate) fn frontend_snapshot(root: &Path, prefix: &str) -> AppResult<FrontendSnapshot> {
+    snapshot(
+        root,
+        prefix,
+        MAX_FRONTEND_BYTES,
+        "plugin.frontend.assetsTooLarge",
+    )
+}
+
+pub(crate) fn deployment_snapshot(root: &Path) -> AppResult<PackageSnapshot> {
+    snapshot(root, "", 32 * 1024 * 1024, "plugin.runners.packageTooLarge")
+}
+
+fn snapshot(
+    root: &Path,
+    prefix: &str,
+    limit: usize,
+    limit_error: &'static str,
+) -> AppResult<PackageSnapshot> {
     let mut capture = Some(Capture {
         prefix,
         assets: BTreeMap::new(),
         bytes: 0,
+        limit,
+        limit_error,
+        directories: BTreeSet::new(),
     });
     let digest = read(root, &mut capture)?;
     let capture = capture.expect("capture provided");
-    Ok(FrontendSnapshot {
+    Ok(PackageSnapshot {
         digest,
         assets: capture.assets,
         bytes: capture.bytes,
+        directories: capture.directories,
     })
 }
 

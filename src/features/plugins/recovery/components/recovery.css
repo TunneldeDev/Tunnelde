@@ -78,6 +78,13 @@
 .runner-recovery__badge.is-uncertain {
   color: var(--td-orange);
 }
+.runner-recovery__badge.is-creating,
+.runner-recovery__badge.is-uploading {
+  color: var(--td-orange);
+}
+.runner-recovery__badge.is-ready {
+  color: var(--td-green);
+}
 .runner-recovery__detail {
   margin: 12px 0 0 22px;
   padding-left: 12px;
