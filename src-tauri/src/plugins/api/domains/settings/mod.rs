@@ -6,12 +6,16 @@ use crate::{
 use serde_json::Value;
 use tauri::Manager;
 mod preferences;
+mod profiles;
 
 pub(in crate::plugins::api) async fn dispatch(
     context: &HostContext,
     method: &str,
     params: Value,
 ) -> AppResult<Value> {
+    if method.starts_with("profiles.") {
+        return profiles::dispatch(context, method, params);
+    }
     if method.starts_with("preferences.") {
         return preferences::dispatch(context, method, params).await;
     }

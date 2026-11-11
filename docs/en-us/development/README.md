@@ -23,6 +23,7 @@
 - [Host menu commands](plugins/host-menu.md)
 - [Monitoring providers](plugins/monitor-ui.md)
 - [Public preferences](plugins/preferences.md)
+- [Profile metadata observation](plugins/profiles.md)
 - [Process manager providers](plugins/processes-ui.md)
 - [Quick-access result providers](plugins/quick-access-ui.md)
 - [Plugins](plugins/README.md)

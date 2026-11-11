@@ -76,6 +76,8 @@ mod monitor;
 mod mounts;
 #[path = "settings/preferences/methods.rs"]
 mod preferences;
+#[path = "settings/profiles/methods.rs"]
+mod profiles;
 #[path = "runtime/methods.rs"]
 mod runtime;
 #[path = "settings/methods.rs"]
@@ -106,6 +108,7 @@ const DOMAINS: &[&[ApiMethod]] = &[
     application::METHODS,
     settings::METHODS,
     preferences::METHODS,
+    profiles::METHODS,
     connections::METHODS,
     terminal::METHODS,
     files::METHODS,

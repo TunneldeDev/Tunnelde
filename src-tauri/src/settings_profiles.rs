@@ -16,6 +16,7 @@ const MAX_FILE_BYTES: usize = 512_000;
 const MAX_PROFILES: usize = 32;
 
 mod files;
+pub(crate) mod observation;
 
 // Deliberately explicit: newly added settings never become portable by accident.
 const PORTABLE_KEYS: &[&str] = &[
@@ -191,11 +192,26 @@ fn load(conn: &Connection) -> AppResult<Vec<SettingsProfile>> {
 }
 
 fn save(conn: &Connection, profiles: &[SettingsProfile]) -> AppResult<()> {
-    conn.execute(
+    let raw = serde_json::to_string(profiles)?;
+    if raw.len() > observation::MAX_STORAGE_BYTES {
+        return Err(AppError::validation("profiles.storageTooLarge"));
+    }
+    let transaction = conn.unchecked_transaction()?;
+    transaction.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        params![KEY, serde_json::to_string(profiles)?, now_ms()],
+        params![KEY, raw, now_ms()],
     )?;
+    transaction.execute(
+        "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        params![
+            observation::REVISION_KEY,
+            uuid::Uuid::new_v4().to_string(),
+            now_ms()
+        ],
+    )?;
+    transaction.commit()?;
     Ok(())
 }
 
