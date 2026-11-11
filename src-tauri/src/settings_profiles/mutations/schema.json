@@ -1,0 +1,249 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Experimental public profile mutations v1",
+  "description": "Structural schemas plus semantic host/SDK checks: UTF-8 sizes/offsets, complete eleven-group public values, unique normalized names, body/collection bounds, runtime ownership, expiration, final raw/nonce CAS, live authorization and cancellation commit fence. Activation requires host-owned native consent and both profile/preference revision fences. Lost mutation responses require catalogue reconciliation; drafts are one-shot and no retry is implied.",
+  "definitions": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+    },
+    "revision": {
+      "type": "string",
+      "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+    },
+    "prepare": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "totalBytes"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16515072
+        }
+      }
+    },
+    "append": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draftId", "offset", "text"],
+      "properties": {
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16515072
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "x-maxBytes": 32768
+        }
+      }
+    },
+    "discard": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["draftId"],
+      "properties": {
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        }
+      }
+    },
+    "draft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "draftId", "totalBytes", "offset"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16515072
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16515072
+        }
+      }
+    },
+    "discarded": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version"],
+      "properties": {
+        "version": {
+          "const": 1
+        }
+      }
+    },
+    "save": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "draftId", "name"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        }
+      }
+    },
+    "rename": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "name"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        }
+      }
+    },
+    "delete": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        }
+      }
+    },
+    "changed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "revision"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        }
+      }
+    },
+    "activate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "preferencesRevision"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "preferencesRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        }
+      }
+    },
+    "activated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "revision", "preferencesRevision"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "revision": {
+          "type": "string",
+          "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+        },
+        "preferencesRevision": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        }
+      }
+    }
+  }
+}

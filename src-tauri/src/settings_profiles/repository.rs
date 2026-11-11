@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 const ACTIVE_KEY: &str = "settings.profiles.active.v1";
+pub(super) mod mutation;
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -75,14 +76,18 @@ pub(super) fn read(conn: &Connection) -> AppResult<Snapshot> {
 /// Owned row bytes let public background readers release SQLite before hashing,
 /// validating or materializing large bodies. Capture all companion rows inside
 /// the caller's read transaction; this type carries no DB lock or authority.
+#[derive(Clone)]
 pub(super) struct Captured {
     raw: String,
+    present: bool,
     nonce: Option<String>,
     active_id: Option<String>,
 }
 
 pub(super) fn capture(conn: &Connection) -> AppResult<Captured> {
-    let raw = text(conn, KEY, observation::MAX_STORAGE_BYTES)?.unwrap_or_else(|| "[]".into());
+    let raw = text(conn, KEY, observation::MAX_STORAGE_BYTES)?;
+    let present = raw.is_some();
+    let raw = raw.unwrap_or_else(|| "[]".into());
     let nonce = text(conn, observation::REVISION_KEY, 36)?;
     if nonce.as_ref().is_some_and(|value| {
         !uuid::Uuid::parse_str(value).is_ok_and(|id| !id.is_nil() && id.to_string() == *value)
@@ -91,6 +96,7 @@ pub(super) fn capture(conn: &Connection) -> AppResult<Captured> {
     }
     Ok(Captured {
         raw,
+        present,
         nonce,
         active_id: active(conn)?,
     })
