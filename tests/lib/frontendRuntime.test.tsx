@@ -56,7 +56,9 @@ it("admits mounted scopes only for the exact activated module, renderer and pack
     ["main", token, () => null, "approved"],
     ["main", token, View, "changed"],
   ] as const)
-    expect(() => runtime.viewScope(plugin.id, viewId, candidateToken, component, fingerprint)).toThrow("closed");
+    expect(() =>
+      runtime.viewScope(plugin.id, viewId, candidateToken, component, fingerprint),
+    ).toThrow("closed");
   expect(context.resources.size).toBe(before);
   const first = runtime.viewScope(plugin.id, "main", token, View, "approved");
   const second = runtime.viewScope(plugin.id, "main", token, View, "approved");
@@ -71,6 +73,33 @@ it("admits mounted scopes only for the exact activated module, renderer and pack
 });
 
 afterEach(() => vi.useRealTimers());
+
+it("passes per-call cancellation through the frontend scope and aborts native transport on retirement", async () => {
+  let context!: FrontendContext;
+  const { runtime, transport } = fixture((ctx) => {
+    context = ctx;
+  });
+  const signals: AbortSignal[] = [];
+  vi.mocked(transport.call).mockImplementation((_token, _method, _params, signal) => {
+    signals.push(signal!);
+    return new Promise((_resolve, reject) =>
+      signal!.addEventListener("abort", () => reject(new Error("cancelled")), { once: true }),
+    );
+  });
+  await runtime.ensure(plugin);
+  const owner = new AbortController();
+  const first = context.api.call("ui.confirm", { message: "review" }, { signal: owner.signal });
+  const firstCheck = expect(first).rejects.toThrow("cancelled");
+  owner.abort();
+  await firstCheck;
+  expect(signals[0]!.aborted).toBe(true);
+  const second = context.api.call("ui.confirm", {});
+  const secondCheck = expect(second).rejects.toThrow("closed");
+  runtime.stop(plugin.id);
+  await secondCheck;
+  expect(signals[1]!.aborted).toBe(true);
+  await vi.waitFor(() => expect(context.resources.size).toBe(0));
+});
 
 it("replaces an identical-package module on runtime change and rejects stale ensure without disposing its replacement", async () => {
   const cleanup = vi.fn();

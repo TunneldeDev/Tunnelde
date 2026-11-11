@@ -13,6 +13,8 @@ import { uiSdk, type FrontendContext, type FrontendModule, type FrontendViewProp
 import { createBackgroundTaskRunner } from "./backgroundTasks/execution";
 import { samePluginRuntime } from "@/lib/plugins/commands/runtime";
 import { usePlugins } from "@/store/plugins";
+import { callFrontend } from "./runtime/requests/frontend";
+import type { UiResourceOptions } from "./contracts/runtime/resources";
 
 interface Session {
   token: string;
@@ -42,7 +44,12 @@ export interface FrontendTransport {
   ready(token: string): Promise<void>;
   close(token: string): Promise<void>;
   fail(token: string): Promise<void>;
-  call<T>(token: string, method: string, params: Record<string, unknown>): Promise<T>;
+  call<T>(
+    token: string,
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<T>;
   load(session: Session): Promise<FrontendModule>;
   report(pluginId: string, operation: string, error: unknown): void;
 }
@@ -141,11 +148,19 @@ export function createFrontendRuntime(transport: FrontendTransport) {
             resources: scope,
             backgroundTasks: createBackgroundTaskRunner(scope.signal, live, plugin.id),
             api: Object.freeze({
-              call: <T>(method: string, params: Record<string, unknown> = {}) => {
+              call: <T>(
+                method: string,
+                params: Record<string, unknown> = {},
+                options: UiResourceOptions = {},
+              ) => {
                 live();
-                return scope.run(() => transport.call<T>(session.token, method, params), {
-                  timeoutMs: 60_000,
-                });
+                return scope.run(
+                  (signal) => transport.call<T>(session.token, method, params, signal),
+                  {
+                    timeoutMs: 60_000,
+                    ...options,
+                  },
+                );
               },
             }),
             views: Object.freeze({
@@ -284,9 +299,12 @@ export function createFrontendRuntime(transport: FrontendTransport) {
           throw new ResourceScopeClosed();
       };
       live();
-      const result = await runtime!.scope.run(() => transport.call<T>(token, method, params), {
-        timeoutMs: 30_000,
-      });
+      const result = await runtime!.scope.run(
+        (signal) => transport.call<T>(token, method, params, signal),
+        {
+          timeoutMs: 30_000,
+        },
+      );
       live();
       return result;
     },
@@ -344,7 +362,15 @@ export const frontendRuntime = createFrontendRuntime({
   fail: async (token) => {
     await invoke("plugin_frontend_failed", { token });
   },
-  call: (token, method, params) => invoke("plugin_frontend_call", { token, method, params }),
+  call: (token, method, params, signal) =>
+    callFrontend(
+      invoke,
+      (error) => reportError("plugins.frontend", "cancel-call", error),
+      token,
+      method,
+      params,
+      signal,
+    ),
   load: (session) => {
     const base = convertFileSrc(session.token, "tunnelde-ui");
     const url = `${base}/${session.entry.split("/").map(encodeURIComponent).join("/")}`;

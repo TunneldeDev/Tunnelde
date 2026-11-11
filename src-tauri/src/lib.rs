@@ -196,6 +196,8 @@ pub fn run() {
             plugins::frontend::plugin_frontend_close,
             plugins::frontend::plugin_frontend_failed,
             plugins::frontend::plugin_frontend_call,
+            plugins::frontend::requests::plugin_frontend_prepare_call,
+            plugins::frontend::requests::plugin_frontend_cancel_call,
             commands::app_info,
             storage::storage_status,
             storage::storage_restart_pending,
