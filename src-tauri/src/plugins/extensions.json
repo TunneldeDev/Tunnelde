@@ -251,7 +251,7 @@
     },
     {
       "id": "files",
-      "namespaces": ["files", "editor", "clipboard"]
+      "namespaces": ["files", "fileBrowser", "editor", "clipboard"]
     },
     {
       "id": "terminal",
