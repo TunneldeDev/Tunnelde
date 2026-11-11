@@ -1785,7 +1785,36 @@
     "notFound": "This profile no longer exists. Refresh the profiles and try again.",
     "conflict": "Saved profiles changed. Refresh the list, review it and try again. No preferences were changed.",
     "invalidRequest": "The profile request is invalid. Refresh the profiles and try again.",
-    "limit": "You can save up to 32 settings profiles. Delete one to add another."
+    "limit": "You can save up to 32 settings profiles. Delete one to add another.",
+    "activationReview": "Apply saved profile “{{name}}”?\n\nChanged groups: {{groups}}\n\nThis replaces public preferences, including configured proxy routes, update sources and keyboard shortcuts. Private UI provider selections are preserved. Removed proxies follow normal credential cleanup. Some changes may require a restart.",
+    "noPublicChanges": "No public preference changes",
+    "activation": {
+      "denied": "Profile activation was declined. Preferences were preserved."
+    },
+    "mutation": {
+      "invalidRequest": "The profile operation contains missing or unsupported fields.",
+      "unavailable": "The profile operation could not complete. Open the software log and refresh saved profiles before retrying."
+    },
+    "draft": {
+      "notFound": "The profile upload is missing or has expired. Begin a new upload.",
+      "busy": "This upload is being committed. Refresh saved profiles to check the result.",
+      "incomplete": "The profile upload is incomplete.",
+      "invalidOffset": "The profile upload offset is invalid. Begin a new upload.",
+      "limit": "Too many profile uploads or reserved bytes. Wait for the current operation to finish."
+    },
+    "groups": {
+      "general": "General",
+      "appearance": "Appearance",
+      "workspace": "Workspace",
+      "terminal": "Terminal",
+      "files": "Files",
+      "transfers": "Transfers",
+      "editor": "Editor",
+      "monitoring": "Monitoring",
+      "shortcuts": "Keyboard shortcuts",
+      "network": "Network and proxies",
+      "updates": "Updates"
+    }
   },
   "search": {
     "invalidRoot": "Choose an existing absolute directory.",
