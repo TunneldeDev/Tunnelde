@@ -37,6 +37,8 @@ export function PluginPermissionList({ permissions }: { permissions: string[] })
     "workspace.read": "pluginSecurity.permission.workspaceRead",
     "workspace.write": "pluginSecurity.permission.workspaceWrite",
     "editor.read": "pluginSecurity.permission.editorRead",
+    "fileBrowser.read": "pluginSecurity.permission.fileBrowserRead",
+    "fileBrowser.write": "pluginSecurity.permission.fileBrowserWrite",
     "editor.write": "pluginSecurity.permission.editorWrite",
     "app.openExternal": "pluginSecurity.permission.openExternal",
     network: "pluginSecurity.permission.network",

@@ -1487,6 +1487,8 @@
       "forwardsRead": "View saved port forwarding rules",
       "forwardsWrite": "Manage and start local or remote port forwarding",
       "editorRead": "Read documents in open editors",
+      "fileBrowserRead": "Read paths, visible entries and selection metadata in open file browsers, without file contents",
+      "fileBrowserWrite": "Navigate, select, refresh and open entries through existing file browsers",
       "editorWrite": "Modify editor buffers (without saving automatically)",
       "trustedUi": "Load trusted code into the application interface.",
       "backgroundTasksRead": "Read visible background tasks across features",

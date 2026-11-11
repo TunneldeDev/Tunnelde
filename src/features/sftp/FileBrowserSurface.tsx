@@ -8,10 +8,12 @@ import {
   type FileBrowserActions,
 } from "@/lib/extensions/files/context";
 import { createPersistentSurface } from "@/lib/extensions/persistentSurface";
+import { mountFileBrowser } from "@/lib/files/browser/registry";
 
 /** Keeps file ownership, navigation, filtering and native recovery outside the provider. */
 export function FileBrowserSurface({
   paneId,
+  tabId,
   source,
   path,
   entries,
@@ -23,6 +25,7 @@ export function FileBrowserSurface({
   children,
 }: {
   paneId: string;
+  tabId?: string;
   source: FsSource;
   path: string | null;
   entries: readonly FileEntry[];
@@ -34,6 +37,7 @@ export function FileBrowserSurface({
   children: ReactNode;
 }) {
   const current = useRef<{ frame: object; actions: FileBrowserActions } | null>(null);
+  const registration = useRef<ReturnType<typeof mountFileBrowser> | null>(null);
   const [surface] = useState(createPersistentSurface);
   const Entries = surface.Mount;
   const listing = useMemo(() => createFileBrowserListing(entries), [entries]);
@@ -73,6 +77,17 @@ export function FileBrowserSurface({
     });
   }, [frame, listing, surface]);
   /* eslint-enable react-hooks/refs */
+  useLayoutEffect(() => {
+    const mounted = mountFileBrowser(paneId);
+    registration.current = mounted;
+    return () => {
+      mounted.dispose();
+      if (registration.current === mounted) registration.current = null;
+    };
+  }, [paneId]);
+  useLayoutEffect(() => {
+    registration.current?.publish({ browser: context, tabId: tabId ?? null, suspended });
+  }, [context, tabId, suspended]);
   return (
     <>
       <ProviderSurface target="fileBrowser" fileBrowser={context} suspended={suspended}>

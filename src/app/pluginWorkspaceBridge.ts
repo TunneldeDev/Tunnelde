@@ -17,6 +17,7 @@ import { toast } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
 import { runEditorRequest } from "@/app/plugins/editorRequests";
+import { runFileBrowserRequest } from "@/app/plugins/fileBrowserRequests";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 import { isIpcError } from "@/lib/api/types";
@@ -69,6 +70,8 @@ export async function runPluginWorkspaceRequest(
   await authorizeRequest();
   const { method, params } = request;
   if (method.startsWith("editor.")) return runEditorRequest(method, params, authorizeRequest);
+  if (method.startsWith("fileBrowser."))
+    return runFileBrowserRequest(method, params, authorizeRequest);
   const workspace = useWorkspace.getState();
   switch (method) {
     case "__frontend.command": {

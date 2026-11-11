@@ -4,7 +4,10 @@ mod remote;
 pub(in crate::plugins::api) mod text;
 mod transfers;
 
-use crate::{error::AppResult, plugins::api::HostContext};
+use crate::{
+    error::AppResult,
+    plugins::api::{frontend_request, HostContext},
+};
 use serde_json::Value;
 
 pub(in crate::plugins::api) async fn dispatch(
@@ -13,6 +16,7 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     match method {
+        name if name.starts_with("fileBrowser.") => frontend_request(context, name, params).await,
         "files.local.copy"
         | "files.sftp.copy"
         | "files.upload"

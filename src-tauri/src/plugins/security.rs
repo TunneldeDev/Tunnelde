@@ -40,6 +40,8 @@ pub const PERMISSIONS: &[&str] = &[
     "ssh.exec",
     "fs.read",
     "fs.write",
+    "fileBrowser.read",
+    "fileBrowser.write",
     "sftp.read",
     "sftp.write",
     "monitor.read",

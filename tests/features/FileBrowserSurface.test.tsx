@@ -1,7 +1,9 @@
 import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useEffect, useLayoutEffect } from "react";
+import { StrictMode, useEffect, useLayoutEffect } from "react";
+import { observeFileBrowsers, readFileBrowser } from "@/lib/plugins/files/browser/data";
+import { runFileBrowserAction } from "@/lib/plugins/files/browser/actions";
 import "@/i18n/i18n";
 import { FileBrowserSurface } from "@/features/sftp/FileBrowserSurface";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
@@ -86,6 +88,48 @@ afterEach(() => {
 function choose() {
   act(() => useSettings.setState((s) => ({ settings: { ...s.settings, uiProviders: selected } })));
 }
+
+it("publishes committed native browsers under StrictMode and retires frames on hide, source switch and close", async () => {
+  const content = (
+    suspended = false,
+    source: FrontendFileBrowser["snapshot"]["source"] = props.source,
+  ) => (
+    <StrictMode>
+      <FileBrowserSurface {...props} tabId="files-tab" source={source} suspended={suspended}>
+        <Rows />
+      </FileBrowserSurface>
+    </StrictMode>
+  );
+  const ui = render(content());
+  const first = await observeFileBrowsers({});
+  if (!first.changed) throw new Error("expected metadata");
+  const frame = first.snapshot.items[0]!;
+  expect(frame).toMatchObject({ paneId: "one", tabId: "files-tab", suspended: false });
+  expect(readFileBrowser({ paneId: "one", revision: frame.revision }).items).toHaveLength(1);
+  ui.rerender(content(true));
+  expect(() =>
+    runFileBrowserAction({ paneId: "one", revision: frame.revision, action: "refresh" }),
+  ).toThrow("changed");
+  const hidden = await observeFileBrowsers({});
+  if (!hidden.changed) throw new Error("expected metadata");
+  expect(hidden.snapshot.items[0]).toMatchObject({ suspended: true, busy: true });
+  expect(() =>
+    runFileBrowserAction({
+      paneId: "one",
+      revision: hidden.snapshot.items[0]!.revision,
+      action: "refresh",
+    }),
+  ).toThrow("busy");
+  ui.rerender(content(false, { kind: "remote", sessionId: "new-session" }));
+  const remote = await observeFileBrowsers({});
+  if (!remote.changed) throw new Error("expected metadata");
+  expect(remote.snapshot.items[0]?.source).toEqual({ kind: "remote", sessionId: "new-session" });
+  ui.unmount();
+  expect(() =>
+    readFileBrowser({ paneId: "one", revision: remote.snapshot.items[0]!.revision }),
+  ).toThrow("changed");
+  expect(await observeFileBrowsers({})).toMatchObject({ changed: true, snapshot: { total: 0 } });
+});
 
 it("retains the scope on directory refresh but retires it on source or remote-session changes", () => {
   const scopes: UiResourceScope[] = [];
