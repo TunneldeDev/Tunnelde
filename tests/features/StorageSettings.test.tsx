@@ -230,11 +230,16 @@ it("shows persisted cancellation after failure and allows retry without advertis
   api.storageStatus.mockResolvedValueOnce(planned).mockResolvedValue({
     ...planned,
     pending: { ...planned.pending, action: "cancel" },
+    lastError: "storage.verificationFailed",
   });
   api.storageCancel.mockRejectedValueOnce(new Error("storage.verificationFailed"));
   render(<StorageSettings />);
   fireEvent.click(await screen.findByRole("button", { name: "Cancel scheduled changes" }));
   await screen.findByText("Storage cancellation needs recovery");
+  expect(
+    screen.getByText(/Cancellation is incomplete\. Current storage locations remain active\./),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Migration did not complete/)).toBeNull();
   expect(screen.queryByText("Location changes are scheduled")).toBeNull();
   expect(screen.queryByText("E:\\Database")).toBeNull();
   expect(screen.queryByRole("button", { name: /Review changes/ })).toBeNull();

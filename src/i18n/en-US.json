@@ -2086,6 +2086,7 @@
     "restartHint": "Finish your work, fully quit Tunnelde (including the tray), then open it again. Closing only the window does not apply these changes.",
     "cancelPlan": "Cancel scheduled changes",
     "cancellationPending": "Storage cancellation needs recovery",
+    "cancellationFailed": "Cancellation is incomplete. Current storage locations remain active.",
     "cancellationHint": "The migration will not be applied. Resolve any reported conflict, then retry cancellation or fully quit and reopen Tunnelde to resume it. Recovery copies are retained.",
     "retryCancellation": "Retry cancellation",
     "incompleteCopy": "An interrupted or changed staging copy was retained. Cancel the migration to keep the recovery copy, then schedule it again.",
