@@ -2,6 +2,31 @@ use super::*;
 use crate::db::Database;
 
 #[test]
+fn final_guard_runs_before_any_write_and_companion_failure_stays_atomic() {
+    Database::in_memory().unwrap().with(|conn| {
+        let initial = Settings::default();
+        let expected = save(conn,&initial)?;
+        let mut changed = initial.clone(); changed.theme = "dark".into();
+        let current = save(conn,&changed)?;
+        let mut proposed = changed.clone(); proposed.theme = "light".into();
+        // If the guard were late, this trigger would mask the stale revision.
+        conn.execute_batch("CREATE TRIGGER reject_preferences BEFORE UPDATE ON settings WHEN NEW.key='app' BEGIN SELECT RAISE(FAIL,'guard ran too late'); END;")?;
+        let error = save_guarded(conn,&proposed,|tx| {
+            if revision(tx,&changed)? != expected { return Err(crate::error::AppError::validation("preferences.staleRevision")); }
+            Ok(())
+        }, |_|Ok(())).unwrap_err();
+        assert_eq!(error.to_string(),"preferences.staleRevision");
+        assert_eq!(revision(conn,&changed)?,current);
+        assert_eq!(crate::db::settings::load(conn)?.theme,"dark");
+        conn.execute_batch("DROP TRIGGER reject_preferences")?;
+        assert!(save_guarded(conn,&proposed,|_|Ok(()),|_|Err(crate::error::AppError::validation("profiles.conflict"))).is_err());
+        assert_eq!(revision(conn,&changed)?,current);
+        assert_eq!(crate::db::settings::load(conn)?.theme,"dark");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn companion_failure_rolls_back_preferences_revision_and_selection() {
     Database::in_memory()
         .unwrap()

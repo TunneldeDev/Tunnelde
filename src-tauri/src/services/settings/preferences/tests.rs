@@ -128,3 +128,39 @@ fn update_envelope_rejects_extra_keys_and_requires_revision() {
     )
     .is_err());
 }
+
+#[test]
+fn full_profile_requires_every_group_and_field_and_preserves_partial_rpc_bound() {
+    let native = Settings::default();
+    let complete = profile_values(&native).unwrap();
+    for invalid in [
+        json!({}),
+        {
+            let mut v = complete.clone();
+            v.as_object_mut().unwrap().remove("terminal");
+            v
+        },
+        {
+            let mut v = complete.clone();
+            v["appearance"].as_object_mut().unwrap().remove("theme");
+            v
+        },
+        {
+            let mut v = complete.clone();
+            v["uiProviders"] = json!({});
+            v
+        },
+    ] {
+        assert!(apply_profile_values(&native, invalid).is_err());
+    }
+    let mut full = complete;
+    // Escaped content exceeds the partial RPC limit while remaining valid CSS
+    // and within the native 200k character/byte field bound.
+    full["appearance"]["userCss"] = "\t".repeat(180_000).into();
+    assert!(serde_json::to_vec(&full).unwrap().len() > 256 * 1024);
+    assert!(update::apply(&native, full.clone()).is_err());
+    assert_eq!(
+        apply_profile_values(&native, full).unwrap().user_css.len(),
+        180_000
+    );
+}

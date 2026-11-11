@@ -9,7 +9,7 @@ use crate::{
 pub(crate) use contracts::{Apply, Snapshot};
 use tauri::{AppHandle, Emitter, Manager};
 
-pub(super) fn publish(app: &AppHandle) {
+pub(crate) fn publish(app: &AppHandle) {
     let _ = app.emit("settings-profiles://changed", ());
 }
 

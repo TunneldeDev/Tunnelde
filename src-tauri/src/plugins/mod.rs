@@ -212,6 +212,7 @@ pub struct PluginsManager {
     host_columns: contributions::Registry<host_columns::Column>,
     host_sources: contributions::Registry<host_sources::Source>,
     sessions: Arc<runtime::ownership::Registry<String>>,
+    profile_drafts: Arc<crate::settings_profiles::mutations::drafts::Registry>,
 }
 
 impl PluginsManager {
@@ -379,6 +380,7 @@ impl PluginsManager {
             host_columns: contributions::Registry::with_limit_error("plugin.hostList.limit"),
             host_sources: contributions::Registry::with_limit_error("plugin.hostSources.limit"),
             sessions: runtime::ownership::Registry::new(8, 64),
+            profile_drafts: Arc::default(),
         }
     }
 

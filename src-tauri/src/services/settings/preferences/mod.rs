@@ -28,6 +28,15 @@ pub(crate) fn profile_values(settings: &crate::settings::Settings) -> AppResult<
     Ok(values)
 }
 
+/// Full public profile onto a native baseline. Excluded private fields retain
+/// their current values; callers never synthesize an internal Settings patch.
+pub(crate) fn apply_profile_values(
+    previous: &crate::settings::Settings,
+    values: serde_json::Value,
+) -> AppResult<crate::settings::Settings> {
+    update::full(previous, values)
+}
+
 impl Writer<'_> {
     pub(crate) fn observe_preferences(
         &self,
@@ -44,6 +53,19 @@ impl Writer<'_> {
 }
 
 impl<'a> Writer<'a> {
+    pub(crate) fn prepare_profile(
+        self,
+        revision: &str,
+        values: serde_json::Value,
+    ) -> AppResult<Prepared<'a>> {
+        if self.current()?.1 != revision {
+            return Err(AppError::validation("preferences.staleRevision"));
+        }
+        self.prepare(Kind::Preferences, |previous| {
+            apply_profile_values(previous, values)
+        })
+    }
+
     pub(crate) fn prepare_preferences(self, request: contracts::Update) -> AppResult<Prepared<'a>> {
         let (_, revision) = self.current()?;
         if request.revision != revision {
@@ -56,6 +78,9 @@ impl<'a> Writer<'a> {
 }
 
 impl Prepared<'_> {
+    pub(crate) fn finish_profile_revision(self) -> String {
+        self.finish_with(|_, revision| revision.to_owned())
+    }
     pub(crate) fn finish_preferences(self) -> AppResult<contracts::Snapshot> {
         self.finish_with(|next, revision| projection::snapshot(next, revision.to_owned()))
     }

@@ -31,6 +31,8 @@ export type * from "./contracts/profiles/data/snapshot.js";
 export type * from "./contracts/profiles/data/observation.js";
 export type * from "./contracts/profiles/data/content/catalogue.js";
 export type * from "./contracts/profiles/data/content/read.js";
+export type * from "./contracts/profiles/data/mutations/drafts.js";
+export type * from "./contracts/profiles/data/mutations/writes.js";
 export type * from "./contracts/configuration/schema.js";
 export type * from "./contracts/configuration/document.js";
 export type * from "./contracts/configuration/migration.js";

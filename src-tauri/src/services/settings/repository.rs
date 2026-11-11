@@ -29,13 +29,24 @@ pub(super) fn save(conn: &Connection, next: &Settings) -> AppResult<String> {
     save_with(conn, next, |_| Ok(()))
 }
 
+#[cfg(test)]
 pub(super) fn save_with(
     conn: &Connection,
     next: &Settings,
     extra: impl FnOnce(&Connection) -> AppResult<()>,
 ) -> AppResult<String> {
+    save_guarded(conn, next, |_| Ok(()), extra)
+}
+
+pub(super) fn save_guarded(
+    conn: &Connection,
+    next: &Settings,
+    before: impl FnOnce(&Connection) -> AppResult<()>,
+    extra: impl FnOnce(&Connection) -> AppResult<()>,
+) -> AppResult<String> {
     let revision = uuid::Uuid::new_v4().to_string();
     let transaction = conn.unchecked_transaction()?;
+    before(&transaction)?;
     crate::db::settings::save(&transaction, next)?;
     transaction.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES (?1, ?2, ?3)
