@@ -11,6 +11,8 @@ Required dependencies, approval and runtime readiness: [activation](activation.m
 Editor command and formatter contributions:
 [English](editor-plugins.md) · [简体中文](../../../zh-cn/development/plugins/editor-plugins.md).
 
+Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-buffers.md).
+
 Host metadata extensions use a versioned manifest schema and revision-checked storage. See [plugin host fields](host-fields.md).
 
 Plugin-owned settings, explicit schema migration and recovery: [plugin configuration](configuration.md).

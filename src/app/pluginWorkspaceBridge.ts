@@ -8,12 +8,7 @@ import { api } from "@/lib/api/ipc";
 import { closeTab } from "@/lib/session/tabActions";
 import { sidebarTabId, sidebarViewOf } from "@/lib/session/sidebarDock";
 import { useDialogs } from "@/store/dialogs";
-import {
-  useEditors,
-  editorDocument,
-  replaceEditorDocument,
-  EDITOR_DOCUMENT_MAX_BYTES,
-} from "@/store/editors";
+import { useEditors } from "@/store/editors";
 import { useHosts } from "@/store/hosts";
 import { sourceHosts, type HostSourcesSnapshot } from "@/lib/hosts/sources";
 import { usePlugins } from "@/store/plugins";
@@ -21,7 +16,7 @@ import { useSsh } from "@/store/ssh";
 import { toast } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
-import { pluginEditorDocument, pluginEditorWriteResult } from "@/lib/plugins/editor";
+import { runEditorRequest } from "@/app/plugins/editorRequests";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 import { isIpcError } from "@/lib/api/types";
@@ -69,6 +64,7 @@ export async function runPluginWorkspaceRequest(
   };
   await authorizeRequest();
   const { method, params } = request;
+  if (method.startsWith("editor.")) return runEditorRequest(method, params, authorizeRequest);
   const workspace = useWorkspace.getState();
   switch (method) {
     case "__frontend.command": {
@@ -83,28 +79,6 @@ export async function runPluginWorkspaceRequest(
         (params.input ?? {}) as Record<string, unknown>,
         signal,
       );
-    }
-    case "editor.active": {
-      const document = workspace.activeId ? editorDocument(workspace.activeId) : null;
-      if (document && new TextEncoder().encode(document.content).length > EDITOR_DOCUMENT_MAX_BYTES)
-        throw new Error("editor.documentTooLarge");
-      return pluginEditorDocument(document);
-    }
-    case "editor.replace": {
-      const tabId = text(params, "tabId"),
-        documentId = text(params, "documentId");
-      if (!Number.isSafeInteger(params.version) || (params.version as number) < 0)
-        throw new Error("invalid:version");
-      if (
-        typeof params.text !== "string" ||
-        new TextEncoder().encode(params.text).length > EDITOR_DOCUMENT_MAX_BYTES
-      )
-        throw new Error("invalid:text");
-      const document = replaceEditorDocument(
-        { tabId, documentId, version: params.version as number },
-        params.text,
-      );
-      return pluginEditorWriteResult(document);
     }
     case "workspace.snapshot":
       return pluginWorkspaceSnapshot();

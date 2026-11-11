@@ -33,3 +33,7 @@ export type * from "./contracts/runtime/lifecycle/resource.js";
 export type * from "./contracts/runtime/lifecycle/snapshot.js";
 export type * from "./contracts/runtime/lifecycle/release.js";
 export type * from "./contracts/runtime/lifecycle/identify.js";
+export type * from "./contracts/editor/data/identity.js";
+export type * from "./contracts/editor/data/observation.js";
+export type * from "./contracts/editor/data/range.js";
+export type * from "./contracts/editor/data/edits.js";
