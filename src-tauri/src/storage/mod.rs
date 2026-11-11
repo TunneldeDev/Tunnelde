@@ -3,6 +3,7 @@ mod inventory;
 pub mod layout;
 mod migration;
 pub(crate) mod public;
+pub(crate) mod recovery;
 mod restore;
 
 use std::sync::Mutex;
@@ -16,6 +17,10 @@ use crate::state::AppState;
 use layout::{Category, Paths, CATEGORIES};
 
 static MUTATIONS: Mutex<()> = Mutex::new(());
+// Public service tests exercise a deliberately fail-fast commit lock. Keep their
+// independent filesystem fixtures from contending on that process-global lock.
+#[cfg(test)]
+static PUBLIC_TESTS: Mutex<()> = Mutex::new(());
 
 pub fn initialize(
     home: std::path::PathBuf,
@@ -32,8 +37,15 @@ pub fn initialize(
         &config.locations,
         plugins.clone(),
     );
-    if let Some(pending) = &config.pending {
-        let result = match pending.action {
+    if let Some(pending) = &mut config.pending {
+        let action = pending.action;
+        if pending.restart_requested {
+            pending.restart_requested = false;
+            // An interrupted execution must not continue to advertise a request
+            // that has yet to start. Persist before touching migration files.
+            config::save(&home, &config)?;
+        }
+        let result = match action {
             config::Action::Apply => migration::apply(&paths, &mut config),
             config::Action::Cancel => migration::cancel(&paths, &mut config),
         };
@@ -130,7 +142,11 @@ pub async fn storage_cancel(app: AppHandle) -> AppResult<Status> {
             .lock()
             .map_err(|_| AppError::internal("storage.lock"))?;
         let mut config = config::load(&paths.home)?;
-        migration::cancel(&paths, &mut config)?;
+        if let Err(error) = migration::cancel(&paths, &mut config) {
+            config.last_error = Some(error.to_string());
+            config::save(&paths.home, &config)?;
+            return Err(error);
+        }
         status(&paths)
     })
     .await

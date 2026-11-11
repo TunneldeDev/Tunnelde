@@ -117,6 +117,7 @@ pub(crate) fn schedule(
             id: uuid::Uuid::new_v4().to_string(),
             changes: validated,
             action: config::Action::Apply,
+            restart_requested: false,
         });
         config.last_error = None;
         config

@@ -386,6 +386,7 @@ pub fn schedule(paths: &Paths, config: &mut Config, changes: Vec<Change>) -> App
         id: uuid::Uuid::new_v4().to_string(),
         changes,
         action: config::Action::Apply,
+        restart_requested: false,
     });
     config.last_error = None;
     config::save(&paths.home, config)

@@ -8,9 +8,10 @@ pub(in crate::storage) fn cancel(paths: &Paths, config: &mut Config) -> AppResul
     if uuid::Uuid::parse_str(&pending.id).is_err() {
         return Err(AppError::validation("storage.invalidPlan"));
     }
-    if pending.action != config::Action::Cancel {
+    if pending.action != config::Action::Cancel || pending.restart_requested {
         let mut next = config.clone();
         pending.action = config::Action::Cancel;
+        pending.restart_requested = false;
         next.pending = Some(pending.clone());
         config::save(&paths.home, &next)?;
         *config = next;

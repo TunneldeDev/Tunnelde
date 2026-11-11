@@ -16,8 +16,7 @@ struct Fixture {
 }
 impl Fixture {
     fn new() -> Self {
-        static FIXTURES: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let serial = FIXTURES.lock().unwrap();
+        let serial = crate::storage::PUBLIC_TESTS.lock().unwrap();
         let root = std::env::temp_dir().join(format!(
             "tunnelde-location-contract-{}",
             uuid::Uuid::new_v4()
@@ -88,6 +87,7 @@ fn observation_does_not_scan_or_expose_errors_and_private_pending_ids() {
     state.pending = Some(config::Pending {
         id: uuid::Uuid::new_v4().to_string(),
         action: config::Action::Apply,
+        restart_requested: false,
         changes: vec![config::Change {
             category: Category::Keys,
             target: f.root.join("target"),
