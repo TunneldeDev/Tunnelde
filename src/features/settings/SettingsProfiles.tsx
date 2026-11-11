@@ -31,7 +31,7 @@ export function SettingsProfiles({
   const { t } = useTranslation();
   const settings = useSettings((state) => state.settings);
   const saving = useSettings((state) => state.saving);
-  const { profiles, selectedId, loading, busy, error, load, select, save, remove } =
+  const { profiles, selectedId, loading, busy, error, load, refresh, save, remove } =
     useSettingsProfiles();
   const [managing, setManaging] = useState(false);
   const [naming, setNaming] = useState<{
@@ -46,41 +46,54 @@ export function SettingsProfiles({
   const nameId = useId();
   const disabled = saving || busy || loading || working;
   const currentSnapshot = useMemo(() => portableSettings(settings), [settings]);
-  const matching = profiles.find((profile) => sameSettings(profile.settings, currentSnapshot));
-  const selected = profiles.find((profile) => profile.id === selectedId) ?? matching;
+  const selected = profiles.find((profile) => profile.id === selectedId);
   const modified = !!selected && !sameSettings(selected.settings, currentSnapshot);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const apply = async (snapshot: PortableSettings, id: string | null) => {
+  const apply = async (snapshot: PortableSettings, id: string | null, revision: string | null) => {
     if (useSettings.getState().saving || useSettingsProfiles.getState().busy || working) return;
-    if (!validateUserCss(snapshot.userCss ?? "").ok) {
+    if (!id && !validateUserCss(snapshot.userCss ?? "").ok) {
       toast(t("settings.cssRejected"), "error");
       return;
     }
     setWorking(true);
     try {
-      if (await useSettings.getState().update(snapshot)) {
-        select(id);
+      if (id && !revision) {
+        toast(t("profiles.conflict"), "error");
+        void load();
+        return;
+      }
+      if (
+        await useSettings
+          .getState()
+          .applyProfile(
+            id
+              ? { source: "saved", id, revision: revision! }
+              : { source: "import", settings: snapshot },
+          )
+      ) {
+        await refresh();
         setPreview(null);
         onApplied();
         toast(t("profiles.applied"), "success");
-      }
+      } else void load();
     } finally {
       setWorking(false);
     }
   };
   const requestApply = (snapshot: PortableSettings, id: string | null) => {
+    const revision = useSettingsProfiles.getState().revision;
     if (hasDraft) {
       useDialogs.getState().confirm({
         title: t("profiles.discardDraftTitle"),
         body: t("profiles.discardDraft"),
         confirmLabel: t("common.apply"),
-        onConfirm: () => apply(snapshot, id),
+        onConfirm: () => apply(snapshot, id, revision),
       });
-    } else void apply(snapshot, id);
+    } else void apply(snapshot, id, revision);
   };
   const saveName = async () => {
     if (!naming || disabled) return;
@@ -172,7 +185,7 @@ export function SettingsProfiles({
           onChange={(id) => {
             const profile = profiles.find((entry) => entry.id === id);
             if (profile) requestApply(profile.settings, profile.id);
-            else select(null);
+            else requestApply(currentSnapshot, null);
           }}
         />
         <Button

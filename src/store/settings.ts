@@ -8,6 +8,7 @@ import { setLanguage } from "@/i18n/i18n";
 import i18n from "@/i18n/i18n";
 import { toast } from "@/store/toasts";
 import { translateError } from "@/lib/api/errors";
+import type { ApplySettingsProfile } from "@/lib/prefs/profiles";
 
 let requestedLocale: string | undefined;
 let appliedLocale: string | undefined;
@@ -43,6 +44,7 @@ interface SettingsStore {
   error: string | null;
   load: () => Promise<void>;
   update: (patch: SettingsPatch) => Promise<boolean>;
+  applyProfile: (request: ApplySettingsProfile) => Promise<boolean>;
   reset: () => Promise<void>;
   applyRemote: (settings: Settings) => void;
 }
@@ -82,7 +84,11 @@ export const useSettings = create<SettingsStore>((set, get) => {
     applySettings(settings);
     set({ settings, saving: pending.length > 0 });
   };
-  const commit = (patch: SettingsPatch, reset = false): Promise<boolean> => {
+  const commit = (
+    patch: SettingsPatch,
+    reset = false,
+    profile?: ApplySettingsProfile,
+  ): Promise<boolean> => {
     if (pending.length === 0) confirmed = get().settings;
     pending.push(patch);
     display();
@@ -90,7 +96,11 @@ export const useSettings = create<SettingsStore>((set, get) => {
       let ok = true;
       try {
         confirmed = isTauri()
-          ? await (reset ? api.resetSettings() : api.updateSettings(patch))
+          ? await (profile
+              ? api.applySettingsProfile(profile)
+              : reset
+                ? api.resetSettings()
+                : api.updateSettings(patch))
           : { ...confirmed, ...patch };
         set({ error: null });
       } catch (error) {
@@ -140,6 +150,9 @@ export const useSettings = create<SettingsStore>((set, get) => {
     },
 
     update: (patch) => commit(patch),
+    // The server selects the saved body. Do not optimistically apply a stale UI copy.
+    applyProfile: (request) =>
+      isTauri() ? commit({}, false, structuredClone(request)) : Promise.resolve(false),
 
     reset: async () => {
       const defaults = get().info?.defaultSettings ?? createDefaultSettings(get().info?.os);

@@ -1783,6 +1783,8 @@
     "storageTooLarge": "The saved profiles exceed the storage limit. Remove a profile or reduce its content.",
     "invalidStorage": "Saved profiles could not be read. Current settings are unaffected.",
     "notFound": "This profile no longer exists. Refresh the profiles and try again.",
+    "conflict": "Saved profiles changed. Refresh the list, review it and try again. No preferences were changed.",
+    "invalidRequest": "The profile request is invalid. Refresh the profiles and try again.",
     "limit": "You can save up to 32 settings profiles. Delete one to add another."
   },
   "search": {

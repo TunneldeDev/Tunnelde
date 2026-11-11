@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import i18n from "@/i18n/i18n";
 import { SettingsProfiles } from "@/features/settings/SettingsProfiles";
 import { createDefaultSettings } from "@/lib/prefs/defaults";
-import { portableSettings } from "@/lib/prefs/profiles";
+import { portableSettings, type ApplySettingsProfile } from "@/lib/prefs/profiles";
 import { useSettings } from "@/store/settings";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useDialogs } from "@/store/dialogs";
@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   importSettingsFile: vi.fn(),
   exportSettingsFile: vi.fn(),
   saveSettingsProfile: vi.fn(),
-  settingsProfiles: vi.fn(),
+  settingsProfilesSnapshot: vi.fn(),
   deleteSettingsProfile: vi.fn(),
   setLocale: vi.fn(),
 }));
@@ -23,21 +23,34 @@ const profile = {
   settings: portableSettings({ ...defaults, theme: "light" }),
   updatedAt: 1,
 };
-const update = vi.fn(async () => true);
+const update = vi.fn(async (_request: ApplySettingsProfile) => true);
 const applied = vi.fn();
 
 beforeEach(async () => {
   vi.clearAllMocks();
   await i18n.changeLanguage("en-US");
-  mocks.settingsProfiles.mockResolvedValue([profile]);
+  mocks.settingsProfilesSnapshot.mockResolvedValue({
+    profiles: [profile],
+    revision: "pc1:initial",
+    activeId: "work",
+  });
   mocks.saveSettingsProfile.mockResolvedValue([profile]);
+  update.mockImplementation(async (request) => {
+    mocks.settingsProfilesSnapshot.mockResolvedValue({
+      profiles: [profile],
+      revision: "pc1:initial",
+      activeId: request.source === "saved" ? request.id : null,
+    });
+    return true;
+  });
   useSettings.setState({
     settings: { ...defaults, skippedVersion: "1.0", lastUpdateCheck: 100 },
     saving: false,
-    update,
+    applyProfile: update,
   });
   useSettingsProfiles.setState({
     profiles: [profile],
+    revision: "pc1:initial",
     selectedId: "work",
     loading: false,
     busy: false,
@@ -50,6 +63,31 @@ const mount = async (hasDraft = false) => {
 };
 
 describe("settings profile workflows", () => {
+  it("does not infer active identity from a saved profile with identical settings", async () => {
+    mocks.settingsProfilesSnapshot.mockResolvedValue({
+      profiles: [{ ...profile, settings: portableSettings(defaults) }],
+      revision: "pc1:same",
+      activeId: null,
+    });
+    await mount();
+    expect(document.querySelector(".settings-profiles")?.textContent).toContain("Current settings");
+    expect(document.querySelector(".settings-profiles")?.textContent).not.toContain("Work");
+  });
+
+  it("captures the content revision before confirmation instead of applying a stale frontend body", async () => {
+    await mount(true);
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Manage settings profiles" })),
+    );
+    await act(async () => fireEvent.click(screen.getByRole("button", { name: "Apply" })));
+    expect(update).not.toHaveBeenCalled();
+    const dialog = useDialogs.getState().dialog;
+    expect(dialog.kind).toBe("confirm");
+    await act(async () => useSettingsProfiles.setState({ revision: "changed-after-confirmation" }));
+    if (dialog.kind === "confirm") await act(async () => dialog.onConfirm());
+    expect(update).toHaveBeenCalledWith({ source: "saved", id: "work", revision: "pc1:initial" });
+  });
+
   it("exports only applied portable preferences through the native picker", async () => {
     mocks.exportSettingsFile.mockResolvedValue(null);
     await mount();
@@ -79,7 +117,7 @@ describe("settings profile workflows", () => {
     expect(within(dialog).getByText("Imported")).toBeTruthy();
     expect(update).not.toHaveBeenCalled();
     await act(async () => fireEvent.click(within(dialog).getByRole("button", { name: "Apply" })));
-    expect(update).toHaveBeenCalledWith(profile.settings);
+    expect(update).toHaveBeenCalledWith({ source: "import", settings: profile.settings });
     expect(applied).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(useSettingsProfiles.getState().selectedId).toBeNull();
@@ -130,6 +168,11 @@ describe("settings profile workflows", () => {
       target: { value: "Personal" },
     });
     mocks.saveSettingsProfile.mockResolvedValue([{ ...profile, name: "Personal" }]);
+    mocks.settingsProfilesSnapshot.mockResolvedValue({
+      profiles: [{ ...profile, name: "Personal" }],
+      revision: "pc1:renamed",
+      activeId: "work",
+    });
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Save" })));
     expect(mocks.saveSettingsProfile).toHaveBeenCalledWith("work", "Personal", profile.settings);
     expect(screen.getAllByRole("dialog")).toHaveLength(1);
@@ -186,7 +229,11 @@ describe("settings profile workflows", () => {
       fireEvent.click(screen.getByRole("button", { name: "Manage settings profiles" })),
     );
     await act(async () => fireEvent.click(screen.getByRole("button", { name: "Apply" })));
-    expect(update).toHaveBeenLastCalledWith(profile.settings);
+    expect(update).toHaveBeenLastCalledWith({
+      source: "saved",
+      id: "work",
+      revision: "pc1:initial",
+    });
     expect(applied).toHaveBeenCalledOnce();
   });
 });

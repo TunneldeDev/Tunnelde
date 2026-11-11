@@ -35,6 +35,7 @@ export interface NativeEvents {
   "plugins://download": PluginDownload;
   "plugins://config": PluginConfig;
   "settings://changed": Settings;
+  "settings-profiles://changed": null;
   "update://state": UpdateState;
   "ui://navigate": string;
   "ui://suspend": number;

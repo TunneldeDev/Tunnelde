@@ -5,7 +5,13 @@ import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
 import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
-import type { PortableSettings, SettingsDocument, SettingsProfile } from "@/lib/prefs/profiles";
+import type {
+  ApplySettingsProfile,
+  PortableSettings,
+  SettingsDocument,
+  SettingsProfile,
+  SettingsProfilesSnapshot,
+} from "@/lib/prefs/profiles";
 import type {
   ActivationPlan,
   FrontendActivation,
@@ -112,6 +118,9 @@ export const api = {
   updateSettings: (patch: SettingsPatch) => invoke<Settings>("settings_update", { patch }),
   resetSettings: () => invoke<Settings>("settings_reset"),
   settingsProfiles: () => invoke<SettingsProfile[]>("settings_profiles_list"),
+  settingsProfilesSnapshot: () => invoke<SettingsProfilesSnapshot>("settings_profiles_snapshot"),
+  applySettingsProfile: (request: ApplySettingsProfile) =>
+    invoke<Settings>("settings_profile_apply", { request }),
   saveSettingsProfile: (id: string | null, name: string, settings: PortableSettings) =>
     invoke<SettingsProfile[]>("settings_profile_save", { id, name, settings }),
   deleteSettingsProfile: (id: string) =>
@@ -349,6 +358,8 @@ export const api = {
 };
 
 export const events = {
+  onSettingsProfilesChanged: (cb: () => void, signal?: AbortSignal): Promise<UnlistenFn> =>
+    nativeEvents.on("settings-profiles://changed", cb, signal),
   onPluginActivation: (
     handler: (request: FrontendActivation) => void,
     signal?: AbortSignal,
