@@ -1,5 +1,7 @@
 # 文件浏览器提供者
 
+普通插件也可使用[浏览器实时数据与操作](file-browser-data.md)，无须注册替换界面提供者。
+
 [English](../../../en-us/development/plugins/file-browser.md) · [界面提供者](ui-providers.md)
 
 实验性 UI SDK 支持受信任前端组件声明 `views[].provider: "fileBrowser"`。

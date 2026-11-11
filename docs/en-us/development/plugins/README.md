@@ -13,6 +13,8 @@ Editor command and formatter contributions:
 
 Loaded buffer observation, paging and atomic edits: [editor buffer data](editor-buffers.md).
 
+Existing file-browser discovery, paging and host actions: [live browser data](file-browser-data.md).
+
 Independent log reading grants and cancellable subscriptions: [persisted logs](logging.md).
 
 Confirmed deferred migration retry/cancellation and recorded copies: [host storage recovery](storage-recovery.md).

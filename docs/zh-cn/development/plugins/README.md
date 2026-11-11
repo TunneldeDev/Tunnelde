@@ -1,5 +1,7 @@
 # 插件
 
+现有文件浏览器的发现、分页和宿主操作：[实时浏览器数据](file-browser-data.md)。
+
 必需依赖、授权与运行就绪：[插件依赖与激活](activation.md)。
 
 [English](../../../en-us/development/plugins/README.md)
