@@ -6,6 +6,10 @@ use super::inventory;
 use super::layout::{self, Category, Paths};
 use super::restore;
 use crate::error::{AppError, AppResult};
+use crate::platform::file_ops::rename_noreplace;
+
+mod cancellation;
+pub(super) use cancellation::cancel;
 
 pub(super) const MARKER: &str = ".tunnelde-storage-migration";
 
@@ -269,6 +273,9 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
     let Some(pending) = config.pending.clone() else {
         return Ok(());
     };
+    if pending.action != config::Action::Apply {
+        return Err(AppError::validation("storage.cancellationPending"));
+    }
     if uuid::Uuid::parse_str(&pending.id).is_err() {
         return Err(AppError::validation("storage.invalidPlan"));
     }
@@ -291,11 +298,16 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
                 continue;
             }
             let destination = stage(change, &pending.id)?;
-            if destination.try_exists()? {
+            if layout::metadata(&destination)?.is_some() {
                 if !owned(&destination, &pending.id) {
                     return Err(AppError::validation("storage.targetNotEmpty"));
                 }
-                std::fs::remove_dir_all(&destination)?;
+                let mut staged = change.clone();
+                staged.target = destination.clone();
+                verify_published(paths, &staged)
+                    .map_err(|_| AppError::validation("storage.incompleteCopy"))?;
+                staging.push(Some(destination));
+                continue;
             }
             std::fs::create_dir_all(destination.parent().unwrap())?;
             std::fs::create_dir(&destination)?;
@@ -321,7 +333,7 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
             if change.target.exists() {
                 std::fs::remove_dir(&change.target)?;
             }
-            std::fs::rename(stage, &change.target)?;
+            rename_noreplace(stage, &change.target)?;
         }
         let mut next = config.clone();
         for change in &changes {
@@ -351,36 +363,18 @@ pub fn apply(paths: &Paths, config: &mut Config) -> AppResult<()> {
         }
         Ok::<_, AppError>(())
     })();
-    // Only remove our reserved staging directories, never source or published destination data.
-    for (change, directory) in changes
-        .iter()
-        .zip(staging)
-        .filter_map(|(change, stage)| stage.map(|stage| (change, stage)))
-    {
-        if prepared.is_err()
-            && restore::is_default(paths, change)?
-            && restore::pending(change, &pending.id)?
-        {
-            continue;
-        }
-        if owned(&directory, &pending.id) {
-            let _ = std::fs::remove_dir_all(directory);
-        }
-    }
-    prepared
-}
-
-pub fn cancel(paths: &Paths, config: &mut Config) -> AppResult<()> {
-    if let Some(pending) = &config.pending {
-        for change in &pending.changes {
-            if restore::is_default(paths, change)? {
-                restore::cancel(paths, change, &pending.id)?;
+    // On failure retain all evidence for cancellation/recovery. On success a
+    // default-reset stage contains only our marker; remove only an empty dir,
+    // so a concurrently created entry is never recursively deleted.
+    if prepared.is_ok() {
+        for directory in staging.into_iter().flatten() {
+            if owned(&directory, &pending.id) {
+                let _ = std::fs::remove_file(directory.join(MARKER));
+                let _ = std::fs::remove_dir(directory);
             }
         }
     }
-    config.pending = None;
-    config.last_error = None;
-    config::save(&paths.home, config)
+    prepared
 }
 
 pub fn schedule(paths: &Paths, config: &mut Config, changes: Vec<Change>) -> AppResult<()> {
@@ -391,6 +385,7 @@ pub fn schedule(paths: &Paths, config: &mut Config, changes: Vec<Change>) -> App
     config.pending = Some(Pending {
         id: uuid::Uuid::new_v4().to_string(),
         changes,
+        action: config::Action::Apply,
     });
     config.last_error = None;
     config::save(&paths.home, config)

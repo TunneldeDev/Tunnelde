@@ -87,6 +87,7 @@ fn observation_does_not_scan_or_expose_errors_and_private_pending_ids() {
         .contains("private error"));
     state.pending = Some(config::Pending {
         id: uuid::Uuid::new_v4().to_string(),
+        action: config::Action::Apply,
         changes: vec![config::Change {
             category: Category::Keys,
             target: f.root.join("target"),
@@ -123,6 +124,34 @@ fn schedule_and_unstarted_cancel_write_only_metadata() {
     .unwrap();
     assert!(cancelled.pending.is_none());
     assert!(!PathBuf::from(target).exists());
+}
+
+#[test]
+fn cancellation_intent_is_recovery_even_before_any_copy_and_stays_private() {
+    let f = Fixture::new();
+    let request = f.request();
+    schedule(&f.paths, request, || Ok(()), || Ok(()), |save| save()).unwrap();
+    let before = f.snapshot();
+    assert!(!before.recovery_required);
+    let mut state = config::load(&f.paths.home).unwrap();
+    state.pending.as_mut().unwrap().action = config::Action::Cancel;
+    config::save(&f.paths.home, &state).unwrap();
+    let recovery = f.snapshot();
+    assert!(recovery.recovery_required);
+    assert_ne!(before.revision, recovery.revision);
+    assert!(!serde_json::to_string(&recovery)
+        .unwrap()
+        .contains("\"action\""));
+    assert!(cancel(
+        &f.paths,
+        Cancel {
+            revision: recovery.revision
+        },
+        || Ok(()),
+        || Ok(()),
+        |save| save()
+    )
+    .is_err());
 }
 
 #[test]

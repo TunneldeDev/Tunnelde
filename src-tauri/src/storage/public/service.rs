@@ -116,6 +116,7 @@ pub(crate) fn schedule(
         config.pending = Some(config::Pending {
             id: uuid::Uuid::new_v4().to_string(),
             changes: validated,
+            action: config::Action::Apply,
         });
         config.last_error = None;
         config
