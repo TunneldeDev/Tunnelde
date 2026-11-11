@@ -1,23 +1,7 @@
+use super::super::test_support::{client, directory_client, Gate, Tree};
 use super::*;
-use russh_sftp::protocol::*;
-use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::Duration;
-
-#[derive(Default)]
-struct Tree {
-    directories: std::collections::HashSet<String>,
-    files: HashMap<String, Vec<u8>>,
-    modes: HashMap<String, u32>,
-    lstats: usize,
-}
-
-struct Gate {
-    before_create: bool,
-    arrived: tokio::sync::Semaphore,
-    release: tokio::sync::Semaphore,
-    finished: tokio::sync::Semaphore,
-}
 
 fn acknowledgement_db(to: &Endpoint) -> (rusqlite::Connection, ArtifactRecord, Endpoint) {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -75,7 +59,8 @@ async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
                     &conn.lock().unwrap(),
                     "job",
                     &to,
-                    &directory
+                    &directory,
+                    true
                 )?);
                 done.add_permits(1);
                 result.into_result()
@@ -176,13 +161,13 @@ fn late_acknowledgement_cannot_replace_a_new_generation_or_recreate_deleted_jour
     let raw = serde_json::to_string(&replacement).unwrap();
     conn.execute("UPDATE settings SET value=?1", [&raw])
         .unwrap();
-    assert!(!settle_creation(&conn, "job", &to, &directory).unwrap());
+    assert!(!settle_creation(&conn, "job", &to, &directory, true).unwrap());
     let actual: String = conn
         .query_row("SELECT value FROM settings", [], |row| row.get(0))
         .unwrap();
     assert_eq!(actual, raw);
     conn.execute("DELETE FROM settings", []).unwrap();
-    assert!(!settle_creation(&conn, "job", &to, &directory).unwrap());
+    assert!(!settle_creation(&conn, "job", &to, &directory, true).unwrap());
     assert!(require_creation_settled("job", &to, Some(&saved)).is_err());
     let count: i64 = conn
         .query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0))
@@ -190,196 +175,26 @@ fn late_acknowledgement_cannot_replace_a_new_generation_or_recreate_deleted_jour
     assert_eq!(count, 0);
 }
 
-struct Server {
-    tree: Arc<Mutex<Tree>>,
-    gate: Option<Arc<Gate>>,
-    mkdir_gate: Option<Arc<Gate>>,
-    listed: std::collections::HashSet<String>,
-}
-
-fn status(id: u32) -> Status {
-    Status {
-        id,
-        status_code: StatusCode::Ok,
-        error_message: String::new(),
-        language_tag: String::new(),
-    }
-}
-
-impl russh_sftp::server::Handler for Server {
-    type Error = StatusCode;
-    fn unimplemented(&self) -> StatusCode {
-        StatusCode::OpUnsupported
-    }
-    async fn init(&mut self, _: u32, _: HashMap<String, String>) -> Result<Version, StatusCode> {
-        Ok(Version::new())
-    }
-    async fn lstat(&mut self, id: u32, path: String) -> Result<Attrs, StatusCode> {
-        let mut tree = self.tree.lock().unwrap();
-        tree.lstats += 1;
-        let mut attrs = FileAttributes::empty();
-        if tree.directories.contains(&path) {
-            attrs.permissions = Some(tree.modes.get(&path).copied().unwrap_or(0o40700));
-        } else if let Some(data) = tree.files.get(&path) {
-            attrs.permissions = Some(tree.modes.get(&path).copied().unwrap_or(0o100600));
-            attrs.size = Some(data.len() as u64);
-        } else {
-            return Err(StatusCode::NoSuchFile);
-        }
-        Ok(Attrs { id, attrs })
-    }
-    async fn open(
-        &mut self,
-        id: u32,
-        path: String,
-        flags: OpenFlags,
-        _: FileAttributes,
-    ) -> Result<Handle, StatusCode> {
-        if let Some(gate) = self.gate.as_ref().filter(|g| g.before_create) {
-            gate.arrived.add_permits(1);
-            gate.release.acquire().await.unwrap().forget();
-        }
-        let created = {
-            let mut tree = self.tree.lock().unwrap();
-            let parent = path.rsplit_once('/').unwrap().0;
-            if !tree.directories.contains(parent) {
-                Err(StatusCode::NoSuchFile)
-            } else if flags.contains(OpenFlags::EXCLUDE) && tree.files.contains_key(&path) {
-                Err(StatusCode::Failure)
-            } else {
-                tree.files.entry(path).or_default();
-                Ok(())
-            }
-        };
-        if let Some(gate) = self.gate.as_ref().filter(|g| !g.before_create) {
-            gate.arrived.add_permits(1);
-            gate.release.acquire().await.unwrap().forget();
-        }
-        if let Some(gate) = &self.gate {
-            gate.finished.add_permits(1);
-        }
-        created?;
-        Ok(Handle {
-            id,
-            handle: "empty-writer".into(),
-        })
-    }
-    async fn mkdir(
-        &mut self,
-        id: u32,
-        path: String,
-        attrs: FileAttributes,
-    ) -> Result<Status, StatusCode> {
-        if let Some(gate) = self.mkdir_gate.as_ref().filter(|gate| gate.before_create) {
-            gate.arrived.add_permits(1);
-            gate.release.acquire().await.unwrap().forget();
-        }
-        {
-            let mut tree = self.tree.lock().unwrap();
-            if tree.directories.contains(&path) || tree.files.contains_key(&path) {
-                return Err(StatusCode::Failure);
-            }
-            tree.modes
-                .insert(path.clone(), 0o40000 | attrs.permissions.unwrap_or(0o755));
-            tree.directories.insert(path);
-        }
-        if let Some(gate) = &self.mkdir_gate {
-            if !gate.before_create {
-                gate.arrived.add_permits(1);
-                gate.release.acquire().await.unwrap().forget();
-            }
-            gate.finished.add_permits(1);
-        }
-        Ok(status(id))
-    }
-    async fn opendir(&mut self, id: u32, path: String) -> Result<Handle, StatusCode> {
-        if !self.tree.lock().unwrap().directories.contains(&path) {
-            return Err(StatusCode::NoSuchFile);
-        }
-        self.listed.remove(&path);
-        Ok(Handle { id, handle: path })
-    }
-    async fn readdir(&mut self, id: u32, path: String) -> Result<Name, StatusCode> {
-        if !self.listed.insert(path.clone()) {
-            return Err(StatusCode::Eof);
-        }
-        let tree = self.tree.lock().unwrap();
-        let prefix = path + "/";
-        let files: Vec<_> = tree
-            .files
-            .keys()
-            .chain(tree.directories.iter())
-            .filter_map(|path| path.strip_prefix(&prefix))
-            .filter(|name| !name.contains('/'))
-            .map(|name| File {
-                filename: name.into(),
-                longname: name.into(),
-                attrs: FileAttributes::empty(),
-            })
-            .collect();
-        if files.is_empty() {
-            return Err(StatusCode::Eof);
-        }
-        Ok(Name { id, files })
-    }
-    async fn close(&mut self, id: u32, _: String) -> Result<Status, StatusCode> {
-        Ok(status(id))
-    }
-    async fn remove(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
-        self.tree
-            .lock()
-            .unwrap()
-            .files
-            .remove(&path)
-            .ok_or(StatusCode::NoSuchFile)?;
-        Ok(status(id))
-    }
-    async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
-        let mut tree = self.tree.lock().unwrap();
-        let prefix = path.clone() + "/";
-        if tree.files.keys().any(|p| p.starts_with(&prefix))
-            || tree.directories.iter().any(|p| p.starts_with(&prefix))
-        {
-            return Err(StatusCode::Failure);
-        }
-        if !tree.directories.remove(&path) {
-            return Err(StatusCode::NoSuchFile);
-        }
-        Ok(status(id))
-    }
-}
-
-async fn client(tree: Arc<Mutex<Tree>>, gate: Option<Arc<Gate>>) -> SftpSession {
-    let (client, server) = tokio::io::duplex(65536);
-    russh_sftp::server::run(
-        server,
-        Server {
-            tree,
-            gate,
-            mkdir_gate: None,
-            listed: Default::default(),
-        },
-    )
-    .await;
-    SftpSession::new(client).await.unwrap()
-}
-
-async fn directory_client(
-    tree: Arc<Mutex<Tree>>,
-    mkdir_gate: Option<Arc<Gate>>,
-) -> range_io::DataSession {
-    let (client, server) = tokio::io::duplex(65536);
-    russh_sftp::server::run(
-        server,
-        Server {
-            tree,
-            gate: None,
-            mkdir_gate,
-            listed: Default::default(),
-        },
-    )
-    .await;
-    range_io::DataSession::new(client).await.unwrap()
+#[test]
+fn acknowledged_rejection_never_reuses_a_possibly_foreign_directory() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    let (conn, _, old) = acknowledgement_db(&to);
+    assert!(settle_creation(&conn, "job", &to, &old, false).unwrap());
+    let raw: String = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key=?1",
+            [artifact_key("job", &to)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let next: ArtifactRecord = serde_json::from_str(&raw).unwrap();
+    let stage = remote_staging(Some(&next)).unwrap();
+    assert!(!stage.prepared && !stage.creating && !stage.opening);
+    assert_ne!(staging_directory(&to, "job", stage).unwrap().path, old.path);
+    assert!(!settle_creation(&conn, "job", &to, &old, true).unwrap());
 }
 
 #[tokio::test]
