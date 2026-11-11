@@ -67,7 +67,8 @@ fn domain_catalogue_preserves_existing_method_contracts() {
             "resources.release",
             "resources.snapshot",
             "runners.review",
-            "runners.startInitialized"
+            "runners.startInitialized",
+            "storage.observe"
         ]
     );
 }

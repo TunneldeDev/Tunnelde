@@ -1,0 +1,115 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Experimental plugin-owned storage observation v1",
+  "description": "Structural schema. Host/SDK additionally enforce UTF-8 byte limits, safe integral numbers, valid Unicode, depth64, valid top-level keys, paired revisions and encoded size limits.",
+  "definitions": {
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/revision"
+        }
+      }
+    },
+    "json": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/json"
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/json"
+          }
+        }
+      ]
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "revision", "values"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "values": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$(?![\\s\\S])",
+            "not": {
+              "enum": ["__proto__", "constructor", "prototype"]
+            }
+          },
+          "additionalProperties": {
+            "$ref": "#/definitions/json"
+          }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "revision", "changed"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "changed": {
+          "const": false
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "revision", "changed", "snapshot"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "changed": {
+          "const": true
+        },
+        "snapshot": {
+          "$ref": "#/definitions/snapshot"
+        }
+      }
+    }
+  ]
+}

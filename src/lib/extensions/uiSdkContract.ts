@@ -40,3 +40,6 @@ export type * from "./contracts/editor/data/identity.js";
 export type * from "./contracts/editor/data/observation.js";
 export type * from "./contracts/editor/data/range.js";
 export type * from "./contracts/editor/data/edits.js";
+export type * from "./contracts/storage/pluginData/json.js";
+export type * from "./contracts/storage/pluginData/snapshot.js";
+export type * from "./contracts/storage/pluginData/observation.js";
