@@ -23,7 +23,13 @@ impl LocalReader {
             // final open. File identity is pinned by the handle, not the path.
             let path = std::fs::canonicalize(path)?;
             job.check()?;
-            let file = crate::platform::regular_file::open_read(&path)?;
+            let file = crate::platform::regular_file::open_read(&path).map_err(|error| {
+                if error.kind() == std::io::ErrorKind::InvalidInput {
+                    AppError::validation("fileRead.invalidPath")
+                } else {
+                    error.into()
+                }
+            })?;
             let size = file.metadata()?.len();
             Ok((Self(Arc::new(Mutex::new(file))), size))
         })
