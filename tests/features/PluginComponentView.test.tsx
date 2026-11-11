@@ -46,6 +46,8 @@ import { ProviderSurface } from "@/components/layout/ProviderSurface";
 import { createWorkbenchSurfaces } from "@/components/layout/WorkbenchSurfaces";
 import { useSettings } from "@/store/settings";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
+import { TerminalSurface } from "@/features/terminal/TerminalSurface";
+import type { TerminalBridge } from "@/lib/extensions/terminal/bridge";
 
 const plugin = {
   name: "Custom",
@@ -372,4 +374,112 @@ it("binds real provider scopes to selection generations while retaining the nati
   expect(context.resources.size).toBe(initial);
   expect(screen.getByLabelText("native editor")).toBe(editor);
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("keeps nested terminal validation and its scope live while a workbench provider acquires its committed lifetime", async () => {
+  const scopes: UiResourceScope[] = [];
+  let context!: FrontendContext;
+  const providerPlugin = {
+    ...plugin,
+    permissions: ["ui.trusted", "sessions.read", "ssh.exec"],
+    views: [
+      { ...plugin.views[0]!, provider: "workbench" },
+      { id: "terminal", title: "Terminal", kind: "component", provider: "terminal" },
+    ],
+  } as PluginInfo;
+  usePlugins.setState({ items: [providerPlugin] });
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    context = ctx;
+    ctx.views.register("main", ({ workbench }: FrontendViewProps) => {
+      const Workspace = workbench!.Workspace;
+      return (
+        <section aria-label="outer provider">
+          <Workspace />
+        </section>
+      );
+    });
+    ctx.views.register("terminal", function View({ resources, terminal }: FrontendViewProps) {
+      useEffect(() => {
+        scopes.push(resources!);
+      }, [resources]);
+      const Screen = terminal!.Screen;
+      return (
+        <section aria-label="inner provider">
+          <Screen />
+        </section>
+      );
+    });
+  });
+  await frontendRuntime.ensure(providerPlugin);
+  const bridge = { api: {} } as TerminalBridge;
+  function Fixture() {
+    const [surfaces] = useState(createWorkbenchSurfaces);
+    const Workspace = surfaces.slots.Workspace;
+    return (
+      <>
+        <ProviderSurface
+          target="workbench"
+          slots={surfaces.slots}
+          validate={surfaces.hasWorkspace}
+          subscribe={surfaces.subscribe}
+        >
+          <Workspace />
+        </ProviderSurface>
+        {createPortal(
+          <TerminalSurface bridge={bridge} visible>
+            <textarea aria-label="nested terminal" defaultValue="retained output" />
+          </TerminalSurface>,
+          surfaces.container("workspace"),
+        )}
+      </>
+    );
+  }
+  useSettings.setState((state) => ({
+    settings: {
+      ...state.settings,
+      uiProviders: { terminal: { pluginId: plugin.id, viewId: "terminal" } },
+    },
+  }));
+  render(<Fixture />);
+  const input = await screen.findByLabelText("nested terminal");
+  const scope = scopes[0]!;
+  await act(async () =>
+    useSettings.setState((state) => ({
+      settings: {
+        ...state.settings,
+        uiProviders: {
+          ...state.settings.uiProviders,
+          workbench: { pluginId: plugin.id, viewId: "main" },
+        },
+      },
+    })),
+  );
+  expect((await screen.findByRole("region", { name: "outer provider" })).contains(input)).toBe(
+    true,
+  );
+  expect(screen.getByRole("region", { name: "inner provider" }).contains(input)).toBe(true);
+  expect(scopes).toHaveLength(1);
+  expect(scope.signal.aborted).toBe(false);
+  expect(screen.queryByRole("alert")).toBeNull();
+  fireEvent.click(screen.getAllByRole("button", { name: "Restore built-in interface" })[0]!);
+  await waitFor(() => expect(screen.queryByRole("region", { name: "outer provider" })).toBeNull());
+  expect(screen.getByLabelText("nested terminal")).toBe(input);
+  expect(scope.signal.aborted).toBe(false);
+  expect(screen.queryByRole("alert")).toBeNull();
+  while (context.resources.size < 128) context.resources.use(() => {});
+  await act(async () =>
+    useSettings.setState((state) => ({
+      settings: {
+        ...state.settings,
+        uiProviders: {
+          ...state.settings.uiProviders,
+          workbench: { pluginId: plugin.id, viewId: "main" },
+        },
+      },
+    })),
+  );
+  expect((await screen.findByRole("alert")).textContent).toContain("extension.scope.limit");
+  expect(screen.getByRole("region", { name: "inner provider" }).contains(input)).toBe(true);
+  expect(scope.signal.aborted).toBe(false);
+  expect(scopes).toHaveLength(1);
 });

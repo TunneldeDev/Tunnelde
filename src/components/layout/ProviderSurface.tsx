@@ -358,6 +358,7 @@ export function ProviderSurface({
               retain={accessLease.retain}
               validation={validation || undefined}
               onFailure={fail}
+              fallback={keepFallback ? null : children}
               viewProps={{
                 pluginId: selected!.plugin.id,
                 viewId: selected!.view.id,
