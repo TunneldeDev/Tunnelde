@@ -2100,7 +2100,7 @@
       "unavailable": "Storage recovery metadata is temporarily unavailable. Check the application logs.",
       "reviewCancel": "Allow this plugin to schedule cancellation of this storage plan at the next startup? Cancellation cannot be reversed to migration.",
       "reviewRetry": "Allow this plugin to retry this storage migration at the next startup?",
-      "reviewBoundaries": "Only the recovery request is saved now. There is no immediate restart or data movement. Existing recovery copies and the previous error are retained. Recorded paths do not prove files still exist or may be deleted.",
+      "reviewBoundaries": "Only the recovery request is saved now. There is no immediate restart or data movement. Existing recovery copies and the previous error are retained.",
       "restartPending": "Storage recovery scheduled",
       "cancelAtRestart": "The next startup will continue cancelling this plan. Current storage locations remain active and recovery copies are retained.",
       "retryAtRestart": "The next startup will retry this migration. Current storage locations remain active.",
