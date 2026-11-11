@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useEffect, useState } from "react";
+import { StrictMode, Suspense, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { PluginInfo } from "@/lib/api/types";
 import type * as FrontendRuntimeModule from "@/lib/extensions/frontendRuntime";
@@ -38,9 +39,13 @@ import { PluginComponentView } from "@/features/plugins/PluginComponentView";
 import { frontendRuntime } from "@/lib/extensions/frontendRuntime";
 import { usePlugins } from "@/store/plugins";
 import { usePluginSecurity } from "@/store/pluginSecurity";
-import type { FrontendContext } from "@/lib/extensions/uiSdk";
+import type { FrontendContext, FrontendViewProps } from "@/lib/extensions/uiSdk";
 import type { UiResourceScope } from "@/lib/extensions/contracts/runtime/resources";
 import { deferred } from "../fixtures/plugins";
+import { ProviderSurface } from "@/components/layout/ProviderSurface";
+import { createWorkbenchSurfaces } from "@/components/layout/WorkbenchSurfaces";
+import { useSettings } from "@/store/settings";
+import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 
 const plugin = {
   name: "Custom",
@@ -62,6 +67,7 @@ const plugin = {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useSettings.setState({ settings: { ...DEFAULT_SETTINGS, uiProviders: {} } });
   usePlugins.setState({ items: [plugin] });
   usePluginSecurity.setState((state) => ({ state: { ...state.state, restricted: false } }));
 });
@@ -111,7 +117,7 @@ it("provides refresh after a component render error", async () => {
   }
 });
 
-it("lets mounted views own separate lifetimes, retain them while hidden and clean late acquisitions on close", async () => {
+it("automatically owns separate view lifetimes, retains hidden views and cleans forgotten late acquisitions on close", async () => {
   const scopes: UiResourceScope[] = [];
   const delayed = deferred<string>();
   const released = vi.fn();
@@ -119,14 +125,14 @@ it("lets mounted views own separate lifetimes, retain them while hidden and clea
   let context!: FrontendContext;
   fixture.activate.mockImplementation((ctx: FrontendContext) => {
     context = ctx;
-    ctx.views.register("main", function View() {
+    ctx.views.register("main", function View({ resources }: FrontendViewProps) {
       useEffect(() => {
-        const scope = ctx.resources.child!();
+        const scope = resources!;
         scopes.push(scope);
         if (scopes.length === 1)
           pending = scope.acquire(() => delayed.promise, released).catch((error) => error);
-        return () => scope.dispose();
-      }, []);
+        // No explicit dispose: the host owns this instance's lifetime.
+      }, [resources]);
       const [count, setCount] = useState(0);
       return <button onClick={() => setCount(count + 1)}>View count {count}</button>;
     });
@@ -162,4 +168,208 @@ it("lets mounted views own separate lifetimes, retain them while hidden and clea
   });
   expect(second.signal.aborted).toBe(true);
   expect(context.resources.size).toBe(0);
+});
+
+it("allocates nothing for an abandoned suspended render and never revives a closed scope on StrictMode replay", async () => {
+  const observed: UiResourceScope[] = [];
+  let context!: FrontendContext;
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    context = ctx;
+    ctx.views.register("main", function View({ resources }: FrontendViewProps) {
+      useEffect(() => {
+        observed.push(resources!);
+      }, [resources]);
+      return <p>Committed instance</p>;
+    });
+  });
+  await frontendRuntime.ensure(plugin);
+  const initial = context.resources.size;
+  const waitForever = new Promise(() => {});
+  function Suspended(): never {
+    throw waitForever;
+  }
+  const ui = render(
+    <Suspense fallback={<p>Deferred</p>}>
+      <PluginComponentView pluginId={plugin.id} viewId="main" />
+      <Suspended />
+    </Suspense>,
+  );
+  expect(screen.getByText("Deferred")).toBeTruthy();
+  expect(context.resources.size).toBe(initial);
+  expect(observed).toHaveLength(0);
+  ui.rerender(
+    <StrictMode>
+      <PluginComponentView pluginId={plugin.id} viewId="main" />
+    </StrictMode>,
+  );
+  await screen.findByText("Committed instance");
+  expect(context.resources.size).toBe(initial + 1);
+  const current = observed.at(-1)!;
+  expect(current.signal.aborted).toBe(false);
+  ui.unmount();
+  expect(observed.every((scope) => scope.signal.aborted)).toBe(true);
+  expect(context.resources.size).toBe(initial);
+});
+
+it("reports quota exhaustion without retrying or resetting an already mounted sibling", async () => {
+  const observed: UiResourceScope[] = [];
+  let context!: FrontendContext;
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    context = ctx;
+    ctx.views.register("main", function View({ resources }: FrontendViewProps) {
+      useEffect(() => {
+        observed.push(resources!);
+      }, [resources]);
+      const [count, setCount] = useState(0);
+      return <button onClick={() => setCount(count + 1)}>Stable count {count}</button>;
+    });
+  });
+  const content = (second: boolean) => (
+    <>
+      <PluginComponentView key="first" pluginId={plugin.id} viewId="main" />
+      {second && <PluginComponentView key="second" pluginId={plugin.id} viewId="main" />}
+    </>
+  );
+  const ui = render(content(false));
+  fireEvent.click(await screen.findByRole("button", { name: "Stable count 0" }));
+  const cleanup = [];
+  while (context.resources.size < 128) cleanup.push(context.resources.use(() => {}));
+  ui.rerender(content(true));
+  expect((await screen.findByRole("alert")).textContent).toContain("extension.scope.limit");
+  expect(screen.getByRole("button", { name: "Stable count 1" })).toBeTruthy();
+  expect(observed).toHaveLength(1);
+  expect(observed[0]!.signal.aborted).toBe(false);
+  expect(fixture.activate).toHaveBeenCalledOnce();
+  cleanup.forEach((release) => release());
+});
+
+it("does not attach a retired admission failure to the replacement module", async () => {
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    ctx.views.register("main", () => <p>Replacement mounted</p>);
+  });
+  const original = frontendRuntime.viewScope;
+  const admission = vi.spyOn(frontendRuntime, "viewScope").mockImplementation(original);
+  // Keep exactly the first admission retired; later generations use the real admission.
+  admission.mockImplementationOnce(() => {
+    frontendRuntime.stop(plugin.id);
+    throw new Error("extension.scope.closed");
+  });
+  try {
+    render(<PluginComponentView pluginId={plugin.id} viewId="main" />);
+    await screen.findByText("Replacement mounted");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fixture.activate).toHaveBeenCalledTimes(2);
+  } finally {
+    admission.mockRestore();
+  }
+});
+
+it("retires a mounted view and its forgotten cleanup on render failure", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const cleaned = vi.fn();
+  let scope!: UiResourceScope;
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    ctx.views.register("main", function View({ resources }: FrontendViewProps) {
+      scope = resources!;
+      useEffect(() => {
+        resources!.use(cleaned);
+      }, [resources]);
+      const [broken, setBroken] = useState(false);
+      if (broken) throw new Error("mounted view failed");
+      return <button onClick={() => setBroken(true)}>Break view</button>;
+    });
+  });
+  try {
+    render(<PluginComponentView pluginId={plugin.id} viewId="main" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Break view" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("mounted view failed");
+    expect(scope.signal.aborted).toBe(true);
+    expect(cleaned).toHaveBeenCalledOnce();
+  } finally {
+    consoleError.mockRestore();
+  }
+});
+
+it("binds real provider scopes to selection generations while retaining the native editor through StrictMode and batched restore", async () => {
+  const scopes: UiResourceScope[] = [];
+  let context!: FrontendContext;
+  const providerPlugin = {
+    ...plugin,
+    views: [{ ...plugin.views[0]!, provider: "workbench" }],
+  } as PluginInfo;
+  usePlugins.setState({ items: [providerPlugin] });
+  fixture.activate.mockImplementation((ctx: FrontendContext) => {
+    context = ctx;
+    ctx.views.register("main", function View({ resources, workbench, visible }: FrontendViewProps) {
+      useEffect(() => {
+        scopes.push(resources!);
+      }, [resources]);
+      const Workspace = workbench!.Workspace;
+      return (
+        <section aria-label="scoped layout" hidden={!visible}>
+          <Workspace />
+        </section>
+      );
+    });
+  });
+  await frontendRuntime.ensure(providerPlugin);
+  const initial = context.resources.size;
+  function Fixture({ visible = true }: { visible?: boolean }) {
+    const [surfaces] = useState(createWorkbenchSurfaces);
+    const Workspace = surfaces.slots.Workspace;
+    return (
+      <>
+        <ProviderSurface
+          target="workbench"
+          slots={surfaces.slots}
+          visible={visible}
+          validate={surfaces.hasWorkspace}
+          subscribe={surfaces.subscribe}
+        >
+          <Workspace />
+        </ProviderSurface>
+        {createPortal(
+          <textarea aria-label="native editor" defaultValue="draft" />,
+          surfaces.container("workspace"),
+        )}
+      </>
+    );
+  }
+  const selected = { workbench: { pluginId: plugin.id, viewId: "main" } };
+  const ui = render(
+    <StrictMode>
+      <Fixture />
+    </StrictMode>,
+  );
+  const editor = screen.getByLabelText("native editor");
+  fireEvent.change(editor, { target: { value: "unsaved" } });
+  await act(async () =>
+    useSettings.setState((state) => ({ settings: { ...state.settings, uiProviders: selected } })),
+  );
+  expect((await screen.findByRole("region", { name: "scoped layout" })).contains(editor)).toBe(
+    true,
+  );
+  const first = scopes.at(-1)!;
+  ui.rerender(
+    <StrictMode>
+      <Fixture visible={false} />
+    </StrictMode>,
+  );
+  expect(first.signal.aborted).toBe(false);
+  expect(scopes.every((scope) => scope === first || scope.signal.aborted)).toBe(true);
+  await act(async () => {
+    useSettings.setState((state) => ({ settings: { ...state.settings, uiProviders: {} } }));
+    expect(first.signal.aborted).toBe(true);
+    useSettings.setState((state) => ({ settings: { ...state.settings, uiProviders: selected } }));
+  });
+  const replacement = scopes.at(-1)!;
+  expect(replacement).not.toBe(first);
+  expect(replacement.signal.aborted).toBe(false);
+  expect(screen.getByLabelText("native editor")).toBe(editor);
+  expect(editor).toHaveProperty("value", "unsaved");
+  fireEvent.click(screen.getByRole("button", { name: "Restore built-in interface" }));
+  expect(replacement.signal.aborted).toBe(true);
+  expect(context.resources.size).toBe(initial);
+  expect(screen.getByLabelText("native editor")).toBe(editor);
+  expect(screen.queryByRole("alert")).toBeNull();
 });

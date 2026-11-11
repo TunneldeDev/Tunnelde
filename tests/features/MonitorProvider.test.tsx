@@ -1,3 +1,4 @@
+import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { StrictMode, useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -46,6 +47,7 @@ function Provider({ monitor }: FrontendViewProps) {
   );
 }
 beforeEach(() => {
+  mockCommittedViewScopes();
   showCharts = true;
   remoteStats.mockReset().mockResolvedValue({
     cpuPercent: 42,

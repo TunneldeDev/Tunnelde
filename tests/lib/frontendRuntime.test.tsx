@@ -39,6 +39,37 @@ function fixture(activate: FrontendModule["activate"] = () => {}) {
   return { transport, runtime: createFrontendRuntime(transport) };
 }
 
+it("admits mounted scopes only for the exact activated module, renderer and package fingerprint", async () => {
+  let context!: FrontendContext;
+  const View = () => null;
+  const { runtime, transport } = fixture((ctx) => {
+    context = ctx;
+    ctx.views.register("main", View);
+  });
+  expect(() => runtime.viewScope(plugin.id, "main", undefined, View)).toThrow("closed");
+  await runtime.ensure(plugin);
+  const token = runtime.token(plugin.id)!;
+  const before = context.resources.size;
+  for (const [viewId, candidateToken, component, fingerprint] of [
+    ["missing", token, View, "approved"],
+    ["main", "stale", View, "approved"],
+    ["main", token, () => null, "approved"],
+    ["main", token, View, "changed"],
+  ] as const)
+    expect(() => runtime.viewScope(plugin.id, viewId, candidateToken, component, fingerprint)).toThrow("closed");
+  expect(context.resources.size).toBe(before);
+  const first = runtime.viewScope(plugin.id, "main", token, View, "approved");
+  const second = runtime.viewScope(plugin.id, "main", token, View, "approved");
+  expect(first).not.toBe(second);
+  first.dispose();
+  expect(second.signal.aborted).toBe(false);
+  vi.mocked(transport.current).mockReturnValue(false);
+  expect(() => runtime.viewScope(plugin.id, "main", token, View, "approved")).toThrow("closed");
+  runtime.stop(plugin.id);
+  expect(second.signal.aborted).toBe(true);
+  await vi.waitFor(() => expect(context.resources.size).toBe(0));
+});
+
 afterEach(() => vi.useRealTimers());
 
 it("replaces an identical-package module on runtime change and rejects stale ensure without disposing its replacement", async () => {
