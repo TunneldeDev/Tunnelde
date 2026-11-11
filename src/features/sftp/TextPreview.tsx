@@ -2,34 +2,34 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/form/Button";
 import { PluginMarkdown } from "@/features/plugins/PluginMarkdown";
-import { api } from "@/lib/api/ipc";
+import { createFileReadResource, readFileText } from "@/lib/files/resources/read";
 import { translateError } from "@/lib/api/errors";
 import type { PreviewFile } from "@/store/filePreview";
 
 export function TextPreview({ file }: { file: PreviewFile }) {
   const { t } = useTranslation();
-  const [content, setContent] = useState<string | null>(null);
-  const [error, setError] = useState("");
+  const [result, setResult] = useState<{
+    file: PreviewFile;
+    content?: string;
+    cause?: unknown;
+  } | null>(null);
   useEffect(() => {
-    let disposed = false;
-    const request =
-      file.source.kind === "local"
-        ? api.searchPreviewLocal(file.path)
-        : api.sftpReadText(file.source.sessionId, file.path).then((result) => result.content);
-    void request
-      .then((text) => {
-        if (!disposed) setContent(text);
-      })
-      .catch((cause) => {
-        if (!disposed) setError(translateError(cause));
-      });
-    return () => {
-      disposed = true;
-    };
-  }, [file.path, file.source]);
+    const resource = createFileReadResource(file.path, file.source);
+    void readFileText(resource, "preview").then(
+      (content) => {
+        if (!resource.scope.signal.aborted) setResult({ file, content });
+      },
+      (cause) => {
+        if (!resource.scope.signal.aborted) setResult({ file, cause });
+      },
+    );
+    return resource.scope.dispose;
+  }, [file]);
+  const content = result?.file === file ? result.content : undefined;
+  const error = result?.file === file && "cause" in result ? translateError(result.cause) : "";
   return error ? (
     <p role="alert">{error}</p>
-  ) : content === null ? (
+  ) : content === undefined ? (
     <p role="status">{t("common.loading")}</p>
   ) : (
     <TextContent file={file} content={content} markdown={/\.(md|markdown)$/i.test(file.path)} />

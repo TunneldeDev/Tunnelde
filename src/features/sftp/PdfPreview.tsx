@@ -48,12 +48,23 @@ class LocalBinaryDataFactory {
 }
 
 /** Render one bounded canvas; no embedded scripts, form execution or external document links. */
-export default function PdfPreview({ url, size }: { url: string; size: number }) {
+export default function PdfPreview({
+  url,
+  size,
+  onError,
+}: {
+  url: string;
+  size: number;
+  onError?: (cause: unknown) => void;
+}) {
   const { t } = useTranslation();
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
   const [pageNumber, setPageNumber] = useState(1);
   const [zoom, setZoom] = useState(1);
   const [failure, setFailure] = useState<{ cause: unknown } | null>(null);
+  useEffect(() => {
+    if (failure) onError?.(failure.cause);
+  }, [failure, onError]);
   const [rendering, setRendering] = useState(true);
   const canvas = useRef<HTMLCanvasElement>(null);
   const container = useRef<HTMLDivElement>(null);

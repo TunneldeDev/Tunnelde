@@ -92,6 +92,46 @@ describe("file preview", () => {
     expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("new content");
   });
 
+  it("captures the selected session and reloads a fresh activation of the same text file", async () => {
+    const source = { kind: "remote" as const, sessionId: "selected-session" };
+    vi.mocked(api.sftpReadText).mockResolvedValue({ content: "first", size: 5 });
+    useFilePreview.getState().show("/same.txt", 0, 0, source);
+    source.sessionId = "unselected-session";
+    render(<FilePreview />);
+    expect(((await screen.findByRole("textbox")) as HTMLTextAreaElement).value).toBe("first");
+    expect(api.sftpReadText).toHaveBeenCalledWith("selected-session", "/same.txt");
+    let finish!: (value: { content: string; size: number }) => void;
+    vi.mocked(api.sftpReadText).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    act(() =>
+      useFilePreview
+        .getState()
+        .show("/same.txt", 0, 0, { kind: "remote", sessionId: "selected-session" }),
+    );
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.getByRole("status")).toBeTruthy();
+    await act(async () => finish({ content: "fresh", size: 5 }));
+    expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("fresh");
+  });
+
+  it.each([undefined, new Error("First read failed")])(
+    "clears a failed builtin read when the same file is opened again (%j)",
+    async (cause) => {
+      vi.mocked(api.searchPreviewLocal)
+        .mockRejectedValueOnce(cause)
+        .mockResolvedValueOnce("recovered");
+      useFilePreview.getState().show("/same.txt");
+      render(<FilePreview />);
+      await screen.findByRole("alert");
+      act(() => useFilePreview.getState().show("/same.txt"));
+      expect(((await screen.findByRole("textbox")) as HTMLTextAreaElement).value).toBe("recovered");
+      expect(screen.queryByRole("alert")).toBeNull();
+    },
+  );
+
   it("offers preview extensions for binary files without attempting a text read", () => {
     useFilePreview.getState().show("/photo.png");
     render(<FilePreview />);
@@ -191,6 +231,9 @@ describe("file preview", () => {
     expect(api.filePreviewClose).not.toHaveBeenCalled();
     fireEvent.error(player);
     expect(screen.getByRole("alert").textContent).toBe(i18n.t("preview.mediaError"));
+    expect(api.filePreviewClose).toHaveBeenCalledExactlyOnceWith(
+      vi.mocked(api.filePreviewOpen).mock.calls[0]![0],
+    );
     await act(async () => {
       await i18n.changeLanguage("en-US");
     });
