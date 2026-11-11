@@ -1487,6 +1487,8 @@
       "forwardsRead": "查看已保存的端口转发规则",
       "forwardsWrite": "管理、启动本地或远程端口转发",
       "editorRead": "读取已打开编辑器中的文档",
+      "fileBrowserRead": "读取已打开文件浏览器的路径、可见条目及选择状态（不含文件内容）",
+      "fileBrowserWrite": "通过现有文件浏览器导航、选择、刷新及打开条目",
       "editorWrite": "修改编辑器缓冲区（不会自动保存）",
       "trustedUi": "在应用界面中加载受信任代码。",
       "backgroundTasksRead": "读取各功能的可见后台任务",
