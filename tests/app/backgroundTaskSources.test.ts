@@ -4,12 +4,42 @@ import { api } from "@/lib/api/ipc";
 import { registerBackgroundTaskSources } from "@/app/backgroundTaskSources";
 import { useEditorCleanup } from "@/store/editorCleanup";
 import { useBackgroundTasks } from "@/lib/tasks/background";
+import { useTransfers } from "@/store/transfers";
 
 let dispose: (() => void) | undefined;
 afterEach(() => {
   dispose?.();
   dispose = undefined;
   useEditorCleanup.setState({ items: [] });
+  useTransfers.setState({ items: [] });
+});
+
+it("retained directory receipts are attention tasks without fabricated byte progress", async () => {
+  await i18n.changeLanguage("en-US");
+  useTransfers.setState({
+    items: [
+      {
+        id: "old-dir",
+        name: "file",
+        direction: "transfer",
+        status: "cleanupPending",
+        retainedCreation: true,
+        retainedSettlement: "unknown",
+        transferred: 0,
+        total: 0,
+        updatedAt: 1,
+        error: "sftp.retainedCreationUnknown",
+      },
+    ],
+  });
+  dispose = registerBackgroundTaskSources();
+  const task = useBackgroundTasks.getState().items.find((task) => task.id === "old-dir");
+  expect(task).toMatchObject({
+    title: "Temporary directory · file",
+    status: "attention",
+    execution: "native",
+  });
+  expect(task?.progress).toBeUndefined();
 });
 
 it("distinguishes local cleanup paths from remote hosts and retries the native task", async () => {

@@ -64,13 +64,17 @@ export function registerBackgroundTaskSources(): () => void {
             (item) =>
               ({
                 id: item.id,
-                title: item.name,
+                title: item.retainedCreation
+                  ? i18n.t("sftp.retainedCreationTask", { name: item.name })
+                  : item.name,
                 status: ["failed", "cleanupPending"].includes(item.status)
                   ? "attention"
                   : item.status,
                 updatedAt: item.updatedAt,
                 execution: "native",
-                progress: { completed: item.transferred, total: item.total, unit: "bytes" },
+                progress: item.retainedCreation
+                  ? undefined
+                  : { completed: item.transferred, total: item.total, unit: "bytes" },
                 actions: ["done", "cancelled", "failed"].includes(item.status)
                   ? [
                       {

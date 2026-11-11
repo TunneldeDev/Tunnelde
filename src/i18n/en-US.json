@@ -798,7 +798,13 @@
     "resetTasksLayout": "Reset transfer window layout",
     "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)",
     "resizeColumnHint": "Drag to resize; double-click to fit contents. Use arrow keys when focused.",
-    "columnHeaderHint": "Click to sort; drag to reorder columns."
+    "columnHeaderHint": "Click to sort; drag to reorder columns.",
+    "retainedCreationTask": "Temporary directory · {{name}}",
+    "retainedCreationPath": "Temporary directory",
+    "retainedCreationUnknown": "The old directory creation has no confirmed result. This record keeps its exact path while the original transfer can continue with a fresh temporary directory. It cannot be cleaned until the old request is confirmed.",
+    "retainedCreationSettled": "The old request has finished. Retry cleanup to remove its empty temporary directory or clear a rejected request. Other files are preserved.",
+    "retainedCreationInvalid": "The retained operation record or its host identity does not match. Keep the record and review the application log.",
+    "retainedCreationLimit": "Too many unconfirmed temporary directories are retained. Finish or review existing recovery tasks before trying another transfer generation."
   },
   "processes": {
     "title": "Processes",
