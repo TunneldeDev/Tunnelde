@@ -91,6 +91,8 @@ describe("public UI contract boundaries", () => {
       "PreferenceGeneral",
       "PreferenceMonitoring",
       "PreferenceNetwork",
+      "PreferenceObservation",
+      "PreferenceObservationRequest",
       "PreferenceSchema",
       "PreferenceSchemaNode",
       "PreferenceShortcuts",
