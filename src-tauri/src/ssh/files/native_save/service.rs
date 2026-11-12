@@ -75,11 +75,11 @@ impl<S: Secrets> Service<S> {
             record
                 .binding
                 .control(self.secrets.load(&record.secret_key())?)?;
-            // Host integration must check the original owner/generation and cancellation here.
-            // No await exists between this final admission and the durable dispatch gate.
-            authorize(&record.binding)?;
             journal.dispatch(&record)?
         };
+        // Check owner/generation and arbitrate cancellation AFTER the disk checkpoint:
+        // revocation during fsync must prevent network mutation as well.
+        authorize(&dispatched.binding)?;
         // Persisted unknown remains even if this future, delivery or process disappears.
         let receipt = client.submit(prepared, permit).await?;
         Ok(self.journal()?.observe(&dispatched, receipt)?)
@@ -131,8 +131,8 @@ impl<S: Secrets> Service<S> {
         let control = record
             .binding
             .control(self.secrets.load(&record.secret_key())?)?;
-        authorize(&record.binding)?;
         let releasing = self.journal()?.release(&record, discard_backup)?;
+        authorize(&releasing.binding)?;
         let receipt = releasing
             .observation
             .as_ref()
