@@ -6,6 +6,7 @@ authors = ["quyansiyuanwang"]
 license = "GPL-3.0-only"
 repository = "https://github.com/TunneldeDev/Tunnelde"
 edition = "2021"
+default-run = "tunnelde"
 rust-version = "1.82"
 
 [lib]
@@ -66,7 +67,7 @@ panic = "abort"
 [target.'cfg(windows)'.dependencies]
 webview2-com = "0.39"
 windows-core = "0.62"
-windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Security_Authorization", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_WindowsProgramming"] }
+windows-sys = { version = "0.61.2", features = ["Win32_Storage_FileSystem", "Win32_Security_Authorization", "Win32_System_Threading", "Win32_System_Memory", "Win32_System_WindowsProgramming", "Win32_System_Console"] }
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
 rustix = { version = "1.1.6", features = ["fs"] }

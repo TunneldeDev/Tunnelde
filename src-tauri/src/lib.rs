@@ -1,3 +1,4 @@
+pub mod automation;
 mod commands;
 mod db;
 mod diagnostics;
@@ -22,6 +23,7 @@ pub fn run() {
     use platform::{menu, tray, window};
 
     tauri::Builder::default()
+        .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
@@ -108,6 +110,7 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle().clone();
             state::init(&handle)?;
+            automation::transport::start(&handle);
             window::restore_main_geometry(&handle);
             let (theme, title_bar_style, locale) = {
                 use tauri::Manager;
@@ -342,6 +345,7 @@ pub fn run() {
                 window::show_main(app);
             }
             if matches!(event, tauri::RunEvent::Exit) {
+                automation::transport::stop(app);
                 use tauri::Manager;
                 if let Some(state) = app.try_state::<state::AppState>() {
                     state.forwards.stop_all();
