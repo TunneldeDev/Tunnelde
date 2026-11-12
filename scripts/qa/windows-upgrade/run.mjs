@@ -8,6 +8,7 @@ import { pathToFileURL } from "node:url";
 import { assertUpgrade, releaseAsset, repository } from "./assets.mjs";
 import { Desktop } from "./desktop.mjs";
 import { seed, verify } from "./data.mjs";
+import { verifyCli } from "./cli.mjs";
 
 // Real installers alter per-user registration. Never run on a user's workstation
 // or a self-hosted runner, even when an alternate installation path is supplied.
@@ -97,6 +98,12 @@ try {
   const after = await install(tags[1]);
   await desktop.start(after, tags[1].slice(1));
   await verify(desktop, expected);
+  if (process.env.UPGRADE_CHECK_CLI === "true") {
+    await verifyCli(after, tags[1].slice(1), root, expected.host.id);
+    report.checks.push(
+      "Actual installed desktop CLI executed offline discovery/version and all seven live methods, including conditional preferences update and restore",
+    );
+  }
   await desktop.page.screenshot({ path: join(evidence, "after.png"), animations: "disabled" });
   await desktop.quit();
   assert.deepEqual(report.pageErrors, []);

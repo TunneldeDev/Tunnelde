@@ -23,6 +23,11 @@ data-folder policies, cleared after each process exits. Existing values are
 never overwritten; user-scoped overrides are ignored by recent WebView2 when
 elevated, as documented in Microsoft's WebView2 security guidance.
 
+For a target release with local CLI support, enable `check_cli`. This additionally
+executes the installed desktop binary's offline version/discovery and all seven
+live methods, including a conditional settings update and restoration. Leave it
+disabled for historical releases that predate the CLI.
+
 Evidence is uploaded for 14 days, including results, installer output, application
 logs and screenshots. It contains synthetic QA data only. The harness refuses
 ordinary workstations and self-hosted runners because even a custom NSIS install
