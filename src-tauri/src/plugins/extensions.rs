@@ -37,6 +37,7 @@ mod tests {
                 "hostList",
                 "workbench",
                 "fileBrowser",
+                "filePreview",
                 "terminal",
                 "history",
                 "forwarding",
@@ -52,6 +53,17 @@ mod tests {
             serde_json::json!(["sessions.read", "monitor.read"])
         );
         assert_eq!(providers["monitor"]["ownership"], "host-view");
+        assert_eq!(
+            providers["filePreviewPermissions"],
+            serde_json::json!(["filePreview.read"])
+        );
+        assert_eq!(
+            providers["filePreviewEndpointPermissions"],
+            serde_json::json!(["fs.read", "sftp.read"])
+        );
+        assert_eq!(providers["filePreview"]["optionalSlot"], "Body");
+        assert_eq!(providers["filePreview"]["presentation"], "quickLook");
+        assert_eq!(providers["filePreview"]["readiness"], "renderer-decoded");
         assert_eq!(
             providers["monitor"]["presentations"],
             serde_json::json!(["page", "panel"])

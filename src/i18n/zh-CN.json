@@ -1415,6 +1415,12 @@
     "fileContent": {
       "invalid": "文件内容请求无效。请选择绝对文件路径及支持的读取区间。",
       "unavailable": "此文件内容句柄已关闭、过期或不属于当前插件运行实例，请重新预留并打开。"
+    },
+    "filePreview": {
+      "invalid": "预览请求参数无效。",
+      "changed": "预览已变更，请刷新状态后重试。",
+      "unavailable": "此预览渲染器不可用。",
+      "permissionDenied": "此插件未获准操作预览。"
     }
   },
   "themes": {
@@ -1510,7 +1516,9 @@
       "storageLocationsRead": "读取全局存储位置及迁移计划（不含文件内容）",
       "storageLocationsWrite": "经确认后计划或取消全局存储迁移",
       "storageRecoveryRead": "读取存储恢复方向、错误状态及已记录的副本位置（不含内容）",
-      "storageRecoveryWrite": "经确认后安排下次启动重试或取消存储迁移"
+      "storageRecoveryWrite": "经确认后安排下次启动重试或取消存储迁移",
+      "filePreviewRead": "读取当前文件预览元数据和渲染器选项，不含文件内容",
+      "filePreviewWrite": "关闭、重试或切换文件预览；打开目标还需对应文件读取权限"
     },
     "permissionCount": "{{count}} 项权限",
     "permissionGroup": {
@@ -2264,7 +2272,8 @@
     "backgroundTasks": "后台任务",
     "processes": "进程管理",
     "quickAccess": "快捷搜索",
-    "preferences": "设置表单"
+    "preferences": "设置表单",
+    "filePreview": "文件预览"
   },
   "hostFields": {
     "title": "插件主机字段",

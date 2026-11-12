@@ -15,17 +15,23 @@ const PdfPreview = lazy(() => import("./PdfPreview"));
 export function ProviderPreview({
   file,
   provider,
+  onReady,
+  onReadError,
+  onDecodeError,
+  onRetry,
 }: {
   file: PreviewFile;
   provider: PluginFilePreview;
+  onReady: () => void;
+  onReadError: () => void;
+  onDecodeError: () => void;
+  onRetry: () => void;
 }) {
   const { t } = useTranslation();
-  const [attempt, setAttempt] = useState(0);
   const [view, setView] = useState<{
     file: PreviewFile;
     providerId: string;
     renderer: PluginFilePreview["renderer"];
-    attempt: number;
     resource: ReturnType<typeof createProviderPreviewResource>;
     info?: FilePreviewInfo;
     content?: string | null;
@@ -40,48 +46,46 @@ export function ProviderPreview({
       file,
       providerId: provider.id,
       renderer: provider.renderer,
-      attempt,
       resource,
     };
     let active = true;
     void resource.ready.then(
       (result) => {
-        if (active) setView({ ...request, ...result });
+        if (active) {
+          setView({ ...request, ...result });
+          if (provider.renderer === "text" || provider.renderer === "markdown") onReady();
+        }
       },
       (cause) => {
-        if (active) setView({ ...request, failure: { cause } });
+        if (active) {
+          setView({ ...request, failure: { cause } });
+          onReadError();
+        }
       },
     );
     return () => {
       active = false;
       resource.dispose();
     };
-  }, [file, provider.id, provider.renderer, attempt]);
+  }, [file, provider.id, provider.renderer, onReady, onReadError]);
   const current =
-    view?.file === file &&
-    view.providerId === provider.id &&
-    view.renderer === provider.renderer &&
-    view.attempt === attempt
+    view?.file === file && view.providerId === provider.id && view.renderer === provider.renderer
       ? view
       : null;
   const { info, content, failure } = current ?? {};
   const fail = useCallback(
     (cause: unknown) => {
       current?.resource.dispose();
+      onDecodeError();
       setView((value) => (value && value === current ? { ...value, failure: { cause } } : value));
     },
-    [current],
+    [current, onDecodeError],
   );
   if (failure)
     return (
       <div className="file-preview__empty">
         <p role="alert">{translateError(failure.cause)}</p>
-        <Button
-          variant="secondary"
-          onClick={() => {
-            setAttempt((value) => value + 1);
-          }}
-        >
+        <Button variant="secondary" onClick={onRetry}>
           {t("common.retry")}
         </Button>
       </div>
@@ -95,7 +99,7 @@ export function ProviderPreview({
   if (info.renderer === "pdf")
     return (
       <Suspense fallback={<p role="status">{t("common.loading")}</p>}>
-        <PdfPreview url={url} size={info.size} onError={fail} />
+        <PdfPreview url={url} size={info.size} onError={fail} onReady={onReady} />
       </Suspense>
     );
   return (
@@ -104,6 +108,7 @@ export function ProviderPreview({
       url={url}
       name={fileName(file.path)}
       onError={() => fail({ code: "validation", message: "preview.mediaError" })}
+      onReady={onReady}
     />
   );
 }

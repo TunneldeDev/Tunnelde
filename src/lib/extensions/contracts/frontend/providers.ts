@@ -4,6 +4,7 @@ export type FrontendProviderTarget =
   | "hostList"
   | "workbench"
   | "fileBrowser"
+  | "filePreview"
   | "terminal"
   | "history"
   | "forwarding"

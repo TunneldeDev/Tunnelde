@@ -73,6 +73,7 @@ export function UiProviderSettings() {
           "hostList",
           "workbench",
           "fileBrowser",
+          "filePreview",
           "terminal",
           "history",
           "forwarding",

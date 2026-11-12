@@ -423,6 +423,7 @@ impl PluginManifest {
                         "hostList"
                             | "workbench"
                             | "fileBrowser"
+                            | "filePreview"
                             | "terminal"
                             | "history"
                             | "forwarding"
@@ -441,6 +442,12 @@ impl PluginManifest {
                             && ["fs.read", "sftp.read", "workspace.write"]
                                 .iter()
                                 .any(|p| !self.permissions.iter().any(|v| v == p)))
+                        || (target == "filePreview"
+                            && (!self.permissions.iter().any(|p| p == "filePreview.read")
+                                || !self
+                                    .permissions
+                                    .iter()
+                                    .any(|p| p == "fs.read" || p == "sftp.read")))
                         || (target == "terminal"
                             && ["sessions.read", "ssh.exec"]
                                 .iter()
@@ -696,6 +703,19 @@ mod tests {
         value["permissions"] =
             serde_json::json!(["ui.trusted", "fs.read", "sftp.read", "workspace.write"]);
         assert!(save(&value).is_ok());
+        value["views"][0]["provider"] = "filePreview".into();
+        for permissions in [
+            serde_json::json!(["ui.trusted", "filePreview.read"]),
+            serde_json::json!(["ui.trusted", "fs.read"]),
+            serde_json::json!(["filePreview.read", "fs.read"]),
+        ] {
+            value["permissions"] = permissions;
+            assert!(save(&value).is_err());
+        }
+        for endpoint in ["fs.read", "sftp.read"] {
+            value["permissions"] = serde_json::json!(["ui.trusted", "filePreview.read", endpoint]);
+            assert!(save(&value).is_ok());
+        }
         value["views"][0]["provider"] = "terminal".into();
         for omitted in ["ui.trusted", "sessions.read", "ssh.exec"] {
             value["permissions"] = serde_json::json!(["ui.trusted", "sessions.read", "ssh.exec"]
