@@ -7,6 +7,7 @@ use crate::ssh::files::native_save::{
 use russh_sftp::protocol::{File, FileAttributes, Name};
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
 mod desktop;
+mod mutation;
 
 struct Fixture(PathBuf);
 impl Fixture {

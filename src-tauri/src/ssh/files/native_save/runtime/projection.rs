@@ -54,3 +54,38 @@ pub(super) fn unavailable(error: &str) -> PendingCleanup {
         running: false,
     }
 }
+
+pub(super) fn legacy(
+    claim: &super::super::journal::admission::Claim,
+    running: bool,
+) -> PendingCleanup {
+    use super::super::journal::admission::Phase;
+    let first = claim.scopes.first();
+    PendingCleanup {
+        id: format!("native-legacy-{}", claim.id),
+        path: first
+            .and_then(|scope| scope.paths.first())
+            .cloned()
+            .unwrap_or_default(),
+        directory: String::new(),
+        address: first
+            .map(|scope| scope.destination.address.clone())
+            .unwrap_or_default(),
+        source: "native",
+        action: Some(if claim.phase == Phase::Prepared {
+            "discard"
+        } else {
+            "inspect"
+        }),
+        updated_at: 0,
+        error: Some(
+            if claim.phase == Phase::Prepared {
+                "editor.nativeUnsent"
+            } else {
+                "editor.remoteOutcomeUnknown"
+            }
+            .into(),
+        ),
+        running,
+    }
+}

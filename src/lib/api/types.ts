@@ -645,7 +645,7 @@ export interface HistoryEntry {
 }
 export interface EditorCleanup {
   source?: "local" | "remote" | "native" | "diagnostic";
-  action?: "query" | "discard" | "finish" | "reload";
+  action?: "query" | "discard" | "finish" | "reload" | "inspect";
   id: string;
   path: string;
   directory: string;

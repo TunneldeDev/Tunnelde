@@ -43,6 +43,13 @@ fn native_desktop_write_fence_fixture() {
     } else {
         Journal::create(&directory).unwrap()
     };
+    if input
+        .get("admissionV2")
+        .and_then(serde_json::Value::as_bool)
+        == Some(true)
+    {
+        journal.enable_admission().unwrap();
+    }
     let record = journal.reserve(value).unwrap();
     std::fs::write(base.join("fence-operation"), &record.binding.operation_id).unwrap();
 }

@@ -7,6 +7,8 @@ use super::{
     transport::{self, Exchange},
 };
 use std::sync::{Arc, Mutex};
+mod mutation;
+pub(super) use mutation::Worker as LegacyWorker;
 mod storage;
 use storage::Storage;
 use tokio::sync::Semaphore;
@@ -30,6 +32,7 @@ pub(super) struct Service<S> {
     storage: Arc<Storage<S>>,
     requests: Semaphore,
     io: Arc<Semaphore>,
+    legacy_workers: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 impl<S: Secrets + 'static> Service<S> {
     pub fn new(journal: Journal, secrets: S) -> Self {
@@ -37,6 +40,7 @@ impl<S: Secrets + 'static> Service<S> {
             storage: Arc::new(Storage::new(journal, secrets)),
             requests: Semaphore::new(4),
             io: Arc::new(Semaphore::new(4)),
+            legacy_workers: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
     }
     async fn blocking<T: Send + 'static>(
