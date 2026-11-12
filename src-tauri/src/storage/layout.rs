@@ -129,17 +129,15 @@ pub fn metadata(path: &Path) -> AppResult<Option<std::fs::Metadata>> {
 }
 
 pub fn linked(metadata: &std::fs::Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;
-        if metadata.file_attributes() & 0x400 != 0 {
-            return true;
-        }
+        metadata.file_type().is_symlink() || metadata.file_attributes() & 0x400 != 0
     }
-    false
+    #[cfg(not(windows))]
+    {
+        metadata.file_type().is_symlink()
+    }
 }
 
 pub fn empty_target(path: &Path) -> AppResult<()> {
