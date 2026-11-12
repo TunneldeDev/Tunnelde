@@ -68,8 +68,25 @@ log link. Query selects a live connection matching the original authenticated
 destination and checks only the original operation. It does not install, initialize,
 submit, cancel or discard a remote backup. Legacy local, legacy remote and native
 stores are read independently so an inaccessible store cannot hide the others.
-Reservations across all other write entry points must still be integrated before
-new native saves are enabled.
+Existing native recovery reservations are checked before legacy editor saves,
+transfers, create, rename, delete and retained-artifact cleanup. The shared path
+comparison includes ancestors/descendants, Windows drive spellings and literal
+POSIX backslashes. Original helper executables and private state directories
+are protected while recovery depends on them. Potential host aliases are matched conservatively by captured
+address, saved host ID or authenticated key; exact identity is still required for
+recovery. Canonical SFTP resolution checks existing paths or the closest existing
+parent, with bounded probes and a deadline. Corrupt/inaccessible recovery storage
+rejects mutations while browsing and diagnostics remain available. An absent
+first-run store is not created by these checks.
+
+This is protection for existing records, not bilateral mutation admission. New
+native reservation entry points are compiled only for tests. Before enabling new
+saves, a durable broker must atomically exclude active and unresolved legacy
+writes in both directions, with the actual worker retaining ownership through
+cancellation and process loss. A read/check before a network await is insufficient
+when new reservations can be admitted concurrently. The current checks do not
+fence arbitrary external filesystem writers or prove symlink identity survives a
+later mutation. They do not settle unknown legacy SFTP requests.
 
 After possible dispatch, only original-operation status is used for recovery.
 Missing remote state remains unresolved. Retained records reserve their target
