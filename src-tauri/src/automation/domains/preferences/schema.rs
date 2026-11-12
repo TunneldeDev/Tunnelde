@@ -16,7 +16,7 @@ pub(in super::super) fn methods() -> Vec<Value> {
     let names: Vec<_> = groups.as_object().unwrap().keys().cloned().collect();
     let values =
         json!({"type":"object","required":names,"properties":groups,"additionalProperties":false});
-    let revision = json!({"type":"string","minLength":1,"maxLength":128,"pattern":"^[^\\u0000-\\u001f\\u007f-\\u009f]+$"});
+    let revision = json!({"type":"string","minLength":1,"maxLength":128,"x-maxBytes":128,"not":{"pattern":"[\\u0000-\\u001f\\u007f-\\u009f]"}});
     let snapshot = json!({
         "type":"object", "required":["version","revision","values","defaults"], "additionalProperties":false,
         "properties":{"version":{"const":1},"revision":revision,"values":values,"defaults":values}

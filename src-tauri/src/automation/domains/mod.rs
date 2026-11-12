@@ -42,8 +42,8 @@ fn info(version: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[test]
-    fn emit_actual_local_api_contracts() {
+    #[tokio::test]
+    async fn emit_actual_local_api_contracts() {
         let db = crate::db::Database::in_memory().unwrap();
         let input: crate::models::HostInput = serde_json::from_value(
             json!({"name":"Consumer fixture", "host":"example.test", "username":"user"}),
@@ -66,6 +66,12 @@ mod tests {
             .unwrap()
             .extend(crate::services::settings::preferences::local_api_samples());
         assert_eq!(samples["samples"].as_array().unwrap().len(), 7);
+        samples["wireSamples"] = json!(crate::automation::transport::contract_samples().await);
+        samples["errorSamples"] = contract::describe()["protocol"]["errors"]
+            .as_array().unwrap().iter().map(|entry| {
+                let error = Failure::new(entry["code"].as_str().unwrap(), "Diagnostic text");
+                json!({"exitCode":error.exit_code(),"response":contract::Response::new("fixture".into(),Err(error))})
+            }).collect();
         if let Some(path) = std::env::var_os("TUNNELDE_LOCAL_API_OUTPUT") {
             std::fs::write(path, serde_json::to_vec_pretty(&samples).unwrap()).unwrap();
         }

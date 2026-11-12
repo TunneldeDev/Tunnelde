@@ -1,5 +1,17 @@
 # 本地 API 与 CLI
 
+接口发现的 `protocol` 字段提供公共请求／响应 Schema、错误码与 CLI 退出码，
+来源为 `automation/schema/protocol-v1.json`。`x-maxBytes` 表示 UTF-8 字节上限，
+独立于 JSON Schema 的 Unicode 字符数限制；消费者校验 Schema 时需要支持此
+关键字，宿主始终执行该约束，仓库检查脚本已支持。
+
+请求信封拒绝未知字段；响应信封、错误对象和端点描述允许新增元数据，但必须
+保留字段类型、版本和请求 ID 对应关系，以及 `result`／`error` 恰好二选一。
+CLI 忽略额外元数据并保留方法结果。该规则不允许删除或改变已有字段；方法
+Schema 仍定义当前生产者允许输出的字段。端点另有回环地址、端口和凭据运行时校验。
+宿主错误保留请求 ID，本地失败使用空 ID。未知错误码退出 1；格式或请求对应关系
+错误返回 `invalid_response` 并退出 2。
+
 本地自动化 API 目前是**面向 1.0 的实验候选接口**。协议版本独立于桌面版本和
 插件 RPC 版本；协议编号不等于稳定承诺。机器可读的唯一来源为
 `src-tauri/src/automation/schema/v1.json`，并由

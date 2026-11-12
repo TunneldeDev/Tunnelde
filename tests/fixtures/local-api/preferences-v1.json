@@ -1223,8 +1223,11 @@
           "revision": {
             "maxLength": 128,
             "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
-            "type": "string"
+            "type": "string",
+            "x-maxBytes": 128,
+            "not": {
+              "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+            }
           },
           "values": {
             "additionalProperties": false,
@@ -2355,8 +2358,11 @@
           "revision": {
             "maxLength": 128,
             "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
-            "type": "string"
+            "type": "string",
+            "x-maxBytes": 128,
+            "not": {
+              "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+            }
           }
         },
         "required": ["revision", "changes"],
@@ -2965,8 +2971,11 @@
           "revision": {
             "maxLength": 128,
             "minLength": 1,
-            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$",
-            "type": "string"
+            "type": "string",
+            "x-maxBytes": 128,
+            "not": {
+              "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+            }
           },
           "values": {
             "additionalProperties": false,

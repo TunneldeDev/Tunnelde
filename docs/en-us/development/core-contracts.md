@@ -28,6 +28,31 @@ method to stable.
 
 ## Domain ownership and release gates
 
+The proposed first stable local surface is limited to these seven methods.
+This is the review scope, not an announcement of stability:
+
+| Surface                                                            | Contract boundary                                                                                                                                                                                  |
+| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.describe`, `app.info`                                         | Protocol/method discovery and running build identity; offline CLI discovery describes its own build, not the host                                                                                  |
+| `hosts.list`                                                       | One saved-host snapshot through the shared host service; no credentials, mutation or plugin-provided hosts; array order is unspecified                                                             |
+| `sessions.list`                                                    | One live connection snapshot; IDs identify connections rather than durable hosts; a returned connection may disconnect immediately; `connectedAt` is Unix milliseconds; array order is unspecified |
+| `preferences.schema`, `preferences.snapshot`, `preferences.update` | Public settings only; opaque revision, strict partial field updates, whole collection replacement and stale-write rejection; no migration or credential access                                     |
+
+Snapshots do not reserve resources or promise event delivery. The local protocol
+is request/response; it exposes no event stream. Preference commits still publish
+the application's normal invalidation event internally. Lost replies to writes
+are ambiguous: re-read the snapshot and inspect the result rather than replaying
+with a fresh revision automatically. Local callers already run as the same OS
+account; the capability grants this limited surface without plugin permissions
+or an interactive approval prompt.
+
+The existing 16 stable plugin methods retain their separate frozen contract.
+Additional local mutations, plugin UI extensions, runners and advanced transfer
+recovery can remain experimental after desktop 1.0. They are not required to
+reach the first stable local contract. Its remaining release gates are historical
+client compatibility, supported-platform binary checks, basic file safety, and
+actual installation/upgrade data preservation. A new API method is not a gate.
+
 This table is a closure checklist, not a claim that every candidate is stable.
 The [local API](local-api.md) is the first external-program adapter.
 

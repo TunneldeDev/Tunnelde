@@ -136,3 +136,8 @@ where
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(super) async fn contract_samples() -> Vec<serde_json::Value> {
+    tests::contract_samples().await
+}
