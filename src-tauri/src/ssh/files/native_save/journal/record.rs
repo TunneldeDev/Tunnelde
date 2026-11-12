@@ -114,26 +114,48 @@ impl Binding {
     pub fn overlaps(&self, other: &Self) -> bool {
         // Do not let a changed key/root/account make an unresolved path writable.
         // Authority still binds recovery; address/path conservatively binds admission.
-        if self.destination.address != other.destination.address
-            && self.destination.host_id != other.destination.host_id
-            && self.authority.context.host_key != other.authority.context.host_key
-        {
+        if !self.same_host(&other.destination) {
             return false;
         }
-        let path = |binding: &Self| {
-            let scope = binding
-                .authority
-                .context
-                .scope
-                .trim_end_matches(['/', '\\']);
-            let path = format!("{scope}/{}", binding.intent.target.join("/"));
-            if binding.platform() == Platform::Windows {
-                path.replace('\\', "/").to_lowercase()
-            } else {
-                path
-            }
+        // Incompatible path namespaces on a potentially identical host cannot
+        // establish disjointness. Recovery still requires the exact identity.
+        self.platform() != other.platform()
+            || self.path_conflict(&self.target_path(), &other.target_path())
+    }
+    pub fn same_host(&self, destination: &SessionIdentity) -> bool {
+        self.destination.address == destination.address
+            || self.destination.host_id == destination.host_id
+            || self.authority.context.host_key == destination.server_key
+    }
+    pub fn target_path(&self) -> String {
+        let scope = match self.platform() {
+            Platform::Posix => self.authority.context.scope.trim_end_matches('/'),
+            Platform::Windows => self.authority.context.scope.trim_end_matches(['/', '\\']),
         };
-        path(self) == path(other)
+        format!("{scope}/{}", self.intent.target.join("/"))
+    }
+    pub fn overlaps_path(&self, other: &str) -> bool {
+        // The original helper's private state contains publication receipts and
+        // retained backups. Legacy cleanup/delete must preserve that authority too.
+        [
+            &self.target_path(),
+            &self.selection.directory,
+            &self.selection.executable,
+        ]
+        .iter()
+        .any(|reserved| self.path_conflict(reserved, other))
+    }
+    fn path_conflict(&self, reserved: &str, other: &str) -> bool {
+        use crate::services::files::admission::{Path, Platform as Paths};
+        let platform = match self.platform() {
+            Platform::Posix => Paths::Posix,
+            Platform::Windows => Paths::Windows,
+        };
+        match (Path::new(reserved, platform), Path::new(other, platform)) {
+            (Some(a), Some(b)) => a.overlaps(&b),
+            // An unsupported path spelling is not proof of disjointness.
+            _ => true,
+        }
     }
 }
 #[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -1,5 +1,7 @@
 //! Revision-CAS transitions. The write transaction also arbitrates quota/path admission.
-use super::{Binding, DispatchPermit, Error, Journal, Record, Result, Stage};
+#[cfg(test)]
+use super::Binding;
+use super::{DispatchPermit, Error, Journal, Record, Result, Stage};
 use crate::ssh::files::native_save;
 use native_save::contracts::{self, receipt::Observation};
 use rusqlite::{params, Connection, TransactionBehavior};
@@ -17,6 +19,7 @@ impl Journal {
             .filter(|record| record == expected)
             .ok_or(Error::Changed)
     }
+    #[cfg(test)]
     pub fn reserve(&mut self, binding: Binding) -> Result<Record> {
         if !binding.valid() {
             return Err(Error::Unrecognized);

@@ -6,11 +6,7 @@ use crate::ssh::files::remote_editor::PendingCleanup;
 
 pub(super) fn record(record: &Record) -> PendingCleanup {
     let scope = &record.binding.authority.context.scope;
-    let path = format!(
-        "{}/{}",
-        scope.trim_end_matches(['/', '\\']),
-        record.binding.intent.target.join("/")
-    );
+    let path = record.binding.target_path();
     let action = if matches!(
         record.stage,
         Stage::Reserved | Stage::Ready | Stage::Abandoned

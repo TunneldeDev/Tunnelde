@@ -69,6 +69,14 @@ fn forced_process_exit_preserves_each_checkpoint_and_rolls_back_uncommitted_chan
         }
         // SQLite itself recovers the killed transaction. No application reset/repair occurs.
         assert_eq!(journal.records().unwrap().len(), 1);
+        let authority = authority();
+        let mut descendant = prepared(&authority);
+        descendant.intent.target = vec!["original-target".into(), "child".into()];
+        descendant.control.intent_sha256 = descendant.intent.digest();
+        assert!(matches!(
+            journal.reserve(binding(&authority, &descendant)),
+            Err(Error::Occupied)
+        ));
     }
 }
 
