@@ -52,6 +52,9 @@ async fn save_opened(
     }
     let lock = lock_for(format!("{}\0{target}", request.address));
     let _guard = lock.lock().await;
+    // An earlier request may still be queued on another server connection.
+    // Serialize future edits against its retained unknown outcome as well.
+    journal.writable(&request.address, &target)?;
     job.check()?;
     policy.authorize()?;
     let original = read_remote_text(sftp, &target).await?;
@@ -86,12 +89,13 @@ async fn save_opened(
         address: request.address.clone(),
         path: target.clone(),
         token: uuid::Uuid::new_v4().to_string(),
+        receipt: Some(recovery::Receipt::new()),
         removing_marker: false,
         updated_at: crate::models::now_ms(),
         error: None,
     };
     let reservation = Reservation::acquire(&record.id, false)?;
-    journal.persist(&record)?;
+    journal.create(&record)?;
     let result = staged_save(
         sftp,
         &replacement,
@@ -101,15 +105,15 @@ async fn save_opened(
             content: &request.content,
             baseline: &original.content,
         },
-        &record,
+        &mut record,
         job,
         policy,
+        transaction::Observer {
+            checkpoint: &|r| journal.persist(r),
+            published: &|| journal.published(&request.session_id),
+        },
     )
     .await;
-    if result.is_ok() {
-        // Acknowledged publication is independent of RPC response delivery.
-        journal.published(&request.session_id);
-    }
     // Do not cancel safe cleanup when a caller disappears. A network timeout
     // still does not prove the server had no side effect: preserve unknown data.
     let settled = match cleanup(sftp, &mut record, |r| journal.persist(r)).await {

@@ -11,6 +11,9 @@ pub(super) struct MemoryJournal {
     pub(super) changed: Arc<AtomicUsize>,
 }
 impl Journal for MemoryJournal {
+    fn create(&self, record: &Record) -> AppResult<()> {
+        self.persist(record)
+    }
     fn persist(&self, record: &Record) -> AppResult<()> {
         let mut records = self.records.lock().unwrap();
         records.retain(|existing| existing.id != record.id);
@@ -19,6 +22,23 @@ impl Journal for MemoryJournal {
     }
     fn forget(&self, record: &Record) -> AppResult<()> {
         self.records.lock().unwrap().retain(|r| r.id != record.id);
+        Ok(())
+    }
+    fn current(&self, record: &Record) -> AppResult<Record> {
+        self.records
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.id == record.id && r.token == record.token)
+            .cloned()
+            .ok_or_else(|| AppError::validation("editor.cleanupMissing"))
+    }
+    fn writable(&self, address: &str, path: &str) -> AppResult<()> {
+        for record in self.records.lock().unwrap().iter() {
+            if record.address == address && record.path == path {
+                super::super::recovery::require_settled(record)?;
+            }
+        }
         Ok(())
     }
     fn changed(&self) {
@@ -239,7 +259,7 @@ async fn no_op_and_conflict_do_not_negotiate_replacement_or_create_staging() {
 async fn cancelled_cleanup_retains_its_worker_and_reservation_until_the_server_reply() {
     let f = Arc::new(Fixture::new());
     let sftp = f.client().await;
-    let record = f.record();
+    let mut record = f.record();
     staged_save(
         &sftp,
         &f.replacement().await.unwrap(),
@@ -247,7 +267,7 @@ async fn cancelled_cleanup_retains_its_worker_and_reservation_until_the_server_r
         "/note.txt",
         "saved",
         "original",
-        &record,
+        &mut record,
     )
     .await
     .unwrap();
