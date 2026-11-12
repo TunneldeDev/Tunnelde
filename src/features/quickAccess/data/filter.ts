@@ -15,7 +15,7 @@ export function filterQuickAccessResults(
   hosts: readonly Host[],
   definitions: readonly ShortcutCommand[],
 ) {
-  return commands.filter((command) => {
+  const results = commands.filter((command) => {
     const host =
       mode === "hosts"
         ? hosts.find(
@@ -42,4 +42,11 @@ export function filterQuickAccessResults(
       },
     );
   });
+  // Exact command titles keep Enter predictable when a longer command shares its words.
+  const title = searchText(parsedQuery.text.join(" "));
+  if (mode === "commands" && title)
+    results.sort(
+      (a, b) => Number(searchText(b.title) === title) - Number(searchText(a.title) === title),
+    );
+  return results;
 }
