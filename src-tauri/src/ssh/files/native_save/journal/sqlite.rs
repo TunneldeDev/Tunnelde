@@ -32,7 +32,7 @@ impl Journal {
         }
         if records.iter().any(|record| {
             record.binding.operation_id == binding.operation_id
-                || (!record.released() && record.binding.overlaps(&binding))
+                || (record.blocks_target() && record.binding.overlaps(&binding))
         }) {
             return Err(Error::Occupied);
         }
@@ -59,7 +59,7 @@ impl Journal {
         self.verify()?;
         Ok(record)
     }
-    fn replace(&mut self, expected: &Record, next: &Record) -> Result<Record> {
+    pub(super) fn replace(&mut self, expected: &Record, next: &Record) -> Result<Record> {
         self.verify()?;
         if next.binding != expected.binding
             || next.journal_id != expected.journal_id
@@ -90,6 +90,7 @@ impl Journal {
         self.verify()?;
         Ok(next.clone())
     }
+    #[cfg(test)]
     pub fn ready(&mut self, record: &Record) -> Result<Record> {
         if record.stage != Stage::Reserved {
             return Err(Error::Changed);
@@ -148,7 +149,7 @@ impl Journal {
     }
 }
 
-fn encode(record: &Record) -> Result<(String, String)> {
+pub(super) fn encode(record: &Record) -> Result<(String, String)> {
     if !record.valid() {
         return Err(Error::Unrecognized);
     }
@@ -160,7 +161,7 @@ fn encode(record: &Record) -> Result<(String, String)> {
     Ok((bytes, digest))
 }
 // Called both for public reads and inside the actual write transaction.
-fn read_records(conn: &Connection, journal_id: &str) -> Result<Vec<Record>> {
+pub(super) fn read_records(conn: &Connection, journal_id: &str) -> Result<Vec<Record>> {
     let mut query = conn
         .prepare("SELECT id,revision,value,digest FROM records LIMIT 129")
         .map_err(|_| Error::Unrecognized)?;

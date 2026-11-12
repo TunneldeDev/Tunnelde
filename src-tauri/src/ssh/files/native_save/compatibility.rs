@@ -289,6 +289,16 @@ async fn selected_file_save_helper_recovers_the_durable_service_without_replayin
                 .cloned()
                 .ok_or(super::journal::Error::SecretChanged)
         }
+        fn forget(&self, key: &str, expected_sha256: &str) -> super::journal::Result<()> {
+            let mut values = self.0.lock().unwrap();
+            if values.get(key).is_some_and(|token| {
+                super::contracts::hash(b"", token.as_bytes()) != expected_sha256
+            }) {
+                return Err(super::journal::Error::SecretChanged);
+            }
+            values.remove(key);
+            Ok(())
+        }
     }
     let fixture = Fixture::selected();
     let client = fixture.initialized().await;
@@ -306,7 +316,7 @@ async fn selected_file_save_helper_recovers_the_durable_service_without_replayin
     let mut bound = super::testing::binding(&authority, &prepared);
     bound.selection.executable = fixture.executable.to_str().unwrap().into();
     bound.selection.directory = fixture.state.to_str().unwrap().into();
-    let ready = service.reserve(bound, &prepared).unwrap();
+    let ready = service.reserve(bound, &prepared).await.unwrap();
     let mut record = service
         .submit(&ready, &prepared, &client, |_| Ok(()))
         .await

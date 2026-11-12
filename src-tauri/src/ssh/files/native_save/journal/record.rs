@@ -142,6 +142,8 @@ pub(in super::super) enum Stage {
     Reserved,
     Ready,
     Dispatched,
+    Abandoned,
+    Retired,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -182,18 +184,19 @@ impl Record {
             && self.revision > 0
             && self.revision <= i64::MAX as u64
             && self.release.as_ref().is_none_or(|release| {
-                self.stage == Stage::Dispatched
+                (self.stage == Stage::Dispatched || self.stage == Stage::Retired)
                     && release.revision > 0
                     && self.observation.is_some()
             })
             && self.observation.as_ref().is_none_or(|receipt| {
-                self.stage == Stage::Dispatched
+                (self.stage == Stage::Dispatched || self.stage == Stage::Retired)
                     && receipt.valid()
                     && receipt.operation_id == self.binding.operation_id
                     && receipt.generation == self.binding.generation
                     && receipt.intent_sha256 == self.binding.intent_sha256
                     && receipt.revision > 0
             })
+            && (self.stage != Stage::Retired || self.released())
     }
     pub fn released(&self) -> bool {
         self.observation.as_ref().is_some_and(|receipt| {
@@ -210,5 +213,11 @@ impl Record {
                     .observation
                     .as_ref()
                     .is_some_and(Observation::releasable))
+    }
+    pub fn disposable(&self) -> bool {
+        self.stage == Stage::Abandoned || (self.stage == Stage::Retired && self.released())
+    }
+    pub fn blocks_target(&self) -> bool {
+        !self.released() && !self.disposable()
     }
 }

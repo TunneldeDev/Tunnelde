@@ -14,7 +14,13 @@ impl Drop for Worker {
 
 #[test]
 fn forced_process_exit_preserves_each_checkpoint_and_rolls_back_uncommitted_change() {
-    for phase in ["reserved", "ready", "dispatched", "uncommitted"] {
+    for phase in [
+        "reserved",
+        "ready",
+        "dispatched",
+        "uncommitted",
+        "provisioning",
+    ] {
         let fixture = Fixture::new();
         let signal = fixture.root.join("checkpoint.json");
         let mut child = Worker(
@@ -44,9 +50,17 @@ fn forced_process_exit_preserves_each_checkpoint_and_rolls_back_uncommitted_chan
             );
             std::thread::sleep(Duration::from_millis(10));
         }
+        let expected: Record = serde_json::from_slice(&std::fs::read(&signal).unwrap()).unwrap();
+        if phase == "provisioning" {
+            // An independent process still owns the credential setup transaction.
+            // A second connection cannot retire its reservation ahead of the writer.
+            let mut contender = Journal::open(&fixture.path()).unwrap();
+            assert!(contender.retire(&expected).is_err());
+            assert!(contender.current(&expected).is_ok());
+            assert!(fixture.root.join("qa-token").is_file());
+        }
         child.0.kill().unwrap();
         child.0.wait().unwrap();
-        let expected: Record = serde_json::from_slice(&std::fs::read(signal).unwrap()).unwrap();
         let mut journal = Journal::open(&fixture.path()).unwrap();
         let current = journal.current(&expected).unwrap();
         assert!(current == expected);
@@ -61,7 +75,6 @@ fn forced_process_exit_preserves_each_checkpoint_and_rolls_back_uncommitted_chan
 #[test]
 #[ignore = "isolated child process fixture, invoked by the force-exit parent test"]
 fn checkpoint_child() {
-    use std::io::Write;
     let root = PathBuf::from(std::env::var_os("TUNNELDE_TEST_NATIVE_JOURNAL_ROOT").unwrap());
     assert!(root.is_absolute());
     assert!(root
@@ -73,7 +86,7 @@ fn checkpoint_child() {
     let phase = std::env::var("TUNNELDE_TEST_NATIVE_JOURNAL_PHASE").unwrap();
     assert!(matches!(
         phase.as_str(),
-        "reserved" | "ready" | "dispatched" | "uncommitted"
+        "reserved" | "ready" | "dispatched" | "uncommitted" | "provisioning"
     ));
     let mut journal = Journal::create(&root.join("native-file-saves")).unwrap();
     let mut record = reserve(&mut journal, "original-target");
@@ -89,18 +102,35 @@ fn checkpoint_child() {
             .execute_batch("BEGIN IMMEDIATE; UPDATE records SET revision=999;")
             .unwrap();
     }
+    if phase == "provisioning" {
+        journal
+            .provision(&record, || {
+                let token = std::fs::File::create(root.join("qa-token")).unwrap();
+                token.sync_all().unwrap();
+                signal_checkpoint(&root, &record);
+                std::thread::sleep(Duration::from_secs(60));
+                panic!("parent did not terminate the provisioning child");
+            })
+            .unwrap();
+        unreachable!();
+    }
+    signal_checkpoint(&root, &record);
+    // Parent forcibly terminates this actual process while SQLite is still open.
+    std::thread::sleep(Duration::from_secs(60));
+    panic!("parent did not terminate the checkpoint child");
+}
+
+fn signal_checkpoint(root: &std::path::Path, record: &Record) {
+    use std::io::Write;
     let mut signal = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(root.join("checkpoint.tmp"))
         .unwrap();
     signal
-        .write_all(&serde_json::to_vec(&record).unwrap())
+        .write_all(&serde_json::to_vec(record).unwrap())
         .unwrap();
     signal.sync_all().unwrap();
     drop(signal);
     std::fs::rename(root.join("checkpoint.tmp"), root.join("checkpoint.json")).unwrap();
-    // Parent forcibly terminates this actual process while SQLite is still open.
-    std::thread::sleep(Duration::from_secs(60));
-    panic!("parent did not terminate the checkpoint child");
 }
