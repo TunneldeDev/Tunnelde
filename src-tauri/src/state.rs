@@ -27,6 +27,7 @@ pub struct AppState {
     pub forwards: crate::ssh::forward::ForwardRegistry,
     pub mounts: crate::mounts::MountRegistry,
     pub transfers: TransferRegistry,
+    pub(crate) native_saves: std::sync::Arc<crate::ssh::files::native_save::runtime::Manager>,
     pub monitor: MonitorCache,
     pub plugins: PluginsManager,
     pub(crate) runners: crate::plugins::runners::Coordinator,
@@ -132,6 +133,10 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         settings.transfer_download_limit_kib,
     );
     let version = app.package_info().version.to_string();
+    let native_saves = std::sync::Arc::new(crate::ssh::files::native_save::runtime::Manager::new(
+        storage.dir(crate::storage::layout::Category::Database),
+        &app.config().identifier,
+    ));
     let plugins = PluginsManager::load(plugins_dir);
     plugins.initialize_security(
         &database,
@@ -149,6 +154,7 @@ pub fn init(app: &AppHandle) -> AppResult<()> {
         forwards: crate::services::forwarding::registry(app),
         mounts: Default::default(),
         transfers,
+        native_saves,
         monitor: MonitorCache::default(),
         plugins,
         runners: Default::default(),

@@ -29,7 +29,7 @@ mod move_verification;
     dead_code,
     reason = "Native save transport awaits explicit installation and recovery UI acceptance"
 )]
-mod native_save;
+pub(crate) mod native_save;
 mod publication;
 mod range_io;
 mod remote_commit;

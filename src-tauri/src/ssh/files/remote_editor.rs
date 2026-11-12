@@ -8,6 +8,7 @@ use std::sync::{Mutex, OnceLock, Weak};
 
 mod journal;
 mod lifetime;
+mod pending;
 pub(crate) mod policy;
 mod recovery;
 mod retained;
@@ -52,6 +53,8 @@ pub struct PendingCleanup {
     pub(super) directory: String,
     pub(super) address: String,
     pub(super) source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) action: Option<&'static str>,
     pub(super) updated_at: i64,
     pub(super) error: Option<String>,
     pub(super) running: bool,
@@ -79,11 +82,22 @@ fn forget(app: &AppHandle, record: &Record) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
+pub async fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
+    let native = app.state::<AppState>().native_saves.clone();
+    // SQLite and filesystem reads stay off the async executor as well.
+    let read = app.clone();
+    let mut pending = tauri::async_runtime::spawn_blocking(move || pending::legacy(&read))
+        .await
+        .unwrap_or_else(|_| pending::worker_failed());
+    pending.extend(native.pending().await);
+    Ok(pending)
+}
+
+fn remote_pending(app: &AppHandle) -> AppResult<Vec<PendingCleanup>> {
     // Keep registration/retirement ordered with the journal snapshot. Reading
     // these separately could expose a new ordinary save as inactive cleanup.
     let active = lifetime::active();
-    let mut pending: Vec<_> = records(&app)?
+    let pending: Vec<_> = records(app)?
         .into_iter()
         .filter(|r| {
             active
@@ -98,6 +112,7 @@ pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
             PendingCleanup {
                 running: active.contains_key(&r.id),
                 source: "remote",
+                action: None,
                 id: r.id,
                 path: r.path,
                 directory: r.directory,
@@ -108,7 +123,6 @@ pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
         })
         .collect();
     drop(active);
-    pending.extend(local_editor::pending(&app)?);
     Ok(pending)
 }
 
@@ -119,6 +133,15 @@ fn session_for(app: &AppHandle, record: &Record) -> AppResult<String> {
 
 #[tauri::command]
 pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
+    if pending::diagnostic_id(&id) {
+        return tauri::async_runtime::spawn_blocking(move || pending::retry(&app, &id))
+            .await
+            .map_err(|_| AppError::internal("editor.nativeWorkerFailed"))?;
+    }
+    if id.starts_with("native-") {
+        let native = app.state::<AppState>().native_saves.clone();
+        return native.retry(&app, &id).await;
+    }
     if id.starts_with("local-") {
         return local_editor::retry(app, id).await;
     }
