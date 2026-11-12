@@ -34,8 +34,16 @@ export function FilePreview() {
   const activeSidebar = useNavigation((state) => state.activeSidebar);
   const panelOpen = panel ? !panel.hidden : sidebarVisible && activeSidebar === "filePreview";
   useEffect(() => {
-    if (file && presentation === "docked" && !previewPanelOpen()) useFilePreview.getState().close();
-  }, [file, presentation, panel, sidebarVisible, activeSidebar]);
+    const current = useFilePreview.getState();
+    if (
+      file &&
+      current.file === file &&
+      current.id === id &&
+      current.presentation === "docked" &&
+      !previewPanelOpen()
+    )
+      current.close();
+  }, [file, id, presentation, panel, sidebarVisible, activeSidebar]);
   return file && (presentation === "quickLook" || panelOpen) ? (
     <Preview key={id} id={id!} file={file} presentation={presentation} />
   ) : (

@@ -211,6 +211,29 @@ it("the command opens an empty preview panel without silently reopening a saved 
   expect(api.filePreviewOpen).not.toHaveBeenCalled();
   expect(api.sftpReadText).not.toHaveBeenCalled();
 });
+it("an obsolete panel-close effect cannot close a replacement activated during commit", async () => {
+  usePlugins.setState({ items: [images] });
+  useFilePreview.getState().dock();
+  useFilePreview.getState().show("C:/old.png");
+  useWorkspace.getState().close(previewPanelId);
+  function ReplaceDuringCommit() {
+    useLayoutEffect(() => {
+      useFilePreview.getState().undock();
+      useFilePreview.getState().show("C:/replacement.png");
+    }, []);
+    return null;
+  }
+  render(
+    <>
+      <DockingShell />
+      <ReplaceDuringCommit />
+    </>,
+  );
+  await screen.findByRole("img", { name: "replacement.png" });
+  expect(useFilePreview.getState().file?.path).toBe("C:/replacement.png");
+  expect(snapshot().presentation).toBe("quickLook");
+});
+
 afterEach(() => {
   cleanup();
   useFilePreview.getState().close();
