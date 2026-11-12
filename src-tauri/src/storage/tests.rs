@@ -546,3 +546,72 @@ fn symlink_data_is_rejected_without_reading_outside_the_category() {
     assert!(inventory::scan(Category::Keys, paths.dir(Category::Keys)).is_err());
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[test]
+fn native_save_recovery_directory_moves_with_database_and_cannot_be_left_behind() {
+    let (root, paths) = workspace();
+    let directory = paths.dir(Category::Database).join("native-file-saves");
+    std::fs::create_dir(&directory).unwrap();
+    let files = [
+        "recovery.sqlite3",
+        "recovery.sqlite3-wal",
+        "recovery.sqlite3-shm",
+        "recovery.sqlite3-journal",
+    ];
+    for name in files {
+        std::fs::write(directory.join(name), name.as_bytes()).unwrap();
+    }
+    let mut change = change(&root, Category::Database);
+    change.migrate = false;
+    assert!(migration::validate(&paths, &[change.clone()])
+        .unwrap_err()
+        .to_string()
+        .contains("storage.nativeRecoveryRequiresMigration"));
+    change.migrate = true;
+    let mut config = config::Config::default();
+    migration::schedule(&paths, &mut config, vec![change.clone()]).unwrap();
+    migration::apply(&paths, &mut config).unwrap();
+    for name in files {
+        assert_eq!(
+            std::fs::read(change.target.join("native-file-saves").join(name)).unwrap(),
+            name.as_bytes()
+        );
+        assert_eq!(
+            std::fs::read(directory.join(name)).unwrap(),
+            name.as_bytes()
+        );
+    }
+    let moved = Paths::new(
+        paths.home.clone(),
+        root.join("logs"),
+        &config.locations,
+        None,
+    );
+    migration::schedule(
+        &moved,
+        &mut config,
+        vec![config::Change {
+            category: Category::Database,
+            target: paths.dir(Category::Database).to_owned(),
+            migrate: true,
+        }],
+    )
+    .unwrap();
+    migration::apply(&moved, &mut config).unwrap();
+    for name in files {
+        assert_eq!(
+            std::fs::read(directory.join(name)).unwrap(),
+            name.as_bytes()
+        );
+        assert_eq!(
+            std::fs::read(
+                config.archives[&Category::Database]
+                    .join("native-file-saves")
+                    .join(name)
+            )
+            .unwrap(),
+            name.as_bytes()
+        );
+    }
+    std::fs::remove_dir_all(root).unwrap();
+}

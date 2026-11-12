@@ -6,6 +6,64 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.37.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.36.0...v0.37.0) - 2026-11-12
+
+### 更新概览 | Highlights
+
+- **files:** dock live previews in remembered workspace panels
+- **files:** add bound native save host protocol
+- **files:** checkpoint native saves before dispatch
+- **files:** show original save recovery actions in background tasks
+- **ssh:** share remote command encoding
+
+<details open>
+<summary>详细变更 | Details (24)</summary>
+
+### 新增 | New
+
+- **files:** dock live previews in remembered workspace panels ([#304](https://github.com/TunneldeDev/Tunnelde/pull/304), [34ba397](https://github.com/TunneldeDev/Tunnelde/commit/34ba397518b135d2396b44deb62fd77a0956bd19)) @quyansiyuanwang
+- **files:** add bound native save host protocol ([#305](https://github.com/TunneldeDev/Tunnelde/pull/305), [8f023a9](https://github.com/TunneldeDev/Tunnelde/commit/8f023a95a1d6e648f52cdc087b193aad616a8eb2)) @quyansiyuanwang
+- **files:** checkpoint native saves before dispatch ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306), [65d40ce](https://github.com/TunneldeDev/Tunnelde/commit/65d40ce96a45f3426ddb7f42f000f5c413daae0b)) @quyansiyuanwang
+- **files:** show original save recovery actions in background tasks ([#307](https://github.com/TunneldeDev/Tunnelde/pull/307), [9575d9a](https://github.com/TunneldeDev/Tunnelde/commit/9575d9a759ac09fdaa2aeca16a82af6d1be57d6d)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **ssh:** share remote command encoding ([#305](https://github.com/TunneldeDev/Tunnelde/pull/305), [bbe8daf](https://github.com/TunneldeDev/Tunnelde/commit/bbe8dafcdc4568160bc11d93e4f21a1d73c067e3)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **files:** retain durable unknown remote editor mutations ([#301](https://github.com/TunneldeDev/Tunnelde/pull/301)) @quyansiyuanwang
+- **files:** retain editor replies after foreground timeout ([#303](https://github.com/TunneldeDev/Tunnelde/pull/303)) @quyansiyuanwang
+- **commands:** prefer exact titles over overlapping command names ([#304](https://github.com/TunneldeDev/Tunnelde/pull/304), [a56b230](https://github.com/TunneldeDev/Tunnelde/commit/a56b230c1e31d3c2bdb6339fe6aadf2047b9c249)) @quyansiyuanwang
+- **files:** fence stale preview panel close effects ([#304](https://github.com/TunneldeDev/Tunnelde/pull/304), [51e315f](https://github.com/TunneldeDev/Tunnelde/commit/51e315fb380586072b7e5c986d22cd7711eda640)) @quyansiyuanwang
+- **files:** keep docked preview paths compact ([#304](https://github.com/TunneldeDev/Tunnelde/pull/304), [b0a102e](https://github.com/TunneldeDev/Tunnelde/commit/b0a102ea8f3cd38c6a39b8bfd70c358720e4ab26)) @quyansiyuanwang
+- **files:** preserve visible Quick Look content in flex layouts ([#304](https://github.com/TunneldeDev/Tunnelde/pull/304)) @quyansiyuanwang
+- **storage:** preserve native save recovery during migration ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306), [e898f06](https://github.com/TunneldeDev/Tunnelde/commit/e898f061cfaceb067bebd738c1c7220976b7a35f)) @quyansiyuanwang
+- **files:** reject damaged journal state during checkpoint CAS ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306), [22e3417](https://github.com/TunneldeDev/Tunnelde/commit/22e341763fb26e7164caa66c67daf32212083dc2)) @quyansiyuanwang
+- **files:** recheck owner after durable dispatch checkpoint ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306), [c261c71](https://github.com/TunneldeDev/Tunnelde/commit/c261c71e6f63bbc12d9676bb43c3e21fa5d0d40d)) @quyansiyuanwang
+- **files:** resolve journal ancestor aliases before SQLite open ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306)) @quyansiyuanwang
+- **files:** serialize native recovery credentials on bounded workers ([#307](https://github.com/TunneldeDev/Tunnelde/pull/307), [837f843](https://github.com/TunneldeDev/Tunnelde/commit/837f8433c7a3f4320ef57ecde586d1b90e4048ce)) @quyansiyuanwang
+- **files:** distinguish recovery store reload from operation queries ([#307](https://github.com/TunneldeDev/Tunnelde/pull/307)) @quyansiyuanwang
+- **files:** preserve native recovery across parent and path aliases ([#308](https://github.com/TunneldeDev/Tunnelde/pull/308), [202ea83](https://github.com/TunneldeDev/Tunnelde/commit/202ea83e07b765acbe054d4796720ee0e56a5383)) @quyansiyuanwang
+- **files:** fence legacy mutations against native recovery records ([#308](https://github.com/TunneldeDev/Tunnelde/pull/308), [b2fe694](https://github.com/TunneldeDev/Tunnelde/commit/b2fe694eb080b4e55df0f24095867e0450534933)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **files:** describe native recovery lifecycle and remaining limits ([#307](https://github.com/TunneldeDev/Tunnelde/pull/307), [7756d0a](https://github.com/TunneldeDev/Tunnelde/commit/7756d0a3bdcbe52a6419c924e83e8494d8eff806)) @quyansiyuanwang
+- **files:** describe recovery admission limits in both languages ([#308](https://github.com/TunneldeDev/Tunnelde/pull/308)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **files:** pin native save interoperability fixtures ([#305](https://github.com/TunneldeDev/Tunnelde/pull/305)) @quyansiyuanwang
+- **files:** enforce durable save recovery producer checks ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306), [2126b9e](https://github.com/TunneldeDev/Tunnelde/commit/2126b9e8a130cbe64efb78dcdfa68e67adc1e8f5)) @quyansiyuanwang
+- **files:** exercise recovery journals on every desktop platform ([#306](https://github.com/TunneldeDev/Tunnelde/pull/306), [c49ae8e](https://github.com/TunneldeDev/Tunnelde/commit/c49ae8e57b87ed04f630a89e3e74f37ce950989c)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.36.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.35.0...v0.36.0) - 2026-11-12
 
 ### 更新概览 | Highlights

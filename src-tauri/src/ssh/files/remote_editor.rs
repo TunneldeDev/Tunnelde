@@ -7,10 +7,16 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Weak};
 
 mod journal;
+mod lifetime;
+mod pending;
 pub(crate) mod policy;
+mod recovery;
 mod retained;
 mod saving;
+mod staging;
+mod storage;
 use journal::Journal;
+use lifetime::Reservation;
 mod transaction;
 use transaction::staged_save;
 
@@ -21,8 +27,6 @@ const PREFIX: &str = "editor-cleanup:";
 const EVENT: &str = "editor://cleanup-changed";
 type SaveLocks = Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>;
 static LOCKS: OnceLock<SaveLocks> = OnceLock::new();
-// false = an ordinary save (hidden), true = visible cleanup in progress.
-static ACTIVE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +37,8 @@ struct Record {
     path: String,
     directory: String,
     token: String,
+    #[serde(default)]
+    receipt: Option<recovery::Receipt>,
     #[serde(default)]
     removing_marker: bool,
     updated_at: i64,
@@ -47,26 +53,11 @@ pub struct PendingCleanup {
     pub(super) directory: String,
     pub(super) address: String,
     pub(super) source: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) action: Option<&'static str>,
     pub(super) updated_at: i64,
     pub(super) error: Option<String>,
     pub(super) running: bool,
-}
-
-struct Reservation(String);
-impl Reservation {
-    fn acquire(id: &str, retry: bool) -> AppResult<Self> {
-        let mut active = ACTIVE.get_or_init(Default::default).lock().unwrap();
-        if active.contains_key(id) {
-            return Err(AppError::validation("editor.cleanupBusy"));
-        }
-        active.insert(id.into(), retry);
-        Ok(Self(id.into()))
-    }
-}
-impl Drop for Reservation {
-    fn drop(&mut self) {
-        ACTIVE.get().unwrap().lock().unwrap().remove(&self.0);
-    }
 }
 
 fn records(app: &AppHandle) -> AppResult<Vec<Record>> {
@@ -79,43 +70,59 @@ fn records(app: &AppHandle) -> AppResult<Vec<Record>> {
 }
 
 fn persist(app: &AppHandle, record: &Record) -> AppResult<()> {
-    let value = serde_json::to_string(record)?;
-    app.state::<AppState>().db.with(|conn| {
-        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
-            rusqlite::params![format!("{PREFIX}{}", record.id), value, crate::models::now_ms()])?;
-        Ok(())
-    })
+    app.state::<AppState>()
+        .db
+        .with(|conn| storage::persist(conn, record))
 }
 
 fn forget(app: &AppHandle, record: &Record) -> AppResult<()> {
-    app.state::<AppState>().db.with(|conn| {
-        conn.execute(
-            "DELETE FROM settings WHERE key=?1",
-            [format!("{PREFIX}{}", record.id)],
-        )?;
-        Ok(())
-    })
+    app.state::<AppState>()
+        .db
+        .with(|conn| storage::forget(conn, record))
 }
 
 #[tauri::command]
-pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
-    let active = ACTIVE.get_or_init(Default::default).lock().unwrap();
-    let mut pending: Vec<_> = records(&app)?
+pub async fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
+    let native = app.state::<AppState>().native_saves.clone();
+    // SQLite and filesystem reads stay off the async executor as well.
+    let read = app.clone();
+    let mut pending = tauri::async_runtime::spawn_blocking(move || pending::legacy(&read))
+        .await
+        .unwrap_or_else(|_| pending::worker_failed());
+    pending.extend(native.pending().await);
+    Ok(pending)
+}
+
+fn remote_pending(app: &AppHandle) -> AppResult<Vec<PendingCleanup>> {
+    // Keep registration/retirement ordered with the journal snapshot. Reading
+    // these separately could expose a new ordinary save as inactive cleanup.
+    let active = lifetime::active();
+    let pending: Vec<_> = records(app)?
         .into_iter()
-        .filter(|r| active.get(&r.id) != Some(&false))
-        .map(|r| PendingCleanup {
-            running: active.get(&r.id) == Some(&true),
-            source: "remote",
-            id: r.id,
-            path: r.path,
-            directory: r.directory,
-            address: r.address,
-            updated_at: r.updated_at,
-            error: r.error,
+        .filter(|r| {
+            active
+                .get(&r.id)
+                .is_none_or(|visible| visible.load(Ordering::Acquire))
+        })
+        .map(|r| {
+            let error = r
+                .error
+                .clone()
+                .or_else(|| recovery::require_settled(&r).err().map(|e| e.to_string()));
+            PendingCleanup {
+                running: active.contains_key(&r.id),
+                source: "remote",
+                action: None,
+                id: r.id,
+                path: r.path,
+                directory: r.directory,
+                address: r.address,
+                updated_at: r.updated_at,
+                error,
+            }
         })
         .collect();
     drop(active);
-    pending.extend(local_editor::pending(&app)?);
     Ok(pending)
 }
 
@@ -126,6 +133,15 @@ fn session_for(app: &AppHandle, record: &Record) -> AppResult<String> {
 
 #[tauri::command]
 pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
+    if pending::diagnostic_id(&id) {
+        return tauri::async_runtime::spawn_blocking(move || pending::retry(&app, &id))
+            .await
+            .map_err(|_| AppError::internal("editor.nativeWorkerFailed"))?;
+    }
+    if id.starts_with("native-") {
+        let native = app.state::<AppState>().native_saves.clone();
+        return native.retry(&app, &id).await;
+    }
     if id.starts_with("local-") {
         return local_editor::retry(app, id).await;
     }
@@ -138,7 +154,10 @@ pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
     retained::retry_with(
         &write::REMOTE_BUDGET,
         record,
-        move || async move { session(&connection, &session_for(&connection, &target)?).await },
+        move || async move {
+            let session_id = session_for(&connection, &target)?;
+            admission::open(&connection, &session_id, &[&target.directory]).await
+        },
         app,
     )
     .await
@@ -181,6 +200,7 @@ pub(super) async fn save(
         .into_iter()
         .find(|s| s.id == session_id)
         .ok_or_else(|| AppError::validation("sftp.reconnectRequired"))?;
+    let request_path = path.clone();
     let request = saving::Request {
         session_id: session_id.clone(),
         host_id: host.host_id,
@@ -195,7 +215,7 @@ pub(super) async fn save(
         request,
         policy,
         move |_job| async move {
-            let sftp = session(&connection, &session_id).await?;
+            let sftp = admission::open(&connection, &session_id, &[&request_path]).await?;
             Ok((sftp, async move {
                 remote_commit::Replacement::connect(&connection, &session_id).await
             }))
@@ -214,6 +234,11 @@ async fn cleanup(
     record: &mut Record,
     checkpoint: impl Fn(&Record) -> AppResult<()>,
 ) -> AppResult<()> {
+    // Legacy or interrupted mutations have no terminal server authority.
+    // Do not even probe paths: absence cannot fence another live connection.
+    if !recovery::require_settled(record)? {
+        return Ok(());
+    }
     let metadata = match sftp.symlink_metadata(&record.directory).await {
         Ok(metadata) => metadata,
         Err(error) if missing(&error) => return Ok(()),

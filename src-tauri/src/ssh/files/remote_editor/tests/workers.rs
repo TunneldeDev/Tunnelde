@@ -11,6 +11,9 @@ pub(super) struct MemoryJournal {
     pub(super) changed: Arc<AtomicUsize>,
 }
 impl Journal for MemoryJournal {
+    fn create(&self, record: &Record) -> AppResult<()> {
+        self.persist(record)
+    }
     fn persist(&self, record: &Record) -> AppResult<()> {
         let mut records = self.records.lock().unwrap();
         records.retain(|existing| existing.id != record.id);
@@ -19,6 +22,23 @@ impl Journal for MemoryJournal {
     }
     fn forget(&self, record: &Record) -> AppResult<()> {
         self.records.lock().unwrap().retain(|r| r.id != record.id);
+        Ok(())
+    }
+    fn current(&self, record: &Record) -> AppResult<Record> {
+        self.records
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|r| r.id == record.id && r.token == record.token)
+            .cloned()
+            .ok_or_else(|| AppError::validation("editor.cleanupMissing"))
+    }
+    fn writable(&self, address: &str, path: &str) -> AppResult<()> {
+        for record in self.records.lock().unwrap().iter() {
+            if record.address == address && record.path == path {
+                super::super::recovery::require_settled(record)?;
+            }
+        }
         Ok(())
     }
     fn changed(&self) {
@@ -68,14 +88,33 @@ pub(super) fn spawn_checked(
     content: &str,
     policy: impl policy::Policy,
 ) -> tokio::task::JoinHandle<AppResult<()>> {
+    spawn_checked_timing(
+        budget,
+        f,
+        journal,
+        content,
+        policy,
+        lifetime::Timing::default(),
+    )
+}
+
+pub(super) fn spawn_checked_timing(
+    budget: Arc<Budget>,
+    f: Arc<Fixture>,
+    journal: MemoryJournal,
+    content: &str,
+    policy: impl policy::Policy,
+    timing: lifetime::Timing,
+) -> tokio::task::JoinHandle<AppResult<()>> {
     let request = request(&f, content);
     tokio::spawn(async move {
-        saving::save_with(
+        saving::save_with_timing(
             &budget,
             request,
             policy,
             move |job| opening(f, job),
             journal,
+            timing,
         )
         .await
     })
@@ -146,7 +185,7 @@ async fn cancelled_staging_retains_capacity_lock_and_reservation_until_cleanup_f
     assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 1);
     assert!(journal.records.lock().unwrap().is_empty());
     assert_eq!(journal.published.load(Ordering::SeqCst), 0);
-    assert_eq!(journal.changed.load(Ordering::SeqCst), 1);
+    assert_eq!(journal.changed.load(Ordering::SeqCst), 2);
     assert!(lock.try_lock().is_ok());
     spawn_save(budget, f.clone(), journal.clone(), "retry")
         .await
@@ -239,7 +278,7 @@ async fn no_op_and_conflict_do_not_negotiate_replacement_or_create_staging() {
 async fn cancelled_cleanup_retains_its_worker_and_reservation_until_the_server_reply() {
     let f = Arc::new(Fixture::new());
     let sftp = f.client().await;
-    let record = f.record();
+    let mut record = f.record();
     staged_save(
         &sftp,
         &f.replacement().await.unwrap(),
@@ -247,7 +286,7 @@ async fn cancelled_cleanup_retains_its_worker_and_reservation_until_the_server_r
         "/note.txt",
         "saved",
         "original",
-        &record,
+        &mut record,
     )
     .await
     .unwrap();

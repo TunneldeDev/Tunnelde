@@ -1,0 +1,93 @@
+.file-preview-panel {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.file-preview-panel > .sidebar__head {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  height: auto;
+  min-height: 38px;
+}
+.file-preview-panel .sidebar__actions {
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.file-preview-panel__body {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+}
+.file-preview__content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  gap: 8px;
+}
+.file-preview .file-preview__content > .provider-content {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+.file-preview__target {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.file-preview__target > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.file-preview__target > div {
+  min-width: 0;
+}
+.file-preview__target strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.file-preview__target .settings-hint {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+}
+.file-preview-panel .file-preview__target .settings-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-preview-panel
+  :is(
+    .file-preview__text,
+    .file-preview__markdown,
+    .file-preview__media,
+    .file-preview__pdf-pages
+  ) {
+  flex: 1 1 0;
+  min-height: 120px;
+  height: auto;
+}
+.file-preview-panel .file-preview__text {
+  resize: none;
+}
+.file-preview-panel .file-preview__empty {
+  flex: 1 1 0;
+  min-height: 120px;
+  padding: 16px;
+}
+.file-preview-panel__placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  color: var(--td-muted);
+}

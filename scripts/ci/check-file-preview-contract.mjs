@@ -62,6 +62,13 @@ assert(
     (sample) => sample.method === "filePreview.open" && sample.params.source.kind === "remote",
   ),
 );
+assert(fixture.samples.some((sample) => sample.result.snapshot?.presentation === "docked"));
+for (const action of ["dock", "undock"])
+  assert(
+    fixture.samples.some(
+      (sample) => sample.method === "filePreview.action" && sample.params.action === action,
+    ),
+  );
 console.log(
   `Actual host preview bridge: ${fixture.samples.length} samples satisfy canonical schema and SDK.`,
 );

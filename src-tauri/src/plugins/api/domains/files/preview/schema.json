@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Experimental host quick-look preview RPC schemas, schemaVersion 1",
+  "title": "Experimental host file preview RPC schemas, schemaVersion 1",
   "description": "Host and SDK additionally enforce UTF-8 token/path byte limits (128/32768), source-specific absolute paths, a 256KiB observation budget, 64KiB provider-page budget, request-bound pagination and identity, and state/provider consistency. Endpoint read authority is retained through native authorization and reply. Accepted actions are not rendering completion and must not be replayed automatically.",
   "definitions": {
     "token": {
@@ -74,7 +74,7 @@
           "maximum": 9007199254740991
         },
         "presentation": {
-          "const": "quickLook"
+          "enum": ["quickLook", "docked"]
         },
         "renderer": {
           "$ref": "#/definitions/renderer"
@@ -362,7 +362,7 @@
                 "$ref": "#/definitions/token"
               },
               "action": {
-                "enum": ["close", "retry"]
+                "enum": ["close", "retry", "dock", "undock"]
               }
             },
             "required": ["id", "revision", "action"],

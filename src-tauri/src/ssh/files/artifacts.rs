@@ -4,6 +4,7 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+mod protection;
 pub(super) mod retained;
 mod staging;
 #[cfg(test)]
@@ -154,6 +155,9 @@ pub(super) async fn finish_staging(
     };
     let sftp = sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?;
     let directory = staging_directory(to, id, staging)?;
+    if let Some(session_id) = &to.session {
+        admission::writable(app, session_id, sftp, &[&directory.path]).await?;
+    }
     interruptible(
         Some(cancel),
         staging::cleanup_directory(sftp, &directory, !staging.prepared && staging.creating),
@@ -177,6 +181,7 @@ where
     Fut: std::future::Future<Output = AppResult<()>>,
 {
     let mut record = artifact_record(app, id, to)?;
+    protection::writable(app, id, to, sftp, record.as_ref()).await?;
     prepare_remote_staging(app, id, to, sftp, cancel, &mut record, create_directory).await?;
     let temp = part_from_record(to, id, record.as_ref())?;
     let recovering_publication = matches!(
@@ -205,6 +210,7 @@ where
             serde_json::to_string(&record.as_ref().unwrap())?,
         )?;
         let next = publication_successor(to, id, &successor, record.as_ref())?;
+        protection::writable(app, id, to, Some(sftp), record.as_ref()).await?;
         if !publication::fence(&temp, &next, sftp, cancel).await? {
             // Keep the uncertainty record until the published target has been
             // verified. A failed verification must remain protected on every
@@ -272,6 +278,7 @@ where
                 tx.commit()?;
                 Ok(())
             })?;
+            protection::writable(app, id, to, sftp, record.as_ref()).await?;
             return Ok((part_from_record(to, id, record.as_ref())?, false));
         }
     }
@@ -661,6 +668,7 @@ async fn cleanup_file(
         Sha256::digest(to.path.as_bytes())
     );
     let artifact = artifact_record(app, id, to)?;
+    protection::writable(app, id, to, sftp, artifact.as_ref()).await?;
     staging::require_creation_settled(id, to, artifact.as_ref())?;
     if remote_staging(artifact.as_ref()).is_some_and(|staging| staging.opening) {
         return retire_remote_staging(
@@ -789,6 +797,12 @@ pub(super) async fn cleanup(
         None => None,
     };
     let result = async {
+        if let (Some(session_id), Some(sftp)) = (to.session.as_deref(), sftp.as_ref()) {
+            admission::writable(app, session_id, sftp, &[&to.path]).await?;
+            for path in &targets {
+                admission::writable(app, session_id, sftp, &[path]).await?;
+            }
+        }
         for path in &targets {
             cleanup_file(app, &row.id, &to.child(path.clone()), sftp.as_ref()).await?;
         }

@@ -15,10 +15,15 @@ pub struct Inventory {
 
 pub fn roots(category: Category, directory: &Path) -> Vec<PathBuf> {
     match category {
-        Category::Database => ["tunnelde.db", "tunnelde.db-wal", "tunnelde.db-shm"]
-            .into_iter()
-            .map(|name| directory.join(name))
-            .collect(),
+        Category::Database => [
+            "tunnelde.db",
+            "tunnelde.db-wal",
+            "tunnelde.db-shm",
+            "native-file-saves",
+        ]
+        .into_iter()
+        .map(|name| directory.join(name))
+        .collect(),
         Category::Cache => ["marketplace", "tmp"]
             .into_iter()
             .map(|name| directory.join(name))

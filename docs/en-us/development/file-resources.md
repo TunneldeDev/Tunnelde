@@ -142,8 +142,34 @@ and an acknowledged publication still notifies observers if delivery is cancelle
 These bounds concern client worker lifetime and publication admission. SFTP
 timeouts and lost replies do not prove that server-side work stopped. Network
 path validation and rename are separate server operations, not compare-and-swap;
-external processes may race them. Durable crash/lost-ack settlement remains
-separate work. This does not add a public write transaction API.
+external processes may race them. This does not add a public write transaction API.
+
+Remote editor recovery persists a versioned generation and operation intent with
+SQLite FULL durability before creation, serialized staging mutations and final
+publication. Terminal replies settle the corresponding intent. Transport errors
+and timeouts retain an unknown result; neither missing paths nor matching bytes
+settle it. Cleanup and subsequent saves of that remote target are blocked while
+its result is unknown. Old records without receipts are preserved conservatively.
+Recovery reloads the current record after reservation, and stale revisions cannot
+overwrite or resurrect retired journals. The host allows 128 retained records;
+capacity exhaustion rejects a new save before remote mutation.
+
+Remote saves separate the 30-second foreground response deadline from a
+five-minute absolute observation horizon. Foreground expiry or caller cancellation
+exposes the original pending operation and cancels publication which has not yet
+been admitted. The same owned worker keeps its existing four-slot remote write
+budget, path lock, journal reservation and reply receiver until it settles or the
+observation horizon expires. Late terminal replies settle the original generation;
+an already admitted publication notifies once. The host does not replay the save
+or create another observer per request. Horizon expiry retains durable unknown
+intent and releases client resources; it still does not prove server work stopped.
+Transfer publication retains its independent ten-second deadline.
+
+This is the conservative SFTP recovery floor. Automatic resolution of missing
+replies after process loss requires separate server operation fencing or durable
+receipts. It does not silently install a helper, retry a rename or authorize
+recursive cleanup. Acknowledged publication notifies once even if recording the
+terminal receipt fails locally; the unknown recovery record is retained.
 
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves

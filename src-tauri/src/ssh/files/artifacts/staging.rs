@@ -74,6 +74,9 @@ where
         return Ok(());
     }
     let directory = staging_directory(to, id, staging)?;
+    if let Some(session_id) = &to.session {
+        admission::writable(app, session_id, sftp, &[&directory.path]).await?;
+    }
     ensure_private_directory(sftp, &directory, cancel, |directory| async {
         // The caller persists its creation intent only after channel setup and
         // immediately before submitting MKDIR. Do not mark connection failures

@@ -10,6 +10,11 @@ pub(super) struct Draft<'a> {
     pub baseline: &'a str,
 }
 
+pub(super) struct Observer<'a> {
+    pub checkpoint: &'a (dyn Fn(&Record) -> AppResult<()> + Sync),
+    pub published: &'a (dyn Fn() + Sync),
+}
+
 fn same_metadata(a: &FileAttributes, b: &FileAttributes) -> bool {
     a.size == b.size
         && a.mtime == b.mtime
@@ -18,38 +23,16 @@ fn same_metadata(a: &FileAttributes, b: &FileAttributes) -> bool {
         && a.gid == b.gid
 }
 
-async fn exclusive_write(sftp: &SftpSession, path: &str, content: &[u8]) -> AppResult<()> {
-    let mut file = sftp
-        .open_with_flags_and_attributes(
-            path,
-            OpenFlags::READ | OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
-            FileAttributes {
-                permissions: Some(0o600),
-                ..Default::default()
-            },
-        )
-        .await
-        .map_err(map_sftp)?;
-    let result = async {
-        file.write_all(content).await?;
-        file.flush().await?;
-        file.sync_all().await.map_err(map_sftp)
-    }
-    .await;
-    let closed = file.close().await;
-    result?;
-    closed?;
-    Ok(())
-}
-
 pub(super) async fn staged_save(
     sftp: &SftpSession,
     replacement: &remote_commit::Replacement,
     draft: Draft<'_>,
-    record: &Record,
+    record: &mut Record,
     job: &Cancellation,
     policy: &impl policy::Policy,
+    observer: Observer<'_>,
 ) -> AppResult<()> {
+    let checkpoint = &observer.checkpoint;
     let Draft {
         requested,
         target,
@@ -72,7 +55,8 @@ pub(super) async fn staged_save(
     // the first policy check. Revalidate before creating even private staging.
     policy.check(sftp, target, baseline).await?;
     job.check()?;
-    replacement
+    recovery::begin(record, recovery::Operation::Create, checkpoint)?;
+    let creation = replacement
         .raw()
         .mkdir(
             &record.directory,
@@ -81,8 +65,16 @@ pub(super) async fn staged_save(
                 ..Default::default()
             },
         )
-        .await
-        .map_err(map_sftp)?;
+        .await;
+    match creation {
+        Ok(_) => recovery::settle(record, true, checkpoint)?,
+        Err(error) => {
+            if recovery::terminal(&error) {
+                recovery::settle(record, false, checkpoint)?;
+            }
+            return Err(map_sftp(error));
+        }
+    }
     let private = sftp
         .symlink_metadata(&record.directory)
         .await
@@ -90,43 +82,53 @@ pub(super) async fn staged_save(
     if !private.is_dir() || private.permissions.is_none_or(|mode| mode & 0o777 != 0o700) {
         return Err(AppError::validation("editor.privateStagingRequired"));
     }
-    exclusive_write(
-        sftp,
-        &format!("{}/owner", record.directory),
-        record.token.as_bytes(),
-    )
-    .await?;
+    let marker = format!("{}/owner", record.directory);
+    let token = record.token.clone();
+    staging::exclusive_write(replacement, record, checkpoint, &marker, token.as_bytes()).await?;
     // Establish ownership even if cancellation arrived during mkdir/marker IO.
     // Cleanup may only remove paths carrying the acknowledged owner token.
     job.check()?;
     let staging = format!("{}/content", record.directory);
-    exclusive_write(sftp, &staging, content.as_bytes()).await?;
+    staging::exclusive_write(
+        replacement,
+        record,
+        checkpoint,
+        &staging,
+        content.as_bytes(),
+    )
+    .await?;
     job.check()?;
     // Ownership must precede mode: chown may clear setuid/setgid bits.
     if let (Some(uid), Some(gid)) = (metadata.uid, metadata.gid) {
-        sftp.set_metadata(
-            &staging,
-            FileAttributes {
-                uid: Some(uid),
-                gid: Some(gid),
-                ..Default::default()
-            },
+        recovery::mutation(
+            record,
+            checkpoint,
+            replacement.raw().setstat(
+                &staging,
+                FileAttributes {
+                    uid: Some(uid),
+                    gid: Some(gid),
+                    ..Default::default()
+                },
+            ),
         )
-        .await
-        .map_err(map_sftp)?;
+        .await?;
     }
     let permissions = metadata
         .permissions
         .ok_or_else(|| AppError::validation("editor.metadataNotPreserved"))?;
-    sftp.set_metadata(
-        &staging,
-        FileAttributes {
-            permissions: Some(permissions & 0o7777),
-            ..Default::default()
-        },
+    recovery::mutation(
+        record,
+        checkpoint,
+        replacement.raw().setstat(
+            &staging,
+            FileAttributes {
+                permissions: Some(permissions & 0o7777),
+                ..Default::default()
+            },
+        ),
     )
-    .await
-    .map_err(map_sftp)?;
+    .await?;
     let staged = sftp.symlink_metadata(&staging).await.map_err(map_sftp)?;
     if !staged.is_regular()
         || staged.uid != metadata.uid
@@ -146,5 +148,22 @@ pub(super) async fn staged_save(
     }
     policy.check(sftp, target, &current.content).await?;
     policy.admit(job)?;
-    replacement.replace(&staging, target).await
+    recovery::begin(record, recovery::Operation::Publish, checkpoint)?;
+    let publication = replacement.replace(&staging, target).await;
+    match &publication {
+        Ok(()) => {
+            // The server already published: notify even if recording its receipt
+            // fails locally. Retained recovery may remain Unknown in that case.
+            (observer.published)();
+            recovery::settle(record, true, checkpoint)?;
+        }
+        Err(AppError::RemoteRename {
+            status_code: Some(_),
+            ..
+        }) => {
+            recovery::settle(record, true, checkpoint)?;
+        }
+        Err(_) => {}
+    }
+    publication
 }

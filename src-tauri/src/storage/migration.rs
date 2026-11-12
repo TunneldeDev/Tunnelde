@@ -41,6 +41,16 @@ fn validate_plan(
         if target == source {
             continue;
         }
+        // Recovery authority must follow the database location, even if its
+        // records are currently inaccessible/corrupt. Never hide it via a blank move.
+        if change.category == Category::Database
+            && !change.migrate
+            && layout::metadata(&source.join("native-file-saves"))?.is_some()
+        {
+            return Err(AppError::validation(
+                "storage.nativeRecoveryRequiresMigration",
+            ));
+        }
         let resetting = target == layout::normalize(&paths.defaults[&change.category])?;
         let targets = if resetting {
             inventory::roots(change.category, &target)
