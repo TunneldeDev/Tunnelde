@@ -16,11 +16,14 @@ Usage: tunnelde-cli [--endpoint PATH] <command>\n\
   app info                  Read the running application's version\n\
   hosts list                List saved hosts without credentials\n\
   sessions list             List currently connected sessions\n\
+  preferences schema        Describe public settings\n\
+  preferences snapshot      Read public settings and their revision\n\
+  preferences update --params JSON|-  Save settings with the original revision\n\
   call METHOD [--params JSON|-]  Call a discovered local API method\n\
 The application must be running for live calls. TUNNELDE_ENDPOINT can select\n\
 an isolated application's automation.json. Output is JSON. Errors are JSON\n\
 on stderr. Exit codes: 0 success, 1 operation failed, 2 invalid input,\n\
-3 unavailable/timeout, 4 authentication failed.\n";
+3 unavailable/timeout, 4 authentication failed, 5 stale revision.\n";
 
 enum Command {
     Help,
@@ -143,6 +146,9 @@ fn parse(mut args: Vec<OsString>) -> Result<Command, Failure> {
         ["app", "info"] => ("app.info", None),
         ["hosts", "list"] => ("hosts.list", None),
         ["sessions", "list"] => ("sessions.list", None),
+        ["preferences", "schema"] => ("preferences.schema", None),
+        ["preferences", "snapshot"] => ("preferences.snapshot", None),
+        ["preferences", "update", "--params", params] => ("preferences.update", Some(*params)),
         ["call", method] => (*method, None),
         ["call", method, "--params", params] => (*method, Some(*params)),
         _ => return Err(invalid()),

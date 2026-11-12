@@ -52,7 +52,7 @@ fn discovery_has_bounded_versioned_domain_contracts() {
             && names.contains("sessions.list")
     );
     for method in methods {
-        assert_eq!(method["effect"], "read");
+        assert!(["read", "write"].contains(&method["effect"].as_str().unwrap()));
         assert_eq!(method["inputSchema"]["additionalProperties"], false);
         assert_eq!(method["resultSchema"]["type"], "object");
     }
@@ -66,6 +66,8 @@ fn errors_have_programmable_exit_codes() {
         ("timeout", 3),
         ("unavailable", 3),
         ("internal", 1),
+        ("stale_revision", 5),
+        ("invalid_preferences", 2),
     ] {
         let failure = Failure::new(code, "description");
         assert_eq!(failure.exit_code(), exit);
