@@ -60,6 +60,12 @@ PR 策略按 Conventional Commits 验证标题和每个提交标题。两种贡�
 
 **Publish version → Run workflow → tag** 也可为已有版本标签验证并创建缺失草稿；**Release → existing_tag** 恢复已暂存的草稿。两者均保留原源码，不修改标签或重新构建已公开的包。Development 并发控制仅串行化发布 PR 维护；Beta 和版本发布有独立工作流组。
 
+若仅一个平台失败，可在 **Release → Run workflow** 中指定相同的 `existing_tag`，
+并将 `platform` 从 `all` 改为失败的平台。恢复流程使用当前工作流的依赖安装与恢复工具，
+应用仍从不可变标签构建；其他平台已有的草稿资源保留。最终仍检查全部桌面资源、签名及
+更新清单，缺少任一平台时不会公开。Linux 依赖安装与 CI 共用有界的软件源回退逻辑，
+保留 APT 签名验证，并在结束后恢复 runner 原有源配置。
+
 编译器计时只作为可选 Actions 构建产物。原生辅助程序由 Tunnelde-agent 仓库独立版本化、构建和发布；插件市场仓库也有独立发布流程。辅助程序不会出现在桌面 Release 下载中。
 
 Rust 缓存恢复是可选的：每个步骤最长三分钟，缓存下载的分段超时为两分钟。恢复失败或超时时，一次性托管 runner 会删除受影响的 target 目录及 Cargo registry/Git 缓存，再从源码编译；保留源码、其他 Rust 工作区和已安装工具链。恢复旧发布标签时，从工作流源码加载该清理工具，但仍构建不可变标签。手动 **Release** 恢复还提供 `use_rust_cache: false`，可在缓存服务故障时从源码编译，无需更改源码标签或缓存命名空间。

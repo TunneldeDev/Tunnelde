@@ -60,6 +60,10 @@ mod editor;
 mod events;
 #[path = "execution/methods.rs"]
 mod execution;
+#[path = "files/browser/methods.rs"]
+mod file_browser;
+#[path = "files/content/methods.rs"]
+mod file_content;
 #[path = "files/methods.rs"]
 mod files;
 #[path = "forwarding/methods.rs"]
@@ -112,6 +116,8 @@ const DOMAINS: &[&[ApiMethod]] = &[
     connections::METHODS,
     terminal::METHODS,
     files::METHODS,
+    file_browser::METHODS,
+    file_content::METHODS,
     monitor::METHODS,
     history::METHODS,
     clipboard::METHODS,

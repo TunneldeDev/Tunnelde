@@ -4,7 +4,10 @@ use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+pub(super) mod retained;
 mod staging;
+#[cfg(test)]
+mod test_support;
 pub(super) use staging::create_directory;
 use staging::{prepare_remote_staging, remote_staging, retire_remote_staging, staging_directory};
 

@@ -28,7 +28,14 @@ mod tests {
 
     #[test]
     fn only_supported_bounded_domain_selectors_are_accepted() {
-        for kind in ["connection", "forward", "mount", "task", "transfer"] {
+        for kind in [
+            "connection",
+            "forward",
+            "mount",
+            "task",
+            "transfer",
+            "fileContent",
+        ] {
             let reference: Reference =
                 serde_json::from_value(json!({"kind":kind,"id":"resource-id"})).unwrap();
             reference.validate().unwrap();

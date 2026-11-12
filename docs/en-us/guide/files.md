@@ -162,6 +162,12 @@ acknowledged. If its creation reply is lost, the task keeps the recovery record
 and displays the exact staging path for review. A missing or currently empty
 path cannot prove that an already sent request will not create it later.
 Resume and automatic cleanup do not reuse or forget that uncertain directory.
+When you resume, the original transfer can use a fresh temporary directory after
+the old request has been durably retained as a separate **Temporary directory**
+task. Clearing the original transfer does not clear this recovery task. Its exact
+host and directory remain visible after restart; it has no transfer progress or
+Resume action. Retrying cleanup does not require a connection while its result
+is unknown or explicitly rejected.
 Previously saved unprepared records without creation state receive the same
 conservative treatment. Acknowledged directories retain normal cleanup and
 resume behavior. Source files and completed destination files are preserved.
@@ -172,3 +178,13 @@ directory's recovery record. Cancelled tasks automatically retry cleanup; paused
 tasks can be resumed. After connection loss or application exit, the old request's
 outcome may remain unknown. The task explicitly reports unconfirmed directory
 creation; manually removing the directory does not prove the old request has ended.
+
+A late success updates only its original directory's recovery task. Cleanup then
+requires the original host and only removes an empty private directory; files,
+symbolic links and unexpected permissions are preserved. An explicit rejection
+clears the recovery record without touching the remote path, which may belong to
+someone else. A retry after rejection always uses a fresh directory name.
+At most eight retained directories are allowed per original transfer and 128
+across the application. Reaching a limit preserves the current records and stops
+another generation; it never silently deletes recovery information. Requests
+whose final result was lost still need authoritative settlement before cleanup.

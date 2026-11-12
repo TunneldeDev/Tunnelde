@@ -18,6 +18,48 @@ Closing a view never implies that a filesystem write stopped or rolled back.
 
 ## Preview ownership
 
+Local preview ranges, built-in text previews and plugin local text reads use the
+shared native reader in `src-tauri/src/services/files/read/`. It resolves intentional
+aliases, then opens a regular file with platform flags that reject final symlink,
+reparse and special-file replacements. It retains the opened handle and serializes
+seek/read pairs. Windows readers permit an existing log writer to continue writing;
+the editor's more restrictive publication handles remain separate. Ancestor path
+resolution still follows the OS and does not establish a filesystem sandbox.
+
+At most eight native read/open workers may be queued or running together, shared
+by local blocking IO and remote protocol IO.
+Capacity belongs to the worker until it exits, even when its async caller times out
+or closes. Cancelled queued workers skip IO; a reader waiting for its cursor lock
+checks cancellation again after acquiring the lock. Already running filesystem IO
+can still finish. Saturation returns an explicit busy error without queuing more
+work. One byte read is bounded to 32 MiB, preserving existing whole-image previews;
+HTTP ranges remain capped at 1 MiB. Text-prefix reads retain the caller's existing
+limits and read one extra byte to detect oversize input. Files may change through
+other writers: these handles do not promise a consistent immutable snapshot.
+
+The native service itself grants no plugin authority. The separate public content
+resource boundary below owns its permissions, lifetime and bounded transport.
+
+Remote previews use the same source service, with a dedicated read-only SFTP
+channel and opened handle. Each READ carries an explicit offset and exact bounded
+length; there is no mutable prefetched cursor. Short replies continue from the
+returned byte count, without reading beyond the requested range. The service
+honors negotiated packet/read limits, rejects empty or oversized DATA replies,
+and validates the opened handle's regular-file type and reported size.
+
+Cancelling a caller keeps its actual worker reservation until the pending protocol
+request settles; it then skips subsequent requests and discards delivery. A late
+OPEN acknowledgement closes its abandoned channel. A read error or whole-read
+deadline closes only this dedicated channel before releasing admission. This
+preserves the user's parent SSH connection. At most 64 source channels, including
+pending opens and retained workers, may exist. Opens are bounded to 15 seconds,
+individual replies to 15 seconds, and whole reads to 30 seconds.
+
+SFTP v3 does not provide local `O_NOFOLLOW` guarantees or control over a server's
+blocked filesystem operations. Closing a channel requests remote resource release;
+it does not prove that server-side OS IO stopped. These sources pin handles, not
+immutable file contents, and grant no authority independently of the public resource boundary.
+
 Each provider preview gets a fresh host-generated ticket ID. Closing while native
 provider discovery is pending requests early close; a late successful open is
 closed again because registration can happen after the early request. Cleanup
@@ -54,3 +96,40 @@ baseline checks remain necessary; this lifetime layer is not a write transaction
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves
 and a complete shared file data/subscription contract remain separate work.
+
+## Public read-only content resources (experimental)
+
+The `files.content` API provides bytes to ordinary frontend or stdio plugins without
+host preview ticket IDs or an implicit SSH target. `prepare` takes an explicit
+`{source:{kind:"local"},path}` or `{source:{kind:"remote",sessionId},path}` and
+checks only the corresponding `fs.read` or `sftp.read` grant. Paths are absolute.
+Preparation reserves an empty descriptor for 20 seconds and performs no file IO.
+`open` claims its returned `contentId` exactly once. The SDK knows this ID before
+IO starts, so cancellation can close it even if the open response is lost. A close
+that overtakes open removes its prerequisite; a late success cannot reinstall it.
+Unknown preparation responses own no file or channel and expire.
+
+`read` accepts safe integer byte offsets and lengths from 1 to 49152, clamped at
+the opened size. Results contain canonical base64, decoded byte count and EOF.
+The SDK validates these fields and returns `Uint8Array`. The opened size must fit
+JavaScript's safe integer range. Handles pin file identity, not an immutable content
+snapshot; truncation or modification can change or fail subsequent reads.
+
+Use `createFileContentClient` from `sdk/files/content/client.mjs`. Pass an owner
+`AbortSignal` to `open`; aborting that owner or calling the returned `close()`
+retires the resource. Each client and host runtime permit eight handles; the host
+permits 64 in total, sharing the native eight-worker IO admission. Reads renew a
+60-second idle lease; `observe` and `subscribe` observe lifetime and do not renew it
+or watch filesystem changes. Deadlines reject operations immediately; a single
+host sweeper reclaims idle handles within the next second. Close is idempotent.
+Native worker permits remain held until actual IO settles after cancellation.
+
+Descriptors and opened sources participate in `resources.snapshot`,
+`resources.identify({kind:"fileContent",id:contentId})` and `resources.release`.
+Every operation checks runtime ownership independently of IDs. Runtime stop,
+permission revocation and restricted mode retire its handles. Releasing an opened
+resource may report `cancellationRequested`: retiring a dedicated SFTP channel or
+local handle is not proof of stopping already-running OS IO. Parent SSH connections
+remain intact. Scoped AI tool allowlists are unchanged pending separate handle and
+path-scope contracts. Public preview-panel observation and mutation transactions
+remain separate work; these methods do not expand the stable API set.

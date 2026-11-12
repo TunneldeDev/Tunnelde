@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Experimental public profile content v1",
+  "description": "Structural schema. Host and SDK also enforce UTF-8 byte bounds, matching revision/id/offset, total size continuity, progressing nextOffset or exact EOF, unique metadata and activeId membership, public preference group schemas and 128KiB encoded chunk budget. activeId records selection, not equality; collection content revision does not track selection. Content max 16515072 bytes. Public preference schemas are owned by services/settings/preferences/schema/.",
+  "definitions": {
+    "revision": {
+      "type": "string",
+      "pattern": "^pc1:[0-9a-f]{64}$(?![\\s\\S])"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "updatedAt"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+        },
+        "updatedAt": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "catalogueRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {}
+    },
+    "catalogue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "revision", "activeId", "items"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "activeId": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/id"
+            }
+          ]
+        },
+        "items": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/definitions/metadata"
+          }
+        }
+      }
+    },
+    "readRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision", "offset", "limit"],
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16515072
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 4,
+          "maximum": 65536
+        }
+      }
+    },
+    "chunk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "id", "revision", "offset", "totalBytes", "text", "nextOffset"],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "$ref": "#/definitions/id"
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16515072
+        },
+        "totalBytes": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16515072
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 65536
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 16515072
+            }
+          ]
+        }
+      }
+    }
+  }
+}

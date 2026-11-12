@@ -39,6 +39,14 @@ export const useStorage = create<StorageStore>((set, get) => {
       return true;
     } catch (failure) {
       set({ error: translateError(failure) });
+      // A failed cancellation can already have persisted its recovery direction.
+      // Read it back so the view cannot keep promising an ordinary migration.
+      try {
+        const status = await api.storageStatus();
+        set({ status, restartPending: !!status.pending });
+      } catch {
+        // Preserve the original operation error when recovery metadata is unavailable.
+      }
       return false;
     } finally {
       revision++;

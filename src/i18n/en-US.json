@@ -35,6 +35,16 @@
     "status": "Status",
     "author": "Author"
   },
+  "fileRead": {
+    "busy": "File reads are still running. Wait for them to finish, then try again.",
+    "cancelled": "The file read was cancelled.",
+    "workerFailed": "The file reader stopped unexpectedly. Check the software log and try again.",
+    "invalidPath": "Choose a regular file using an absolute path.",
+    "invalidRange": "The requested file range exceeds the supported read limits.",
+    "invalidReply": "The remote file service returned an invalid read response.",
+    "metadataUnavailable": "The remote file service did not provide a readable file size.",
+    "sourceChanged": "The file no longer contains the requested range. Reopen it and try again."
+  },
   "preview": {
     "previousPage": "Previous page",
     "nextPage": "Next page",
@@ -798,7 +808,14 @@
     "resetTasksLayout": "Reset transfer window layout",
     "resizeTasksHint": "Resize transfer window (arrow keys; Shift for fine adjustment)",
     "resizeColumnHint": "Drag to resize; double-click to fit contents. Use arrow keys when focused.",
-    "columnHeaderHint": "Click to sort; drag to reorder columns."
+    "columnHeaderHint": "Click to sort; drag to reorder columns.",
+    "retainedCreationTask": "Temporary directory · {{name}}",
+    "retainedCreationPath": "Temporary directory",
+    "retainedCreationChanged": "The temporary directory contains other data or has an unexpected type or permissions. It was preserved. Inspect its contents before retrying cleanup.",
+    "retainedCreationUnknown": "The old directory creation has no confirmed result. This record keeps its exact path while the original transfer can continue with a fresh temporary directory. It cannot be cleaned until the old request is confirmed.",
+    "retainedCreationSettled": "The old request has finished. Retry cleanup to remove its empty temporary directory or clear a rejected request. Other files are preserved.",
+    "retainedCreationInvalid": "The retained operation record or its host identity does not match. Keep the record and review the application log.",
+    "retainedCreationLimit": "Too many unconfirmed temporary directories are retained. Finish or review existing recovery tasks before trying another transfer generation."
   },
   "processes": {
     "title": "Processes",
@@ -1394,6 +1411,10 @@
       "changed": "These preferences changed. Read the current page and try again.",
       "permissionDenied": "This plugin requires settings.write to change preferences.",
       "invalid": "Invalid preference update. Provide the revision and field replacements."
+    },
+    "fileContent": {
+      "invalid": "Invalid file content request. Choose an absolute file path and a supported byte range.",
+      "unavailable": "This file content handle is closed, expired or belongs to a different plugin runtime. Prepare and open it again."
     }
   },
   "themes": {
@@ -1480,12 +1501,16 @@
       "forwardsRead": "View saved port forwarding rules",
       "forwardsWrite": "Manage and start local or remote port forwarding",
       "editorRead": "Read documents in open editors",
+      "fileBrowserRead": "Read paths, visible entries and selection metadata in open file browsers, without file contents",
+      "fileBrowserWrite": "Navigate, select, refresh and open entries through existing file browsers",
       "editorWrite": "Modify editor buffers (without saving automatically)",
       "trustedUi": "Load trusted code into the application interface.",
       "backgroundTasksRead": "Read visible background tasks across features",
       "backgroundTasksWrite": "Invoke available background task actions",
       "storageLocationsRead": "Read global storage locations and migration plans, without file contents",
-      "storageLocationsWrite": "Schedule or cancel global storage migrations with native confirmation"
+      "storageLocationsWrite": "Schedule or cancel global storage migrations with native confirmation",
+      "storageRecoveryRead": "Read storage recovery direction, error presence and recorded copy locations, without contents",
+      "storageRecoveryWrite": "Schedule storage recovery or cancellation at next startup with native confirmation"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -1785,7 +1810,36 @@
     "notFound": "This profile no longer exists. Refresh the profiles and try again.",
     "conflict": "Saved profiles changed. Refresh the list, review it and try again. No preferences were changed.",
     "invalidRequest": "The profile request is invalid. Refresh the profiles and try again.",
-    "limit": "You can save up to 32 settings profiles. Delete one to add another."
+    "limit": "You can save up to 32 settings profiles. Delete one to add another.",
+    "activationReview": "Apply saved profile “{{name}}”?\n\nChanged groups: {{groups}}\n\nThis replaces public preferences, including configured proxy routes, update sources and keyboard shortcuts. Private UI provider selections are preserved. Removed proxies follow normal credential cleanup. Some changes may require a restart.",
+    "noPublicChanges": "No public preference changes",
+    "activation": {
+      "denied": "Profile activation was declined. Preferences were preserved."
+    },
+    "mutation": {
+      "invalidRequest": "The profile operation contains missing or unsupported fields.",
+      "unavailable": "The profile operation could not complete. Open the software log and refresh saved profiles before retrying."
+    },
+    "draft": {
+      "notFound": "The profile upload is missing or has expired. Begin a new upload.",
+      "busy": "This upload is being committed. Refresh saved profiles to check the result.",
+      "incomplete": "The profile upload is incomplete.",
+      "invalidOffset": "The profile upload offset is invalid. Begin a new upload.",
+      "limit": "Too many profile uploads or reserved bytes. Wait for the current operation to finish."
+    },
+    "groups": {
+      "general": "General",
+      "appearance": "Appearance",
+      "workspace": "Workspace",
+      "terminal": "Terminal",
+      "files": "Files",
+      "transfers": "Transfers",
+      "editor": "Editor",
+      "monitoring": "Monitoring",
+      "shortcuts": "Keyboard shortcuts",
+      "network": "Network and proxies",
+      "updates": "Updates"
+    }
   },
   "search": {
     "invalidRoot": "Choose an existing absolute directory.",
@@ -2037,7 +2091,7 @@
     "resetCategory": "Reset {{category}} to its default location",
     "defaultPath": "Default location: {{path}}",
     "resetHint": "Existing data at the default location will be archived for recovery before the current data is copied back. Other storage categories remain in place.",
-    "archivedDefault": "Archived default data — {{category}}",
+    "archivedDefault": "Recovery copy — {{category}}",
     "size_one": "{{size}} · {{count}} file",
     "size_other": "{{size}} · {{count}} files",
     "overridden": "Managed by TUNNELDE_PLUGINS_DIR. Change that environment variable to relocate this folder.",
@@ -2056,7 +2110,26 @@
     "pending": "Location changes are scheduled",
     "restartHint": "Finish your work, fully quit Tunnelde (including the tray), then open it again. Closing only the window does not apply these changes.",
     "cancelPlan": "Cancel scheduled changes",
-    "recovery": "Original locations retained for recovery",
+    "cancellationPending": "Storage cancellation needs recovery",
+    "cancellationFailed": "Cancellation is incomplete. Current storage locations remain active.",
+    "cancellationHint": "The migration will not be applied. Resolve any reported conflict, then retry cancellation or fully quit and reopen Tunnelde to resume it. Recovery copies are retained.",
+    "retryCancellation": "Retry cancellation",
+    "incompleteCopy": "An interrupted or changed staging copy was retained. Cancel the migration to keep the recovery copy, then schedule it again.",
+    "recovery": {
+      "invalidState": "Storage recovery metadata is invalid. Check the application logs.",
+      "conflict": "Storage recovery state changed. Refresh and confirm again.",
+      "busy": "Storage configuration is being changed. Try again shortly.",
+      "noPendingPlan": "There is no pending storage plan to recover.",
+      "unavailable": "Storage recovery metadata is temporarily unavailable. Check the application logs.",
+      "reviewCancel": "Allow this plugin to schedule cancellation of this storage plan at the next startup? Cancellation cannot be reversed to migration.",
+      "reviewRetry": "Allow this plugin to retry this storage migration at the next startup?",
+      "reviewBoundaries": "Only the recovery request is saved now. There is no immediate restart or data movement. Existing recovery copies and the previous error are retained.",
+      "restartPending": "Storage recovery scheduled",
+      "cancelAtRestart": "The next startup will continue cancelling this plan. Current storage locations remain active and recovery copies are retained.",
+      "retryAtRestart": "The next startup will retry this migration. Current storage locations remain active.",
+      "previousError": "Previous recovery error (new request has not run yet):",
+      "reviewRestart": "Choose when to restart"
+    },
     "keptOriginals": "These copies are no longer updated. Check the new locations before manually removing any original data.",
     "boundaries": "System keychain credentials and your external keys, workspaces, downloads and remote files stay in their existing locations. The small storage.json location index stays in the original application data folder; locations are excluded from settings profiles and exports. Plugin-owned absolute paths may need updating in that plugin.",
     "migrationFailed": "Migration did not finish. The app is using the original locations. Cancel the plan and choose new empty destinations, or correct the conflict and fully restart to retry.",
@@ -2101,7 +2174,8 @@
       "invalidState": "Storage location metadata is invalid.",
       "unavailable": "Storage location metadata could not be accessed.",
       "busy": "Storage settings are busy. Read the latest state and retry."
-    }
+    },
+    "recoveryCopies": "Original locations retained for recovery"
   },
   "tasks": {
     "title": "Background tasks",

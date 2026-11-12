@@ -1,4 +1,5 @@
 //! API transport and approval around the native storage service.
+use super::operation::Operation;
 use crate::{
     error::{AppError, AppResult},
     plugins::{
@@ -10,8 +11,6 @@ use crate::{
 };
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
-mod operation;
-use operation::Operation;
 const READ: &[&str] = &["storage.locations.read"];
 const WRITE: &[&str] = &["storage.locations.read", "storage.locations.write"];
 fn parse<T: serde::de::DeserializeOwned>(params: Value) -> AppResult<T> {

@@ -32,6 +32,8 @@ export function StorageSettings() {
   const disabled = busy || loading || picking || !isTauri();
   const locked = disabled || !!status?.pending;
   const locations = status?.locations ?? [];
+  const cancelling = status?.pending?.action === "cancel";
+  const restartRequested = !!status?.pending?.restartRequested;
   const selectable = locations.filter((location) => !location.overridden);
   const canReset = (location: (typeof locations)[number]) =>
     !location.overridden &&
@@ -134,7 +136,14 @@ export function StorageSettings() {
       ) : null}
       {status?.lastError ? (
         <p className="settings-message is-error" role="alert">
-          {t("storage.migrationFailed")} {storageError(status.lastError)}
+          {t(
+            restartRequested
+              ? "storage.recovery.previousError"
+              : cancelling
+                ? "storage.cancellationFailed"
+                : "storage.migrationFailed",
+          )}{" "}
+          {storageError(status.lastError)}
         </p>
       ) : null}
       {loading && !status ? (
@@ -144,10 +153,33 @@ export function StorageSettings() {
       ) : null}
       {status?.pending ? (
         <div className="storage-settings__pending" role="status">
-          <strong>{t("storage.pending")}</strong>
-          <p>{t("storage.restartHint")}</p>
+          <strong>
+            {t(
+              restartRequested
+                ? "storage.recovery.restartPending"
+                : cancelling
+                  ? "storage.cancellationPending"
+                  : "storage.pending",
+            )}
+          </strong>
+          <p>
+            {t(
+              restartRequested
+                ? cancelling
+                  ? "storage.recovery.cancelAtRestart"
+                  : "storage.recovery.retryAtRestart"
+                : cancelling
+                  ? "storage.cancellationHint"
+                  : "storage.restartHint",
+            )}
+          </p>
+          {restartRequested ? (
+            <Button size="sm" onClick={() => useRestartPrompt.getState().show()}>
+              {t("storage.recovery.reviewRestart")}
+            </Button>
+          ) : null}
           <Button size="sm" disabled={disabled} onClick={() => void cancel()}>
-            {t("storage.cancelPlan")}
+            {t(cancelling ? "storage.retryCancellation" : "storage.cancelPlan")}
           </Button>
         </div>
       ) : null}
@@ -189,7 +221,7 @@ export function StorageSettings() {
                 {location.overridden ? (
                   <p className="settings-row__hint">{t("storage.overridden")}</p>
                 ) : null}
-                {next ? (
+                {next && !cancelling ? (
                   <div className="storage-settings__next">
                     <span>{t("storage.nextPath")}</span>
                     <code className="storage-settings__path" title={next.target}>
@@ -283,9 +315,10 @@ export function StorageSettings() {
           </Button>
         </div>
       ) : null}
-      {status && Object.keys(status.previous).length ? (
+      {status &&
+      (Object.keys(status.previous).length || Object.keys(status.archives ?? {}).length) ? (
         <details className="storage-settings__recovery">
-          <summary>{t("storage.recovery")}</summary>
+          <summary>{t("storage.recoveryCopies")}</summary>
           <p className="settings-row__hint">{t("storage.keptOriginals")}</p>
           {Object.entries(status.previous).map(([category, path]) => (
             <p key={category}>

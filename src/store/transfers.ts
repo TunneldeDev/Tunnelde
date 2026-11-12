@@ -12,6 +12,8 @@ import { transferNeedsReview } from "@/lib/files/transferRecovery";
 export interface TransferItem extends Omit<TransferEvent, "status"> {
   status: TransferEvent["status"] | "paused";
   durable?: boolean;
+  retainedCreation?: boolean;
+  retainedSettlement?: "unknown" | "created" | "rejected";
   updatedAt: number;
   cancelling?: boolean;
   pausing?: boolean;
@@ -211,6 +213,8 @@ export const useTransfers = create<TransfersStore>((set, get) => ({
       const previous = state.items.find((item) => item.id === event.id);
       if (previous && previous.status !== "running" && event.status === "running") return state;
       next.durable = previous?.durable;
+      next.retainedCreation = previous?.retainedCreation;
+      next.retainedSettlement = previous?.retainedSettlement;
       next.pluginId = event.pluginId ?? previous?.pluginId;
       next.clearing = previous?.clearing;
       next.speedLimitKib = previous?.speedLimitKib;

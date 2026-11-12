@@ -7,6 +7,23 @@ pub(super) fn apply(previous: &Settings, changes: Value) -> AppResult<Settings> 
     if serde_json::to_vec(&changes)?.len() > 256 * 1024 {
         return Err(invalid("changes"));
     }
+    apply_fields(previous, changes)
+}
+
+/// A saved profile is a complete public value, not a partial preference patch.
+/// Its domain owns body/collection bounds; keep the partial RPC's 256KiB limit.
+pub(super) fn full(previous: &Settings, values: Value) -> AppResult<Settings> {
+    let fields = values.as_object().ok_or_else(|| invalid("values"))?;
+    if fields.len() != GROUPS.len() {
+        return Err(invalid("values"));
+    }
+    for group in GROUPS {
+        schema::check(&schema::groups()[group.id], &values[group.id], group.id)?;
+    }
+    apply_fields(previous, values)
+}
+
+fn apply_fields(previous: &Settings, changes: Value) -> AppResult<Settings> {
     let fields = changes.as_object().ok_or_else(|| invalid("changes"))?;
     let mut internal = serde_json::to_value(previous)?;
     let mut expected = projection::values(previous)?;

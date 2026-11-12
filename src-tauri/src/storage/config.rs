@@ -23,6 +23,25 @@ fn default_migrate() -> bool {
 pub struct Pending {
     pub id: String,
     pub changes: Vec<Change>,
+    #[serde(default, skip_serializing_if = "Action::is_apply")]
+    pub action: Action,
+    /// Explicit user-confirmed recovery request, consumed before startup I/O.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub restart_requested: bool,
+}
+
+/// The persisted direction wins after a process restart. Older plans apply.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Action {
+    #[default]
+    Apply,
+    Cancel,
+}
+impl Action {
+    fn is_apply(&self) -> bool {
+        *self == Self::Apply
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

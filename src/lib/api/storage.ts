@@ -26,7 +26,12 @@ export interface StorageLocation {
 }
 export interface StorageStatus {
   locations: StorageLocation[];
-  pending: { id: string; changes: StorageChange[] } | null;
+  pending: {
+    id: string;
+    changes: StorageChange[];
+    action?: "apply" | "cancel";
+    restartRequested?: boolean;
+  } | null;
   previous: Partial<Record<StorageCategory, string>>;
   archives?: Partial<Record<StorageCategory, string>>;
   lastError: string | null;

@@ -17,10 +17,13 @@ import { toast } from "@/store/toasts";
 import { useWorkspace, type PageKind } from "@/store/workspace";
 import { useQuickAccess } from "@/store/quickAccess";
 import { runEditorRequest } from "@/app/plugins/editorRequests";
+import { runFileBrowserRequest } from "@/app/plugins/fileBrowserRequests";
 import { projectPluginWorkspace } from "@/lib/plugins/workspace";
 import { pluginMessage, pluginConfirmation } from "@/lib/plugins/ui";
 import { isIpcError } from "@/lib/api/types";
 import { storageLocationReview } from "@/app/plugins/storageLocationRequests";
+import { storageRecoveryReview } from "@/app/plugins/storageRecoveryRequests";
+import { profileActivationReview } from "@/app/plugins/profileActivationRequests";
 import { reconcileStorageMetadata } from "@/app/plugins/storageReconciliation";
 
 export interface PluginWorkspaceRequest {
@@ -67,6 +70,8 @@ export async function runPluginWorkspaceRequest(
   await authorizeRequest();
   const { method, params } = request;
   if (method.startsWith("editor.")) return runEditorRequest(method, params, authorizeRequest);
+  if (method.startsWith("fileBrowser."))
+    return runFileBrowserRequest(method, params, authorizeRequest);
   const workspace = useWorkspace.getState();
   switch (method) {
     case "__frontend.command": {
@@ -214,6 +219,10 @@ export async function runPluginWorkspaceRequest(
     }
     case "ui.confirm":
       return confirmPlugin(request.requestId, request.pluginId, pluginConfirmation(params));
+    case "profiles.activate":
+      return confirmPlugin(request.requestId, request.pluginId, profileActivationReview(params));
+    case "storage.recovery.request":
+      return confirmPlugin(request.requestId, request.pluginId, storageRecoveryReview(params));
     case "storage.locations.schedule":
     case "storage.locations.cancel":
       return confirmPlugin(

@@ -28,6 +28,11 @@ pub struct DurableTransfer {
     /// Attribution only, never an authorization to resume a former runtime.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub plugin_id: Option<String>,
+    /// An independently retained MKDIR receipt; never a resumable data transfer.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub retained_creation: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retained_settlement: Option<String>,
     pub direction: String,
     pub name: String,
     pub from_session: Option<String>,
@@ -67,6 +72,9 @@ pub struct DurableTransfer {
 
 impl DurableTransfer {
     pub(super) fn require_user_control(&self) -> AppResult<()> {
+        if self.retained_creation {
+            return Err(AppError::validation("sftp.retainedCreationUnknown"));
+        }
         if self.plugin_id.is_some() {
             return Err(AppError::validation("sftp.pluginTransferNotResumable"));
         }
@@ -95,6 +103,10 @@ const UPSERT_TRANSFER: &str = "INSERT INTO settings(key,value,updated_at) VALUES
 const SET_SPEED_LIMIT: &str = "UPDATE settings SET value=json_set(value,'$.speedLimitKib',?1,'$.updatedAt',?2),updated_at=?2 WHERE key=?3";
 
 fn write_row(conn: &rusqlite::Connection, row: &DurableTransfer) -> AppResult<()> {
+    if row.retained_creation {
+        return super::artifacts::retained::update_task(conn, row);
+    }
+    super::artifacts::retained::protect_remove(conn, &row.id)?;
     conn.execute(
         UPSERT_TRANSFER,
         rusqlite::params![
@@ -143,7 +155,12 @@ pub(super) fn record_cleanup_failure(row: &mut DurableTransfer, error: Option<Ap
     row.error = Some(match error {
         Some(AppError::TransferCreationUnconfirmed { path }) => {
             row.artifact_recovery = Some(path);
-            "sftp.transferCreationUnconfirmed".into()
+            if row.retained_creation {
+                "sftp.retainedCreationUnknown"
+            } else {
+                "sftp.transferCreationUnconfirmed"
+            }
+            .into()
         }
         Some(AppError::TransferArtifactUnrecognized { path }) => {
             row.artifact_recovery = Some(path);
@@ -216,6 +233,7 @@ impl Journal {
     }
     pub fn list(app: &AppHandle) -> AppResult<Vec<DurableTransfer>> {
         app.state::<AppState>().db.with(|conn| {
+            super::artifacts::retained::restore_tasks(conn)?;
             let mut stmt = conn.prepare(
                 "SELECT value FROM settings WHERE key LIKE 'transfer:%' ORDER BY updated_at",
             )?;
@@ -229,6 +247,7 @@ impl Journal {
     }
     pub fn get(app: &AppHandle, id: &str) -> AppResult<DurableTransfer> {
         app.state::<AppState>().db.with(|conn| {
+            super::artifacts::retained::restore_task(conn, id)?;
             use rusqlite::OptionalExtension;
             let raw: Option<String> = conn
                 .query_row(
@@ -243,6 +262,7 @@ impl Journal {
     }
     pub fn remove(app: &AppHandle, id: &str) -> AppResult<()> {
         app.state::<AppState>().db.with(|conn| {
+            super::artifacts::retained::protect_remove(conn, id)?;
             conn.execute(
                 "DELETE FROM settings WHERE key=?1 OR instr(key,?2)=1 OR instr(key,?3)=1 OR instr(key,?4)=1 OR instr(key,?5)=1 OR instr(key,?6)=1 OR instr(key,?7)=1",
                 rusqlite::params![
@@ -283,6 +303,10 @@ impl Journal {
 
 /// Caller keeps the transfer reserved until cleanup and journal changes finish.
 pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) -> AppResult<()> {
+    if row.retained_creation {
+        return super::artifacts::retained::cleanup(app, row).await;
+    }
+    super::artifacts::retained::detach_for_cleanup(app, row)?;
     let has_artifacts = app.state::<AppState>().db.with(|conn| {
         Ok(conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM settings WHERE instr(key,?1)=1 OR instr(key,?2)=1)",
@@ -790,7 +814,11 @@ pub async fn durable_transfer_clear(
     let state = app.state::<AppState>();
     let _reservation = state.transfers.reserve_cleanup(&id)?;
     async {
-        let mut row = Journal::get(&app, &id)?;
+        let mut row = match Journal::get(&app, &id) {
+            Ok(row) => row,
+            Err(AppError::NotFound(_)) => return Ok(None),
+            Err(error) => return Err(error),
+        };
         if row.status == "done" {
             Journal::remove(&app, &id)?;
             return Ok(None);
@@ -815,7 +843,9 @@ pub async fn durable_transfer_clear(
                 row.updated_at = crate::models::now_ms();
                 Journal::upsert(&app, row.clone())?;
                 let _ = app.emit("sftp://changed", ());
-                Ok(Some(row))
+                // A late acknowledgement may have advanced retained work while
+                // cleanup was awaiting I/O. Return the authoritative projection.
+                Ok(Some(Journal::get(&app, &row.id)?))
             }
         }
     }
@@ -918,13 +948,14 @@ pub(crate) async fn on_reconnect(app: &AppHandle) {
             row
         };
         if row.status == "cleanupPending"
-            && resolve_session(
-                app,
-                row.to_host_id.as_deref(),
-                row.to_session.as_deref(),
-                row.to_address.as_deref(),
-            )
-            .is_ok()
+            && ((row.retained_creation && row.retained_settlement.as_deref() == Some("rejected"))
+                || resolve_session(
+                    app,
+                    row.to_host_id.as_deref(),
+                    row.to_session.as_deref(),
+                    row.to_address.as_deref(),
+                )
+                .is_ok())
         {
             // A reconnect can arrive while an older connection still owns a
             // bounded cleanup attempt. Retain that request until its registry

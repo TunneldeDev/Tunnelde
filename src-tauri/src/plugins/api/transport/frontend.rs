@@ -94,6 +94,8 @@ pub(in crate::plugins) async fn frontend_request(
                         | "__frontend.command"
                         | "storage.locations.schedule"
                         | "storage.locations.cancel"
+                        | "storage.recovery.request"
+                        | "profiles.activate"
                 ) {
                     60
                 } else {

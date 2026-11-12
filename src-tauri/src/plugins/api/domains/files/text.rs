@@ -17,17 +17,12 @@ fn validate_text(bytes: &[u8]) -> AppResult<()> {
 }
 
 pub(in crate::plugins::api) async fn local_read(path: String) -> AppResult<Value> {
-    tokio::task::spawn_blocking(move || {
-        let target = std::fs::canonicalize(path)?;
-        let mut file = crate::platform::editor_file::open_regular(&target, false)?;
-        let mut bytes = Vec::new();
-        std::io::Read::read_to_end(
-            &mut std::io::Read::take(&mut file, MAX_TEXT as u64 + 1),
-            &mut bytes,
-        )?;
-        validate_text(&bytes)?;
-        Ok(json!({"size":bytes.len(),"content":String::from_utf8(bytes).map_err(|_| AppError::validation("plugin.api.invalidText"))?}))
-    }).await.map_err(|error| AppError::internal(error.to_string()))?
+    let (reader, _) = crate::services::files::read::LocalReader::open(path).await?;
+    let bytes = reader.prefix(MAX_TEXT).await?;
+    validate_text(&bytes)?;
+    Ok(
+        json!({"size":bytes.len(),"content":String::from_utf8(bytes).map_err(|_| AppError::validation("plugin.api.invalidText"))?}),
+    )
 }
 
 pub(in crate::plugins) async fn write_local(

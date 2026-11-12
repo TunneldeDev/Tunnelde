@@ -1,0 +1,276 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Experimental host storage recovery v1",
+  "description": "Metadata only. Also enforce UTF-8 byte bounds, exact category order, unique pending categories, ordered category/kind copies, paired revisions, snapshot<=127KiB and response<=128KiB. Recorded paths do not confer existence/integrity/ownership/deletion authority.",
+  "definitions": {
+    "revision": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$(?![\\s\\S])"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\)[^\\u0000-\\u001f\\u007f-\\u009f]*$(?![\\s\\S])"
+    },
+    "category": {
+      "enum": [
+        "database",
+        "plugins",
+        "pluginData",
+        "keys",
+        "runtimes",
+        "cache",
+        "logs",
+        "runners"
+      ]
+    },
+    "change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "target",
+        "migrate"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/category"
+        },
+        "target": {
+          "$ref": "#/definitions/path"
+        },
+        "migrate": {
+          "type": "boolean"
+        }
+      }
+    },
+    "changes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 8,
+      "items": {
+        "$ref": "#/definitions/change"
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "path",
+        "defaultPath",
+        "overridden"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/category"
+        },
+        "path": {
+          "$ref": "#/definitions/path"
+        },
+        "defaultPath": {
+          "$ref": "#/definitions/path"
+        },
+        "overridden": {
+          "type": "boolean"
+        }
+      }
+    },
+    "observeRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/revision"
+        }
+      }
+    },
+    "pending": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "action",
+        "restartRequested",
+        "changes"
+      ],
+      "properties": {
+        "action": {
+          "enum": [
+            "apply",
+            "cancel"
+          ]
+        },
+        "restartRequested": {
+          "type": "boolean"
+        },
+        "changes": {
+          "$ref": "#/definitions/changes"
+        }
+      }
+    },
+    "copy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "kind",
+        "path"
+      ],
+      "properties": {
+        "category": {
+          "$ref": "#/definitions/category"
+        },
+        "kind": {
+          "enum": [
+            "previous",
+            "archive"
+          ]
+        },
+        "path": {
+          "$ref": "#/definitions/path"
+        }
+      }
+    },
+    "snapshot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "revision",
+        "locations",
+        "pending",
+        "recordedCopies",
+        "hasError"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "locations": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/definitions/location"
+          }
+        },
+        "pending": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/definitions/pending"
+            }
+          ]
+        },
+        "recordedCopies": {
+          "type": "array",
+          "minItems": 0,
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/definitions/copy"
+          }
+        },
+        "hasError": {
+          "type": "boolean"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "revision",
+        "action"
+      ],
+      "properties": {
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "action": {
+          "enum": [
+            "retry",
+            "cancel"
+          ]
+        }
+      }
+    },
+    "requestResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "outcome",
+        "snapshot"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "outcome": {
+          "enum": [
+            "restartScheduled",
+            "dismissed"
+          ]
+        },
+        "snapshot": {
+          "$ref": "#/definitions/snapshot"
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "revision",
+        "changed"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "changed": {
+          "const": false
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "revision",
+        "changed",
+        "snapshot"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "$ref": "#/definitions/revision"
+        },
+        "changed": {
+          "const": true
+        },
+        "snapshot": {
+          "$ref": "#/definitions/snapshot"
+        }
+      }
+    }
+  ]
+}

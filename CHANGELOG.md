@@ -6,6 +6,72 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.35.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.34.0...v0.35.0) - 2026-11-11
+
+### 更新概览 | Highlights
+
+- **profiles:** expose bounded versioned public content reads
+- **profiles:** add owned staged writes and atomic activation
+- **profiles:** request native consent for public activation
+- **storage:** add confirmed deferred recovery API
+- **settings:** distinguish scheduled recovery and review restart intent
+
+<details open>
+<summary>详细变更 | Details (32)</summary>
+
+### 新增 | New
+
+- **profiles:** expose bounded versioned public content reads ([#283](https://github.com/TunneldeDev/Tunnelde/pull/283), [8071b5b](https://github.com/TunneldeDev/Tunnelde/commit/8071b5b56e004b908f75bd2677dc99d9c7232e17)) @quyansiyuanwang
+- **profiles:** add owned staged writes and atomic activation ([#286](https://github.com/TunneldeDev/Tunnelde/pull/286), [e6440df](https://github.com/TunneldeDev/Tunnelde/commit/e6440dffa70c289134c6a5efc0b0e567d6340e8b)) @quyansiyuanwang
+- **profiles:** request native consent for public activation ([#286](https://github.com/TunneldeDev/Tunnelde/pull/286), [34ace3b](https://github.com/TunneldeDev/Tunnelde/commit/34ace3b0fbe1cd69c7ea1b1724f14f8cd2d66a38)) @quyansiyuanwang
+- **storage:** add confirmed deferred recovery API ([#288](https://github.com/TunneldeDev/Tunnelde/pull/288), [88ccf5a](https://github.com/TunneldeDev/Tunnelde/commit/88ccf5a7a4433cd627a54b74d1de60288cd16cdd)) @quyansiyuanwang
+- **settings:** distinguish scheduled recovery and review restart intent ([#288](https://github.com/TunneldeDev/Tunnelde/pull/288), [0d13150](https://github.com/TunneldeDev/Tunnelde/commit/0d131502c87a2dfc2fb7ee324aa74e210e8bd976)) @quyansiyuanwang
+- **plugins:** expose live file browser data and actions ([#290](https://github.com/TunneldeDev/Tunnelde/pull/290), [401d716](https://github.com/TunneldeDev/Tunnelde/commit/401d716a7bd180c83b6c2d226107d6c940c4bcb3)) @quyansiyuanwang
+- **files:** add runtime-owned read-only content resources ([#293](https://github.com/TunneldeDev/Tunnelde/pull/293), [f085d7b](https://github.com/TunneldeDev/Tunnelde/commit/f085d7b9c69ccb8f7c0af4cfab6e1eb13067c665)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **profiles:** decode public profile snapshots outside the database lock ([#283](https://github.com/TunneldeDev/Tunnelde/pull/283)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **ci:** use explicit Node global in profile SDK consumer ([#283](https://github.com/TunneldeDev/Tunnelde/pull/283), [2b374a3](https://github.com/TunneldeDev/Tunnelde/commit/2b374a3fe354447ffdd00a230c00b42a07dde99e)) @quyansiyuanwang
+- **release:** recover platform builds with resilient Linux sources ([#285](https://github.com/TunneldeDev/Tunnelde/pull/285)) @quyansiyuanwang
+- **storage:** persist cancellation intent and retain recovery copies ([#287](https://github.com/TunneldeDev/Tunnelde/pull/287), [d918dea](https://github.com/TunneldeDev/Tunnelde/commit/d918dea9520dd297936d42c3eafeb5b5b99fe3ba)) @quyansiyuanwang
+- **settings:** expose interrupted storage cancellation and retry ([#287](https://github.com/TunneldeDev/Tunnelde/pull/287), [95e1a85](https://github.com/TunneldeDev/Tunnelde/commit/95e1a856bf522309f45ace2aa4d202a79ce6116f)) @quyansiyuanwang
+- **settings:** distinguish cancellation recovery errors from migration failures ([#287](https://github.com/TunneldeDev/Tunnelde/pull/287)) @quyansiyuanwang
+- **settings:** keep recovery consent focused on the requested action ([#288](https://github.com/TunneldeDev/Tunnelde/pull/288)) @quyansiyuanwang
+- **sftp:** retain uncertain directory creation across retries ([#289](https://github.com/TunneldeDev/Tunnelde/pull/289), [479f067](https://github.com/TunneldeDev/Tunnelde/commit/479f067a0b477c5e5fa225b53c7a45330254d11d)) @quyansiyuanwang
+- **tasks:** separate retained directory recovery from transfer progress ([#289](https://github.com/TunneldeDev/Tunnelde/pull/289), [986a478](https://github.com/TunneldeDev/Tunnelde/commit/986a4785022822145e441f806d33f74f86118382)) @quyansiyuanwang
+- **tasks:** explain preserved directory contents during recovery ([#289](https://github.com/TunneldeDev/Tunnelde/pull/289)) @quyansiyuanwang
+- **files:** bound and safely open native file read workers ([#291](https://github.com/TunneldeDev/Tunnelde/pull/291), [1948a27](https://github.com/TunneldeDev/Tunnelde/commit/1948a27105ce07879723767c463a6a5d9cff5266)) @quyansiyuanwang
+- **files:** share bounded explicit-offset remote readers ([#292](https://github.com/TunneldeDev/Tunnelde/pull/292), [cfc8fdf](https://github.com/TunneldeDev/Tunnelde/commit/cfc8fdfdace21d4a38242df9b690074f172d6be6)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **transfers:** explain retained directory recovery ([#289](https://github.com/TunneldeDev/Tunnelde/pull/289), [a64438e](https://github.com/TunneldeDev/Tunnelde/commit/a64438efa11bc0098fd6a2255c945199bf8999d8)) @quyansiyuanwang
+- **plugins:** describe revision-bound browser operations ([#290](https://github.com/TunneldeDev/Tunnelde/pull/290), [bd449c3](https://github.com/TunneldeDev/Tunnelde/commit/bd449c3a9e0abb987780e3279173afad8b7c47dd)) @quyansiyuanwang
+- **files:** describe read budgets and cancellation limits ([#291](https://github.com/TunneldeDev/Tunnelde/pull/291), [d5c9448](https://github.com/TunneldeDev/Tunnelde/commit/d5c94482edc6265ae11db4cf4d05cdf206eca494)) @quyansiyuanwang
+- **files:** describe remote read ownership and deadlines ([#292](https://github.com/TunneldeDev/Tunnelde/pull/292)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **transfers:** measure throttling after opening SFTP handles ([#283](https://github.com/TunneldeDev/Tunnelde/pull/283), [aa66b61](https://github.com/TunneldeDev/Tunnelde/commit/aa66b61cbb628977dcd40013ccd0b0e527fb0806)) @quyansiyuanwang
+- **profiles:** check native writes against the SDK contract ([#286](https://github.com/TunneldeDev/Tunnelde/pull/286)) @quyansiyuanwang
+- **storage:** check native recovery with pinned SDK ([#288](https://github.com/TunneldeDev/Tunnelde/pull/288), [c46c5c5](https://github.com/TunneldeDev/Tunnelde/commit/c46c5c50d596aff3b7cdf1a84a7817fc9defeb37)) @quyansiyuanwang
+- **plugins:** cover browser discovery and historical exports ([#290](https://github.com/TunneldeDev/Tunnelde/pull/290), [6392d89](https://github.com/TunneldeDev/Tunnelde/commit/6392d89e60777cbe6c32991ad45279f869eaebf9)) @quyansiyuanwang
+- **plugins:** verify real file browser responses with pinned SDK ([#290](https://github.com/TunneldeDev/Tunnelde/pull/290)) @quyansiyuanwang
+- **files:** exercise native readers on Windows and macOS ([#291](https://github.com/TunneldeDev/Tunnelde/pull/291), [03e16b0](https://github.com/TunneldeDev/Tunnelde/commit/03e16b0fb604402cc7e6a11933cac5518f46b750)) @quyansiyuanwang
+- **files:** bound the FIFO replacement regression probe ([#291](https://github.com/TunneldeDev/Tunnelde/pull/291)) @quyansiyuanwang
+- **files:** verify content contracts across host and SDK ([#293](https://github.com/TunneldeDev/Tunnelde/pull/293), [4301a01](https://github.com/TunneldeDev/Tunnelde/commit/4301a011d5bf505b6d800fd30704ae8fea46d67f)) @quyansiyuanwang
+- **files:** record additive content types in compatibility contract ([#293](https://github.com/TunneldeDev/Tunnelde/pull/293)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.34.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.33.0...v0.34.0) - 2026-11-11
 
 ### 更新概览 | Highlights

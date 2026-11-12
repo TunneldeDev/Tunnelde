@@ -7,6 +7,10 @@ use super::inventory;
 use super::layout::{self, Category, Paths};
 use super::migration::{equal_tree, owned, stage, MARKER};
 use crate::error::{AppError, AppResult};
+use crate::platform::file_ops::rename_noreplace;
+
+mod cancellation;
+pub(super) use cancellation::cancel;
 
 const JOURNAL: &str = "restore.json";
 
@@ -168,7 +172,9 @@ pub(super) fn publish(
             if !owned(&preparing, id) {
                 return Err(AppError::validation("storage.targetNotEmpty"));
             }
-            std::fs::remove_dir_all(&preparing)?;
+            // A marker does not authorize deleting files left by an interrupted
+            // preparation. Preserve the directory for manual recovery.
+            return Err(AppError::validation("storage.incompleteCopy"));
         }
         std::fs::create_dir(&preparing)?;
         #[cfg(unix)]
@@ -186,7 +192,7 @@ pub(super) fn publish(
         file.write_all(&bytes)?;
         file.sync_all()?;
         drop(file);
-        std::fs::rename(preparing, &directory)?;
+        rename_noreplace(&preparing, &directory)?;
     }
     let journal = load(paths, change, id)?;
     std::fs::create_dir_all(&change.target)?;
@@ -198,7 +204,7 @@ pub(super) fn publish(
             if layout::linked(&metadata) {
                 return Err(AppError::validation("storage.linkUnsupported"));
             }
-            std::fs::rename(original, saved)?;
+            rename_noreplace(&original, &saved)?;
         }
     }
     for entry in &journal.installed {
@@ -208,7 +214,7 @@ pub(super) fn publish(
             if layout::metadata(&destination)?.is_some() {
                 return Err(AppError::validation("storage.targetNotEmpty"));
             }
-            std::fs::rename(staged, destination)?;
+            rename_noreplace(&staged, &destination)?;
         }
         verify_installed(paths, change, entry)?;
     }
@@ -216,40 +222,4 @@ pub(super) fn publish(
         return Err(AppError::validation("storage.verificationFailed"));
     }
     Ok(directory.join("original"))
-}
-
-/// Cancellation restores archived defaults only after checking that published entries
-/// still match the migration source. Modified files are retained and reported, never deleted.
-pub(super) fn cancel(paths: &Paths, change: &Change, id: &str) -> AppResult<()> {
-    if !pending(change, id)? {
-        return Ok(());
-    }
-    let journal = load(paths, change, id)?;
-    let staging = stage(change, id)?;
-    if !owned(&staging, id) {
-        return Err(AppError::validation("storage.verificationFailed"));
-    }
-    let directory = archive(change, id)?;
-    for entry in &journal.installed {
-        if layout::metadata(&staging.join(entry))?.is_none() {
-            verify_installed(paths, change, entry)?;
-        }
-    }
-    for entry in &journal.installed {
-        if layout::metadata(&staging.join(entry))?.is_none() {
-            std::fs::rename(change.target.join(entry), staging.join(entry))?;
-        }
-    }
-    for entry in &journal.originals {
-        let saved = directory.join("original").join(entry);
-        if layout::metadata(&saved)?.is_some() {
-            if layout::metadata(&change.target.join(entry))?.is_some() {
-                return Err(AppError::validation("storage.targetNotEmpty"));
-            }
-            std::fs::rename(saved, change.target.join(entry))?;
-        }
-    }
-    std::fs::remove_dir_all(directory)?;
-    std::fs::remove_dir_all(staging)?;
-    Ok(())
 }

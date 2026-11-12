@@ -27,6 +27,9 @@ export function TransferTask({
   const actions = useTransfers.getState();
   const busy = item.clearing || item.cancelling || item.pausing;
   const pending = item.status === "cleanupPending";
+  const name = item.retainedCreation
+    ? t("sftp.retainedCreationTask", { name: item.name })
+    : item.name;
   const running = item.status === "running";
   const reviewRequired = (item.status === "failed" || pending) && transferNeedsReview(item.error);
   const waiting = item.phase === "queued" || item.phase === "preparing";
@@ -76,18 +79,18 @@ export function TransferTask({
   return (
     <article
       className={cn("transfer-task", `is-${item.status}`, reviewRequired && "needs-review")}
-      aria-label={item.name}
+      aria-label={name}
     >
       <div className="transfer-task__row">
         <button
           type="button"
           className="transfer-task__toggle"
-          title={item.name}
+          title={name}
           aria-expanded={expanded}
           onClick={() => setExpanded(!expanded)}
         >
           <ChevronDown size={12} className={expanded ? "is-expanded" : undefined} />
-          <span>{item.name}</span>
+          <span>{name}</span>
         </button>
         <span className="transfer-task__state">{state}</span>
         <span className="transfer__actions">
@@ -152,39 +155,45 @@ export function TransferTask({
           )}
         </span>
       </div>
-      <span
-        className={cn("transfer__meter", progress.percent === null && "is-indeterminate")}
-        role="progressbar"
-        aria-label={item.name}
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={progress.percent === null ? undefined : Math.floor(progress.percent)}
-        aria-valuetext={state}
-      >
-        <span style={{ width: progress.percent === null ? "25%" : `${progress.percent}%` }} />
-      </span>
-      <div className="transfer-task__summary">
-        <span>
-          {formatBytes(progress.transferred)}
-          {progress.total !== null ? ` / ${formatBytes(progress.total)}` : ""}
-        </span>
-        {running && !waiting ? (
-          <span>
-            {progress.speed === null
-              ? t("sftp.calculatingSpeed")
-              : t("sftp.transferSpeed", { value: formatBytes(progress.speed) })}
+      {!item.retainedCreation ? (
+        <>
+          <span
+            className={cn("transfer__meter", progress.percent === null && "is-indeterminate")}
+            role="progressbar"
+            aria-label={item.name}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress.percent === null ? undefined : Math.floor(progress.percent)}
+            aria-valuetext={state}
+          >
+            <span style={{ width: progress.percent === null ? "25%" : `${progress.percent}%` }} />
           </span>
-        ) : null}
-        {running && !waiting && progress.eta !== null && progress.remaining !== 0 ? (
-          <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
-        ) : null}
-      </div>
+          <div className="transfer-task__summary">
+            <span>
+              {formatBytes(progress.transferred)}
+              {progress.total !== null ? ` / ${formatBytes(progress.total)}` : ""}
+            </span>
+            {running && !waiting ? (
+              <span>
+                {progress.speed === null
+                  ? t("sftp.calculatingSpeed")
+                  : t("sftp.transferSpeed", { value: formatBytes(progress.speed) })}
+              </span>
+            ) : null}
+            {running && !waiting && progress.eta !== null && progress.remaining !== 0 ? (
+              <span>{t("sftp.remainingTime", { value: elapsed(progress.eta) })}</span>
+            ) : null}
+          </div>
+        </>
+      ) : null}
       {pending && !item.backupRecovery && !item.artifactRecovery ? (
         <p className="transfer-task__notice">{t("sftp.cleanupPendingHint")}</p>
       ) : null}
       {item.error ? (
         <p className="transfer-task__error">
-          {translateError({ code: "ssh", message: item.error })}
+          {item.retainedCreation && item.error === "sftp.transferArtifactUnrecognized"
+            ? t("sftp.retainedCreationChanged")
+            : translateError({ code: "ssh", message: item.error })}
         </p>
       ) : null}
       {item.backupRecovery ? (
@@ -212,7 +221,9 @@ export function TransferTask({
             item={item}
             side="to"
             path={item.artifactRecovery}
-            label={t("sftp.transferArtifactPath")}
+            label={t(
+              item.retainedCreation ? "sftp.retainedCreationPath" : "sftp.transferArtifactPath",
+            )}
             inspect
           />
         </div>
@@ -226,7 +237,7 @@ export function TransferTask({
         <div className="transfer-task__details">
           {item.pluginId ? <p>{t("sftp.pluginTransferOwner", { id: item.pluginId })}</p> : null}
           {!showRecoveryPaths ? <TransferPaths item={item} /> : null}
-          {progress.remaining !== null ? (
+          {!item.retainedCreation && progress.remaining !== null ? (
             <p>{t("sftp.remainingBytes", { value: formatBytes(progress.remaining) })}</p>
           ) : null}
           {item.speedLimitKib ? (

@@ -4,6 +4,7 @@ import i18n from "@/i18n/i18n";
 import { StorageSettings } from "@/features/settings/StorageSettings";
 import { useStorage } from "@/store/storage";
 import { sameStoragePath, type StorageStatus } from "@/lib/api/storage";
+import { useRestartPrompt } from "@/store/restartPrompt";
 
 const api = vi.hoisted(() => ({
   storageStatus: vi.fn(),
@@ -216,7 +217,76 @@ it("shows archived default data alongside the retained migration source", async 
   restored.archives = { database: "C:\\Data\\storage-recovery\\database\\id\\original" };
   api.storageStatus.mockResolvedValue(restored);
   render(<StorageSettings />);
-  await screen.findByText("Archived default data — Settings & database");
+  await screen.findByText("Recovery copy — Settings & database");
   expect(screen.getByText("D:\\CurrentDatabase")).toBeTruthy();
   expect(screen.getByText(restored.archives.database!)).toBeTruthy();
 });
+
+it("shows persisted cancellation after failure and allows retry without advertising new paths", async () => {
+  const planned = status();
+  planned.pending = {
+    id: "plan",
+    changes: [{ category: "database", target: "E:\\Database", migrate: true }],
+  };
+  api.storageStatus.mockResolvedValueOnce(planned).mockResolvedValue({
+    ...planned,
+    pending: { ...planned.pending, action: "cancel" },
+    lastError: "storage.verificationFailed",
+  });
+  api.storageCancel.mockRejectedValueOnce(new Error("storage.verificationFailed"));
+  render(<StorageSettings />);
+  fireEvent.click(await screen.findByRole("button", { name: "Cancel scheduled changes" }));
+  await screen.findByText("Storage cancellation needs recovery");
+  expect(
+    screen.getByText(/Cancellation is incomplete\. Current storage locations remain active\./),
+  ).toBeTruthy();
+  expect(screen.queryByText(/Migration did not complete/)).toBeNull();
+  expect(screen.queryByText("Location changes are scheduled")).toBeNull();
+  expect(screen.queryByText("E:\\Database")).toBeNull();
+  expect(screen.queryByRole("button", { name: /Review changes/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Retry cancellation" }));
+  await waitFor(() => expect(api.storageCancel).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(useStorage.getState().status?.pending).toBeNull());
+});
+
+it("shows a cancelled staging recovery copy even before any migration has succeeded", async () => {
+  const cancelled = status();
+  cancelled.archives = { pluginData: "D:\\Recovery\\cancelled" };
+  api.storageStatus.mockResolvedValue(cancelled);
+  render(<StorageSettings />);
+  await screen.findByText("Recovery copy — Plugin data & chats");
+  expect(screen.getByText("D:\\Recovery\\cancelled")).toBeTruthy();
+});
+
+it.each(["apply", "cancel"] as const)(
+  "distinguishes deferred %s from a failed recovery and offers restart timing",
+  async (action) => {
+    const deferred = status();
+    deferred.pending = {
+      id: "plan",
+      action,
+      restartRequested: true,
+      changes: [{ category: "database", target: "E:\\Database", migrate: true }],
+    };
+    deferred.lastError = "storage.verificationFailed";
+    api.storageStatus.mockResolvedValue(deferred);
+    useRestartPrompt.getState().close();
+    render(<StorageSettings />);
+    await screen.findByText("Storage recovery scheduled");
+    expect(
+      screen.getByText(/Previous recovery error \(new request has not run yet\):/),
+    ).toBeTruthy();
+    expect(screen.queryByText("Storage cancellation needs recovery")).toBeNull();
+    expect(
+      screen.getByText(
+        action === "cancel"
+          ? "The next startup will continue cancelling this plan. Current storage locations remain active and recovery copies are retained."
+          : "The next startup will retry this migration. Current storage locations remain active.",
+      ),
+    ).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose when to restart" }));
+    expect(useRestartPrompt.getState().open).toBe(true);
+    expect(api.storageCancel).not.toHaveBeenCalled();
+    useRestartPrompt.getState().close();
+  },
+);
