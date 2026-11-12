@@ -130,7 +130,9 @@ function Preview({
           <FileTypeIcon icon={resolveFileIcon(file.path)} />
           <div>
             <strong>{fileName(file.path)}</strong>
-            <p className="settings-hint">{file.path}</p>
+            <p className="settings-hint" title={file.path}>
+              {file.path}
+            </p>
           </div>
         </div>
         {providers.length > 1 ? (
