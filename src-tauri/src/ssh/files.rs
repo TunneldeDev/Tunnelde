@@ -3120,6 +3120,25 @@ pub async fn write_text(
     content: &str,
     baseline: Option<&str>,
 ) -> AppResult<()> {
+    write_text_checked(
+        app,
+        session_id,
+        path,
+        content,
+        baseline,
+        remote_editor::policy::Native,
+    )
+    .await
+}
+
+pub(crate) async fn write_text_checked(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    content: &str,
+    baseline: Option<&str>,
+    policy: impl remote_editor::policy::Policy,
+) -> AppResult<()> {
     if content.len() as u64 > MAX_TEXT || baseline.is_some_and(|s| s.len() as u64 > MAX_TEXT) {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
@@ -3132,6 +3151,7 @@ pub async fn write_text(
         path.into(),
         content.into(),
         baseline.map(str::to_owned),
+        policy,
     )
     .await
 }

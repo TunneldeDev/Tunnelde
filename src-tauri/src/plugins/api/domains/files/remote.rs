@@ -36,17 +36,7 @@ pub(in crate::plugins::api) async fn dispatch(
             )
             .await?,
         ),
-        "files.sftp.writeText" => {
-            commands::sftp_write_text(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "path")?,
-                field(&params, "content")?,
-                optional(&params, "baseline")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
+        "files.sftp.writeText" => super::remote_write::write_remote(context, &params, None).await,
         "files.sftp.createFile" => {
             commands::sftp_create_file(
                 app.clone(),

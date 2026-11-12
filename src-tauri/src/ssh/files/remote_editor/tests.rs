@@ -3,6 +3,7 @@ use russh_sftp::protocol::*;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::atomic::AtomicUsize;
 
+mod authorization;
 mod workers;
 
 // Existing protocol cases exercise an uncancelled transaction; worker lifetime
@@ -29,6 +30,7 @@ async fn staged_save(
         },
         record,
         &job,
+        &policy::Native,
     )
     .await
 }

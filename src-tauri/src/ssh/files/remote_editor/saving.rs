@@ -15,6 +15,7 @@ pub(super) struct Request {
 pub(super) async fn save_with<J, F, W, R>(
     budget: &Budget,
     request: Request,
+    policy: impl policy::Policy,
     open: F,
     journal: J,
 ) -> AppResult<()>
@@ -27,8 +28,9 @@ where
     budget
         .asynchronous(move |job| async move {
             // Opening channels is charged to the actual worker, not the RPC.
+            policy.authorize()?;
             let (sftp, replacement) = open(job.clone()).await?;
-            let result = save_opened(&sftp, replacement, &request, &journal, &job).await;
+            let result = save_opened(&sftp, replacement, &request, &journal, &job, &policy).await;
             let _ = sftp.close().await;
             result
         })
@@ -41,6 +43,7 @@ async fn save_opened(
     request: &Request,
     journal: &impl Journal,
     job: &Cancellation,
+    policy: &impl policy::Policy,
 ) -> AppResult<()> {
     job.check()?;
     let target = sftp.canonicalize(&request.path).await.map_err(map_sftp)?;
@@ -50,9 +53,13 @@ async fn save_opened(
     let lock = lock_for(format!("{}\0{target}", request.address));
     let _guard = lock.lock().await;
     job.check()?;
+    policy.authorize()?;
     let original = read_remote_text(sftp, &target).await?;
     job.check()?;
+    policy.check(sftp, &target, &original.content).await?;
+    job.check()?;
     if original.content == request.content {
+        policy.admit(job)?;
         journal.published(&request.session_id);
         return Ok(());
     }
@@ -96,6 +103,7 @@ async fn save_opened(
         },
         &record,
         job,
+        policy,
     )
     .await;
     if result.is_ok() {

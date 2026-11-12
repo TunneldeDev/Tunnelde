@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Weak};
 
 mod journal;
+pub(crate) mod policy;
 mod retained;
 mod saving;
 use journal::Journal;
@@ -171,6 +172,7 @@ pub(super) async fn save(
     path: String,
     content: String,
     baseline: Option<String>,
+    policy: impl policy::Policy,
 ) -> AppResult<()> {
     let host = app
         .state::<AppState>()
@@ -191,6 +193,7 @@ pub(super) async fn save(
     saving::save_with(
         &write::REMOTE_BUDGET,
         request,
+        policy,
         move |_job| async move {
             let sftp = session(&connection, &session_id).await?;
             Ok((sftp, async move {

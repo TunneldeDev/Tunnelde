@@ -121,10 +121,21 @@ not emit it again. No-op saves reconcile observers without requiring replacement
 support from the server. A cancelled cleanup caller also leaves its admitted
 cleanup worker running until the transaction settles.
 
-These bounds concern client worker lifetime. SFTP timeouts and lost replies do
-not prove that server-side work stopped. Durable crash/lost-ack settlement,
-publication-time plugin policy and scoped approval fencing remain separate work;
-this does not add a public write transaction API or remote compare-and-swap.
+Remote plugin saves recheck the exact runtime grant, client/request lifetime and
+SSH connection after the path-lock wait, before staging and at publication
+admission. Scoped AI/MCP writes retain the approved canonical path, original path
+alias, authorized root alias and content digest on the worker, and re-resolve them
+before admission. Cancelling an exact tool request also fences its admitted worker
+even before the caller task processes its cancellation. The final synchronous
+runtime/client gate orders admission against revocation; no policy lock spans
+network IO. After admission the asynchronous rename and safe cleanup settle once,
+and an acknowledged publication still notifies observers if delivery is cancelled.
+
+These bounds concern client worker lifetime and publication admission. SFTP
+timeouts and lost replies do not prove that server-side work stopped. Network
+path validation and rename are separate server operations, not compare-and-swap;
+external processes may race them. Durable crash/lost-ack settlement remains
+separate work. This does not add a public write transaction API.
 
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves
