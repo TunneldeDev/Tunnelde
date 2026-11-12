@@ -177,11 +177,12 @@ fn corruption_missing_storage_and_foreign_databases_are_never_reset() {
 fn damaged_record_checksum_fails_closed_and_does_not_admit_new_work() {
     let fixture = Fixture::new();
     let mut journal = fixture.create();
-    reserve(&mut journal, "retained");
+    let retained = reserve(&mut journal, "retained");
     let conn = rusqlite::Connection::open(fixture.path().join("recovery.sqlite3")).unwrap();
     conn.execute("UPDATE records SET digest=?1", ["0".repeat(64)])
         .unwrap();
     assert!(journal.records().is_err());
+    assert!(journal.ready(&retained).is_err());
     let authority = authority();
     assert!(journal
         .reserve(binding(&authority, &prepared(&authority)))
