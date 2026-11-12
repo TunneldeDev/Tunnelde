@@ -555,6 +555,7 @@ fn accept_pending(key: &str, registration: uuid::Uuid) -> AppResult<()> {
 
 impl Drop for PendingGuard {
     fn drop(&mut self) {
+        let _gate = client_gate().lock().unwrap_or_else(|e| e.into_inner());
         let mut requests = pending().lock().unwrap_or_else(|e| e.into_inner());
         if requests
             .get(&self.0)
