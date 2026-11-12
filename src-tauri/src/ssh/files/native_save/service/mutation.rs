@@ -63,6 +63,19 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.journal()?.settle_legacy(permit))
             .await
     }
+    pub async fn extend_transfer(
+        &self,
+        permit: &mut Dispatched,
+        additional: Vec<Scope>,
+    ) -> journal::Result<()> {
+        let expected = permit.claim().clone();
+        let next = self
+            .blocking(move |storage| storage.journal()?.extend_transfer(&expected, additional))
+            .await?;
+        // A dropped future cannot dispatch new paths. If the disk update already
+        // committed, the older permit becomes stale rather than releasing it.
+        permit.adopt_transfer_extension(next)
+    }
     pub async fn park_editor_cleanup(&self, permit: Dispatched) -> journal::Result<()> {
         self.blocking(move |storage| storage.journal()?.park_editor_cleanup(permit))
             .await

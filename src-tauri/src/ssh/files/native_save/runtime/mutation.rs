@@ -2,6 +2,7 @@
 mod editor;
 mod observation;
 mod scope;
+mod transfer;
 use super::super::journal::{
     admission::{Claim, Dispatched, Scope},
     Owner,
@@ -16,6 +17,7 @@ pub(crate) use editor::Reference as MutationReference;
 pub(crate) use observation::Observation;
 use russh_sftp::client::SftpSession;
 use std::future::Future;
+pub(crate) use transfer::Target as MutationTarget;
 
 pub(crate) struct Mutation {
     service: Arc<Service<System>>,

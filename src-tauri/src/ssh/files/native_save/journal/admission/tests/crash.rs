@@ -21,6 +21,8 @@ fn actual_process_death_preserves_dispatch_and_rolls_back_partial_transitions() 
         "uncommitted-upgrade",
         "recoverable",
         "uncommitted-resume",
+        "expanded",
+        "uncommitted-expansion",
     ] {
         let fixture = Fixture::new();
         let signal = fixture.root.join("checkpoint.json");
@@ -59,9 +61,16 @@ fn actual_process_death_preserves_dispatch_and_rolls_back_partial_transitions() 
             native(&mut journal, "blocked/child"),
             Err(Error::Occupied)
         ));
-        if phase == "dispatched" {
+        if matches!(phase, "dispatched" | "expanded" | "uncommitted-expansion") {
             assert!(journal.retire_unsent_legacy(&expected).is_err());
             assert!(journal.dispatch_legacy(&expected).is_err());
+            assert_eq!(
+                matches!(
+                    native(&mut journal, ".expanded-stage"),
+                    Err(Error::Occupied)
+                ),
+                phase == "expanded",
+            );
         } else if matches!(phase, "recoverable" | "uncommitted-resume") {
             assert!(expected.phase == Phase::Recoverable);
             assert!(journal.retire_unsent_legacy(&expected).is_err());
@@ -94,7 +103,9 @@ fn legacy_checkpoint_child() {
         "uncommitted-dispatch",
         "uncommitted-upgrade",
         "recoverable",
-        "uncommitted-resume"
+        "uncommitted-resume",
+        "expanded",
+        "uncommitted-expansion"
     ]
     .contains(&phase.as_str()));
     let mut journal = Journal::create(&root.join("native-file-saves")).unwrap();
@@ -105,7 +116,9 @@ fn legacy_checkpoint_child() {
         journal.enable_admission().unwrap();
         let mut claim = journal
             .reserve_legacy(
-                if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
+                if matches!(phase.as_str(), "expanded" | "uncommitted-expansion") {
+                    Kind::Transfer
+                } else if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
                     Kind::Editor
                 } else {
                     Kind::Delete
@@ -116,6 +129,30 @@ fn legacy_checkpoint_child() {
             .unwrap();
         if phase == "dispatched" {
             claim = journal.dispatch_legacy(&claim).unwrap().claim().clone();
+        }
+        if matches!(phase.as_str(), "expanded" | "uncommitted-expansion") {
+            claim = journal.dispatch_legacy(&claim).unwrap().claim().clone();
+            if phase == "expanded" {
+                claim = journal
+                    .extend_transfer(&claim, vec![scope("/workspace/.expanded-stage")])
+                    .unwrap();
+            } else {
+                let mut next = claim.clone();
+                next.revision += 2;
+                next.scopes[0]
+                    .paths
+                    .push("/workspace/.expanded-stage".into());
+                let (bytes, digest) = persistence::encode(&next).unwrap();
+                journal.conn.execute_batch("BEGIN IMMEDIATE").unwrap();
+                journal
+                    .conn
+                    .execute(
+                        "UPDATE legacy_claims SET revision=?1,value=?2,digest=?3 WHERE id=?4",
+                        rusqlite::params![next.revision as i64, bytes, digest, next.id],
+                    )
+                    .unwrap();
+                journal.conn.cache_flush().unwrap();
+            }
         }
         if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
             let permit = journal.dispatch_legacy(&claim).unwrap();

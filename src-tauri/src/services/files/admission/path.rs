@@ -64,9 +64,12 @@ impl Path {
     /// Both ancestors and descendants conflict. This is deliberately broader
     /// than exact-file exclusion: deleting or renaming a parent also mutates it.
     pub(crate) fn overlaps(&self, other: &Self) -> bool {
-        self.root == other.root
-            && (self.components.starts_with(&other.components)
-                || other.components.starts_with(&self.components))
+        self.contains(other) || other.contains(self)
+    }
+
+    /// Already reserved directory subtrees need no per-child path inventory.
+    pub(crate) fn contains(&self, other: &Self) -> bool {
+        self.root == other.root && other.components.starts_with(&self.components)
     }
 }
 
@@ -108,5 +111,24 @@ mod tests {
         assert!(Path::new("C:/work/file:stream", Platform::Windows).is_none());
         assert!(Path::new("C:/work. /file", Platform::Windows).is_none());
         assert!(Path::new("/bad\0path", Platform::Posix).is_none());
+    }
+
+    #[test]
+    fn containment_is_directional_and_respects_remote_roots_and_components() {
+        for (parent, child, platform, contains) in [
+            ("/root", "/root/child", Platform::Posix, true),
+            ("/root/child", "/root", Platform::Posix, false),
+            ("/root", "/root-other", Platform::Posix, false),
+            ("/root", "/root/../other", Platform::Posix, false),
+            ("C:/Root", "/c:/root/child", Platform::Windows, true),
+            ("C:/", "D:/child", Platform::Windows, false),
+        ] {
+            assert_eq!(
+                Path::new(parent, platform)
+                    .unwrap()
+                    .contains(&Path::new(child, platform).unwrap()),
+                contains
+            );
+        }
     }
 }
