@@ -25,16 +25,69 @@ where
     W: Future<Output = AppResult<(SftpSession, R)>> + Send + 'static,
     R: Future<Output = AppResult<remote_commit::Replacement>> + Send + 'static,
 {
-    budget
-        .asynchronous(move |job| async move {
-            // Opening channels is charged to the actual worker, not the RPC.
+    save_with_timing(
+        budget,
+        request,
+        policy,
+        open,
+        journal,
+        lifetime::Timing::default(),
+    )
+    .await
+}
+
+pub(super) async fn save_with_timing<J, F, W, R>(
+    budget: &Budget,
+    request: Request,
+    policy: impl policy::Policy,
+    open: F,
+    journal: J,
+    timing: lifetime::Timing,
+) -> AppResult<()>
+where
+    J: Journal,
+    F: FnOnce(Cancellation) -> W + Send + 'static,
+    W: Future<Output = AppResult<(SftpSession, R)>> + Send + 'static,
+    R: Future<Output = AppResult<remote_commit::Replacement>> + Send + 'static,
+{
+    let mut delivery = lifetime::Delivery::new(journal);
+    let journal = delivery.journal.clone();
+    let visible = delivery.visible.clone();
+    let work = budget.asynchronous(move |job| async move {
+        let _wake = lifetime::WorkerWake(journal.clone());
+        // One absolute horizon bounds the worker, not each individual IO.
+        tokio::time::timeout(timing.observation, async {
             policy.authorize()?;
             let (sftp, replacement) = open(job.clone()).await?;
-            let result = save_opened(&sftp, replacement, &request, &journal, &job, &policy).await;
+            let observation = lifetime::Observation {
+                visible,
+                horizon: timing.observation,
+            };
+            let result = save_opened(
+                &sftp,
+                replacement,
+                &request,
+                journal.as_ref(),
+                &job,
+                &policy,
+                observation,
+            )
+            .await;
             let _ = sftp.close().await;
             result
         })
         .await
+        .map_err(|_| AppError::validation("editor.remoteOutcomeUnknown"))?
+    });
+    match tokio::time::timeout(timing.delivery, work).await {
+        Ok(result) => {
+            delivery.complete();
+            result
+        }
+        // Dropping delivery cancels unadmitted publication and exposes the
+        // original worker. Its slot, path lock and response receiver live on.
+        Err(_) => Err(AppError::validation("editor.remoteSaveWaiting")),
+    }
 }
 
 async fn save_opened(
@@ -44,6 +97,7 @@ async fn save_opened(
     journal: &impl Journal,
     job: &Cancellation,
     policy: &impl policy::Policy,
+    observation: lifetime::Observation,
 ) -> AppResult<()> {
     job.check()?;
     let target = sftp.canonicalize(&request.path).await.map_err(map_sftp)?;
@@ -76,6 +130,7 @@ async fn save_opened(
     // Negotiate only for a real save, after validating the original. A no-op
     // must still succeed on a server without atomic replacement support.
     let replacement = replacement.await?;
+    replacement.retain_replies(observation.horizon);
     job.check()?;
     let id = uuid::Uuid::new_v4().to_string();
     let parent = target
@@ -94,7 +149,7 @@ async fn save_opened(
         updated_at: crate::models::now_ms(),
         error: None,
     };
-    let reservation = Reservation::acquire(&record.id, false)?;
+    let reservation = Reservation::saving(&record.id, observation.visible)?;
     journal.create(&record)?;
     let result = staged_save(
         sftp,
@@ -126,7 +181,6 @@ async fn save_opened(
         }
     };
     drop(reservation);
-    journal.changed();
     settled?;
     result
 }

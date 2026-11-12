@@ -896,6 +896,8 @@
     "cleanupTitle": "清理编辑暂存文件",
     "retryCleanup": "重试清理",
     "cleanupUnrecognized": "暂存目录已发生变化，已保留其中的内容以供检查。",
+    "operationInProgress": "正在处理编辑器文件操作",
+    "remoteSaveWaiting": "远端操作仍在等待确认，原任务继续在后台处理。请先查看编辑器待处理操作，再决定是否重试。",
     "remoteOutcomeUnknown": "服务端尚未确认此文件操作的结果。已保留恢复记录和暂存内容，已阻止自动重试与清理。",
     "remoteRecoveryLimit": "等待恢复的远端文件操作过多，请先检查待清理任务，再保存其他文件。",
     "privateStagingRequired": "服务器无法创建私有暂存目录，已保留原文件。",

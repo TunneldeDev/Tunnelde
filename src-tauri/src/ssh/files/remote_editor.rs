@@ -7,6 +7,7 @@ use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Weak};
 
 mod journal;
+mod lifetime;
 pub(crate) mod policy;
 mod recovery;
 mod retained;
@@ -14,6 +15,7 @@ mod saving;
 mod staging;
 mod storage;
 use journal::Journal;
+use lifetime::Reservation;
 mod transaction;
 use transaction::staged_save;
 
@@ -24,8 +26,6 @@ const PREFIX: &str = "editor-cleanup:";
 const EVENT: &str = "editor://cleanup-changed";
 type SaveLocks = Mutex<HashMap<String, Weak<tokio::sync::Mutex<()>>>>;
 static LOCKS: OnceLock<SaveLocks> = OnceLock::new();
-// false = an ordinary save (hidden), true = visible cleanup in progress.
-static ACTIVE: OnceLock<Mutex<HashMap<String, bool>>> = OnceLock::new();
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -57,23 +57,6 @@ pub struct PendingCleanup {
     pub(super) running: bool,
 }
 
-struct Reservation(String);
-impl Reservation {
-    fn acquire(id: &str, retry: bool) -> AppResult<Self> {
-        let mut active = ACTIVE.get_or_init(Default::default).lock().unwrap();
-        if active.contains_key(id) {
-            return Err(AppError::validation("editor.cleanupBusy"));
-        }
-        active.insert(id.into(), retry);
-        Ok(Self(id.into()))
-    }
-}
-impl Drop for Reservation {
-    fn drop(&mut self) {
-        ACTIVE.get().unwrap().lock().unwrap().remove(&self.0);
-    }
-}
-
 fn records(app: &AppHandle) -> AppResult<Vec<Record>> {
     app.state::<AppState>().db.with(|conn| {
         let mut stmt =
@@ -97,17 +80,23 @@ fn forget(app: &AppHandle, record: &Record) -> AppResult<()> {
 
 #[tauri::command]
 pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
-    let active = ACTIVE.get_or_init(Default::default).lock().unwrap();
+    // Keep registration/retirement ordered with the journal snapshot. Reading
+    // these separately could expose a new ordinary save as inactive cleanup.
+    let active = lifetime::active();
     let mut pending: Vec<_> = records(&app)?
         .into_iter()
-        .filter(|r| active.get(&r.id) != Some(&false))
+        .filter(|r| {
+            active
+                .get(&r.id)
+                .is_none_or(|visible| visible.load(Ordering::Acquire))
+        })
         .map(|r| {
             let error = r
                 .error
                 .clone()
                 .or_else(|| recovery::require_settled(&r).err().map(|e| e.to_string()));
             PendingCleanup {
-                running: active.get(&r.id) == Some(&true),
+                running: active.contains_key(&r.id),
                 source: "remote",
                 id: r.id,
                 path: r.path,

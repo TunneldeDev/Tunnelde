@@ -88,14 +88,33 @@ pub(super) fn spawn_checked(
     content: &str,
     policy: impl policy::Policy,
 ) -> tokio::task::JoinHandle<AppResult<()>> {
+    spawn_checked_timing(
+        budget,
+        f,
+        journal,
+        content,
+        policy,
+        lifetime::Timing::default(),
+    )
+}
+
+pub(super) fn spawn_checked_timing(
+    budget: Arc<Budget>,
+    f: Arc<Fixture>,
+    journal: MemoryJournal,
+    content: &str,
+    policy: impl policy::Policy,
+    timing: lifetime::Timing,
+) -> tokio::task::JoinHandle<AppResult<()>> {
     let request = request(&f, content);
     tokio::spawn(async move {
-        saving::save_with(
+        saving::save_with_timing(
             &budget,
             request,
             policy,
             move |job| opening(f, job),
             journal,
+            timing,
         )
         .await
     })
@@ -166,7 +185,7 @@ async fn cancelled_staging_retains_capacity_lock_and_reservation_until_cleanup_f
     assert_eq!(std::fs::read_dir(&f.root).unwrap().count(), 1);
     assert!(journal.records.lock().unwrap().is_empty());
     assert_eq!(journal.published.load(Ordering::SeqCst), 0);
-    assert_eq!(journal.changed.load(Ordering::SeqCst), 1);
+    assert_eq!(journal.changed.load(Ordering::SeqCst), 2);
     assert!(lock.try_lock().is_ok());
     spawn_save(budget, f.clone(), journal.clone(), "retry")
         .await

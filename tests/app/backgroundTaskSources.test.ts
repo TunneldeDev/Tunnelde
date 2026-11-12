@@ -14,6 +14,34 @@ afterEach(() => {
   useTransfers.setState({ items: [] });
 });
 
+it("shows retained editor observation as running, then exposes an unresolved outcome after retirement", async () => {
+  await i18n.changeLanguage("en-US");
+  const pending = {
+    id: "observed-save",
+    source: "remote" as const,
+    path: "/note.txt",
+    directory: "/.tunnelde-save-observed",
+    address: "user@server",
+    updatedAt: 1,
+    running: true,
+    error: "editor.remoteOutcomeUnknown",
+  };
+  useEditorCleanup.setState({ items: [pending] });
+  dispose = registerBackgroundTaskSources();
+  const task = () => useBackgroundTasks.getState().items.find((item) => item.id === pending.id);
+  expect(task()).toMatchObject({ title: "Editor file operation in progress", status: "running" });
+  expect(task()?.error).toBeUndefined();
+  expect(task()?.actions?.find((action) => action.id === "retry")?.disabled).toBe(true);
+  useEditorCleanup.setState({ items: [{ ...pending, running: false }] });
+  expect(task()?.status).toBe("attention");
+  expect(task()?.error).toBe(i18n.t("editor.remoteOutcomeUnknown"));
+  expect(task()?.actions?.find((action) => action.id === "retry")?.disabled).toBe(false);
+  await i18n.changeLanguage("zh-CN");
+  useEditorCleanup.setState({ items: [pending] });
+  expect(task()?.title).toBe("正在处理编辑器文件操作");
+  expect(task()?.error).toBeUndefined();
+});
+
 it("retained directory receipts are attention tasks without fabricated byte progress", async () => {
   await i18n.changeLanguage("en-US");
   useTransfers.setState({
