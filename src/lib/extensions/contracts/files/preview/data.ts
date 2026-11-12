@@ -13,8 +13,8 @@ export interface FilePreviewMetadata {
   /** Zero means unspecified; positive host coordinates are one-based. */
   readonly line: number;
   readonly column: number;
-  /** Current host quick-look dialog; does not imply a docked workspace panel. */
-  readonly presentation: "quickLook";
+  /** Host Quick Look dialog or a retained, movable workbench panel. */
+  readonly presentation: "quickLook" | "docked";
   readonly renderer: FilePreviewRenderer;
   readonly providerId: string | null;
   readonly providerCount: number;

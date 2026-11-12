@@ -7,7 +7,7 @@ export function runFilePreviewAction(input: unknown) {
   const fields =
     kind.action === "selectProvider"
       ? ["id", "revision", "action", "providerId"]
-      : kind.action === "close" || kind.action === "retry"
+      : ["close", "retry", "dock", "undock"].includes(kind.action as string)
         ? ["id", "revision", "action"]
         : null;
   if (!fields) throw invalid();
@@ -15,6 +15,8 @@ export function runFilePreviewAction(input: unknown) {
   const preview = liveFilePreview(token(request.id), token(request.revision));
   if (request.action === "close") preview.close();
   else if (request.action === "retry") preview.retry();
+  else if (request.action === "dock") preview.dock();
+  else if (request.action === "undock") preview.undock();
   else preview.selectProvider(token(request.providerId, 129));
   return { schemaVersion: 1 as const, accepted: true as const };
 }

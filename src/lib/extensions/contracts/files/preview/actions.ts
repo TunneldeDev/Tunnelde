@@ -4,7 +4,7 @@ export type FilePreviewAction = {
   readonly id: string;
   readonly revision: string;
 } & (
-  | { readonly action: "close" | "retry" }
+  | { readonly action: "close" | "retry" | "dock" | "undock" }
   | { readonly action: "selectProvider"; readonly providerId: string }
 );
 /** Opening a target additionally requires fs.read or sftp.read for its explicit source. */

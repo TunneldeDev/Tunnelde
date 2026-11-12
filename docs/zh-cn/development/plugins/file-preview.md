@@ -2,20 +2,20 @@
 
 [English](../../../en-us/development/plugins/file-preview.md) · [文件资源](../file-resources.md)
 
-实验性 `filePreview` 领域开放宿主当前的快速预览弹窗。它不代表所有编辑器、
-可停靠预览面板、文件系统快照或公开渲染地址。使用前检查 `api.describe` 和
+实验性 `filePreview` 领域开放宿主当前的快速预览或可停靠预览面板。它不代表所有
+编辑器、文件系统快照或公开渲染地址。使用前检查 `api.describe` 和
 `extensions.describe`；本次不扩大稳定核心，也不改变协议版本。
 
-| 方法                    | 所需权限                                                    | 结果                                      |
-| ----------------------- | ----------------------------------------------------------- | ----------------------------------------- |
-| `filePreview.observe`   | `filePreview.read`                                          | 条件观察已提交的元数据，关闭时为 `null`。 |
-| `filePreview.providers` | `filePreview.read`                                          | 精确预览版本对应的渲染器选项。            |
-| `filePreview.action`    | `filePreview.write`                                         | 接受关闭、重试或切换渲染器操作。          |
-| `filePreview.open`      | `filePreview.write`，以及来源对应的 `fs.read` / `sftp.read` | 接受显式绝对路径目标。                    |
+| 方法                    | 所需权限                                                    | 结果                                         |
+| ----------------------- | ----------------------------------------------------------- | -------------------------------------------- |
+| `filePreview.observe`   | `filePreview.read`                                          | 条件观察已提交的元数据，关闭时为 `null`。    |
+| `filePreview.providers` | `filePreview.read`                                          | 精确预览版本对应的渲染器选项。               |
+| `filePreview.action`    | `filePreview.write`                                         | 接受关闭、重试、停靠、还原或切换渲染器操作。 |
+| `filePreview.open`      | `filePreview.write`，以及来源对应的 `fs.read` / `sftp.read` | 接受显式绝对路径目标。                       |
 
 `observe({revision?})` 返回 `{schemaVersion:1,revision,changed}`，只有变化时才包含
 `snapshot`。非空快照包含激活 `id`、帧 `revision`、渲染尝试 `attemptId`、明确的
-来源与路径、行列（0 表示未指定，正值从 1 开始）、`presentation:"quickLook"`、渲染类型、可空的提供者
+来源与路径、行列（0 表示未指定，正值从 1 开始）、`presentation:"quickLook"|"docked"`、渲染类型、可空的提供者
 ID、提供者数量、状态及可空错误码。它不包含正文、原生票据、URL、原始错误或回调。
 观察会暴露路径，因此具有独立权限。
 
@@ -31,8 +31,9 @@ ID、提供者数量、状态及可空错误码。它不包含正文、原生票
 渲染器名称最多 120 UTF-8 字节。行列和数量必须为非负安全整数。JSON Schema 的字符
 限制不能代替这些字节限制。
 
-操作需要 `{id,revision,action}`。`selectProvider` 额外需要 `providerId`；`close`
-和 `retry` 不接受无关字段。接受操作后，立即消耗该帧的修改资格。重试或切换提供者
+操作需要 `{id,revision,action}`。`selectProvider` 额外需要 `providerId`；其他操作不
+接受无关字段。真正改变状态的操作立即消耗该帧修改资格；展示已处于目标模式的
+`dock`、`undock` 是成功的无副作用操作。重试或切换提供者
 产生新的尝试；再次打开同一路径产生新的激活。旧帧、旧回调和迟到结果不能影响新目标。
 
 `open` 需要 `{source,path,line?,column?}`。来源为 `{kind:"local"}` 或
@@ -66,7 +67,7 @@ SDK 返回独立、冻结的数据。订阅必须有所属方 signal，串行交
 以及至少一种端点读取权限。由用户在界面提供者设置中主动选择。宿主在挂载与访问时
 检查实际目标的端点；仅有本地权限的提供者遇到远端目标会回退。修改操作还需独立的
 `filePreview.write`。`FrontendViewProps.filePreview` 提供元数据、`readProviders`、
-关闭/重试/选择回调及可以选择是否挂载的 `Body`。挂载一次 `Body` 即可组合现有宿主
+关闭/重试/停靠/还原/选择回调及可以选择是否挂载的 `Body`。挂载一次 `Body` 即可组合现有宿主
 渲染器，无需重建。省略它可仅显示元数据；重复挂载或渲染异常会恢复内置界面。
 语言、主题与展示提供者变化保留原渲染 DOM 和资源。目标替换、停止、撤权后，保留的
 组件与回调失效。可信 UI 仍是受信任代码，不是 JavaScript 安全沙箱。
@@ -74,3 +75,14 @@ SDK 返回独立、冻结的数据。订阅必须有所属方 signal，串行交
 传输契约、原生代理与 Schema、已提交状态注册、渲染生命周期、界面守卫及 SDK 客户端
 分别存放于各自 `files/preview` 领域。CI 检查历史消费者、Schema、真实前端生产样本
 与 SDK 解析。公开字节资源属于独立的 `files.content` API，预览元数据权限不授予正文访问。
+
+## 停靠与生命周期
+
+点击“停靠预览”可将现有渲染器移到有位置记忆的工作区分组。拖动标签或面板标题
+可以调整布局，共用分隔条可调整大小；“还原为快速预览”返回弹窗。后续预览沿用所选
+模式。移动或切换展示保留激活、渲染尝试、已解码 DOM 与原生票据，只更新元数据版本。
+关闭或收起面板释放文件资源并保留布局位置；重新打开保存的空位置不会自动读取旧远端
+文件。F1 提供“显示文件预览面板”命令。插件动作 `dock`、`undock` 不接受额外字段，
+展示已处于目标模式时是无副作用的成功操作；真正改变状态才消耗旧帧修改权。通过
+`extensions.describe` 的 `filePreview.presentations` 确认宿主支持，不能仅凭 Schema
+版本推断旧宿主具备停靠能力。

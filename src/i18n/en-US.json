@@ -46,6 +46,10 @@
     "sourceChanged": "The file no longer contains the requested range. Reopen it and try again."
   },
   "preview": {
+    "dock": "Dock preview",
+    "undock": "Open in Quick Look",
+    "showPanel": "Show file preview panel",
+    "panelHint": "Select a file in the file browser and press Space or choose Preview. Drag this panel’s title to move it.",
     "previousPage": "Previous page",
     "nextPage": "Next page",
     "pdfRangeLimit": "This PDF needs too much data to preview safely. Open it with your preferred PDF application.",

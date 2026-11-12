@@ -278,7 +278,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: TunneldeDev/Tunnelde-hub
-          ref: e86bf904570318bec246b93bef55c8958e7523f0
+          ref: d5de592a48c474079491434244d97605827ead5e
           path: .tmp/ci/file-preview-consumer
           persist-credentials: false
 

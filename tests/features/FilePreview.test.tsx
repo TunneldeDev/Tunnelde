@@ -25,7 +25,7 @@ vi.mock("@/lib/api/ipc", () => ({
 
 beforeEach(async () => {
   await i18n.changeLanguage("en-US");
-  useFilePreview.setState({ file: null });
+  useFilePreview.setState({ file: null, id: null, presentation: "quickLook" });
   usePlugins.setState({ items: [] });
   vi.clearAllMocks();
   vi.mocked(api.filePreviewClose).mockResolvedValue();

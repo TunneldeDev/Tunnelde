@@ -46,6 +46,10 @@
     "sourceChanged": "文件已不包含请求的区间，请重新打开后重试。"
   },
   "preview": {
+    "dock": "停靠预览",
+    "undock": "还原为快速预览",
+    "showPanel": "显示文件预览面板",
+    "panelHint": "在文件管理中选中文件，按空格或选择“预览”。拖动面板标题可调整布局。",
     "previousPage": "上一页",
     "nextPage": "下一页",
     "pdfRangeLimit": "此 PDF 预览所需数据过大，请使用常用 PDF 应用打开。",
