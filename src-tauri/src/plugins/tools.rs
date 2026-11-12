@@ -1,4 +1,5 @@
 //! Scoped tool gateway shared by MCP clients and agent plugins.
+pub(in crate::plugins) mod remote_write;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -128,6 +129,7 @@ fn local_path(path: &str, roots: &[String]) -> AppResult<String> {
 }
 
 struct LocalWriteApproval {
+    requested: PathBuf,
     path: PathBuf,
     root_paths: Vec<String>,
     resolved_roots: Vec<PathBuf>,
@@ -141,6 +143,7 @@ impl LocalWriteApproval {
             .map(std::fs::canonicalize)
             .collect::<std::io::Result<Vec<_>>>()?;
         let approval = Self {
+            requested: path.clone(),
             path,
             root_paths: roots.to_vec(),
             resolved_roots,
@@ -150,13 +153,20 @@ impl LocalWriteApproval {
         Ok(approval)
     }
 
+    fn with_requested(mut self, requested: PathBuf) -> AppResult<Self> {
+        self.requested = requested;
+        self.check_target(&self.path)?;
+        Ok(self)
+    }
+
     fn check_target(&self, target: &Path) -> AppResult<()> {
         let current = self
             .root_paths
             .iter()
             .map(std::fs::canonicalize)
             .collect::<std::io::Result<Vec<_>>>()?;
-        if current != self.resolved_roots
+        if std::fs::canonicalize(&self.requested)? != self.path
+            || current != self.resolved_roots
             || target != self.path
             || !self
                 .resolved_roots
@@ -407,13 +417,6 @@ fn client_revoked(plugin: &str, generation: u64, client: &str) -> bool {
         })
 }
 
-pub(super) fn authorize_client(context: &HostContext, client: &str) -> AppResult<()> {
-    if client_revoked(&context.id, context.generation, client) {
-        return Err(AppError::validation("plugin.tools.clientRevoked"));
-    }
-    Ok(())
-}
-
 /// Admission/publication and client revocation share this gate. Lock order:
 /// runtime policy -> client gate -> domain registry -> SSH manager. Never await,
 /// reenter security or perform I/O in the callback.
@@ -429,6 +432,35 @@ pub(super) fn with_client_authorized<T>(
     }
     operation()
 }
+/// Order exact-request cancellation and client revocation against publication.
+/// This callback must remain synchronous and cannot reenter the client gate.
+pub(super) fn with_request_authorized<T>(
+    owner: &str,
+    generation: u64,
+    client: Option<&str>,
+    request: Option<uuid::Uuid>,
+    operation: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    with_client_authorized(owner, generation, client, || {
+        if let Some(registration) = request {
+            let valid = pending()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .values()
+                .any(|item| {
+                    item.plugin == owner
+                        && item.generation == generation
+                        && item.registration == registration
+                        && client.is_none_or(|client| item.client == client)
+                });
+            if !valid {
+                return Err(AppError::validation("plugin.tools.cancelled"));
+            }
+        }
+        operation()
+    })
+}
+
 fn register_pending(key: &str, request: Pending) -> AppResult<()> {
     let _gate = client_gate()
         .lock()
@@ -525,6 +557,7 @@ fn accept_pending(key: &str, registration: uuid::Uuid) -> AppResult<()> {
 
 impl Drop for PendingGuard {
     fn drop(&mut self) {
+        let _gate = client_gate().lock().unwrap_or_else(|e| e.into_inner());
         let mut requests = pending().lock().unwrap_or_else(|e| e.into_inner());
         if requests
             .get(&self.0)
@@ -689,14 +722,34 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
         None
     };
     let local_approval = if method == "files.local.writeText" {
-        Some(LocalWriteApproval::new(
-            PathBuf::from(field::<String>(&normalized, "path")?),
-            &scope.local_roots,
-            original_hash
-                .as_ref()
-                .map(|(_, hash)| hash.clone())
-                .ok_or_else(|| AppError::validation("plugin.tools.fileChanged"))?,
-        )?)
+        Some(
+            LocalWriteApproval::new(
+                PathBuf::from(field::<String>(&normalized, "path")?),
+                &scope.local_roots,
+                original_hash
+                    .as_ref()
+                    .map(|(_, hash)| hash.clone())
+                    .ok_or_else(|| AppError::validation("plugin.tools.fileChanged"))?,
+            )?
+            .with_requested(PathBuf::from(field::<String>(&input, "path")?))?,
+        )
+    } else {
+        None
+    };
+    let remote_approval = if method == "files.sftp.writeText" {
+        Some(
+            remote_write::RemoteWriteApproval::prepare(
+                context,
+                &input,
+                &normalized,
+                &scope,
+                original_hash
+                    .as_ref()
+                    .map(|(_, hash)| hash.clone())
+                    .ok_or_else(|| AppError::validation("plugin.tools.fileChanged"))?,
+            )
+            .await?,
+        )
     } else {
         None
     };
@@ -742,6 +795,8 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
             approval.check(target, original)
         })
         .await?
+    } else if let Some(approval) = remote_approval {
+        super::api::write_remote(&invocation_context, &normalized, Some(approval)).await?
     } else {
         Box::pin(super::api::dispatch(
             &invocation_context,
@@ -873,6 +928,43 @@ mod tests {
             "plugin.tools.targetChanged"
         );
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn local_write_approval_retains_requested_alias_until_publication() {
+        use std::os::unix::fs::symlink;
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-write-alias-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let first = root.join("first.txt");
+        let second = root.join("second.txt");
+        std::fs::write(&first, "same bytes").unwrap();
+        std::fs::write(&second, "same bytes").unwrap();
+        let alias = root.join("alias.txt");
+        symlink(&first, &alias).unwrap();
+        let target = std::fs::canonicalize(&first).unwrap();
+        let approval = LocalWriteApproval::new(
+            target.clone(),
+            &[root.to_string_lossy().into_owned()],
+            format!("{:x}", Sha256::digest(b"same bytes")),
+        )
+        .unwrap()
+        .with_requested(alias.clone())
+        .unwrap();
+        approval.check(&target, "same bytes").unwrap();
+        std::fs::remove_file(&alias).unwrap();
+        symlink(&second, &alias).unwrap();
+        assert_eq!(
+            approval
+                .check(&target, "same bytes")
+                .unwrap_err()
+                .to_string(),
+            "plugin.tools.targetChanged"
+        );
+        assert_eq!(std::fs::read_to_string(&first).unwrap(), "same bytes");
+        assert_eq!(std::fs::read_to_string(&second).unwrap(), "same bytes");
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

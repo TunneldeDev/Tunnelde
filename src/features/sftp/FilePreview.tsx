@@ -1,11 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Dialog } from "@/components/ui/overlay/Dialog";
 import { Button } from "@/components/ui/form/Button";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
 import { useFileIconResolver } from "@/lib/files/icons";
 import { Select } from "@/components/ui/form/Select";
-import { matchesPreview, previewKind, previewProviders } from "@/lib/files/preview";
+import { matchesPreview, previewProviders } from "@/lib/files/preview";
 import { usePlugins } from "@/store/plugins";
 import { useMarketplace } from "@/store/marketplace";
 import { useNavigation } from "@/store/navigation";
@@ -15,17 +15,15 @@ import { useFilePreview, type PreviewFile } from "@/store/filePreview";
 import { fileName } from "@/store/editors";
 import { useSsh } from "@/store/ssh";
 import { useWorkspace } from "@/store/workspace";
+import { usePreviewSession } from "./preview/usePreviewSession";
+import { PreviewSurface } from "./preview/PreviewSurface";
 
 export function FilePreview() {
   const file = useFilePreview((state) => state.file);
-  return file ? (
-    <Preview
-      key={`${file.source.kind === "remote" ? file.source.sessionId : "local"}:${file.path}`}
-      file={file}
-    />
-  ) : null;
+  const id = useFilePreview((state) => state.id);
+  return file ? <Preview key={id} id={id!} file={file} /> : null;
 }
-function Preview({ file }: { file: PreviewFile }) {
+function Preview({ file, id }: { file: PreviewFile; id: string }) {
   const { t } = useTranslation();
   const resolveFileIcon = useFileIconResolver();
   const plugins = usePlugins((state) => state.items);
@@ -33,9 +31,15 @@ function Preview({ file }: { file: PreviewFile }) {
     () => previewProviders(plugins).filter((provider) => matchesPreview(provider, file.path)),
     [plugins, file.path],
   );
-  const [preferred, setPreferred] = useState("");
-  const provider = providers.find((candidate) => candidate.id === preferred) ?? providers[0];
-  const kind = provider?.renderer ?? previewKind(file.path);
+  const {
+    context,
+    provider,
+    renderer: kind,
+    attemptId,
+    onReady,
+    onReadError,
+    onDecodeError,
+  } = usePreviewSession(file, id, providers);
   const text = kind === "text" || kind === "markdown";
   const session = useSsh((state) =>
     state.sessions.find(
@@ -87,31 +91,41 @@ function Preview({ file }: { file: PreviewFile }) {
             value: item.id,
             label: `${item.name} · ${item.pluginName}`,
           }))}
-          onChange={setPreferred}
+          onChange={context.selectProvider}
           label={t("preview.provider")}
         />
       ) : null}
-      {provider ? (
-        <ProviderPreview key={provider.id} file={file} provider={provider} />
-      ) : text ? (
-        <TextPreview file={file} />
-      ) : (
-        <div className="file-preview__empty">
-          <p>{t("preview.installHint")}</p>
-          <Button
-            variant="primary"
-            onClick={() => {
-              useMarketplace.getState().setScope("market");
-              useMarketplace.getState().setTag("");
-              useMarketplace.getState().setQuery("@tag:preview");
-              useNavigation.getState().showSidebar("plugins");
-              useFilePreview.getState().close();
-            }}
-          >
-            {t("preview.findPlugins")}
-          </Button>
-        </div>
-      )}
+      <PreviewSurface context={context}>
+        {provider ? (
+          <ProviderPreview
+            key={attemptId}
+            file={file}
+            provider={provider}
+            onReady={onReady}
+            onReadError={onReadError}
+            onDecodeError={onDecodeError}
+            onRetry={context.retry}
+          />
+        ) : text ? (
+          <TextPreview key={attemptId} file={file} onReady={onReady} onError={onReadError} />
+        ) : (
+          <div className="file-preview__empty">
+            <p>{t("preview.installHint")}</p>
+            <Button
+              variant="primary"
+              onClick={() => {
+                useMarketplace.getState().setScope("market");
+                useMarketplace.getState().setTag("");
+                useMarketplace.getState().setQuery("@tag:preview");
+                useNavigation.getState().showSidebar("plugins");
+                useFilePreview.getState().close();
+              }}
+            >
+              {t("preview.findPlugins")}
+            </Button>
+          </div>
+        )}
+      </PreviewSurface>
     </Dialog>
   );
 }

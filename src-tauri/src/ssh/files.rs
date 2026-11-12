@@ -3120,16 +3120,40 @@ pub async fn write_text(
     content: &str,
     baseline: Option<&str>,
 ) -> AppResult<()> {
+    write_text_checked(
+        app,
+        session_id,
+        path,
+        content,
+        baseline,
+        remote_editor::policy::Native,
+    )
+    .await
+}
+
+pub(crate) async fn write_text_checked(
+    app: &AppHandle,
+    session_id: &str,
+    path: &str,
+    content: &str,
+    baseline: Option<&str>,
+    policy: impl remote_editor::policy::Policy,
+) -> AppResult<()> {
     if content.len() as u64 > MAX_TEXT || baseline.is_some_and(|s| s.len() as u64 > MAX_TEXT) {
         return Err(AppError::Ssh("sftp.fileTooLarge".into()));
     }
     if content.contains('\0') {
         return Err(AppError::Ssh("sftp.binaryFile".into()));
     }
-    let sftp = session(app, session_id).await?;
-    let result = remote_editor::save(app, session_id, &sftp, path, content, baseline).await;
-    let _ = sftp.close().await;
-    result
+    remote_editor::save(
+        app.clone(),
+        session_id.into(),
+        path.into(),
+        content.into(),
+        baseline.map(str::to_owned),
+        policy,
+    )
+    .await
 }
 
 fn check_local_destination(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {

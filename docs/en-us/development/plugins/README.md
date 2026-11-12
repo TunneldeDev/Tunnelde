@@ -774,3 +774,5 @@ Use the returned `hostId` in `sessions.connect` or `workspace.openHost`. IDs bin
 [Host storage location metadata and migration plans](storage-locations.md).
 
 - [Public profile writes and activation](profile-mutations.md)
+
+[Host quick-look preview API](file-preview.md).

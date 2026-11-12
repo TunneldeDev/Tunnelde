@@ -64,6 +64,8 @@ mod execution;
 mod file_browser;
 #[path = "files/content/methods.rs"]
 mod file_content;
+#[path = "files/preview/methods.rs"]
+mod file_preview;
 #[path = "files/methods.rs"]
 mod files;
 #[path = "forwarding/methods.rs"]
@@ -118,6 +120,7 @@ const DOMAINS: &[&[ApiMethod]] = &[
     files::METHODS,
     file_browser::METHODS,
     file_content::METHODS,
+    file_preview::METHODS,
     monitor::METHODS,
     history::METHODS,
     clipboard::METHODS,

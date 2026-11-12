@@ -53,6 +53,18 @@ pub(in crate::plugins) async fn frontend_request(
             .ok_or_else(|| AppError::validation("plugin.api.unknownMethod"))?
             .permissions
     };
+    frontend_request_with_permissions(context, method, params, permissions).await
+}
+
+/// Extra endpoint authority stays attached to the pending request, including final
+/// frontend authorization and reply, instead of being checked only before an await.
+pub(in crate::plugins::api) async fn frontend_request_with_permissions(
+    context: &HostContext,
+    method: &str,
+    params: Value,
+    permissions: &'static [&'static str],
+) -> AppResult<Value> {
+    authorize(context, permissions)?;
     let request_id = uuid::Uuid::new_v4().to_string();
     let (sender, receiver) = oneshot::channel();
     {

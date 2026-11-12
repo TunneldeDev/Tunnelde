@@ -93,6 +93,58 @@ or emit a stale error. Typing while saving remains dirty. An in-flight write is 
 cancelled, replayed or rolled back when the document is replaced. Existing native
 baseline checks remain necessary; this lifetime layer is not a write transaction.
 
+Local editor saves and retained staging cleanup share four actual-worker slots,
+independent of the eight reader slots. Admission occurs before dispatch to the
+blocking pool. Excess calls fail with `editor.saveBusy` before file IO; the caller
+keeps its draft and may retry after current operations finish. A cancelled caller
+does not release a running or queued worker's slot. Pool-queued cancelled jobs
+skip IO; started saves recheck cancellation after the path lock and before
+publication. Cleanup admitted on a worker finishes its safe transaction even if
+its delivery is cancelled. A published save still sends its committed change
+notification; cancellation cannot roll it back. Worker failures return
+`editor.saveWorkerFailed`, with domain/stage diagnostics in application logs.
+This budget does not forcibly interrupt OS IO or settle remote write side effects.
+
+Remote editor saves and retained staging cleanup have a separate four-worker
+budget, acquired before opening SFTP channels. `editor.remoteSaveBusy` rejects
+excess work while preserving the draft; unexpected worker termination returns
+`editor.remoteSaveWorkerFailed`. The owned worker retains its path lock and
+cleanup reservation after the caller stops waiting. Cancellation is checked after
+waiting for the path lock and before staging/publication. An acknowledged owner
+marker allows safe staging cleanup even when the caller has disappeared.
+
+Publication admission and cancellation have one atomic winner. After admission,
+the worker waits for the rename result and safe cleanup, without retrying or
+rolling back that rename because delivery was cancelled. An acknowledged save
+emits its file-change notification on the worker exactly once; IPC routing does
+not emit it again. No-op saves reconcile observers without requiring replacement
+support from the server. A cancelled cleanup caller also leaves its admitted
+cleanup worker running until the transaction settles.
+
+Local plugin saves use the same runtime, exact request and client admission fence
+as remote saves. Blocking workers recheck after acquiring the path lock and after
+scoped target/hash validation. Cancellation and publication admission have one
+winner, including no-op reconciliation. No filesystem IO runs under the policy
+lock; after admission, the atomic filesystem replacement and cleanup settle even
+if the caller is cancelled or the plugin is stopped. Admission does not provide
+filesystem compare-and-swap against unrelated processes.
+
+Remote plugin saves recheck the exact runtime grant, client/request lifetime and
+SSH connection after the path-lock wait, before staging and at publication
+admission. Scoped AI/MCP writes retain the approved canonical path, original path
+alias, authorized root alias and content digest on the worker, and re-resolve them
+before admission. Cancelling an exact tool request also fences its admitted worker
+even before the caller task processes its cancellation. The final synchronous
+runtime/client gate orders admission against revocation; no policy lock spans
+network IO. After admission the asynchronous rename and safe cleanup settle once,
+and an acknowledged publication still notifies observers if delivery is cancelled.
+
+These bounds concern client worker lifetime and publication admission. SFTP
+timeouts and lost replies do not prove that server-side work stopped. Network
+path validation and rename are separate server operations, not compare-and-swap;
+external processes may race them. Durable crash/lost-ack settlement remains
+separate work. This does not add a public write transaction API.
+
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves
 and a complete shared file data/subscription contract remain separate work.
@@ -131,5 +183,6 @@ permission revocation and restricted mode retire its handles. Releasing an opene
 resource may report `cancellationRequested`: retiring a dedicated SFTP channel or
 local handle is not proof of stopping already-running OS IO. Parent SSH connections
 remain intact. Scoped AI tool allowlists are unchanged pending separate handle and
-path-scope contracts. Public preview-panel observation and mutation transactions
-remain separate work; these methods do not expand the stable API set.
+path-scope contracts. Public preview lifecycle and presentation have their own
+[experimental contract](plugins/file-preview.md); mutation transactions remain
+separate work. These methods do not expand the stable API set.
