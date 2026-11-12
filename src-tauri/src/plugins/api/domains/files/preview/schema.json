@@ -1,0 +1,425 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Experimental host quick-look preview RPC schemas, schemaVersion 1",
+  "description": "Host and SDK additionally enforce UTF-8 token/path byte limits (128/32768), source-specific absolute paths, a 256KiB observation budget, 64KiB provider-page budget, request-bound pagination and identity, and state/provider consistency. Endpoint read authority is retained through native authorization and reply. Accepted actions are not rendering completion and must not be replayed automatically.",
+  "definitions": {
+    "token": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 32768,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "source": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "local"
+            }
+          },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "remote"
+            },
+            "sessionId": {
+              "$ref": "#/definitions/token"
+            }
+          },
+          "required": ["kind", "sessionId"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "renderer": {
+      "enum": ["text", "markdown", "image", "audio", "video", "pdf"]
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/token"
+        },
+        "revision": {
+          "$ref": "#/definitions/token"
+        },
+        "attemptId": {
+          "$ref": "#/definitions/token"
+        },
+        "source": {
+          "$ref": "#/definitions/source"
+        },
+        "path": {
+          "$ref": "#/definitions/path"
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "column": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "presentation": {
+          "const": "quickLook"
+        },
+        "renderer": {
+          "$ref": "#/definitions/renderer"
+        },
+        "providerId": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/providerId"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "providerCount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": ["loading", "ready", "error", "unavailable"]
+        },
+        "errorCode": {
+          "anyOf": [
+            {
+              "enum": ["readFailed", "decodeFailed", "rendererUnavailable"]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "revision",
+        "attemptId",
+        "source",
+        "path",
+        "line",
+        "column",
+        "presentation",
+        "renderer",
+        "providerId",
+        "providerCount",
+        "state",
+        "errorCode"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "unavailable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "errorCode": {
+                "const": "rendererUnavailable"
+              },
+              "providerId": {
+                "type": "null"
+              },
+              "providerCount": {
+                "const": 0
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "errorCode": {
+                "enum": ["readFailed", "decodeFailed"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": ["loading", "ready"]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "errorCode": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "provider": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/providerId"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+        },
+        "renderer": {
+          "$ref": "#/definitions/renderer"
+        }
+      },
+      "required": ["id", "name", "renderer"],
+      "additionalProperties": false
+    },
+    "accepted": {
+      "type": "object",
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "accepted": {
+          "const": true
+        }
+      },
+      "required": ["schemaVersion", "accepted"],
+      "additionalProperties": false
+    },
+    "providerId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 129,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+    }
+  },
+  "methods": {
+    "filePreview.observe": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "$ref": "#/definitions/token"
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "revision": {
+                "$ref": "#/definitions/token"
+              },
+              "changed": {
+                "const": false
+              }
+            },
+            "required": ["schemaVersion", "revision", "changed"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "const": 1
+              },
+              "revision": {
+                "$ref": "#/definitions/token"
+              },
+              "changed": {
+                "const": true
+              },
+              "snapshot": {
+                "anyOf": [
+                  {
+                    "$ref": "#/definitions/metadata"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": ["schemaVersion", "revision", "changed", "snapshot"],
+            "additionalProperties": false
+          }
+        ]
+      }
+    },
+    "filePreview.providers": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/definitions/token"
+          },
+          "revision": {
+            "$ref": "#/definitions/token"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 32
+          }
+        },
+        "required": ["id", "revision"],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "type": "object",
+        "properties": {
+          "schemaVersion": {
+            "const": 1
+          },
+          "id": {
+            "$ref": "#/definitions/token"
+          },
+          "revision": {
+            "$ref": "#/definitions/token"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "nextOffset": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 32,
+            "items": {
+              "$ref": "#/definitions/provider"
+            }
+          }
+        },
+        "required": ["schemaVersion", "id", "revision", "total", "offset", "nextOffset", "items"],
+        "additionalProperties": false
+      }
+    },
+    "filePreview.action": {
+      "inputSchema": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/definitions/token"
+              },
+              "revision": {
+                "$ref": "#/definitions/token"
+              },
+              "action": {
+                "enum": ["close", "retry"]
+              }
+            },
+            "required": ["id", "revision", "action"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "$ref": "#/definitions/token"
+              },
+              "revision": {
+                "$ref": "#/definitions/token"
+              },
+              "action": {
+                "const": "selectProvider"
+              },
+              "providerId": {
+                "$ref": "#/definitions/providerId"
+              }
+            },
+            "required": ["id", "revision", "action", "providerId"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "resultSchema": {
+        "$ref": "#/definitions/accepted"
+      }
+    },
+    "filePreview.open": {
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "$ref": "#/definitions/source"
+          },
+          "path": {
+            "$ref": "#/definitions/path"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "column": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": ["source", "path"],
+        "additionalProperties": false
+      },
+      "resultSchema": {
+        "$ref": "#/definitions/accepted"
+      }
+    }
+  }
+}

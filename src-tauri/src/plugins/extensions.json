@@ -33,6 +33,7 @@
         "hostList",
         "workbench",
         "fileBrowser",
+        "filePreview",
         "terminal",
         "history",
         "forwarding",
@@ -166,6 +167,21 @@
         "writePermission": "settings.write",
         "concurrency": "persistent-revision",
         "recovery": "native-search-navigation-and-trust"
+      },
+      "filePreviewPermissions": ["filePreview.read"],
+      "filePreviewEndpointPermissions": ["fs.read", "sftp.read"],
+      "filePreview": {
+        "context": "filePreview",
+        "optionalSlot": "Body",
+        "presentation": "quickLook",
+        "pageSize": 32,
+        "pageTextLimit": 65536,
+        "observationTextLimit": 262144,
+        "writePermission": "filePreview.write",
+        "openReadPermission": "source-specific",
+        "readiness": "renderer-decoded",
+        "ownership": "host-view",
+        "paging": "revision-bound"
       }
     },
     "components": [
@@ -239,8 +255,14 @@
   },
   "layers": ["contract", "runtime", "data", "presentation", "behavior", "governance"],
   "domains": [
-    { "id": "runtime", "namespaces": ["resources"] },
-    { "id": "configuration", "namespaces": ["configuration"] },
+    {
+      "id": "runtime",
+      "namespaces": ["resources"]
+    },
+    {
+      "id": "configuration",
+      "namespaces": ["configuration"]
+    },
     {
       "id": "platform",
       "namespaces": ["api", "extensions", "app"]
@@ -251,7 +273,7 @@
     },
     {
       "id": "files",
-      "namespaces": ["files", "fileBrowser", "editor", "clipboard"]
+      "namespaces": ["files", "fileBrowser", "filePreview", "editor", "clipboard"]
     },
     {
       "id": "terminal",

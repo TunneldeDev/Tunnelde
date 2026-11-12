@@ -1,6 +1,7 @@
 //! File RPC adapters. Local publication, SFTP and owned transfers remain separate.
 mod content;
 mod local;
+mod preview;
 mod remote;
 pub(in crate::plugins::api) mod text;
 mod transfers;
@@ -17,6 +18,7 @@ pub(in crate::plugins::api) async fn dispatch(
     params: Value,
 ) -> AppResult<Value> {
     match method {
+        name if name.starts_with("filePreview.") => preview::dispatch(context, name, params).await,
         name if name.starts_with("files.content.") => {
             content::dispatch(context, name, params).await
         }

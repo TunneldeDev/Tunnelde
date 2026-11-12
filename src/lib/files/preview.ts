@@ -7,6 +7,7 @@ export function previewProviders(plugins: PluginInfo[]) {
         ...provider,
         id: `${plugin.id}:${provider.id}`,
         pluginName: plugin.name,
+        fingerprint: plugin.fingerprint ?? "",
       })),
     )
     .sort((a, b) => a.id.localeCompare(b.id));

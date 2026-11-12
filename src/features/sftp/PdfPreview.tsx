@@ -52,10 +52,12 @@ export default function PdfPreview({
   url,
   size,
   onError,
+  onReady,
 }: {
   url: string;
   size: number;
   onError?: (cause: unknown) => void;
+  onReady?: () => void;
 }) {
   const { t } = useTranslation();
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null);
@@ -170,6 +172,7 @@ export default function PdfPreview({
         await task.promise;
         if (!disposed) {
           setRendering(false);
+          onReady?.();
           page.cleanup();
         }
       })
@@ -180,7 +183,7 @@ export default function PdfPreview({
       disposed = true;
       task?.cancel();
     };
-  }, [document, pageNumber, zoom, width]);
+  }, [document, pageNumber, zoom, width, onReady]);
   return (
     <div className="file-preview__pdf">
       <div className="file-preview__toolbar" role="toolbar" aria-label={t("preview.pdfControls")}>

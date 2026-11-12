@@ -25,6 +25,12 @@ import type { FrontendHistory } from "@/lib/extensions/contracts/history/provide
 import { reportError } from "@/lib/diagnostics";
 import { translateError } from "@/lib/api/errors";
 import type { HistoryContext } from "@/lib/extensions/history/context";
+import type { FilePreviewContext } from "@/lib/extensions/files/preview/context";
+import type { FrontendFilePreview } from "@/lib/extensions/contracts/files/preview/provider";
+import {
+  createFilePreviewBody,
+  guardFilePreviewProvider,
+} from "@/lib/extensions/files/preview/provider";
 
 import { createProviderLease } from "@/lib/extensions/runtime/providers/lease";
 import { guardFileBrowserProvider } from "@/lib/extensions/files/provider";
@@ -81,6 +87,7 @@ export function ProviderSurface({
   visible = true,
   keepFallback = false,
   fileBrowser,
+  filePreview,
   terminal,
   history,
   forwarding,
@@ -100,6 +107,7 @@ export function ProviderSurface({
   visible?: boolean;
   keepFallback?: boolean;
   fileBrowser?: FrontendFileBrowser;
+  filePreview?: FilePreviewContext & Pick<FrontendFilePreview, "Body">;
   terminal?: FrontendTerminal;
   history?: HistoryContext & Pick<FrontendHistory, "Entries">;
   forwarding?: ForwardingContext & Pick<FrontendForwarding, "Entries">;
@@ -130,6 +138,10 @@ export function ProviderSurface({
     !suspended &&
     !security.restricted &&
     selected?.plugin.status === "running" &&
+    (!filePreview ||
+      selected.plugin.permissions.includes(
+        filePreview.snapshot.source.kind === "local" ? "fs.read" : "sftp.read",
+      )) &&
     (!isTauri() || hasPluginGrant(security, selected.plugin));
   const failed = failure?.identity === identity;
   // A user restore clears this local failure latch. Unrelated settings updates
@@ -190,6 +202,7 @@ export function ProviderSurface({
       fileBrowser?.snapshot.paneId,
       fileBrowser?.snapshot.source.kind,
       fileSessionId,
+      filePreview?.snapshot.id,
       history?.snapshot.sessionId,
       history?.snapshot.hostId,
       forwarding?.snapshot.hostId,
@@ -233,6 +246,10 @@ export function ProviderSurface({
       current.view.id !== selected.view.id ||
       current.plugin.fingerprint !== selected.plugin.fingerprint ||
       current.plugin.status !== "running" ||
+      (filePreview &&
+        !current.plugin.permissions.includes(
+          filePreview.snapshot.source.kind === "local" ? "fs.read" : "sftp.read",
+        )) ||
       frontendRuntime.token(current.plugin.id) !== token ||
       frontendRuntime.view(current.plugin.id, current.view.id, current.plugin.fingerprint) !==
         View ||
@@ -240,6 +257,31 @@ export function ProviderSurface({
     )
       throw new Error("plugin.frontend.viewUnavailable");
   };
+  // Both factories retain callbacks; neither reads host refs while rendering.
+  /* eslint-disable react-hooks/refs */
+  const PreviewBody = useMemo(
+    () =>
+      filePreview && active
+        ? createFilePreviewBody(filePreview.Body, checkAccess, filePreview.validateTarget)
+        : undefined,
+    // Scope and endpoint belong to the target/lease; metadata frames must not remount Body.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [accessLease, filePreview?.Body, active],
+  );
+  const previewContext =
+    filePreview && PreviewBody
+      ? guardFilePreviewProvider(
+          filePreview,
+          PreviewBody,
+          checkAccess,
+          () =>
+            !!usePlugins
+              .getState()
+              .items.find((item) => item.id === selected!.plugin.id)
+              ?.permissions.includes("filePreview.write"),
+        )
+      : undefined;
+  /* eslint-enable react-hooks/refs */
   // Factories capture authorization callbacks; they do not read host refs during render.
   /* eslint-disable react-hooks/refs */
   const files =
@@ -365,6 +407,7 @@ export function ProviderSurface({
                 visible,
                 workbench: slots,
                 fileBrowser: files,
+                filePreview: previewContext,
                 terminal: terminalContext,
                 history: historyContext,
                 forwarding: forwardingContext,

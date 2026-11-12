@@ -6,11 +6,13 @@ export function MediaPreview({
   url,
   name,
   onError,
+  onReady,
 }: {
   kind: "image" | "audio" | "video";
   url: string;
   name: string;
   onError: () => void;
+  onReady?: () => void;
 }) {
   const { t } = useTranslation();
   const media = useRef<HTMLMediaElement | null>(null);
@@ -29,7 +31,7 @@ export function MediaPreview({
   return (
     <div className={`file-preview__media file-preview__media--${kind}`}>
       {kind === "image" ? (
-        <img src={url} alt={name} onError={onError} draggable={false} />
+        <img src={url} alt={name} onError={onError} onLoad={onReady} draggable={false} />
       ) : kind === "video" ? (
         <video
           ref={(element) => {
@@ -39,6 +41,7 @@ export function MediaPreview({
           controls
           preload="metadata"
           onError={onError}
+          onLoadedMetadata={onReady}
           aria-label={name}
         />
       ) : (
@@ -52,6 +55,7 @@ export function MediaPreview({
             controls
             preload="metadata"
             onError={onError}
+            onLoadedMetadata={onReady}
             aria-label={name}
           />
         </div>
