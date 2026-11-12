@@ -30,9 +30,7 @@ impl Journal {
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| Error::Unavailable)?;
         let records = read_records(&tx, &self.id)?;
-        if records.len() >= CAPACITY {
-            return Err(Error::Capacity);
-        }
+        super::admission::persistence::admit_native(&tx, &self.id, &binding, &records)?;
         if records.iter().any(|record| {
             record.binding.operation_id == binding.operation_id
                 || (record.blocks_target() && record.binding.overlaps(&binding))
@@ -80,7 +78,8 @@ impl Journal {
             let active = read_records(&tx, &self.id)?
                 .into_iter()
                 .filter(Record::occupies_worker)
-                .count();
+                .count()
+                + super::admission::persistence::active(&tx, &self.id)?;
             if active >= 4 {
                 return Err(Error::Capacity);
             }
@@ -165,6 +164,8 @@ pub(super) fn encode(record: &Record) -> Result<(String, String)> {
 }
 // Called both for public reads and inside the actual write transaction.
 pub(super) fn read_records(conn: &Connection, journal_id: &str) -> Result<Vec<Record>> {
+    // Corruption in either namespace invalidates admission and transitions.
+    let legacy_count = super::admission::persistence::read_claims(conn, journal_id)?.len();
     let mut query = conn
         .prepare("SELECT id,revision,value,digest FROM records LIMIT 129")
         .map_err(|_| Error::Unrecognized)?;
@@ -195,7 +196,7 @@ pub(super) fn read_records(conn: &Connection, journal_id: &str) -> Result<Vec<Re
         }
         records.push(record);
     }
-    if records.len() > CAPACITY {
+    if records.len() + legacy_count > CAPACITY {
         return Err(Error::Capacity);
     }
     Ok(records)

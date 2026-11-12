@@ -69,7 +69,7 @@ impl Journal {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| Error::Unrecognized)?;
-        if check != "ok" || application != APPLICATION || version != 1 {
+        if check != "ok" || application != APPLICATION || !matches!(version, 1 | 2) {
             return Err(Error::Unrecognized);
         }
         let id: String = conn
@@ -86,9 +86,11 @@ impl Journal {
             directory_identity,
             file_identity,
             id,
+            schema_version: version,
         };
         journal.verify()?;
         journal.records()?;
+        journal.legacy_claims()?;
         Ok(journal)
     }
     pub(super) fn verify(&self) -> Result<()> {
@@ -105,6 +107,17 @@ impl Journal {
             })
             .map_err(|_| Error::Unrecognized)?;
         if id != self.id {
+            return Err(Error::Changed);
+        }
+        let version: i64 = self
+            .conn
+            .pragma_query_value(None, "user_version", |r| r.get(0))
+            .map_err(|_| Error::Unrecognized)?;
+        let application: i64 = self
+            .conn
+            .pragma_query_value(None, "application_id", |r| r.get(0))
+            .map_err(|_| Error::Unrecognized)?;
+        if version != self.schema_version || application != APPLICATION {
             return Err(Error::Changed);
         }
         Ok(())
