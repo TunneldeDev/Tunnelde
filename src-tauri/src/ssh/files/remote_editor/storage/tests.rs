@@ -11,6 +11,7 @@ fn fixture() -> (crate::db::Database, Record) {
             directory: "/.tunnelde-save-test".into(),
             token: uuid::Uuid::new_v4().to_string(),
             receipt: Some(recovery::Receipt::new()),
+            admission: None,
             removing_marker: false,
             updated_at: 0,
             error: None,
@@ -93,6 +94,7 @@ fn old_records_are_readable_but_missing_receipts_are_not_authority() {
     let (db, record) = fixture();
     let mut raw = serde_json::to_value(&record).unwrap();
     raw.as_object_mut().unwrap().remove("receipt");
+    raw.as_object_mut().unwrap().remove("admission");
     db.with(|conn| {
         conn.execute(
             "INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,0)",
@@ -182,4 +184,29 @@ fn stale_observer_cannot_overwrite_a_more_recent_receipt() {
         recovery::require_settled(&db.with(|conn| load(conn, &record.id)).unwrap().unwrap())
             .unwrap()
     );
+}
+
+#[test]
+fn durable_admission_link_is_assigned_once_and_stale_records_cannot_remove_it() {
+    let (db, mut record) = fixture();
+    db.with(|conn| create(conn, &record)).unwrap();
+    let stale = record.clone();
+    let reference = || {
+        serde_json::from_value(serde_json::json!({
+            "journalId": uuid::Uuid::new_v4().to_string(),
+            "claimId": uuid::Uuid::new_v4().to_string()
+        }))
+        .unwrap()
+    };
+    record.admission = Some(reference());
+    db.with(|conn| persist(conn, &record)).unwrap();
+    db.with(|conn| persist(conn, &record)).unwrap();
+    assert!(db.with(|conn| persist(conn, &stale)).is_err());
+    assert!(db.with(|conn| forget(conn, &stale)).is_err());
+    let mut changed = record.clone();
+    changed.admission = Some(reference());
+    assert!(db.with(|conn| persist(conn, &changed)).is_err());
+    let restored = db.with(|conn| load(conn, &record.id)).unwrap().unwrap();
+    assert!(restored.admission == record.admission);
+    db.with(|conn| forget(conn, &restored)).unwrap();
 }

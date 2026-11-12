@@ -59,6 +59,7 @@ struct Probe {
     commit_started: tokio::sync::Notify,
     release_commit: tokio::sync::Notify,
     hold_rmdir: AtomicBool,
+    hold_rmdir_after: AtomicBool,
     rmdir_started: tokio::sync::Notify,
     release_rmdir: tokio::sync::Notify,
     hold_mkdir_before: AtomicBool,
@@ -292,6 +293,10 @@ impl russh_sftp::server::Handler for Server {
             return Err(StatusCode::Failure);
         }
         std::fs::remove_dir(self.path(&path)).map_err(io)?;
+        if self.probe.hold_rmdir_after.swap(false, Ordering::SeqCst) {
+            self.probe.rmdir_started.notify_one();
+            self.probe.release_rmdir.notified().await;
+        }
         Ok(ok(id))
     }
     async fn remove(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
@@ -452,6 +457,7 @@ impl Fixture {
             directory: "/.tunnelde-save-test".into(),
             token: uuid::Uuid::new_v4().to_string(),
             receipt: Some(recovery::Receipt::new()),
+            admission: None,
             removing_marker: false,
             updated_at: 0,
             error: None,

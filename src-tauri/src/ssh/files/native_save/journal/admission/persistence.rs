@@ -86,7 +86,7 @@ impl Journal {
     }
     pub fn dispatch_legacy(&mut self, expected: &Claim) -> Result<Dispatched> {
         self.verify()?;
-        if expected.phase != Phase::Prepared {
+        if !matches!(expected.phase, Phase::Prepared | Phase::Recoverable) {
             return Err(Error::Changed);
         }
         let mut next = expected.clone();
@@ -100,6 +100,15 @@ impl Journal {
         let native = sqlite::read_records(&tx, &self.id)?;
         let legacy = read_claims(&tx, &self.id)?;
         current(&legacy, expected)?;
+        if native
+            .iter()
+            .any(|record| record.blocks_target() && expected.overlaps_native(&record.binding))
+            || legacy
+                .iter()
+                .any(|claim| claim.id != expected.id && claim.overlaps(&expected.scopes))
+        {
+            return Err(Error::Occupied);
+        }
         if native.iter().filter(|r| r.occupies_worker()).count()
             + legacy
                 .iter()
@@ -152,7 +161,7 @@ impl Journal {
         self.verify()
     }
 }
-fn current(records: &[Claim], expected: &Claim) -> Result<()> {
+pub(super) fn current(records: &[Claim], expected: &Claim) -> Result<()> {
     records
         .iter()
         .any(|r| r == expected)
@@ -163,7 +172,7 @@ fn version(conn: &Connection) -> Result<i64> {
     conn.pragma_query_value(None, "user_version", |r| r.get(0))
         .map_err(|_| Error::Unrecognized)
 }
-fn encode(claim: &Claim) -> Result<(String, String)> {
+pub(super) fn encode(claim: &Claim) -> Result<(String, String)> {
     if !claim.valid() {
         return Err(Error::Unrecognized);
     }

@@ -8,6 +8,7 @@ use std::sync::{Mutex, OnceLock, Weak};
 
 mod journal;
 mod lifetime;
+mod ownership;
 mod pending;
 pub(crate) mod policy;
 mod recovery;
@@ -39,6 +40,8 @@ struct Record {
     token: String,
     #[serde(default)]
     receipt: Option<recovery::Receipt>,
+    #[serde(default)]
+    admission: Option<native_save::runtime::MutationReference>,
     #[serde(default)]
     removing_marker: bool,
     updated_at: i64,
@@ -156,7 +159,9 @@ pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
         record,
         move || async move {
             let session_id = session_for(&connection, &target)?;
-            admission::open(&connection, &session_id, &[&target.directory]).await
+            // Owned admission below verifies the exact original claim. A generic
+            // writable check here would reject that claim before it can resume.
+            session(&connection, &session_id).await
         },
         app,
     )
@@ -275,9 +280,8 @@ async fn cleanup(
             return Err(unrecognized());
         }
         if entries.iter().any(|entry| entry.file_name() == "content") {
-            sftp.remove_file(format!("{}/content", record.directory))
-                .await
-                .map_err(map_sftp)?;
+            let content = format!("{}/content", record.directory);
+            recovery::cleanup_mutation(record, &checkpoint, sftp.remove_file(content)).await?;
         }
         // Persist the empty-directory cleanup phase before removing its proof.
         record.removing_marker = true;
@@ -291,10 +295,11 @@ async fn cleanup(
             {
                 return Err(unrecognized());
             }
-            sftp.remove_file(marker).await.map_err(map_sftp)?;
+            recovery::cleanup_mutation(record, &checkpoint, sftp.remove_file(marker)).await?;
         }
         Err(error) if missing(&error) => {}
         Err(error) => return Err(map_sftp(error)),
     }
-    sftp.remove_dir(&record.directory).await.map_err(map_sftp)
+    let directory = record.directory.clone();
+    recovery::cleanup_mutation(record, &checkpoint, sftp.remove_dir(directory)).await
 }

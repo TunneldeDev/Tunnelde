@@ -1,5 +1,6 @@
 use super::*;
 use crate::ssh::files::native_save::testing::*;
+mod continuation;
 mod crash;
 
 struct Fixture {

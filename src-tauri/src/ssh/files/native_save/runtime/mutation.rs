@@ -1,5 +1,7 @@
 //! Actual legacy worker ownership, independent of caller delivery and cancellation.
+mod editor;
 mod observation;
+mod scope;
 use super::super::journal::{
     admission::{Claim, Dispatched, Scope},
     Owner,
@@ -10,6 +12,7 @@ use crate::{
     services::files::operations::Cancellation,
     ssh::session::SessionIdentity,
 };
+pub(crate) use editor::Reference as MutationReference;
 pub(crate) use observation::Observation;
 use russh_sftp::client::SftpSession;
 use std::future::Future;
@@ -17,6 +20,7 @@ use std::future::Future;
 pub(crate) struct Mutation {
     service: Arc<Service<System>>,
     claim: Claim,
+    retire_on_cancel: bool,
 }
 pub(crate) struct ActiveMutation {
     service: Arc<Service<System>>,
@@ -24,6 +28,9 @@ pub(crate) struct ActiveMutation {
     _worker: super::super::service::LegacyWorker,
 }
 impl Mutation {
+    pub(crate) fn reference(&self) -> MutationReference {
+        MutationReference::new(&self.claim)
+    }
     pub(crate) async fn retire(self) -> AppResult<()> {
         self.service
             .retire_unsent_legacy(&self.claim)
@@ -32,7 +39,9 @@ impl Mutation {
     }
     pub(crate) async fn dispatch(self, job: &Cancellation) -> AppResult<ActiveMutation> {
         if let Err(error) = job.check() {
-            self.retire().await?;
+            if self.retire_on_cancel {
+                self.retire().await?;
+            }
             return Err(error);
         }
         let permit = self
@@ -48,6 +57,12 @@ impl Mutation {
     }
 }
 impl ActiveMutation {
+    pub(crate) async fn park_editor_cleanup(self) -> AppResult<()> {
+        self.service
+            .park_editor_cleanup(self.permit)
+            .await
+            .map_err(errors::app_journal)
+    }
     pub(crate) async fn settle(self) -> AppResult<()> {
         self.service
             .settle_legacy(self.permit)
@@ -63,6 +78,26 @@ impl Manager {
         kind: MutationKind,
         paths: &[String],
     ) -> AppResult<Option<Mutation>> {
+        self.reserve_owned_mutation(
+            destination,
+            sftp,
+            kind,
+            paths,
+            Owner {
+                id: uuid::Uuid::new_v4().to_string(),
+                generation: uuid::Uuid::new_v4().to_string(),
+            },
+        )
+        .await
+    }
+    async fn reserve_owned_mutation(
+        &self,
+        destination: &SessionIdentity,
+        sftp: &SftpSession,
+        kind: MutationKind,
+        paths: &[String],
+        owner: Owner,
+    ) -> AppResult<Option<Mutation>> {
         let Some(service) = self.existing().await.map_err(errors::app_journal)? else {
             return Ok(None);
         };
@@ -75,45 +110,18 @@ impl Manager {
         {
             return Ok(None);
         };
-        if paths.is_empty() || paths.len() > 16 {
-            return Err(AppError::validation("editor.nativeBusy"));
-        }
-        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
-        let mut spellings = Vec::new();
-        for path in paths {
-            spellings.push(path.clone());
-            spellings.push(
-                tokio::time::timeout_at(deadline, admission::resolve(sftp, path))
-                    .await
-                    .map_err(|_| AppError::validation("editor.nativeReconnect"))??,
-            );
-        }
-        let windows = spellings.iter().any(|path| {
-            crate::services::files::admission::Path::new(
-                path,
-                crate::services::files::admission::Platform::Windows,
-            )
-            .is_some()
-        });
-        let scope = Scope {
-            destination: destination.clone(),
-            platform: if windows { "windows" } else { "posix" }.into(),
-            paths: spellings,
-        };
+        let scope = scope::resolve(destination, sftp, paths).await?;
         // Final native/legacy overlap check AND reservation are one transaction,
         // after resolution. The earlier read/check alone is not admission.
         let claim = service
-            .reserve_legacy(
-                kind,
-                Owner {
-                    id: uuid::Uuid::new_v4().to_string(),
-                    generation: uuid::Uuid::new_v4().to_string(),
-                },
-                vec![scope],
-            )
+            .reserve_legacy(kind, owner, vec![scope])
             .await
             .map_err(errors::app_journal)?;
-        Ok(Some(Mutation { service, claim }))
+        Ok(Some(Mutation {
+            service,
+            claim,
+            retire_on_cancel: kind != MutationKind::Editor,
+        }))
     }
     pub(crate) async fn mutate<W: Future<Output = AppResult<()>>>(
         &self,
