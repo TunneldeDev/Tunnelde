@@ -284,3 +284,19 @@ fn full_checkpoint_failure_never_returns_a_dispatch_permit() {
     assert!(journal.dispatch(&ready).is_err());
     assert!(journal.current(&ready).is_ok());
 }
+
+#[cfg(unix)]
+#[test]
+fn ancestor_alias_is_resolved_but_the_selected_directory_link_is_rejected() {
+    let fixture = Fixture::new();
+    std::os::unix::fs::symlink(&fixture.root, fixture.root.join("ancestor-alias")).unwrap();
+    let alias = fixture.root.join("ancestor-alias/native-file-saves");
+    let journal = Journal::create(&alias).unwrap();
+    assert!(journal.records().unwrap().is_empty());
+    drop(journal);
+    assert!(Journal::open(&alias).is_ok());
+    let selected = fixture.root.join("selected-link");
+    std::os::unix::fs::symlink(fixture.path(), &selected).unwrap();
+    assert!(Journal::open(&selected).is_err());
+    assert!(Journal::create(&selected).is_err());
+}

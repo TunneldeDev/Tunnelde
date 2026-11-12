@@ -8,6 +8,16 @@ impl Journal {
     /// Explicit initialization only. A partial/failed initialization is retained.
     pub fn create(directory: &Path) -> Result<Self> {
         editor_file::private_directory(directory).map_err(|_| Error::Unavailable)?;
+        // macOS temporary storage uses an ancestor /var -> /private/var alias.
+        // Preserve the selected directory identity while resolving ancestor aliases
+        // before SQLite NOFOLLOW checks every path component.
+        let identity =
+            editor_file::directory_identity(directory).map_err(|_| Error::Unrecognized)?;
+        let directory = directory.canonicalize().map_err(|_| Error::Unavailable)?;
+        if editor_file::directory_identity(&directory).map_err(|_| Error::Unrecognized)? != identity
+        {
+            return Err(Error::Changed);
+        }
         let path = directory.join("recovery.sqlite3");
         let file = std::fs::OpenOptions::new()
             .write(true)
@@ -33,12 +43,15 @@ impl Journal {
         drop(conn);
         // SQLite FULL/EXTRA syncs transactions; initial directory entries also need syncing.
         #[cfg(unix)]
-        for parent in [Some(directory), directory.parent()].into_iter().flatten() {
+        for parent in [Some(directory.as_path()), directory.parent()]
+            .into_iter()
+            .flatten()
+        {
             File::open(parent)
                 .and_then(|file| file.sync_all())
                 .map_err(|_| Error::Unavailable)?;
         }
-        Self::open(directory)
+        Self::open(&directory)
     }
     pub fn open(directory: &Path) -> Result<Self> {
         let directory_identity =
