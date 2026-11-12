@@ -14,6 +14,47 @@ afterEach(() => {
   useTransfers.setState({ items: [] });
 });
 
+it.each([
+  ["discard", "editor.nativeDiscardUnsent"],
+  ["query", "editor.nativeQueryOriginal"],
+  ["finish", "editor.nativeFinishRecovery"],
+] as const)(
+  "native recovery exposes the explicit %s action and a working log link",
+  async (action, label) => {
+    await i18n.changeLanguage("en-US");
+    const pending = {
+      id: "native-original",
+      source: "native" as const,
+      action,
+      address: "user@server",
+      path: "/scope/note.txt",
+      directory: "/scope",
+      updatedAt: 0,
+      running: false,
+      error: "editor.remoteOutcomeUnknown",
+    };
+    useEditorCleanup.setState({ items: [pending] });
+    const retry = vi.spyOn(api, "editorCleanupRetry").mockResolvedValue(undefined);
+    vi.spyOn(api, "editorCleanupList").mockResolvedValue([pending]);
+    const log = vi.spyOn(api, "openLatestLog").mockResolvedValue(undefined);
+    dispose = registerBackgroundTaskSources();
+    const task = useBackgroundTasks.getState().items.find((item) => item.id === pending.id);
+    expect(task).toMatchObject({
+      title: i18n.t("editor.nativeRecoveryTitle"),
+      status: "attention",
+      execution: "native",
+      message: "user@server · /scope/note.txt",
+    });
+    expect(task?.progress).toBeUndefined();
+    expect(task?.actions?.map((item) => item.id)).toEqual(["retry", "logs"]);
+    expect(task?.actions?.[0]?.label).toBe(i18n.t(label));
+    await task?.actions?.[0]?.run();
+    expect(retry).toHaveBeenCalledWith(pending.id);
+    await task?.actions?.[1]?.run();
+    expect(log).toHaveBeenCalledTimes(1);
+  },
+);
+
 it("shows retained editor observation as running, then exposes an unresolved outcome after retirement", async () => {
   await i18n.changeLanguage("en-US");
   const pending = {
@@ -68,6 +109,34 @@ it("retained directory receipts are attention tasks without fabricated byte prog
     execution: "native",
   });
   expect(task?.progress).toBeUndefined();
+});
+
+it("keeps a failed recovery store visible alongside operations and offers a read-only reload", async () => {
+  await i18n.changeLanguage("en-US");
+  useEditorCleanup.setState({
+    items: [
+      {
+        id: "recovery-remote-store",
+        source: "diagnostic",
+        action: "reload",
+        path: "",
+        directory: "",
+        address: "",
+        updatedAt: 0,
+        running: false,
+        error: "editor.recoveryStoreUnavailable",
+      },
+    ],
+  });
+  dispose = registerBackgroundTaskSources();
+  const task = useBackgroundTasks
+    .getState()
+    .items.find((item) => item.id === "recovery-remote-store");
+  expect(task?.status).toBe("attention");
+  expect(task?.message).toBe("");
+  expect(task?.error).toBe(i18n.t("editor.recoveryStoreUnavailable"));
+  expect(task?.actions?.map((action) => action.id)).toEqual(["retry", "logs"]);
+  expect(task?.actions?.[0]?.label).toBe("Reload recovery records");
 });
 
 it("distinguishes local cleanup paths from remote hosts and retries the native task", async () => {

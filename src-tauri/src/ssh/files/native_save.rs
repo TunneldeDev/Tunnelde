@@ -6,6 +6,7 @@ mod codec;
 mod compatibility;
 mod contracts;
 mod journal;
+pub(crate) mod runtime;
 mod secrets;
 mod service;
 mod transport;
