@@ -1,5 +1,6 @@
 use super::*;
 use std::io::{Seek, SeekFrom};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 struct Fixture {
     root: PathBuf,
@@ -44,6 +45,8 @@ impl Drop for Fixture {
         std::fs::remove_dir_all(&self.root).unwrap();
     }
 }
+
+mod workers;
 
 #[test]
 fn legacy_plugin_save_uses_an_atomic_snapshot_and_explicit_baseline_detects_conflicts() {
