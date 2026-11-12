@@ -54,6 +54,7 @@ Read the plugin overview in [English](docs/en-us/guide/plugins.md) or [简体中
 | Updates / 更新                                       | [English](docs/en-us/guide/updates.md)              | [简体中文](docs/zh-cn/guide/updates.md)              |
 | Plugin development / 插件开发                        | [English](docs/en-us/development/plugins/README.md) | [简体中文](docs/zh-cn/development/plugins/README.md) |
 | Architecture / 架构                                  | [English](docs/en-us/development/architecture.md)   | [简体中文](docs/zh-cn/development/architecture.md)   |
+| Local API and CLI / 本地 API 与 CLI                  | [English](docs/en-us/development/local-api.md)      | [简体中文](docs/zh-cn/development/local-api.md)      |
 | Troubleshooting / 故障排查                           | [English](docs/en-us/guide/troubleshooting.md)      | [简体中文](docs/zh-cn/guide/troubleshooting.md)      |
 
 ## Development

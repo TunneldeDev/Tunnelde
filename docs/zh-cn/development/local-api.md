@@ -1,5 +1,10 @@
 # 本地 API 与 CLI
 
+CLI 连接最多等待三秒；建立连接后，请求／响应收发总计最多十秒，零碎输出不会
+重置总时限，每次写入另有三秒上限。写入发送后超时不证明宿主拒绝或回滚，应
+先重读快照确认结果。协议客户端位于 `automation/client/`，与 CLI 参数解析、
+输出和退出码处理分离。
+
 接口发现的 `protocol` 字段提供公共请求／响应 Schema、错误码与 CLI 退出码，
 来源为 `automation/schema/protocol-v1.json`。`x-maxBytes` 表示 UTF-8 字节上限，
 独立于 JSON Schema 的 Unicode 字符数限制；消费者校验 Schema 时需要支持此
