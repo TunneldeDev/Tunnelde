@@ -18,6 +18,11 @@ impl Replacement {
     pub(super) fn supports_fsync(&self) -> bool {
         self.fsync
     }
+    pub(super) fn retain_replies(&self, horizon: Duration) {
+        // The editor owns an earlier absolute observation deadline. Keep the
+        // dependency's per-request timer from discarding its receiver first.
+        self.raw.set_timeout(horizon.as_secs().saturating_add(1));
+    }
     pub(super) fn write_chunk(&self, handle: &str) -> AppResult<usize> {
         let overhead = 25u64.saturating_add(handle.len() as u64);
         let size = self.limits.write_len.unwrap_or(32768).min(32768).min(
@@ -81,7 +86,9 @@ impl Replacement {
     /// rename fallback may expose a missing destination or destroy an old file.
     /// Consuming this channel also prevents reuse after a lost acknowledgement.
     pub async fn commit(self, from: &str, to: &str) -> AppResult<()> {
-        self.replace(from, to).await
+        tokio::time::timeout(Duration::from_secs(10), self.replace(from, to))
+            .await
+            .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
     }
 
     // Editor staging owns the channel until its cleanup has been attempted.
@@ -94,13 +101,11 @@ impl Replacement {
             payload.extend_from_slice(&length.to_be_bytes());
             payload.extend_from_slice(path.as_bytes());
         }
-        let reply = tokio::time::timeout(
-            Duration::from_secs(10),
-            self.raw.extended("posix-rename@openssh.com", payload),
-        )
-        .await
-        .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
-        .map_err(|error| rename::failure(from, to, error))?;
+        let reply = self
+            .raw
+            .extended("posix-rename@openssh.com", payload)
+            .await
+            .map_err(|error| rename::failure(from, to, error))?;
         match reply {
             Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
             Packet::Status(status) => Err(rename::failure(

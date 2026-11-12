@@ -6,6 +6,8 @@ use std::sync::atomic::AtomicUsize;
 mod authorization;
 #[path = "tests/recovery.rs"]
 mod durability;
+#[path = "tests/late_replies.rs"]
+mod late_replies;
 mod workers;
 
 // Existing protocol cases exercise an uncancelled transaction; worker lifetime
@@ -363,12 +365,12 @@ impl russh_sftp::server::Handler for Server {
         if request != "posix-rename@openssh.com" {
             return Err(StatusCode::OpUnsupported);
         }
-        if self.fails("rename") {
-            return Err(StatusCode::Failure);
-        }
         if self.probe.hold_commit_before.swap(false, Ordering::SeqCst) {
             self.probe.commit_started.notify_one();
             self.probe.release_commit.notified().await;
+        }
+        if self.fails("rename") {
+            return Err(StatusCode::Failure);
         }
         let mut data = data.as_slice();
         let mut names = Vec::new();

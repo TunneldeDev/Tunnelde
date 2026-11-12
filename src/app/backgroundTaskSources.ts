@@ -36,14 +36,15 @@ export function registerBackgroundTaskSources(): () => void {
         snapshot: () =>
           useEditorCleanup.getState().items.map((item) => ({
             id: item.id,
-            title: i18n.t("editor.cleanupTitle"),
+            title: i18n.t(item.running ? "editor.operationInProgress" : "editor.cleanupTitle"),
             status: item.running ? "running" : "attention",
             execution: "native",
             updatedAt: item.updatedAt,
             message: `${item.source === "local" ? i18n.t("sftp.local") : item.address} · ${item.directory}`,
-            error: item.error
-              ? translateError({ code: "editorCleanup", message: item.error })
-              : undefined,
+            error:
+              !item.running && item.error
+                ? translateError({ code: "editorCleanup", message: item.error })
+                : undefined,
             actions: [
               {
                 id: "retry",

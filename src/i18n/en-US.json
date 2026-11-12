@@ -896,6 +896,8 @@
     "cleanupTitle": "Clean up editor staging",
     "retryCleanup": "Retry cleanup",
     "cleanupUnrecognized": "The staging directory has changed. Its contents were preserved for review.",
+    "operationInProgress": "Editor file operation in progress",
+    "remoteSaveWaiting": "Still waiting for the remote operation. Its original task continues in the background; check pending editor operations before trying again.",
     "remoteOutcomeUnknown": "The server has not confirmed this file operation. Recovery records and staging were preserved; automatic retry and cleanup are blocked.",
     "remoteRecoveryLimit": "Too many remote file operations await recovery. Review pending cleanup before saving another file.",
     "privateStagingRequired": "The server cannot create a private staging directory. The original file was preserved.",

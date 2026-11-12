@@ -1,10 +1,17 @@
-//! Real protocol effects deliberately outlive the request timeout.
+//! Real protocol effects deliberately outlive the worker observation horizon.
 use super::workers::*;
 use super::*;
 
 #[tokio::test]
-async fn unknown_mkdir_and_publication_survive_missing_paths_and_late_server_effects() {
-    for (publish, after_effect) in [(false, false), (false, true), (true, false), (true, true)] {
+async fn unknown_mutations_survive_missing_paths_and_late_server_effects() {
+    for (phase, after_effect) in [
+        ("create", false),
+        ("create", true),
+        ("stage", true),
+        ("publish", false),
+        ("publish", true),
+    ] {
+        let publish = phase == "publish";
         let f = Arc::new(Fixture::new());
         f.probe.short_timeout.store(true, Ordering::SeqCst);
         if publish {
@@ -13,6 +20,8 @@ async fn unknown_mkdir_and_publication_survive_missing_paths_and_late_server_eff
             } else {
                 f.probe.hold_commit_before.store(true, Ordering::SeqCst);
             }
+        } else if phase == "stage" {
+            f.probe.hold_close.store(true, Ordering::SeqCst);
         } else if after_effect {
             f.probe.hold_mkdir_after.store(true, Ordering::SeqCst);
         } else {
@@ -20,15 +29,21 @@ async fn unknown_mkdir_and_publication_survive_missing_paths_and_late_server_eff
         }
         let (budget, capacity) = budget();
         let journal = MemoryJournal::default();
-        let save = spawn_checked(
+        let save = spawn_checked_timing(
             budget.clone(),
             f.clone(),
             journal.clone(),
             "approved",
             policy::Native,
+            lifetime::Timing {
+                delivery: std::time::Duration::from_secs(5),
+                observation: std::time::Duration::from_secs(1),
+            },
         );
         if publish {
             notified(&f.probe.commit_started).await;
+        } else if phase == "stage" {
+            notified(&f.probe.close_started).await;
         } else {
             notified(&f.probe.mkdir_started).await;
         }
@@ -39,7 +54,9 @@ async fn unknown_mkdir_and_publication_survive_missing_paths_and_late_server_eff
             .unwrap();
         assert!(result.is_err());
         let record = journal.records.lock().unwrap()[0].clone();
-        assert_eq!(record.error.as_deref(), Some("editor.remoteOutcomeUnknown"));
+        // Horizon expiry leaves the durable intent; the list derives Unknown
+        // from that intent even when no best-effort error projection was saved.
+        assert!(record.error.is_none());
         assert_eq!(
             super::super::recovery::require_settled(&record)
                 .unwrap_err()
@@ -87,6 +104,8 @@ async fn unknown_mkdir_and_publication_survive_missing_paths_and_late_server_eff
         assert_eq!(before, after);
         if publish {
             f.probe.release_commit.notify_one();
+        } else if phase == "stage" {
+            f.probe.release_close.notify_one();
         } else {
             f.probe.release_mkdir.notify_one();
         }
@@ -103,8 +122,8 @@ async fn unknown_mkdir_and_publication_survive_missing_paths_and_late_server_eff
             .root
             .join(record.directory.trim_start_matches('/'))
             .exists());
-        // The server task has completed its held handler before Fixture deletes
-        // this test-owned directory. The record remains Unknown even after effect.
+        // The durable record remains Unknown even when the independently
+        // observed filesystem effect has occurred; it is not a server receipt.
         tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     }
 }
