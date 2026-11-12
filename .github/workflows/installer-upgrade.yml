@@ -13,6 +13,11 @@ on:
         default: v0.37.0
         required: true
         type: string
+      check_cli:
+        description: Verify the target installed desktop CLI (requires a release with CLI support)
+        default: false
+        required: false
+        type: boolean
   pull_request:
     branches: [dev]
     paths:
@@ -50,6 +55,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           UPGRADE_FROM: ${{ inputs.from || 'v0.36.0' }}
           UPGRADE_TO: ${{ inputs.to || 'v0.37.0' }}
+          UPGRADE_CHECK_CLI: ${{ inputs.check_cli && 'true' || 'false' }}
         run: node scripts/qa/windows-upgrade/run.mjs
       - name: Upload installation evidence
         if: always()
