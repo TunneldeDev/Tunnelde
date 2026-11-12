@@ -5,6 +5,9 @@ mod codec;
 #[cfg(test)]
 mod compatibility;
 mod contracts;
+mod journal;
+mod secrets;
+mod service;
 mod transport;
 
 #[cfg(test)]

@@ -7,6 +7,7 @@ use super::{
         receipt::{Observation, Phase},
         MAX_OUTPUT,
     },
+    testing::Checkpoint,
     transport::{Exchange, Failure, Output, Reason},
 };
 use std::{path::PathBuf, time::Duration};
@@ -165,7 +166,8 @@ async fn selected_file_save_helper_executes_and_recovers_original_host_operation
         .await
         .unwrap()
         .is_none());
-    client.submit(&prepared).await.unwrap();
+    let mut checkpoint = Checkpoint::new(client.authority(), &prepared);
+    client.submit(&prepared, checkpoint.take()).await.unwrap();
     // Simulate client loss: only its retained original authority/control survive.
     let authority = client.authority().clone();
     drop(client);
@@ -176,7 +178,26 @@ async fn selected_file_save_helper_executes_and_recovers_original_host_operation
         std::fs::read_to_string(fixture.root.join("host-测试.txt")).unwrap(),
         prepared.content
     );
-    let duplicate = restored.submit(&prepared).await.unwrap();
+    // Exercise server idempotency directly; the durable desktop gate forbids a second submit.
+    let duplicate = super::codec::operation(
+        fixture
+            .transport()
+            .exchange(
+                serde_json::to_vec(&super::contracts::operation::Request::Submit {
+                    control: &prepared.control,
+                    intent: &prepared.intent,
+                    content: &prepared.content,
+                })
+                .unwrap(),
+            )
+            .await
+            .unwrap(),
+        restored.authority(),
+        &prepared.control,
+        fixture.platform,
+    )
+    .unwrap()
+    .unwrap();
     assert_eq!(duplicate.revision, first.revision);
     restored
         .release(&prepared.control, &first, false)
@@ -193,7 +214,11 @@ async fn selected_file_save_helper_executes_and_recovers_original_host_operation
         "replacement".into(),
     )
     .unwrap();
-    restored.submit(&replace).await.unwrap();
+    let mut replacement_checkpoint = Checkpoint::new(restored.authority(), &replace);
+    restored
+        .submit(&replace, replacement_checkpoint.take())
+        .await
+        .unwrap();
     let receipt = settled(&restored, &replace).await;
     assert_eq!(receipt.phase, Phase::Succeeded);
     assert_eq!(receipt.backup_retained, Some(true));
@@ -219,7 +244,14 @@ async fn selected_file_save_helper_executes_and_recovers_original_host_operation
     let tombstone = restored.cancel(&cancelled.control).await.unwrap();
     assert_eq!(tombstone.phase, Phase::Cancelled);
     assert_eq!(
-        restored.submit(&cancelled).await.unwrap().phase,
+        restored
+            .submit(
+                &cancelled,
+                Checkpoint::new(restored.authority(), &cancelled).take()
+            )
+            .await
+            .unwrap()
+            .phase,
         Phase::Cancelled
     );
     assert!(!fixture.root.join("cancelled.txt").exists());
@@ -228,6 +260,84 @@ async fn selected_file_save_helper_executes_and_recovers_original_host_operation
         .release(&cancelled.control, &terminal, false)
         .await
         .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires explicitly selected reviewed helper; isolated durable service fixture"]
+async fn selected_file_save_helper_recovers_the_durable_service_without_replaying_content() {
+    use super::{journal::Journal, secrets::Secrets, service::Service};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, Mutex},
+    };
+    #[derive(Clone, Default)]
+    struct Tokens(Arc<Mutex<HashMap<String, String>>>);
+    impl Secrets for Tokens {
+        fn create(&self, key: &str, token: &str) -> super::journal::Result<()> {
+            let mut values = self.0.lock().unwrap();
+            if values.get(key).is_some_and(|value| value != token) {
+                return Err(super::journal::Error::SecretChanged);
+            }
+            values.insert(key.into(), token.into());
+            Ok(())
+        }
+        fn load(&self, key: &str) -> super::journal::Result<String> {
+            self.0
+                .lock()
+                .unwrap()
+                .get(key)
+                .cloned()
+                .ok_or(super::journal::Error::SecretChanged)
+        }
+    }
+    let fixture = Fixture::selected();
+    let client = fixture.initialized().await;
+    let authority = client.authority().clone();
+    let path = fixture.root.join("desktop-private-journal");
+    let tokens = Tokens::default();
+    let service = Service::new(Journal::create(&path).unwrap(), tokens.clone());
+    let prepared = Prepared::new(
+        &authority,
+        vec!["durable-service.txt".into()],
+        Baseline::Absent,
+        "preserved UTF-8 测试".into(),
+    )
+    .unwrap();
+    let mut bound = super::testing::binding(&authority, &prepared);
+    bound.selection.executable = fixture.executable.to_str().unwrap().into();
+    bound.selection.directory = fixture.state.to_str().unwrap().into();
+    let ready = service.reserve(bound, &prepared).unwrap();
+    let mut record = service
+        .submit(&ready, &prepared, &client, |_| Ok(()))
+        .await
+        .unwrap();
+    drop(service);
+    drop(client);
+    drop(prepared); // neither persisted text nor a submit path is available to recovery
+    let service = Service::new(Journal::open(&path).unwrap(), tokens);
+    let restored = Client::restore(fixture.transport(), authority, fixture.platform).unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(8);
+    loop {
+        record = service
+            .recover(&record, &restored, |_| Ok(()))
+            .await
+            .unwrap();
+        if record.observation.as_ref().unwrap().releasable() {
+            break;
+        }
+        assert!(tokio::time::Instant::now() < deadline);
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(record.observation.as_ref().unwrap().phase, Phase::Succeeded);
+    assert_eq!(
+        std::fs::read_to_string(fixture.root.join("durable-service.txt")).unwrap(),
+        "preserved UTF-8 测试"
+    );
+    let released = service
+        .release(&record, &restored, false, |_| Ok(()))
+        .await
+        .unwrap();
+    assert!(released.released());
 }
 #[tokio::test]
 #[ignore = "requires explicitly selected historical helper; unsupported native saves must stay unavailable"]
