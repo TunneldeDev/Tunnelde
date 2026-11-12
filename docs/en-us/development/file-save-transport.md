@@ -6,8 +6,9 @@ The internal `ssh/files/native_save` adapter consumes the optional helper's
 `files.save.v1` protocol. It is separate from legacy SFTP cleanup and runner
 control. It does not install a runtime, advertise support, enable desktop saves,
 or add a public plugin API. Installation consent, editor integration and recovery
-UI must be accepted before enabling this path. The private durable service is
-implemented, but remains dormant until those flows are integrated.
+UI must be accepted before enabling new writes. The desktop lifecycle can load
+existing recovery records and project explicit recovery actions into background
+tasks. Installation, initialization and the actual editor save path remain disabled.
 
 The adapter has separate contracts, codec, client and transport modules. Shared
 POSIX/PowerShell command encoding lives under `ssh/command`; it never includes
@@ -37,7 +38,10 @@ the service obtains it only after recording possible dispatch durably.
 transitions. Its dedicated `native-file-saves/recovery.sqlite3` database is under
 the configured database location. Existing missing, corrupt, foreign or replaced
 storage is rejected without recreation. SQLite uses `synchronous=EXTRA`; reserve,
-ready, possible-dispatch, receipt and cleanup-intent changes are short transactions.
+possible-dispatch, receipt and cleanup-intent changes are short transactions.
+Credential setup and deletion retain an immediate write transaction until the
+actual keyring call returns. This cross-process exclusion prevents retirement
+from removing a reservation while setup can still write its credential.
 The storage inventory carries the entire directory through moves and resets;
 moving the database without its data is refused when recovery storage exists.
 
@@ -46,7 +50,26 @@ selection, authority and intent, but never file content or the control token.
 `secrets` uses a distinct application-scoped keyring service, including isolated
 QA identifiers. The service first reserves a record, then saves and verifies its
 unique token, then marks readiness. A missing, changed or inaccessible token never
-causes rotation or a replacement operation. No keyring deletion is exposed.
+causes rotation or a replacement operation. Explicit finalization durably abandons
+never-dispatched work or retires a confirmed released record before removing its
+matching credential and record. Unknown writes and retained backups cannot be
+forgotten this way. OS-keyring lookup/deletion is not a CAS against arbitrary
+external writers; operation keys must never be reassigned.
+
+All journal/keyring operations run on bounded blocking workers. Caller cancellation
+does not return a slot while its actual disk/keyring work is still running. The
+desktop manager opens existing storage lazily; once observed, a missing or failed
+store remains an error rather than becoming an empty first run. Listing recovery
+records does not read credentials or contact the remote host. A historical live
+receipt is shown as requiring attention, never as proof of current execution.
+
+Recovery tasks offer query, discard-unsent or finish-local actions and a software
+log link. Query selects a live connection matching the original authenticated
+destination and checks only the original operation. It does not install, initialize,
+submit, cancel or discard a remote backup. Legacy local, legacy remote and native
+stores are read independently so an inaccessible store cannot hide the others.
+Reservations across all other write entry points must still be integrated before
+new native saves are enabled.
 
 After possible dispatch, only original-operation status is used for recovery.
 Missing remote state remains unresolved. Retained records reserve their target
