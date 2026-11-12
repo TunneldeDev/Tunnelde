@@ -8,8 +8,11 @@ use std::sync::{Mutex, OnceLock, Weak};
 
 mod journal;
 pub(crate) mod policy;
+mod recovery;
 mod retained;
 mod saving;
+mod staging;
+mod storage;
 use journal::Journal;
 mod transaction;
 use transaction::staged_save;
@@ -33,6 +36,8 @@ struct Record {
     path: String,
     directory: String,
     token: String,
+    #[serde(default)]
+    receipt: Option<recovery::Receipt>,
     #[serde(default)]
     removing_marker: bool,
     updated_at: i64,
@@ -79,22 +84,15 @@ fn records(app: &AppHandle) -> AppResult<Vec<Record>> {
 }
 
 fn persist(app: &AppHandle, record: &Record) -> AppResult<()> {
-    let value = serde_json::to_string(record)?;
-    app.state::<AppState>().db.with(|conn| {
-        conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
-            rusqlite::params![format!("{PREFIX}{}", record.id), value, crate::models::now_ms()])?;
-        Ok(())
-    })
+    app.state::<AppState>()
+        .db
+        .with(|conn| storage::persist(conn, record))
 }
 
 fn forget(app: &AppHandle, record: &Record) -> AppResult<()> {
-    app.state::<AppState>().db.with(|conn| {
-        conn.execute(
-            "DELETE FROM settings WHERE key=?1",
-            [format!("{PREFIX}{}", record.id)],
-        )?;
-        Ok(())
-    })
+    app.state::<AppState>()
+        .db
+        .with(|conn| storage::forget(conn, record))
 }
 
 #[tauri::command]
@@ -103,15 +101,21 @@ pub fn editor_cleanup_list(app: AppHandle) -> AppResult<Vec<PendingCleanup>> {
     let mut pending: Vec<_> = records(&app)?
         .into_iter()
         .filter(|r| active.get(&r.id) != Some(&false))
-        .map(|r| PendingCleanup {
-            running: active.get(&r.id) == Some(&true),
-            source: "remote",
-            id: r.id,
-            path: r.path,
-            directory: r.directory,
-            address: r.address,
-            updated_at: r.updated_at,
-            error: r.error,
+        .map(|r| {
+            let error = r
+                .error
+                .clone()
+                .or_else(|| recovery::require_settled(&r).err().map(|e| e.to_string()));
+            PendingCleanup {
+                running: active.get(&r.id) == Some(&true),
+                source: "remote",
+                id: r.id,
+                path: r.path,
+                directory: r.directory,
+                address: r.address,
+                updated_at: r.updated_at,
+                error,
+            }
         })
         .collect();
     drop(active);
@@ -214,6 +218,11 @@ async fn cleanup(
     record: &mut Record,
     checkpoint: impl Fn(&Record) -> AppResult<()>,
 ) -> AppResult<()> {
+    // Legacy or interrupted mutations have no terminal server authority.
+    // Do not even probe paths: absence cannot fence another live connection.
+    if !recovery::require_settled(record)? {
+        return Ok(());
+    }
     let metadata = match sftp.symlink_metadata(&record.directory).await {
         Ok(metadata) => metadata,
         Err(error) if missing(&error) => return Ok(()),

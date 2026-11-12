@@ -896,6 +896,8 @@
     "cleanupTitle": "清理编辑暂存文件",
     "retryCleanup": "重试清理",
     "cleanupUnrecognized": "暂存目录已发生变化，已保留其中的内容以供检查。",
+    "remoteOutcomeUnknown": "服务端尚未确认此文件操作的结果。已保留恢复记录和暂存内容，已阻止自动重试与清理。",
+    "remoteRecoveryLimit": "等待恢复的远端文件操作过多，请先检查待清理任务，再保存其他文件。",
     "privateStagingRequired": "服务器无法创建私有暂存目录，已保留原文件。",
     "metadataNotPreserved": "无法保留原文件权限或验证暂存内容，已保留原文件。",
     "remoteFileChanged": "远端文件在打开后已被修改，请对比更改后再保存。",
