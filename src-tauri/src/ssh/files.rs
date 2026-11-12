@@ -570,10 +570,14 @@ pub fn local_list(path: Option<String>) -> AppResult<Listing> {
 }
 
 pub async fn remote_mkdir(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    let sftp = admission::open(app, session_id, &[&path]).await?;
-    sftp.create_dir(path).await.map_err(map_sftp)?;
-    let _ = sftp.close().await;
-    Ok(())
+    admission::mutate(
+        app,
+        session_id,
+        vec![path.clone()],
+        native_save::runtime::MutationKind::Mkdir,
+        move |sftp| async move { sftp.create_dir(path).await.map_err(map_sftp) },
+    )
+    .await
 }
 
 pub async fn remote_rename(
@@ -583,40 +587,44 @@ pub async fn remote_rename(
     to: String,
     overwrite: bool,
 ) -> AppResult<()> {
-    let sftp = session(app, session_id)
-        .await
-        .map_err(|error| rename::context(&from, &to, error))?;
-    let result = async {
-        admission::writable(app, session_id, &sftp, &[&from, &to]).await?;
-        check_remote_destination(&sftp, &from, &to, overwrite).await?;
-        if overwrite && remote_exists(&sftp, &to).await? {
-            // Merge real directories using only server-side renames. Resolving
-            // roots once also permits a user's parent directory symlink.
-            if sftp
-                .symlink_metadata(&from)
-                .await
-                .map_err(map_sftp)?
-                .is_dir()
-                && sftp.symlink_metadata(&to).await.map_err(map_sftp)?.is_dir()
-            {
-                let source = sftp.canonicalize(&from).await.map_err(map_sftp)?;
-                let target = sftp.canonicalize(&to).await.map_err(map_sftp)?;
-                let plan = remote_merge::Plan::prepare(&sftp, &source, &target).await?;
-                let replacement = if plan.needs_replacement {
-                    Some(remote_commit::Replacement::connect(app, session_id).await?)
-                } else {
-                    None
-                };
-                return plan.apply(&sftp, replacement.as_ref()).await;
+    let connection = app.clone();
+    let id = session_id.to_owned();
+    let original_from = from.clone();
+    let original_to = to.clone();
+    admission::mutate(
+        app,
+        session_id,
+        vec![from.clone(), to.clone()],
+        native_save::runtime::MutationKind::Rename,
+        move |sftp| async move {
+            check_remote_destination(&sftp, &from, &to, overwrite).await?;
+            if overwrite && remote_exists(&sftp, &to).await? {
+                // Merge real directories using only server-side renames. Resolving
+                // roots once also permits a user's parent directory symlink.
+                if sftp
+                    .symlink_metadata(&from)
+                    .await
+                    .map_err(map_sftp)?
+                    .is_dir()
+                    && sftp.symlink_metadata(&to).await.map_err(map_sftp)?.is_dir()
+                {
+                    let source = sftp.canonicalize(&from).await.map_err(map_sftp)?;
+                    let target = sftp.canonicalize(&to).await.map_err(map_sftp)?;
+                    let plan = remote_merge::Plan::prepare(&sftp, &source, &target).await?;
+                    let replacement = if plan.needs_replacement {
+                        Some(remote_commit::Replacement::connect(&connection, &id).await?)
+                    } else {
+                        None
+                    };
+                    return plan.apply(&sftp, replacement.as_ref()).await;
+                }
+                return remote_replace(&connection, &id, &from, &to).await;
             }
-            return remote_replace(app, session_id, &from, &to).await;
-        }
-        rename::entry(&sftp, &from, &to).await
-    }
+            rename::entry(&sftp, &from, &to).await
+        },
+    )
     .await
-    .map_err(|error| rename::context(&from, &to, error));
-    let _ = sftp.close().await;
-    result
+    .map_err(|error| rename::context(&original_from, &original_to, error))
 }
 
 // OpenSSH's extension maps to the server's atomic rename operation. In
@@ -634,10 +642,14 @@ pub async fn remote_delete(
     path: String,
     _is_dir: bool,
 ) -> AppResult<()> {
-    let sftp = admission::open(app, session_id, &[&path]).await?;
-    remove_remote_entry(&sftp, &path).await?;
-    let _ = sftp.close().await;
-    Ok(())
+    admission::mutate(
+        app,
+        session_id,
+        vec![path.clone()],
+        native_save::runtime::MutationKind::Delete,
+        move |sftp| async move { remove_remote_entry(&sftp, &path).await },
+    )
+    .await
 }
 
 pub fn local_mkdir(path: String) -> AppResult<()> {
@@ -654,21 +666,23 @@ pub fn local_create_file(path: String) -> AppResult<()> {
 }
 
 pub async fn remote_create_file(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    let sftp = admission::open(app, session_id, &[&path]).await?;
-    let result = sftp
-        .open_with_flags(
-            &path,
-            OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
-        )
-        .await
-        .map_err(map_sftp);
-    if let Ok(mut file) = result {
-        let result = file.shutdown().await.map_err(AppError::from);
-        let _ = sftp.close().await;
-        return result;
-    }
-    let _ = sftp.close().await;
-    result.map(|_| ())
+    admission::mutate(
+        app,
+        session_id,
+        vec![path.clone()],
+        native_save::runtime::MutationKind::Create,
+        move |sftp| async move {
+            let mut file = sftp
+                .open_with_flags(
+                    &path,
+                    OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
+                )
+                .await
+                .map_err(map_sftp)?;
+            file.shutdown().await.map_err(AppError::from)
+        },
+    )
+    .await
 }
 
 pub fn local_rename(from: String, to: String, overwrite: bool) -> AppResult<()> {

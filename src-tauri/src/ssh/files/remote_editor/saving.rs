@@ -150,7 +150,25 @@ async fn save_opened(
         error: None,
     };
     let reservation = Reservation::saving(&record.id, observation.visible)?;
-    journal.create(&record)?;
+    let claim = journal
+        .admission(
+            sftp,
+            &request.session_id,
+            vec![target.clone(), record.directory.clone()],
+            native_save::runtime::MutationKind::Editor,
+        )
+        .await?;
+    if let Err(error) = journal.create(&record) {
+        if let Some(claim) = claim {
+            claim.retire().await?;
+        }
+        return Err(error);
+    }
+    let active = if let Some(claim) = claim {
+        Some(claim.dispatch(job).await?)
+    } else {
+        None
+    };
     let result = staged_save(
         sftp,
         &replacement,
@@ -182,5 +200,10 @@ async fn save_opened(
     };
     drop(reservation);
     settled?;
+    // Safe cleanup and forgetting the original legacy receipt precede release.
+    // A process loss at either boundary retains the durable claim conservatively.
+    if let Some(active) = active {
+        active.settle().await?;
+    }
     result
 }

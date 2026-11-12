@@ -1,6 +1,9 @@
 //! Desktop lifecycle: load existing recovery authority, never silently initialize it.
 mod admission;
 mod errors;
+mod mutation;
+pub(crate) use super::journal::admission::Kind as MutationKind;
+pub(crate) use mutation::Mutation;
 mod projection;
 #[cfg(test)]
 mod tests;
@@ -73,12 +76,18 @@ impl Manager {
         let result = async {
             match self.existing().await? {
                 None => Ok(Vec::new()),
-                Some(service) => Ok(service
-                    .records()
-                    .await?
-                    .iter()
-                    .map(projection::record)
-                    .collect()),
+                Some(service) => {
+                    let mut pending: Vec<_> = service
+                        .records()
+                        .await?
+                        .iter()
+                        .map(projection::record)
+                        .collect();
+                    pending.extend(service.legacy_claims().await?.iter().map(|claim| {
+                        projection::legacy(claim, service.legacy_worker_running(&claim.id))
+                    }));
+                    Ok(pending)
+                }
             }
         }
         .await;
@@ -109,6 +118,24 @@ impl Manager {
             if id == "native-store" {
                 service.records().await.map_err(errors::app_journal)?;
                 return Ok(());
+            }
+            if let Some(operation) = id.strip_prefix("native-legacy-") {
+                let claim = service
+                    .legacy_claims()
+                    .await
+                    .map_err(errors::app_journal)?
+                    .into_iter()
+                    .find(|claim| claim.id == operation)
+                    .ok_or_else(|| AppError::validation("editor.cleanupMissing"))?;
+                if claim.phase != super::journal::admission::Phase::Prepared {
+                    return Err(AppError::validation("editor.remoteOutcomeUnknown"));
+                }
+                // Only definitely unsent claims may be retired. A remote path
+                // probe or a newly installed helper cannot settle legacy SFTP.
+                return service
+                    .retire_unsent_legacy(&claim)
+                    .await
+                    .map_err(errors::app_journal);
             }
             let operation = id
                 .strip_prefix("native-")

@@ -88,6 +88,25 @@ when new reservations can be admitted concurrently. The current checks do not
 fence arbitrary external filesystem writers or prove symlink identity survives a
 later mutation. They do not settle unknown legacy SFTP requests.
 
+The internal version-2 journal adds legacy mutation claims in the same SQLite
+authority. Format upgrade is explicit and transactional; reopening version 1
+does not upgrade it. Both namespaces share the 128-record and four-dispatched-worker
+limits. Native and legacy admission check each other under `BEGIN IMMEDIATE`,
+including original helper state and ancestor paths. Claims retain the captured
+destination, requested/canonical paths, owner generation, revision and dispatch
+checkpoint. Only the original worker receives a single-use settlement permit;
+ordinary retirement cannot delete a potentially dispatched claim. A lost result
+remains an attention task with logs, without offering an unsupported remote query
+or discard action.
+
+Remote create/mkdir/rename/delete and editor save/retained cleanup workers use
+this internal authority when an explicitly upgraded store exists. Frontend
+delivery timeout does not cancel an already admitted primitive mutation: its
+worker observes the original operation for up to five minutes. Production
+initialization and full transfer/artifact enrollment are not enabled yet, so this
+does not establish complete bilateral coverage or enable native editor saves.
+Unknown historical SFTP outcomes are never attested by a newly installed helper.
+
 After possible dispatch, only original-operation status is used for recovery.
 Missing remote state remains unresolved. Retained records reserve their target
 until confirmed release; at most 128 records and four potentially active workers

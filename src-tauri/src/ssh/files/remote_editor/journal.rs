@@ -2,6 +2,24 @@
 use super::*;
 
 pub(super) trait Journal: Send + Sync + 'static {
+    fn cleanup_admission(
+        &self,
+        _sftp: &SftpSession,
+        _record: &Record,
+    ) -> impl std::future::Future<Output = AppResult<Option<native_save::runtime::Mutation>>> + Send
+    {
+        async { Ok(None) }
+    }
+    fn admission(
+        &self,
+        _sftp: &SftpSession,
+        _session: &str,
+        _paths: Vec<String>,
+        _kind: native_save::runtime::MutationKind,
+    ) -> impl std::future::Future<Output = AppResult<Option<native_save::runtime::Mutation>>> + Send
+    {
+        async { Ok(None) }
+    }
     fn create(&self, record: &Record) -> AppResult<()>;
     fn persist(&self, record: &Record) -> AppResult<()>;
     fn forget(&self, record: &Record) -> AppResult<()>;
@@ -12,6 +30,33 @@ pub(super) trait Journal: Send + Sync + 'static {
 }
 
 impl Journal for AppHandle {
+    async fn cleanup_admission(
+        &self,
+        sftp: &SftpSession,
+        record: &Record,
+    ) -> AppResult<Option<native_save::runtime::Mutation>> {
+        self.admission(
+            sftp,
+            &session_for(self, record)?,
+            vec![record.path.clone(), record.directory.clone()],
+            native_save::runtime::MutationKind::Cleanup,
+        )
+        .await
+    }
+    async fn admission(
+        &self,
+        sftp: &SftpSession,
+        session: &str,
+        paths: Vec<String>,
+        kind: native_save::runtime::MutationKind,
+    ) -> AppResult<Option<native_save::runtime::Mutation>> {
+        let state = self.state::<AppState>();
+        let identity = state.ssh.identity(session)?;
+        state
+            .native_saves
+            .reserve_mutation(&identity, sftp, kind, &paths)
+            .await
+    }
     fn create(&self, record: &Record) -> AppResult<()> {
         self.state::<AppState>()
             .db
