@@ -241,32 +241,35 @@ async fn secret_setup_failure_keeps_unsent_reservation_and_never_admits_recovery
 
 #[tokio::test]
 async fn revoked_owner_or_changed_authority_cannot_submit_or_disclose_control() {
-    let fixture = Fixture::new();
-    let service = fixture.service(MemorySecrets::default());
-    let authority = authority();
-    let prepared = prepared(&authority);
-    let record = service
-        .reserve(binding(&authority, &prepared), &prepared)
-        .unwrap();
-    let client = client(&fixture, &authority, vec![]);
-    assert!(service
-        .submit(&record, &prepared, &client, |_| Err(
-            journal::Error::Changed
-        ))
-        .await
-        .is_err());
-    assert!(service.records().unwrap()[0] == record);
-    client
-        .test_transport()
-        .revoked
-        .store(true, Ordering::Release);
-    assert!(service
-        .submit(&record, &prepared, &client, |_| Ok(()))
-        .await
-        .is_err());
-    assert!(client.test_transport().requests.lock().unwrap().is_empty());
-    // A pre-network transport failure still retains the conservative possible dispatch checkpoint.
-    assert!(service.records().unwrap()[0].stage == Stage::Dispatched);
+    for owner_revoked in [true, false] {
+        let fixture = Fixture::new();
+        let service = fixture.service(MemorySecrets::default());
+        let authority = authority();
+        let prepared = prepared(&authority);
+        let record = service
+            .reserve(binding(&authority, &prepared), &prepared)
+            .unwrap();
+        let client = client(&fixture, &authority, vec![]);
+        client
+            .test_transport()
+            .revoked
+            .store(!owner_revoked, Ordering::Release);
+        assert!(service
+            .submit(&record, &prepared, &client, |_| {
+                // The final owner check must see the already committed checkpoint.
+                assert!(service.records().unwrap()[0].stage == Stage::Dispatched);
+                if owner_revoked {
+                    Err(journal::Error::Changed)
+                } else {
+                    Ok(())
+                }
+            })
+            .await
+            .is_err());
+        assert!(client.test_transport().requests.lock().unwrap().is_empty());
+        // Pre-network refusal still retains the conservative possible-dispatch checkpoint.
+        assert!(service.records().unwrap()[0].stage == Stage::Dispatched);
+    }
 }
 
 #[tokio::test]
