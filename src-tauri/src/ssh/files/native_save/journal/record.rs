@@ -120,7 +120,8 @@ impl Binding {
         // Incompatible path namespaces on a potentially identical host cannot
         // establish disjointness. Recovery still requires the exact identity.
         self.platform() != other.platform()
-            || self.path_conflict(&self.target_path(), &other.target_path())
+            || self.overlaps_path(&other.target_path())
+            || other.overlaps_path(&self.target_path())
     }
     pub fn same_host(&self, destination: &SessionIdentity) -> bool {
         self.destination.address == destination.address

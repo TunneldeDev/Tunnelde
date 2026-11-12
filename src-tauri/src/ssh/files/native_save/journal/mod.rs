@@ -1,4 +1,5 @@
 //! Private recovery authority, deliberately separate from the resettable App DB.
+pub(super) mod admission;
 mod database;
 mod finalization;
 mod record;
@@ -6,15 +7,16 @@ mod sqlite;
 #[cfg(test)]
 mod tests;
 
-pub(super) use record::{Binding, Record, Stage};
 #[cfg(test)]
-pub(super) use record::{Owner, Selection};
+pub(super) use record::Selection;
+pub(super) use record::{Binding, Owner, Record, Stage};
 pub(super) struct Journal {
     conn: rusqlite::Connection,
     directory: std::path::PathBuf,
     directory_identity: crate::platform::editor_file::Identity,
     file_identity: crate::platform::editor_file::Identity,
     id: String,
+    schema_version: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
