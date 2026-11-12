@@ -25,6 +25,11 @@ pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
 mod move_verification;
+#[allow(
+    dead_code,
+    reason = "Native save transport awaits explicit installation and recovery UI acceptance"
+)]
+mod native_save;
 mod publication;
 mod range_io;
 mod remote_commit;
