@@ -3,6 +3,36 @@ use russh_sftp::protocol::*;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::atomic::AtomicUsize;
 
+mod workers;
+
+// Existing protocol cases exercise an uncancelled transaction; worker lifetime
+// cases below use the real Budget and caller-owned cancellation state.
+async fn staged_save(
+    sftp: &SftpSession,
+    replacement: &remote_commit::Replacement,
+    requested: &str,
+    target: &str,
+    content: &str,
+    baseline: &str,
+    record: &Record,
+) -> AppResult<()> {
+    let (job, _caller) =
+        crate::services::files::operations::Cancellation::for_test("editor.saveCancelled");
+    transaction::staged_save(
+        sftp,
+        replacement,
+        transaction::Draft {
+            requested,
+            target,
+            content,
+            baseline,
+        },
+        record,
+        &job,
+    )
+    .await
+}
+
 #[derive(Default)]
 struct Probe {
     failure: Mutex<String>,
@@ -12,6 +42,14 @@ struct Probe {
     hold_close: AtomicBool,
     close_started: tokio::sync::Notify,
     release_close: tokio::sync::Notify,
+    realpaths: AtomicUsize,
+    mkdirs: AtomicUsize,
+    hold_commit: AtomicBool,
+    commit_started: tokio::sync::Notify,
+    release_commit: tokio::sync::Notify,
+    hold_rmdir: AtomicBool,
+    rmdir_started: tokio::sync::Notify,
+    release_rmdir: tokio::sync::Notify,
 }
 
 struct Server {
@@ -87,6 +125,7 @@ impl russh_sftp::server::Handler for Server {
         Ok(version)
     }
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, StatusCode> {
+        self.probe.realpaths.fetch_add(1, Ordering::SeqCst);
         let full = std::fs::canonicalize(self.path(&path)).map_err(io)?;
         let root = std::fs::canonicalize(&self.root).map_err(io)?;
         let relative = full.strip_prefix(root).map_err(|_| StatusCode::Failure)?;
@@ -202,6 +241,7 @@ impl russh_sftp::server::Handler for Server {
         attrs: FileAttributes,
     ) -> Result<Status, StatusCode> {
         std::fs::create_dir(self.path(&path)).map_err(io)?;
+        self.probe.mkdirs.fetch_add(1, Ordering::SeqCst);
         self.modes
             .lock()
             .unwrap()
@@ -209,6 +249,10 @@ impl russh_sftp::server::Handler for Server {
         Ok(ok(id))
     }
     async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
+        if self.probe.hold_rmdir.swap(false, Ordering::SeqCst) {
+            self.probe.rmdir_started.notify_one();
+            self.probe.release_rmdir.notified().await;
+        }
         if self.fails("rmdir") {
             return Err(StatusCode::Failure);
         }
@@ -289,11 +333,16 @@ impl russh_sftp::server::Handler for Server {
         }
         self.probe.commits.fetch_add(1, Ordering::SeqCst);
         std::fs::rename(self.path(&names[0]), self.path(&names[1])).map_err(io)?;
-        let mut modes = self.modes.lock().unwrap();
-        if let Some(mode) = modes.get(&names[0]).copied() {
-            modes.insert(names[1].clone(), mode);
+        {
+            let mut modes = self.modes.lock().unwrap();
+            if let Some(mode) = modes.get(&names[0]).copied() {
+                modes.insert(names[1].clone(), mode);
+            }
         }
-        drop(modes);
+        if self.probe.hold_commit.swap(false, Ordering::SeqCst) {
+            self.probe.commit_started.notify_one();
+            self.probe.release_commit.notified().await;
+        }
         if self.fails("lost-ack") {
             return Err(StatusCode::Failure);
         }

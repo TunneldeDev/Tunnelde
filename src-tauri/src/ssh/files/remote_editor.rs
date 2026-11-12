@@ -1,10 +1,15 @@
 //! Bounded, optimistic editor saves. The original is never opened with TRUNCATE.
 //! SFTP v3 cannot make the last comparison and rename a compare-and-swap.
 use super::*;
+use crate::services::files::write;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, Weak};
 
+mod journal;
+mod retained;
+mod saving;
+use journal::Journal;
 mod transaction;
 use transaction::staged_save;
 
@@ -123,28 +128,19 @@ pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
     if id.starts_with("local-") {
         return local_editor::retry(app, id).await;
     }
-    let _reservation = Reservation::acquire(&id, true)?;
-    let _ = app.emit(EVENT, ());
-    let mut record = records(&app)?
+    let record = records(&app)?
         .into_iter()
         .find(|r| r.id == id)
         .ok_or_else(|| AppError::NotFound("editor.cleanupMissing".into()))?;
-    let result = async {
-        let sftp = session(&app, &session_for(&app, &record)?).await?;
-        let result = cleanup(&sftp, &mut record, |r| persist(&app, r)).await;
-        let _ = sftp.close().await;
-        result?;
-        forget(&app, &record)
-    }
-    .await;
-    if let Err(error) = &result {
-        record.error = Some(error.to_string());
-        record.updated_at = crate::models::now_ms();
-        persist(&app, &record)?;
-    }
-    drop(_reservation);
-    let _ = app.emit(EVENT, ());
-    result
+    let connection = app.clone();
+    let target = record.clone();
+    retained::retry_with(
+        &write::REMOTE_BUDGET,
+        record,
+        move || async move { session(&connection, &session_for(&connection, &target)?).await },
+        app,
+    )
+    .await
 }
 
 pub(crate) async fn on_reconnect(app: &AppHandle) {
@@ -170,12 +166,11 @@ fn lock_for(key: String) -> Arc<tokio::sync::Mutex<()>> {
 }
 
 pub(super) async fn save(
-    app: &AppHandle,
-    session_id: &str,
-    sftp: &SftpSession,
-    path: &str,
-    content: &str,
-    baseline: Option<&str>,
+    app: AppHandle,
+    session_id: String,
+    path: String,
+    content: String,
+    baseline: Option<String>,
 ) -> AppResult<()> {
     let host = app
         .state::<AppState>()
@@ -184,62 +179,27 @@ pub(super) async fn save(
         .into_iter()
         .find(|s| s.id == session_id)
         .ok_or_else(|| AppError::validation("sftp.reconnectRequired"))?;
-    let target = sftp.canonicalize(path).await.map_err(map_sftp)?;
-    if !target.starts_with('/') || target.contains('\0') {
-        return Err(AppError::validation("sftp.absolutePathRequired"));
-    }
-    // Different tabs and SSH sessions for the same host share a publication lock.
-    let lock = lock_for(format!("{}\0{target}", host.address));
-    let _guard = lock.lock().await;
-    let original = read_remote_text(sftp, &target).await?;
-    if original.content == content {
-        return Ok(());
-    }
-    if baseline.is_some_and(|expected| expected != original.content) {
-        return Err(AppError::validation("editor.remoteFileChanged"));
-    }
-    // Negotiate before creating any remote artifacts. No non-atomic fallback.
-    let replacement = remote_commit::Replacement::connect(app, session_id).await?;
-    let id = uuid::Uuid::new_v4().to_string();
-    let parent = target
-        .rsplit_once('/')
-        .map(|(parent, _)| parent)
-        .unwrap_or("");
-    let mut record = Record {
-        directory: format!("{parent}/.tunnelde-save-{id}"),
-        id,
+    let request = saving::Request {
+        session_id: session_id.clone(),
         host_id: host.host_id,
         address: host.address,
-        path: target.clone(),
-        token: uuid::Uuid::new_v4().to_string(),
-        removing_marker: false,
-        updated_at: crate::models::now_ms(),
-        error: None,
-    };
-    let reservation = Reservation::acquire(&record.id, false)?;
-    persist(app, &record)?;
-    let result = staged_save(
-        sftp,
-        &replacement,
         path,
-        &target,
         content,
-        &original.content,
-        &record,
+        baseline,
+    };
+    let connection = app.clone();
+    saving::save_with(
+        &write::REMOTE_BUDGET,
+        request,
+        move |_job| async move {
+            let sftp = session(&connection, &session_id).await?;
+            Ok((sftp, async move {
+                remote_commit::Replacement::connect(&connection, &session_id).await
+            }))
+        },
+        app,
     )
-    .await;
-    match cleanup(sftp, &mut record, |r| persist(app, r)).await {
-        Ok(()) => forget(app, &record)?,
-        Err(error) => {
-            tracing::warn!(%error, path = %record.directory, "Remote editor staging cleanup deferred");
-            record.error = Some(error.to_string());
-            record.updated_at = crate::models::now_ms();
-            persist(app, &record)?;
-        }
-    }
-    drop(reservation);
-    let _ = app.emit(EVENT, ());
-    result
+    .await
 }
 
 fn missing(error: &russh_sftp::client::error::Error) -> bool {
