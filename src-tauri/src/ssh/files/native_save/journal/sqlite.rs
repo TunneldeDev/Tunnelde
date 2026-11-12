@@ -68,7 +68,7 @@ impl Journal {
             return Err(Error::Changed);
         }
         let (bytes, digest) = encode(next)?;
-        let (previous, _) = encode(expected)?;
+        let (previous, previous_digest) = encode(expected)?;
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -82,7 +82,7 @@ impl Journal {
                 return Err(Error::Capacity);
             }
         }
-        let changed = tx.execute("UPDATE records SET revision=?1,value=?2,digest=?3 WHERE id=?4 AND revision=?5 AND value=?6", params![next.revision as i64,bytes,digest,expected.binding.operation_id,expected.revision as i64,previous]).map_err(|_| Error::Unavailable)?;
+        let changed = tx.execute("UPDATE records SET revision=?1,value=?2,digest=?3 WHERE id=?4 AND revision=?5 AND value=?6 AND digest=?7", params![next.revision as i64,bytes,digest,expected.binding.operation_id,expected.revision as i64,previous,previous_digest]).map_err(|_| Error::Unavailable)?;
         if changed != 1 {
             return Err(Error::Changed);
         }
