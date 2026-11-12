@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import { createWriteStream } from "node:fs";
 import { spawn } from "node:child_process";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { setTimeout as pause } from "node:timers/promises";
 import { join } from "node:path";
@@ -23,6 +26,7 @@ export class Desktop {
       WEBVIEW2_USER_DATA_FOLDER: join(this.root, "webview"),
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     });
+    this.port = port;
     this.child = spawn(binary, [], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
     this.done = new Promise((resolve) => {
       this.child.once("error", (error) => resolve({ error: String(error) }));
@@ -105,6 +109,16 @@ export class Desktop {
   }
 
   async cleanup() {
+    if (this.child) {
+      const command =
+        "$ErrorActionPreference='Continue'; Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'tunnelde|msedgewebview2' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Depth 3; Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -eq " +
+        this.port +
+        " } | ConvertTo-Json";
+      const diagnostic = await promisify(execFile)("pwsh", ["-NoProfile", "-Command", command], {
+        timeout: 10000,
+      }).catch((error) => ({ stdout: String(error) }));
+      await writeFile(join(this.root, "evidence", "processes.txt"), diagnostic.stdout);
+    }
     if (this.page)
       await this.page
         .screenshot({ path: join(this.root, "evidence", "failure.png") })
