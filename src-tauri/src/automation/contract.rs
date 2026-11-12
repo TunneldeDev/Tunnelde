@@ -16,7 +16,7 @@ pub(super) struct Request {
 }
 
 #[derive(Debug, Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Failure {
     pub code: String,
     pub message: String,
@@ -32,6 +32,7 @@ impl Failure {
         match self.code.as_str() {
             "invalid_arguments"
             | "invalid_request"
+            | "invalid_response"
             | "unknown_method"
             | "unsupported_version"
             | "invalid_preferences" => 2,
@@ -72,9 +73,8 @@ impl TryFrom<serde_json::Map<String, Value>> for Response {
             },
             _ => return Err("expected exactly one result or error"),
         };
-        if !fields.is_empty() {
-            return Err("unknown response field");
-        }
+        // Output metadata is additive. Required fields and the mutually
+        // exclusive outcome remain checked before ignoring unknown fields.
         Ok(Self {
             version,
             id,
@@ -102,7 +102,7 @@ impl Response {
 }
 
 #[derive(Deserialize, Serialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct Endpoint {
     pub version: u8,
     pub address: std::net::SocketAddr,
@@ -116,6 +116,8 @@ pub(super) fn describe() -> Value {
         .as_array_mut()
         .expect("core methods")
         .extend(super::domains::additional_contracts());
+    schema["protocol"] = serde_json::from_str(include_str!("schema/protocol-v1.json"))
+        .expect("checked local protocol schema");
     schema
 }
 
@@ -141,6 +143,18 @@ pub(super) fn validate(request: &Request, token: &str) -> Result<(), Failure> {
     }
     if !request.params.is_object() {
         return Err(Failure::new("invalid_request", "params must be an object"));
+    }
+    if request.method.is_empty()
+        || request.method.len() > 128
+        || !request
+            .method
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"._".contains(&byte))
+    {
+        return Err(Failure::new(
+            "invalid_request",
+            "Invalid local API method name",
+        ));
     }
     Ok(())
 }

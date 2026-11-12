@@ -35,6 +35,45 @@ fn request(token: &str) -> Vec<u8> {
     bytes
 }
 
+pub(super) async fn contract_samples() -> Vec<serde_json::Value> {
+    let base: serde_json::Value = serde_json::from_slice(&request(&"a".repeat(64))).unwrap();
+    let mut samples = Vec::new();
+    for (field, value, valid, code) in [
+        ("id", json!("consumer"), true, None),
+        ("token", json!("b".repeat(64)), true, Some("unauthorized")),
+        ("version", json!(2), false, Some("unsupported_version")),
+        ("extra", json!(true), false, Some("invalid_request")),
+        ("id", json!("界".repeat(43)), false, Some("invalid_request")),
+        ("id", json!("consumer\n"), false, Some("invalid_request")),
+        (
+            "method",
+            json!("app.info\n"),
+            false,
+            Some("invalid_request"),
+        ),
+        ("params", json!([]), false, Some("invalid_request")),
+    ] {
+        let mut input = base.clone();
+        input[field] = value;
+        let mut bytes = serde_json::to_vec(&input).unwrap();
+        bytes.push(b'\n');
+        let calls = Arc::new(AtomicUsize::new(0));
+        let response = wire(bytes, calls.clone()).await;
+        match &response.outcome {
+            Outcome::Success { .. } => {
+                assert!(code.is_none());
+                assert_eq!(calls.load(Ordering::SeqCst), 1);
+            }
+            Outcome::Error { error } => {
+                assert_eq!(Some(error.code.as_str()), code);
+                assert_eq!(calls.load(Ordering::SeqCst), 0);
+            }
+        }
+        samples.push(json!({"request":input,"requestValid":valid,"response":response}));
+    }
+    samples
+}
+
 #[tokio::test]
 async fn real_loopback_authentication_rejects_before_domain_dispatch() {
     let calls = Arc::new(AtomicUsize::new(0));

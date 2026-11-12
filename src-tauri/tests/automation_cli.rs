@@ -63,8 +63,7 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
     }
 }
 
-#[test]
-fn actual_cli_process_uses_v1_endpoint_and_preserves_machine_readable_results() {
+fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output, Value) {
     let directory =
         std::env::temp_dir().join(format!("tunnelde-cli-consumer-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&directory).unwrap();
@@ -74,14 +73,14 @@ fn actual_cli_process_uses_v1_endpoint_and_preserves_machine_readable_results() 
     std::fs::write(
         &endpoint,
         serde_json::to_vec(
-            &json!({"version":1,"address":listener.local_addr().unwrap(),"token":"a".repeat(64)}),
+            &json!({"version":1,"address":listener.local_addr().unwrap(),"token":"a".repeat(64),"future":true}),
         )
         .unwrap(),
     )
     .unwrap();
     std::fs::write(
         &pointer,
-        serde_json::to_vec(&json!({"endpoint":endpoint})).unwrap(),
+        serde_json::to_vec(&json!({"endpoint":endpoint,"future":true})).unwrap(),
     )
     .unwrap();
     let server = std::thread::spawn(move || {
@@ -97,14 +96,34 @@ fn actual_cli_process_uses_v1_endpoint_and_preserves_machine_readable_results() 
         assert_eq!(request["version"], 1);
         assert_eq!(request["method"], "hosts.list");
         assert_eq!(request["token"], "a".repeat(64));
-        let response = json!({"version":1,"id":request["id"],"result":{"hosts":[]}});
+        if response["id"] == "$request" {
+            response["id"] = request["id"].clone();
+        }
         writeln!(stream, "{response}").unwrap();
+        request
     });
-    let result = run(
+    let args: Vec<_> = prefix
+        .iter()
+        .copied()
+        .chain(["--endpoint", pointer.to_str().unwrap(), "hosts", "list"])
+        .collect();
+    let result = run(binary, &args);
+    let request = server.join().unwrap();
+    std::fs::remove_file(endpoint).unwrap();
+    std::fs::remove_file(pointer).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+    (result, request)
+}
+
+#[test]
+fn actual_cli_process_uses_v1_endpoint_and_preserves_machine_readable_results() {
+    let (result, _) = fixture_reply(
         env!("CARGO_BIN_EXE_tunnelde-cli"),
-        &["--endpoint", pointer.to_str().unwrap(), "hosts", "list"],
+        &[],
+        json!({
+            "version":1,"id":"$request","result":{"hosts":[],"future":true},"metadata":{"future":true}
+        }),
     );
-    server.join().unwrap();
     assert!(
         result.status.success(),
         "{}",
@@ -112,10 +131,65 @@ fn actual_cli_process_uses_v1_endpoint_and_preserves_machine_readable_results() 
     );
     assert_eq!(
         serde_json::from_slice::<Value>(&result.stdout).unwrap()["result"],
-        json!({"hosts":[]})
+        json!({"hosts":[],"future":true})
     );
     assert!(result.stderr.is_empty());
-    std::fs::remove_file(endpoint).unwrap();
-    std::fs::remove_file(pointer).unwrap();
-    std::fs::remove_dir(directory).unwrap();
+}
+
+#[test]
+fn installed_and_console_clients_validate_outcomes_and_preserve_host_failure_ids() {
+    for (binary, prefix) in [
+        (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
+        (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
+    ] {
+        for (response, exit, expected) in [
+            (
+                json!({"version":1,"id":"$request","error":{"code":"stale_revision","message":"changed","retryAfter":1},"future":true}),
+                5,
+                "stale_revision",
+            ),
+            (
+                json!({"version":1,"id":"$request","error":{"code":"future_error","message":"failed"}}),
+                1,
+                "future_error",
+            ),
+            (
+                json!({"version":1,"id":"$request","error":{"code":"internal","message":"failed"},"result":{}}),
+                2,
+                "invalid_response",
+            ),
+            (json!({"version":1,"id":"$request"}), 2, "invalid_response"),
+            (
+                json!({"version":2,"id":"$request","result":{}}),
+                2,
+                "invalid_response",
+            ),
+            (
+                json!({"version":1,"id":"different-request","result":{}}),
+                2,
+                "invalid_response",
+            ),
+            (
+                json!({"version":1,"id":"$request","error":{"code":1,"message":"failed"}}),
+                2,
+                "invalid_response",
+            ),
+        ] {
+            let (result, request) = fixture_reply(binary, &prefix, response);
+            assert_eq!(
+                result.status.code(),
+                Some(exit),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(result.stdout.is_empty());
+            let output: Value = serde_json::from_slice(&result.stderr).unwrap();
+            assert_eq!(output["error"]["code"], expected);
+            if expected != "invalid_response" {
+                assert_eq!(output["id"], request["id"]);
+            } else {
+                assert_eq!(output["id"], "");
+            }
+        }
+    }
 }

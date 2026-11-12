@@ -87,8 +87,59 @@ fn response_cannot_hide_an_error_behind_a_success_field() {
     assert!(serde_json::from_value::<Response>(
         json!({"version":1,"id":"r","result":{},"extra":true})
     )
-    .is_err());
+    .is_ok());
     assert!(
         serde_json::from_value::<Response>(json!({"version":1,"id":"r","result":null})).is_ok()
     );
+}
+
+#[test]
+fn additive_outputs_preserve_required_types_and_requests_remain_strict() {
+    let response: Response = serde_json::from_value(json!({
+        "version":1,"id":"r","metadata":{"future":true},
+        "error":{"code":"future_error","message":"description","retryAfter":1}
+    }))
+    .unwrap();
+    assert!(
+        matches!(response.outcome, Outcome::Error { error } if error.code == "future_error" && error.exit_code() == 1)
+    );
+    for invalid in [
+        json!({"version":"1","id":"r","result":{}}),
+        json!({"version":1,"id":1,"result":{}}),
+        json!({"version":1,"id":"r","error":null}),
+        json!({"version":1,"id":"r","error":{"code":"internal"}}),
+        json!({"version":1,"id":"r","error":{"code":1,"message":"failed"}}),
+    ] {
+        assert!(serde_json::from_value::<Response>(invalid).is_err());
+    }
+    assert!(serde_json::from_value::<Request>(json!({
+        "version":1,"id":"r","token":"a".repeat(64),"method":"app.info","params":{},"future":true
+    }))
+    .is_err());
+}
+
+#[test]
+fn unicode_revision_byte_bound_is_shared_with_the_native_preferences_writer() {
+    use crate::services::settings::preferences::contracts::Update;
+    assert!(
+        serde_json::from_value::<Update>(json!({"revision":"界".repeat(42),"changes":{}})).is_ok()
+    );
+    for revision in [
+        "界".repeat(43),
+        "token\n".into(),
+        "\u{85}".into(),
+        "".into(),
+    ] {
+        assert!(
+            serde_json::from_value::<Update>(json!({"revision":revision,"changes":{}})).is_err()
+        );
+    }
+    let schema = describe();
+    let revision = &schema["methods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|method| method["name"] == "preferences.update")
+        .unwrap()["inputSchema"]["properties"]["revision"];
+    assert_eq!(revision["x-maxBytes"], 128);
 }

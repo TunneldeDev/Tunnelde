@@ -5,6 +5,11 @@ version is independent of the desktop version and plugin RPC version. A protocol
 number alone is not a stability promise. The machine-readable source is
 `src-tauri/src/automation/schema/v1.json`, composed with domain-owned preference
 schemas by `automation/domains/preferences/schema.rs`.
+Common request/response schemas, error codes and CLI exit codes are published in
+the `protocol` section of discovery, sourced from `schema/protocol-v1.json`.
+Schemas use `x-maxBytes` for UTF-8 byte limits in addition to JSON Schema's
+Unicode character limits. Consumers validating schemas must implement this
+keyword; the host always enforces it. The repository checker supports it.
 
 Build the console executable with:
 
@@ -54,6 +59,9 @@ Successful live calls write one JSON object to stdout, with `version`, `id` and
 Exit codes are 0 (success), 1 (operation failure), 2 (input/protocol error),
 3 (unavailable/timeout), 4 (authentication failure) and 5 (stale revision). Messages are explanatory;
 programs must use codes. Offline version and discovery return plain JSON objects.
+Host errors preserve the request ID. Failures before a valid host response use
+an empty ID. Unknown error codes use exit 1; malformed or mismatched responses
+use `invalid_response` and exit 2.
 `call METHOD --params JSON` accepts an object; use `--params -` to read it from
 stdin. Read methods require an empty object. To update preferences, first obtain
 the revision from `preferences snapshot`, review the desired changes, and submit:
@@ -99,6 +107,13 @@ Requests contain `version`, `id`, `token`, `method` and `params`. There are at m
 eight concurrent connections, a 10-second server deadline, 32 KiB request limit
 and 4 MiB response limit. Excess connections close without a response; the CLI
 reports unavailable. Unknown methods and extra parameters fail explicitly.
+Request envelopes reject unknown fields. Response envelopes, error objects and
+endpoint descriptors accept additional metadata while retaining required field
+types, version/request correlation and exactly one of `result` or `error`.
+Additional metadata is ignored by the CLI; method results are preserved.
+This does not permit removing or changing existing fields. Published method
+schemas still define the current producer's allowed fields. Endpoint descriptors
+also undergo runtime loopback, port and capability validation.
 Endpoint availability is independent of webview visibility. A local API startup
 failure is logged without preventing desktop startup.
 

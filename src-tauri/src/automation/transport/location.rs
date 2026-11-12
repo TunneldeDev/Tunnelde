@@ -64,7 +64,6 @@ pub(crate) fn read(pointer: &Path) -> Result<Endpoint, Failure> {
         Failure::new("unavailable", "Cannot locate the running application. Start Tunnelde, or use --endpoint with its automation.json path")
     };
     #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
     struct Pointer {
         endpoint: PathBuf,
     }

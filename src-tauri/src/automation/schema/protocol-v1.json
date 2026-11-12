@@ -1,0 +1,175 @@
+{
+  "version": 1,
+  "stability": "experimental",
+  "compatibility": {
+    "unknownInputFields": "reject",
+    "unknownOutputFields": "ignore",
+    "unknownErrorExitCode": 1,
+    "stringLength": "Unicode code points; x-maxBytes additionally limits UTF-8 bytes",
+    "messages": "diagnostic text, not a machine-readable contract"
+  },
+  "requestSchema": {
+    "type": "object",
+    "required": ["version", "id", "token", "method", "params"],
+    "additionalProperties": false,
+    "properties": {
+      "version": {
+        "const": 1
+      },
+      "id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "x-maxBytes": 128,
+        "not": {
+          "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+        }
+      },
+      "token": {
+        "type": "string",
+        "minLength": 64,
+        "maxLength": 64,
+        "x-maxBytes": 64
+      },
+      "method": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 128,
+        "not": {
+          "pattern": "[^A-Za-z0-9._]"
+        }
+      },
+      "params": {
+        "type": "object"
+      }
+    }
+  },
+  "responseSchema": {
+    "type": "object",
+    "required": ["version", "id"],
+    "additionalProperties": true,
+    "properties": {
+      "version": {
+        "const": 1
+      },
+      "id": {
+        "type": "string",
+        "maxLength": 128,
+        "x-maxBytes": 128,
+        "not": {
+          "pattern": "[\\u0000-\\u001f\\u007f-\\u009f]"
+        }
+      },
+      "result": {},
+      "error": {
+        "type": "object",
+        "required": ["code", "message"],
+        "additionalProperties": true,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "oneOf": [
+      {
+        "required": ["result"],
+        "not": {
+          "required": ["error"]
+        }
+      },
+      {
+        "required": ["error"],
+        "not": {
+          "required": ["result"]
+        }
+      }
+    ]
+  },
+  "cli": {
+    "successStream": "stdout",
+    "failureStream": "stderr",
+    "liveOutput": "responseSchema",
+    "offlineOutput": "--help is text; --version and api describe are plain JSON objects",
+    "localFailureId": "",
+    "exitCodes": {
+      "0": "success",
+      "1": "operation failure or unknown error",
+      "2": "invalid input or protocol",
+      "3": "unavailable or timeout",
+      "4": "authentication failed",
+      "5": "stale revision"
+    }
+  },
+  "errors": [
+    {
+      "code": "invalid_arguments",
+      "exitCode": 2,
+      "origin": "client"
+    },
+    {
+      "code": "invalid_request",
+      "exitCode": 2,
+      "origin": "client-or-host"
+    },
+    {
+      "code": "invalid_response",
+      "exitCode": 2,
+      "origin": "client"
+    },
+    {
+      "code": "unsupported_version",
+      "exitCode": 2,
+      "origin": "host"
+    },
+    {
+      "code": "unknown_method",
+      "exitCode": 2,
+      "origin": "host"
+    },
+    {
+      "code": "invalid_preferences",
+      "exitCode": 2,
+      "origin": "host"
+    },
+    {
+      "code": "unavailable",
+      "exitCode": 3,
+      "origin": "client"
+    },
+    {
+      "code": "timeout",
+      "exitCode": 3,
+      "origin": "client"
+    },
+    {
+      "code": "unauthorized",
+      "exitCode": 4,
+      "origin": "host"
+    },
+    {
+      "code": "stale_revision",
+      "exitCode": 5,
+      "origin": "host"
+    },
+    {
+      "code": "operation_rejected",
+      "exitCode": 1,
+      "origin": "host"
+    },
+    {
+      "code": "internal",
+      "exitCode": 1,
+      "origin": "client-or-host"
+    },
+    {
+      "code": "response_too_large",
+      "exitCode": 1,
+      "origin": "host"
+    }
+  ]
+}

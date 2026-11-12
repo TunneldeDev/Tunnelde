@@ -86,10 +86,12 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> i32 {
                 })?;
             let endpoint = transport::read_endpoint(&pointer)?;
             let response = exchange(endpoint, method, params)?;
-            match &response.outcome {
-                Outcome::Success { .. } => encode(&response),
-                Outcome::Error { error } => Err(Failure::new(&error.code, &error.message)),
-            }
+            let status = match &response.outcome {
+                Outcome::Success { .. } => 0,
+                Outcome::Error { error } => error.exit_code(),
+            };
+            // Preserve the host's request id on operation errors as well.
+            encode(&response).map(|(bytes, _)| (bytes, status))
         }
     });
     match result {
@@ -97,7 +99,12 @@ pub fn run(arguments: impl IntoIterator<Item = OsString>) -> i32 {
             if bytes.last() != Some(&b'\n') {
                 bytes.push(b'\n');
             }
-            if std::io::stdout().lock().write_all(&bytes).is_err() {
+            let written = if status == 0 {
+                std::io::stdout().lock().write_all(&bytes)
+            } else {
+                std::io::stderr().lock().write_all(&bytes)
+            };
+            if written.is_err() {
                 return 1;
             }
             status
