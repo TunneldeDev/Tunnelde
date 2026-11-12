@@ -52,6 +52,11 @@
   margin: 3px 0 0;
   overflow-wrap: anywhere;
 }
+.file-preview-panel .file-preview__target .settings-hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .file-preview-panel
   :is(
     .file-preview__text,
