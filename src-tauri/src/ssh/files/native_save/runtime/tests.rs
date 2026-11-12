@@ -75,6 +75,7 @@ async fn corruption_is_visible_as_a_recovery_task_and_not_recreated() {
     let manager = fixture.manager();
     let pending = manager.pending().await;
     assert_eq!(pending[0].id, "native-store");
+    assert_eq!(pending[0].action, Some("reload"));
     assert_eq!(
         pending[0].error.as_deref(),
         Some("editor.nativeJournalUnavailable")

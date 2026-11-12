@@ -52,7 +52,7 @@ pub(super) fn unavailable(error: &str) -> PendingCleanup {
         directory: String::new(),
         address: String::new(),
         source: "native",
-        action: Some("query"),
+        action: Some("reload"),
         updated_at: 0,
         error: Some(error.into()),
         running: false,
