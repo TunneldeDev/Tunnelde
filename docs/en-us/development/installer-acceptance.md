@@ -18,6 +18,10 @@ must be newer; Beta tags use `.1` through `.9`. Changes to the harness also run 
 fixed public release pair on their pull request. No application compilation is
 required. The pinned Playwright client connects to the installed WebView2 via
 CDP without downloading a browser. Product CSP and binaries remain unchanged.
+Elevated hosted runners use temporary, app-specific HKLM WebView2 debugging and
+data-folder policies, cleared after each process exits. Existing values are
+never overwritten; user-scoped overrides are ignored by recent WebView2 when
+elevated, as documented in Microsoft's WebView2 security guidance.
 
 Evidence is uploaded for 14 days, including results, installer output, application
 logs and screenshots. It contains synthetic QA data only. The harness refuses
