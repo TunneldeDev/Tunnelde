@@ -105,6 +105,9 @@ XDG_DATA_HOME 或 `~/.local/share` 下。不支持远程监听和网络认证模
 认证新进程。公开安装包和升级验收仍是交付门槛。桌面 CLI 入口属于现有桌面程序；
 独立的 `tunnelde-cli` 在确定单独分发策略之前，作为可选源码构建提供。
 
+可复现的公开 Windows 安装器数据保留检查及其边界见
+[安装器验收](installer-acceptance.md)；应用内 OTA 与其他平台仍需独立验收。
+
 ## 归属与兼容
 
 `automation/contract.rs` 管理请求、响应和错误，`schema/` 管理接口发现，
