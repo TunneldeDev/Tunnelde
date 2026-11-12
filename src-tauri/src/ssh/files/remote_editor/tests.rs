@@ -3,6 +3,7 @@ use russh_sftp::protocol::*;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::atomic::AtomicUsize;
 
+mod admission;
 mod authorization;
 #[path = "tests/recovery.rs"]
 mod durability;

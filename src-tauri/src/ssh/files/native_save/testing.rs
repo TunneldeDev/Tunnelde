@@ -6,6 +6,21 @@ use super::{
     transport::Output,
 };
 use serde_json::{json, Value};
+pub(in crate::ssh::files) fn admission_fixture(
+    directory: &std::path::Path,
+) -> crate::ssh::session::SessionIdentity {
+    let mut journal = super::journal::Journal::create(directory).unwrap();
+    journal.enable_admission().unwrap();
+    let authority = authority();
+    binding(&authority, &prepared(&authority)).destination
+}
+pub(in crate::ssh::files) fn admission_claim_count(directory: &std::path::Path) -> usize {
+    super::journal::Journal::open(directory)
+        .unwrap()
+        .legacy_claims()
+        .unwrap()
+        .len()
+}
 pub(super) fn authority() -> Authority {
     let identity = ObjectIdentity {
         platform: "linux".into(),

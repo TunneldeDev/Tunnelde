@@ -24,6 +24,70 @@ fn cancellation() -> (Cancellation, impl Drop) {
 }
 
 #[tokio::test]
+async fn original_protocol_rejection_releases_claim_and_allows_immediate_retry() {
+    let (fixture, destination) = setup();
+    let manager = fixture.manager();
+    let (sftp, _) = server(&[("/requested", Ok("/workspace/actual"))], None).await;
+    // The actual protocol server rejects mkdir with OpUnsupported. No display
+    // string or manually constructed AppError is used as settlement evidence.
+    for _ in 0..2 {
+        let (job, _delivery) = cancellation();
+        let remote = &sftp;
+        let error = manager
+            .mutate(
+                &destination,
+                &sftp,
+                Kind::Mkdir,
+                &["/requested".into()],
+                &job,
+                |observed| async move {
+                    observed
+                        .request(remote.create_dir("/requested"))
+                        .await
+                        .map_err(crate::ssh::files::map_sftp)
+                },
+            )
+            .await
+            .unwrap_err();
+        assert!(error.to_string().contains("unsupported"));
+        assert!(journal(&fixture).legacy_claims().unwrap().is_empty());
+    }
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn later_success_cannot_settle_an_earlier_original_request_timeout() {
+    let (fixture, destination) = setup();
+    let manager = fixture.manager();
+    let (sftp, _) = server(&[("/requested", Ok("/workspace/actual"))], None).await;
+    let (job, _delivery) = cancellation();
+    let error = manager
+        .mutate(
+            &destination,
+            &sftp,
+            Kind::Delete,
+            &["/requested".into()],
+            &job,
+            |observed| async move {
+                let _: Result<(), _> = observed
+                    .request(async { Err(russh_sftp::client::error::Error::Timeout) })
+                    .await;
+                observed.request(async { Ok(()) }).await.unwrap();
+                Ok(())
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "editor.remoteOutcomeUnknown");
+    assert_eq!(journal(&fixture).legacy_claims().unwrap().len(), 1);
+    assert!(manager
+        .writable(&destination, &sftp, &["/requested"])
+        .await
+        .is_err());
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
 async fn worker_success_releases_exact_claim_but_failure_retains_original_after_reopen() {
     let (fixture, destination) = setup();
     let manager = fixture.manager();
@@ -36,7 +100,7 @@ async fn worker_success_releases_exact_claim_but_failure_retains_original_after_
             Kind::Create,
             &["/requested".into()],
             &job,
-            || async { Ok(()) },
+            |_| async { Ok(()) },
         )
         .await
         .unwrap();
@@ -49,7 +113,11 @@ async fn worker_success_releases_exact_claim_but_failure_retains_original_after_
             Kind::Create,
             &["/requested".into()],
             &job,
-            || async { Err(AppError::validation("simulated transport failure")) },
+            |observed| async move {
+                observed
+                    .opaque(async { Err(AppError::validation("simulated transport failure")) })
+                    .await
+            },
         )
         .await
         .unwrap_err();
@@ -111,7 +179,7 @@ async fn caller_cancellation_keeps_actual_worker_claim_until_original_success() 
                             Kind::Mkdir,
                             &["/requested".into()],
                             &job,
-                            || async move {
+                            |_| async move {
                                 started.send(()).unwrap();
                                 release.notified().await;
                                 Ok(())
@@ -187,7 +255,7 @@ async fn cancellation_during_resolution_retires_only_unsent_claim_and_never_poll
                     Kind::Delete,
                     &["/requested".into()],
                     &job,
-                    || async {
+                    |_| async {
                         polled.store(true, Ordering::SeqCst);
                         Ok(())
                     },
@@ -229,7 +297,7 @@ async fn missing_store_and_read_compatible_v1_do_not_silently_upgrade() {
                 Kind::Create,
                 &["/requested".into()],
                 &job,
-                || async { Ok(()) },
+                |_| async { Ok(()) },
             )
             .await
             .unwrap();

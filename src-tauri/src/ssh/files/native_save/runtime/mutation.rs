@@ -1,4 +1,5 @@
 //! Actual legacy worker ownership, independent of caller delivery and cancellation.
+mod observation;
 use super::super::journal::{
     admission::{Claim, Dispatched, Scope},
     Owner,
@@ -9,6 +10,7 @@ use crate::{
     services::files::operations::Cancellation,
     ssh::session::SessionIdentity,
 };
+pub(crate) use observation::Observation;
 use russh_sftp::client::SftpSession;
 use std::future::Future;
 
@@ -120,7 +122,7 @@ impl Manager {
         kind: MutationKind,
         paths: &[String],
         job: &Cancellation,
-        work: impl FnOnce() -> W,
+        work: impl FnOnce(Observation) -> W,
     ) -> AppResult<()> {
         job.check()?;
         let reserved = self
@@ -137,15 +139,21 @@ impl Manager {
         } else {
             None
         };
-        // Any error, panic, timeout or lost delivery retains possible dispatch.
-        // Success comes from the original actual mutation future, never a probe.
-        let result = tokio::time::timeout(std::time::Duration::from_secs(300), work())
-            .await
-            .map_err(|_| AppError::validation("editor.remoteOutcomeUnknown"))?;
-        if result.is_ok() {
+        let observation = Observation::default();
+        // Only original typed request completions acknowledge dispatch. An
+        // unrelated success or matching AppError text cannot settle an unknown.
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(300),
+            work(observation.clone()),
+        )
+        .await
+        .map_err(|_| AppError::validation("editor.remoteOutcomeUnknown"))?;
+        if observation.settled() {
             if let Some(active) = dispatched {
                 active.settle().await?;
             }
+        } else if result.is_ok() {
+            return Err(AppError::validation("editor.remoteOutcomeUnknown"));
         }
         result
     }
