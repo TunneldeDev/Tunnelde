@@ -102,8 +102,19 @@ or discard action.
 Remote create/mkdir/rename/delete and editor save/retained cleanup workers use
 this internal authority when an explicitly upgraded store exists. Frontend
 delivery timeout does not cancel an already admitted primitive mutation: its
-worker observes the original operation for up to five minutes. Production
-initialization and full transfer/artifact enrollment are not enabled yet, so this
+worker observes the original operation for up to five minutes. Primitive workers
+track each original mutation request separately. A recognized terminal SFTP
+rejection releases its claim while preserving the operation error; it does not
+prove that no partial filesystem changes occurred. Transport loss, timeouts,
+malformed responses and uninstrumented composite-operation failures retain the
+claim. A later successful request cannot settle an earlier unknown request.
+Read-only preparation failures do not invent a pending mutation. Editor claims
+are released only after confirmed staging cleanup and removal of the original
+recovery record; recording a deferred cleanup is not completion. Exact recovery
+continuation and plugin revalidation at the final dispatch boundary still require
+completion before production enablement.
+
+Production initialization and full transfer/artifact enrollment are not enabled yet, so this
 does not establish complete bilateral coverage or enable native editor saves.
 Unknown historical SFTP outcomes are never attested by a newly installed helper.
 

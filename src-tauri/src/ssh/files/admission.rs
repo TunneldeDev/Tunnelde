@@ -11,7 +11,7 @@ pub(super) async fn mutate<F, W>(
     action: F,
 ) -> AppResult<()>
 where
-    F: FnOnce(Arc<SftpSession>) -> W + Send + 'static,
+    F: FnOnce(Arc<SftpSession>, native_save::runtime::MutationObservation) -> W + Send + 'static,
     W: std::future::Future<Output = AppResult<()>> + Send + 'static,
 {
     let app = app.clone();
@@ -21,12 +21,19 @@ where
         let native = app.state::<AppState>().native_saves.clone();
         let sftp = Arc::new(session(&app, &session_id).await?);
         let result = native
-            .mutate(&destination, &sftp, kind, &paths, &job, || async {
-                if app.state::<AppState>().ssh.identity(&session_id)? != destination {
-                    return Err(AppError::validation("editor.nativeChanged"));
-                }
-                action(sftp.clone()).await
-            })
+            .mutate(
+                &destination,
+                &sftp,
+                kind,
+                &paths,
+                &job,
+                |observation| async {
+                    if app.state::<AppState>().ssh.identity(&session_id)? != destination {
+                        return Err(AppError::validation("editor.nativeChanged"));
+                    }
+                    action(sftp.clone(), observation).await
+                },
+            )
             .await;
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sftp.close()).await;
         let _ = app.emit("editor://cleanup-changed", ());

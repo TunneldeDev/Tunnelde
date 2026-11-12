@@ -3,7 +3,7 @@ mod admission;
 mod errors;
 mod mutation;
 pub(crate) use super::journal::admission::Kind as MutationKind;
-pub(crate) use mutation::Mutation;
+pub(crate) use mutation::{Mutation, Observation as MutationObservation};
 mod projection;
 #[cfg(test)]
 mod tests;

@@ -189,21 +189,26 @@ async fn save_opened(
     .await;
     // Do not cancel safe cleanup when a caller disappears. A network timeout
     // still does not prove the server had no side effect: preserve unknown data.
-    let settled = match cleanup(sftp, &mut record, |r| journal.persist(r)).await {
-        Ok(()) => journal.forget(&record),
+    let cleaned = match cleanup(sftp, &mut record, |r| journal.persist(r)).await {
+        Ok(()) => {
+            journal.forget(&record)?;
+            true
+        }
         Err(error) => {
             tracing::warn!(%error, path = %record.directory, "Remote editor staging cleanup deferred");
             record.error = Some(error.to_string());
             record.updated_at = crate::models::now_ms();
-            journal.persist(&record)
+            journal.persist(&record)?;
+            false
         }
     };
     drop(reservation);
-    settled?;
     // Safe cleanup and forgetting the original legacy receipt precede release.
     // A process loss at either boundary retains the durable claim conservatively.
-    if let Some(active) = active {
-        active.settle().await?;
+    if cleaned {
+        if let Some(active) = active {
+            active.settle().await?;
+        }
     }
     result
 }

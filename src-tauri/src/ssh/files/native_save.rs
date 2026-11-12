@@ -12,4 +12,4 @@ mod service;
 mod transport;
 
 #[cfg(test)]
-mod testing;
+pub(super) mod testing;
