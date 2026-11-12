@@ -15,6 +15,7 @@ use crate::{
 };
 pub(crate) use editor::Reference as MutationReference;
 pub(crate) use observation::Observation;
+pub(crate) use observation::{terminal as terminal_mutation_status, Receipt as MutationReceipt};
 use russh_sftp::client::SftpSession;
 use std::future::Future;
 pub(crate) use transfer::Target as MutationTarget;

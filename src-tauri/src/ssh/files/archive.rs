@@ -34,11 +34,12 @@ async fn connect(
     app: &AppHandle,
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
+    observation: native_save::runtime::MutationObservation,
 ) -> AppResult<Option<compressed::Session>> {
     match (&endpoint.session, sftp) {
         (Some(id), Some(sftp)) => tokio::time::timeout(
             std::time::Duration::from_secs(5),
-            compressed::Session::connect(app, id, sftp),
+            compressed::Session::connect(app, id, sftp, observation),
         )
         .await
         .map_err(|_| invalid_archive())?
@@ -53,6 +54,7 @@ pub(super) struct Batcher {
     pending: Mutex<Vec<Job>>,
     channels: OnceCell<Option<Channels>>,
     limited: AtomicBool,
+    observation: native_save::runtime::MutationObservation,
 }
 
 fn invalid_archive() -> AppError {
@@ -172,6 +174,12 @@ async fn read_local(path: &str, length: u64) -> AppResult<Vec<u8>> {
 }
 
 impl Batcher {
+    pub(super) fn new(observation: native_save::runtime::MutationObservation) -> Self {
+        Self {
+            observation,
+            ..Self::default()
+        }
+    }
     #[allow(clippy::too_many_arguments)]
     pub async fn copy(
         &self,
@@ -273,8 +281,8 @@ impl Batcher {
                 .channels
                 .get_or_init(|| async {
                     let (source, target) = tokio::join!(
-                        connect(app, &jobs[0].source, source_sftp),
-                        connect(app, &jobs[0].target, target_sftp)
+                        connect(app, &jobs[0].source, source_sftp, self.observation.clone()),
+                        connect(app, &jobs[0].target, target_sftp, self.observation.clone())
                     );
                     match (source, target) {
                         (Ok(source), Ok(target)) => Some(Channels { source, target }),

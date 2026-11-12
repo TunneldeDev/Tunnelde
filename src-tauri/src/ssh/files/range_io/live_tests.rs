@@ -50,6 +50,7 @@ async fn configured_data_channel(
             read_size: 256 * 1024,
             write_size: 256 * 1024,
             copy_data: false,
+            writes: observation::Writes::new(MutationObservation::default()),
         });
     }
     channel.request_subsystem(true, "sftp").await.unwrap();
