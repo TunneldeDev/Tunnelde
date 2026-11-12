@@ -127,6 +127,10 @@ new process. Public installer and upgrade acceptance remain release gates.
 The desktop CLI entry is part of the existing desktop binary; a standalone
 `tunnelde-cli` is an optional source build until it has its own distribution policy.
 
+See [installer acceptance](installer-acceptance.md) for the reproducible public
+Windows installer data-retention check and its limits. In-app OTA and other
+platforms require separate acceptance evidence.
+
 ## Ownership and compatibility
 
 `automation/contract.rs` owns envelopes and errors, `schema/` owns discovery,
