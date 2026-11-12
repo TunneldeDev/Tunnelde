@@ -14,5 +14,8 @@ export interface FrontendFilePreview {
   /** Actions require filePreview.write and reject retained/stale contexts. */
   close(): void;
   retry(): void;
+  /** Move the existing renderer without opening a second file resource. */
+  dock(): void;
+  undock(): void;
   selectProvider(providerId: string): void;
 }

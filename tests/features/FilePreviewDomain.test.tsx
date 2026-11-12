@@ -1,5 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useLayoutEffect } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { FilePreview } from "@/features/sftp/FilePreview";
 import { useFilePreview } from "@/store/filePreview";
@@ -18,7 +18,15 @@ import type { FrontendViewProps } from "@/lib/extensions/contracts/frontend/view
 import { plugin } from "../fixtures/plugins";
 import { mockCommittedViewScopes } from "../fixtures/viewScopes";
 import i18n from "@/i18n/i18n";
+import { SidebarArea } from "@/components/layout/SidebarDock";
+import { PaneLayout } from "@/components/layout/PaneLayout";
+import { WorkspaceContents } from "@/components/layout/TabContent";
+import { useWorkspace } from "@/store/workspace";
+import { useNavigation } from "@/store/navigation";
+import { previewPanelId } from "@/store/filePreview";
+import { runWorkbenchCommand } from "@/lib/keyboard/actions";
 
+vi.mock("@/features/terminal/TerminalPage", () => ({ TerminalPage: () => null }));
 vi.mock("@tauri-apps/api/core", () => ({
   convertFileSrc: (id: string) => `preview://localhost/${id}`,
 }));
@@ -51,6 +59,9 @@ const action = (kind: "close" | "retry") => {
 beforeEach(async () => {
   await i18n.changeLanguage("en-US");
   useFilePreview.getState().close();
+  useFilePreview.setState({ presentation: "quickLook" });
+  useWorkspace.setState(useWorkspace.getInitialState(), true);
+  useNavigation.setState(useNavigation.getInitialState(), true);
   useSettings.setState({ settings: { ...DEFAULT_SETTINGS, uiProviders: {} } });
   usePlugins.setState({ items: [] });
   usePluginSecurity.setState((state) => ({ state: { ...state.state, restricted: false } }));
@@ -62,6 +73,143 @@ beforeEach(async () => {
   vi.mocked(api.filePreviewClose).mockResolvedValue();
   vi.mocked(api.searchPreviewLocal).mockResolvedValue("preview text");
   vi.mocked(api.sftpReadText).mockResolvedValue({ content: "remote preview", size: 14 });
+});
+
+function DockingShell() {
+  return (
+    <>
+      <SidebarArea />
+      <PaneLayout />
+      <WorkspaceContents />
+      <FilePreview />
+    </>
+  );
+}
+
+it("docks, repositions and undocks the same decoded renderer and native ticket", async () => {
+  usePlugins.setState({ items: [images] });
+  useFilePreview.getState().show("C:/photo.png");
+  render(<DockingShell />);
+  const image = await screen.findByRole("img", { name: "photo.png" });
+  fireEvent.load(image);
+  const before = snapshot();
+  const oldContext = liveFilePreview(before.id, before.revision);
+  fireEvent.click(screen.getByRole("button", { name: "Dock preview" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getByRole("img", { name: "photo.png" })).toBe(image);
+  expect(snapshot()).toMatchObject({
+    id: before.id,
+    attemptId: before.attemptId,
+    state: "ready",
+    presentation: "docked",
+  });
+  expect(() => oldContext.dock()).toThrow("changed");
+  const docked = snapshot();
+  act(() => runFilePreviewAction({ id: docked.id, revision: docked.revision, action: "dock" }));
+  expect(snapshot().revision).toBe(docked.revision);
+  act(() => useWorkspace.getState().splitTab(previewPanelId, "column", "after", "root"));
+  expect(screen.getByRole("img", { name: "photo.png" })).toBe(image);
+  expect(api.filePreviewOpen).toHaveBeenCalledOnce();
+  expect(api.filePreviewClose).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Open in Quick Look" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.getByRole("img", { name: "photo.png" })).toBe(image);
+  expect(snapshot()).toMatchObject({
+    id: before.id,
+    attemptId: before.attemptId,
+    state: "ready",
+    presentation: "quickLook",
+  });
+  expect(api.filePreviewOpen).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  expect(api.filePreviewClose).toHaveBeenCalledOnce();
+});
+
+it("closing the preview group releases resources and reopening retains the panel geometry", async () => {
+  usePlugins.setState({ items: [images] });
+  useFilePreview.getState().dock();
+  useFilePreview.getState().show("C:/first.png");
+  render(<DockingShell />);
+  await screen.findByRole("img", { name: "first.png" });
+  const workspace = useWorkspace.getState();
+  const owner = workspace.panes.find((pane) => pane.tabIds.includes(previewPanelId))!;
+  expect(workspace.layout.kind).toBe("split");
+  if (workspace.layout.kind !== "split") throw new Error("missing split");
+  act(() =>
+    workspace.resizeSplit(workspace.layout.kind === "split" ? workspace.layout.id : "", 0.47),
+  );
+  const geometry = useWorkspace.getState().layout;
+  act(() => useWorkspace.getState().closePane(owner.id));
+  expect(useFilePreview.getState().file).toBeNull();
+  expect(api.filePreviewClose).toHaveBeenCalledOnce();
+  expect(observeFilePreview({})).toMatchObject({ snapshot: null });
+  expect(
+    document.querySelector('.sidebar-view:not([hidden]) [data-sidebar-slot="filePreview"]'),
+  ).toBeNull();
+  act(() => useFilePreview.getState().show("C:/second.png"));
+  await screen.findByRole("img", { name: "second.png" });
+  expect(useWorkspace.getState().layout).toEqual(geometry);
+  expect(
+    useWorkspace.getState().panes.find((pane) => pane.tabIds.includes(previewPanelId))?.id,
+  ).toBe(owner.id);
+  expect(useWorkspace.getState().tabs.filter((tab) => tab.id === previewPanelId)).toHaveLength(1);
+});
+
+it("a late media open cannot resurrect a closed docked preview", async () => {
+  usePlugins.setState({ items: [images] });
+  let finish!: () => void;
+  vi.mocked(api.filePreviewOpen).mockImplementationOnce(
+    (id) =>
+      new Promise((resolve) => {
+        finish = () => resolve({ id, renderer: "image", size: 5 });
+      }),
+  );
+  useFilePreview.getState().dock();
+  useFilePreview.getState().show("/slow.png", 0, 0, { kind: "remote", sessionId: "original" });
+  render(<DockingShell />);
+  await waitFor(() => expect(api.filePreviewOpen).toHaveBeenCalledOnce());
+  act(() => useWorkspace.getState().close(previewPanelId));
+  await act(async () => finish());
+  expect(useFilePreview.getState().file).toBeNull();
+  expect(screen.queryByRole("img")).toBeNull();
+  expect(api.filePreviewClose).toHaveBeenCalledTimes(2);
+  expect(useWorkspace.getState().tabs.find((tab) => tab.id === previewPanelId)?.hidden).toBe(true);
+});
+
+it("switching remote targets and revoking a renderer retires only its original resource", async () => {
+  usePlugins.setState({ items: [images] });
+  useFilePreview.getState().dock();
+  useFilePreview.getState().show("/photo.png", 0, 0, { kind: "remote", sessionId: "one" });
+  render(<DockingShell />);
+  await screen.findByRole("img", { name: "photo.png" });
+  const old = snapshot();
+  act(() =>
+    useFilePreview.getState().show("/photo.png", 0, 0, { kind: "remote", sessionId: "two" }),
+  );
+  await screen.findByRole("img", { name: "photo.png" });
+  expect(api.filePreviewOpen).toHaveBeenLastCalledWith(
+    expect.any(String),
+    "images:image",
+    "/photo.png",
+    "two",
+  );
+  expect(api.filePreviewClose).toHaveBeenCalledOnce();
+  expect(() =>
+    runFilePreviewAction({ id: old.id, revision: old.revision, action: "undock" }),
+  ).toThrow("changed");
+  act(() => usePlugins.setState({ items: [] }));
+  expect(screen.queryByRole("img")).toBeNull();
+  expect(snapshot()).toMatchObject({ presentation: "docked", state: "unavailable" });
+  expect(api.filePreviewClose).toHaveBeenCalledTimes(2);
+});
+
+it("the command opens an empty preview panel without silently reopening a saved remote file", () => {
+  render(<DockingShell />);
+  act(() => expect(runWorkbenchCommand("preview.showPanel")).toBe(true));
+  expect(screen.getByText(i18n.t("preview.panelHint"))).toBeTruthy();
+  expect(useFilePreview.getState().file).toBeNull();
+  expect(api.filePreviewOpen).not.toHaveBeenCalled();
+  expect(api.sftpReadText).not.toHaveBeenCalled();
 });
 afterEach(() => {
   cleanup();
@@ -260,7 +408,9 @@ it("retains host renderer DOM across selected presentation changes and fences re
   };
   let retained: FrontendFilePreview | undefined;
   function Presentation({ filePreview }: FrontendViewProps) {
-    retained = filePreview;
+    useLayoutEffect(() => {
+      retained = filePreview;
+    }, [filePreview]);
     const Body = filePreview!.Body;
     return (
       <section data-testid="presentation">
@@ -424,8 +574,10 @@ it("falls back from a local-only presentation for remote targets and fences reta
   };
   let retained!: FrontendFilePreview;
   function Presentation({ filePreview }: FrontendViewProps) {
-    retained = filePreview!;
-    const Body = retained.Body;
+    useLayoutEffect(() => {
+      retained = filePreview!;
+    }, [filePreview]);
+    const Body = filePreview!.Body;
     return (
       <section data-testid="local-only">
         <Body />

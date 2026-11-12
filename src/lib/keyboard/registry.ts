@@ -41,6 +41,7 @@ export const SHORTCUT_COMMANDS: ShortcutCommand[] = [
   command("sidebar.forwarding", "forward.title", "workbench", []),
   command("sidebar.plugins", "settings.plugins", "workbench", []),
   command("sidebar.output", "output.show", "workbench", ["Mod+Shift+U"], { input: true }),
+  command("preview.showPanel", "preview.showPanel", "workbench", [], { input: true }),
   command("app.reload", "restart.reload", "workbench", []),
   command("app.restart", "restart.command", "workbench", []),
   command("panel.restoreWorkbench", "providers.restore", "workbench", [], { input: true }),

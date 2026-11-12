@@ -43,7 +43,13 @@ function prepare(change: Partial<FilePreviewMetadata> = {}) {
   };
   const mounted = mountFilePreview(snapshot.id);
   registrations.push(mounted);
-  const actions = { close: vi.fn(), retry: vi.fn(), selectProvider: vi.fn() };
+  const actions = {
+    close: vi.fn(),
+    retry: vi.fn(),
+    dock: vi.fn(),
+    undock: vi.fn(),
+    selectProvider: vi.fn(),
+  };
   const context: FilePreviewContext = {
     snapshot,
     ...actions,
@@ -91,13 +97,20 @@ it("projects real host metadata, conditional/null observation, providers and acc
   await call("filePreview.observe", { revision: first.revision });
   await call("filePreview.providers", identity);
   await call("filePreview.providers", { ...identity, offset: 1 });
-  for (const action of ["close", "retry", "selectProvider"])
+  for (const action of ["close", "retry", "dock", "undock", "selectProvider"])
     await call("filePreview.action", {
       ...identity,
       action,
       ...(action === "selectProvider" ? { providerId: "preview:images" } : {}),
     });
   expect(actions.selectProvider).toHaveBeenCalledWith("preview:images");
+  expect(actions.dock).toHaveBeenCalledOnce();
+  expect(actions.undock).toHaveBeenCalledOnce();
+  mounted.publish({
+    ...context,
+    snapshot: { ...context.snapshot, revision: "docked-frame", presentation: "docked" },
+  });
+  await call("filePreview.observe");
   for (const state of ["ready", "error", "unavailable"] as const) {
     const snapshot = {
       ...context.snapshot,

@@ -1,7 +1,7 @@
 import { ForwardingPanel } from "@/features/forwarding/ForwardingPanel";
 import { OutputPanel } from "@/features/output/OutputPanel";
 import { DockedBackgroundTasks } from "@/features/tasks/BackgroundTasks";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { HostTree } from "@/components/layout/HostTree";
 import { ProviderSurface } from "./ProviderSurface";
@@ -24,6 +24,11 @@ function containerFor(view: SidebarView): HTMLDivElement {
     containers.set(view, container);
   }
   return container;
+}
+
+/** A retained owner outside SidebarContents may publish into the same movable slot. */
+export function SidebarPortal({ view, children }: { view: SidebarView; children: ReactNode }) {
+  return createPortal(children, containerFor(view), view);
 }
 
 /** Move the existing DOM container; the list's React owner never changes. */
@@ -134,7 +139,7 @@ export function SidebarContents() {
         <ProviderSurface target="hostList" visible={active} keepFallback>
           <HostTree />
         </ProviderSurface>
-      ) : view === "forwarding" ? (
+      ) : view === "filePreview" ? null : view === "forwarding" ? (
         <ForwardingPanel />
       ) : view === "tasks" ? (
         <DockedBackgroundTasks />

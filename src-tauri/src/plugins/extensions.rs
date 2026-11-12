@@ -63,6 +63,10 @@ mod tests {
         );
         assert_eq!(providers["filePreview"]["optionalSlot"], "Body");
         assert_eq!(providers["filePreview"]["presentation"], "quickLook");
+        assert_eq!(
+            providers["filePreview"]["presentations"],
+            serde_json::json!(["quickLook", "docked"])
+        );
         assert_eq!(providers["filePreview"]["readiness"], "renderer-decoded");
         assert_eq!(
             providers["monitor"]["presentations"],

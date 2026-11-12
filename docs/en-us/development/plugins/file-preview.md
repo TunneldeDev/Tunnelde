@@ -2,22 +2,22 @@
 
 [简体中文](../../../zh-cn/development/plugins/file-preview.md) · [File resources](../file-resources.md)
 
-The experimental `filePreview` domain exposes the host's current quick-look dialog.
-It does not represent every editor, a docked workspace preview, a filesystem
-snapshot or a public renderer URL. Check `api.describe` and `extensions.describe`
+The experimental `filePreview` domain exposes the host's current Quick Look or
+docked preview. It does not represent every editor, a filesystem snapshot or a
+public renderer URL. Check `api.describe` and `extensions.describe`
 before using it. The stable core and protocol version remain unchanged.
 
-| Method                  | Required permission                                             | Result                                                 |
-| ----------------------- | --------------------------------------------------------------- | ------------------------------------------------------ |
-| `filePreview.observe`   | `filePreview.read`                                              | Conditional committed metadata, or `null` when closed. |
-| `filePreview.providers` | `filePreview.read`                                              | Renderer choices at an exact preview revision.         |
-| `filePreview.action`    | `filePreview.write`                                             | Accept close, retry or provider selection.             |
-| `filePreview.open`      | `filePreview.write` and source-specific `fs.read` / `sftp.read` | Accept an explicit absolute target.                    |
+| Method                  | Required permission                                             | Result                                                   |
+| ----------------------- | --------------------------------------------------------------- | -------------------------------------------------------- |
+| `filePreview.observe`   | `filePreview.read`                                              | Conditional committed metadata, or `null` when closed.   |
+| `filePreview.providers` | `filePreview.read`                                              | Renderer choices at an exact preview revision.           |
+| `filePreview.action`    | `filePreview.write`                                             | Accept close, retry, dock, undock or provider selection. |
+| `filePreview.open`      | `filePreview.write` and source-specific `fs.read` / `sftp.read` | Accept an explicit absolute target.                      |
 
 `observe({revision?})` returns `{schemaVersion:1,revision,changed}`. Only changed
 responses contain `snapshot`. A non-null snapshot includes activation `id`, frame
 `revision`, renderer `attemptId`, explicit source/path, line/column (0 means unspecified; positive values are one-based),
-`presentation:"quickLook"`, renderer, nullable provider ID, provider count, state
+`presentation:"quickLook"|"docked"`, renderer, nullable provider ID, provider count, state
 and nullable error code. No contents, native tickets, URLs, raw errors or callbacks
 cross this boundary. Metadata access reveals paths, so it has a separate grant.
 
@@ -36,8 +36,9 @@ to 120 UTF-8 bytes. Coordinates/counts are nonnegative safe JavaScript integers.
 JSON Schema character limits supplement, and do not replace, these byte checks.
 
 Actions require `{id,revision,action}`. `selectProvider` additionally requires
-`providerId`; `close` and `retry` accept no unrelated fields. An accepted action
-immediately consumes that frame's mutation authority. Retry and provider changes
+`providerId`; `close`, `retry`, `dock` and `undock` accept no unrelated fields.
+State-changing actions immediately consume that frame's mutation authority; docking
+an already docked preview or undocking Quick Look is an accepted no-op. Retry and provider changes
 create new attempts; reopening the same path creates a new activation. Old frames,
 callbacks and late renderer results cannot affect replacements.
 
@@ -76,7 +77,7 @@ A trusted component view may declare `provider:"filePreview"`. It needs `ui.trus
 in interface-provider settings. The host checks the actual target's endpoint at
 mount and access; a local-only provider falls back for a remote target. Actions
 independently require `filePreview.write`. `FrontendViewProps.filePreview` contains
-metadata, `readProviders`, close/retry/select callbacks and optional-to-mount `Body`.
+metadata, `readProviders`, close/retry/dock/undock/select callbacks and optional-to-mount `Body`.
 Mount `Body` once to arrange the existing host renderer without recreating it.
 Omitting it permits metadata-only UI; duplicate mounts or rendering failures recover
 to the built-in presentation. Language/theme/presentation changes preserve renderer
@@ -88,3 +89,16 @@ presentation guard and SDK client live in separate files under their respective
 `files/preview` domains. CI checks historical consumers, schemas, actual frontend
 producer samples and SDK interpretation. Public byte resources use the separate
 `files.content` API; preview metadata grants do not grant byte access.
+
+## Docking and lifetime
+
+Use **Dock preview** to move the existing renderer into a remembered workbench
+group. Drag its tab or panel title to any supported split; resize it with the
+shared splitter. **Open in Quick Look** returns to the dialog. The chosen mode is
+remembered for subsequent previews. Moving or changing presentation retains the
+activation, renderer attempt, decoded DOM and native ticket; only the committed
+metadata revision changes. Closing/collapsing the panel releases file resources
+and retains its layout slot. Reopening a saved empty slot never rereads an old
+remote file. The command palette offers **Show file preview panel**. Discovery
+reports `filePreview.presentations`; applications without dock/undock support must
+not be inferred to support it from the schema version alone.
