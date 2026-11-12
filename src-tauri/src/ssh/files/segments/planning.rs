@@ -5,6 +5,12 @@ pub(in crate::ssh::files) struct Plan {
     pub requests: usize,
 }
 
+const MIN_AUTO_CHUNK: u64 = 1024 * 1024;
+const MAX_AUTO_CHUNK: u64 = 16 * 1024 * 1024;
+const LARGE_FILE: u64 = 64 * 1024 * 1024;
+const SMALL_AUTO_WINDOW: u64 = 16 * 1024 * 1024;
+const LARGE_AUTO_WINDOW: u64 = 64 * 1024 * 1024;
+
 impl Plan {
     pub fn window_end(self, offset: u64, size: u64, replay_end: Option<u64>) -> u64 {
         offset
@@ -23,12 +29,8 @@ impl Plan {
     }
 
     pub fn for_file(settings: &crate::settings::Settings, size: u64, remote: bool) -> Self {
-        let chunk = match settings.transfer_chunk_kib {
-            0 if size < 64 * 1024 * 1024 => 1024 * 1024,
-            0 => 4 * 1024 * 1024,
-            kib => u64::from(kib) * 1024,
-        };
-        let workers = if !settings.transfer_optimization || !remote || size < 512 * 1024 {
+        let optimized = settings.transfer_optimization && remote;
+        let workers = if !optimized || size < 512 * 1024 {
             1
         } else if settings.transfer_concurrency != 0 {
             usize::from(settings.transfer_concurrency)
@@ -36,6 +38,28 @@ impl Plan {
             2
         } else {
             4
+        }
+        .clamp(1, 8);
+        let window_budget = if size < LARGE_FILE {
+            SMALL_AUTO_WINDOW
+        } else {
+            LARGE_AUTO_WINDOW
+        };
+        let chunk = match settings.transfer_chunk_kib {
+            // Stream a bounded share of this file before a checkpoint barrier.
+            // A fixed 1 MiB range cannot fill eight negotiated 256 KiB requests;
+            // it also drains every worker for repeated metadata round trips.
+            // This is a replay extent, not an allocation: packet budgets and
+            // each local worker's 1 MiB buffer remain independently bounded.
+            // Share one window budget rather than multiplying it when users
+            // increase concurrency; short files do not need a 64 MiB window.
+            0 if optimized => size
+                .div_ceil(workers as u64)
+                .min(window_budget / workers as u64)
+                .clamp(MIN_AUTO_CHUNK, MAX_AUTO_CHUNK),
+            0 if size < LARGE_FILE => MIN_AUTO_CHUNK,
+            0 => 4 * 1024 * 1024,
+            kib => u64::from(kib) * 1024,
         };
         let workers = workers
             .min(size.div_ceil(chunk).clamp(1, 8) as usize)
@@ -141,5 +165,70 @@ mod tests {
         assert_eq!(Plan::for_file(&settings, u64::MAX, true).workers, 1);
         assert_eq!(Plan::for_file(&settings, u64::MAX, true).requests, 1);
         assert_eq!(config(&settings).max_concurrent_reads, 1);
+    }
+
+    #[test]
+    fn automatic_extents_fill_the_pipeline_without_unbounded_replay() {
+        let mut settings = crate::settings::Settings::default();
+        for workers in [0, 1, 2, 4, 8] {
+            settings.transfer_concurrency = workers;
+            for size in [
+                0,
+                1,
+                512 * 1024 - 1,
+                512 * 1024,
+                8 * 1024 * 1024 - 1,
+                8 * 1024 * 1024,
+                32 * 1024 * 1024 + 73,
+                128 * 1024 * 1024 + 73,
+                u64::MAX,
+            ] {
+                let plan = Plan::for_file(&settings, size, true);
+                assert!((1..=8).contains(&plan.workers));
+                assert!(plan.workers * plan.requests <= 32);
+                assert!((MIN_AUTO_CHUNK..=MAX_AUTO_CHUNK).contains(&plan.chunk));
+                assert!(plan.window_end(0, size, None) <= 64 * 1024 * 1024);
+                if size < 64 * 1024 * 1024 {
+                    assert!(plan.window_end(0, size, None) <= 16 * 1024 * 1024);
+                }
+                if size <= 16 * 1024 * 1024 {
+                    assert_eq!(plan.window_end(0, size, None), size);
+                }
+                if size >= 8 * 1024 * 1024 {
+                    assert!(plan.chunk >= plan.requests as u64 * 256 * 1024);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_chunks_and_unoptimized_or_local_defaults_are_preserved() {
+        for remote in [false, true] {
+            for optimized in [false, true] {
+                let mut settings = crate::settings::Settings {
+                    transfer_optimization: optimized,
+                    ..Default::default()
+                };
+                for size in [1024, 32 * 1024 * 1024 + 73, u64::MAX] {
+                    for chunk in [256, 1024, 4096, 16384] {
+                        settings.transfer_chunk_kib = chunk;
+                        let plan = Plan::for_file(&settings, size, remote);
+                        assert_eq!(plan.chunk, u64::from(chunk) * 1024);
+                        assert!(plan.workers * plan.requests <= 64);
+                    }
+                    settings.transfer_chunk_kib = 0;
+                    if !remote || !optimized {
+                        let plan = Plan::for_file(&settings, size, remote);
+                        assert_eq!(plan.workers, 1);
+                        let legacy_chunk = if size < 64 * 1024 * 1024 {
+                            1024 * 1024
+                        } else {
+                            4 * 1024 * 1024
+                        };
+                        assert_eq!(plan.chunk, legacy_chunk);
+                    }
+                }
+            }
+        }
     }
 }
