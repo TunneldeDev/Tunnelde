@@ -274,6 +274,20 @@ jobs:
           TUNNELDE_FILE_BROWSER_CONTRACT_OUTPUT="$RUNNER_TEMP/file-browser.json" pnpm exec vitest run tests/app/pluginFileBrowserContract.test.ts
           node scripts/ci/check-file-browser-contract.mjs "$RUNNER_TEMP/file-browser.json" .tmp/ci/file-browser-consumer/sdk
 
+      - name: Checkout live preview SDK consumer
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-hub
+          ref: e86bf904570318bec246b93bef55c8958e7523f0
+          path: .tmp/ci/file-preview-consumer
+          persist-credentials: false
+
+      - name: Check actual preview bridge against schema and SDK
+        timeout-minutes: 3
+        run: |
+          TUNNELDE_FILE_PREVIEW_CONTRACT_OUTPUT="$RUNNER_TEMP/file-preview.json" pnpm exec vitest run tests/app/pluginFilePreviewContract.test.ts
+          node scripts/ci/check-file-preview-contract.mjs "$RUNNER_TEMP/file-preview.json" .tmp/ci/file-preview-consumer/sdk
+
       - name: Checkout cancellable transport SDK
         uses: actions/checkout@v4
         with:
