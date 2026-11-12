@@ -99,6 +99,7 @@ pub(super) fn pending(app: &AppHandle) -> AppResult<Vec<remote_editor::PendingCl
             directory: display_path(&r.directory),
             address: String::new(),
             source: "local",
+            action: None,
             updated_at: r.updated_at,
             error: r.error,
         })

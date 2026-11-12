@@ -17,8 +17,12 @@ where
     budget
         .asynchronous(move |_| async move {
             let held = Reservation::acquire(&record.id, true)?;
+            // A retry captured before waiting for admission must not recreate
+            // a retired journal or replay an older recovery phase.
+            record = journal.current(&record)?;
             journal.changed();
             let result = async {
+                recovery::require_settled(&record)?;
                 let sftp = open().await?;
                 let result = cleanup(&sftp, &mut record, |r| journal.persist(r)).await;
                 let _ = sftp.close().await;

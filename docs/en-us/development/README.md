@@ -38,3 +38,5 @@
 - [Trusted frontend plugins](plugins/ui.md)
 - [Release operations](releases.md)
 - [Version and release policy](versioning.md)
+
+- [Native file-save transport (experimental)](file-save-transport.md)

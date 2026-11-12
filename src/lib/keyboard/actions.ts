@@ -1,6 +1,7 @@
 import { requestApplicationAction } from "@/lib/session/restart";
 import { useDialogs } from "@/store/dialogs";
 import { useNavigation } from "@/store/navigation";
+import { useFilePreview } from "@/store/filePreview";
 import { useSettings } from "@/store/settings";
 import { useUpdates } from "@/store/updates";
 import { useWorkspace } from "@/store/workspace";
@@ -45,6 +46,7 @@ export function runWorkbenchCommand(id: string, openPalette?: () => void): boole
   else if (id === "sidebar.forwarding") useNavigation.getState().showSidebar("forwarding");
   else if (id === "sidebar.plugins") useNavigation.getState().showSidebar("plugins");
   else if (id === "sidebar.output") useNavigation.getState().showOutput();
+  else if (id === "preview.showPanel") useFilePreview.getState().dock();
   else if (id === "transfers.show") useTransferPanel.getState().show();
   else if (id === "panel.restoreWorkbench") {
     void settings.update({ uiProviders: {} });

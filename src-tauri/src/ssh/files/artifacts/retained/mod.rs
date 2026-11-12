@@ -158,7 +158,7 @@ pub(in crate::ssh::files) async fn cleanup(
                 Some(&record.address),
             )?
             .ok_or_else(invalid)?;
-            let sftp = session(app, &session_id).await?;
+            let sftp = admission::open(app, &session_id, &[&record.directory]).await?;
             let result = cleanup_created(&sftp, &record.directory).await;
             let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sftp.close()).await;
             result?;

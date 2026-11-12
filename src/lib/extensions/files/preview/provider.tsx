@@ -41,6 +41,14 @@ export function guardFilePreviewProvider(
       check(true);
       context.retry();
     },
+    dock() {
+      check(true);
+      context.dock();
+    },
+    undock() {
+      check(true);
+      context.undock();
+    },
     selectProvider(providerId) {
       check(true);
       context.selectProvider(providerId);

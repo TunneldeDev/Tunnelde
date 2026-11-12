@@ -7,6 +7,7 @@ import { usePlugins } from "@/store/plugins";
 import i18n from "@/i18n/i18n";
 import { useEditorCleanup } from "@/store/editorCleanup";
 import { translateError } from "@/lib/api/errors";
+import { api } from "@/lib/api/ipc";
 
 const PHASE_KEYS = {
   connecting: "market.phase.connecting",
@@ -36,21 +37,50 @@ export function registerBackgroundTaskSources(): () => void {
         snapshot: () =>
           useEditorCleanup.getState().items.map((item) => ({
             id: item.id,
-            title: i18n.t("editor.cleanupTitle"),
+            title: i18n.t(
+              item.source === "native" || item.source === "diagnostic"
+                ? "editor.nativeRecoveryTitle"
+                : item.running
+                  ? "editor.operationInProgress"
+                  : "editor.cleanupTitle",
+            ),
             status: item.running ? "running" : "attention",
             execution: "native",
             updatedAt: item.updatedAt,
-            message: `${item.source === "local" ? i18n.t("sftp.local") : item.address} · ${item.directory}`,
-            error: item.error
-              ? translateError({ code: "editorCleanup", message: item.error })
-              : undefined,
+            message:
+              item.source === "native" || item.source === "diagnostic"
+                ? [item.address, item.path].filter(Boolean).join(" · ")
+                : `${item.source === "local" ? i18n.t("sftp.local") : item.address} · ${item.directory}`,
+            error:
+              !item.running && item.error
+                ? translateError({ code: "editorCleanup", message: item.error })
+                : undefined,
             actions: [
               {
                 id: "retry",
                 disabled: item.running,
-                label: i18n.t("editor.retryCleanup"),
+                label: i18n.t(
+                  item.action === "reload"
+                    ? "editor.reloadRecoveryRecords"
+                    : item.source !== "native"
+                      ? "editor.retryCleanup"
+                      : item.action === "discard"
+                        ? "editor.nativeDiscardUnsent"
+                        : item.action === "finish"
+                          ? "editor.nativeFinishRecovery"
+                          : "editor.nativeQueryOriginal",
+                ),
                 run: () => useEditorCleanup.getState().retry(item.id),
               },
+              ...(item.source === "native" || item.source === "diagnostic"
+                ? [
+                    {
+                      id: "logs",
+                      label: i18n.t("editor.nativeOpenLog"),
+                      run: () => api.openLatestLog(),
+                    },
+                  ]
+                : []),
             ],
           })),
       }),

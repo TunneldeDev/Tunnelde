@@ -4,6 +4,10 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::atomic::AtomicUsize;
 
 mod authorization;
+#[path = "tests/recovery.rs"]
+mod durability;
+#[path = "tests/late_replies.rs"]
+mod late_replies;
 mod workers;
 
 // Existing protocol cases exercise an uncancelled transaction; worker lifetime
@@ -15,7 +19,7 @@ async fn staged_save(
     target: &str,
     content: &str,
     baseline: &str,
-    record: &Record,
+    record: &mut Record,
 ) -> AppResult<()> {
     let (job, _caller) =
         crate::services::files::operations::Cancellation::for_test("editor.saveCancelled");
@@ -31,6 +35,10 @@ async fn staged_save(
         record,
         &job,
         &policy::Native,
+        transaction::Observer {
+            checkpoint: &|_| Ok(()),
+            published: &|| {},
+        },
     )
     .await
 }
@@ -52,6 +60,13 @@ struct Probe {
     hold_rmdir: AtomicBool,
     rmdir_started: tokio::sync::Notify,
     release_rmdir: tokio::sync::Notify,
+    hold_mkdir_before: AtomicBool,
+    hold_mkdir_after: AtomicBool,
+    mkdir_started: tokio::sync::Notify,
+    release_mkdir: tokio::sync::Notify,
+    hold_commit_before: AtomicBool,
+    short_timeout: AtomicBool,
+    write_limit: AtomicUsize,
 }
 
 struct Server {
@@ -124,6 +139,11 @@ impl russh_sftp::server::Handler for Server {
         version
             .extensions
             .insert("fsync@openssh.com".into(), "1".into());
+        if self.probe.write_limit.load(Ordering::SeqCst) > 0 {
+            version
+                .extensions
+                .insert("limits@openssh.com".into(), "1".into());
+        }
         Ok(version)
     }
     async fn realpath(&mut self, id: u32, path: String) -> Result<Name, StatusCode> {
@@ -189,6 +209,10 @@ impl russh_sftp::server::Handler for Server {
         offset: u64,
         data: Vec<u8>,
     ) -> Result<Status, StatusCode> {
+        let limit = self.probe.write_limit.load(Ordering::SeqCst);
+        if limit > 0 && data.len() > limit {
+            return Err(StatusCode::Failure);
+        }
         let fail = self.fails("write");
         let (path, file) = self.files.get_mut(&handle).ok_or(StatusCode::Failure)?;
         file.seek(SeekFrom::Start(offset)).map_err(io)?;
@@ -242,12 +266,20 @@ impl russh_sftp::server::Handler for Server {
         path: String,
         attrs: FileAttributes,
     ) -> Result<Status, StatusCode> {
+        if self.probe.hold_mkdir_before.swap(false, Ordering::SeqCst) {
+            self.probe.mkdir_started.notify_one();
+            self.probe.release_mkdir.notified().await;
+        }
         std::fs::create_dir(self.path(&path)).map_err(io)?;
         self.probe.mkdirs.fetch_add(1, Ordering::SeqCst);
         self.modes
             .lock()
             .unwrap()
             .insert(path, attrs.permissions.unwrap_or(0o777));
+        if self.probe.hold_mkdir_after.swap(false, Ordering::SeqCst) {
+            self.probe.mkdir_started.notify_one();
+            self.probe.release_mkdir.notified().await;
+        }
         Ok(ok(id))
     }
     async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
@@ -312,6 +344,18 @@ impl russh_sftp::server::Handler for Server {
         request: String,
         data: Vec<u8>,
     ) -> Result<Packet, StatusCode> {
+        if request == "limits@openssh.com" {
+            let mut data = Vec::new();
+            for value in [
+                4096u64,
+                2048,
+                self.probe.write_limit.load(Ordering::SeqCst) as u64,
+                0,
+            ] {
+                data.extend_from_slice(&value.to_be_bytes());
+            }
+            return Ok(Packet::ExtendedReply(ExtendedReply { id, data }));
+        }
         if request == "fsync@openssh.com" {
             if self.fails("fsync") {
                 return Err(StatusCode::Failure);
@@ -320,6 +364,10 @@ impl russh_sftp::server::Handler for Server {
         }
         if request != "posix-rename@openssh.com" {
             return Err(StatusCode::OpUnsupported);
+        }
+        if self.probe.hold_commit_before.swap(false, Ordering::SeqCst) {
+            self.probe.commit_started.notify_one();
+            self.probe.release_commit.notified().await;
         }
         if self.fails("rename") {
             return Err(StatusCode::Failure);
@@ -345,7 +393,7 @@ impl russh_sftp::server::Handler for Server {
             self.probe.commit_started.notify_one();
             self.probe.release_commit.notified().await;
         }
-        if self.fails("lost-ack") {
+        if self.fails("failure-after-rename") {
             return Err(StatusCode::Failure);
         }
         Ok(Packet::Status(ok(id)))
@@ -388,10 +436,11 @@ impl Fixture {
         SftpSession::new(self.stream().await).await.unwrap()
     }
     async fn replacement(&self) -> AppResult<remote_commit::Replacement> {
-        remote_commit::Replacement::negotiate(russh_sftp::client::RawSftpSession::new(
-            self.stream().await,
-        ))
-        .await
+        let raw = russh_sftp::client::RawSftpSession::new(self.stream().await);
+        if self.probe.short_timeout.load(Ordering::SeqCst) {
+            raw.set_timeout(1);
+        }
+        remote_commit::Replacement::negotiate(raw).await
     }
     fn record(&self) -> Record {
         Record {
@@ -401,6 +450,7 @@ impl Fixture {
             path: "/note.txt".into(),
             directory: "/.tunnelde-save-test".into(),
             token: uuid::Uuid::new_v4().to_string(),
+            receipt: Some(recovery::Receipt::new()),
             removing_marker: false,
             updated_at: 0,
             error: None,
@@ -435,7 +485,7 @@ async fn atomically_saves_short_empty_unicode_bom_and_crlf() {
             "/note.txt",
             text,
             &baseline,
-            &record,
+            &mut record,
         )
         .await
         .unwrap();
@@ -470,7 +520,7 @@ async fn original_survives_partial_write_fsync_close_metadata_permission_and_ren
                 "/note.txt",
                 "replacement",
                 "original",
-                &record
+                &mut record
             )
             .await
             .is_err(),
@@ -501,7 +551,7 @@ async fn save_waits_for_close_and_rejects_changes_during_staging() {
             "/note.txt",
             "my draft",
             "original",
-            &record
+            &mut record
         ),
         async {
             f.probe.close_started.notified().await;
@@ -518,11 +568,11 @@ async fn save_waits_for_close_and_rejects_changes_during_staging() {
 }
 
 #[tokio::test]
-async fn unacknowledged_commit_is_not_repeated_and_cleanup_leaves_published_content() {
+async fn server_failure_after_rename_is_not_repeated_and_cleanup_leaves_published_content() {
     let f = Fixture::new();
     let sftp = f.client().await;
     let mut record = f.record();
-    *f.probe.failure.lock().unwrap() = "lost-ack".into();
+    *f.probe.failure.lock().unwrap() = "failure-after-rename".into();
     assert!(staged_save(
         &sftp,
         &f.replacement().await.unwrap(),
@@ -530,7 +580,7 @@ async fn unacknowledged_commit_is_not_repeated_and_cleanup_leaves_published_cont
         "/note.txt",
         "published",
         "original",
-        &record
+        &mut record
     )
     .await
     .is_err());
@@ -559,7 +609,7 @@ async fn unsupported_server_and_missing_file_are_never_recreated() {
         "/note.txt",
         "draft",
         "original",
-        &f.record()
+        &mut f.record()
     )
     .await
     .is_err());
@@ -579,7 +629,7 @@ async fn cleanup_after_reconnect_checks_ownership_and_checkpoints_before_removin
         "/note.txt",
         "saved",
         "original",
-        &record,
+        &mut record,
     )
     .await
     .unwrap();
@@ -628,7 +678,7 @@ async fn cleanup_refuses_forged_marker_or_failed_checkpoint() {
             "/note.txt",
             "saved",
             "original",
-            &record,
+            &mut record,
         )
         .await
         .unwrap();

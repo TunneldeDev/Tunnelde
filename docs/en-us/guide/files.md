@@ -188,3 +188,11 @@ At most eight retained directories are allowed per original transfer and 128
 across the application. Reaching a limit preserves the current records and stops
 another generation; it never silently deletes recovery information. Requests
 whose final result was lost still need authoritative settlement before cleanup.
+
+## Docked preview
+
+Choose **Dock preview** in Quick Look to keep a preview beside your files. Drag
+its title or tab to move it, and drag the shared divider to resize it. **Open in
+Quick Look** returns to the dialog. Closing the panel releases the file while
+remembering its position and size. Use F1 → **Show file preview panel** to reopen
+its empty slot; preview another file with Space.

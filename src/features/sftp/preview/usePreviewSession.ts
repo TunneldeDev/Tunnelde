@@ -7,13 +7,19 @@ import type {
 } from "@/lib/extensions/contracts/files/preview/data";
 import type { FilePreviewContext } from "@/lib/extensions/files/preview/context";
 import { previewKind } from "@/lib/files/preview";
-import { useFilePreview, type PreviewFile } from "@/store/filePreview";
+import {
+  previewPanelOpen,
+  useFilePreview,
+  type PreviewFile,
+  type PreviewPresentation,
+} from "@/store/filePreview";
 
 /** Rendering belongs to one target activation and one provider/retry attempt. */
 export function usePreviewSession(
   file: PreviewFile,
   id: string,
   providers: readonly (PluginFilePreview & { fingerprint?: string })[],
+  presentation: PreviewPresentation,
 ) {
   const [preferred, setPreferred] = useState("");
   const [retry, setRetry] = useState(0);
@@ -73,14 +79,14 @@ export function usePreviewSession(
         path: file.path,
         line: file.line,
         column: file.column,
-        presentation: "quickLook",
+        presentation,
         renderer,
         providerId: provider?.id ?? null,
         providerCount: choices.length,
         state,
         errorCode,
       }),
-    [id, file, attemptId, renderer, provider?.id, choices, state, errorCode],
+    [id, file, attemptId, renderer, provider?.id, choices, state, errorCode, presentation],
   );
   const committed = useRef<FilePreviewMetadata | null>(null);
   useLayoutEffect(() => {
@@ -112,6 +118,8 @@ export function usePreviewSession(
     snapshot,
     validateTarget() {
       if (useFilePreview.getState().file !== file || useFilePreview.getState().id !== id)
+        throw new Error("plugin.filePreview.changed");
+      if (useFilePreview.getState().presentation === "docked" && !previewPanelOpen())
         throw new Error("plugin.filePreview.changed");
     },
     validate() {
@@ -149,6 +157,18 @@ export function usePreviewSession(
       context.validate();
       committed.current = null;
       useFilePreview.getState().close();
+    },
+    dock() {
+      context.validate();
+      if (presentation === "docked") return;
+      committed.current = null;
+      useFilePreview.getState().dock();
+    },
+    undock() {
+      context.validate();
+      if (presentation === "quickLook") return;
+      committed.current = null;
+      useFilePreview.getState().undock();
     },
     retry() {
       context.validate();

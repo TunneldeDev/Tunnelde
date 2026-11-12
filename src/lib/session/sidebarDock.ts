@@ -12,6 +12,7 @@ export const SIDEBAR_VIEWS: BuiltinSidebarView[] = [
   "forwarding",
   "tasks",
   "output",
+  "filePreview",
 ];
 export const SIDEBAR_LABELS = {
   hosts: "sidebar.hosts",
@@ -20,6 +21,7 @@ export const SIDEBAR_LABELS = {
   plugins: "settings.plugins",
   tasks: "tasks.title",
   output: "output.title",
+  filePreview: "sftp.preview",
 } as const satisfies Record<BuiltinSidebarView, string>;
 export const sidebarTabId = (view: SidebarView): string => `sidebar:${view}`;
 
