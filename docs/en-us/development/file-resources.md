@@ -121,6 +121,14 @@ not emit it again. No-op saves reconcile observers without requiring replacement
 support from the server. A cancelled cleanup caller also leaves its admitted
 cleanup worker running until the transaction settles.
 
+Local plugin saves use the same runtime, exact request and client admission fence
+as remote saves. Blocking workers recheck after acquiring the path lock and after
+scoped target/hash validation. Cancellation and publication admission have one
+winner, including no-op reconciliation. No filesystem IO runs under the policy
+lock; after admission, the atomic filesystem replacement and cleanup settle even
+if the caller is cancelled or the plugin is stopped. Admission does not provide
+filesystem compare-and-swap against unrelated processes.
+
 Remote plugin saves recheck the exact runtime grant, client/request lifetime and
 SSH connection after the path-lock wait, before staging and at publication
 admission. Scoped AI/MCP writes retain the approved canonical path, original path

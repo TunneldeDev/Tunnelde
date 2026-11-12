@@ -46,6 +46,7 @@ impl Drop for Fixture {
     }
 }
 
+mod authorization;
 mod workers;
 
 #[test]

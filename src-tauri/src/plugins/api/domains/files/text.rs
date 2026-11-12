@@ -6,7 +6,7 @@ use tauri::Emitter;
 
 const MAX_TEXT: usize = 512 * 1024;
 
-fn validate_text(bytes: &[u8]) -> AppResult<()> {
+pub(super) fn validate_text(bytes: &[u8]) -> AppResult<()> {
     if bytes.len() > MAX_TEXT {
         return Err(AppError::validation("plugin.api.fileTooLarge"));
     }
@@ -39,22 +39,12 @@ pub(in crate::plugins) async fn write_local(
     }
     authorize(context, &["fs.write"])?;
     let app = context.app.clone();
-    let context = context.clone();
     crate::ssh::files::local_editor::save_checked(
         context.app.clone(),
         path,
         content,
         baseline,
-        move |target, original| {
-            // Recheck on the blocking worker after lock acquisition and again
-            // immediately before atomic publication, including RPC revocation.
-            authorize(&context, &["fs.write"])?;
-            if let Some(client) = &context.tool_client {
-                crate::plugins::tools::authorize_client(&context, client)?;
-            }
-            validate_text(original.as_bytes())?;
-            check_scope(target, original)
-        },
+        super::local_write::LocalPolicy::new(context, check_scope),
         move || {
             // Direct calls and scoped AI/MCP tools share this publication event.
             // It survives RPC cancellation after the atomic publication gate.

@@ -1,12 +1,22 @@
 //! Local editor transactions, with only staging cleanup persisted across restarts.
 use super::*;
 use crate::platform::editor_file::{self as native, Identity};
-use crate::services::files::{operations::Budget, write};
+use crate::services::files::write;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::sync::{Mutex, OnceLock, Weak};
+
+pub(crate) mod policy;
+mod saving;
+mod transaction;
+pub use saving::save;
+pub(crate) use saving::save_checked;
+#[cfg(test)]
+pub(super) use saving::save_without_app;
+#[cfg(test)]
+use saving::{save_async, save_sync, save_transaction, save_with_budget};
 
 #[cfg(test)]
 mod tests;
@@ -141,223 +151,6 @@ fn lock_for(path: &Path) -> Arc<Mutex<()>> {
     let lock = Arc::new(Mutex::new(()));
     locks.insert(path.into(), Arc::downgrade(&lock));
     lock
-}
-
-pub async fn save(
-    app: AppHandle,
-    path: String,
-    content: String,
-    baseline: String,
-) -> AppResult<()> {
-    save_checked(app, path, content, Some(baseline), |_, _| Ok(()), || {}).await
-}
-
-pub(crate) async fn save_checked(
-    app: AppHandle,
-    path: String,
-    content: String,
-    baseline: Option<String>,
-    check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
-    on_saved: impl FnOnce() + Send + 'static,
-) -> AppResult<()> {
-    save_async(Some(app), path, content, baseline, check, on_saved).await
-}
-
-async fn save_async(
-    app: Option<AppHandle>,
-    path: String,
-    content: String,
-    baseline: Option<String>,
-    check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
-    on_saved: impl FnOnce() + Send + 'static,
-) -> AppResult<()> {
-    save_with_budget(
-        &write::BUDGET,
-        app,
-        path,
-        content,
-        baseline,
-        check,
-        on_saved,
-    )
-    .await
-}
-
-async fn save_with_budget(
-    budget: &Budget,
-    app: Option<AppHandle>,
-    path: String,
-    content: String,
-    baseline: Option<String>,
-    check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
-    on_saved: impl FnOnce() + Send + 'static,
-) -> AppResult<()> {
-    validate_editor_text(&path, &content, baseline.as_deref().unwrap_or_default())?;
-    budget
-        .blocking(move |cancellation| {
-            let mut on_saved = Some(on_saved);
-            let result = save_transaction(
-                app.as_ref(),
-                &path,
-                &content,
-                baseline.as_deref(),
-                |path, original| {
-                    // Recheck after the per-path lock and immediately before publish.
-                    // Dropping the request cannot roll back an admitted publication.
-                    cancellation.check()?;
-                    check(path, original)
-                },
-                |phase, _| {
-                    if phase == "published" {
-                        // Publication cannot be undone by dropping the RPC future.
-                        // Notify on this worker before fallible staging cleanup.
-                        if let Some(on_saved) = on_saved.take() {
-                            on_saved();
-                        }
-                    }
-                    Ok(())
-                },
-            );
-            if result.is_ok() {
-                // A successful no-op still reconciles a caller's potentially stale view.
-                if let Some(on_saved) = on_saved.take() {
-                    on_saved();
-                }
-            }
-            result
-        })
-        .await
-}
-
-#[cfg(test)]
-pub(super) async fn save_without_app(path: &str, content: &str, baseline: &str) -> AppResult<()> {
-    validate_editor_text(path, content, baseline)?;
-    save_sync(None, path, content, baseline, |_, _| Ok(()))
-}
-
-// The stage hook permits tests to inject actual partial writes/failures and
-// concurrent filesystem mutations at the production transaction boundaries.
-#[cfg(test)]
-fn save_sync(
-    app: Option<&AppHandle>,
-    requested: &str,
-    content: &str,
-    baseline: &str,
-    hook: impl FnMut(&str, &Record) -> AppResult<()>,
-) -> AppResult<()> {
-    save_transaction(app, requested, content, Some(baseline), |_, _| Ok(()), hook)
-}
-
-fn save_transaction(
-    app: Option<&AppHandle>,
-    requested: &str,
-    content: &str,
-    baseline: Option<&str>,
-    check: impl Fn(&Path, &str) -> AppResult<()>,
-    mut hook: impl FnMut(&str, &Record) -> AppResult<()>,
-) -> AppResult<()> {
-    let requested = Path::new(requested);
-    let target = std::fs::canonicalize(requested)?;
-    let lock = lock_for(&target);
-    let _guard = lock.lock().unwrap();
-    // Require write permission to the existing file, not merely its parent.
-    drop(native::open_regular(&target, true)?);
-    let mut source = native::open_regular(&target, false)?;
-    let source_identity = native::identity(&source)?;
-    let metadata = source.metadata()?;
-    if metadata.permissions().readonly() {
-        return Err(AppError::validation("editor.readOnlyFile"));
-    }
-    let original = decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?;
-    let baseline = baseline.unwrap_or(&original.content);
-    check(&target, &original.content)?;
-    if original.content == content {
-        return Ok(());
-    }
-    if original.content != baseline {
-        return Err(AppError::validation("editor.localFileChanged"));
-    }
-    let id = format!("local-{}", uuid::Uuid::new_v4());
-    let directory = target
-        .parent()
-        .ok_or_else(|| AppError::validation("sftp.invalidName"))?
-        .join(format!(".tunnelde-save-{id}"));
-    let mut record = Record {
-        id,
-        path: target.clone(),
-        directory,
-        directory_identity: None,
-        staging_identity: None,
-        token: uuid::Uuid::new_v4().to_string(),
-        removing_marker: false,
-        updated_at: crate::models::now_ms(),
-        error: None,
-    };
-    let held = Reservation::new(&record.id, false)?;
-    let checkpoint = |r: &Record| app.map_or(Ok(()), |app| persist(app, r));
-    checkpoint(&record)?;
-    let result = (|| {
-        native::private_directory(&record.directory)?;
-        record.directory_identity = Some(native::directory_identity(&record.directory)?);
-        checkpoint(&record)?;
-        let mut marker = File::options()
-            .write(true)
-            .create_new(true)
-            .open(record.directory.join("owner"))?;
-        marker.write_all(record.token.as_bytes())?;
-        marker.sync_all()?;
-        drop(marker);
-        let staging = record.directory.join("content");
-        native::copy_original(&mut source, &target, &staging, MAX_TEXT)?;
-        let stage = native::open_regular(&staging, false)?;
-        record.staging_identity = Some(native::identity(&stage)?);
-        drop(stage);
-        checkpoint(&record)?;
-        hook("copied", &record)?;
-        let mut stage = native::open_regular(&staging, true)?;
-        if Some(native::identity(&stage)?) != record.staging_identity {
-            return Err(AppError::validation("editor.cleanupUnrecognized"));
-        }
-        native::write_staging(&mut stage, content.as_bytes(), MAX_TEXT)?;
-        native::preserve_metadata(&source, &stage)?;
-        drop(stage);
-        native::preserve_security(&target, &staging)?;
-        native::verify_security(&target, &staging)?;
-        hook("staged", &record)?;
-        let mut current = native::open_regular(&target, false)?;
-        if native::identity(&current)? != source_identity
-            || !native::same_metadata(&metadata, &source.metadata()?)
-            || decode_text(native::read_bounded(&mut source, MAX_TEXT)?)?.content != baseline
-            || decode_text(native::read_bounded(&mut current, MAX_TEXT)?)?.content != baseline
-            || std::fs::canonicalize(requested)? != target
-        {
-            return Err(AppError::validation("editor.localFileChanged"));
-        }
-        hook("verified", &record)?;
-        check(&target, &original.content)?;
-        native::publish(&staging, &target, record.staging_identity.as_ref().unwrap())?;
-        hook("published", &record)?;
-        Ok(())
-    })();
-    drop(source);
-    match cleanup(&mut record, checkpoint) {
-        Ok(()) => {
-            if let Some(app) = app {
-                forget(app, &record)?;
-            }
-        }
-        Err(error) => {
-            tracing::warn!(%error, path = %record.directory.display(), "Local editor staging cleanup deferred");
-            record.error = Some(error.to_string());
-            record.updated_at = crate::models::now_ms();
-            checkpoint(&record)?;
-        }
-    }
-    drop(held);
-    if let Some(app) = app {
-        let _ = app.emit(EVENT, ());
-    }
-    result
 }
 
 fn cleanup(record: &mut Record, checkpoint: impl Fn(&Record) -> AppResult<()>) -> AppResult<()> {
