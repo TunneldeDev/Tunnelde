@@ -416,3 +416,38 @@ async fn deep_merges_and_missing_file_type_metadata_fail_without_mutation() {
         Err(AppError::Validation(key)) if key == "sftp.fileMetadataMissing"));
     assert!(f.0.lock().unwrap().mutations.is_empty());
 }
+
+#[tokio::test]
+async fn revocation_between_merge_steps_stops_before_the_next_mutation() {
+    let fixture = Fixture::new();
+    fixture.file("/source/a", "a");
+    fixture.file("/source/b", "b");
+    let client = fixture.client().await;
+    let plan = Plan::prepare(&client, "/source", "/target").await.unwrap();
+    let state = fixture.0.clone();
+    let dispatch = mutations::Dispatch::new(
+        move || {
+            if state.lock().unwrap().mutations.is_empty() {
+                Ok(())
+            } else {
+                Err(AppError::validation("pluginSecurity.changed"))
+            }
+        },
+        native_save::runtime::MutationObservation::default(),
+    );
+    let error = plan
+        .apply_guarded(&client, None, Some(&dispatch))
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), "pluginSecurity.changed");
+    assert_eq!(fixture.0.lock().unwrap().mutations.len(), 1);
+    assert!(fixture.value("/source").is_some());
+    assert_eq!(
+        [fixture.value("/source/a"), fixture.value("/source/b")]
+            .iter()
+            .filter(|value| value.is_some())
+            .count(),
+        1
+    );
+    client.close().await.unwrap();
+}

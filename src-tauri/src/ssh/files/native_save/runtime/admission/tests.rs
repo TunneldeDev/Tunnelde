@@ -6,6 +6,7 @@ use crate::ssh::files::native_save::{
 };
 use russh_sftp::protocol::{File, FileAttributes, Name};
 use std::{collections::HashMap, sync::atomic::AtomicUsize};
+mod authorization;
 mod desktop;
 mod editor;
 mod mutation;

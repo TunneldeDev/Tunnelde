@@ -123,6 +123,7 @@ impl Manager {
             retire_on_cancel: kind != MutationKind::Editor,
         }))
     }
+    #[cfg(test)]
     pub(crate) async fn mutate<W: Future<Output = AppResult<()>>>(
         &self,
         destination: &SessionIdentity,
@@ -132,11 +133,27 @@ impl Manager {
         job: &Cancellation,
         work: impl FnOnce(Observation) -> W,
     ) -> AppResult<()> {
+        self.mutate_checked(destination, sftp, kind, paths, job, (|| job.commit(), work))
+            .await
+    }
+
+    pub(crate) async fn mutate_checked<W: Future<Output = AppResult<()>>>(
+        &self,
+        destination: &SessionIdentity,
+        sftp: &SftpSession,
+        kind: MutationKind,
+        paths: &[String],
+        job: &Cancellation,
+        (admit, work): (
+            impl FnOnce() -> AppResult<()>,
+            impl FnOnce(Observation) -> W,
+        ),
+    ) -> AppResult<()> {
         job.check()?;
         let reserved = self
             .reserve_mutation(destination, sftp, kind, paths)
             .await?;
-        if let Err(cancelled) = job.commit() {
+        if let Err(cancelled) = job.check() {
             if let Some(reserved) = reserved {
                 reserved.retire().await?;
             }
@@ -147,6 +164,29 @@ impl Manager {
         } else {
             None
         };
+        // Re-resolve after the disk checkpoint without holding authorization
+        // locks. A changed alias must not dispatch under an earlier scope.
+        if let Some(active) = &dispatched {
+            let resolved = scope::resolve(destination, sftp, paths).await;
+            if !resolved
+                .as_ref()
+                .is_ok_and(|scope| active.permit.claim().scopes == [scope.clone()])
+            {
+                let error = resolved
+                    .err()
+                    .unwrap_or_else(|| AppError::validation("editor.nativeChanged"));
+                dispatched.unwrap().settle().await?;
+                return Err(error);
+            }
+        }
+        // Disk dispatch can await a blocking worker. Authorization/cancellation
+        // must be admitted after it, before any remote mutation can be polled.
+        if let Err(error) = admit() {
+            if let Some(active) = dispatched {
+                active.settle().await?;
+            }
+            return Err(error);
+        }
         let observation = Observation::default();
         // Only original typed request completions acknowledge dispatch. An
         // unrelated success or matching AppError text cannot settle an unknown.
