@@ -107,6 +107,10 @@ Requests contain `version`, `id`, `token`, `method` and `params`. There are at m
 eight concurrent connections, a 10-second server deadline, 32 KiB request limit
 and 4 MiB response limit. Excess connections close without a response; the CLI
 reports unavailable. Unknown methods and extra parameters fail explicitly.
+The CLI allows up to three seconds to connect, then ten seconds in total for
+request/response I/O. Partial output does not reset that deadline; each write is
+also limited to three seconds. A timeout after sending a write does not prove
+that the host rejected or rolled it back. Re-read its snapshot before retrying.
 Request envelopes reject unknown fields. Response envelopes, error objects and
 endpoint descriptors accept additional metadata while retaining required field
 types, version/request correlation and exactly one of `result` or `error`.
@@ -127,7 +131,8 @@ The desktop CLI entry is part of the existing desktop binary; a standalone
 
 `automation/contract.rs` owns envelopes and errors, `schema/` owns discovery,
 `domains/` owns independent public projections, `transport/` owns authentication,
-discovery and framing, and `cli.rs` owns arguments, output and exit codes. Business
+discovery and framing, `client/` owns bounded client communication, and `cli.rs`
+owns arguments, output and exit codes. Business
 logic remains in the shared application services. UI state and native database
 structures are not public API contracts.
 
