@@ -3126,10 +3126,14 @@ pub async fn write_text(
     if content.contains('\0') {
         return Err(AppError::Ssh("sftp.binaryFile".into()));
     }
-    let sftp = session(app, session_id).await?;
-    let result = remote_editor::save(app, session_id, &sftp, path, content, baseline).await;
-    let _ = sftp.close().await;
-    result
+    remote_editor::save(
+        app.clone(),
+        session_id.into(),
+        path.into(),
+        content.into(),
+        baseline.map(str::to_owned),
+    )
+    .await
 }
 
 fn check_local_destination(from: &Path, to: &Path, overwrite: bool) -> AppResult<()> {

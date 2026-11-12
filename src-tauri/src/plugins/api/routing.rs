@@ -81,6 +81,7 @@ fn changed_domain(method: &str) -> Option<&'static str> {
                     | "files.cancelTransfer"
                     | "files.transferStatus"
                     | "files.local.writeText"
+                    | "files.sftp.writeText"
                     | "files.local.copy"
                     | "files.sftp.copy"
             )

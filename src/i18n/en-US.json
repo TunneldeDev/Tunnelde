@@ -877,6 +877,8 @@
     "saveCancelled": "Saving was cancelled. Your draft has been retained.",
     "saveBusy": "Local file operations are busy. Wait for the current operations to finish, then try again. Your draft has been retained.",
     "saveWorkerFailed": "The local file operation stopped unexpectedly. Your draft has been retained. Check the application logs before retrying.",
+    "remoteSaveBusy": "Remote file operations are busy. Wait for the current operations to finish, then try again. Your draft has been retained.",
+    "remoteSaveWorkerFailed": "The remote file operation stopped unexpectedly. Your draft has been retained. Check the application logs and the remote file before retrying.",
     "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?",
     "format": "Format document",
     "formatting": "Formatting…",

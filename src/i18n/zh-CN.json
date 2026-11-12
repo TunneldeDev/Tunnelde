@@ -877,6 +877,8 @@
     "saveCancelled": "保存已取消，草稿已保留。",
     "saveBusy": "本地文件操作繁忙，请等待当前操作结束后重试。草稿已保留。",
     "saveWorkerFailed": "本地文件操作意外停止，草稿已保留。请查看软件日志后重试。",
+    "remoteSaveBusy": "远端文件操作繁忙，请等待当前操作结束后重试。草稿已保留。",
+    "remoteSaveWorkerFailed": "远端文件操作意外停止，草稿已保留。请查看软件日志并确认远端文件后再重试。",
     "conflictBody": "远端文件与打开时的版本不同。是否使用当前内容覆盖？",
     "format": "格式化文档",
     "formatting": "正在格式化…",

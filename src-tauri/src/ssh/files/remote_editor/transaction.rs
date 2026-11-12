@@ -1,6 +1,14 @@
 //! Optimistic remote staging and atomic publication; no truncate fallback.
 use super::*;
+use crate::services::files::operations::Cancellation;
 use russh_sftp::protocol::FileAttributes;
+
+pub(super) struct Draft<'a> {
+    pub requested: &'a str,
+    pub target: &'a str,
+    pub content: &'a str,
+    pub baseline: &'a str,
+}
 
 fn same_metadata(a: &FileAttributes, b: &FileAttributes) -> bool {
     a.size == b.size
@@ -37,12 +45,17 @@ async fn exclusive_write(sftp: &SftpSession, path: &str, content: &[u8]) -> AppR
 pub(super) async fn staged_save(
     sftp: &SftpSession,
     replacement: &remote_commit::Replacement,
-    requested: &str,
-    target: &str,
-    content: &str,
-    baseline: &str,
+    draft: Draft<'_>,
     record: &Record,
+    job: &Cancellation,
 ) -> AppResult<()> {
+    let Draft {
+        requested,
+        target,
+        content,
+        baseline,
+    } = draft;
+    job.check()?;
     let metadata = sftp.symlink_metadata(target).await.map_err(map_sftp)?;
     if !metadata.is_regular() {
         return Err(AppError::validation("sftp.notRegularFile"));
@@ -53,6 +66,7 @@ pub(super) async fn staged_save(
         .await
         .map_err(map_sftp)?;
     probe.close().await?;
+    job.check()?;
     replacement
         .raw()
         .mkdir(
@@ -77,8 +91,12 @@ pub(super) async fn staged_save(
         record.token.as_bytes(),
     )
     .await?;
+    // Establish ownership even if cancellation arrived during mkdir/marker IO.
+    // Cleanup may only remove paths carrying the acknowledged owner token.
+    job.check()?;
     let staging = format!("{}/content", record.directory);
     exclusive_write(sftp, &staging, content.as_bytes()).await?;
+    job.check()?;
     // Ownership must precede mode: chown may clear setuid/setgid bits.
     if let (Some(uid), Some(gid)) = (metadata.uid, metadata.gid) {
         sftp.set_metadata(
@@ -121,5 +139,6 @@ pub(super) async fn staged_save(
     {
         return Err(AppError::validation("editor.remoteFileChanged"));
     }
+    job.commit()?;
     replacement.replace(&staging, target).await
 }

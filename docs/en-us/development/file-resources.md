@@ -105,6 +105,27 @@ notification; cancellation cannot roll it back. Worker failures return
 `editor.saveWorkerFailed`, with domain/stage diagnostics in application logs.
 This budget does not forcibly interrupt OS IO or settle remote write side effects.
 
+Remote editor saves and retained staging cleanup have a separate four-worker
+budget, acquired before opening SFTP channels. `editor.remoteSaveBusy` rejects
+excess work while preserving the draft; unexpected worker termination returns
+`editor.remoteSaveWorkerFailed`. The owned worker retains its path lock and
+cleanup reservation after the caller stops waiting. Cancellation is checked after
+waiting for the path lock and before staging/publication. An acknowledged owner
+marker allows safe staging cleanup even when the caller has disappeared.
+
+Publication admission and cancellation have one atomic winner. After admission,
+the worker waits for the rename result and safe cleanup, without retrying or
+rolling back that rename because delivery was cancelled. An acknowledged save
+emits its file-change notification on the worker exactly once; IPC routing does
+not emit it again. No-op saves reconcile observers without requiring replacement
+support from the server. A cancelled cleanup caller also leaves its admitted
+cleanup worker running until the transaction settles.
+
+These bounds concern client worker lifetime. SFTP timeouts and lost replies do
+not prove that server-side work stopped. Durable crash/lost-ack settlement,
+publication-time plugin policy and scoped approval fencing remain separate work;
+this does not add a public write transaction API or remote compare-and-swap.
+
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves
 and a complete shared file data/subscription contract remain separate work.
