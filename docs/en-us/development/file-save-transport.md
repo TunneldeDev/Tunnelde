@@ -132,6 +132,17 @@ not undo an already admitted request or partially completed operation. Closing a
 already admitted file handle still observes its original completion. Preparation
 or final admission failure releases a claim only when no mutation was polled.
 
+The internal transfer adapter can reserve all mutated remote endpoints in one
+transaction. A live transfer can extend its exact reservation with generated
+staging or backup paths before using them. Extension retains the original owner,
+authenticated endpoint and existing paths, checks all competing native and legacy
+reservations in the same transaction, and advances the dispatch revision. It
+neither locks unrelated siblings nor grants permission to submit a request.
+Losing extension delivery leaves the older settlement permit stale and the
+expanded reservation intact. Each claim remains bounded to four scopes and 32
+stored paths; this is not an unbounded directory-transfer inventory. Actual
+transfer, pause/resume and artifact-cleanup integration is still incomplete.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 A crash between the two local stores' updates can still retain a conservative

@@ -10,6 +10,7 @@ mod authorization;
 mod desktop;
 mod editor;
 mod mutation;
+mod transfer;
 
 struct Fixture(PathBuf);
 impl Fixture {
