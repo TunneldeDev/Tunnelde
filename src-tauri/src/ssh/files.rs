@@ -12,6 +12,7 @@ use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 
+mod admission;
 mod archive;
 mod artifacts;
 pub mod bandwidth;
@@ -569,7 +570,7 @@ pub fn local_list(path: Option<String>) -> AppResult<Listing> {
 }
 
 pub async fn remote_mkdir(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    let sftp = session(app, session_id).await?;
+    let sftp = admission::open(app, session_id, &[&path]).await?;
     sftp.create_dir(path).await.map_err(map_sftp)?;
     let _ = sftp.close().await;
     Ok(())
@@ -586,6 +587,7 @@ pub async fn remote_rename(
         .await
         .map_err(|error| rename::context(&from, &to, error))?;
     let result = async {
+        admission::writable(app, session_id, &sftp, &[&from, &to]).await?;
         check_remote_destination(&sftp, &from, &to, overwrite).await?;
         if overwrite && remote_exists(&sftp, &to).await? {
             // Merge real directories using only server-side renames. Resolving
@@ -632,7 +634,7 @@ pub async fn remote_delete(
     path: String,
     _is_dir: bool,
 ) -> AppResult<()> {
-    let sftp = session(app, session_id).await?;
+    let sftp = admission::open(app, session_id, &[&path]).await?;
     remove_remote_entry(&sftp, &path).await?;
     let _ = sftp.close().await;
     Ok(())
@@ -652,7 +654,7 @@ pub fn local_create_file(path: String) -> AppResult<()> {
 }
 
 pub async fn remote_create_file(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    let sftp = session(app, session_id).await?;
+    let sftp = admission::open(app, session_id, &[&path]).await?;
     let result = sftp
         .open_with_flags(
             &path,
@@ -2085,6 +2087,9 @@ async fn cleanup_backup(
     let Some(expected) = backup_checkpoint(app, key)? else {
         return Ok(());
     };
+    if let (Some(session_id), Some(sftp)) = (backup.session.as_deref(), sftp) {
+        admission::writable(app, session_id, sftp, &[&backup.path]).await?;
+    }
     if interruptible(Some(cancel), file_length(backup, sftp))
         .await?
         .is_some()
@@ -2761,6 +2766,7 @@ async fn run(
                     if cancel.load(Ordering::SeqCst) {
                         return Err(AppError::Ssh(CANCELLED.into()));
                     }
+                    admission::writable(app, from_session, &sftp, &[&from.path, &to.path]).await?;
                     check_remote_destination(&sftp, &from.path, &to.path, overwrite).await?;
                     rename::entry(&sftp, &from.path, &to.path).await?;
                     Ok::<(), AppError>(())
@@ -2804,6 +2810,25 @@ async fn run(
         }
         None => None,
     };
+
+    if let Err(error) = admission::transfer(
+        app,
+        from,
+        to,
+        from_sftp.as_ref(),
+        to_sftp.as_ref(),
+        remove_source,
+    )
+    .await
+    {
+        if let Some(sftp) = from_sftp {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+        }
+        if let Some(sftp) = to_sftp {
+            let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+        }
+        return Outcome::from_result(Err(error), 0, cancel);
+    }
 
     #[cfg(windows)]
     if durable && remove_source && from_sftp.is_none() && to_sftp.is_none() {
