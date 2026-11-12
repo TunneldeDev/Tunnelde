@@ -4,6 +4,8 @@
 
 - [插件开发与安全](plugins/README.md)
 - [架构](architecture.md)
+- [本地 API 与 CLI](local-api.md)
+- [面向 1.0 的核心契约](core-contracts.md)
 - [后台任务](background-tasks.md)
 - [可选原生辅助程序](native-helper.md)
 - [公共面板布局](panel-layout.md)
