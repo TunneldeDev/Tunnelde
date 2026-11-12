@@ -82,6 +82,16 @@ Segment size can be automatic or 256 KiB, 1 MiB, 4 MiB or 16 MiB. Request depth 
 automatic or 1, 4, 8, 16 or 32 per segment, with a cap of 64 total in-flight requests.
 Changes apply on start/resume and travel with settings profiles.
 
+For optimized remote transfers, automatic segment sizes share the file across the
+selected workers, bounded to 1–16 MiB per segment. This keeps the request pipeline
+supplied and reduces checkpoint round trips. Automatic windows cover at most
+16 MiB for files below 64 MiB and 64 MiB for larger files, across all selected
+workers. Explicit segment sizes can produce larger windows.
+An interrupted, unconfirmed window is replayed on resume. Smaller manual segments
+reduce that replay extent, at the cost of more checkpoint waits. Explicit segment
+sizes, local copies and transfers with optimization disabled keep their existing
+planning behavior. Segment size does not allocate a buffer of that size.
+
 Local reads and writes use bounded 1 MiB buffers per segment to avoid issuing
 disk operations for every network packet. Read-ahead stops at the segment end;
 out-of-order download replies retain their explicit file offsets. Each window
