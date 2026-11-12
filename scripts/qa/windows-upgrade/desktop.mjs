@@ -7,10 +7,12 @@ import { writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { setTimeout as pause } from "node:timers/promises";
 import { join } from "node:path";
+import { WebViewPolicy } from "./webview-policy.mjs";
 
 export class Desktop {
   constructor(chromium, root, report) {
     Object.assign(this, { chromium, root, report });
+    this.policy = new WebViewPolicy();
   }
 
   async start(binary, version) {
@@ -27,6 +29,8 @@ export class Desktop {
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     });
     this.port = port;
+    await this.policy.set("AdditionalBrowserArguments", `--remote-debugging-port=${port}`);
+    await this.policy.set("UserDataFolder", join(this.root, "webview"));
     this.child = spawn(binary, [], { windowsHide: true, env, stdio: ["ignore", "pipe", "pipe"] });
     this.done = new Promise((resolve) => {
       this.child.once("error", (error) => resolve({ error: String(error) }));
@@ -106,6 +110,7 @@ export class Desktop {
     await this.browser?.close().catch(() => {});
     this.browser = null;
     this.page = null;
+    await this.policy.clear();
   }
 
   async cleanup() {
@@ -128,5 +133,6 @@ export class Desktop {
       this.child.kill();
       await Promise.race([this.done, pause(5000)]);
     }
+    await this.policy.clear();
   }
 }
