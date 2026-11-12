@@ -7,7 +7,7 @@ use crate::ssh::files::native_save::{
 };
 use tokio::sync::{oneshot, Notify};
 
-fn setup() -> (Fixture, SessionIdentity) {
+pub(super) fn setup() -> (Fixture, SessionIdentity) {
     let fixture = Fixture::new();
     let mut journal = fixture.journal();
     journal.enable_admission().unwrap();
@@ -16,10 +16,10 @@ fn setup() -> (Fixture, SessionIdentity) {
     drop(journal);
     (fixture, destination)
 }
-fn journal(fixture: &Fixture) -> Journal {
+pub(super) fn journal(fixture: &Fixture) -> Journal {
     Journal::open(&fixture.0.join("native-file-saves")).unwrap()
 }
-fn cancellation() -> (Cancellation, impl Drop) {
+pub(super) fn cancellation() -> (Cancellation, impl Drop) {
     Cancellation::for_test("cancelled")
 }
 

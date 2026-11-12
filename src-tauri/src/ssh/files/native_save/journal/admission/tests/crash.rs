@@ -19,6 +19,8 @@ fn actual_process_death_preserves_dispatch_and_rolls_back_partial_transitions() 
         "dispatched",
         "uncommitted-dispatch",
         "uncommitted-upgrade",
+        "recoverable",
+        "uncommitted-resume",
     ] {
         let fixture = Fixture::new();
         let signal = fixture.root.join("checkpoint.json");
@@ -60,6 +62,12 @@ fn actual_process_death_preserves_dispatch_and_rolls_back_partial_transitions() 
         if phase == "dispatched" {
             assert!(journal.retire_unsent_legacy(&expected).is_err());
             assert!(journal.dispatch_legacy(&expected).is_err());
+        } else if matches!(phase, "recoverable" | "uncommitted-resume") {
+            assert!(expected.phase == Phase::Recoverable);
+            assert!(journal.retire_unsent_legacy(&expected).is_err());
+            let continued = journal.dispatch_legacy(&expected).unwrap();
+            journal.settle_legacy(continued).unwrap();
+            native(&mut journal, "blocked/child").unwrap();
         } else {
             journal.retire_unsent_legacy(&expected).unwrap();
             native(&mut journal, "blocked/child").unwrap();
@@ -84,7 +92,9 @@ fn legacy_checkpoint_child() {
         "prepared",
         "dispatched",
         "uncommitted-dispatch",
-        "uncommitted-upgrade"
+        "uncommitted-upgrade",
+        "recoverable",
+        "uncommitted-resume"
     ]
     .contains(&phase.as_str()));
     let mut journal = Journal::create(&root.join("native-file-saves")).unwrap();
@@ -94,10 +104,29 @@ fn legacy_checkpoint_child() {
     } else {
         journal.enable_admission().unwrap();
         let mut claim = journal
-            .reserve_legacy(Kind::Delete, owner(), vec![scope("/workspace/blocked")])
+            .reserve_legacy(
+                if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
+                    Kind::Editor
+                } else {
+                    Kind::Delete
+                },
+                owner(),
+                vec![scope("/workspace/blocked")],
+            )
             .unwrap();
         if phase == "dispatched" {
             claim = journal.dispatch_legacy(&claim).unwrap().claim().clone();
+        }
+        if matches!(phase.as_str(), "recoverable" | "uncommitted-resume") {
+            let permit = journal.dispatch_legacy(&claim).unwrap();
+            journal.park_editor_cleanup(permit).unwrap();
+            claim = journal.legacy_claims().unwrap().remove(0);
+            if phase == "uncommitted-resume" {
+                journal
+                    .conn
+                    .execute_batch("BEGIN IMMEDIATE;UPDATE legacy_claims SET revision=999;")
+                    .unwrap();
+            }
         }
         if phase == "uncommitted-dispatch" {
             journal

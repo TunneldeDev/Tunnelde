@@ -110,9 +110,23 @@ malformed responses and uninstrumented composite-operation failures retain the
 claim. A later successful request cannot settle an earlier unknown request.
 Read-only preparation failures do not invent a pending mutation. Editor claims
 are released only after confirmed staging cleanup and removal of the original
-recovery record; recording a deferred cleanup is not completion. Exact recovery
-continuation and plugin revalidation at the final dispatch boundary still require
-completion before production enablement.
+recovery record; recording a deferred cleanup is not completion.
+
+When every original request has a recognized terminal reply, the original worker
+may park its exact editor claim for cleanup. The legacy receipt stores that
+claim's journal and operation identity. A continuation must match the original
+owner/generation, authenticated destination and lexical/canonical paths; a
+transactional revision check admits only one resumed worker. Cancellation keeps
+the original reservation. Every cleanup mutation persists its own possible-send
+checkpoint before submission. A lost cleanup reply remains unknown even when a
+later probe finds the directory absent; a new cleanup attempt cannot erase it.
+Only confirmed cleanup and removal of the original receipt release the claim.
+
+The recoverable editor phase is part of the internal, explicitly initialized v2
+candidate format; it is not a public plugin API or an automatic storage upgrade.
+A crash between the two local stores' updates can still retain a conservative
+orphan reservation. Full recovery across those boundaries, and plugin revalidation
+at the final primitive-dispatch boundary, remain production enablement blockers.
 
 Production initialization and full transfer/artifact enrollment are not enabled yet, so this
 does not establish complete bilateral coverage or enable native editor saves.

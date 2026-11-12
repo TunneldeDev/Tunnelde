@@ -90,6 +90,8 @@ pub(crate) enum Kind {
 pub(in super::super::super::super) enum Phase {
     Prepared,
     Dispatched,
+    /// Original worker observed all requests finish; only owned cleanup may resume.
+    Recoverable,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -109,7 +111,13 @@ impl Claim {
             && contracts::uuid(&self.owner.id)
             && contracts::uuid(&self.owner.generation)
             && (1..=i64::MAX as u64).contains(&self.revision)
-            && self.revision == if self.phase == Phase::Prepared { 1 } else { 2 }
+            && match self.phase {
+                Phase::Prepared => self.revision == 1,
+                Phase::Dispatched => self.revision >= 2 && self.revision % 2 == 0,
+                Phase::Recoverable => {
+                    self.kind == Kind::Editor && self.revision >= 3 && self.revision % 2 != 0
+                }
+            }
             && !self.scopes.is_empty()
             && self.scopes.len() <= 4
             && self.scopes.iter().map(|s| s.paths.len()).sum::<usize>() <= 32

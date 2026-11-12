@@ -1,4 +1,5 @@
 //! Legacy and native writers arbitrate in the same private SQLite transaction.
+mod continuation;
 mod model;
 pub(super) mod persistence;
 #[cfg(test)]

@@ -145,19 +145,16 @@ async fn save_opened(
         path: target.clone(),
         token: uuid::Uuid::new_v4().to_string(),
         receipt: Some(recovery::Receipt::new()),
+        admission: None,
         removing_marker: false,
         updated_at: crate::models::now_ms(),
         error: None,
     };
     let reservation = Reservation::saving(&record.id, observation.visible)?;
     let claim = journal
-        .admission(
-            sftp,
-            &request.session_id,
-            vec![target.clone(), record.directory.clone()],
-            native_save::runtime::MutationKind::Editor,
-        )
+        .admission(sftp, &request.session_id, &record)
         .await?;
+    record.admission = claim.as_ref().map(|claim| claim.reference());
     if let Err(error) = journal.create(&record) {
         if let Some(claim) = claim {
             claim.retire().await?;
@@ -205,10 +202,6 @@ async fn save_opened(
     drop(reservation);
     // Safe cleanup and forgetting the original legacy receipt precede release.
     // A process loss at either boundary retains the durable claim conservatively.
-    if cleaned {
-        if let Some(active) = active {
-            active.settle().await?;
-        }
-    }
+    ownership::finish(active, &record, cleaned).await?;
     result
 }

@@ -63,4 +63,8 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.journal()?.settle_legacy(permit))
             .await
     }
+    pub async fn park_editor_cleanup(&self, permit: Dispatched) -> journal::Result<()> {
+        self.blocking(move |storage| storage.journal()?.park_editor_cleanup(permit))
+            .await
+    }
 }
