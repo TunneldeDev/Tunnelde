@@ -1,5 +1,10 @@
 use super::*;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::Duration;
+use tokio::sync::Semaphore;
 
 #[tokio::test]
 async fn cancellation_keeps_running_io_charged_until_the_worker_really_exits() {

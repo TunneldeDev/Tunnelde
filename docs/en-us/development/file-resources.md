@@ -93,6 +93,18 @@ or emit a stale error. Typing while saving remains dirty. An in-flight write is 
 cancelled, replayed or rolled back when the document is replaced. Existing native
 baseline checks remain necessary; this lifetime layer is not a write transaction.
 
+Local editor saves and retained staging cleanup share four actual-worker slots,
+independent of the eight reader slots. Admission occurs before dispatch to the
+blocking pool. Excess calls fail with `editor.saveBusy` before file IO; the caller
+keeps its draft and may retry after current operations finish. A cancelled caller
+does not release a running or queued worker's slot. Pool-queued cancelled jobs
+skip IO; started saves recheck cancellation after the path lock and before
+publication. Cleanup admitted on a worker finishes its safe transaction even if
+its delivery is cancelled. A published save still sends its committed change
+notification; cancellation cannot roll it back. Worker failures return
+`editor.saveWorkerFailed`, with domain/stage diagnostics in application logs.
+This budget does not forcibly interrupt OS IO or settle remote write side effects.
+
 The stable editor APIs and experimental buffer compare-and-swap contracts are
 unchanged. File mutation ownership, durable write settlement, cross-source moves
 and a complete shared file data/subscription contract remain separate work.
@@ -131,5 +143,6 @@ permission revocation and restricted mode retire its handles. Releasing an opene
 resource may report `cancellationRequested`: retiring a dedicated SFTP channel or
 local handle is not proof of stopping already-running OS IO. Parent SSH connections
 remain intact. Scoped AI tool allowlists are unchanged pending separate handle and
-path-scope contracts. Public preview-panel observation and mutation transactions
-remain separate work; these methods do not expand the stable API set.
+path-scope contracts. Public preview lifecycle and presentation have their own
+[experimental contract](plugins/file-preview.md); mutation transactions remain
+separate work. These methods do not expand the stable API set.

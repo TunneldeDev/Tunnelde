@@ -1,11 +1,11 @@
 //! Local editor transactions, with only staging cleanup persisted across restarts.
 use super::*;
 use crate::platform::editor_file::{self as native, Identity};
+use crate::services::files::{operations::Budget, write};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock, Weak};
 
 #[cfg(test)]
@@ -97,30 +97,30 @@ pub(super) fn pending(app: &AppHandle) -> AppResult<Vec<remote_editor::PendingCl
 
 pub(super) async fn retry(app: AppHandle, id: String) -> AppResult<()> {
     let held = Reservation::new(&id, true)?;
-    let _ = app.emit(EVENT, ());
-    tokio::task::spawn_blocking(move || {
-        let result = (|| {
-            let mut record = records(&app)?
-                .into_iter()
-                .find(|record| record.id == id)
-                .ok_or_else(|| AppError::NotFound("editor.cleanupMissing".into()))?;
-            let result = cleanup(&mut record, |r| persist(&app, r));
-            match &result {
-                Ok(()) => forget(&app, &record)?,
-                Err(error) => {
-                    record.error = Some(error.to_string());
-                    record.updated_at = crate::models::now_ms();
-                    persist(&app, &record)?;
+    write::BUDGET
+        .blocking(move |_| {
+            let _ = app.emit(EVENT, ());
+            let result = (|| {
+                let mut record = records(&app)?
+                    .into_iter()
+                    .find(|record| record.id == id)
+                    .ok_or_else(|| AppError::NotFound("editor.cleanupMissing".into()))?;
+                let result = cleanup(&mut record, |r| persist(&app, r));
+                match &result {
+                    Ok(()) => forget(&app, &record)?,
+                    Err(error) => {
+                        record.error = Some(error.to_string());
+                        record.updated_at = crate::models::now_ms();
+                        persist(&app, &record)?;
+                    }
                 }
-            }
+                result
+            })();
+            drop(held);
+            let _ = app.emit(EVENT, ());
             result
-        })();
-        drop(held);
-        let _ = app.emit(EVENT, ());
-        result
-    })
-    .await
-    .map_err(|e| AppError::internal(e.to_string()))?
+        })
+        .await
 }
 
 pub(crate) async fn on_start(app: &AppHandle) {
@@ -152,16 +152,6 @@ pub async fn save(
     save_checked(app, path, content, Some(baseline), |_, _| Ok(()), || {}).await
 }
 
-// Dropping an RPC future does not stop spawn_blocking. Propagate cancellation
-// into the publication gate. Cancellation after that gate cannot roll back a
-// publication already in progress.
-struct SaveLifetime(Arc<AtomicBool>);
-impl Drop for SaveLifetime {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::Release);
-    }
-}
-
 pub(crate) async fn save_checked(
     app: AppHandle,
     path: String,
@@ -181,43 +171,62 @@ async fn save_async(
     check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
     on_saved: impl FnOnce() + Send + 'static,
 ) -> AppResult<()> {
-    validate_editor_text(&path, &content, baseline.as_deref().unwrap_or_default())?;
-    let lifetime = SaveLifetime(Arc::new(AtomicBool::new(true)));
-    let active = lifetime.0.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut on_saved = Some(on_saved);
-        let result = save_transaction(
-            app.as_ref(),
-            &path,
-            &content,
-            baseline.as_deref(),
-            |path, original| {
-                if !active.load(Ordering::Acquire) {
-                    return Err(AppError::validation("editor.saveCancelled"));
-                }
-                check(path, original)
-            },
-            |phase, _| {
-                if phase == "published" {
-                    // Publication cannot be undone by dropping the RPC future.
-                    // Notify on this worker before fallible staging cleanup.
-                    if let Some(on_saved) = on_saved.take() {
-                        on_saved();
-                    }
-                }
-                Ok(())
-            },
-        );
-        if result.is_ok() {
-            // A successful no-op still reconciles a caller's potentially stale view.
-            if let Some(on_saved) = on_saved.take() {
-                on_saved();
-            }
-        }
-        result
-    })
+    save_with_budget(
+        &write::BUDGET,
+        app,
+        path,
+        content,
+        baseline,
+        check,
+        on_saved,
+    )
     .await
-    .map_err(|e| AppError::internal(e.to_string()))?
+}
+
+async fn save_with_budget(
+    budget: &Budget,
+    app: Option<AppHandle>,
+    path: String,
+    content: String,
+    baseline: Option<String>,
+    check: impl Fn(&Path, &str) -> AppResult<()> + Send + 'static,
+    on_saved: impl FnOnce() + Send + 'static,
+) -> AppResult<()> {
+    validate_editor_text(&path, &content, baseline.as_deref().unwrap_or_default())?;
+    budget
+        .blocking(move |cancellation| {
+            let mut on_saved = Some(on_saved);
+            let result = save_transaction(
+                app.as_ref(),
+                &path,
+                &content,
+                baseline.as_deref(),
+                |path, original| {
+                    // Recheck after the per-path lock and immediately before publish.
+                    // Dropping the request cannot roll back an admitted publication.
+                    cancellation.check()?;
+                    check(path, original)
+                },
+                |phase, _| {
+                    if phase == "published" {
+                        // Publication cannot be undone by dropping the RPC future.
+                        // Notify on this worker before fallible staging cleanup.
+                        if let Some(on_saved) = on_saved.take() {
+                            on_saved();
+                        }
+                    }
+                    Ok(())
+                },
+            );
+            if result.is_ok() {
+                // A successful no-op still reconciles a caller's potentially stale view.
+                if let Some(on_saved) = on_saved.take() {
+                    on_saved();
+                }
+            }
+            result
+        })
+        .await
 }
 
 #[cfg(test)]
