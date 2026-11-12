@@ -358,6 +358,20 @@ jobs:
           cargo build --locked --manifest-path .tmp/ci/helper-artifacts/Cargo.toml --target-dir src-tauri/target
           TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib selected_helper_artifact_protocol_matches_host_contract -- --ignored
 
+      - name: Checkout native file-save helper protocol fixture
+        uses: actions/checkout@v4
+        with:
+          repository: TunneldeDev/Tunnelde-agent
+          ref: cb0d52789037a2aaf2dae2176a052a5895479a77
+          path: .tmp/ci/helper-file-save
+          persist-credentials: false
+
+      - name: Check actual native saves against desktop transport and recovery decoder
+        timeout-minutes: 5
+        run: |
+          cargo build --locked --manifest-path .tmp/ci/helper-file-save/Cargo.toml --target-dir src-tauri/target
+          TUNNELDE_TEST_FILE_SAVE_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib selected_file_save_helper_executes_and_recovers_original_host_operations -- --ignored
+
       - name: Checkout historical helper protocol fixture
         uses: actions/checkout@v4
         with:
@@ -371,6 +385,7 @@ jobs:
         run: |
           cargo build --locked --manifest-path .tmp/ci/helper-historical/Cargo.toml --target-dir src-tauri/target
           TUNNELDE_TEST_RUNNER_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml historical_selected_helper_discovery_remains_unavailable -- --ignored
+          TUNNELDE_TEST_FILE_SAVE_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib historical_file_save_helper_is_not_inferred_from_runner_capabilities -- --ignored
 
       - name: Test real SSHFS mount when FUSE is available
         run: |
