@@ -122,11 +122,21 @@ checkpoint before submission. A lost cleanup reply remains unknown even when a
 later probe finds the directory absent; a new cleanup attempt cannot erase it.
 Only confirmed cleanup and removal of the original receipt release the claim.
 
+Plugin create, mkdir, rename and delete workers retain their original runtime and
+request authorization. After the durable possible-dispatch checkpoint, they
+re-resolve reserved lexical/canonical paths, check the authenticated destination,
+and admit cancellation and authorization before polling a mutation. Recursive
+delete and directory merge recheck authorization before each later mutation,
+after awaited read-only preparation. Revocation stops subsequent steps; it does
+not undo an already admitted request or partially completed operation. Closing an
+already admitted file handle still observes its original completion. Preparation
+or final admission failure releases a claim only when no mutation was polled.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 A crash between the two local stores' updates can still retain a conservative
-orphan reservation. Full recovery across those boundaries, and plugin revalidation
-at the final primitive-dispatch boundary, remain production enablement blockers.
+orphan reservation. Full recovery across those boundaries remains a production
+enablement blocker.
 
 Production initialization and full transfer/artifact enrollment are not enabled yet, so this
 does not establish complete bilateral coverage or enable native editor saves.

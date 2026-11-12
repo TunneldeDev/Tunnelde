@@ -37,45 +37,10 @@ pub(in crate::plugins::api) async fn dispatch(
             .await?,
         ),
         "files.sftp.writeText" => super::remote_write::write_remote(context, &params, None).await,
-        "files.sftp.createFile" => {
-            commands::sftp_create_file(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "path")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
-        "files.sftp.mkdir" => {
-            commands::sftp_mkdir(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "path")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
-        "files.sftp.rename" => {
-            commands::sftp_rename(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "from")?,
-                field(&params, "to")?,
-                optional(&params, "overwrite")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
-        "files.sftp.delete" => {
-            commands::sftp_delete(
-                app.clone(),
-                field(&params, "sessionId")?,
-                field(&params, "path")?,
-                field(&params, "isDir")?,
-            )
-            .await?;
-            Ok(Value::Null)
-        }
+        "files.sftp.createFile"
+        | "files.sftp.mkdir"
+        | "files.sftp.rename"
+        | "files.sftp.delete" => super::remote_mutation::dispatch(context, method, &params).await,
         _ => Err(AppError::validation("plugin.api.unknownMethod")),
     }
 }

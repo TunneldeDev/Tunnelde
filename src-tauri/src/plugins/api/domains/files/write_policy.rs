@@ -43,6 +43,14 @@ impl Authorization {
         job: &Cancellation,
         validate: impl FnOnce() -> AppResult<()>,
     ) -> AppResult<()> {
+        self.with_authorized(|| {
+            validate()?;
+            job.commit()
+        })
+    }
+
+    /// Recheck runtime and request ownership for each later composite step.
+    pub fn with_authorized(&self, validate: impl FnOnce() -> AppResult<()>) -> AppResult<()> {
         let lease = Lease {
             id: self.context.id.clone(),
             fingerprint: self.context.fingerprint.clone(),
@@ -60,10 +68,7 @@ impl Authorization {
                     lease.generation,
                     self.context.tool_client.as_deref(),
                     self.context.tool_request,
-                    || {
-                        validate()?;
-                        job.commit()
-                    },
+                    validate,
                 )
             })
     }

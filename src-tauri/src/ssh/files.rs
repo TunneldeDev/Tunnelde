@@ -26,6 +26,7 @@ pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
 mod move_verification;
+pub(crate) mod mutations;
 #[allow(
     dead_code,
     reason = "Native save transport awaits explicit installation and recovery UI acceptance"
@@ -570,19 +571,7 @@ pub fn local_list(path: Option<String>) -> AppResult<Listing> {
 }
 
 pub async fn remote_mkdir(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    admission::mutate(
-        app,
-        session_id,
-        vec![path.clone()],
-        native_save::runtime::MutationKind::Mkdir,
-        move |sftp, observed| async move {
-            observed
-                .request(sftp.create_dir(path))
-                .await
-                .map_err(map_sftp)
-        },
-    )
-    .await
+    mutations::mkdir(app, session_id, path, mutations::Native).await
 }
 
 pub async fn remote_rename(
@@ -592,60 +581,7 @@ pub async fn remote_rename(
     to: String,
     overwrite: bool,
 ) -> AppResult<()> {
-    let connection = app.clone();
-    let id = session_id.to_owned();
-    let original_from = from.clone();
-    let original_to = to.clone();
-    admission::mutate(
-        app,
-        session_id,
-        vec![from.clone(), to.clone()],
-        native_save::runtime::MutationKind::Rename,
-        move |sftp, observed| async move {
-            check_remote_destination(&sftp, &from, &to, overwrite).await?;
-            if overwrite && remote_exists(&sftp, &to).await? {
-                // Merge real directories using only server-side renames. Resolving
-                // roots once also permits a user's parent directory symlink.
-                if sftp
-                    .symlink_metadata(&from)
-                    .await
-                    .map_err(map_sftp)?
-                    .is_dir()
-                    && sftp.symlink_metadata(&to).await.map_err(map_sftp)?.is_dir()
-                {
-                    let source = sftp.canonicalize(&from).await.map_err(map_sftp)?;
-                    let target = sftp.canonicalize(&to).await.map_err(map_sftp)?;
-                    let plan = remote_merge::Plan::prepare(&sftp, &source, &target).await?;
-                    let replacement = if plan.needs_replacement {
-                        Some(remote_commit::Replacement::connect(&connection, &id).await?)
-                    } else {
-                        None
-                    };
-                    return observed
-                        .opaque(plan.apply(&sftp, replacement.as_ref()))
-                        .await;
-                }
-                return observed
-                    .opaque(remote_replace(&connection, &id, &from, &to))
-                    .await;
-            }
-            observed
-                .request(sftp.rename(&from, &to))
-                .await
-                .map_err(|error| rename::failure(&from, &to, error))
-        },
-    )
-    .await
-    .map_err(|error| rename::context(&original_from, &original_to, error))
-}
-
-// OpenSSH's extension maps to the server's atomic rename operation. In
-// particular, never delete the destination as a workaround for SFTP v3.
-async fn remote_replace(app: &AppHandle, session_id: &str, from: &str, to: &str) -> AppResult<()> {
-    remote_commit::Replacement::connect(app, session_id)
-        .await?
-        .commit(from, to)
-        .await
+    mutations::rename(app, session_id, from, to, overwrite, mutations::Native).await
 }
 
 pub async fn remote_delete(
@@ -654,16 +590,7 @@ pub async fn remote_delete(
     path: String,
     _is_dir: bool,
 ) -> AppResult<()> {
-    admission::mutate(
-        app,
-        session_id,
-        vec![path.clone()],
-        native_save::runtime::MutationKind::Delete,
-        move |sftp, observed| async move {
-            remove_remote_entry_observed(&sftp, &path, Some(&observed)).await
-        },
-    )
-    .await
+    mutations::delete(app, session_id, path, mutations::Native).await
 }
 
 pub fn local_mkdir(path: String) -> AppResult<()> {
@@ -680,25 +607,7 @@ pub fn local_create_file(path: String) -> AppResult<()> {
 }
 
 pub async fn remote_create_file(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    admission::mutate(
-        app,
-        session_id,
-        vec![path.clone()],
-        native_save::runtime::MutationKind::Create,
-        move |sftp, observed| async move {
-            let mut file = observed
-                .request(sftp.open_with_flags(
-                    &path,
-                    OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
-                ))
-                .await
-                .map_err(map_sftp)?;
-            observed
-                .opaque(async { file.shutdown().await.map_err(AppError::from) })
-                .await
-        },
-    )
-    .await
+    mutations::create_file(app, session_id, path, mutations::Native).await
 }
 
 pub fn local_rename(from: String, to: String, overwrite: bool) -> AppResult<()> {
@@ -3314,7 +3223,7 @@ async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
 async fn remove_remote_entry_observed(
     sftp: &SftpSession,
     path: &str,
-    observed: Option<&native_save::runtime::MutationObservation>,
+    observed: Option<&mutations::Dispatch>,
 ) -> AppResult<()> {
     // Never follow a directory symlink while deleting: only unlink the link.
     let metadata = sftp.symlink_metadata(path).await.map_err(map_sftp)?;
@@ -3329,18 +3238,12 @@ async fn remove_remote_entry_observed(
             Box::pin(remove_remote_entry_observed(sftp, &child, observed)).await?;
         }
         if let Some(observed) = observed {
-            observed
-                .request(sftp.remove_dir(path))
-                .await
-                .map_err(map_sftp)?;
+            observed.request(sftp.remove_dir(path)).await?;
         } else {
             sftp.remove_dir(path).await.map_err(map_sftp)?;
         }
     } else if let Some(observed) = observed {
-        observed
-            .request(sftp.remove_file(path))
-            .await
-            .map_err(map_sftp)?;
+        observed.request(sftp.remove_file(path)).await?;
     } else {
         sftp.remove_file(path).await.map_err(map_sftp)?;
     }
