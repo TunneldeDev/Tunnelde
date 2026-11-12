@@ -44,3 +44,16 @@ test("local API checker detects contract, transport and error changes", () => {
   errors.schema.errors.pop();
   assert.throws(() => checkLocalApiContract(errors, floor), /errors changed/);
 });
+
+test("decimal preference steps accept normal floats and reject half-step values", () => {
+  const candidate = fixture();
+  candidate.schema.methods[1].resultSchema.properties.lineHeight = {
+    type: "number",
+    multipleOf: 0.1,
+  };
+  const expected = globalThis.structuredClone(candidate.schema);
+  candidate.samples[1].result.lineHeight = 1.2;
+  assert.doesNotThrow(() => checkLocalApiContract(candidate, expected));
+  candidate.samples[1].result.lineHeight = 1.25;
+  assert.throws(() => checkLocalApiContract(candidate, expected), /multipleOf/);
+});

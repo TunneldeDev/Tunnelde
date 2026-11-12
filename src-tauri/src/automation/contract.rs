@@ -30,7 +30,12 @@ impl Failure {
     }
     pub fn exit_code(&self) -> i32 {
         match self.code.as_str() {
-            "invalid_arguments" | "invalid_request" | "unknown_method" | "unsupported_version" => 2,
+            "invalid_arguments"
+            | "invalid_request"
+            | "unknown_method"
+            | "unsupported_version"
+            | "invalid_preferences" => 2,
+            "stale_revision" => 5,
             "unavailable" | "timeout" => 3,
             "unauthorized" => 4,
             _ => 1,
@@ -105,7 +110,13 @@ pub(super) struct Endpoint {
 }
 
 pub(super) fn describe() -> Value {
-    serde_json::from_str(include_str!("schema/v1.json")).expect("checked local API schema")
+    let mut schema: Value =
+        serde_json::from_str(include_str!("schema/v1.json")).expect("checked local API schema");
+    schema["methods"]
+        .as_array_mut()
+        .expect("core methods")
+        .extend(super::domains::additional_contracts());
+    schema
 }
 
 pub(super) fn validate(request: &Request, token: &str) -> Result<(), Failure> {

@@ -1,5 +1,6 @@
 //! Public projections use shared domain services, never internal tab/layout DTOs.
 mod hosts;
+mod preferences;
 mod sessions;
 use super::contract::{self, Failure};
 use crate::state::AppState;
@@ -7,6 +8,9 @@ use serde_json::{json, Value};
 use tauri::{AppHandle, Manager};
 
 pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result<Value, Failure> {
+    if method.starts_with("preferences.") {
+        return preferences::call(app, method, params).await;
+    }
     if !params.as_object().is_some_and(|fields| fields.is_empty()) {
         return Err(Failure::new(
             "invalid_request",
@@ -24,6 +28,10 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
             "Unknown local API method; use api.describe",
         )),
     }
+}
+
+pub(super) fn additional_contracts() -> Vec<Value> {
+    preferences::methods()
 }
 
 fn info(version: &str) -> Value {
@@ -44,7 +52,7 @@ mod tests {
         let host = db
             .with(|conn| crate::db::hosts::create_host(conn, &input.validate()?))
             .unwrap();
-        let samples = json!({"schema":contract::describe(), "samples":[
+        let mut samples = json!({"schema":contract::describe(), "samples":[
             {"method":"api.describe", "params":{}, "result":contract::describe()},
             {"method":"app.info", "params":{}, "result":info(env!("CARGO_PKG_VERSION"))},
             {"method":"hosts.list", "params":{}, "result":hosts::list(&db).unwrap()},
@@ -53,7 +61,11 @@ mod tests {
                 cols:80,rows:24,connected_at:1_700_000_000_000,terminal:true,purpose:None,
             }])}
         ]});
-        assert_eq!(samples["samples"].as_array().unwrap().len(), 4);
+        samples["samples"]
+            .as_array_mut()
+            .unwrap()
+            .extend(crate::services::settings::preferences::local_api_samples());
+        assert_eq!(samples["samples"].as_array().unwrap().len(), 7);
         if let Some(path) = std::env::var_os("TUNNELDE_LOCAL_API_OUTPUT") {
             std::fs::write(path, serde_json::to_vec_pretty(&samples).unwrap()).unwrap();
         }

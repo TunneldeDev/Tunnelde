@@ -43,7 +43,11 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
             "../../tests/fixtures/local-api/candidate-v1.json"
         ))
         .unwrap();
-        assert_eq!(discovery, floor);
+        assert_eq!(discovery["version"], floor["version"]);
+        assert_eq!(discovery["transport"], floor["transport"]);
+        for method in floor["methods"].as_array().unwrap() {
+            assert!(discovery["methods"].as_array().unwrap().contains(method));
+        }
         let args: Vec<_> = prefix
             .iter()
             .copied()
