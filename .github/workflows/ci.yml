@@ -131,6 +131,11 @@ jobs:
           node scripts/ci/check-core-contract.mjs "$RUNNER_TEMP/plugin-api-describe.json" "$RUNNER_TEMP/plugin-core.json"
           node scripts/ci/check-legacy-sdk.mjs "$RUNNER_TEMP/plugin-core.json"
 
+      - name: Check actual local automation API contracts
+        run: |
+          TUNNELDE_LOCAL_API_OUTPUT="$RUNNER_TEMP/local-api.json" cargo test --locked --manifest-path src-tauri/Cargo.toml --lib emit_actual_local_api_contracts
+          node scripts/ci/check-local-api-contract.mjs "$RUNNER_TEMP/local-api.json"
+
       - name: Checkout SDK catalogue parser
         uses: actions/checkout@v4
         with:
