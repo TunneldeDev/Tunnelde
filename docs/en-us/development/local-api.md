@@ -3,7 +3,8 @@
 The local automation API is an **experimental candidate for 1.0**. Its protocol
 version is independent of the desktop version and plugin RPC version. A protocol
 number alone is not a stability promise. The machine-readable source is
-`src-tauri/src/automation/schema/v1.json`.
+`src-tauri/src/automation/schema/v1.json`, composed with domain-owned preference
+schemas by `automation/domains/preferences/schema.rs`.
 
 Build the console executable with:
 
@@ -35,23 +36,48 @@ tunnelde-cli api describe
 tunnelde-cli app info
 tunnelde-cli hosts list
 tunnelde-cli sessions list
+tunnelde-cli preferences schema
+tunnelde-cli preferences snapshot
 tunnelde-cli call api.describe
 ```
 
 Help, CLI version and the CLI's own schema work offline. Live calls use the
 running application's domain services. They do not read its database separately,
 start a webview, execute a shell, or forward arbitrary Tauri invocations. The
-initial live methods are read-only. Saved-host results exclude notes, key paths
+Core discovery, hosts and sessions are read-only. Public preferences also support
+revision-checked updates through the shared settings writer. Saved-host results exclude notes, key paths
 and credentials. They include addresses and usernames; treat output as private.
 Plugin-defined host sources are not part of the saved-host list.
 
 Successful live calls write one JSON object to stdout, with `version`, `id` and
 `result`. Errors write `version`, `id` and `error: {code, message}` to stderr.
 Exit codes are 0 (success), 1 (operation failure), 2 (input/protocol error),
-3 (unavailable/timeout) and 4 (authentication failure). Messages are explanatory;
+3 (unavailable/timeout), 4 (authentication failure) and 5 (stale revision). Messages are explanatory;
 programs must use codes. Offline version and discovery return plain JSON objects.
 `call METHOD --params JSON` accepts an object; use `--params -` to read it from
-stdin. The initial methods require an empty object.
+stdin. Read methods require an empty object. To update preferences, first obtain
+the revision from `preferences snapshot`, review the desired changes, and submit:
+
+```sh
+tunnelde-cli preferences update --params '{"revision":"REVISION_FROM_SNAPSHOT","changes":{"appearance":{"theme":"dark"},"editor":{"tabSize":4}}}'
+```
+
+Use `--params -` with stdin in environments where shell JSON quoting is awkward.
+Only supplied public fields change; collections replace their previous contents.
+Unknown fields and invalid values return `invalid_preferences` (exit 2). A stale
+revision returns `stale_revision` (exit 5). Read a new snapshot and review the
+changes rather than automatically retrying with the new token. Validation and
+failed commits do not publish settings. Persistence and normal desktop effects
+complete together without an intervening asynchronous cancellation point;
+disconnecting the CLI does not roll back a committed update. Revision tokens are
+opaque, nonempty, at most 128 UTF-8 bytes and contain no control characters.
+The request limit remains 32 KiB even though the plugin adapter has a larger
+budget. Proxy passwords, credentials, internal metadata and provider selection
+are outside the public preference schema. Values may contain user CSS, proxy
+addresses and usernames, so keep snapshots private. This API does not request an
+application restart; changes with deferred effects follow ordinary desktop
+settings behavior. Storage relocation remains a separate domain and is not
+available through preferences.update.
 
 The desktop binds an ephemeral IPv4 loopback port and publishes `automation.json`
 in its standard application data directory. This pointer contains a path only.
