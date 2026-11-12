@@ -15,14 +15,14 @@ pub(in super::super) enum Phase {
     Releasing,
     Released,
 }
-#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize, Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub(in super::super) enum Publication {
     None,
     Published,
     Unknown,
 }
-#[derive(Clone, PartialEq, Eq, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in super::super) struct Observation {
     pub operation_id: String,

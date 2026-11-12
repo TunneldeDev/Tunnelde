@@ -16,6 +16,10 @@ pub(super) struct Client<T> {
     platform: Platform,
 }
 impl<T: Exchange> Client<T> {
+    #[cfg(test)]
+    pub fn test_transport(&self) -> &T {
+        &self.transport
+    }
     pub async fn initialize(
         transport: T,
         context: Context,
@@ -72,8 +76,12 @@ impl<T: Exchange> Client<T> {
             self.platform,
         )
     }
-    pub async fn submit(&self, prepared: &Prepared) -> Result<Observation, Failure> {
-        if !prepared.valid(&self.authority) {
+    pub async fn submit(
+        &self,
+        prepared: &Prepared,
+        permit: super::journal::DispatchPermit,
+    ) -> Result<Observation, Failure> {
+        if !prepared.valid(&self.authority) || !permit.matches(&self.authority, prepared) {
             return Err(Failure::before(Reason::InvalidRequest));
         }
         self.request(
@@ -158,7 +166,7 @@ fn encode(request: &Request<'_>) -> Result<Vec<u8>, Failure> {
     }
     Ok(bytes)
 }
-fn follows(old: &Observation, new: &Observation) -> bool {
+pub(super) fn follows(old: &Observation, new: &Observation) -> bool {
     if old.operation_id != new.operation_id
         || old.generation != new.generation
         || old.intent_sha256 != new.intent_sha256

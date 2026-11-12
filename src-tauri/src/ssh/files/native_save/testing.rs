@@ -36,6 +36,67 @@ pub(super) fn prepared(authority: &Authority) -> Prepared {
     )
     .unwrap()
 }
+pub(super) fn binding(authority: &Authority, prepared: &Prepared) -> super::journal::Binding {
+    super::journal::Binding::new(
+        authority.clone(),
+        prepared,
+        super::journal::Owner {
+            id: uuid::Uuid::new_v4().to_string(),
+            generation: uuid::Uuid::new_v4().to_string(),
+        },
+        crate::ssh::session::SessionIdentity {
+            host_id: "isolated-test-host".into(),
+            address: format!("{}@test.invalid:22", authority.context.account),
+            server_key: authority.context.host_key.clone(),
+        },
+        super::journal::Selection {
+            executable: if authority.root.platform == "windows" {
+                r"C:\qa\agent.exe"
+            } else {
+                "/qa/agent"
+            }
+            .into(),
+            directory: if authority.root.platform == "windows" {
+                r"C:\qa\state"
+            } else {
+                "/qa/state"
+            }
+            .into(),
+            protocol: super::contracts::PROTOCOL.into(),
+        },
+    )
+    .unwrap()
+}
+pub(super) struct Checkpoint {
+    pub root: std::path::PathBuf,
+    journal: Option<super::journal::Journal>,
+    permit: Option<super::journal::DispatchPermit>,
+}
+impl Checkpoint {
+    pub fn new(authority: &Authority, prepared: &Prepared) -> Self {
+        let root =
+            std::env::temp_dir().join(format!("tunnelde-checkpoint-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let mut journal = super::journal::Journal::create(&root.join("journal")).unwrap();
+        let record = journal.reserve(binding(authority, prepared)).unwrap();
+        let record = journal.ready(&record).unwrap();
+        let (_, permit) = journal.dispatch(&record).unwrap();
+        Self {
+            root,
+            journal: Some(journal),
+            permit: Some(permit),
+        }
+    }
+    pub fn take(&mut self) -> super::journal::DispatchPermit {
+        self.permit.take().unwrap()
+    }
+}
+impl Drop for Checkpoint {
+    fn drop(&mut self) {
+        drop(self.journal.take());
+        std::fs::remove_dir_all(&self.root).unwrap();
+    }
+}
 pub(super) fn response(
     authority: &Authority,
     control: Option<&Control>,

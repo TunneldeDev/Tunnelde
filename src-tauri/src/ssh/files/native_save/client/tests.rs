@@ -82,7 +82,15 @@ async fn lost_submit_is_not_replayed_and_query_uses_the_exact_original_identity(
         dispatched: true,
     }));
     let client = Client::restore(mock, authority, Platform::Posix).unwrap();
-    assert!(client.submit(&saved).await.err().unwrap().dispatched);
+    let mut checkpoint = Checkpoint::new(client.authority(), &saved);
+    assert!(
+        client
+            .submit(&saved, checkpoint.take())
+            .await
+            .err()
+            .unwrap()
+            .dispatched
+    );
     let found = client.status(&saved.control, None).await.unwrap().unwrap();
     assert_eq!(found.phase, Phase::Succeeded);
     let requests = client.transport.requests.lock().unwrap();
@@ -105,8 +113,16 @@ async fn changed_payload_revision_or_settled_phase_cannot_be_accepted() {
         Platform::Posix,
     )
     .unwrap();
+    let mut checkpoint = Checkpoint::new(&authority, &saved);
     saved.content.push('x');
-    assert!(!client.submit(&saved).await.err().unwrap().dispatched);
+    assert!(
+        !client
+            .submit(&saved, checkpoint.take())
+            .await
+            .err()
+            .unwrap()
+            .dispatched
+    );
     assert!(client.transport.requests.lock().unwrap().is_empty());
     let old = receipt(&authority, &saved, "succeeded", 3);
     assert_eq!(

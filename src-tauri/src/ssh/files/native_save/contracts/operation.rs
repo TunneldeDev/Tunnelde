@@ -1,7 +1,7 @@
 use super::{authority::Authority, hash, json_hash, MAX_TEXT};
 use serde::{Deserialize, Serialize};
 
-// Private authority is serializable for stdin and a future private journal, never Debug/log/IPC.
+// Private request control is serializable for stdin, never Debug/log/IPC or the journal.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(in super::super) struct Control {
