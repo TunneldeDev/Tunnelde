@@ -9,8 +9,10 @@ use std::sync::Mutex;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, BufReader};
 use tokio::sync::{mpsc, oneshot, OwnedSemaphorePermit, Semaphore};
 
+mod observation;
 #[cfg(test)]
 mod tests;
+use super::native_save::runtime::MutationObservation;
 
 const LIMIT: usize = 1024 * 1024;
 const SCRIPT: &str = include_str!("compressed.py");
@@ -22,6 +24,7 @@ struct PendingReply {
     reply: oneshot::Sender<Response>,
     // Keep the slot until the wire acknowledgement, even if its caller cancels.
     _slot: OwnedSemaphorePermit,
+    observation: observation::Pending,
 }
 
 #[derive(Deserialize)]
@@ -240,7 +243,12 @@ impl Session {
         format!("python3 -I -S -u -c {} {}", quote(SCRIPT), quote(home))
     }
 
-    pub async fn connect(app: &AppHandle, id: &str, sftp: &SftpSession) -> AppResult<Self> {
+    pub async fn connect(
+        app: &AppHandle,
+        id: &str,
+        sftp: &SftpSession,
+        observation: MutationObservation,
+    ) -> AppResult<Self> {
         // An SFTP-only/chrooted filesystem may use different absolute paths.
         // Enable exec transport only when both sides resolve the same home.
         let home = sftp.canonicalize(".").await.map_err(map_sftp)?;
@@ -255,11 +263,19 @@ impl Session {
             .exec(true, Self::command(&home))
             .await
             .map_err(|_| protocol_error())?;
-        Self::new(channel.into_stream()).await
+        Self::new_observed(channel.into_stream(), observation).await
     }
 
+    #[cfg(test)]
     pub(super) async fn new(
         stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    ) -> AppResult<Self> {
+        Self::new_observed(stream, MutationObservation::default()).await
+    }
+
+    pub(super) async fn new_observed(
+        stream: impl AsyncRead + AsyncWrite + Unpin + Send + 'static,
+        observation: MutationObservation,
     ) -> AppResult<Self> {
         let (input, mut output) = tokio::io::split(stream);
         let mut input = BufReader::new(input);
@@ -271,6 +287,7 @@ impl Session {
         let (requests, mut receiver) = mpsc::channel::<Request>(64);
         let pending: Pending = Arc::new(Mutex::new(HashMap::new()));
         let worker = tokio::spawn(async move {
+            let observation = observation::Observer::new(observation);
             let write = async {
                 while let Some(request) = receiver.recv().await {
                     if request.reply.is_closed() {
@@ -285,6 +302,7 @@ impl Session {
                         PendingReply {
                             reply: request.reply,
                             _slot: request.slot,
+                            observation: observation.begin(&request.header),
                         },
                     );
                     output.write_all(&bytes).await?;
@@ -316,6 +334,7 @@ impl Session {
                         .unwrap()
                         .remove(&reply.id)
                         .ok_or_else(protocol_error)?;
+                    observation.complete(sender.observation, &reply)?;
                     let _ = sender.reply.send(Ok((reply, data)));
                 }
                 #[allow(unreachable_code)]

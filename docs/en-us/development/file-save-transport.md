@@ -143,6 +143,20 @@ expanded reservation intact. Each claim remains bounded to four scopes and 32
 stored paths; this is not an unbounded directory-transfer inventory. Actual
 transfer, pause/resume and artifact-cleanup integration is still incomplete.
 
+Actual range channels now share one in-memory observation per transfer, including
+parallel directory workers, compressed channels, archive writes and detached
+staging-directory creation. Each raw SFTP mutation is observed before its error
+is mapped for presentation. A writable OPEN retains a separate handle receipt
+until its original successful CLOSE; rejected CLOSE, channel shutdown or a later
+successful write cannot release it. The compressed protocol worker tracks original
+request ids and validates mutation-reply shapes before delivery, so it can observe
+a late terminal reply even after the caller cancels. Raw SFTP requests dropped by
+their caller remain unknown because the library no longer delivers that response
+to the observer. Pseudo connection statuses are not terminal MKDIR rejections.
+This observation currently supplies diagnostics; it does not yet bind transfer
+pause/resume or cleanup to a durable claim, cover all metadata mutations, or make
+an application restart recover an unconfirmed transfer.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 A crash between the two local stores' updates can still retain a conservative

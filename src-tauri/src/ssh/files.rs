@@ -1201,6 +1201,7 @@ struct Meter<'a> {
     data_channels: Arc<tokio::sync::OnceCell<range_io::Sessions>>,
     batch_progress: Option<batch::Progress>,
     archives: Option<Arc<archive::Batcher>>,
+    observation: native_save::runtime::MutationObservation,
 }
 
 impl<'a> Meter<'a> {
@@ -1220,10 +1221,13 @@ impl<'a> Meter<'a> {
                         self.app,
                         from,
                         to,
-                        &self.settings,
+                        range_io::Plan {
+                            settings: &self.settings,
+                            total_size: self.total,
+                            observation: self.observation.clone(),
+                        },
                         from_sftp,
                         to_sftp,
-                        self.total,
                     ),
                 )
                 .await
@@ -1251,6 +1255,7 @@ impl<'a> Meter<'a> {
             data_channels: Arc::new(tokio::sync::OnceCell::new()),
             batch_progress: None,
             archives: None,
+            observation: native_save::runtime::MutationObservation::default(),
         }
     }
 
@@ -1690,19 +1695,7 @@ async fn copy_entry(
     if from_sftp.is_some() || to_sftp.is_some() {
         open_writer(to, to_sftp, overwrite).await?.finish().await?;
         let channels = meter
-            .data_channels
-            .get_or_try_init(|| async {
-                range_io::Sessions::open(
-                    meter.app,
-                    from,
-                    to,
-                    &meter.settings,
-                    from_sftp,
-                    to_sftp,
-                    meter.total,
-                )
-                .await
-            })
+            .data_sessions(from, to, from_sftp, to_sftp, cancel)
             .await?
             .clone();
         let files = range_io::Files::open(&channels, from, to)
@@ -1774,7 +1767,8 @@ async fn copy_directory_batch(
     // Initialize once, lazily at the first validated regular file. Sampling a
     // directory child here could follow a link before copy_entry rejects it.
     let channels = meter.data_channels.clone();
-    let archives = Arc::new(archive::Batcher::default());
+    let observation = meter.observation.clone();
+    let archives = Arc::new(archive::Batcher::new(observation.clone()));
     let app = meter.app;
     let id = meter.id;
     let name = meter.name;
@@ -1813,6 +1807,7 @@ async fn copy_directory_batch(
             worker.data_channels = channels.clone();
             worker.batch_progress = Some(progress);
             worker.archives = Some(archives.clone());
+            worker.observation = observation.clone();
             async move {
                 Box::pin(copy_entry(
                     &source,
@@ -2982,6 +2977,10 @@ async fn run(
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
     }
 
+    if !meter.observation.settled() {
+        tracing::warn!(target: "files.transfer", transfer_id = id,
+            "Original transfer data requests or writable handles remain unconfirmed");
+    }
     Outcome::from_result(result, meter.transferred, cancel)
 }
 

@@ -4,7 +4,8 @@ mod errors;
 mod mutation;
 pub(crate) use super::journal::admission::Kind as MutationKind;
 pub(crate) use mutation::{
-    ActiveMutation, Mutation, MutationReference, Observation as MutationObservation,
+    terminal_mutation_status, ActiveMutation, Mutation, MutationReceipt, MutationReference,
+    Observation as MutationObservation,
 };
 mod projection;
 #[cfg(test)]
