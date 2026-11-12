@@ -5,6 +5,7 @@ mod routing;
 mod transport;
 
 pub use catalogue::{ApiMethod, METHODS};
+pub(super) use domains::files::remote_write::write_remote;
 pub(super) use domains::files::text::write_local;
 pub(super) use transport::frontend::frontend_request;
 

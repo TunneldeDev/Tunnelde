@@ -48,6 +48,7 @@ pub(super) async fn staged_save(
     draft: Draft<'_>,
     record: &Record,
     job: &Cancellation,
+    policy: &impl policy::Policy,
 ) -> AppResult<()> {
     let Draft {
         requested,
@@ -66,6 +67,10 @@ pub(super) async fn staged_save(
         .await
         .map_err(map_sftp)?;
     probe.close().await?;
+    job.check()?;
+    // Channel negotiation and the write-access probe may have awaited since
+    // the first policy check. Revalidate before creating even private staging.
+    policy.check(sftp, target, baseline).await?;
     job.check()?;
     replacement
         .raw()
@@ -139,6 +144,7 @@ pub(super) async fn staged_save(
     {
         return Err(AppError::validation("editor.remoteFileChanged"));
     }
-    job.commit()?;
+    policy.check(sftp, target, &current.content).await?;
+    policy.admit(job)?;
     replacement.replace(&staging, target).await
 }

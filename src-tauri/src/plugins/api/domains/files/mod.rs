@@ -3,6 +3,7 @@ mod content;
 mod local;
 mod preview;
 mod remote;
+pub(in crate::plugins::api) mod remote_write;
 pub(in crate::plugins::api) mod text;
 mod transfers;
 

@@ -5,10 +5,10 @@ use std::time::Duration;
 use tokio::sync::Semaphore;
 
 #[derive(Clone, Default)]
-struct MemoryJournal {
-    records: Arc<Mutex<Vec<Record>>>,
-    published: Arc<AtomicUsize>,
-    changed: Arc<AtomicUsize>,
+pub(super) struct MemoryJournal {
+    pub(super) records: Arc<Mutex<Vec<Record>>>,
+    pub(super) published: Arc<AtomicUsize>,
+    pub(super) changed: Arc<AtomicUsize>,
 }
 impl Journal for MemoryJournal {
     fn persist(&self, record: &Record) -> AppResult<()> {
@@ -29,7 +29,7 @@ impl Journal for MemoryJournal {
     }
 }
 
-fn request(f: &Fixture, content: &str) -> saving::Request {
+pub(super) fn request(f: &Fixture, content: &str) -> saving::Request {
     saving::Request {
         session_id: "session".into(),
         host_id: "host".into(),
@@ -40,7 +40,7 @@ fn request(f: &Fixture, content: &str) -> saving::Request {
     }
 }
 
-async fn opening(
+pub(super) async fn opening(
     f: Arc<Fixture>,
     job: Cancellation,
 ) -> AppResult<(
@@ -58,13 +58,30 @@ fn spawn_save(
     journal: MemoryJournal,
     content: &str,
 ) -> tokio::task::JoinHandle<AppResult<()>> {
+    spawn_checked(budget, f, journal, content, policy::Native)
+}
+
+pub(super) fn spawn_checked(
+    budget: Arc<Budget>,
+    f: Arc<Fixture>,
+    journal: MemoryJournal,
+    content: &str,
+    policy: impl policy::Policy,
+) -> tokio::task::JoinHandle<AppResult<()>> {
     let request = request(&f, content);
     tokio::spawn(async move {
-        saving::save_with(&budget, request, move |job| opening(f, job), journal).await
+        saving::save_with(
+            &budget,
+            request,
+            policy,
+            move |job| opening(f, job),
+            journal,
+        )
+        .await
     })
 }
 
-async fn until(condition: impl Fn() -> bool) {
+pub(super) async fn until(condition: impl Fn() -> bool) {
     tokio::time::timeout(Duration::from_secs(5), async {
         while !condition() {
             tokio::task::yield_now().await;
@@ -74,13 +91,13 @@ async fn until(condition: impl Fn() -> bool) {
     .unwrap();
 }
 
-async fn notified(notify: &tokio::sync::Notify) {
+pub(super) async fn notified(notify: &tokio::sync::Notify) {
     tokio::time::timeout(Duration::from_secs(5), notify.notified())
         .await
         .unwrap();
 }
 
-fn budget() -> (Arc<Budget>, Arc<Semaphore>) {
+pub(super) fn budget() -> (Arc<Budget>, Arc<Semaphore>) {
     let capacity = Arc::new(Semaphore::new(1));
     (
         Arc::new(Budget::with_capacity(
@@ -204,6 +221,7 @@ async fn no_op_and_conflict_do_not_negotiate_replacement_or_create_staging() {
         saving::save_with(
             &budget,
             request,
+            policy::Native,
             move |job| opening(remote, job),
             journal.clone()
         )

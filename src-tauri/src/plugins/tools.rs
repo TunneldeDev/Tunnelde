@@ -1,4 +1,5 @@
 //! Scoped tool gateway shared by MCP clients and agent plugins.
+pub(in crate::plugins) mod remote_write;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -429,6 +430,35 @@ pub(super) fn with_client_authorized<T>(
     }
     operation()
 }
+/// Order exact-request cancellation and client revocation against publication.
+/// This callback must remain synchronous and cannot reenter the client gate.
+pub(super) fn with_request_authorized<T>(
+    owner: &str,
+    generation: u64,
+    client: Option<&str>,
+    request: Option<uuid::Uuid>,
+    operation: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    with_client_authorized(owner, generation, client, || {
+        if let Some(registration) = request {
+            let valid = pending()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .values()
+                .any(|item| {
+                    item.plugin == owner
+                        && item.generation == generation
+                        && item.registration == registration
+                        && client.is_none_or(|client| item.client == client)
+                });
+            if !valid {
+                return Err(AppError::validation("plugin.tools.cancelled"));
+            }
+        }
+        operation()
+    })
+}
+
 fn register_pending(key: &str, request: Pending) -> AppResult<()> {
     let _gate = client_gate()
         .lock()
@@ -700,6 +730,23 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
     } else {
         None
     };
+    let remote_approval = if method == "files.sftp.writeText" {
+        Some(
+            remote_write::RemoteWriteApproval::prepare(
+                context,
+                &input,
+                &normalized,
+                &scope,
+                original_hash
+                    .as_ref()
+                    .map(|(_, hash)| hash.clone())
+                    .ok_or_else(|| AppError::validation("plugin.tools.fileChanged"))?,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
     let auto_review = params.pointer("/review/approved").and_then(Value::as_bool) == Some(true);
     if !read_only(&method) && mode != "full" && !(mode == "approve" && auto_review) {
         let description = serde_json::to_string_pretty(&normalized)?;
@@ -742,6 +789,8 @@ async fn invoke_inner(context: &HostContext, params: Value) -> AppResult<Value> 
             approval.check(target, original)
         })
         .await?
+    } else if let Some(approval) = remote_approval {
+        super::api::write_remote(&invocation_context, &normalized, Some(approval)).await?
     } else {
         Box::pin(super::api::dispatch(
             &invocation_context,
