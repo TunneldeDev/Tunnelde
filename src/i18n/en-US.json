@@ -2156,6 +2156,7 @@
     "invalidPath": "Choose an absolute folder path without parent-directory segments.",
     "targetNotEmpty": "The destination must be an empty or new folder. Existing files will not be overwritten.",
     "invalidPlan": "Select at least one different destination, with each category selected only once.",
+    "nativeRecoveryRequiresMigration": "File-save recovery records exist. Move the database with its data so unresolved operations remain recoverable.",
     "pathOverlap": "Storage folders cannot overlap each other or the source data.",
     "notEnoughSpace": "The destination disk does not have enough free space for this migration.",
     "linkUnsupported": "This storage category contains a symbolic link, junction or unsupported file. Choose a different destination or remove the link from the category before migrating.",
