@@ -408,13 +408,6 @@ fn client_revoked(plugin: &str, generation: u64, client: &str) -> bool {
         })
 }
 
-pub(super) fn authorize_client(context: &HostContext, client: &str) -> AppResult<()> {
-    if client_revoked(&context.id, context.generation, client) {
-        return Err(AppError::validation("plugin.tools.clientRevoked"));
-    }
-    Ok(())
-}
-
 /// Admission/publication and client revocation share this gate. Lock order:
 /// runtime policy -> client gate -> domain registry -> SSH manager. Never await,
 /// reenter security or perform I/O in the callback.

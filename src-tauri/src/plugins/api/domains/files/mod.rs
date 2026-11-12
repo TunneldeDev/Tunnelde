@@ -1,11 +1,13 @@
 //! File RPC adapters. Local publication, SFTP and owned transfers remain separate.
 mod content;
 mod local;
+mod local_write;
 mod preview;
 mod remote;
 pub(in crate::plugins::api) mod remote_write;
 pub(in crate::plugins::api) mod text;
 mod transfers;
+mod write_policy;
 
 use crate::{
     error::AppResult,

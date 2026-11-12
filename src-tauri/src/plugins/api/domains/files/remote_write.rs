@@ -1,10 +1,10 @@
 //! Remote plugin publication policy; network checks never hold policy locks.
+use super::write_policy::Authorization;
 use crate::{
     error::{AppError, AppResult},
     plugins::{
         api::{authorize, field, optional, HostContext},
-        security::Lease,
-        tools::{self, remote_write::RemoteWriteApproval},
+        tools::remote_write::RemoteWriteApproval,
     },
     services::files::operations::Cancellation,
     ssh::files::remote_editor::policy::Policy,
@@ -15,7 +15,7 @@ use serde_json::Value;
 use tauri::Manager;
 
 struct RemotePolicy {
-    context: HostContext,
+    authorization: Authorization,
     session_id: String,
     host_id: String,
     address: String,
@@ -25,6 +25,7 @@ struct RemotePolicy {
 impl RemotePolicy {
     fn connected(&self) -> AppResult<()> {
         let valid = self
+            .authorization
             .context
             .app
             .state::<AppState>()
@@ -42,14 +43,7 @@ impl RemotePolicy {
     }
 
     fn authorized(&self) -> AppResult<()> {
-        authorize(&self.context, &["sftp.write"])?;
-        tools::with_request_authorized(
-            &self.context.id,
-            self.context.generation,
-            self.context.tool_client.as_deref(),
-            self.context.tool_request,
-            || Ok(()),
-        )?;
+        self.authorization.check()?;
         self.connected()
     }
 }
@@ -68,29 +62,7 @@ impl Policy for RemotePolicy {
     }
 
     fn admit(&self, job: &Cancellation) -> AppResult<()> {
-        let lease = Lease {
-            id: self.context.id.clone(),
-            fingerprint: self.context.fingerprint.clone(),
-            permissions: self.context.permissions.clone(),
-            generation: self.context.generation,
-        };
-        self.context
-            .app
-            .state::<AppState>()
-            .plugins
-            .security
-            .with_authorized(&lease, &["sftp.write"], || {
-                tools::with_request_authorized(
-                    &lease.id,
-                    lease.generation,
-                    self.context.tool_client.as_deref(),
-                    self.context.tool_request,
-                    || {
-                        self.connected()?;
-                        job.commit()
-                    },
-                )
-            })
+        self.authorization.admit(job, || self.connected())
     }
 }
 
@@ -110,7 +82,7 @@ pub(in crate::plugins) async fn write_remote(
         .find(|s| s.id == session_id)
         .ok_or_else(|| AppError::validation("sftp.reconnectRequired"))?;
     let policy = RemotePolicy {
-        context: context.clone(),
+        authorization: Authorization::new(context, "sftp.write"),
         session_id: session_id.clone(),
         host_id: session.host_id,
         address: session.address,
