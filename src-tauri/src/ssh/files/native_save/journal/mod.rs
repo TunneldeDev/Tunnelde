@@ -1,5 +1,6 @@
 //! Private recovery authority, deliberately separate from the resettable App DB.
 mod database;
+mod finalization;
 mod record;
 mod sqlite;
 #[cfg(test)]

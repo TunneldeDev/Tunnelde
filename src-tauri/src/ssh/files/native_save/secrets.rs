@@ -8,6 +8,7 @@ use keyring::{Entry, Error as KeyringError};
 pub(super) trait Secrets: Send + Sync {
     fn create(&self, key: &str, token: &str) -> Result<()>;
     fn load(&self, key: &str) -> Result<String>;
+    fn forget(&self, key: &str, expected_sha256: &str) -> Result<()>;
 }
 
 pub(super) struct System {
@@ -61,10 +62,29 @@ impl Secrets for System {
             }
         })
     }
+    fn forget(&self, key: &str, expected_sha256: &str) -> Result<()> {
+        if !contracts::digest(expected_sha256) {
+            return Err(Error::SecretChanged);
+        }
+        let entry = self.entry(key)?;
+        match entry.get_password() {
+            Err(KeyringError::NoEntry) => return Ok(()),
+            Err(_) => return Err(Error::SecretUnavailable),
+            Ok(token) if contracts::hash(b"", token.as_bytes()) == expected_sha256 => (),
+            Ok(_) => return Err(Error::SecretChanged),
+        }
+        // Keys include journal, operation and generation and are never reassigned.
+        // This is not a CAS against independent external writers to the OS keyring.
+        match entry.delete_credential() {
+            Ok(()) | Err(KeyringError::NoEntry) => Ok(()),
+            Err(_) => Err(Error::SecretUnavailable),
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    mod system;
     use super::*;
     #[test]
     fn namespace_and_keys_cannot_address_host_or_plugin_credentials() {

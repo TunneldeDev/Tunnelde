@@ -2,6 +2,7 @@ use super::*;
 use crate::ssh::files::native_save::{contracts::receipt::Observation, testing::*};
 use std::path::PathBuf;
 mod crash;
+mod finalization;
 
 struct Fixture {
     root: PathBuf,

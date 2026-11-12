@@ -6,7 +6,9 @@ use super::{
     secrets::Secrets,
     transport::{self, Exchange},
 };
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+mod storage;
+use storage::Storage;
 use tokio::sync::Semaphore;
 
 #[derive(Debug)]
@@ -25,35 +27,51 @@ impl From<transport::Failure> for Error {
     }
 }
 pub(super) struct Service<S> {
-    journal: Mutex<Journal>,
-    secrets: S,
+    storage: Arc<Storage<S>>,
     requests: Semaphore,
+    io: Arc<Semaphore>,
 }
-impl<S: Secrets> Service<S> {
+impl<S: Secrets + 'static> Service<S> {
     pub fn new(journal: Journal, secrets: S) -> Self {
         Self {
-            journal: Mutex::new(journal),
-            secrets,
+            storage: Arc::new(Storage::new(journal, secrets)),
             requests: Semaphore::new(4),
+            io: Arc::new(Semaphore::new(4)),
         }
     }
-    fn journal(&self) -> journal::Result<std::sync::MutexGuard<'_, Journal>> {
-        self.journal.lock().map_err(|_| journal::Error::Unavailable)
+    async fn blocking<T: Send + 'static>(
+        &self,
+        action: impl FnOnce(&Storage<S>) -> journal::Result<T> + Send + 'static,
+    ) -> journal::Result<T> {
+        let permit = self
+            .io
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| journal::Error::Capacity)?;
+        let storage = self.storage.clone();
+        tokio::task::spawn_blocking(move || {
+            // Actual queued/running IO owns capacity even when caller delivery disappears.
+            let _permit = permit;
+            action(&storage)
+        })
+        .await
+        .map_err(|_| journal::Error::Unavailable)?
     }
-    pub fn records(&self) -> journal::Result<Vec<Record>> {
-        self.journal()?.records()
+    pub async fn records(&self) -> journal::Result<Vec<Record>> {
+        self.blocking(|storage| storage.journal()?.records()).await
     }
-    pub fn reserve(&self, binding: Binding, prepared: &Prepared) -> journal::Result<Record> {
+    pub async fn reserve(&self, binding: Binding, prepared: &Prepared) -> journal::Result<Record> {
         if !binding.matches(&binding.authority, prepared) {
             return Err(journal::Error::Unrecognized);
         }
-        let reserved = self.journal()?.reserve(binding)?;
-        // No dispatch is possible through any of these crash/failure windows.
-        self.secrets
-            .create(&reserved.secret_key(), &prepared.control.token)?;
-        let token = self.secrets.load(&reserved.secret_key())?;
-        reserved.binding.control(token)?;
-        self.journal()?.ready(&reserved)
+        let token = prepared.control.token.clone();
+        self.blocking(move |storage| storage.reserve(binding, token))
+            .await
+    }
+    pub async fn finalize(&self, expected: &Record) -> journal::Result<()> {
+        let expected = expected.clone();
+        self.blocking(move |storage| storage.finalize(&expected))
+            .await
     }
     pub async fn submit<T: Exchange>(
         &self,
@@ -66,23 +84,21 @@ impl<S: Secrets> Service<S> {
             .requests
             .try_acquire()
             .map_err(|_| journal::Error::Capacity)?;
-        let (dispatched, permit) = {
-            let mut journal = self.journal()?;
-            let record = journal.current(expected)?;
-            if !record.binding.matches(client.authority(), prepared) {
-                return Err(journal::Error::Changed.into());
-            }
-            record
-                .binding
-                .control(self.secrets.load(&record.secret_key())?)?;
-            journal.dispatch(&record)?
-        };
+        if !expected.binding.matches(client.authority(), prepared) {
+            return Err(journal::Error::Changed.into());
+        }
+        let expected = expected.clone();
+        let (dispatched, permit) = self
+            .blocking(move |storage| storage.dispatch(&expected))
+            .await?;
         // Check owner/generation and arbitrate cancellation AFTER the disk checkpoint:
         // revocation during fsync must prevent network mutation as well.
         authorize(&dispatched.binding)?;
         // Persisted unknown remains even if this future, delivery or process disappears.
         let receipt = client.submit(prepared, permit).await?;
-        Ok(self.journal()?.observe(&dispatched, receipt)?)
+        Ok(self
+            .blocking(move |storage| storage.journal()?.observe(&dispatched, receipt))
+            .await?)
     }
     pub async fn recover<T: Exchange>(
         &self,
@@ -94,16 +110,16 @@ impl<S: Secrets> Service<S> {
             .requests
             .try_acquire()
             .map_err(|_| journal::Error::Capacity)?;
-        let record = self.journal()?.current(expected)?;
+        let expected = expected.clone();
+        let (record, control) = self
+            .blocking(move |storage| storage.original(&expected))
+            .await?;
         if record.stage != Stage::Dispatched {
             return Err(journal::Error::NotDispatched.into());
         }
         if record.binding.authority != *client.authority() {
             return Err(journal::Error::Changed.into());
         }
-        let control = record
-            .binding
-            .control(self.secrets.load(&record.secret_key())?)?;
         authorize(&record.binding)?;
         let observed = client.status(&control, record.observation.as_ref()).await?;
         // Not found is not proof of nonpublication. Keep the dispatched record intact.
@@ -111,7 +127,9 @@ impl<S: Secrets> Service<S> {
             reason: transport::Reason::MissingOperation,
             dispatched: true,
         })?;
-        Ok(self.journal()?.observe(&record, receipt)?)
+        Ok(self
+            .blocking(move |storage| storage.journal()?.observe(&record, receipt))
+            .await?)
     }
     pub async fn release<T: Exchange>(
         &self,
@@ -124,21 +142,22 @@ impl<S: Secrets> Service<S> {
             .requests
             .try_acquire()
             .map_err(|_| journal::Error::Capacity)?;
-        let record = self.journal()?.current(expected)?;
-        if record.stage != Stage::Dispatched || record.binding.authority != *client.authority() {
+        if expected.binding.authority != *client.authority() {
             return Err(journal::Error::Changed.into());
         }
-        let control = record
-            .binding
-            .control(self.secrets.load(&record.secret_key())?)?;
-        let releasing = self.journal()?.release(&record, discard_backup)?;
+        let expected = expected.clone();
+        let (releasing, control) = self
+            .blocking(move |storage| storage.release(&expected, discard_backup))
+            .await?;
         authorize(&releasing.binding)?;
         let receipt = releasing
             .observation
             .as_ref()
             .ok_or(journal::Error::Changed)?;
         let released = client.release(&control, receipt, discard_backup).await?;
-        Ok(self.journal()?.observe(&releasing, released)?)
+        Ok(self
+            .blocking(move |storage| storage.journal()?.observe(&releasing, released))
+            .await?)
     }
 }
 

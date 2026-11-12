@@ -1,4 +1,6 @@
 use super::*;
+mod finalization;
+mod workers;
 use crate::ssh::files::native_save::{
     contracts::authority::{Authority, Context, Platform},
     testing::*,
@@ -41,6 +43,19 @@ impl Secrets for MemorySecrets {
             .get(key)
             .cloned()
             .ok_or(journal::Error::SecretChanged)
+    }
+    fn forget(&self, key: &str, expected_sha256: &str) -> journal::Result<()> {
+        if self.unavailable.load(Ordering::Acquire) {
+            return Err(journal::Error::SecretUnavailable);
+        }
+        let mut values = self.values.lock().unwrap();
+        if values.get(key).is_some_and(|token| {
+            super::super::contracts::hash(b"", token.as_bytes()) != expected_sha256
+        }) {
+            return Err(journal::Error::SecretChanged);
+        }
+        values.remove(key);
+        Ok(())
     }
 }
 struct Fixture {
@@ -139,6 +154,7 @@ async fn lost_submit_reopens_original_journal_and_recovers_without_payload_or_re
     let prepared = prepared(&authority);
     let saved = service
         .reserve(binding(&authority, &prepared), &prepared)
+        .await
         .unwrap();
     let client = client(
         &fixture,
@@ -157,7 +173,7 @@ async fn lost_submit_reopens_original_journal_and_recovers_without_payload_or_re
         service.submit(&saved, &prepared, &client, |_| Ok(())).await,
         Err(Error::Remote(_))
     ));
-    let original = service.records().unwrap().pop().unwrap();
+    let original = service.records().await.unwrap().pop().unwrap();
     assert!(original.stage == Stage::Dispatched);
     assert!(service
         .submit(&original, &prepared, &client, |_| Ok(()))
@@ -192,6 +208,7 @@ async fn missing_changed_and_unavailable_secrets_never_rotate_or_send() {
         let prepared = prepared(&authority);
         let record = service
             .reserve(binding(&authority, &prepared), &prepared)
+            .await
             .unwrap();
         let client = client(&fixture, &authority, vec![]);
         match failure {
@@ -214,7 +231,7 @@ async fn missing_changed_and_unavailable_secrets_never_rotate_or_send() {
             .await
             .is_err());
         assert!(client.test_transport().requests.lock().unwrap().is_empty());
-        assert!(service.records().unwrap()[0] == record);
+        assert!(service.records().await.unwrap()[0] == record);
     }
 }
 
@@ -228,8 +245,9 @@ async fn secret_setup_failure_keeps_unsent_reservation_and_never_admits_recovery
     let prepared = prepared(&authority);
     assert!(service
         .reserve(binding(&authority, &prepared), &prepared)
+        .await
         .is_err());
-    let reserved = service.records().unwrap().pop().unwrap();
+    let reserved = service.records().await.unwrap().pop().unwrap();
     assert!(reserved.stage == Stage::Reserved);
     let client = client(&fixture, &authority, vec![]);
     assert!(service
@@ -248,6 +266,7 @@ async fn revoked_owner_or_changed_authority_cannot_submit_or_disclose_control() 
         let prepared = prepared(&authority);
         let record = service
             .reserve(binding(&authority, &prepared), &prepared)
+            .await
             .unwrap();
         let client = client(&fixture, &authority, vec![]);
         client
@@ -257,7 +276,10 @@ async fn revoked_owner_or_changed_authority_cannot_submit_or_disclose_control() 
         assert!(service
             .submit(&record, &prepared, &client, |_| {
                 // The final owner check must see the already committed checkpoint.
-                assert!(service.records().unwrap()[0].stage == Stage::Dispatched);
+                assert!(
+                    service.storage.journal().unwrap().records().unwrap()[0].stage
+                        == Stage::Dispatched
+                );
                 if owner_revoked {
                     Err(journal::Error::Changed)
                 } else {
@@ -268,7 +290,7 @@ async fn revoked_owner_or_changed_authority_cannot_submit_or_disclose_control() 
             .is_err());
         assert!(client.test_transport().requests.lock().unwrap().is_empty());
         // Pre-network refusal still retains the conservative possible-dispatch checkpoint.
-        assert!(service.records().unwrap()[0].stage == Stage::Dispatched);
+        assert!(service.records().await.unwrap()[0].stage == Stage::Dispatched);
     }
 }
 
@@ -280,6 +302,7 @@ async fn missing_original_remote_operation_preserves_unknown_and_blocks_overlap(
     let prepared = prepared(&authority);
     let record = service
         .reserve(binding(&authority, &prepared), &prepared)
+        .await
         .unwrap();
     let client = client(
         &fixture,
@@ -291,7 +314,7 @@ async fn missing_original_remote_operation_preserves_unknown_and_blocks_overlap(
         .await
         .err()
         .unwrap();
-    let unknown = service.records().unwrap().pop().unwrap();
+    let unknown = service.records().await.unwrap().pop().unwrap();
     assert!(matches!(
         service.recover(&unknown, &client, |_| Ok(())).await,
         Err(Error::Remote(transport::Failure {
@@ -299,10 +322,11 @@ async fn missing_original_remote_operation_preserves_unknown_and_blocks_overlap(
             ..
         }))
     ));
-    assert!(service.records().unwrap()[0] == unknown);
+    assert!(service.records().await.unwrap()[0] == unknown);
     let second = super::super::testing::prepared(&authority);
     assert!(service
         .reserve(binding(&authority, &second), &second)
+        .await
         .is_err());
 }
 
@@ -314,6 +338,7 @@ async fn cleanup_checkpoint_precedes_remote_release_and_lost_reply_is_query_only
     let prepared = prepared(&authority);
     let record = service
         .reserve(binding(&authority, &prepared), &prepared)
+        .await
         .unwrap();
     let client = client(
         &fixture,
@@ -336,7 +361,7 @@ async fn cleanup_checkpoint_precedes_remote_release_and_lost_reply_is_query_only
         .release(&terminal, &client, true, |_| Ok(()))
         .await
         .is_err());
-    let releasing = service.records().unwrap().pop().unwrap();
+    let releasing = service.records().await.unwrap().pop().unwrap();
     assert!(releasing.release.is_some());
     assert!(service
         .release(&releasing, &client, true, |_| Ok(()))
