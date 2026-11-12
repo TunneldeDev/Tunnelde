@@ -30,6 +30,10 @@
   width: 100%;
   gap: 8px;
 }
+.file-preview .file-preview__content > .provider-content {
+  flex: 0 0 auto;
+  overflow: visible;
+}
 .file-preview__target {
   display: flex;
   align-items: flex-start;
