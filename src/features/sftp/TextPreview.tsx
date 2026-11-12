@@ -6,7 +6,15 @@ import { createFileReadResource, readFileText } from "@/lib/files/resources/read
 import { translateError } from "@/lib/api/errors";
 import type { PreviewFile } from "@/store/filePreview";
 
-export function TextPreview({ file }: { file: PreviewFile }) {
+export function TextPreview({
+  file,
+  onReady,
+  onError,
+}: {
+  file: PreviewFile;
+  onReady?: () => void;
+  onError?: () => void;
+}) {
   const { t } = useTranslation();
   const [result, setResult] = useState<{
     file: PreviewFile;
@@ -17,14 +25,20 @@ export function TextPreview({ file }: { file: PreviewFile }) {
     const resource = createFileReadResource(file.path, file.source);
     void readFileText(resource, "preview").then(
       (content) => {
-        if (!resource.scope.signal.aborted) setResult({ file, content });
+        if (!resource.scope.signal.aborted) {
+          setResult({ file, content });
+          onReady?.();
+        }
       },
       (cause) => {
-        if (!resource.scope.signal.aborted) setResult({ file, cause });
+        if (!resource.scope.signal.aborted) {
+          setResult({ file, cause });
+          onError?.();
+        }
       },
     );
     return resource.scope.dispose;
-  }, [file]);
+  }, [file, onReady, onError]);
   const content = result?.file === file ? result.content : undefined;
   const error = result?.file === file && "cause" in result ? translateError(result.cause) : "";
   return error ? (

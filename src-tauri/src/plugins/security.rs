@@ -42,6 +42,8 @@ pub const PERMISSIONS: &[&str] = &[
     "fs.write",
     "fileBrowser.read",
     "fileBrowser.write",
+    "filePreview.read",
+    "filePreview.write",
     "sftp.read",
     "sftp.write",
     "monitor.read",

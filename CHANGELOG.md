@@ -6,6 +6,48 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.36.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.35.0...v0.36.0) - 2026-11-12
+
+### 更新概览 | Highlights
+
+- **files:** expose committed preview lifecycle and presentation
+- **transfers:** separate segment planning from IO orchestration
+- **transfers:** size automatic replay windows for the request pipeline
+- **files:** separate remote editor staging from lifecycle
+- **files:** bound local mutation workers through cancellation
+
+<details open>
+<summary>详细变更 | Details (11)</summary>
+
+### 新增 | New
+
+- **files:** expose committed preview lifecycle and presentation ([#294](https://github.com/TunneldeDev/Tunnelde/pull/294), [e1a35e2](https://github.com/TunneldeDev/Tunnelde/commit/e1a35e298d2771a52e08f5a05704abd2351810e9)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **transfers:** separate segment planning from IO orchestration ([#297](https://github.com/TunneldeDev/Tunnelde/pull/297), [a194e51](https://github.com/TunneldeDev/Tunnelde/commit/a194e51633b8d790f3e39ed23826ba1b4e0f402d)) @quyansiyuanwang
+- **transfers:** size automatic replay windows for the request pipeline ([#297](https://github.com/TunneldeDev/Tunnelde/pull/297)) @quyansiyuanwang
+- **files:** separate remote editor staging from lifecycle ([#298](https://github.com/TunneldeDev/Tunnelde/pull/298), [426f4dd](https://github.com/TunneldeDev/Tunnelde/commit/426f4ddd7a83db8dc0f86d6185d242b3ff26bf6e)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **files:** bound local mutation workers through cancellation ([#296](https://github.com/TunneldeDev/Tunnelde/pull/296)) @quyansiyuanwang
+- **files:** retain remote editor workers through cancellation ([#298](https://github.com/TunneldeDev/Tunnelde/pull/298)) @quyansiyuanwang
+- **files:** fence remote plugin writes at publication admission ([#299](https://github.com/TunneldeDev/Tunnelde/pull/299), [dffb313](https://github.com/TunneldeDev/Tunnelde/commit/dffb31315c023dd466961540e21af027ceef5171)) @quyansiyuanwang
+- **plugins:** serialize abandoned tool requests with publication ([#299](https://github.com/TunneldeDev/Tunnelde/pull/299)) @quyansiyuanwang
+- **files:** fence local writes with shared publication authorization ([#300](https://github.com/TunneldeDev/Tunnelde/pull/300), [252369b](https://github.com/TunneldeDev/Tunnelde/commit/252369b27d202a421f8ac8da0c100865e6544a02)) @quyansiyuanwang
+- **plugins:** retain approved local path aliases through publication ([#300](https://github.com/TunneldeDev/Tunnelde/pull/300)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **plugins:** verify preview contracts against pinned SDK ([#294](https://github.com/TunneldeDev/Tunnelde/pull/294)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.35.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.34.0...v0.35.0) - 2026-11-11
 
 ### 更新概览 | Highlights

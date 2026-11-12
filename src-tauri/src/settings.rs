@@ -272,6 +272,7 @@ impl Settings {
                 "hostList"
                     | "workbench"
                     | "fileBrowser"
+                    | "filePreview"
                     | "terminal"
                     | "history"
                     | "forwarding"
@@ -588,6 +589,7 @@ mod tests {
                 "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
                 "hostList": {"pluginId":"../invalid", "viewId":"hosts"},
                 "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
+                "filePreview": {"pluginId":"custom-ui", "viewId":"preview"},
                 "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
                 "history": {"pluginId":"custom-ui", "viewId":"history"},
                 "credentials": {"pluginId":"custom-ui", "viewId":"secret"}
@@ -601,6 +603,7 @@ mod tests {
             serde_json::json!({
                 "workbench": {"pluginId":"custom-ui", "viewId":"desktop"},
                 "fileBrowser": {"pluginId":"custom-ui", "viewId":"files"},
+                "filePreview": {"pluginId":"custom-ui", "viewId":"preview"},
                 "terminal": {"pluginId":"custom-ui", "viewId":"screen"},
                 "history": {"pluginId":"custom-ui", "viewId":"history"}
             })

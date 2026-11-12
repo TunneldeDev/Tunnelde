@@ -576,3 +576,5 @@ Node 以用户操作系统权限运行；清单权限保护宿主 API，**不限
 [宿主存储位置元数据与迁移计划](storage-locations.md).
 
 - [公共 Profile 写入与启用](profile-mutations.md)
+
+[宿主快速预览 API](file-preview.md).

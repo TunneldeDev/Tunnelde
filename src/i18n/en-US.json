@@ -875,6 +875,10 @@
     "localFileChanged": "The file changed outside Tunnelde. Your draft is retained; compare the changes before saving.",
     "readOnlyFile": "This file is read-only. Your draft has been retained.",
     "saveCancelled": "Saving was cancelled. Your draft has been retained.",
+    "saveBusy": "Local file operations are busy. Wait for the current operations to finish, then try again. Your draft has been retained.",
+    "saveWorkerFailed": "The local file operation stopped unexpectedly. Your draft has been retained. Check the application logs before retrying.",
+    "remoteSaveBusy": "Remote file operations are busy. Wait for the current operations to finish, then try again. Your draft has been retained.",
+    "remoteSaveWorkerFailed": "The remote file operation stopped unexpectedly. Your draft has been retained. Check the application logs and the remote file before retrying.",
     "conflictBody": "The remote file differs from the version you opened. Replace it with your current content?",
     "format": "Format document",
     "formatting": "Formatting…",
@@ -1415,6 +1419,12 @@
     "fileContent": {
       "invalid": "Invalid file content request. Choose an absolute file path and a supported byte range.",
       "unavailable": "This file content handle is closed, expired or belongs to a different plugin runtime. Prepare and open it again."
+    },
+    "filePreview": {
+      "invalid": "Invalid preview request.",
+      "changed": "The preview changed. Refresh its state before trying again.",
+      "unavailable": "This preview renderer is unavailable.",
+      "permissionDenied": "This plugin is not allowed to control the preview."
     }
   },
   "themes": {
@@ -1510,7 +1520,9 @@
       "storageLocationsRead": "Read global storage locations and migration plans, without file contents",
       "storageLocationsWrite": "Schedule or cancel global storage migrations with native confirmation",
       "storageRecoveryRead": "Read storage recovery direction, error presence and recorded copy locations, without contents",
-      "storageRecoveryWrite": "Schedule storage recovery or cancellation at next startup with native confirmation"
+      "storageRecoveryWrite": "Schedule storage recovery or cancellation at next startup with native confirmation",
+      "filePreviewRead": "Read current file-preview metadata and renderer choices, without file contents",
+      "filePreviewWrite": "Close, retry or change file previews; opening a target also requires its file read permission"
     },
     "permissionCount": "{{count}} permissions",
     "permissionGroup": {
@@ -2264,7 +2276,8 @@
     "backgroundTasks": "Background tasks",
     "processes": "Process manager",
     "quickAccess": "Quick access",
-    "preferences": "Preference forms"
+    "preferences": "Preference forms",
+    "filePreview": "File preview"
   },
   "hostFields": {
     "title": "Plugin host fields",

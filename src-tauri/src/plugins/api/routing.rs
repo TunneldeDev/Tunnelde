@@ -29,7 +29,9 @@ pub(super) async fn route(context: &HostContext, method: &str, params: Value) ->
         "hosts" | "groups" | "hostList" => domains::hosts::dispatch(context, method, params).await,
         "sessions" => domains::connections::dispatch(context, method, params).await,
         "terminal" => domains::terminal::dispatch(context, method, params).await,
-        "files" | "fileBrowser" => domains::files::dispatch(context, method, params).await,
+        "files" | "fileBrowser" | "filePreview" => {
+            domains::files::dispatch(context, method, params).await
+        }
         "monitor" => domains::monitor::dispatch(context, method, params).await,
         "history" => domains::history::dispatch(context, method, params).await,
         "clipboard" => domains::clipboard::dispatch(context, method, params).await,
@@ -79,6 +81,7 @@ fn changed_domain(method: &str) -> Option<&'static str> {
                     | "files.cancelTransfer"
                     | "files.transferStatus"
                     | "files.local.writeText"
+                    | "files.sftp.writeText"
                     | "files.local.copy"
                     | "files.sftp.copy"
             )
