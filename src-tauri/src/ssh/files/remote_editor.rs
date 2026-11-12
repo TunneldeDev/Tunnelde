@@ -154,7 +154,10 @@ pub async fn editor_cleanup_retry(app: AppHandle, id: String) -> AppResult<()> {
     retained::retry_with(
         &write::REMOTE_BUDGET,
         record,
-        move || async move { session(&connection, &session_for(&connection, &target)?).await },
+        move || async move {
+            let session_id = session_for(&connection, &target)?;
+            admission::open(&connection, &session_id, &[&target.directory]).await
+        },
         app,
     )
     .await
@@ -197,6 +200,7 @@ pub(super) async fn save(
         .into_iter()
         .find(|s| s.id == session_id)
         .ok_or_else(|| AppError::validation("sftp.reconnectRequired"))?;
+    let request_path = path.clone();
     let request = saving::Request {
         session_id: session_id.clone(),
         host_id: host.host_id,
@@ -211,7 +215,7 @@ pub(super) async fn save(
         request,
         policy,
         move |_job| async move {
-            let sftp = session(&connection, &session_id).await?;
+            let sftp = admission::open(&connection, &session_id, &[&request_path]).await?;
             Ok((sftp, async move {
                 remote_commit::Replacement::connect(&connection, &session_id).await
             }))

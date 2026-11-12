@@ -16,6 +16,7 @@ impl<S: Secrets> Storage<S> {
     pub fn journal(&self) -> journal::Result<std::sync::MutexGuard<'_, Journal>> {
         self.journal.lock().map_err(|_| journal::Error::Unavailable)
     }
+    #[cfg(test)]
     pub fn reserve(&self, binding: Binding, token: String) -> journal::Result<Record> {
         let reserved = self.journal()?.reserve(binding)?;
         self.journal()?.provision(&reserved, || {

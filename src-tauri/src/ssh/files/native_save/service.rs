@@ -60,6 +60,9 @@ impl<S: Secrets + 'static> Service<S> {
     pub async fn records(&self) -> journal::Result<Vec<Record>> {
         self.blocking(|storage| storage.journal()?.records()).await
     }
+    // New production writes stay disabled until bilateral durable admission and
+    // installation consent are integrated. Recovery must not mint a new submit.
+    #[cfg(test)]
     pub async fn reserve(&self, binding: Binding, prepared: &Prepared) -> journal::Result<Record> {
         if !binding.matches(&binding.authority, prepared) {
             return Err(journal::Error::Unrecognized);

@@ -1,4 +1,5 @@
 //! Desktop lifecycle: load existing recovery authority, never silently initialize it.
+mod admission;
 mod errors;
 mod projection;
 #[cfg(test)]
