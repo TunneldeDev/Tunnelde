@@ -371,6 +371,7 @@ jobs:
         run: |
           cargo build --locked --manifest-path .tmp/ci/helper-file-save/Cargo.toml --target-dir src-tauri/target
           TUNNELDE_TEST_FILE_SAVE_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib selected_file_save_helper_executes_and_recovers_original_host_operations -- --ignored
+          TUNNELDE_TEST_FILE_SAVE_HELPER="$PWD/src-tauri/target/debug/tunnelde-agent" cargo test --manifest-path src-tauri/Cargo.toml --lib selected_file_save_helper_recovers_the_durable_service_without_replaying_content -- --ignored
 
       - name: Checkout historical helper protocol fixture
         uses: actions/checkout@v4
