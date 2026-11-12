@@ -2,7 +2,8 @@
 
 本地自动化 API 目前是**面向 1.0 的实验候选接口**。协议版本独立于桌面版本和
 插件 RPC 版本；协议编号不等于稳定承诺。机器可读的唯一来源为
-`src-tauri/src/automation/schema/v1.json`。
+`src-tauri/src/automation/schema/v1.json`，并由
+`automation/domains/preferences/schema.rs` 组合公共设置领域已有的 Schema。
 
 构建控制台程序：
 
@@ -32,20 +33,39 @@ tunnelde-cli api describe
 tunnelde-cli app info
 tunnelde-cli hosts list
 tunnelde-cli sessions list
+tunnelde-cli preferences schema
+tunnelde-cli preferences snapshot
 tunnelde-cli call api.describe
 ```
 
 帮助、CLI 版本及 CLI 自身的接口说明可离线使用。在线调用使用运行中应用的公共
 业务服务，不单独读取数据库、不启动 WebView、不执行 shell，也不转发任意 Tauri
-命令。首批在线方法仅提供读取。主机结果不包含备注、密钥路径或凭据，但包含地址
+命令。核心发现、主机与会话方法仅提供读取，公共设置支持通过共享设置服务执行
+修订检查后的更新。主机结果不包含备注、密钥路径或凭据，但包含地址
 和用户名，请妥善处理输出。已保存主机列表不包含插件动态提供的主机。
 
 在线成功结果向 stdout 输出一个 JSON 对象，包含 `version`、`id`、`result`；
 失败向 stderr 输出 `version`、`id`、`error: {code, message}`。退出码为
-0（成功）、1（操作失败）、2（输入或协议错误）、3（不可用或超时）、4（认证失败）。
+0（成功）、1（操作失败）、2（输入或协议错误）、3（不可用或超时）、4（认证失败）、
+5（修订过期）。
 程序应根据错误码处理，不解析解释性消息。离线版本与接口说明直接返回 JSON 对象。
 `call METHOD --params JSON` 接收一个对象，`--params -` 从 stdin 读取。
-首批方法只接收空对象。
+读取方法只接收空对象。更新设置前，先通过 `preferences snapshot` 取得修订号，
+审查需要修改的字段后提交：
+
+```sh
+tunnelde-cli preferences update --params '{"revision":"REVISION_FROM_SNAPSHOT","changes":{"appearance":{"theme":"dark"},"editor":{"tabSize":4}}}'
+```
+
+若 shell 不便转义 JSON，使用 `--params -` 从 stdin 输入。只修改提供的公共字段，
+集合整体替换。未知字段和无效值返回 `invalid_preferences`（退出码 2），修订过期
+返回 `stale_revision`（退出码 5）。应重新读取并审查变更，不要只替换修订号自动重试。
+校验或提交失败不会发布设置；持久化和正常桌面副作用之间没有异步取消点，CLI
+断开不会回滚已经提交的更新。修订号是不透明的非空字符串，最多 128 个 UTF-8
+字节，不能包含控制字符。本地请求仍限制 32 KiB，不沿用插件较大的请求预算。
+公共设置不包含代理密码、凭据、内部元数据和提供者选择，但可以包含用户 CSS、
+代理地址和用户名，快照应妥善保管。本接口不会请求应用重启；延迟生效的设置沿用
+普通桌面设置行为。存储迁移属于独立领域，不能通过 preferences.update 执行。
 
 桌面程序监听随机 IPv4 回环端口，在标准应用数据目录生成 `automation.json`。
 这个入口文件仅包含路径。随机凭据和地址存放在另一个私有目录中，Unix 使用
