@@ -1,5 +1,8 @@
 # Local API and CLI
 
+See the [compatibility policy](local-api-compatibility.md) for the finite candidate
+scope, data lifetimes, evolution rules and stable declaration requirements.
+
 The local automation API is an **experimental candidate for 1.0**. Its protocol
 version is independent of the desktop version and plugin RPC version. A protocol
 number alone is not a stability promise. The machine-readable source is
