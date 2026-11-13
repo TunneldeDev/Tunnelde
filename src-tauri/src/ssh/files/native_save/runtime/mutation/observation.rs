@@ -26,6 +26,18 @@ impl Receipt {
     pub(crate) fn acknowledge(self) {
         self.pending.fetch_sub(1, Ordering::AcqRel);
     }
+
+    fn finish<T>(self, result: Result<T, Error>) -> Result<T, Error> {
+        let acknowledged = match &result {
+            Ok(_) => true,
+            Err(Error::Status(status)) => terminal(status),
+            Err(_) => false,
+        };
+        if acknowledged {
+            self.acknowledge();
+        }
+        result
+    }
 }
 
 impl Observation {
@@ -66,16 +78,23 @@ impl Observation {
         let receipt = self
             .begin()
             .ok_or_else(|| Error::IO("Mutation request admission is closed".into()))?;
-        let result = request.await;
-        let acknowledged = match &result {
-            Ok(_) => true,
-            Err(Error::Status(status)) => terminal(status),
-            Err(_) => false,
-        };
-        if acknowledged {
-            receipt.acknowledge();
-        }
-        result
+        receipt.finish(request.await)
+    }
+
+    /// Caller cancellation drops only the wait. The original worker owns its
+    /// channel and receipt until a typed terminal response or transport failure.
+    /// Acquire admission before spawning so queued old work cannot escape a seal.
+    pub(crate) async fn retained<T: Send + 'static>(
+        &self,
+        request: impl Future<Output = Result<T, Error>> + Send + 'static,
+    ) -> Result<T, Error> {
+        let receipt = self
+            .begin()
+            .ok_or_else(|| Error::IO("Mutation request admission is closed".into()))?;
+        let worker = tauri::async_runtime::spawn(async move { receipt.finish(request.await) });
+        worker
+            .await
+            .map_err(|error| Error::IO(format!("Mutation response worker: {error}")))?
     }
 
     /// Composite/exec adapters without typed per-request replies remain

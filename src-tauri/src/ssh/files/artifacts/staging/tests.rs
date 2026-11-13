@@ -1,4 +1,4 @@
-use super::super::test_support::{client, directory_client, Gate, Tree};
+use super::super::test_support::{cleanup_client, client, directory_client, Gate, Tree};
 use super::*;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -892,4 +892,85 @@ async fn acknowledged_mkdir_rejections_are_distinct_from_unconfirmed_transport_e
     let reply = data.create_private_directory("/existing").await.unwrap();
     assert!(matches!(reply, range_io::DirectoryCreation::Rejected(_)));
     assert!(reply.into_result().is_err());
+}
+
+async fn cancelled_directory_cleanup_keeps_original_reply(before_remove: bool) {
+    let tree = Arc::new(Mutex::new(Tree::default()));
+    tree.lock().unwrap().directories.insert("/stage".into());
+    let gate = Arc::new(Gate {
+        before_create: before_remove,
+        arrived: tokio::sync::Semaphore::new(0),
+        release: tokio::sync::Semaphore::new(0),
+        finished: tokio::sync::Semaphore::new(0),
+    });
+    let sftp = cleanup_client(tree.clone(), gate.clone()).await;
+    let channel = Arc::downgrade(&sftp);
+    let observer = client(tree.clone(), None).await;
+    let registry = TransferRegistry::default();
+    let reservation = registry.reserve_cleanup("job").unwrap();
+    let observation = registry.begin_cleanup("job").unwrap();
+    let directory = Endpoint {
+        session: Some("remote".into()),
+        path: "/stage".into(),
+    };
+    let cancel = AtomicBool::new(false);
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(
+            interruptible(
+                Some(&cancel),
+                cleanup_directory(&sftp, &directory, false, &observation)
+            ),
+            async {
+                gate.arrived.acquire().await.unwrap().forget();
+                cancel.store(true, Ordering::SeqCst);
+            }
+        )
+        .0
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    drop(reservation);
+    metadata::close(sftp).await;
+    assert!(channel.upgrade().is_some());
+    assert!(registry.reserve_cleanup("job").is_err());
+    assert_eq!(
+        tree.lock().unwrap().directories.contains("/stage"),
+        before_remove
+    );
+    if !before_remove {
+        // Seeing an absent directory on an independent channel does not settle
+        // the still-held original RMDIR response.
+        assert!(observer.symlink_metadata("/stage").await.is_err());
+        assert!(!observation.settled());
+    }
+    gate.release.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(channel.upgrade().is_none());
+    let reservation = registry.reserve_cleanup("job").unwrap();
+    assert!(observation.closed());
+    let cleanup = registry.begin_cleanup("job").unwrap();
+    cleanup_directory(&observer, &directory, false, &cleanup)
+        .await
+        .unwrap();
+    assert!(cleanup.settled());
+    assert!(tree.lock().unwrap().directories.is_empty());
+    drop(reservation);
+    observer.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn cancel_before_directory_unlink_keeps_cleanup_reserved_until_original_reply() {
+    cancelled_directory_cleanup_keeps_original_reply(true).await;
+}
+
+#[tokio::test]
+async fn missing_directory_after_cancel_does_not_replace_original_cleanup_acknowledgement() {
+    cancelled_directory_cleanup_keeps_original_reply(false).await;
 }

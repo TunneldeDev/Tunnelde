@@ -146,7 +146,7 @@ pub(super) async fn finish_staging(
     app: &AppHandle,
     id: &str,
     to: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     cancel: &AtomicBool,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
@@ -154,7 +154,8 @@ pub(super) async fn finish_staging(
     let Some(staging) = remote_staging(record.as_ref()) else {
         return Ok(());
     };
-    let sftp = sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?;
+    let metadata = metadata.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?;
+    let sftp = metadata.as_ref();
     let directory = staging_directory(to, id, staging)?;
     if let Some(session_id) = &to.session {
         admission::writable(app, session_id, sftp, &[&directory.path]).await?;
@@ -162,7 +163,7 @@ pub(super) async fn finish_staging(
     interruptible(
         Some(cancel),
         staging::cleanup_directory(
-            sftp,
+            metadata,
             &directory,
             !staging.prepared && staging.creating,
             observation,
@@ -178,7 +179,7 @@ pub(super) async fn prepare_staging<F, Fut>(
     app: &AppHandle,
     id: &str,
     to: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     cancel: &AtomicBool,
     observation: &native_save::runtime::MutationObservation,
     create_directory: F,
@@ -187,13 +188,14 @@ where
     F: FnOnce(Endpoint) -> Fut,
     Fut: std::future::Future<Output = AppResult<()>>,
 {
+    let sftp = metadata.map(Arc::as_ref);
     let mut record = artifact_record(app, id, to)?;
     protection::writable(app, id, to, sftp, record.as_ref()).await?;
     prepare_remote_staging(
         app,
         id,
         to,
-        sftp,
+        metadata,
         cancel,
         &mut record,
         staging::Preparation {
@@ -211,7 +213,9 @@ where
         })
     );
     if recovering_publication {
-        let sftp = sftp.ok_or_else(|| AppError::internal("Remote publication on local staging"))?;
+        let metadata =
+            metadata.ok_or_else(|| AppError::internal("Remote publication on local staging"))?;
+        let sftp = metadata.as_ref();
         let successor = match record.as_mut().unwrap() {
             ArtifactRecord::Current { publication, .. } => publication
                 .as_mut()
@@ -230,7 +234,7 @@ where
         )?;
         let next = publication_successor(to, id, &successor, record.as_ref())?;
         protection::writable(app, id, to, Some(sftp), record.as_ref()).await?;
-        if !publication::fence(&temp, &next, sftp, cancel, observation).await? {
+        if !publication::fence(&temp, &next, metadata, cancel, observation).await? {
             // Keep the uncertainty record until the published target has been
             // verified. A failed verification must remain protected on every
             // later Resume, including after an application restart.
@@ -269,7 +273,11 @@ where
                 .await?
                 .is_some()
             {
-                interruptible(Some(cancel), remove_transfer_file(&temp, sftp, observation)).await?;
+                interruptible(
+                    Some(cancel),
+                    remove_transfer_file(&temp, metadata, observation),
+                )
+                .await?;
             }
             archive.generation = Some(uuid::Uuid::new_v4().to_string());
             archive.pending = false;
@@ -669,9 +677,10 @@ async fn cleanup_file(
     app: &AppHandle,
     id: &str,
     to: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
+    let sftp = metadata.map(Arc::as_ref);
     if get(
         app,
         &format!(
@@ -694,7 +703,7 @@ async fn cleanup_file(
         return retire_remote_staging(
             id,
             to,
-            sftp.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?,
+            metadata.ok_or_else(|| AppError::internal("Missing staging cleanup session"))?,
             artifact.as_ref().unwrap(),
             &AtomicBool::new(false),
             observation,
@@ -706,7 +715,7 @@ async fn cleanup_file(
         id,
         to,
         &temp,
-        sftp,
+        metadata,
         backup_checkpoint(app, &key)?.as_ref(),
         artifact.as_ref().and_then(ArtifactRecord::identity),
         observation,
@@ -721,10 +730,10 @@ async fn cleanup_file(
     {
         let next = publication_successor(to, id, generation, artifact.as_ref())?;
         if file_length(&next, sftp).await?.is_some() {
-            cleanup_partial(&next, sftp, None, observation).await?;
+            cleanup_partial(&next, metadata, None, observation).await?;
         }
     }
-    finish_staging(app, id, to, sftp, &AtomicBool::new(false), observation).await?;
+    finish_staging(app, id, to, metadata, &AtomicBool::new(false), observation).await?;
     Ok(())
 }
 
@@ -732,7 +741,7 @@ async fn cleanup_file(
 pub(super) async fn cleanup_owned(
     id: &str,
     to: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     expected: Option<&BackupFingerprint>,
     identity: Option<&FileIdentity>,
 ) -> AppResult<()> {
@@ -741,7 +750,7 @@ pub(super) async fn cleanup_owned(
         id,
         to,
         &temp,
-        sftp,
+        metadata,
         expected,
         identity,
         &native_save::runtime::MutationObservation::default(),
@@ -753,11 +762,12 @@ async fn cleanup_at(
     id: &str,
     to: &Endpoint,
     temp: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     expected: Option<&BackupFingerprint>,
     identity: Option<&FileIdentity>,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
+    let sftp = metadata.map(Arc::as_ref);
     let backup = staging_endpoint(to, id, "backup");
     let cancel = AtomicBool::new(false);
     if file_length(&backup, sftp).await?.is_some() {
@@ -779,19 +789,19 @@ async fn cleanup_at(
         return Err(recovery());
     }
     if file_length(temp, sftp).await?.is_some() {
-        cleanup_partial(temp, sftp, identity, observation).await?;
+        cleanup_partial(temp, metadata, identity, observation).await?;
     }
     Ok(())
 }
 
 async fn cleanup_partial(
     temp: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     _identity: Option<&FileIdentity>,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     #[cfg(windows)]
-    if sftp.is_none() {
+    if metadata.is_none() {
         let unrecognized = || AppError::TransferArtifactUnrecognized {
             path: temp.path.clone(),
         };
@@ -810,7 +820,7 @@ async fn cleanup_partial(
         guard.delete()?;
         return Ok(());
     }
-    remove_transfer_file(temp, sftp, observation).await
+    remove_transfer_file(temp, metadata, observation).await
 }
 
 /// No source or completed destination is removed. Keep the journal on error so
@@ -826,12 +836,13 @@ pub(super) async fn cleanup(
     if row.status == "done" && targets.is_empty() {
         return Ok(());
     }
-    let sftp = match &to.session {
-        Some(id) => Some(session(app, id).await?),
+    let metadata = match &to.session {
+        Some(id) => Some(Arc::new(session(app, id).await?)),
         None => None,
     };
+    let sftp = metadata.as_deref();
     let result = async {
-        if let (Some(session_id), Some(sftp)) = (to.session.as_deref(), sftp.as_ref()) {
+        if let (Some(session_id), Some(sftp)) = (to.session.as_deref(), sftp) {
             admission::writable(app, session_id, sftp, &[&to.path]).await?;
             for path in &targets {
                 admission::writable(app, session_id, sftp, &[path]).await?;
@@ -842,7 +853,7 @@ pub(super) async fn cleanup(
                 app,
                 &row.id,
                 &to.child(path.clone()),
-                sftp.as_ref(),
+                metadata.as_ref(),
                 observation,
             )
             .await?;
@@ -850,9 +861,9 @@ pub(super) async fn cleanup(
         // Support jobs created before explicit artifact records. Only inspect
         // their destination tree and remove names matching a saved file key.
         if targets.is_empty() {
-            cleanup_file(app, &row.id, to, sftp.as_ref(), observation).await?;
+            cleanup_file(app, &row.id, to, metadata.as_ref(), observation).await?;
         }
-        let directory = match sftp.as_ref() {
+        let directory = match sftp {
             Some(s) => match s.symlink_metadata(&to.path).await {
                 Ok(m) => m.is_dir() && !m.is_symlink(),
                 Err(russh_sftp::client::error::Error::Status(st))
@@ -869,13 +880,13 @@ pub(super) async fn cleanup(
             },
         };
         if targets.is_empty() && directory {
-            cleanup_legacy_tree(app, &row.id, to, sftp.as_ref(), observation).await?;
+            cleanup_legacy_tree(app, &row.id, to, metadata.as_ref(), observation).await?;
         }
         Ok(())
     }
     .await;
-    if let Some(sftp) = sftp {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+    if let Some(metadata) = metadata {
+        metadata::close(metadata).await;
     }
     result
 }
@@ -884,9 +895,10 @@ async fn cleanup_legacy_tree(
     app: &AppHandle,
     id: &str,
     root: &Endpoint,
-    sftp: Option<&SftpSession>,
+    metadata: Option<&Arc<SftpSession>>,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
+    let sftp = metadata.map(Arc::as_ref);
     let prefixes: Vec<String> = app.state::<AppState>().db.with(|conn| {
         let mut query = conn.prepare("SELECT key FROM settings WHERE instr(key,?1)=1")?;
         let keys = query.query_map([format!("transfer-file:{id}:")], |r| r.get::<_, String>(0))?;
@@ -917,7 +929,7 @@ async fn cleanup_legacy_tree(
                     {
                         // Older Windows journals do not identify the original
                         // object. Preserve it and expose its exact location.
-                        cleanup_partial(&entry, sftp, None, observation).await?;
+                        cleanup_partial(&entry, metadata, None, observation).await?;
                     } else if prefixes
                         .iter()
                         .any(|prefix| name == format!("{prefix}.backup"))

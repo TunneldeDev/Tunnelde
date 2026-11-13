@@ -6,12 +6,19 @@ use super::*;
 pub(super) async fn commit(
     from: &Endpoint,
     to: &Endpoint,
-    sftp: Option<&SftpSession>,
+    sftp: Option<&Arc<SftpSession>>,
     cancel: &AtomicBool,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     match sftp {
-        Some(_) => interruptible(Some(cancel), rename_endpoint(from, to, sftp, observation)).await,
+        Some(sftp) => {
+            interruptible(Some(cancel), async {
+                metadata::rename(sftp, &from.path, &to.path, observation)
+                    .await
+                    .map_err(|error| rename::failure(&from.path, &to.path, error))
+            })
+            .await
+        }
         // A blocking local rename must settle before releasing its file guard.
         None => rename_endpoint(from, to, None, observation).await,
     }
@@ -22,7 +29,7 @@ pub(super) async fn commit(
 pub(super) async fn fence(
     previous: &Endpoint,
     successor: &Endpoint,
-    sftp: &SftpSession,
+    sftp: &Arc<SftpSession>,
     cancel: &AtomicBool,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<bool> {
@@ -44,10 +51,7 @@ pub(super) async fn fence(
         return Ok(true);
     }
     interruptible(Some(cancel), async {
-        match observation
-            .request(sftp.rename(&previous.path, &successor.path))
-            .await
-        {
+        match metadata::rename(sftp, &previous.path, &successor.path, observation).await {
             Ok(()) => Ok(true),
             Err(russh_sftp::client::error::Error::Status(status))
                 if status.status_code == StatusCode::NoSuchFile =>

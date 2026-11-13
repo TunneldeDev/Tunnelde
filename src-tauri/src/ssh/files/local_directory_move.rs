@@ -438,7 +438,7 @@ pub(super) async fn run(
         Ok(observation) => observation,
         Err(error) => return Outcome::Failed(0, error),
     };
-    let mut meter = Meter::new(app, id, name, 0, observation);
+    let mut meter = Meter::new(app, id, name, 0, observation, None);
     let result = async {
         check_cancelled(cancel)?;
         let mut row = Journal::get(app, id)?;

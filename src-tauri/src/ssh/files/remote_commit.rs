@@ -100,7 +100,7 @@ impl Replacement {
         let payload = Self::payload(from, to)?;
         tokio::time::timeout(
             Duration::from_secs(10),
-            observation.request(self.request(payload)),
+            observation.retained(async move { self.request(payload).await }),
         )
         .await
         .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?

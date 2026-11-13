@@ -41,12 +41,13 @@ async fn original_unlink_reply_allows_cleanup_only_after_the_actual_response() {
 }
 
 #[tokio::test]
-async fn missing_file_after_a_dropped_unlink_does_not_settle_its_request() {
+async fn missing_file_cannot_settle_a_retained_unlink_before_its_own_reply() {
     let root = temp_root("observed-unlink-drop");
     std::fs::write(root.join("target"), b"staging").unwrap();
     let state = Arc::new(State::default());
-    state.hold_remove.store(true, Ordering::SeqCst);
+    state.hold_remove_reply.store(true, Ordering::SeqCst);
     let sftp = client(&root, state.clone()).await;
+    let observer = client(&root, state.clone()).await;
     let observation = MutationObservation::default();
     let target = endpoint();
     {
@@ -54,14 +55,26 @@ async fn missing_file_after_a_dropped_unlink_does_not_settle_its_request() {
         tokio::pin!(work);
         tokio::select! {
             result = &mut work => panic!("unlink must wait: {result:?}"),
-            () = state.remove_started.notified() => {}
+            () = state.remove_applied.notified() => {}
         }
     }
-    state.release_remove.notify_one();
-    assert!(file_length(&target, Some(&sftp)).await.unwrap().is_none());
+    metadata::close(sftp).await;
+    assert!(file_length(&target, Some(&observer))
+        .await
+        .unwrap()
+        .is_none());
     assert!(!observation.settled());
     assert!(observation.seal().is_err());
-    sftp.close().await.unwrap();
+    state.release_remove_reply.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    observation.seal().unwrap();
+    observer.close().await.unwrap();
     std::fs::remove_dir(root).unwrap();
 }
 
