@@ -25,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .manage(automation::transport::Lifecycle::default())
         .manage(window::StartupWindow::default())
+        .manage(window::close::Registry::default())
         .manage(platform::background::BackgroundWindow::default())
         .manage(preview::Registry::default())
         .manage(plugins::frontend::Registry::default())
@@ -86,6 +87,14 @@ pub fn run() {
             }
             window::show_main(app);
         }))
+        .on_page_load(|webview, payload| {
+            use tauri::Manager;
+            if webview.label() == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                platform::window::close::reset(webview.app_handle());
+            }
+        })
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 use tauri::Manager;
@@ -139,6 +148,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            window::close::main_window_close_guard_claim,
+            window::close::main_window_close_guard_release,
+            window::close::main_window_close_guard_finish,
             services::forwarding::start::commands::forwarding_start_pending,
             services::forwarding::start::commands::forwarding_start_probe,
             services::forwarding::start::commands::forwarding_start_trust,
