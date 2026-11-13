@@ -138,6 +138,9 @@ where
                 };
                 match validate(&request, token) {
                     Ok(()) => {
+                        if tokio::time::Instant::now() >= deadline {
+                            return Err(std::io::ErrorKind::TimedOut.into());
+                        }
                         let execution = budget(&request.method);
                         // Preserve the original whole-exchange deadline for
                         // noninteractive calls. Extra time is granted only
