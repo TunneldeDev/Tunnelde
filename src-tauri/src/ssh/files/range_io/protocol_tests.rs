@@ -1208,8 +1208,7 @@ async fn empty_staging_close_cancels_without_duplicate_close_or_disconnecting_me
     .await;
     let session = SftpSession::new(stream).await.unwrap();
     let writer = Writer::Remote(Box::new(
-        session
-            .open_with_flags("/staging", OpenFlags::WRITE)
+        remote_writer::File::open(&session, "/staging", OpenFlags::WRITE, &Default::default())
             .await
             .unwrap(),
     ));

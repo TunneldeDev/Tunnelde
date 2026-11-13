@@ -245,7 +245,11 @@ async fn exclusive_staging_create_never_overwrites_an_existing_object() {
     };
     // No LSTAT is necessary to make exclusive OPEN safe: an existing entry must
     // make OPEN fail, without permitting truncation or a subsequent data writer.
-    assert!(create_writer(&part, Some(&observer), false).await.is_err());
+    assert!(
+        create_writer(&part, Some(&observer), false, &Default::default())
+            .await
+            .is_err()
+    );
     assert_eq!(tree.lock().unwrap().files[path], b"preserve");
     observer.close().await.unwrap();
 }
@@ -453,8 +457,12 @@ async fn cancelled_create(before_create: bool) {
     let writer = client(tree.clone(), Some(gate.clone())).await;
     let observer = client(tree.clone(), None).await;
     let cancel = AtomicBool::new(false);
+    let observation = Default::default();
     let result = tokio::join!(
-        interruptible(Some(&cancel), create_writer(&part, Some(&writer), false)),
+        interruptible(
+            Some(&cancel),
+            create_writer(&part, Some(&writer), false, &observation)
+        ),
         async {
             gate.arrived.acquire().await.unwrap().forget();
             cancel.store(true, Ordering::SeqCst);

@@ -1106,7 +1106,9 @@ mod tests {
             path: display_path(&root.join("target")),
         };
         let part = staging_endpoint(&target, "job", "part");
-        let writer = open_writer(&part, None, false).await.unwrap();
+        let writer = open_writer(&part, None, false, &Default::default())
+            .await
+            .unwrap();
         let Writer::Local(file) = &writer else {
             unreachable!()
         };
