@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { SearchQuery } from "@/lib/search/query";
 import type { HostFieldsSnapshot, HostFieldsUpdate } from "@/lib/hosts/fields";
 import type { ConnectionRoute, NetworkConnectionQuality } from "./network";
-import type { StorageCategory, StorageChange, StorageStatus } from "./storage";
+import type { StorageCategory, StorageChange, StorageRestartPlan, StorageStatus } from "./storage";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { nativeEvents } from "@/lib/events/native";
 import type {
@@ -89,6 +89,7 @@ export const api = {
     invoke<OutputSnapshot>("logs_output_read", { cursor }),
   appRestart: () => invoke<void>("app_restart"),
   storageRestartPending: () => invoke<boolean>("storage_restart_pending"),
+  storageRestartPlan: () => invoke<StorageRestartPlan | null>("storage_restart_plan"),
   storageStatus: () => invoke<StorageStatus>("storage_status"),
   storageSchedule: (changes: StorageChange[]) =>
     invoke<StorageStatus>("storage_schedule", { changes }),

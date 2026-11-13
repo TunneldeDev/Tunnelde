@@ -9,11 +9,11 @@ import { useSettings } from "@/store/settings";
 import { useDialogs } from "@/store/dialogs";
 import { useEditors } from "@/store/editors";
 import { requestApplicationAction } from "@/lib/session/restart";
-import type { StorageStatus } from "@/lib/api/storage";
+import type { StorageRestartPlan, StorageStatus } from "@/lib/api/storage";
 
 const api = vi.hoisted(() => ({
   storageStatus: vi.fn(),
-  storageRestartPending: vi.fn(),
+  storageRestartPlan: vi.fn(),
   storageSchedule: vi.fn(),
   storageCancel: vi.fn(),
   storagePick: vi.fn(),
@@ -49,12 +49,12 @@ beforeEach(async () => {
     error: null,
     draft: [],
   });
-  useRestartPrompt.setState({ open: false });
+  useRestartPrompt.setState({ open: false, observed: null });
   useDialogs.getState().close();
   useEditors.setState({ entries: {} });
   useSettings.setState((state) => ({ settings: { ...state.settings, showStatusBar: false } }));
   api.storageStatus.mockResolvedValue(empty);
-  api.storageRestartPending.mockResolvedValue(false);
+  api.storageRestartPlan.mockResolvedValue(null);
   api.storagePick.mockResolvedValue("D:\\Data");
   api.storageSchedule.mockImplementation(async (changes) => ({
     ...empty,
@@ -113,29 +113,29 @@ it("warns about dirty files before calling native restart", async () => {
 });
 
 it("ignores an older pending-status response after a plan is cancelled", async () => {
-  let resolve!: (pending: boolean) => void;
-  api.storageRestartPending.mockReturnValue(
-    new Promise<boolean>((done) => {
+  let resolve!: (pending: StorageRestartPlan | null) => void;
+  api.storageRestartPlan.mockReturnValue(
+    new Promise<StorageRestartPlan | null>((done) => {
       resolve = done;
     }),
   );
   const loading = useStorage.getState().loadRestartPending();
   await useStorage.getState().cancel();
-  resolve(true);
+  resolve({ id: "old", action: "apply", restartRequested: false });
   await loading;
   expect(useStorage.getState().restartPending).toBe(false);
 });
 
 it("ignores a pending-status response started during cancellation", async () => {
   let finishCancel!: (status: StorageStatus) => void;
-  let finishCheck!: (pending: boolean) => void;
+  let finishCheck!: (pending: StorageRestartPlan | null) => void;
   api.storageCancel.mockReturnValue(
     new Promise<StorageStatus>((done) => {
       finishCancel = done;
     }),
   );
-  api.storageRestartPending.mockReturnValue(
-    new Promise<boolean>((done) => {
+  api.storageRestartPlan.mockReturnValue(
+    new Promise<StorageRestartPlan | null>((done) => {
       finishCheck = done;
     }),
   );
@@ -143,7 +143,28 @@ it("ignores a pending-status response started during cancellation", async () => 
   const check = useStorage.getState().loadRestartPending();
   finishCancel(empty);
   await cancel;
-  finishCheck(true);
+  finishCheck({ id: "old", action: "apply", restartRequested: false });
   await check;
   expect(useStorage.getState().restartPending).toBe(false);
+});
+
+it("waits for an in-progress cancellation before observing another metadata reply", async () => {
+  let finishCancel!: (status: StorageStatus) => void;
+  api.storageCancel.mockReturnValue(
+    new Promise<StorageStatus>((done) => {
+      finishCancel = done;
+    }),
+  );
+  api.storageRestartPlan.mockResolvedValue({
+    id: "being-cancelled",
+    action: "apply",
+    restartRequested: false,
+  });
+  const cancel = useStorage.getState().cancel();
+  await useStorage.getState().refreshMetadata();
+  expect(useRestartPrompt.getState().open).toBe(false);
+  expect(useStorage.getState().restartPending).toBe(false);
+  finishCancel(empty);
+  await cancel;
+  expect(useRestartPrompt.getState().observed).toBe(null);
 });

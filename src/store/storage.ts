@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { api, isTauri } from "@/lib/api/ipc";
 import { translateError } from "@/lib/api/errors";
 import type { StorageChange, StorageStatus } from "@/lib/api/storage";
+import { useRestartPrompt } from "./restartPrompt";
 
 interface StorageStore {
   status: StorageStatus | null;
@@ -26,8 +27,11 @@ export const useStorage = create<StorageStore>((set, get) => {
     if (!isTauri() || signal?.aborted) return;
     const started = revision;
     const read = ++pendingRead;
-    const restartPending = await api.storageRestartPending();
-    if (!signal?.aborted && started === revision && read === pendingRead) set({ restartPending });
+    const plan = await api.storageRestartPlan();
+    if (!signal?.aborted && started === revision && read === pendingRead && !get().busy) {
+      set({ restartPending: plan !== null });
+      useRestartPrompt.getState().observe(plan);
+    }
   };
   const change = async (run: () => Promise<StorageStatus>) => {
     if (get().busy) return false;
@@ -36,6 +40,7 @@ export const useStorage = create<StorageStore>((set, get) => {
     try {
       const status = await run();
       set({ status, restartPending: !!status.pending });
+      useRestartPrompt.getState().observe(status.pending);
       return true;
     } catch (failure) {
       set({ error: translateError(failure) });
@@ -44,6 +49,7 @@ export const useStorage = create<StorageStore>((set, get) => {
       try {
         const status = await api.storageStatus();
         set({ status, restartPending: !!status.pending });
+        useRestartPrompt.getState().observe(status.pending);
       } catch {
         // Preserve the original operation error when recovery metadata is unavailable.
       }
@@ -82,7 +88,10 @@ export const useStorage = create<StorageStore>((set, get) => {
       loading = api
         .storageStatus()
         .then((status) => {
-          if (started === revision) set({ status, restartPending: !!status.pending, error: null });
+          if (started === revision) {
+            set({ status, restartPending: !!status.pending, error: null });
+            useRestartPrompt.getState().observe(status.pending);
+          }
         })
         .catch((failure: unknown) => {
           if (started === revision) set({ error: translateError(failure) });
