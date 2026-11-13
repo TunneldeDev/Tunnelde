@@ -604,6 +604,7 @@
     "timeout": "连接超时",
     "hostKeyUntrusted": "请先信任该主机密钥",
     "hostKeyChanged": "主机密钥已变化",
+    "connectionChanged": "连接期间主机、跳板路由、代理或已信任的密钥发生变化，请核对连接设置后重试。",
     "keyLoad": "无法读取私钥",
     "sessionMissing": "会话不存在",
     "sessionBusy": "会话繁忙",

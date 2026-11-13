@@ -58,6 +58,14 @@ key is being reviewed, asks for any missing jump credentials, and verifies the
 destination before enabling Connect. Changing a route does not bypass key trust.
 SFTP, port forwards and SSHFS reuse the resulting authenticated connection.
 
+Each connection attempt captures the complete ordered route and its effective TCP
+proxy before opening a socket. Editing an address, username, authentication method,
+key path, route, effective proxy or trusted key while the attempt is in progress
+rejects the pending connection. Review the settings and reconnect; the application
+does not automatically retry against a replacement destination. Cosmetic changes
+such as a host's display name do not cancel an attempt. Trusting a key records the
+reviewed fingerprint only for the endpoint that was actually probed.
+
 ## Transfer performance
 
 In **Settings → Files → Transfers**, total upload and download limits are set

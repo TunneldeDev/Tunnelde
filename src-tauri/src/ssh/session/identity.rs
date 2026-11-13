@@ -36,28 +36,13 @@ pub(crate) async fn trust_bound(
     credentials: &HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
     destination.verify_host(&crate::services::hosts::resolve(app, &host.id)?)?;
-    let info = probe_host_bound(app, host, credentials, Some(destination)).await?;
+    let snapshot = route::Snapshot::capture(app, host)?;
+    let info = route::probe(app, &snapshot, credentials, Some(destination)).await?;
     if info.fingerprint != fingerprint || expected_host_id != Some(info.host_id.as_str()) {
         return Err(AppError::validation("ssh.hostKeyChanged"));
     }
     destination.verify_host(&crate::services::hosts::resolve(app, &host.id)?)?;
-    let approved = if info.host_id == host.id {
-        host.clone()
-    } else {
-        crate::services::hosts::resolve(app, &info.host_id)?
-    };
-    app.state::<AppState>().db.with(|conn| {
-        if !host.id.starts_with(crate::plugins::host_sources::PREFIX) {
-            destination.verify_host(&db::hosts::find_host(conn, &host.id)?)?;
-        }
-        db::known_hosts::upsert(
-            conn,
-            &approved.host,
-            approved.port as i64,
-            &info.algorithm,
-            &info.fingerprint,
-        )
-    })?;
+    snapshot.approve(app, &info)?;
     Ok(HostKeyInfo {
         status: HostKeyStatus::Known,
         known_fingerprint: Some(info.fingerprint.clone()),
