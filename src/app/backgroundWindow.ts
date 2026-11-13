@@ -27,6 +27,7 @@ import { useFileClipboard } from "@/store/fileClipboard";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useTransferPanel } from "@/store/transferPanel";
+import { useRestartPrompt } from "@/store/restartPrompt";
 import {
   backgroundTasksBlockSuspension,
   backgroundTaskHistory,
@@ -53,6 +54,7 @@ interface WindowSnapshot {
   sessions: ReturnType<typeof useSsh.getState>["sessions"];
   outputs: ReturnType<typeof usePlugins.getState>["outputs"];
   storageDraft: ReturnType<typeof useStorage.getState>["draft"];
+  restartPrompt?: Pick<ReturnType<typeof useRestartPrompt.getState>, "observed">;
   monitorHistory: ReturnType<typeof useMonitorHistory.getState>["samples"];
   clipboard: ReturnType<typeof useFileClipboard.getState>["clip"];
   views: Record<string, unknown>;
@@ -81,6 +83,7 @@ export async function restoreBackgroundSnapshot(): Promise<boolean> {
   useSsh.setState({ sessions: snapshot.sessions });
   usePlugins.setState({ outputs: snapshot.outputs });
   useStorage.setState({ draft: snapshot.storageDraft });
+  useRestartPrompt.setState({ observed: snapshot.restartPrompt?.observed ?? null, open: false });
   useMonitorHistory.setState({ samples: snapshot.monitorHistory });
   useFileClipboard.setState({ clip: snapshot.clipboard });
   useWorkspace.setState(snapshot.workspace);
@@ -150,6 +153,7 @@ export async function suspendBackgroundWindow(token: number): Promise<void> {
       terminals,
       outputs: usePlugins.getState().outputs,
       storageDraft: useStorage.getState().draft,
+      restartPrompt: { observed: useRestartPrompt.getState().observed },
       monitorHistory: useMonitorHistory.getState().samples,
       clipboard: useFileClipboard.getState().clip,
       views: viewStateSnapshot(),

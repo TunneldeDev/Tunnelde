@@ -4,6 +4,7 @@ pub mod layout;
 mod migration;
 pub(crate) mod public;
 pub(crate) mod recovery;
+pub(crate) mod restart;
 mod restore;
 
 use std::sync::Mutex;

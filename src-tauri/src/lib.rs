@@ -204,6 +204,7 @@ pub fn run() {
             commands::app_info,
             storage::storage_status,
             storage::storage_restart_pending,
+            storage::restart::storage_restart_plan,
             storage::storage_schedule,
             storage::storage_cancel,
             storage::storage_open,
