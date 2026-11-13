@@ -163,3 +163,23 @@ fn unicode_revision_byte_bound_is_shared_with_the_native_preferences_writer() {
         .unwrap()["inputSchema"]["properties"]["revision"];
     assert_eq!(revision["x-maxBytes"], 128);
 }
+
+#[test]
+fn only_exact_interactive_methods_extend_the_authenticated_execution_budget() {
+    use std::time::Duration;
+    for name in ["forwards.save", "forwards.remove", "forwards.stop"] {
+        assert_eq!(execution_budget(name), Duration::from_secs(135));
+        assert_eq!(exchange_budget(name), Duration::from_secs(150));
+    }
+    for name in [
+        "preferences.update",
+        "forwards.list",
+        "forwards.start",
+        "forwards.save.extra",
+        "forwards.SAVE",
+        "unknown",
+    ] {
+        assert_eq!(execution_budget(name), Duration::from_secs(10));
+        assert_eq!(exchange_budget(name), Duration::from_secs(10));
+    }
+}
