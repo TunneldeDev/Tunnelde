@@ -2,6 +2,50 @@
 use super::*;
 
 #[tokio::test]
+async fn queued_data_admission_preserves_typed_cancel_and_revocation_without_wire_io() {
+    use crate::ssh::files::Outcome;
+    for reason in [CANCELLED, "pluginSecurity.changed"] {
+        for kind in ["write", "mkdir"] {
+            let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+            let current = calls.clone();
+            let original = MutationObservation::default();
+            let guarded = original.guarded(move || {
+                if current.fetch_add(1, Ordering::SeqCst) == 0 {
+                    Ok(()) // Initially admitted before entering the worker queue.
+                } else if reason == CANCELLED {
+                    Err(AppError::Ssh(reason.into()))
+                } else {
+                    Err(AppError::validation(reason))
+                }
+            });
+            let (stream, peer) =
+                stream_with_close(None, Duration::ZERO, CloseReply::default()).await;
+            let session = DataSession::new_observed(stream, guarded).await.unwrap();
+            let result = if kind == "write" {
+                session.write("unused", 0, vec![7]).await
+            } else {
+                session
+                    .create_private_directory("/never-created")
+                    .await
+                    .map(|_| ())
+            };
+            assert_eq!(result.as_ref().unwrap_err().to_string(), reason);
+            assert_eq!(calls.load(Ordering::SeqCst), 2);
+            assert!(
+                original.settled(),
+                "unsent denial acquired an unknown request"
+            );
+            assert!(peer.lock().unwrap().writes.is_empty());
+            match Outcome::from_result(result, 42, &AtomicBool::new(true)) {
+                Outcome::Cancelled(42) if reason == CANCELLED => {}
+                Outcome::Failed(42, AppError::Validation(error)) if error == reason => {}
+                _ => panic!("queued {kind} lost its typed admission result: {reason}"),
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn actual_plugin_policy_revocation_restriction_and_new_generation_stop_wire_writes() {
     use crate::plugins::security::PluginSecurity;
     for action in ["revoke", "restrict", "restart"] {

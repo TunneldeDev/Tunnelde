@@ -288,6 +288,10 @@ When an operation and its completion both fail, actionable operation details
 (such as backup recovery) are preserved and the completion error is logged;
 ordinary cancellation cannot hide the completion failure. An unknown original
 request continues to retain its ownership independently of the displayed error.
+Queued raw-data admission preserves typed local cancellation and permission
+errors. A denial before the request is polled releases only that definitely
+unsent request receipt; it is not presented as a server rejection or an unknown
+write. Already admitted protocol requests still require their original reply.
 
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.

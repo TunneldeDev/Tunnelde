@@ -24,6 +24,11 @@ pub(crate) struct Receipt {
     pending: Arc<AtomicUsize>,
 }
 
+enum RequestFailure {
+    Admission(AppError),
+    Protocol(Error),
+}
+
 impl Receipt {
     pub(crate) fn acknowledge(self) {
         self.pending.fetch_sub(1, Ordering::AcqRel);
@@ -121,22 +126,51 @@ impl Observation {
         &self,
         request: impl Future<Output = Result<T, Error>> + Send + 'static,
     ) -> Result<T, Error> {
-        self.authorize().map_err(authorization::protocol)?;
-        let receipt = self
-            .begin()
-            .ok_or_else(|| Error::IO("Mutation request admission is closed".into()))?;
+        self.retained_result(request)
+            .await
+            .map_err(|failure| match failure {
+                RequestFailure::Admission(error) => authorization::protocol(error),
+                RequestFailure::Protocol(error) => error,
+            })
+    }
+
+    /// Application adapters can preserve typed local cancellation/admission
+    /// errors instead of wrapping them as if the peer had rejected a request.
+    pub(crate) async fn retained_checked<T: Send + 'static>(
+        &self,
+        request: impl Future<Output = Result<T, Error>> + Send + 'static,
+        map: impl FnOnce(Error) -> AppError,
+    ) -> AppResult<T> {
+        self.retained_result(request)
+            .await
+            .map_err(|failure| match failure {
+                RequestFailure::Admission(error) => error,
+                RequestFailure::Protocol(error) => map(error),
+            })
+    }
+
+    async fn retained_result<T: Send + 'static>(
+        &self,
+        request: impl Future<Output = Result<T, Error>> + Send + 'static,
+    ) -> Result<T, RequestFailure> {
+        self.authorize().map_err(RequestFailure::Admission)?;
+        let receipt = self.begin().ok_or_else(|| {
+            RequestFailure::Admission(AppError::validation("editor.remoteOutcomeUnknown"))
+        })?;
         let observation = self.clone();
         let worker = tauri::async_runtime::spawn(async move {
             // The runtime queue may outlive the caller's original approval.
             if let Err(error) = observation.authorize() {
                 receipt.acknowledge(); // Definitely unsent; no request polled.
-                return Err(authorization::protocol(error));
+                return Err(RequestFailure::Admission(error));
             }
-            receipt.finish(request.await)
+            receipt
+                .finish(request.await)
+                .map_err(RequestFailure::Protocol)
         });
-        worker
-            .await
-            .map_err(|error| Error::IO(format!("Mutation response worker: {error}")))?
+        worker.await.map_err(|error| {
+            RequestFailure::Protocol(Error::IO(format!("Mutation response worker: {error}")))
+        })?
     }
 
     /// Composite/exec adapters without typed per-request replies remain

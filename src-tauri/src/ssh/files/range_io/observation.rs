@@ -18,8 +18,8 @@ impl Writes {
     pub(super) async fn request<T: Send + 'static>(
         &self,
         work: impl Future<Output = Result<T, Error>> + Send + 'static,
-    ) -> Result<T, Error> {
-        self.requests.retained(work).await
+    ) -> AppResult<T> {
+        self.requests.retained_checked(work, map_sftp).await
     }
 
     pub(super) async fn open(&self, raw: Arc<RawSftpSession>, path: String) -> AppResult<Handle> {
