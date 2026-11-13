@@ -1,7 +1,10 @@
 //! Desktop lifecycle: load existing recovery authority, never silently initialize it.
 mod admission;
-mod errors;
+pub(in crate::ssh::files::native_save) mod errors;
+mod initialization;
 mod mutation;
+mod retirement;
+mod saving;
 pub(crate) use super::journal::admission::Kind as MutationKind;
 pub(crate) use super::journal::admission::{TaskEndpoint, TransferOutcome, TransferTask};
 pub(crate) use mutation::{
@@ -31,6 +34,37 @@ pub(crate) struct Manager {
     observed: Arc<AtomicBool>,
 }
 impl Manager {
+    pub(crate) async fn setup(
+        &self,
+        app: tauri::AppHandle,
+        session: String,
+        path: String,
+    ) -> crate::error::AppResult<bool> {
+        super::setup::install(app, session, path).await
+    }
+    pub(in crate::ssh::files::native_save) fn directory(&self) -> &Path {
+        &self.directory
+    }
+    pub(in crate::ssh::files::native_save) async fn ready_setup(
+        &self,
+        plan: &journal::setup::Plan,
+    ) -> crate::error::AppResult<bool> {
+        let Some(service) = self.existing().await.map_err(errors::app_journal)? else {
+            return Ok(false);
+        };
+        let setups = service.setups().await.map_err(errors::app_journal)?;
+        let matching = setups.iter().find(|record| {
+            record.plan.destination.address == plan.destination.address
+                && record.plan.context == plan.context
+        });
+        match matching {
+            Some(record) if record.stage == journal::setup::Stage::Ready => Ok(true),
+            Some(_) => Err(crate::error::AppError::validation(
+                "editor.remoteOutcomeUnknown",
+            )),
+            None => Ok(false),
+        }
+    }
     pub fn new(database: &Path, application: &str) -> Self {
         Self {
             directory: database.join("native-file-saves"),
@@ -59,7 +93,7 @@ impl Manager {
                 .map_err(|_| journal::Error::Unavailable)?
                 .is_none()
             {
-                return if observed.load(Ordering::Acquire) {
+                return if observed.load(Ordering::Acquire) || initialization::marked(&directory)? {
                     Err(journal::Error::Changed)
                 } else {
                     Ok(None)
@@ -86,7 +120,12 @@ impl Manager {
                         .records()
                         .await?
                         .iter()
-                        .map(projection::record)
+                        .map(|record| {
+                            let mut view = projection::record(record);
+                            view.running =
+                                service.legacy_worker_running(&record.binding.operation_id);
+                            view
+                        })
                         .collect();
                     pending.extend(service.legacy_claims().await?.iter().map(|claim| {
                         projection::legacy(claim, service.legacy_worker_running(&claim.id))
@@ -97,7 +136,11 @@ impl Manager {
                             .await?
                             .iter()
                             .filter(|setup| setup.stage != super::journal::setup::Stage::Ready)
-                            .map(projection::setup),
+                            .map(|setup| {
+                                let mut view = projection::setup(setup);
+                                view.running = service.legacy_worker_running(&setup.id);
+                                view
+                            }),
                     );
                     Ok(pending)
                 }
@@ -231,9 +274,9 @@ impl Manager {
                 record.binding.platform(),
             )
             .map_err(errors::app_remote)?;
-            // Explicit user action queries the original authority. No initialize, submit,
-            // cancellation or backup release is performed by this task's retry action.
-            service
+            // Query the original authority without initializing, resubmitting or
+            // cancelling. A releasable result may then offer explicit backup cleanup.
+            let record = service
                 .recover(&record, &client, |_| {
                     state
                         .ssh
@@ -249,6 +292,7 @@ impl Manager {
                 })
                 .await
                 .map_err(errors::app_service)?;
+            retirement::release(&service, record, &client, app, &session.id, &destination).await?;
             Ok(())
         }
         .await;

@@ -276,6 +276,7 @@ pub fn run() {
             commands::local_read_text,
             commands::local_write_text,
             commands::sftp_read_text,
+            commands::sftp_setup_native_save,
             commands::sftp_write_text,
             commands::sftp_copy,
             commands::local_copy,

@@ -1,5 +1,5 @@
 //! Protect existing native recovery records from legacy mutation entry points.
-//! New native reservations remain test-only: this is not bilateral admission.
+//! Native setup and saves use the same durable bilateral admission authority.
 use super::*;
 use crate::{
     error::{AppError, AppResult},

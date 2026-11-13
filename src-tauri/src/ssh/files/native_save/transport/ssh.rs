@@ -16,8 +16,8 @@ pub(in super::super) struct Ssh {
     command: String,
 }
 impl Ssh {
-    // The caller must finish explicit install/runtime approval first. No RPC/UI
-    // can construct this adapter until the corresponding consent flow is wired.
+    // New saves require completed host-owned setup approval. Recovery selects
+    // only its original authority and never initializes another runtime.
     pub fn selected(
         app: AppHandle,
         session: String,

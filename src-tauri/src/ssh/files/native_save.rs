@@ -1,5 +1,6 @@
 //! Experimental desktop protocol adapter, separate from legacy SFTP and runners.
-//! No installation, capability advertisement, public RPC or UI path is enabled here.
+//! Explicit per-folder installation and native saves share durable recovery.
+//! Public plugin save capability remains unadvertised and no runtime auto-installs.
 mod client;
 mod codec;
 #[cfg(test)]
@@ -9,6 +10,7 @@ mod journal;
 pub(crate) mod runtime;
 mod secrets;
 mod service;
+pub(in crate::ssh::files) mod setup;
 mod transport;
 
 #[cfg(test)]

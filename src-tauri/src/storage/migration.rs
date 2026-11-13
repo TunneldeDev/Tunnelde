@@ -45,7 +45,8 @@ fn validate_plan(
         // records are currently inaccessible/corrupt. Never hide it via a blank move.
         if change.category == Category::Database
             && !change.migrate
-            && layout::metadata(&source.join("native-file-saves"))?.is_some()
+            && (layout::metadata(&source.join("native-file-saves"))?.is_some()
+                || layout::metadata(&source.join("native-file-saves.initialized"))?.is_some())
         {
             return Err(AppError::validation(
                 "storage.nativeRecoveryRequiresMigration",

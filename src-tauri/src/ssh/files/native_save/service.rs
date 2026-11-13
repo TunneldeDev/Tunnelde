@@ -9,6 +9,7 @@ use super::{
 use std::sync::{Arc, Mutex};
 mod mutation;
 pub(super) use mutation::Worker as LegacyWorker;
+mod setup;
 mod storage;
 use storage::Storage;
 use tokio::sync::Semaphore;
@@ -72,9 +73,7 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.journal()?.discard_setup(&expected))
             .await
     }
-    // New production writes stay disabled until bilateral durable admission and
-    // installation consent are integrated. Recovery must not mint a new submit.
-    #[cfg(test)]
+    // Only a host-owned, explicitly initialized setup may call this in production.
     pub async fn reserve(&self, binding: Binding, prepared: &Prepared) -> journal::Result<Record> {
         if !binding.matches(&binding.authority, prepared) {
             return Err(journal::Error::Unrecognized);
