@@ -23,6 +23,7 @@ on:
     paths:
       - .github/workflows/installer-upgrade.yml
       - scripts/qa/windows-upgrade/**
+      - scripts/qa/local-cli/**
 
 permissions:
   contents: read

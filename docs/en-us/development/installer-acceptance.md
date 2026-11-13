@@ -25,7 +25,8 @@ elevated, as documented in Microsoft's WebView2 security guidance.
 
 For a target release with local CLI support, enable `check_cli`. This additionally
 executes the installed desktop binary's offline version/discovery and all seven
-live methods, including a conditional settings update and restoration. Leave it
+live methods, including a conditional settings update, stale-write rejection
+without a state change, and restoration. Leave it
 disabled for historical releases that predate the CLI.
 
 Evidence is uploaded for 14 days, including results, installer output, application
@@ -38,3 +39,24 @@ scenario. It does **not** prove in-app OTA handoff, saved credentials, physical
 macOS/Linux behavior or every historical upgrade path. Those remain separate
 release acceptance checks. This workflow does not publish releases or promote
 experimental APIs to stable.
+
+## Public macOS and Linux CLI packages
+
+The **Public packaged local CLI** workflow downloads the exact public macOS
+Intel/Apple Silicon archive or Linux x64 Debian package selected by the runner's
+actual architecture. It verifies the published size and SHA-256, extracts it and
+executes that packaged binary. Linux uses an isolated virtual display and D-Bus
+session. Application data stays in the disposable runner's temporary directory;
+GitHub tokens are removed from application and CLI subprocesses.
+
+The check runs offline discovery/version before GUI startup, starts the desktop,
+then calls all seven local methods. A real conditional preference update is
+followed by stale-write rejection and restoration. Results and process logs are
+uploaded for 14 days. No compilation or plugin installation is required.
+
+This proves execution of the selected packaged architecture and local protocol.
+Extracting a Debian package or application archive does not test installer
+registration, Gatekeeper/quarantine, physical hardware or in-app OTA. The harness
+terminates only its own disposable application process; that cleanup is not
+normal-shutdown acceptance. Windows installer and data retention remain covered
+by the separate workflow above.
