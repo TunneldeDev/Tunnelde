@@ -19,6 +19,7 @@ import {
   validateTitle,
 } from "../automation.mjs";
 import { VERSION_PATHS, versionContents } from "../version.mjs";
+import { TARGET_PATH } from "../planning/target.mjs";
 
 const sha = (letter) => letter.repeat(40);
 const main = sha("a"),
@@ -288,6 +289,91 @@ test("release plans use authoritative heads and last promoted dev SHA across squ
     return { data: { status: "identical", total_commits: 0, commits: [] } };
   };
   assert.equal((await planDevelopment(f)).version, undefined);
+});
+
+test("one reviewed milestone drives both stable promotion and immutable Beta snapshots", async () => {
+  for (const channel of ["stable", "beta"]) {
+    const f = fixture();
+    f.contents.set(
+      `${dev}:${TARGET_PATH}`,
+      JSON.stringify({
+        schemaVersion: 1,
+        baseVersion: "0.26.1",
+        targetVersion: "1.0.0",
+      }),
+    );
+    const plan = await planDevelopment(f);
+    assert.equal(plan.version, "1.0.0");
+    assert.match(plan.release.heading, /\[1\.0\.0\]/);
+    if (channel === "stable") {
+      await maintainReleasePr({ ...f, plan });
+      assert.equal(JSON.parse(f.contents.get(`${generated}:${SOURCE_PATH}`)).version, "1.0.0");
+      assert.equal(
+        f.calls.find((call) => call.createPr).createPr.title,
+        "chore(main): release 1.0.0",
+      );
+    } else {
+      assert.equal(await prepareBeta({ ...f, plan }), "v1.0.0-beta.1");
+      assert.match(f.contents.get(`${generated}:CHANGELOG.md`), /\[1\.0\.0-beta\.1\]/);
+    }
+    assert.equal(f.references["heads/main"], main);
+    assert.equal(f.references["heads/dev"], dev);
+  }
+});
+
+test("target selection cannot lower the automatic semantic bump or silently use a changed baseline", async () => {
+  const f = fixture({
+    commits: [{ ...source, commit: { message: "feat!: replace a stable contract" } }],
+  });
+  f.files["package.json"] = JSON.stringify({ version: "1.0.0" });
+  f.contents.set(
+    `${dev}:${TARGET_PATH}`,
+    JSON.stringify({
+      schemaVersion: 1,
+      baseVersion: "1.0.0",
+      targetVersion: "1.1.0",
+    }),
+  );
+  await assert.rejects(planDevelopment(f), /required semantic version bump/);
+  f.contents.set(
+    `${dev}:${TARGET_PATH}`,
+    JSON.stringify({
+      schemaVersion: 1,
+      baseVersion: "0.38.0",
+      targetVersion: "2.0.0",
+    }),
+  );
+  await assert.rejects(planDevelopment(f), /baseline changed/);
+  assert.equal(
+    f.calls.some((call) => call.commit || call.createRef || call.updateRef),
+    false,
+  );
+  f.contents.set(
+    `${dev}:${TARGET_PATH}`,
+    JSON.stringify({
+      schemaVersion: 1,
+      baseVersion: "0.38.0",
+      targetVersion: "1.0.0",
+    }),
+  );
+  assert.equal((await planDevelopment(f)).version, "2.0.0");
+});
+
+test("promotion policy rejects a version that differs from the source-controlled target", async () => {
+  const f = fixture();
+  f.contents.set(
+    `${dev}:${TARGET_PATH}`,
+    JSON.stringify({
+      schemaVersion: 1,
+      baseVersion: "0.26.1",
+      targetVersion: "1.0.0",
+    }),
+  );
+  await maintainReleasePr({ ...f, plan: await planDevelopment(f) });
+  const original = JSON.parse(f.contents.get(`${generated}:${SOURCE_PATH}`));
+  f.contents.set(`${generated}:${SOURCE_PATH}`, JSON.stringify({ ...original, version: "0.27.0" }));
+  await assert.rejects(checkPullRequest({ ...f, number: 15 }), /reviewed target version/);
+  assert.equal(f.calls.at(-1).status.state, "failure");
 });
 
 test("release highlights ignore an unchanged promoted summary and retain a newly edited one", async () => {
