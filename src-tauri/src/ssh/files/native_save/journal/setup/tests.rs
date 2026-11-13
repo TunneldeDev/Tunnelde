@@ -213,11 +213,11 @@ fn alias_host_and_windows_spelling_cannot_evade_installation_exclusion() {
     let mut windows = original.clone();
     windows.package.platform = "windows-x86_64".into();
     windows.context.scope = "C:/workspace".into();
-    windows.install_directory = "C:/Users/user/Tunnelde/helpers".into();
-    windows.selection.executable = "C:/Users/user/Tunnelde/helpers/agent.exe".into();
+    windows.install_directory = "C:/qa/Tunnelde/helpers".into();
+    windows.selection.executable = "C:/qa/Tunnelde/helpers/agent.exe".into();
     windows.selection.directory = "C:/workspace/.tunnelde/saves".into();
     assert!(windows.valid());
-    assert!(windows.protects(r"c:\USERS\USER\Tunnelde\helpers\agent.exe"));
+    assert!(windows.protects(r"c:\QA\Tunnelde\helpers\agent.exe"));
     assert!(windows.protects("/C:/workspace/.tunnelde/saves/state"));
     assert!(!windows.protects("D:/workspace"));
     windows.selection.executable = "D:/elsewhere/agent.exe".into();
@@ -250,6 +250,36 @@ fn bounded_retention_never_evicts_unknown_installations() {
             .len(),
         32
     );
+}
+
+#[test]
+fn generated_transfer_paths_cannot_extend_into_retained_installation_state() {
+    let fixture = Fixture::new();
+    let mut journal = fixture.journal();
+    journal.enable_setups().unwrap();
+    let selected = plan();
+    journal.reserve_setup(owner(), selected.clone()).unwrap();
+    let claim = journal
+        .reserve_legacy(
+            Kind::Transfer,
+            owner(),
+            vec![scope(&selected, "/workspace/source")],
+        )
+        .unwrap();
+    let _worker = journal.dispatch_legacy(&claim).unwrap();
+    let active = journal.legacy_claims().unwrap().remove(0);
+    let protected = format!("{}/staging", selected.selection.directory);
+    assert!(matches!(
+        journal.extend_transfer(&active, vec![scope(&selected, &protected)]),
+        Err(Error::Occupied)
+    ));
+    assert!(journal.legacy_claims().unwrap()[0] == active);
+    journal
+        .extend_transfer(
+            &active,
+            vec![scope(&selected, "/workspace/unrelated-staging")],
+        )
+        .unwrap();
 }
 
 #[test]
