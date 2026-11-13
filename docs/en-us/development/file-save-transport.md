@@ -171,9 +171,15 @@ is mapped for presentation. A writable OPEN retains a separate handle receipt
 until its original successful CLOSE; rejected CLOSE, channel shutdown or a later
 successful write cannot release it. The compressed protocol worker tracks original
 request ids and validates mutation-reply shapes before delivery, so it can observe
-a late terminal reply even after the caller cancels. Unretained raw SFTP requests dropped by
-their caller remain unknown because the library no longer delivers that response
-to the observer. Pseudo connection statuses are not terminal MKDIR rejections.
+a late terminal reply even after the caller cancels. Raw range-channel WRITE,
+COPY_DATA and MKDIR also retain their original worker and channel after delivery
+is cancelled. Writable OPEN returns an owned handle: abandoned delivery closes
+that exact handle once its original reply arrives, and a cancelled CLOSE wait
+does not discard its original response observer. Handle ownership binds the
+actual channel and individual OPEN, so reused handle bytes cannot settle a
+different OPEN. A transport failure or protocol timeout still retains uncertainty;
+only the original typed reply can settle its request. Pseudo connection statuses
+are not terminal MKDIR rejections.
 Ordinary metadata-channel writable files and transfer-directory creation share
 the same observation as the range workers. Writable OPEN remains owned until
 its own successful CLOSE, including empty staging files and resumed writers.

@@ -1,73 +1,59 @@
-//! Raw SFTP completion and writable-handle ownership on the actual data channel.
+//! Original raw SFTP workers retain their channel and completion after cancellation.
+mod handle;
 use super::*;
-use crate::ssh::files::native_save::runtime::{
-    terminal_mutation_status, MutationObservation, MutationReceipt,
-};
+use crate::ssh::files::native_save::runtime::{terminal_mutation_status, MutationObservation};
+pub(super) use handle::Handle;
 use russh_sftp::client::error::Error;
-use std::{collections::HashMap, future::Future, sync::Mutex};
+use std::future::Future;
 
 pub(super) struct Writes {
     requests: MutationObservation,
-    handles: Mutex<HashMap<String, MutationReceipt>>,
 }
 
 impl Writes {
     pub(super) fn new(requests: MutationObservation) -> Self {
-        Self {
-            requests,
-            handles: Mutex::new(HashMap::new()),
-        }
+        Self { requests }
     }
 
-    pub(super) async fn request<T>(
+    pub(super) async fn request<T: Send + 'static>(
         &self,
-        work: impl Future<Output = Result<T, Error>>,
+        work: impl Future<Output = Result<T, Error>> + Send + 'static,
     ) -> Result<T, Error> {
-        self.requests.request(work).await
+        self.requests.retained(work).await
     }
 
-    pub(super) async fn open(
-        &self,
-        work: impl Future<Output = Result<russh_sftp::protocol::Handle, Error>>,
-    ) -> AppResult<String> {
+    pub(super) async fn open(&self, raw: Arc<RawSftpSession>, path: String) -> AppResult<Handle> {
         self.requests.authorize()?;
         let receipt = self
             .requests
             .begin()
             .ok_or_else(|| AppError::validation("editor.remoteOutcomeUnknown"))?;
-        match work.await {
-            Ok(reply) => {
-                let mut handles = self.handles.lock().unwrap();
-                // A server may reuse a handle after processing a CLOSE whose
-                // reply our caller dropped. Replacing this map entry drops the
-                // old receipt without acknowledging it, so later CLOSE can
-                // settle only this newly observed OPEN, never the earlier one.
-                handles.insert(reply.handle.clone(), receipt);
-                Ok(reply.handle)
+        let observation = self.requests.clone();
+        // The returned Handle also owns abandoned delivery: if cancellation
+        // drops the successful result, its destructor closes this exact OPEN.
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = observation.authorize() {
+                receipt.acknowledge(); // Definitely unsent.
+                return Err(error);
             }
-            Err(error) => {
-                if matches!(&error, Error::Status(status) if terminal_mutation_status(status)) {
-                    receipt.acknowledge();
-                }
-                Err(map_sftp(error))
-            }
-        }
-    }
-
-    pub(super) async fn close(&self, raw: &RawSftpSession, handle: &str) -> AppResult<()> {
-        // Move the exact OPEN receipt into its original CLOSE future. A new
-        // OPEN may reuse the same bytes while this reply is delayed, so looking
-        // up by handle after await could accidentally retire the new writer.
-        let writing = self.handles.lock().unwrap().remove(handle);
-        if let Some(receipt) = writing {
-            self.requests
-                .request_completion(raw.close(handle))
+            match raw
+                .open(
+                    path,
+                    OpenFlags::WRITE,
+                    russh_sftp::protocol::FileAttributes::empty(),
+                )
                 .await
-                .map_err(map_sftp)?;
-            receipt.acknowledge();
-        } else {
-            raw.close(handle).await.map_err(map_sftp)?;
-        }
-        Ok(())
+            {
+                Ok(reply) => Ok(Handle::writable(reply.handle, raw, observation, receipt)),
+                Err(error) => {
+                    if matches!(&error, Error::Status(status) if terminal_mutation_status(status)) {
+                        receipt.acknowledge();
+                    }
+                    Err(map_sftp(error))
+                }
+            }
+        })
+        .await
+        .map_err(|error| AppError::internal(format!("SFTP OPEN worker: {error}")))?
     }
 }
