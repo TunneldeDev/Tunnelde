@@ -64,6 +64,7 @@ export interface RecoveryBrowserRequest {
 }
 export interface RecoveryBrowserPlan {
   host: Host | null;
+  jumpHosts: Host[];
 }
 export interface RecoveryBrowserTarget {
   session: SshSession;

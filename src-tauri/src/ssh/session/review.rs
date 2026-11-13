@@ -115,6 +115,16 @@ impl Target {
         route::probe(app, &self.0, credentials, None).await
     }
 
+    /// Recovery additionally pins the target key recorded by the original runner.
+    pub(crate) async fn probe_bound(
+        &self,
+        app: &AppHandle,
+        credentials: &HashMap<String, HopCredential>,
+        destination: &SessionIdentity,
+    ) -> AppResult<HostKeyInfo> {
+        route::probe(app, &self.0, credentials, Some(destination)).await
+    }
+
     pub(crate) async fn trust(
         self,
         app: &AppHandle,
@@ -168,6 +178,18 @@ impl Target {
             return Err(changed());
         }
         connect_captured(app, request, password_auth, published, None, &self.0).await
+    }
+
+    pub(crate) async fn connect_bound(
+        &self,
+        app: AppHandle,
+        request: SshConnectRequest,
+        destination: &SessionIdentity,
+    ) -> AppResult<SessionInfo> {
+        if request.host_id != self.0.target().id {
+            return Err(changed());
+        }
+        connect_captured(app, request, false, false, Some(destination), &self.0).await
     }
 }
 

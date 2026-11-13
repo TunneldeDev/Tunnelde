@@ -124,6 +124,12 @@ browser and shows the derived configuration path when preparation was recorded.
 It reuses a matching user-managed SSH connection. Plugin-owned and dedicated
 forwarding connections are excluded. Otherwise, the normal credential and trust
 dialog creates an independent background connection to the original saved host.
+Before displaying credentials, it captures the complete jump route, authentication
+settings, trust baseline and resolved proxy. Probes, explicit trust and retries
+retain this review. A connection-setting change requires reopening the dialog;
+it cannot send the existing credentials to a replacement jump. Probe, trust and
+connect operations are serialized for that request, and cancellation or a changed
+recovery record prevents a late trust write or connection acceptance.
 The captured address and server key are checked before target authentication;
 editing the host or trusting a different key cannot redirect this action. The
 exact recovery record is checked again before opening the browser. Cancelling or

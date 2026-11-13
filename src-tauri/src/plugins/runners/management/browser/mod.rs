@@ -2,7 +2,9 @@
 mod connection;
 pub mod contracts;
 mod destination;
+mod operation;
 pub(in crate::plugins::runners) mod registry;
+mod verification;
 
 use crate::{
     error::{AppError, AppResult},
@@ -33,6 +35,14 @@ pub fn runner_recovery_browser_prepare(app: AppHandle, request: OpenRequest) -> 
     } else {
         None
     };
+    let target = host
+        .as_ref()
+        .map(|host| session::review::Target::from_displayed(&app, host))
+        .transpose()?;
+    let jump_hosts = target
+        .as_ref()
+        .map_or_else(Vec::new, |target| target.jump_hosts());
+    let review = target.as_ref().map(|target| target.review());
     let lease = state
         .runners
         .admit(&request.plugin_id, &format!("browser:{}", request.token))?;
@@ -44,6 +54,7 @@ pub fn runner_recovery_browser_prepare(app: AppHandle, request: OpenRequest) -> 
         cancelled,
         connection: std::sync::Mutex::new(Connection {
             session,
+            review,
             ..Default::default()
         }),
         _lease: lease,
@@ -67,7 +78,7 @@ pub fn runner_recovery_browser_prepare(app: AppHandle, request: OpenRequest) -> 
             _ = signal.changed() => {}
         }
     });
-    Ok(Plan { host })
+    Ok(Plan { host, jump_hosts })
 }
 
 #[cfg(test)]
@@ -91,21 +102,7 @@ pub async fn runner_recovery_browser_probe(
     jump_credentials: HashMap<String, session::HopCredential>,
 ) -> AppResult<HostKeyInfo> {
     let pending = app.state::<AppState>().runners.browsers.get(&id)?;
-    destination::current(&app, &pending)?;
-    let host = destination::host(&app, &pending.record)?;
-    let info = registry::guard(
-        &pending,
-        session::probe_host_bound(
-            &app,
-            &host,
-            &jump_credentials,
-            Some(destination::identity(&pending.record)?),
-        ),
-    )
-    .await?;
-    destination::current(&app, &pending)?;
-    destination::host(&app, &pending.record)?;
-    Ok(info)
+    verification::probe(&app, &pending, &jump_credentials).await
 }
 
 #[tauri::command]
@@ -117,23 +114,14 @@ pub async fn runner_recovery_browser_trust(
     jump_credentials: HashMap<String, session::HopCredential>,
 ) -> AppResult<HostKeyInfo> {
     let pending = app.state::<AppState>().runners.browsers.get(&id)?;
-    destination::current(&app, &pending)?;
-    let host = destination::host(&app, &pending.record)?;
-    let info = registry::guard(
+    verification::trust(
+        &app,
         &pending,
-        session::trust_bound(
-            &app,
-            &host,
-            destination::identity(&pending.record)?,
-            &fingerprint,
-            expected_host_id.as_deref(),
-            &jump_credentials,
-        ),
+        &fingerprint,
+        expected_host_id.as_deref(),
+        &jump_credentials,
     )
-    .await?;
-    destination::current(&app, &pending)?;
-    destination::host(&app, &pending.record)?;
-    Ok(info)
+    .await
 }
 
 #[tauri::command]

@@ -22,30 +22,3 @@ impl SessionIdentity {
         Ok(())
     }
 }
-
-use super::*;
-
-/// The reviewed target key is pinned even while probing. An edited saved host
-/// cannot redirect this verification to a different address or key.
-pub(crate) async fn trust_bound(
-    app: &AppHandle,
-    host: &Host,
-    destination: &SessionIdentity,
-    fingerprint: &str,
-    expected_host_id: Option<&str>,
-    credentials: &HashMap<String, HopCredential>,
-) -> AppResult<HostKeyInfo> {
-    destination.verify_host(&crate::services::hosts::resolve(app, &host.id)?)?;
-    let snapshot = route::Snapshot::capture(app, host)?;
-    let info = route::probe(app, &snapshot, credentials, Some(destination)).await?;
-    if info.fingerprint != fingerprint || expected_host_id != Some(info.host_id.as_str()) {
-        return Err(AppError::validation("ssh.hostKeyChanged"));
-    }
-    destination.verify_host(&crate::services::hosts::resolve(app, &host.id)?)?;
-    snapshot.approve(app, &info)?;
-    Ok(HostKeyInfo {
-        status: HostKeyStatus::Known,
-        known_fingerprint: Some(info.fingerprint.clone()),
-        ..info
-    })
-}
