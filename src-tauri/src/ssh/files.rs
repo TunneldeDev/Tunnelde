@@ -3277,6 +3277,28 @@ pub async fn write_text(
     content: &str,
     baseline: Option<&str>,
 ) -> AppResult<()> {
+    if content.len() as u64 > MAX_TEXT
+        || baseline.is_some_and(|value| value.len() as u64 > MAX_TEXT)
+    {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
+    }
+    if content.contains('\0') {
+        return Err(AppError::Ssh("sftp.binaryFile".into()));
+    }
+    if app
+        .state::<AppState>()
+        .native_saves
+        .save_if_ready(
+            app.clone(),
+            session_id.into(),
+            path.into(),
+            content.into(),
+            baseline.map(str::to_owned),
+        )
+        .await?
+    {
+        return Ok(());
+    }
     write_text_checked(
         app,
         session_id,

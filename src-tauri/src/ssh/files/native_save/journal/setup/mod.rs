@@ -3,7 +3,6 @@ mod model;
 mod persistence;
 use super::{Error, Journal, Owner, Result};
 use crate::ssh::files::native_save::contracts::authority::Authority;
-#[cfg(test)]
 pub(in crate::ssh::files::native_save) use model::Package;
 pub(in crate::ssh::files::native_save) use model::{Plan, Record, Stage};
 pub(in super::super) use persistence::read;

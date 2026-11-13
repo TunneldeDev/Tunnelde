@@ -14,6 +14,12 @@ pub(super) fn record(record: &Record) -> PendingCleanup {
         "discard"
     } else if record.disposable() || record.released() {
         "finish"
+    } else if record
+        .observation
+        .as_ref()
+        .is_some_and(|receipt| receipt.releasable())
+    {
+        "release"
     } else {
         "query"
     };
