@@ -2,6 +2,103 @@ use super::*;
 use russh_sftp::protocol::Status;
 
 #[tokio::test]
+async fn adding_a_guard_cannot_replace_the_original_authority() {
+    let original = Observation::default();
+    let denied = original.guarded(|| Err(AppError::validation("pluginSecurity.changed")));
+    let wrapped = denied.guarded(|| Ok(()));
+    let polled = std::sync::atomic::AtomicBool::new(false);
+    assert!(wrapped
+        .opaque(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(original.settled());
+}
+
+#[tokio::test]
+async fn revoked_epoch_blocks_new_requests_but_keeps_original_completion() {
+    let allowed = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let current = allowed.clone();
+    let original = Observation::default();
+    let guarded = original.guarded(move || {
+        current
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| AppError::validation("pluginSecurity.changed"))
+    });
+    let handle = guarded.begin().unwrap();
+    allowed.store(false, Ordering::Release);
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let result = guarded
+        .request(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await;
+    assert!(result.is_err());
+    assert!(guarded
+        .opaque(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    let flag = polled.clone();
+    assert!(guarded
+        .retained(async move {
+            flag.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(
+        !original.settled(),
+        "revocation cannot erase an admitted handle"
+    );
+    guarded.request_completion(async { Ok(()) }).await.unwrap();
+    guarded.completion(async { Ok(()) }).await.unwrap();
+    handle.acknowledge();
+    assert!(
+        original.settled(),
+        "guard must preserve the actual registry epoch"
+    );
+    original.seal().unwrap();
+}
+
+#[tokio::test]
+async fn retained_worker_rechecks_authority_after_runtime_queue() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let checked = calls.clone();
+    let original = Observation::default();
+    let guarded = original.guarded(move || {
+        if checked.fetch_add(1, Ordering::AcqRel) == 0 {
+            Ok(())
+        } else {
+            Err(AppError::validation("pluginSecurity.changed"))
+        }
+    });
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = polled.clone();
+    assert!(guarded
+        .retained(async move {
+            flag.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert_eq!(calls.load(Ordering::Acquire), 2);
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(
+        original.settled(),
+        "definitely unsent worker must not leave an unknown"
+    );
+}
+
+#[tokio::test]
 async fn sealed_epoch_rejects_new_work_without_polling_it() {
     let observation = Observation::default();
     let queued = observation.clone();

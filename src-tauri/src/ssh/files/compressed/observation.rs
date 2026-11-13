@@ -30,6 +30,15 @@ impl Observer {
     /// Called after serialization and queue cancellation checks, immediately
     /// before the first possible write. Queued but unsent work owns no receipt.
     pub(super) fn begin(&self, header: &Value) -> AppResult<Pending> {
+        // This runs in the actual wire writer after serialization and queueing.
+        // CLOSE completes an existing handle and remains allowed on revocation.
+        if matches!(
+            header["op"].as_str(),
+            Some("write" | "archive_write" | "mkdir_private")
+        ) || (header["op"] == "open" && header["write"] == true)
+        {
+            self.requests.authorize()?;
+        }
         let kind = match header["op"].as_str() {
             Some("open") if header["write"] == true => Kind::Open,
             Some("write" | "archive_write" | "mkdir_private") => Kind::Mutation,

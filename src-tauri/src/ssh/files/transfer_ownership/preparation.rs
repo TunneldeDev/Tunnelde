@@ -8,6 +8,60 @@ pub(in super::super) struct Endpoints {
 }
 
 impl Endpoints {
+    pub(in super::super) fn observe(
+        &self,
+        app: &AppHandle,
+        id: &str,
+        from: &Endpoint,
+        to: &Endpoint,
+        observation: native_save::runtime::MutationObservation,
+    ) -> AppResult<native_save::runtime::MutationObservation> {
+        let state = app.state::<AppState>();
+        let identity = state
+            .transfers
+            .inner
+            .lock()
+            .map_err(|_| AppError::internal("sftp.transferRegistry"))?
+            .active
+            .get(id)
+            .ok_or_else(|| AppError::validation("sftp.transferBusy"))?
+            .identity
+            .clone();
+        let peers = [
+            (from.session.clone(), self.source.remote.clone()),
+            (to.session.clone(), self.destination.remote.clone()),
+        ];
+        let app = app.clone();
+        let id = id.to_owned();
+        Ok(observation.guarded(move || {
+            let state = app.state::<AppState>();
+            {
+                let registry = state
+                    .transfers
+                    .inner
+                    .lock()
+                    .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+                let task = registry
+                    .active
+                    .get(&id)
+                    .filter(|task| task.identity == identity)
+                    .ok_or_else(|| AppError::validation("sftp.transferBusy"))?;
+                if task.cancel.load(Ordering::SeqCst) {
+                    return Err(AppError::Ssh(CANCELLED.into()));
+                }
+            }
+            authorize_task(&app, &id)?;
+            for (session, expected) in &peers {
+                if let Some(session) = session {
+                    if Some(state.ssh.identity(session)?) != *expected {
+                        return Err(AppError::validation("editor.nativeChanged"));
+                    }
+                }
+            }
+            Ok(())
+        }))
+    }
+
     pub(super) fn for_cleanup(source: TaskEndpoint, destination: TaskEndpoint) -> Self {
         Self {
             source,

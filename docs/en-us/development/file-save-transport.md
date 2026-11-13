@@ -218,7 +218,14 @@ its reply. A subsequent cleanup attempt can park that permit only after the
 original epoch settles. Staging and backup paths enroll through that same permit;
 nested copy destinations recheck admission after read-only preparation. Task
 projection checks reject a remote/local switch or a changed host/address, and
-plugin workers recheck their live authorization lease. This is partial lifecycle
+plugin workers recheck their live authorization lease. Request guards retain the
+same registry epoch and task instance while checking cancellation, plugin runtime
+generation and authenticated peers before new remote writes. The compressed wire
+writer rechecks after queueing; retained metadata workers recheck after spawning.
+Local range writes recheck after remote reads, and local publication rechecks
+inside its blocking worker. Original admitted responses and handle flush/CLOSE
+can still complete after revocation; denial cannot manufacture terminal evidence
+or erase an outstanding handle. This is partial lifecycle
 integration. Successful bound runs and confirmed artifact disposal now seal the
 original request epoch and persist a terminal claim before syncing the task
 projection. Its original scopes remain blocking until that projection and its
