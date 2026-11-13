@@ -96,6 +96,41 @@ application restart; changes with deferred effects follow ordinary desktop
 settings behavior. Storage relocation remains a separate domain and is not
 available through preferences.update.
 
+## Forwarding status (experimental)
+
+`forwards.list` reads the same saved rules and runtime registry as the native
+forwarding manager, without opening a terminal or creating another SSH session.
+Its independent DTO and schema live in `automation/domains/forwarding/`.
+
+```sh
+tunnelde-cli forwards list
+tunnelde cli forwards list --params '{"limit":20}'
+tunnelde-cli forwards list --params '{"after":"LAST_RETURNED_ID","limit":20}'
+```
+
+Results contain `entries` and nullable `nextAfter`. Each entry has `id`, `hostId`,
+`name`, opaque persisted `revision`, `direction` (`local`/`remote`), `bind` and
+`target` endpoints (`host`/`port`), and `state` (`running`/`stopped`). Running means
+the host has registered the listener; it does not prove the destination service
+is reachable. A disconnect retires its listeners through the normal SSH lifecycle.
+Runtime identities, session IDs and credentials are excluded. Addresses and rule
+names are private information. This read-only method does not install helpers,
+request credentials or start/stop/change a rule.
+
+`limit` is 1–128 (default 50); pages are at most 64 KiB. Continue using `nextAfter`
+as `after` until it is null. IDs use ascending binary ordering. Continuation works
+even if its rule was deleted. Each page is a live read, not a frozen snapshot:
+edits, deletion and newly inserted earlier IDs can change enumeration; restart
+without `after` to rescan. The token is only a position, never authorization.
+An empty `after` starts at the beginning; other IDs are at most 128 UTF-8 bytes
+without control characters. SQL bounds the selected rows and stored blobs;
+corrupt records cause an explicit failure rather than silently omitting a rule.
+Four concurrent blocking readers have a budget separate from log readers.
+Cancellation stops subsequent reads, while a worker retains capacity until it
+actually exits. Invalid parameters return `invalid_request` (exit 2); unavailable
+or malformed storage and exhausted readers return `operation_rejected` (exit 1).
+The seven stable methods and existing plugin forwarding contracts are unchanged.
+
 ## Structured log reading (experimental)
 
 `logs.read` reuses the persisted diagnostic/operation service used by plugins.

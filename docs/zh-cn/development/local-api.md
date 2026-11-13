@@ -91,6 +91,34 @@ tunnelde-cli preferences update --params '{"revision":"REVISION_FROM_SNAPSHOT","
 代理地址和用户名，快照应妥善保管。本接口不会请求应用重启；延迟生效的设置沿用
 普通桌面设置行为。存储迁移属于独立领域，不能通过 preferences.update 执行。
 
+## 端口转发状态（实验）
+
+`forwards.list` 复用原生转发管理器的已保存规则和运行注册表，无需打开终端或另建 SSH
+连接。独立公开 DTO 和 Schema 位于 `automation/domains/forwarding/`。
+
+```sh
+tunnelde-cli forwards list
+tunnelde cli forwards list --params '{"limit":20}'
+tunnelde-cli forwards list --params '{"after":"上一页返回的ID","limit":20}'
+```
+
+结果包含 `entries` 和可空的 `nextAfter`。每条包含 `id`、`hostId`、`name`、不透明的
+持久修订 `revision`、`direction`（`local`／`remote`）、`bind`／`target` 端点
+（`host`／`port`）和 `state`（`running`／`stopped`）。运行表示宿主已登记监听器，
+不保证目标服务可达；SSH 断开时由原有生命周期移除对应监听器。不返回运行身份、
+会话 ID 或凭据。地址和规则名应妥善保管。只读接口不安装 helper、不请求凭据、
+不启停或修改规则。
+
+`limit` 为 1–128，默认 50，每页最多 64 KiB。将 `nextAfter` 作为下一次的 `after`
+继续，直到返回 null。按规则 ID 的二进制升序读取；即使上一页末条规则被删除仍可
+继续。这是实时分页而非冻结快照：编辑、删除和较早 ID 的新增会影响遍历，应省略
+`after` 重新扫描以取得当前完整列表。继续位置不是授权凭据。空 `after` 从头读取；
+其他 ID 最多 128 UTF-8 字节，不允许控制字符。SQL 限制读取条数和每条存储大小；
+损坏记录明确报错，不静默遗漏规则。最多四个并发阻塞读取者，与日志读取名额独立。
+取消停止后续读取，原工作实际退出前保留名额。无效参数返回 `invalid_request`
+（退出码 2）；存储不可用、记录损坏或读取繁忙返回 `operation_rejected`（退出码 1）。
+七个稳定方法和既有插件转发契约保持不变。
+
 ## 结构化日志读取（实验）
 
 `logs.read` 复用插件使用的持久诊断／操作日志服务。机器 Schema 归属
