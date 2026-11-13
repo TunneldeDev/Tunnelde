@@ -45,6 +45,11 @@ source. The package selected by Check is retained for Install. Notes cannot chan
 download URL or verification key. Installation restarts the application; platforms
 without automatic installation provide a manual download action.
 
+On Windows, the installer uses the system language when it is supported, otherwise
+English. English and Simplified Chinese are included. Installation and updates do
+not pause for a separate language selection dialog. Change the application's
+language in Settings independently of the installer.
+
 See [release operations](../development/releases.md) for publishing and mirror requirements.
 
 ## Connection failures and rate limits
