@@ -25,6 +25,23 @@ pub(super) fn current(app: &AppHandle, pending: &Pending) -> AppResult<()> {
     Ok(())
 }
 
+/// Retain exact-record authority across the final synchronous native effect.
+/// The caller owns the connection guard, which serializes cancellation.
+pub(super) fn with_current<T>(
+    app: &AppHandle,
+    pending: &Pending,
+    operation: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    if *pending.cancelled.borrow() {
+        return Err(AppError::validation("plugin.runners.browserExpired"));
+    }
+    let context = query::context(app, &pending.plugin_id)?;
+    super::super::super::repository::transaction(&context, |records| {
+        super::super::mutation::index(records, &pending.token)?;
+        operation()
+    })
+}
+
 pub(super) fn host(app: &AppHandle, record: &Record) -> AppResult<Host> {
     let expected = identity(record)?;
     let host = crate::services::hosts::resolve(app, &expected.host_id)?;

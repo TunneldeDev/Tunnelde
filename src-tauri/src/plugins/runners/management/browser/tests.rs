@@ -63,6 +63,34 @@ fn old_expiry_cannot_cancel_a_new_acquisition_reusing_the_same_request_id() {
     assert!(*current.cancelled.borrow());
 }
 
+#[test]
+fn cancellation_waits_for_the_current_synchronous_commit_then_revokes_authority() {
+    let registry = Arc::new(Registry::default());
+    let pending = pending();
+    registry.insert("commit".into(), pending.clone()).unwrap();
+    let commit = pending.connection.lock().unwrap();
+    let (attempt, attempted) = std::sync::mpsc::channel();
+    let (done, finished) = std::sync::mpsc::channel();
+    let task_registry = registry.clone();
+    let worker = std::thread::spawn(move || {
+        attempt.send(()).unwrap();
+        task_registry.remove("commit").unwrap();
+        done.send(()).unwrap();
+    });
+    attempted.recv().unwrap();
+    assert!(finished
+        .recv_timeout(std::time::Duration::from_millis(20))
+        .is_err());
+    assert!(!*pending.cancelled.borrow());
+    drop(commit);
+    finished
+        .recv_timeout(std::time::Duration::from_secs(2))
+        .unwrap();
+    worker.join().unwrap();
+    assert!(*pending.cancelled.borrow());
+    assert!(registry.get("commit").is_err());
+}
+
 #[tokio::test]
 async fn cancellation_before_subscription_does_not_start_network_work() {
     let pending = pending();

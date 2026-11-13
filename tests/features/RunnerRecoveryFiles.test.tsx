@@ -35,7 +35,7 @@ const target = {
 } as RecoveryBrowserTarget;
 beforeEach(() => {
   vi.resetAllMocks();
-  mock.prepareBrowser.mockResolvedValue({ host: null });
+  mock.prepareBrowser.mockResolvedValue({ host: null, jumpHosts: [] });
   mock.openBrowser.mockResolvedValue(target);
   mock.cancelBrowser.mockResolvedValue(undefined);
   mock.disconnect.mockResolvedValue(undefined);
@@ -68,11 +68,13 @@ it("opens the exact native-verified directory without starting a plugin or creat
 });
 
 it("offers normal credentials only for the original host and pins native verification to its request", async () => {
-  mock.prepareBrowser.mockResolvedValue({ host: { id: "original" } });
+  const jumpHosts = [{ id: "jump", host: "captured-server", port: 22 }];
+  mock.prepareBrowser.mockResolvedValue({ host: { id: "original" }, jumpHosts });
   const { result } = renderHook(() => useRecoveryFiles("removed-plugin"));
   await act(async () => result.current.browse(entry));
   const id = mock.prepareBrowser.mock.calls[0]![0].id;
   expect(result.current.connection?.host.id).toBe("original");
+  expect(result.current.verification!.jumpHosts).toEqual(jumpHosts);
   expect(mock.open).not.toHaveBeenCalled();
   await act(async () => {
     await result.current.verification!.probe({});

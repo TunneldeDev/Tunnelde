@@ -12,7 +12,11 @@ import { toast } from "@/store/toasts";
 export function useRecoveryFiles(pluginId: string) {
   const active = useRef(false);
   const operation = useRef<string | null>(null);
-  const [connection, setConnection] = useState<{ id: string; host: Host } | null>(null);
+  const [connection, setConnection] = useState<{
+    id: string;
+    host: Host;
+    jumpHosts: Host[];
+  } | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const cancel = useCallback(() => {
@@ -69,7 +73,7 @@ export function useRecoveryFiles(pluginId: string) {
           await client.cancelBrowser(id);
           return;
         }
-        if (plan.host) setConnection({ id, host: plan.host });
+        if (plan.host) setConnection({ id, host: plan.host, jumpHosts: plan.jumpHosts });
         else await finish(id);
       } catch (cause) {
         if (active.current && operation.current === id) setError(translateError(cause));
@@ -83,6 +87,7 @@ export function useRecoveryFiles(pluginId: string) {
     () =>
       id
         ? {
+            jumpHosts: connection.jumpHosts,
             probe: (credentials: SshConnectRequest["jumpCredentials"]) =>
               client.probeBrowser(id, credentials ?? {}),
             trust: (
@@ -92,7 +97,7 @@ export function useRecoveryFiles(pluginId: string) {
             ) => client.trustBrowser(id, fingerprint, credentials ?? {}, expectedHostId),
           }
         : undefined,
-    [id],
+    [id, connection],
   );
   return {
     connection,

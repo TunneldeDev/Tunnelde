@@ -2,7 +2,7 @@
 use super::super::super::{coordinator::Lease, Record};
 use crate::{
     error::{AppError, AppResult},
-    ssh::SessionInfo,
+    ssh::{session::review::Review, SessionInfo},
 };
 use std::{
     collections::BTreeMap,
@@ -25,6 +25,7 @@ pub(super) struct Pending {
 
 #[derive(Default)]
 pub(super) struct Connection {
+    pub review: Option<Review>,
     pub session: Option<SessionInfo>,
     pub acquired: bool,
     pub busy: bool,
@@ -55,7 +56,7 @@ impl Registry {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .remove(id)?;
-        pending.cancelled.send_replace(true);
+        pending.cancel();
         Some(pending)
     }
 
@@ -72,8 +73,16 @@ impl Registry {
             return None;
         }
         let pending = entries.remove(id)?;
-        pending.cancelled.send_replace(true);
+        pending.cancel();
         Some(pending)
+    }
+}
+
+impl Pending {
+    /// Serialize cancellation with synchronous trust and session acceptance.
+    fn cancel(&self) {
+        let _connection = self.connection.lock().unwrap_or_else(|e| e.into_inner());
+        self.cancelled.send_replace(true);
     }
 }
 

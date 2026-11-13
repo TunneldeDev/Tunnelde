@@ -27,7 +27,7 @@ mod probe;
 pub(crate) mod review;
 mod route;
 pub(crate) use cleanup::SessionDisposal;
-pub(crate) use identity::{trust_bound, SessionIdentity};
+pub(crate) use identity::SessionIdentity;
 pub(super) use probe::ProbeTarget;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
@@ -671,16 +671,6 @@ async fn pump_terminal(
     }
 }
 
-pub(crate) async fn probe_host_bound(
-    app: &AppHandle,
-    host: &Host,
-    credentials: &HashMap<String, HopCredential>,
-    destination: Option<&SessionIdentity>,
-) -> AppResult<HostKeyInfo> {
-    let snapshot = route::Snapshot::capture(app, host)?;
-    route::probe(app, &snapshot, credentials, destination).await
-}
-
 pub async fn probe_route(
     app: &AppHandle,
     host_id: &str,
@@ -725,16 +715,6 @@ pub(crate) async fn connect_unpublished(
     request: SshConnectRequest,
 ) -> AppResult<SessionInfo> {
     connect_for_auth(app, request, false, false, None).await
-}
-
-/// Recovery authenticates only the captured destination and keeps the connection
-/// private until its native caller accepts the exact recovery record.
-pub(crate) async fn connect_bound(
-    app: AppHandle,
-    request: SshConnectRequest,
-    destination: &SessionIdentity,
-) -> AppResult<SessionInfo> {
-    connect_for_auth(app, request, false, false, Some(destination)).await
 }
 
 async fn connect_for_auth(
