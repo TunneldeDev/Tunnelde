@@ -5,6 +5,7 @@ use crate::ssh::files::native_save::{
     journal::admission::Phase,
     runtime::mutation::{MutationTarget, TransferReference},
 };
+mod late_reply;
 
 #[tokio::test]
 async fn parked_transfer_reopens_with_exact_revision_roots_and_a_fresh_request_epoch() {
@@ -76,7 +77,7 @@ async fn parked_transfer_reopens_with_exact_revision_roots_and_a_fresh_request_e
         .await
         .unwrap();
     let (job, _delivery) = cancellation();
-    let current = continuation.dispatch_transfer(&parked, &job).await.unwrap();
+    let mut current = continuation.dispatch_transfer(&parked, &job).await.unwrap();
     let fresh_channel = current.observation();
     fresh_channel.request(async { Ok(()) }).await.unwrap();
     assert!(old_channel.request(async { Ok(()) }).await.is_err());
@@ -108,7 +109,7 @@ async fn unknown_original_request_keeps_transfer_dispatched_and_blocks_continuat
         .unwrap();
     let reference = initial.transfer_reference().unwrap();
     let (job, _delivery) = cancellation();
-    let attempt = initial.dispatch_transfer(&reference, &job).await.unwrap();
+    let mut attempt = initial.dispatch_transfer(&reference, &job).await.unwrap();
     let observed = attempt.observation();
     let result: Result<(), _> = observed
         .request(async { Err(russh_sftp::client::error::Error::Timeout) })
@@ -312,8 +313,169 @@ async fn only_one_continuation_dispatches_and_cancellation_preserves_the_parked_
         second.dispatch_transfer(&parked, &job)
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
-    let winner = a.ok().or_else(|| b.ok()).unwrap();
+    let mut winner = a.ok().or_else(|| b.ok()).unwrap();
     winner.settle().await.unwrap();
     assert!(journal(&fixture).legacy_claims().unwrap().is_empty());
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn persisted_original_roots_reject_shrinking_or_promoting_generated_paths() {
+    let (fixture, destination) = setup();
+    let manager = fixture.manager();
+    let (sftp, _) = server(
+        &[
+            ("/requested", Ok("/workspace/actual")),
+            ("/workspace/actual", Ok("/workspace/actual")),
+            ("/second", Ok("/workspace/other")),
+            ("/workspace/other", Ok("/workspace/other")),
+            ("/generated", Ok("/workspace/.stage")),
+            ("/workspace/.stage", Ok("/workspace/.stage")),
+        ],
+        None,
+    )
+    .await;
+    let roots = vec!["/requested".into(), "/second".into()];
+    let targets = [MutationTarget {
+        destination: &destination,
+        sftp: &sftp,
+        paths: &roots,
+    }];
+    let owner = (
+        uuid::Uuid::new_v4().to_string(),
+        uuid::Uuid::new_v4().to_string(),
+    );
+    let initial = manager
+        .reserve_transfer_mutation(&targets, (&owner.0, &owner.1))
+        .await
+        .unwrap()
+        .unwrap();
+    let reference = initial.transfer_reference().unwrap();
+    let (job, _delivery) = cancellation();
+    let mut attempt = initial.dispatch_transfer(&reference, &job).await.unwrap();
+    attempt
+        .extend_paths(&destination, &sftp, &["/generated".into()])
+        .await
+        .unwrap();
+    let parked = attempt.park().await.unwrap();
+    drop(manager);
+    let manager = fixture.manager();
+    let claim = journal(&fixture).legacy_claims().unwrap().remove(0);
+    assert_eq!(claim.transfer_roots.as_ref().unwrap()[0].paths.len(), 4);
+    assert_eq!(claim.scopes[0].paths.len(), 6);
+
+    let mut shortened = serde_json::to_value(&parked).unwrap();
+    shortened["roots"][0]["paths"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(2);
+    let shortened: TransferReference = serde_json::from_value(shortened).unwrap();
+    let subset = vec!["/requested".into()];
+    let subset_targets = [MutationTarget {
+        destination: &destination,
+        sftp: &sftp,
+        paths: &subset,
+    }];
+    assert!(manager
+        .resume_transfer_mutation(&shortened, &subset_targets)
+        .await
+        .is_err());
+
+    let mut expanded = serde_json::to_value(&parked).unwrap();
+    expanded["roots"] = serde_json::to_value(&claim.scopes).unwrap();
+    let expanded: TransferReference = serde_json::from_value(expanded).unwrap();
+    let promoted = vec!["/requested".into(), "/second".into(), "/generated".into()];
+    let expanded_targets = [MutationTarget {
+        destination: &destination,
+        sftp: &sftp,
+        paths: &promoted,
+    }];
+    assert!(manager
+        .resume_transfer_mutation(&expanded, &expanded_targets)
+        .await
+        .is_err());
+    assert!(journal(&fixture).legacy_claims().unwrap() == [claim]);
+    manager
+        .resume_transfer_mutation(&parked, &targets)
+        .await
+        .unwrap()
+        .dispatch_transfer(&parked, &job)
+        .await
+        .unwrap()
+        .settle()
+        .await
+        .unwrap();
+    sftp.close().await.unwrap();
+}
+
+#[tokio::test]
+async fn historical_transfer_without_original_roots_stays_reserved_instead_of_adopting_a_reference()
+{
+    let (fixture, destination) = setup();
+    let manager = fixture.manager();
+    let (sftp, _) = server(
+        &[
+            ("/requested", Ok("/workspace/actual")),
+            ("/workspace/actual", Ok("/workspace/actual")),
+        ],
+        None,
+    )
+    .await;
+    let roots = vec!["/requested".into()];
+    let targets = [MutationTarget {
+        destination: &destination,
+        sftp: &sftp,
+        paths: &roots,
+    }];
+    let owner = (
+        uuid::Uuid::new_v4().to_string(),
+        uuid::Uuid::new_v4().to_string(),
+    );
+    let initial = manager
+        .reserve_transfer_mutation(&targets, (&owner.0, &owner.1))
+        .await
+        .unwrap()
+        .unwrap();
+    let reference = initial.transfer_reference().unwrap();
+    let (job, _delivery) = cancellation();
+    let parked = initial
+        .dispatch_transfer(&reference, &job)
+        .await
+        .unwrap()
+        .park()
+        .await
+        .unwrap();
+    drop(manager);
+    let mut historic =
+        serde_json::to_value(&journal(&fixture).legacy_claims().unwrap()[0]).unwrap();
+    historic.as_object_mut().unwrap().remove("transferRoots");
+    let bytes = serde_json::to_string(&historic).unwrap();
+    let digest = crate::ssh::files::native_save::contracts::hash(
+        b"tunnelde.files.legacy-claim.v1\0",
+        bytes.as_bytes(),
+    );
+    let conn =
+        rusqlite::Connection::open(fixture.0.join("native-file-saves/recovery.sqlite3")).unwrap();
+    assert_eq!(
+        conn.execute(
+            "UPDATE legacy_claims SET value=?1,digest=?2 WHERE id=?3",
+            rusqlite::params![bytes, digest, historic["id"].as_str().unwrap()],
+        )
+        .unwrap(),
+        1
+    );
+    drop(conn);
+    let manager = fixture.manager();
+    let claims = journal(&fixture).legacy_claims().unwrap();
+    assert!(claims[0].transfer_roots.is_none());
+    assert!(manager
+        .resume_transfer_mutation(&parked, &targets)
+        .await
+        .is_err());
+    assert!(manager
+        .writable(&destination, &sftp, &["/requested"])
+        .await
+        .is_err());
+    assert!(journal(&fixture).legacy_claims().unwrap() == claims);
     sftp.close().await.unwrap();
 }

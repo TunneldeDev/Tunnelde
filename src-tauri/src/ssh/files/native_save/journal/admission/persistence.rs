@@ -51,6 +51,7 @@ impl Journal {
             revision: 1,
             kind,
             phase: Phase::Prepared,
+            transfer_roots: (kind == Kind::Transfer).then(|| scopes.clone()),
             scopes,
         };
         let (bytes, digest) = encode(&claim)?;

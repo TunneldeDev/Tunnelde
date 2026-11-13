@@ -4,7 +4,7 @@ use crate::services::files::admission::Path;
 use crate::ssh::files::native_save::journal::admission::Phase;
 
 pub(crate) struct Transfer {
-    active: ActiveMutation,
+    active: Option<ActiveMutation>,
     reference: Reference,
     observation: Observation,
 }
@@ -24,7 +24,7 @@ impl Mutation {
         }
         let active = self.dispatch(job).await?;
         Ok(Transfer {
-            active,
+            active: Some(active),
             reference: reference.clone(),
             observation: Observation::default(),
         })
@@ -43,28 +43,41 @@ impl Transfer {
         paths: &[String],
     ) -> AppResult<()> {
         self.active
+            .as_mut()
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))?
             .extend_transfer_paths(destination, sftp, paths)
             .await
     }
 
     /// Only the original admitted worker can park, after draining its actual
     /// children. Sealing prevents delayed queued children from sending later.
-    pub(crate) async fn park(self) -> AppResult<Reference> {
-        self.observation.seal()?;
-        let parked = self
-            .active
+    pub(crate) async fn park(&mut self) -> AppResult<Reference> {
+        let active = self.end_epoch()?;
+        let parked = active
             .service
-            .park_transfer(self.active.permit)
+            .park_transfer(active.permit)
             .await
             .map_err(errors::app_journal)?;
-        self.reference.parked(&parked)
+        self.reference.clone().parked(&parked)
     }
 
     /// Final cleanup/retirement must be confirmed by this same attempt before
     /// release. A timeout, lost response or remaining handle retains the claim.
-    pub(crate) async fn settle(self) -> AppResult<()> {
+    pub(crate) async fn settle(&mut self) -> AppResult<()> {
+        self.end_epoch()?.settle().await
+    }
+
+    fn end_epoch(&mut self) -> AppResult<ActiveMutation> {
+        if self.active.is_none() {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        // A pending original request must leave the original worker/permit
+        // available to observe its late reply and retry the transition. Only a
+        // successfully sealed epoch transfers ownership to the durable step.
         self.observation.seal()?;
-        self.active.settle().await
+        self.active
+            .take()
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))
     }
 }
 

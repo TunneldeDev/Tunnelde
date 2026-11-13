@@ -103,6 +103,10 @@ pub(in super::super::super::super) struct Claim {
     pub kind: Kind,
     pub phase: Phase,
     pub scopes: Vec<Scope>,
+    /// Immutable original transfer roots, distinct from subsequently enrolled
+    /// staging/backup paths. Older internal records without them cannot resume.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_roots: Option<Vec<Scope>>,
 }
 impl Claim {
     pub fn valid(&self) -> bool {
@@ -124,6 +128,17 @@ impl Claim {
             && self.scopes.len() <= 4
             && self.scopes.iter().map(|s| s.paths.len()).sum::<usize>() <= 32
             && self.scopes.iter().all(Scope::valid)
+            && self.transfer_roots.as_ref().is_none_or(|roots| {
+                self.kind == Kind::Transfer
+                    && roots.len() == self.scopes.len()
+                    && roots.iter().zip(&self.scopes).all(|(root, scope)| {
+                        root.valid()
+                            && root.destination == scope.destination
+                            && root.platform == scope.platform
+                            && scope.paths.starts_with(&root.paths)
+                    })
+                    && (self.phase != Phase::Prepared || *roots == self.scopes)
+            })
     }
     pub fn overlaps_native(&self, binding: &super::super::Binding) -> bool {
         self.scopes.iter().any(|scope| {

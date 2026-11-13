@@ -168,6 +168,14 @@ fn a_historical_or_forged_checkpoint_cannot_replace_a_live_dispatch_permit() {
     let mut narrowed = extended.clone();
     narrowed.scopes[0].paths.remove(0);
     assert!(permit.adopt_transfer_extension(narrowed).is_err());
+    let mut promoted = extended.clone();
+    promoted.transfer_roots = Some(promoted.scopes.clone());
+    assert!(promoted.valid());
+    assert!(permit.adopt_transfer_extension(promoted).is_err());
+    let mut unbound = extended.clone();
+    unbound.transfer_roots = None;
+    assert!(unbound.valid(), "historical records remain readable");
+    assert!(permit.adopt_transfer_extension(unbound).is_err());
     permit.adopt_transfer_extension(extended).unwrap();
     assert!(permit.adopt_transfer_extension(original).is_err());
     journal.settle_legacy(permit).unwrap();
