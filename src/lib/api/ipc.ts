@@ -322,6 +322,8 @@ export const api = {
     invoke<void>("local_write_text", { path, content, baseline }),
   sftpReadText: (sessionId: string, path: string) =>
     invoke<TextFile>("sftp_read_text", { sessionId, path }),
+  sftpSetupNativeSave: (sessionId: string, path: string) =>
+    invoke<boolean>("sftp_setup_native_save", { sessionId, path }),
   sftpWriteText: (sessionId: string, path: string, content: string, baseline?: string) =>
     invoke<void>("sftp_write_text", { sessionId, path, content, baseline }),
 

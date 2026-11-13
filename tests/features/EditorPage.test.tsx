@@ -35,6 +35,64 @@ beforeEach(() => {
   useFormatting.setState({ busy: [], picker: null });
 });
 
+describe("native file-save setup", () => {
+  it("derives installation from the open remote document, keeps content intact and permits cancelling", async () => {
+    let finish!: (value: boolean) => void;
+    const setup = vi.spyOn(api, "sftpSetupNativeSave").mockImplementation(
+      () =>
+        new Promise<boolean>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const save = vi.spyOn(api, "sftpWriteText").mockResolvedValue(undefined);
+    render(<EditorPage tabId="editor" active />);
+    const button = screen.getByRole("button", { name: /Enable recoverable saves|启用安全保存/ });
+    fireEvent.click(button);
+    expect(setup).toHaveBeenCalledWith("s1", "/draft.txt");
+    expect(screen.getByRole("button", { name: /Setting up|正在初始化/ })).toHaveProperty(
+      "disabled",
+      true,
+    );
+    const textarea = screen.getByRole("textbox", { name: "draft.txt" });
+    textarea.focus();
+    fireEvent.keyDown(textarea, { key: "s", ctrlKey: true });
+    expect(save).not.toHaveBeenCalled();
+    await act(async () => finish(false));
+    expect(
+      screen.getByRole("button", { name: /Enable recoverable saves|启用安全保存/ }),
+    ).toHaveProperty("disabled", false);
+    expect(useEditors.getState().entries.editor?.content).toBe(entry.content);
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("does not offer remote installation for a local document", () => {
+    useEditors.setState({
+      entries: { editor: { ...entry, sessionId: null, path: "C:/qa/draft.txt" } },
+    });
+    render(<EditorPage tabId="editor" active />);
+    expect(
+      screen.queryByRole("button", { name: /Enable recoverable saves|启用安全保存/ }),
+    ).toBeNull();
+  });
+  it("keeps a setup error visible for its document and clears it when retrying", async () => {
+    const setup = vi.spyOn(api, "sftpSetupNativeSave").mockRejectedValue({
+      code: "validation",
+      message: "editor.nativeDownloadFailed",
+    });
+    render(<EditorPage tabId="editor" active />);
+    fireEvent.click(screen.getByRole("button", { name: /Enable recoverable saves|启用安全保存/ }));
+    const failure = await screen.findByRole("alert");
+    expect(failure.textContent).not.toContain("nativeDownloadFailed");
+    expect(useEditors.getState().entries.editor?.content).toBe(entry.content);
+    act(() => useEditors.setState({ entries: { editor: { ...entry, path: "/other.txt" } } }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    act(() => useEditors.setState({ entries: { editor: { ...entry } } }));
+    expect(screen.getByRole("alert").textContent).toBe(failure.textContent);
+    setup.mockResolvedValue(false);
+    fireEvent.click(screen.getByRole("button", { name: /Enable recoverable saves|启用安全保存/ }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
 describe("editor formatting shortcuts", () => {
   const prepare = () => {
     const json = {

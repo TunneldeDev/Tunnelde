@@ -46,6 +46,7 @@ it.each([
   ["discard", "editor.nativeDiscardUnsent"],
   ["query", "editor.nativeQueryOriginal"],
   ["finish", "editor.nativeFinishRecovery"],
+  ["release", "editor.nativeReleaseBackup"],
 ] as const)(
   "native recovery exposes the explicit %s action and a working log link",
   async (action, label) => {

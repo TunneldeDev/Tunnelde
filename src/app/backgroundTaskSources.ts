@@ -71,7 +71,9 @@ export function registerBackgroundTaskSources(): () => void {
                               ? "editor.nativeDiscardUnsent"
                               : item.action === "finish"
                                 ? "editor.nativeFinishRecovery"
-                                : "editor.nativeQueryOriginal",
+                                : item.action === "release"
+                                  ? "editor.nativeReleaseBackup"
+                                  : "editor.nativeQueryOriginal",
                       ),
                       run: () => useEditorCleanup.getState().retry(item.id),
                     },
