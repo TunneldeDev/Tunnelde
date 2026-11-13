@@ -69,6 +69,75 @@ const protocol = JSON.parse(
   ),
 );
 
+const discovery = JSON.parse(
+  await readFile(
+    new URL("../../tests/fixtures/local-api/discovery-v1.json", import.meta.url),
+    "utf8",
+  ),
+);
+
+function discoverableFixture() {
+  const current = fixture();
+  current.schema.protocol = globalThis.structuredClone(protocol);
+  current.schema.methods[0].resultSchema = globalThis.structuredClone(discovery);
+  current.samples[0].result = globalThis.structuredClone(current.schema);
+  return current;
+}
+
+test("discovery declares its own finite result shape and preserves the historical baseline", () => {
+  const previous = globalThis.structuredClone(floor);
+  const current = discoverableFixture();
+  assert.deepEqual(checkLocalApiContract(current, floor, discovery), { methods: 4, samples: 4 });
+  assert.deepEqual(floor, previous);
+  const incomplete = globalThis.structuredClone(current);
+  incomplete.schema.methods[0].resultSchema = { type: "object" };
+  assert.throws(() => checkLocalApiContract(incomplete, floor, discovery), /api.describe/);
+});
+
+test("discovery rejects missing metadata and invalid method, transport and error fields", () => {
+  const mutations = [
+    (value) => delete value.protocol,
+    (value) => delete value.methods[1].inputSchema,
+    (value) => {
+      value.methods[1].name = "invalid\n";
+    },
+    (value) => {
+      value.methods[1].resultSchema = "object";
+    },
+    (value) => {
+      value.methods[1].effect = "execute";
+    },
+    (value) => {
+      value.transport.maximumResponseBytes = "4194304";
+    },
+    (value) => {
+      value.protocol.errors[0].exitCode = "2";
+    },
+    (value) => {
+      value.protocol.cli.exitCodes["0"] = 0;
+    },
+    (value) => {
+      value.protocol.compatibility.unknownOutputFields = "reject";
+    },
+  ];
+  for (const mutate of mutations) {
+    const current = discoverableFixture();
+    mutate(current.samples[0].result);
+    assert.throws(() => checkLocalApiContract(current, floor, discovery), /api.describe result/);
+  }
+});
+
+test("discovery consumers accept additive metadata and future methods", () => {
+  const current = discoverableFixture();
+  const result = current.samples[0].result;
+  result.future = true;
+  result.transport.future = "metadata";
+  result.methods[0].future = { optional: true };
+  result.methods.push({ name: "future.read", effect: "read", inputSchema: true, resultSchema: {} });
+  result.protocol.errors.push({ code: "future_failure", exitCode: 1, origin: "host", future: 1 });
+  assert.doesNotThrow(() => checkLocalApiContract(current, floor, discovery));
+});
+
 test("protocol schemas enforce byte limits, strict inputs and additive outputs", () => {
   const ajv = contractValidator();
   const request = ajv.compile(protocol.requestSchema);

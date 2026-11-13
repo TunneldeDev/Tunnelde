@@ -43,7 +43,7 @@ export function checkProtocolSamples(fixture, floor) {
   return { wireSamples: fixture.wireSamples.length, errorSamples: errors.size };
 }
 
-export function checkLocalApiContract(fixture, floor) {
+export function checkLocalApiContract(fixture, floor, discovery) {
   assert.equal(fixture.schema.version, 1);
   const methods = new Map(fixture.schema.methods.map((method) => [method.name, method]));
   assert.equal(methods.size, fixture.schema.methods.length, "Duplicate local API method");
@@ -52,9 +52,11 @@ export function checkLocalApiContract(fixture, floor) {
   const ajv = contractValidator();
   const covered = new Set();
   for (const method of floor.methods) {
+    const expected =
+      method.name === "api.describe" && discovery ? { ...method, resultSchema: discovery } : method;
     assert.deepEqual(
       methods.get(method.name),
-      method,
+      expected,
       `Local API candidate contract changed: ${method.name}`,
     );
   }
@@ -72,6 +74,15 @@ export function checkLocalApiContract(fixture, floor) {
       );
     }
     covered.add(sample.method);
+    // Historical producer snapshots stay immutable. Discovery is refined by a
+    // separate baseline, while its result must still satisfy the old consumer.
+    if (sample.method === "api.describe" && discovery) {
+      const historical = floor.methods.find((entry) => entry.name === sample.method);
+      assert.ok(
+        ajv.validate(historical.resultSchema, sample.result),
+        "Historical discovery result",
+      );
+    }
   }
   assert.deepEqual(
     covered,
@@ -83,7 +94,7 @@ export function checkLocalApiContract(fixture, floor) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   assert.ok(process.argv[2], "Pass the actual Rust local API fixture output");
-  const [fixture, floor, preferences, protocol] = await Promise.all([
+  const [fixture, floor, preferences, protocol, discovery] = await Promise.all([
     readFile(process.argv[2], "utf8"),
     readFile(new URL("../../tests/fixtures/local-api/candidate-v1.json", import.meta.url), "utf8"),
     readFile(
@@ -91,13 +102,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       "utf8",
     ),
     readFile(new URL("../../tests/fixtures/local-api/protocol-v1.json", import.meta.url), "utf8"),
+    readFile(new URL("../../tests/fixtures/local-api/discovery-v1.json", import.meta.url), "utf8"),
   ]);
   const expected = JSON.parse(floor);
   expected.methods.push(...JSON.parse(preferences).methods);
   const actual = JSON.parse(fixture);
   console.log(
     JSON.stringify({
-      ...checkLocalApiContract(actual, expected),
+      ...checkLocalApiContract(actual, expected, JSON.parse(discovery)),
       ...checkProtocolSamples(actual, JSON.parse(protocol)),
     }),
   );

@@ -118,6 +118,14 @@ pub(super) fn describe() -> Value {
         .extend(super::domains::additional_contracts());
     schema["protocol"] = serde_json::from_str(include_str!("schema/protocol-v1.json"))
         .expect("checked local protocol schema");
+    schema["methods"]
+        .as_array_mut()
+        .expect("core methods")
+        .iter_mut()
+        .find(|method| method["name"] == "api.describe")
+        .expect("discovery method")["resultSchema"] =
+        serde_json::from_str(include_str!("schema/discovery-v1.json"))
+            .expect("checked local discovery schema");
     schema
 }
 
