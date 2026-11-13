@@ -38,13 +38,16 @@ export class Desktop {
     });
     this.child.stdout.pipe(createWriteStream(join(this.root, "evidence", `${version}-stdout.log`)));
     this.child.stderr.pipe(createWriteStream(join(this.root, "evidence", `${version}-stderr.log`)));
-    this.version = version;
-    const until = Date.now() + 60000;
+    await this.connect(version);
+  }
+
+  async connect(version, timeout = 60000) {
+    const until = Date.now() + timeout;
     let lastError;
     while (Date.now() < until) {
-      assert.equal(this.child.exitCode, null, "Desktop exited before readiness");
+      if (this.child) assert.equal(this.child.exitCode, null, "Desktop exited before readiness");
       try {
-        this.browser = await this.chromium.connectOverCDP(`http://127.0.0.1:${port}`, {
+        this.browser = await this.chromium.connectOverCDP(`http://127.0.0.1:${this.port}`, {
           timeout: 1000,
         });
         this.page = this.browser
@@ -53,6 +56,7 @@ export class Desktop {
           .find((page) => page.url().includes("tauri.localhost"));
         assert(this.page, "Main WebView is not ready");
         await this.page.locator(".app").waitFor({ timeout: 1000 });
+        assert.equal((await this.invoke("app_info")).version, version);
         break;
       } catch (error) {
         lastError = error;
@@ -63,7 +67,7 @@ export class Desktop {
     }
     assert(this.browser && this.page, `WebView readiness failed: ${lastError}`);
     this.page.on("pageerror", (error) => this.report.pageErrors.push(String(error)));
-    assert.equal((await this.invoke("app_info")).version, version);
+    this.version = version;
   }
 
   invoke(cmd, args = {}) {

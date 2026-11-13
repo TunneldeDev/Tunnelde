@@ -60,3 +60,21 @@ registration, Gatekeeper/quarantine, physical hardware or in-app OTA. The harnes
 terminates only its own disposable application process; that cleanup is not
 normal-shutdown acceptance. Windows installer and data retention remain covered
 by the separate workflow above.
+## Application-initiated Windows updates
+
+The **Public Windows in-app update** workflow installs only the source release,
+seeds the same synthetic data, then invokes the application's real update check
+and install commands. A temporary custom HTTPS source pins the exact public
+target manifest; package and signed-version verification use the application's
+embedded key. The harness does not install or launch the target itself.
+
+Acceptance requires the old process to exit successfully, the updater to restart
+the target installed binary, the same data and plugin approvals to survive
+without recovery mode, and the target CLI to work. Window close must remove the
+restarted process and local endpoint. The restarted process is not a direct
+child, so its exit code is not available; the result records the observed quit
+conditions explicitly. No user workstation or self-hosted runner is allowed.
+
+Results include update selection, progress, logs, screenshots and startup/data
+checks. This covers the selected Windows public release pair, not macOS/Linux
+OTA, real credentials or every historical migration.
