@@ -80,7 +80,7 @@
 - [插件概览与兼容性](docs/zh-cn/guide/plugins.md)
 - [插件开发与安全](docs/zh-cn/development/plugins/README.md)
 - [架构与数据位置](docs/zh-cn/development/architecture.md)
-- [本地 API 与 CLI（开发构建中的实验接口）](docs/zh-cn/development/local-api.md)
+- [本地 API 与 CLI（七个稳定 v1 方法）](docs/zh-cn/development/local-api.md)
 - [故障排查](docs/zh-cn/guide/troubleshooting.md)
 - [可选原生辅助程序](docs/zh-cn/development/native-helper.md)
 - [版本变更](CHANGELOG.md)

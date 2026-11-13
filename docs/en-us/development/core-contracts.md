@@ -83,3 +83,10 @@ historical fixtures. `src-tauri/tests/automation_cli.rs`
 runs real console and desktop CLI subprocesses against a fixed v1 wire fixture.
 These checks do not replace actual desktop service integration or packaged
 cross-platform installation and upgrade tests.
+
+The public-package CLI checks also compare the discovery emitted by each 1.0
+candidate or later package with the frozen local v1 baseline, including method
+metadata, input/result schemas, transport and errors. Earlier 0.x packages remain
+valid upgrade sources without claiming that stable declaration. The package
+report records whether the stable floor was verified; seven successful calls
+alone do not establish it.
