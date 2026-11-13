@@ -35,6 +35,46 @@ async fn construction_and_first_read_never_initialize_missing_authority() {
     assert!(manager.pending().await.is_empty());
     assert_eq!(std::fs::read_dir(&fixture.root).unwrap().count(), 0);
 }
+
+#[tokio::test]
+async fn original_install_uncertainty_is_visible_after_restart_without_private_control() {
+    let fixture = Fixture::new();
+    let mut journal = fixture.journal();
+    journal.enable_setups().unwrap();
+    let setup = journal
+        .reserve_setup(
+            super::super::journal::Owner {
+                id: uuid::Uuid::new_v4().to_string(),
+                generation: uuid::Uuid::new_v4().to_string(),
+            },
+            setup_plan(),
+        )
+        .unwrap();
+    let permit = journal.dispatch_setup(&setup).unwrap();
+    let original = permit.record().clone();
+    drop(permit);
+    drop(journal);
+    let manager = fixture.manager();
+    let pending = manager.pending().await;
+    assert_eq!(pending.len(), 1);
+    let view = serde_json::to_value(&pending[0]).unwrap();
+    assert_eq!(view["action"], "inspect");
+    assert_eq!(view["running"], false);
+    assert_eq!(view["path"], original.plan.selection.executable);
+    assert_eq!(view["directory"], original.plan.selection.directory);
+    let text = view.to_string();
+    for private in [
+        &original.journal_id,
+        &original.owner.id,
+        &original.owner.generation,
+        &original.plan.package.sha256,
+    ] {
+        assert!(!text.contains(private));
+    }
+    let service = manager.existing().await.unwrap().unwrap();
+    assert!(service.discard_setup(&original).await.is_err());
+    assert!(service.setups().await.unwrap() == vec![original]);
+}
 #[tokio::test]
 async fn existing_records_reopen_without_touching_credentials_and_project_no_private_control() {
     let fixture = Fixture::new();

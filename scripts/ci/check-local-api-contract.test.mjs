@@ -13,6 +13,53 @@ const floor = JSON.parse(
     "utf8",
   ),
 );
+
+test("local forwarding schema enforces byte bounds, explicit status and independent DTOs", async () => {
+  const method = JSON.parse(
+    await readFile(
+      new URL("../../src-tauri/src/automation/domains/forwarding/schema.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  assert.equal(method.stability, "experimental");
+  assert.equal(method.since, null);
+  const ajv = contractValidator();
+  const input = ajv.compile(method.inputSchema);
+  for (const params of [{}, { after: "", limit: 128 }, { after: "界".repeat(42), limit: 1 }])
+    assert.ok(input(params), JSON.stringify(input.errors));
+  for (const params of [
+    { limit: 0 },
+    { limit: 129 },
+    { after: "界".repeat(43) },
+    { after: "a\n" },
+    { sessionId: "private" },
+    { after: null },
+  ])
+    assert.equal(input(params), false);
+  const output = ajv.compile(method.resultSchema);
+  const entry = {
+    id: "rule",
+    hostId: "host",
+    name: "Database",
+    revision: "opaque",
+    direction: "local",
+    bind: { host: "127.0.0.1", port: 15432 },
+    target: { host: "::1", port: 5432 },
+    state: "stopped",
+  };
+  assert.ok(output({ entries: [], nextAfter: null }));
+  assert.ok(output({ entries: [entry], nextAfter: "rule" }));
+  for (const changed of [
+    { ...entry, sessionId: "internal" },
+    { ...entry, runtimeId: "internal" },
+    { ...entry, state: "unknown" },
+    { ...entry, direction: "invalid" },
+    { ...entry, bind: { host: "::1", port: 0 } },
+    { ...entry, name: "界".repeat(41) },
+  ])
+    assert.equal(output({ entries: [changed], nextAfter: null }), false);
+  assert.equal(output({ entries: Array(129).fill(entry), nextAfter: "rule" }), false);
+});
 const fixture = () => ({
   schema: globalThis.structuredClone(floor),
   samples: [
@@ -28,6 +75,29 @@ const fixture = () => ({
 });
 test("local API checker accepts a compatible client floor", () => {
   assert.deepEqual(checkLocalApiContract(fixture(), floor), { methods: 4, samples: 4 });
+});
+
+test("new local domains require experimental discovery and actual producer coverage", () => {
+  const current = fixture();
+  current.schema.methods.push({
+    name: "logs.read",
+    stability: "experimental",
+    since: null,
+    effect: "read",
+    inputSchema: { type: "object", additionalProperties: false },
+    resultSchema: {
+      type: "object",
+      required: ["entries"],
+      properties: { entries: { type: "array" } },
+    },
+  });
+  current.samples.push({ method: "logs.read", params: {}, result: { entries: [] } });
+  assert.deepEqual(checkLocalApiContract(current, floor), { methods: 5, samples: 5 });
+  current.schema.methods.at(-1).stability = "stable";
+  assert.throws(() => checkLocalApiContract(current, floor), /separate stability review/);
+  current.schema.methods.at(-1).stability = "experimental";
+  current.samples.pop();
+  assert.throws(() => checkLocalApiContract(current, floor), /actual producer sample/);
 });
 test("local API checker rejects removed fields and missing actual coverage", () => {
   const removed = fixture();

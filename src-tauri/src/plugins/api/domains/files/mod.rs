@@ -4,6 +4,7 @@ mod local;
 mod local_write;
 mod preview;
 mod remote;
+mod remote_mutation;
 pub(in crate::plugins::api) mod remote_write;
 pub(in crate::plugins::api) mod text;
 mod transfers;

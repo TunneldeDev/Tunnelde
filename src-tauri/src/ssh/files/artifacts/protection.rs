@@ -29,5 +29,5 @@ pub(super) async fn writable(
         paths.push(publication_successor(to, id, generation, record)?.path);
     }
     let paths: Vec<_> = paths.iter().map(String::as_str).collect();
-    admission::writable(app, session_id, sftp, &paths).await
+    transfer_ownership::writable(app, id, session_id, sftp, &paths).await
 }

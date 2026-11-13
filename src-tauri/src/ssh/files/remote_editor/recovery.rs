@@ -7,6 +7,7 @@ pub(super) enum Operation {
     Create,
     Stage,
     Publish,
+    Cleanup,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,8 +35,10 @@ impl Receipt {
         if self.version != 1
             || uuid::Uuid::parse_str(&self.generation).is_err()
             || (self.pending == Some(Operation::Create) && self.created)
-            || (matches!(self.pending, Some(Operation::Stage | Operation::Publish))
-                && !self.created)
+            || (matches!(
+                self.pending,
+                Some(Operation::Stage | Operation::Publish | Operation::Cleanup)
+            ) && !self.created)
         {
             return Err(AppError::validation("editor.cleanupUnrecognized"));
         }
@@ -44,6 +47,9 @@ impl Receipt {
 
     pub fn is_unsent(&self) -> bool {
         self.revision == 0 && self.pending.is_none() && !self.created && self.validate().is_ok()
+    }
+    pub fn generation(&self) -> &str {
+        &self.generation
     }
 
     pub fn follows(&self, previous: &Self) -> bool {
@@ -112,7 +118,21 @@ pub(super) fn settle(
 }
 
 pub(super) fn terminal(error: &russh_sftp::client::error::Error) -> bool {
-    matches!(error, russh_sftp::client::error::Error::Status(_))
+    matches!(error, russh_sftp::client::error::Error::Status(status) if matches!(status.status_code,
+        StatusCode::NoSuchFile | StatusCode::PermissionDenied | StatusCode::Failure | StatusCode::OpUnsupported))
+}
+
+pub(super) async fn cleanup_mutation(
+    record: &mut Record,
+    checkpoint: &impl Fn(&Record) -> AppResult<()>,
+    operation: impl std::future::Future<Output = Result<(), russh_sftp::client::error::Error>>,
+) -> AppResult<()> {
+    begin(record, Operation::Cleanup, checkpoint)?;
+    let result = operation.await;
+    if result.is_ok() || result.as_ref().is_err_and(terminal) {
+        settle(record, true, checkpoint)?;
+    }
+    result.map_err(map_sftp)
 }
 
 /// Staging mutations are serialized; no pipelined write can outlive a terminal

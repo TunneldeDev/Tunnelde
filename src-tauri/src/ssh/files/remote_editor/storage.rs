@@ -49,6 +49,7 @@ fn same_owner(a: &Record, b: &Record) -> bool {
         && a.address == b.address
         && a.directory == b.directory
         && a.path == b.path
+        && (a.admission == b.admission || a.admission.is_none())
 }
 
 pub(super) fn persist(conn: &Connection, record: &Record) -> AppResult<()> {

@@ -1,4 +1,6 @@
 use super::*;
+mod authorization;
+mod pause_completion;
 use std::sync::Mutex;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -7,6 +9,9 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 struct Observed {
     data: Vec<u8>,
     writes: Vec<usize>,
+    write_status: u32,
+    write_gate: Option<Arc<tokio::sync::Semaphore>>,
+    mkdir_status: u32,
     reads: Vec<usize>,
     read_offsets: Vec<u64>,
     short_read: Option<usize>,
@@ -241,10 +246,16 @@ async fn stream_with_copy(
                     delayed = true;
                 }
                 4 | 6 => {
+                    let write_status = state.lock().unwrap().write_status;
                     reply.push(101);
                     reply.extend_from_slice(id);
                     reply.extend_from_slice(
-                        &(if kind == 4 { close.status } else { 0 }).to_be_bytes(),
+                        &(if kind == 4 {
+                            close.status
+                        } else {
+                            write_status
+                        })
+                        .to_be_bytes(),
                     );
                     field(&mut reply, b"");
                     field(&mut reply, b"");
@@ -269,6 +280,7 @@ async fn stream_with_copy(
                         let bytes = string(&request, &mut pos);
                         assert!(bytes.len() <= write_limit.unwrap_or(32768) as usize);
                         let mut state = state.lock().unwrap();
+                        read_gate = state.write_gate.clone();
                         let output = if copy.is_some() {
                             assert_eq!(handle, b"/target");
                             &mut state.copied
@@ -283,6 +295,13 @@ async fn stream_with_copy(
                         state.peak = state.peak.max(state.pending);
                         delayed = true;
                     }
+                }
+                14 => {
+                    reply.push(101);
+                    reply.extend_from_slice(id);
+                    reply.extend_from_slice(&state.lock().unwrap().mkdir_status.to_be_bytes());
+                    field(&mut reply, b"mkdir result");
+                    field(&mut reply, b"");
                 }
                 _ => panic!("unexpected SFTP request {kind}"),
             }
@@ -306,6 +325,8 @@ async fn stream_with_copy(
     });
     (client, observed)
 }
+
+mod ownership;
 
 /// An opt-in wire-level benchmark isolates local IO from WAN variability. It
 /// uses the real range pipeline and verifies every byte outside the timed span.
@@ -735,7 +756,7 @@ async fn cancelled_server_copy_drains_shared_destination_before_retiring_task() 
 }
 
 #[tokio::test]
-async fn acknowledged_server_copy_close_is_cancellable_without_aborting_shared_channel() {
+async fn acknowledged_server_copy_drains_original_close_after_cancellation() {
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     let (sessions, state, from, to) = copy_server(
         copy_supported(),
@@ -757,11 +778,12 @@ async fn acknowledged_server_copy_close_is_cancellable_without_aborting_shared_c
         tokio::join!(files.finish_cancellable(false, &cancel), async {
             wait_for(|| state.lock().unwrap().closes == 2).await;
             cancel.store(true, Ordering::SeqCst);
+            gate.add_permits(2);
         })
     })
     .await
-    .expect("acknowledged copy blocked close cancellation");
-    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    .expect("acknowledged copy did not finish original close");
+    result.unwrap();
     assert!(!state.lock().unwrap().disconnected);
     gate.add_permits(4);
     let next = Files::open(&sessions, &from, &to).await.unwrap();
@@ -1189,8 +1211,7 @@ async fn empty_staging_close_cancels_without_duplicate_close_or_disconnecting_me
     .await;
     let session = SftpSession::new(stream).await.unwrap();
     let writer = Writer::Remote(Box::new(
-        session
-            .open_with_flags("/staging", OpenFlags::WRITE)
+        remote_writer::File::open(&session, "/staging", OpenFlags::WRITE, &Default::default())
             .await
             .unwrap(),
     ));
@@ -1224,7 +1245,7 @@ async fn empty_staging_close_cancels_without_duplicate_close_or_disconnecting_me
 }
 
 #[tokio::test]
-async fn acknowledged_writes_allow_prompt_close_cancellation_and_shared_channel_reuse() {
+async fn acknowledged_writes_drain_original_close_and_preserve_shared_channel_reuse() {
     let source_gate = Arc::new(tokio::sync::Semaphore::new(0));
     let target_gate = Arc::new(tokio::sync::Semaphore::new(0));
     let (source, input) = server_with_close(
@@ -1269,11 +1290,13 @@ async fn acknowledged_writes_allow_prompt_close_cancellation_and_shared_channel_
             wait_for(|| input.lock().unwrap().closes == 1 && output.lock().unwrap().closes == 1)
                 .await;
             cancel.store(true, Ordering::SeqCst);
+            source_gate.add_permits(1);
+            target_gate.add_permits(1);
         })
     })
     .await
-    .expect("pause waited for acknowledged data CLOSE");
-    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    .expect("pause did not finish original data CLOSE");
+    result.unwrap();
     assert_eq!(output.lock().unwrap().data, bytes);
     assert!(!input.lock().unwrap().disconnected);
     assert!(!output.lock().unwrap().disconnected);

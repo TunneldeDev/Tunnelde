@@ -25,23 +25,31 @@ mod local_directory_move;
 pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
+mod metadata;
 mod move_verification;
+pub(crate) mod mutations;
 #[allow(
     dead_code,
     reason = "Native save transport awaits explicit installation and recovery UI acceptance"
 )]
 pub(crate) mod native_save;
+mod outcome;
 mod publication;
 mod range_io;
 mod remote_commit;
 pub mod remote_editor;
 mod remote_merge;
+mod remote_writer;
+mod removal;
 mod rename;
 mod scan;
 mod scheduler;
 pub mod search;
 mod segments;
+mod task_observation;
+mod transfer_ownership;
 mod verification;
+use outcome::Outcome;
 use verification::{fingerprint_file, verify_prefix};
 
 pub const TRANSFER_EVENT: &str = "sftp://transfer";
@@ -118,14 +126,21 @@ impl Drop for CleanupReservation<'_> {
 #[derive(Default)]
 struct TransferState {
     active: std::collections::HashMap<String, ActiveTransfer>,
+    unconfirmed: std::collections::HashMap<String, native_save::runtime::MutationObservation>,
+    retained_ownership: std::collections::HashMap<String, transfer_ownership::Shared>,
     completed: std::collections::VecDeque<CompletedTransfer>,
     paused: std::collections::HashSet<String>,
 }
 
 struct ActiveTransfer {
     identity: String,
+    observation: native_save::runtime::MutationObservation,
+    ownership: transfer_ownership::Shared,
     cancel: Arc<AtomicBool>,
     owner: Option<TransferOwner>,
+    lease: Option<crate::plugins::security::Lease>,
+    cleanup_started: bool,
+    cleanup: Option<transfer_ownership::Cleanup>,
     event: TransferEvent,
 }
 
@@ -158,7 +173,10 @@ impl TransferRegistry {
 
     fn release(&self, id: &str) {
         if let Ok(mut state) = self.inner.lock() {
-            state.active.remove(id);
+            if let Some(task) = state.active.remove(id) {
+                state.retain_observation(id, task.observation);
+                state.retain_ownership(id, task.ownership);
+            }
             state.paused.remove(id);
             self.bandwidth.remove(id);
         }
@@ -229,12 +247,19 @@ impl TransferRegistry {
             return Err(AppError::validation("plugin.api.transferBusy"));
         }
         let plugin_id = owner.as_ref().map(|owner| owner.plugin_id.clone());
+        let observation = state.observation_for_registration(id)?;
+        let ownership = state.retained_ownership.remove(id).unwrap_or_default();
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
                 identity: uuid::Uuid::new_v4().to_string(),
+                observation,
+                ownership,
                 cancel: flag,
                 owner,
+                lease: None,
+                cleanup_started: false,
+                cleanup: None,
                 event: TransferEvent {
                     id: id.into(),
                     plugin_id,
@@ -265,6 +290,8 @@ impl TransferRegistry {
     fn complete(&self, mut event: TransferEvent) -> TransferEvent {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.remove(&event.id) {
+                state.retain_observation(&event.id, transfer.observation);
+                state.retain_ownership(&event.id, transfer.ownership);
                 event.plugin_id = transfer.event.plugin_id;
                 self.bandwidth.remove(&event.id);
                 if event.status == TransferStatus::Cancelled {
@@ -570,10 +597,7 @@ pub fn local_list(path: Option<String>) -> AppResult<Listing> {
 }
 
 pub async fn remote_mkdir(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    let sftp = admission::open(app, session_id, &[&path]).await?;
-    sftp.create_dir(path).await.map_err(map_sftp)?;
-    let _ = sftp.close().await;
-    Ok(())
+    mutations::mkdir(app, session_id, path, mutations::Native).await
 }
 
 pub async fn remote_rename(
@@ -583,49 +607,7 @@ pub async fn remote_rename(
     to: String,
     overwrite: bool,
 ) -> AppResult<()> {
-    let sftp = session(app, session_id)
-        .await
-        .map_err(|error| rename::context(&from, &to, error))?;
-    let result = async {
-        admission::writable(app, session_id, &sftp, &[&from, &to]).await?;
-        check_remote_destination(&sftp, &from, &to, overwrite).await?;
-        if overwrite && remote_exists(&sftp, &to).await? {
-            // Merge real directories using only server-side renames. Resolving
-            // roots once also permits a user's parent directory symlink.
-            if sftp
-                .symlink_metadata(&from)
-                .await
-                .map_err(map_sftp)?
-                .is_dir()
-                && sftp.symlink_metadata(&to).await.map_err(map_sftp)?.is_dir()
-            {
-                let source = sftp.canonicalize(&from).await.map_err(map_sftp)?;
-                let target = sftp.canonicalize(&to).await.map_err(map_sftp)?;
-                let plan = remote_merge::Plan::prepare(&sftp, &source, &target).await?;
-                let replacement = if plan.needs_replacement {
-                    Some(remote_commit::Replacement::connect(app, session_id).await?)
-                } else {
-                    None
-                };
-                return plan.apply(&sftp, replacement.as_ref()).await;
-            }
-            return remote_replace(app, session_id, &from, &to).await;
-        }
-        rename::entry(&sftp, &from, &to).await
-    }
-    .await
-    .map_err(|error| rename::context(&from, &to, error));
-    let _ = sftp.close().await;
-    result
-}
-
-// OpenSSH's extension maps to the server's atomic rename operation. In
-// particular, never delete the destination as a workaround for SFTP v3.
-async fn remote_replace(app: &AppHandle, session_id: &str, from: &str, to: &str) -> AppResult<()> {
-    remote_commit::Replacement::connect(app, session_id)
-        .await?
-        .commit(from, to)
-        .await
+    mutations::rename(app, session_id, from, to, overwrite, mutations::Native).await
 }
 
 pub async fn remote_delete(
@@ -634,10 +616,7 @@ pub async fn remote_delete(
     path: String,
     _is_dir: bool,
 ) -> AppResult<()> {
-    let sftp = admission::open(app, session_id, &[&path]).await?;
-    remove_remote_entry(&sftp, &path).await?;
-    let _ = sftp.close().await;
-    Ok(())
+    mutations::delete(app, session_id, path, mutations::Native).await
 }
 
 pub fn local_mkdir(path: String) -> AppResult<()> {
@@ -654,21 +633,7 @@ pub fn local_create_file(path: String) -> AppResult<()> {
 }
 
 pub async fn remote_create_file(app: &AppHandle, session_id: &str, path: String) -> AppResult<()> {
-    let sftp = admission::open(app, session_id, &[&path]).await?;
-    let result = sftp
-        .open_with_flags(
-            &path,
-            OpenFlags::WRITE | OpenFlags::CREATE | OpenFlags::EXCLUDE,
-        )
-        .await
-        .map_err(map_sftp);
-    if let Ok(mut file) = result {
-        let result = file.shutdown().await.map_err(AppError::from);
-        let _ = sftp.close().await;
-        return result;
-    }
-    let _ = sftp.close().await;
-    result.map(|_| ())
+    mutations::create_file(app, session_id, path, mutations::Native).await
 }
 
 pub fn local_rename(from: String, to: String, overwrite: bool) -> AppResult<()> {
@@ -735,30 +700,6 @@ fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64)
             error: None,
         },
     );
-}
-
-enum Outcome {
-    Done(u64),
-    Cancelled(u64),
-    Failed(u64, AppError),
-}
-
-impl Outcome {
-    fn into_result(self) -> AppResult<()> {
-        match self {
-            Self::Done(_) => Ok(()),
-            Self::Cancelled(_) => Err(AppError::Ssh(CANCELLED.into())),
-            Self::Failed(_, error) => Err(error),
-        }
-    }
-
-    fn from_result(result: AppResult<()>, transferred: u64, cancel: &AtomicBool) -> Self {
-        match result {
-            Ok(()) => Self::Done(transferred),
-            Err(_) if cancel.load(Ordering::SeqCst) => Self::Cancelled(transferred),
-            Err(error) => Self::Failed(transferred, error),
-        }
-    }
 }
 
 async fn finish(app: &AppHandle, id: &str, name: &str, outcome: &Outcome) {
@@ -1044,6 +985,19 @@ fn spawn_transfer_inner(
     app.state::<AppState>()
         .transfers
         .register(&id, cancel.clone(), transfer_owner)?;
+    if let Some(lease) = &owner {
+        let state = app.state::<AppState>();
+        let mut registry = state
+            .transfers
+            .inner
+            .lock()
+            .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+        registry
+            .active
+            .get_mut(&id)
+            .ok_or_else(|| AppError::validation("sftp.transferBusy"))?
+            .lease = Some(lease.clone());
+    }
     let recorded = (|| -> AppResult<()> {
         let sessions = app.state::<AppState>().ssh.list();
         let host = |id: &Option<String>| {
@@ -1262,6 +1216,8 @@ struct Meter<'a> {
     data_channels: Arc<tokio::sync::OnceCell<range_io::Sessions>>,
     batch_progress: Option<batch::Progress>,
     archives: Option<Arc<archive::Batcher>>,
+    observation: native_save::runtime::MutationObservation,
+    metadata: Option<Arc<SftpSession>>,
 }
 
 impl<'a> Meter<'a> {
@@ -1281,10 +1237,13 @@ impl<'a> Meter<'a> {
                         self.app,
                         from,
                         to,
-                        &self.settings,
+                        range_io::Plan {
+                            settings: &self.settings,
+                            total_size: self.total,
+                            observation: self.observation.clone(),
+                        },
                         from_sftp,
                         to_sftp,
-                        self.total,
                     ),
                 )
                 .await
@@ -1299,7 +1258,14 @@ impl<'a> Meter<'a> {
         }
     }
 
-    fn new(app: &'a AppHandle, id: &'a str, name: &'a str, total: u64) -> Self {
+    fn new(
+        app: &'a AppHandle,
+        id: &'a str,
+        name: &'a str,
+        total: u64,
+        observation: native_save::runtime::MutationObservation,
+        metadata: Option<Arc<SftpSession>>,
+    ) -> Self {
         Self {
             app,
             id,
@@ -1312,6 +1278,8 @@ impl<'a> Meter<'a> {
             data_channels: Arc::new(tokio::sync::OnceCell::new()),
             batch_progress: None,
             archives: None,
+            observation,
+            metadata,
         }
     }
 
@@ -1420,7 +1388,7 @@ impl Reader {
 
 enum Writer {
     Local(tokio::fs::File),
-    Remote(Box<russh_sftp::client::fs::File>),
+    Remote(Box<remote_writer::File>),
 }
 
 impl Writer {
@@ -1445,22 +1413,13 @@ impl Writer {
         match self {
             Writer::Local(mut file) => file.flush().await?,
             Writer::Remote(file) => {
-                tokio::time::timeout(std::time::Duration::from_secs(5), finish_remote_file(*file))
+                tokio::time::timeout(std::time::Duration::from_secs(5), file.finish())
                     .await
                     .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??
             }
         }
         Ok(())
     }
-}
-
-async fn finish_remote_file(mut file: russh_sftp::client::fs::File) -> AppResult<()> {
-    let flushed = file.flush().await;
-    // Attempt CLOSE even after a write/flush error; Drop alone does not await it.
-    let closed = file.close().await;
-    flushed?;
-    closed?;
-    Ok(())
 }
 
 #[derive(Debug, PartialEq)]
@@ -1575,6 +1534,7 @@ async fn make_dir(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: Option<&AtomicBool>,
+    observation: native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
         return Err(AppError::Ssh(CANCELLED.into()));
@@ -1605,7 +1565,10 @@ async fn make_dir(
                 None => {
                     // Once sent, MKDIR must settle before cancellation is reported:
                     // a late acknowledgement must not race cleanup or resume.
-                    handle.create_dir(&endpoint.path).await.map_err(map_sftp)?;
+                    observation
+                        .request(handle.create_dir(&endpoint.path))
+                        .await
+                        .map_err(map_sftp)?;
                     if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
                         return Err(AppError::Ssh(CANCELLED.into()));
                     }
@@ -1615,6 +1578,7 @@ async fn make_dir(
         }
         None => {
             reject_local_destination_link(Path::new(&endpoint.path))?;
+            observation.authorize()?;
             tokio::fs::create_dir_all(&endpoint.path).await?;
             if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
                 return Err(AppError::Ssh(CANCELLED.into()));
@@ -1641,31 +1605,34 @@ async fn open_writer(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
     overwrite: bool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<Writer> {
     reject_destination_link(endpoint, sftp).await?;
-    create_writer(endpoint, sftp, overwrite).await
+    create_writer(endpoint, sftp, overwrite, observation).await
 }
 
 async fn create_writer(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
     overwrite: bool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<Writer> {
+    observation.authorize()?;
     Ok(match sftp {
         Some(handle) => Writer::Remote(Box::new(
-            handle
-                .open_with_flags(
-                    &endpoint.path,
-                    OpenFlags::WRITE
-                        | OpenFlags::CREATE
-                        | if overwrite {
-                            OpenFlags::TRUNCATE
-                        } else {
-                            OpenFlags::EXCLUDE
-                        },
-                )
-                .await
-                .map_err(map_sftp)?,
+            remote_writer::File::open(
+                handle,
+                &endpoint.path,
+                OpenFlags::WRITE
+                    | OpenFlags::CREATE
+                    | if overwrite {
+                        OpenFlags::TRUNCATE
+                    } else {
+                        OpenFlags::EXCLUDE
+                    },
+                observation,
+            )
+            .await?,
         )),
         None => Writer::Local(
             tokio::fs::OpenOptions::new()
@@ -1695,10 +1662,18 @@ async fn copy_entry(
         return Err(AppError::Ssh(CANCELLED.into()));
     }
 
-    let SourceMetadata::File(size, modified) =
-        interruptible(Some(cancel), inspect_source(from, from_sftp)).await?
-    else {
-        make_dir(to, to_sftp, Some(cancel)).await?;
+    let metadata = interruptible(Some(cancel), inspect_source(from, from_sftp)).await?;
+    // Read-only preparation can await a slow peer. Revalidate each destination
+    // afterwards, including nested directories, before the next mutation.
+    transfer_ownership::authorize_task(meter.app, meter.id)?;
+    if let (Some(session_id), Some(sftp)) = (to.session.as_deref(), to_sftp) {
+        transfer_ownership::writable(meter.app, meter.id, session_id, sftp, &[&to.path]).await?;
+    }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    let SourceMetadata::File(size, modified) = metadata else {
+        make_dir(to, to_sftp, Some(cancel), meter.observation.clone()).await?;
         let paths = interruptible(Some(cancel), children(from, from_sftp)).await?;
         // Overwrites reserve one commit channel per task. Keep their proven
         // sequential publication path until that protocol supports multiplexing.
@@ -1749,25 +1724,17 @@ async fn copy_entry(
         .await;
     }
     if from_sftp.is_some() || to_sftp.is_some() {
-        open_writer(to, to_sftp, overwrite).await?.finish().await?;
+        open_writer(to, to_sftp, overwrite, &meter.observation)
+            .await?
+            .finish()
+            .await?;
         let channels = meter
-            .data_channels
-            .get_or_try_init(|| async {
-                range_io::Sessions::open(
-                    meter.app,
-                    from,
-                    to,
-                    &meter.settings,
-                    from_sftp,
-                    to_sftp,
-                    meter.total,
-                )
-                .await
-            })
+            .data_sessions(from, to, from_sftp, to_sftp, cancel)
             .await?
             .clone();
         let files = range_io::Files::open(&channels, from, to)
             .await?
+            .with_observation(meter.observation.clone())
             .with_throttle(meter.throttle());
         let plan = segments::Plan::for_file(&meter.settings, size, true);
         let copied = async {
@@ -1784,11 +1751,11 @@ async fn copy_entry(
         }
         .await;
         let closed = files.finish(copied.is_err()).await;
-        return copied.and(closed);
+        return outcome::after_completion(copied, closed);
     }
     let mut reader = open_reader(from, from_sftp).await?;
     let result = async {
-        let mut writer = open_writer(to, to_sftp, overwrite).await?;
+        let mut writer = open_writer(to, to_sftp, overwrite, &meter.observation).await?;
         let copied = async {
             let mut buffer = vec![0_u8; CHUNK];
             let throttle = meter.throttle();
@@ -1803,6 +1770,7 @@ async fn copy_entry(
                 if read == 0 {
                     break;
                 }
+                meter.observation.authorize()?;
                 writer.write_all(&buffer[..read]).await?;
                 meter.add(read as u64);
             }
@@ -1835,7 +1803,9 @@ async fn copy_directory_batch(
     // Initialize once, lazily at the first validated regular file. Sampling a
     // directory child here could follow a link before copy_entry rejects it.
     let channels = meter.data_channels.clone();
-    let archives = Arc::new(archive::Batcher::default());
+    let observation = meter.observation.clone();
+    let metadata = meter.metadata.clone();
+    let archives = Arc::new(archive::Batcher::new(observation.clone()));
     let app = meter.app;
     let id = meter.id;
     let name = meter.name;
@@ -1869,7 +1839,8 @@ async fn copy_directory_batch(
         |path, progress, stop| {
             let source = from.child(path);
             let destination = to.child(to.join(&file_name_of(&source.path)));
-            let mut worker = Meter::new(app, id, name, total);
+            let mut worker =
+                Meter::new(app, id, name, total, observation.clone(), metadata.clone());
             worker.settings = settings.clone();
             worker.data_channels = channels.clone();
             worker.batch_progress = Some(progress);
@@ -1923,24 +1894,31 @@ async fn rename_endpoint(
     from: &Endpoint,
     to: &Endpoint,
     sftp: Option<&SftpSession>,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     match sftp {
-        Some(s) => rename::entry(s, &from.path, &to.path).await,
+        Some(s) => observation
+            .request(s.rename(&from.path, &to.path))
+            .await
+            .map_err(|error| rename::failure(&from.path, &to.path, error)),
         None => {
             let source = PathBuf::from(&from.path);
             let destination = PathBuf::from(&to.path);
-            tokio::task::spawn_blocking(move || {
-                crate::platform::file_ops::rename_noreplace(&source, &destination)
+            let observation = observation.clone();
+            tokio::task::spawn_blocking(move || -> AppResult<()> {
+                observation.authorize()?;
+                crate::platform::file_ops::rename_noreplace(&source, &destination).map_err(
+                    |error| {
+                        if error.kind() == std::io::ErrorKind::AlreadyExists {
+                            AppError::validation("sftp.alreadyExists")
+                        } else {
+                            AppError::from(error)
+                        }
+                    },
+                )
             })
             .await
-            .map_err(|e| AppError::internal(e.to_string()))?
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    AppError::validation("sftp.alreadyExists")
-                } else {
-                    AppError::from(error)
-                }
-            })?;
+            .map_err(|e| AppError::internal(e.to_string()))??;
             Ok(())
         }
     }
@@ -2078,6 +2056,7 @@ async fn remove_guarded_backup(
 }
 async fn cleanup_backup(
     app: &AppHandle,
+    id: &str,
     key: &str,
     backup: &Endpoint,
     destination: &Endpoint,
@@ -2088,7 +2067,7 @@ async fn cleanup_backup(
         return Ok(());
     };
     if let (Some(session_id), Some(sftp)) = (backup.session.as_deref(), sftp) {
-        admission::writable(app, session_id, sftp, &[&backup.path]).await?;
+        transfer_ownership::writable(app, id, session_id, sftp, &[&backup.path]).await?;
     }
     if interruptible(Some(cancel), file_length(backup, sftp))
         .await?
@@ -2158,9 +2137,17 @@ async fn durable_copy_file(
             }
             verify_prefix(&mut source, to, to_sftp, stamp.0, Some(cancel)).await?;
             source.finish_cancellable(cancel).await?;
-            cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+            cleanup_backup(meter.app, id, &backup_key, &backup, to, to_sftp, cancel).await?;
             artifacts::confirm_publication(meter.app, id, to)?;
-            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+            artifacts::finish_staging(
+                meter.app,
+                id,
+                to,
+                meter.metadata.as_ref(),
+                cancel,
+                &meter.observation,
+            )
+            .await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2172,8 +2159,14 @@ async fn durable_copy_file(
     save(false)?;
     artifacts::record(meter.app, id, to, !resuming)?;
     let preparation_meter = &*meter;
-    let (temp, recovering_publication) =
-        artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel, |directory| async move {
+    let (temp, recovering_publication) = artifacts::prepare_staging(
+        meter.app,
+        id,
+        to,
+        meter.metadata.as_ref(),
+        cancel,
+        &meter.observation,
+        |directory| async move {
             let sessions = preparation_meter
                 .data_sessions(from, to, from_sftp, to_sftp, cancel)
                 .await?;
@@ -2191,10 +2184,12 @@ async fn durable_copy_file(
                 directory,
                 target.clone(),
                 cancel,
+                &preparation_meter.observation,
             )
             .await
-        })
-        .await?;
+        },
+    )
+    .await?;
     #[cfg(windows)]
     let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     let mut replay = None;
@@ -2234,12 +2229,20 @@ async fn durable_copy_file(
         let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
         completed.finish_cancellable(cancel).await?;
         if checked.is_ok() {
-            cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+            cleanup_backup(meter.app, id, &backup_key, &backup, to, to_sftp, cancel).await?;
             save(true)?;
             if recovering_publication {
                 artifacts::confirm_publication(meter.app, id, to)?;
             }
-            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+            artifacts::finish_staging(
+                meter.app,
+                id,
+                to,
+                meter.metadata.as_ref(),
+                cancel,
+                &meter.observation,
+            )
+            .await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2321,14 +2324,14 @@ async fn durable_copy_file(
     {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
+    meter.observation.authorize()?;
     let mut writer = if partial.is_some() {
         match to_sftp {
             Some(s) => Writer::Remote(Box::new(
-                interruptible(Some(cancel), async {
-                    s.open_with_flags(&temp.path, OpenFlags::WRITE)
-                        .await
-                        .map_err(map_sftp)
-                })
+                interruptible(
+                    Some(cancel),
+                    remote_writer::File::open(s, &temp.path, OpenFlags::WRITE, &meter.observation),
+                )
                 .await?,
             )),
             None => Writer::Local(
@@ -2343,13 +2346,17 @@ async fn durable_copy_file(
         // existing files and links atomically. Repeating LSTAT here cannot
         // make that check safer and costs several RTTs per small file.
         tracing::debug!(id, "Creating isolated transfer staging file");
-        let writer = interruptible(Some(cancel), create_writer(&temp, to_sftp, false)).await?;
+        let writer = interruptible(
+            Some(cancel),
+            create_writer(&temp, to_sftp, false, &meter.observation),
+        )
+        .await?;
         artifacts::creation_pending(meter.app, id, to, false)?;
         writer
     } else {
         // Old journals do not own a removable parent that fences CREATE.
         interruptible(Some(cancel), reject_destination_link(&temp, to_sftp)).await?;
-        create_writer(&temp, to_sftp, false).await?
+        create_writer(&temp, to_sftp, false, &meter.observation).await?
     };
     #[cfg(windows)]
     artifacts::record_local_writer(
@@ -2423,6 +2430,7 @@ async fn durable_copy_file(
                     break;
                 }
                 attempted = confirmed + n as u64;
+                meter.observation.authorize()?;
                 interruptible(Some(cancel), writer.write_all(&buf[..n])).await?;
                 confirmed += n as u64;
                 meter.add(n as u64);
@@ -2441,7 +2449,7 @@ async fn durable_copy_file(
                 tracing::warn!(%error, "Cannot validate transfer partial length");
             }
         }
-        result.and(closed).and(read_closed)
+        outcome::after_completion(outcome::after_completion(result, closed), read_closed)
     };
     copied?;
     tracing::debug!(
@@ -2460,10 +2468,22 @@ async fn durable_copy_file(
         // verification on resume, rather than retrying a destructive fallback.
         artifacts::begin_publication(meter.app, id, to, &temp)?;
         tracing::debug!(id, "Publishing transfer staging file");
-        interruptible(Some(cancel), replacement.commit(&temp.path, &to.path)).await?;
+        interruptible(
+            Some(cancel),
+            replacement.commit_observed(&temp.path, &to.path, &meter.observation),
+        )
+        .await?;
         save(true)?;
         artifacts::confirm_publication(meter.app, id, to)?;
-        artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+        artifacts::finish_staging(
+            meter.app,
+            id,
+            to,
+            meter.metadata.as_ref(),
+            cancel,
+            &meter.observation,
+        )
+        .await?;
         return Ok(());
     }
     // Persist the old target fingerprint before moving it, so both rename
@@ -2475,13 +2495,14 @@ async fn durable_copy_file(
         }
         let expected = fingerprint_file(to, to_sftp, cancel).await?;
         meter.app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&backup_key,serde_json::to_string(&expected)?,crate::models::now_ms()])?;Ok(())})?;
-        rename_endpoint(to, &backup, to_sftp).await?;
+        rename_endpoint(to, &backup, to_sftp, &meter.observation).await?;
         own_backup = true;
     }
     if to_sftp.is_some() {
         artifacts::begin_publication(meter.app, id, to, &temp)?;
     }
     tracing::debug!(id, "Publishing transfer staging file");
+    meter.observation.authorize()?;
     #[cfg(windows)]
     let committed = match local_staging.as_ref() {
         Some(guard) => guard
@@ -2493,10 +2514,26 @@ async fn durable_copy_file(
                     AppError::from(error)
                 }
             }),
-        None => publication::commit(&temp, to, to_sftp, cancel).await,
+        None => {
+            publication::commit(
+                &temp,
+                to,
+                meter.metadata.as_ref(),
+                cancel,
+                &meter.observation,
+            )
+            .await
+        }
     };
     #[cfg(not(windows))]
-    let committed = publication::commit(&temp, to, to_sftp, cancel).await;
+    let committed = publication::commit(
+        &temp,
+        to,
+        meter.metadata.as_ref(),
+        cancel,
+        &meter.observation,
+    )
+    .await;
     tracing::debug!(id, "Transfer publication returned");
     if let Err(e) = committed {
         if own_backup {
@@ -2511,12 +2548,20 @@ async fn durable_copy_file(
     }
     #[cfg(windows)]
     drop(local_staging);
-    cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+    cleanup_backup(meter.app, id, &backup_key, &backup, to, to_sftp, cancel).await?;
     save(true)?;
     if to_sftp.is_some() {
         artifacts::confirm_publication(meter.app, id, to)?;
     }
-    artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+    artifacts::finish_staging(
+        meter.app,
+        id,
+        to,
+        meter.metadata.as_ref(),
+        cancel,
+        &meter.observation,
+    )
+    .await?;
     Ok(())
 }
 
@@ -2590,18 +2635,35 @@ async fn interrupted_move_error(from: &Endpoint, sftp: Option<&SftpSession>) -> 
     }
 }
 
-async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+async fn remove_endpoint(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+    observation: &native_save::runtime::MutationObservation,
+) -> AppResult<()> {
     match sftp {
-        Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
+        Some(handle) => {
+            removal::entry(
+                handle,
+                &endpoint.path,
+                removal::Observer::Transfer(observation),
+            )
+            .await
+        }
         None => remove_local_entry(&PathBuf::from(&endpoint.path)),
     }
 }
 
 /// Staging files and backups are always files. Do not inspect and recursively
 /// delete a path that another client may have replaced with a directory.
-async fn remove_transfer_file(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+async fn remove_transfer_file(
+    endpoint: &Endpoint,
+    sftp: Option<&Arc<SftpSession>>,
+    observation: &native_save::runtime::MutationObservation,
+) -> AppResult<()> {
     match sftp {
-        Some(handle) => handle.remove_file(&endpoint.path).await.map_err(map_sftp),
+        Some(handle) => metadata::remove_file(handle, &endpoint.path, observation)
+            .await
+            .map_err(map_sftp),
         None => tokio::fs::remove_file(&endpoint.path)
             .await
             .map_err(Into::into),
@@ -2661,6 +2723,7 @@ async fn parallel_copy_file(
     }
     let files = range_io::Files::open_cancellable(&channels, from, temp, cancel)
         .await?
+        .with_observation(meter.observation.clone())
         .with_throttle(meter.throttle());
     let result = async {
         while offset < stamp.0 {
@@ -2700,7 +2763,7 @@ async fn parallel_copy_file(
     if result.is_err() {
         meter.retain(previous_files + offset)?;
     }
-    result.and(closed)
+    outcome::after_completion(result, closed)
 }
 
 struct TransferOptions {
@@ -2719,6 +2782,10 @@ async fn run(
     cancel: &Arc<AtomicBool>,
     options: TransferOptions,
 ) -> Outcome {
+    let observation = match app.state::<AppState>().transfers.observation(id) {
+        Ok(observation) => observation,
+        Err(error) => return Outcome::Failed(0, error),
+    };
     let scheduler = app.state::<AppState>().transfers.scheduler.clone();
     let settings = app.state::<AppState>().settings();
     let archive_channels = options.durable && !options.overwrite && settings.transfer_optimization;
@@ -2768,7 +2835,7 @@ async fn run(
                     }
                     admission::writable(app, from_session, &sftp, &[&from.path, &to.path]).await?;
                     check_remote_destination(&sftp, &from.path, &to.path, overwrite).await?;
-                    rename::entry(&sftp, &from.path, &to.path).await?;
+                    rename_endpoint(from, to, Some(&sftp), &observation).await?;
                     Ok::<(), AppError>(())
                 }
                 .await
@@ -2781,6 +2848,14 @@ async fn run(
     }
 
     let config = segments::config(&settings);
+    let ownership_endpoints = match transfer_ownership::Endpoints::capture(app, from, to) {
+        Ok(endpoints) => endpoints,
+        Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+    };
+    let observation = match ownership_endpoints.observe(app, id, from, to, observation) {
+        Ok(observation) => observation,
+        Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+    };
     let scan_concurrency = config.max_concurrent_reads;
     let from_sftp = match &from.session {
         Some(session_id) => match interruptible(
@@ -2797,7 +2872,7 @@ async fn run(
     let to_sftp = match &to.session {
         Some(session_id) => {
             match interruptible(Some(cancel), session_with_config(app, session_id, config)).await {
-                Ok(value) => Some(value),
+                Ok(value) => Some(Arc::new(value)),
                 Err(error) => {
                     if let Some(sftp) = from_sftp {
                         let _ =
@@ -2811,16 +2886,20 @@ async fn run(
         None => None,
     };
 
-    if let Err(error) = admission::transfer(
-        app,
-        from,
-        to,
-        from_sftp.as_ref(),
-        to_sftp.as_ref(),
-        remove_source,
-    )
-    .await
-    {
+    let legacy_admission = if durable {
+        Ok(())
+    } else {
+        admission::transfer(
+            app,
+            from,
+            to,
+            from_sftp.as_ref(),
+            to_sftp.as_deref(),
+            remove_source,
+        )
+        .await
+    };
+    if let Err(error) = legacy_admission {
         if let Some(sftp) = from_sftp {
             let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
         }
@@ -2920,7 +2999,31 @@ async fn run(
     };
     progress(app, id, name, 0, total);
 
-    let mut meter = Meter::new(app, id, name, total);
+    if durable {
+        if let Err(error) = ownership_endpoints
+            .prepare(
+                app,
+                from,
+                to,
+                from_sftp.as_ref(),
+                to_sftp.as_deref(),
+                id,
+                remove_source,
+                overwrite,
+                cancel,
+            )
+            .await
+        {
+            if let Some(sftp) = from_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+            }
+            if let Some(sftp) = to_sftp {
+                metadata::close(sftp).await;
+            }
+            return Outcome::from_result(Err(error), 0, cancel);
+        }
+    }
+    let mut meter = Meter::new(app, id, name, total, observation, to_sftp.clone());
     meter.settings = settings;
     if let Ok(mut row) = durable::Journal::get(app, id) {
         row.total = total;
@@ -2941,7 +3044,7 @@ async fn run(
                 }
             }
         } else if !resuming && !overwrite {
-            let exists = match to_sftp.as_ref() {
+            let exists = match to_sftp.as_deref() {
                 Some(sftp) => interruptible(Some(cancel), remote_exists(sftp, &to.path)).await?,
                 None => Path::new(&to.path).try_exists()?,
             };
@@ -2962,7 +3065,7 @@ async fn run(
             from,
             to,
             from_sftp.as_ref(),
-            to_sftp.as_ref(),
+            to_sftp.as_deref(),
             &mut meter,
             cancel,
             overwrite,
@@ -2992,7 +3095,7 @@ async fn run(
                         from,
                         to,
                         from_sftp.as_ref(),
-                        to_sftp.as_ref(),
+                        to_sftp.as_deref(),
                         cancel,
                     )
                     .await?;
@@ -3022,6 +3125,7 @@ async fn run(
             if durable {
                 #[cfg(windows)]
                 if let Some(verified) = verified_local_move {
+                    meter.observation.authorize()?;
                     verified.delete(cancel)?;
                 } else {
                     return Err(AppError::validation("sftp.moveSourceRetained"));
@@ -3029,7 +3133,7 @@ async fn run(
                 #[cfg(not(windows))]
                 return Err(AppError::validation("sftp.moveSourceRetained"));
             } else {
-                remove_endpoint(from, from_sftp.as_ref()).await?;
+                remove_endpoint(from, from_sftp.as_ref(), &meter.observation).await?;
             }
         }
         Ok::<(), AppError>(())
@@ -3039,11 +3143,34 @@ async fn run(
     if let Some(sftp) = from_sftp {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
     }
+    drop(meter.metadata.take());
     if let Some(sftp) = to_sftp {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+        metadata::close(sftp).await;
     }
 
-    Outcome::from_result(result, meter.transferred, cancel)
+    if !meter.observation.settled() {
+        tracing::warn!(target: "files.transfer", transfer_id = id,
+            "Original transfer data requests or writable handles remain unconfirmed");
+    }
+    let completed = if durable && result.is_ok() {
+        transfer_ownership::terminal::finish(
+            app,
+            id,
+            native_save::runtime::TransferOutcome::Completed {
+                transferred: meter.transferred,
+                total: meter.total,
+            },
+        )
+        .await
+        .map(|_| ())
+    } else {
+        app.state::<AppState>().transfers.park_ownership(id).await
+    };
+    Outcome::from_result(
+        outcome::after_completion(result, completed),
+        meter.transferred,
+        cancel,
+    )
 }
 
 const MAX_TEXT: u64 = 2 * 1024 * 1024;
@@ -3150,6 +3277,28 @@ pub async fn write_text(
     content: &str,
     baseline: Option<&str>,
 ) -> AppResult<()> {
+    if content.len() as u64 > MAX_TEXT
+        || baseline.is_some_and(|value| value.len() as u64 > MAX_TEXT)
+    {
+        return Err(AppError::Ssh("sftp.fileTooLarge".into()));
+    }
+    if content.contains('\0') {
+        return Err(AppError::Ssh("sftp.binaryFile".into()));
+    }
+    if app
+        .state::<AppState>()
+        .native_saves
+        .save_if_ready(
+            app.clone(),
+            session_id.into(),
+            path.into(),
+            content.into(),
+            baseline.map(str::to_owned),
+        )
+        .await?
+    {
+        return Ok(());
+    }
     write_text_checked(
         app,
         session_id,
@@ -3273,26 +3422,6 @@ fn remove_local_entry(path: &Path) -> AppResult<()> {
         std::fs::remove_dir_all(path)?;
     } else {
         std::fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
-async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
-    // Never follow a directory symlink while deleting: only unlink the link.
-    let metadata = sftp.symlink_metadata(path).await.map_err(map_sftp)?;
-    if metadata.is_dir() {
-        let children: Vec<String> = sftp
-            .read_dir(path)
-            .await
-            .map_err(map_sftp)?
-            .map(|entry| entry.path())
-            .collect();
-        for child in children {
-            Box::pin(remove_remote_entry(sftp, &child)).await?;
-        }
-        sftp.remove_dir(path).await.map_err(map_sftp)?;
-    } else {
-        sftp.remove_file(path).await.map_err(map_sftp)?;
     }
     Ok(())
 }
@@ -3646,7 +3775,13 @@ mod tests {
         std::fs::create_dir(&artifact.path).unwrap();
         let independent = Path::new(&artifact.path).join("independent.txt");
         std::fs::write(&independent, b"preserve directory content").unwrap();
-        assert!(remove_transfer_file(&artifact, None).await.is_err());
+        assert!(remove_transfer_file(
+            &artifact,
+            None,
+            &native_save::runtime::MutationObservation::default()
+        )
+        .await
+        .is_err());
         assert_eq!(
             std::fs::read(&independent).unwrap(),
             b"preserve directory content"
@@ -3654,7 +3789,13 @@ mod tests {
         std::fs::remove_file(&independent).unwrap();
         std::fs::remove_dir(&artifact.path).unwrap();
         std::fs::write(&artifact.path, b"partial file").unwrap();
-        remove_transfer_file(&artifact, None).await.unwrap();
+        remove_transfer_file(
+            &artifact,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         assert!(!Path::new(&artifact.path).exists());
         std::fs::remove_dir(root).unwrap();
     }
@@ -3831,14 +3972,28 @@ mod tests {
         std::fs::write(&target.path, b"old target").unwrap();
         std::fs::write(&temp.path, b"new complete file").unwrap();
         let recorded = fingerprint_file(&target, None, &cancel).await.unwrap();
-        rename_endpoint(&target, &backup, None).await.unwrap();
+        rename_endpoint(
+            &target,
+            &backup,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         // App restarts in the first rename window: old target remains intact.
         assert_eq!(
             fingerprint_file(&backup, None, &cancel).await.unwrap(),
             recorded
         );
         assert!(!std::path::Path::new(&target.path).exists());
-        rename_endpoint(&temp, &target, None).await.unwrap();
+        rename_endpoint(
+            &temp,
+            &target,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         // App restarts in the second rename window: the verified committed
         // target and journal fingerprint allow removing only our old backup.
         remove_verified_backup(&backup, None, &recorded, &cancel)
@@ -4383,13 +4538,25 @@ mod tests {
         let backup = staging_endpoint(&target, "job", "backup");
         std::fs::write(&target.path, b"old destination").unwrap();
         std::fs::write(&temp.path, b"incoming").unwrap();
-        rename_endpoint(&target, &backup, None).await.unwrap();
+        rename_endpoint(
+            &target,
+            &backup,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         std::fs::write(&target.path, b"independent destination").unwrap();
         assert_eq!(
-            rename_endpoint(&temp, &target, None)
-                .await
-                .unwrap_err()
-                .to_string(),
+            rename_endpoint(
+                &temp,
+                &target,
+                None,
+                &native_save::runtime::MutationObservation::default()
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
             "sftp.alreadyExists"
         );
         assert_eq!(
@@ -4399,7 +4566,14 @@ mod tests {
         assert_eq!(std::fs::read(&backup.path).unwrap(), b"old destination");
         assert_eq!(std::fs::read(&temp.path).unwrap(), b"incoming");
         // A concurrently created backup must not be replaced either.
-        assert!(rename_endpoint(&target, &backup, None).await.is_err());
+        assert!(rename_endpoint(
+            &target,
+            &backup,
+            None,
+            &native_save::runtime::MutationObservation::default()
+        )
+        .await
+        .is_err());
         assert_eq!(
             std::fs::read(&target.path).unwrap(),
             b"independent destination"
@@ -4523,6 +4697,9 @@ mod tests {
     }
 
     mod protocol_io {
+        mod directory_observation;
+        mod removal_observation;
+        mod writer_observation;
         use super::*;
         use russh_sftp::protocol::{Attrs, Data, FileAttributes, Handle, Status};
         use std::collections::HashMap;
@@ -4665,6 +4842,12 @@ mod tests {
             mkdir_started: Notify,
             release_mkdir: Notify,
             removals: AtomicUsize,
+            hold_remove: AtomicBool,
+            remove_started: Notify,
+            release_remove: Notify,
+            hold_remove_reply: AtomicBool,
+            remove_applied: Notify,
+            release_remove_reply: Notify,
         }
 
         struct DiskServer {
@@ -4831,12 +5014,20 @@ mod tests {
 
             async fn remove(&mut self, id: u32, filename: String) -> Result<Status, StatusCode> {
                 self.state.removals.fetch_add(1, Ordering::SeqCst);
+                self.state.remove_started.notify_one();
+                if self.state.hold_remove.load(Ordering::SeqCst) {
+                    self.state.release_remove.notified().await;
+                }
                 let path = self.root.join(filename);
                 if self.state.replace_before_remove.load(Ordering::SeqCst) {
                     std::fs::remove_file(&path).map_err(io_status)?;
                     std::fs::write(&path, b"independent replacement").map_err(io_status)?;
                 }
                 std::fs::remove_file(path).map_err(io_status)?;
+                self.state.remove_applied.notify_one();
+                if self.state.hold_remove_reply.load(Ordering::SeqCst) {
+                    self.state.release_remove_reply.notified().await;
+                }
                 Ok(status(id))
             }
 
@@ -5247,7 +5438,9 @@ mod tests {
                 session: Some("test".into()),
                 path: "writer".into(),
             };
-            let mut writer = open_writer(&target, Some(&sftp), false).await.unwrap();
+            let mut writer = open_writer(&target, Some(&sftp), false, &Default::default())
+                .await
+                .unwrap();
             writer.write_all(b"confirmed write").await.unwrap();
             state.delay_close.store(true, Ordering::SeqCst);
             let finish = writer.finish();
@@ -5399,7 +5592,13 @@ mod tests {
             std::fs::create_dir(root.join(&artifact.path)).unwrap();
             let independent = root.join("artifact/independent.txt");
             std::fs::write(&independent, b"preserve directory content").unwrap();
-            assert!(remove_transfer_file(&artifact, Some(&sftp)).await.is_err());
+            assert!(remove_transfer_file(
+                &artifact,
+                Some(&sftp),
+                &native_save::runtime::MutationObservation::default()
+            )
+            .await
+            .is_err());
             assert_eq!(state.removals.load(Ordering::SeqCst), 1);
             assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
             assert_eq!(
@@ -5409,7 +5608,13 @@ mod tests {
             std::fs::remove_file(&independent).unwrap();
             std::fs::remove_dir(root.join(&artifact.path)).unwrap();
             std::fs::write(root.join(&artifact.path), b"partial file").unwrap();
-            remove_transfer_file(&artifact, Some(&sftp)).await.unwrap();
+            remove_transfer_file(
+                &artifact,
+                Some(&sftp),
+                &native_save::runtime::MutationObservation::default(),
+            )
+            .await
+            .unwrap();
             assert_eq!(state.removals.load(Ordering::SeqCst), 2);
             assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
             assert!(!root.join(&artifact.path).exists());
@@ -5795,10 +6000,13 @@ mod tests {
             };
             let cancel = AtomicBool::new(false);
             let (result, ()) = tokio::time::timeout(std::time::Duration::from_millis(500), async {
-                tokio::join!(make_dir(&endpoint, Some(&sftp), Some(&cancel)), async {
-                    state.metadata_started.notified().await;
-                    cancel.store(true, Ordering::SeqCst);
-                })
+                tokio::join!(
+                    make_dir(&endpoint, Some(&sftp), Some(&cancel), Default::default()),
+                    async {
+                        state.metadata_started.notified().await;
+                        cancel.store(true, Ordering::SeqCst);
+                    }
+                )
             })
             .await
             .expect("pause waited for directory metadata reply");
@@ -5823,7 +6031,13 @@ mod tests {
                 session: Some("test".into()),
                 path: "never-created".into(),
             };
-            let result = make_dir(&endpoint, Some(&sftp), Some(&AtomicBool::new(true))).await;
+            let result = make_dir(
+                &endpoint,
+                Some(&sftp),
+                Some(&AtomicBool::new(true)),
+                Default::default(),
+            )
+            .await;
             assert_eq!(result.unwrap_err().to_string(), CANCELLED);
             assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
             assert_eq!(state.directories_created.load(Ordering::SeqCst), 0);
@@ -5843,7 +6057,7 @@ mod tests {
                 path: "acknowledged".into(),
             };
             let cancel = AtomicBool::new(false);
-            let operation = make_dir(&endpoint, Some(&sftp), Some(&cancel));
+            let operation = make_dir(&endpoint, Some(&sftp), Some(&cancel), Default::default());
             tokio::pin!(operation);
             tokio::select! {
                 result = &mut operation => panic!("MKDIR was not awaited: {result:?}"),
@@ -5886,6 +6100,7 @@ mod tests {
                     },
                     Some(&sftp),
                     None,
+                    Default::default(),
                 )
                 .await;
                 match path {
@@ -5907,6 +6122,7 @@ mod tests {
                 },
                 Some(&sftp),
                 None,
+                Default::default()
             )
             .await
             .is_err());
@@ -5943,8 +6159,14 @@ mod tests {
                 session: Some("test".into()),
                 path: "link".into(),
             };
-            assert!(make_dir(&endpoint, Some(&sftp), None).await.is_err());
-            assert!(open_writer(&endpoint, Some(&sftp), true).await.is_err());
+            assert!(make_dir(&endpoint, Some(&sftp), None, Default::default())
+                .await
+                .is_err());
+            assert!(
+                open_writer(&endpoint, Some(&sftp), true, &Default::default())
+                    .await
+                    .is_err()
+            );
             assert_eq!(
                 std::fs::read_to_string(outside.join("preserved.txt")).unwrap(),
                 "preserve"
@@ -5994,7 +6216,9 @@ mod tests {
                 session: Some("mock".into()),
                 path: "new.txt".into(),
             };
-            let mut writer = open_writer(&endpoint, Some(&sftp), false).await.unwrap();
+            let mut writer = open_writer(&endpoint, Some(&sftp), false, &Default::default())
+                .await
+                .unwrap();
             writer.write_all(b"transferred bytes").await.unwrap();
             assert!(writer.finish().await.is_err());
             assert_eq!(state.closes.load(Ordering::SeqCst), 1);
@@ -6116,10 +6340,15 @@ mod tests {
             path: display_path(&root.join("parent/child")),
         };
         assert_eq!(
-            make_dir(&endpoint, None, Some(&AtomicBool::new(true)))
-                .await
-                .unwrap_err()
-                .to_string(),
+            make_dir(
+                &endpoint,
+                None,
+                Some(&AtomicBool::new(true)),
+                Default::default()
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
             CANCELLED
         );
         assert!(!root.join("parent").exists());
@@ -6138,8 +6367,12 @@ mod tests {
             session: None,
             path: display_path(&link),
         };
-        assert!(make_dir(&endpoint, None, None).await.is_err());
-        assert!(open_writer(&endpoint, None, true).await.is_err());
+        assert!(make_dir(&endpoint, None, None, Default::default())
+            .await
+            .is_err());
+        assert!(open_writer(&endpoint, None, true, &Default::default())
+            .await
+            .is_err());
         assert!(scan::measure(&endpoint, None, 1).await.is_err());
         assert_eq!(
             std::fs::read_to_string(outside.join("existing.txt")).unwrap(),
@@ -6163,8 +6396,12 @@ mod tests {
             session: None,
             path: display_path(&link),
         };
-        assert!(make_dir(&endpoint, None, None).await.is_err());
-        assert!(open_writer(&endpoint, None, true).await.is_err());
+        assert!(make_dir(&endpoint, None, None, Default::default())
+            .await
+            .is_err());
+        assert!(open_writer(&endpoint, None, true, &Default::default())
+            .await
+            .is_err());
         #[cfg(windows)]
         std::fs::remove_dir(link).unwrap();
         #[cfg(unix)]

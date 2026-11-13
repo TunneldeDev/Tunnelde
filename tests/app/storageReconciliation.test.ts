@@ -4,7 +4,7 @@ import { reconcileStorageMetadata } from "@/app/plugins/storageReconciliation";
 import { useStorage } from "@/store/storage";
 import { useRestartPrompt } from "@/store/restartPrompt";
 
-const mocks = vi.hoisted(() => ({ storageStatus: vi.fn(), storageRestartPending: vi.fn() }));
+const mocks = vi.hoisted(() => ({ storageStatus: vi.fn(), storageRestartPlan: vi.fn() }));
 vi.mock("@/lib/api/ipc", () => ({ api: mocks, isTauri: () => true }));
 const deferred = <T>() => {
   let resolve!: (value: T) => void;
@@ -22,9 +22,9 @@ const inventory: StorageStatus = {
 
 beforeEach(() => {
   mocks.storageStatus.mockReset().mockResolvedValue(inventory);
-  mocks.storageRestartPending.mockReset().mockResolvedValue(true);
+  mocks.storageRestartPlan.mockReset().mockResolvedValue(inventory.pending);
   useStorage.setState({ status: null, restartPending: false, loading: false, busy: false });
-  useRestartPrompt.getState().close();
+  useRestartPrompt.setState({ open: false, observed: null });
 });
 
 it("restores a missed plan and its restart prompt without starting an inventory scan", async () => {
@@ -32,6 +32,49 @@ it("restores a missed plan and its restart prompt without starting an inventory 
   expect(useStorage.getState().restartPending).toBe(true);
   expect(useRestartPrompt.getState().open).toBe(true);
   expect(mocks.storageStatus).not.toHaveBeenCalled();
+});
+
+it("keeps a deferred prompt closed when the same pending plan is reconciled again", async () => {
+  const lifetime = new AbortController();
+  await reconcileStorageMetadata(lifetime.signal);
+  expect(useRestartPrompt.getState().open).toBe(true);
+  useRestartPrompt.getState().close();
+  await reconcileStorageMetadata(lifetime.signal);
+  expect(useStorage.getState().restartPending).toBe(true);
+  expect(useRestartPrompt.getState().open).toBe(false);
+  useRestartPrompt.getState().show();
+  expect(useRestartPrompt.getState().open).toBe(true);
+});
+
+it("prompts for a replacement plan or a new recovery intent after a deferral", async () => {
+  const lifetime = new AbortController();
+  await reconcileStorageMetadata(lifetime.signal);
+  for (const plan of [
+    { id: "replacement", action: "apply", restartRequested: false },
+    { id: "replacement", action: "cancel", restartRequested: false },
+    { id: "replacement", action: "cancel", restartRequested: true },
+  ]) {
+    useRestartPrompt.getState().close();
+    mocks.storageRestartPlan.mockResolvedValue(plan);
+    await reconcileStorageMetadata(lifetime.signal);
+    expect(useRestartPrompt.getState().open).toBe(true);
+    useRestartPrompt.getState().close();
+    await reconcileStorageMetadata(lifetime.signal);
+    expect(useRestartPrompt.getState().open).toBe(false);
+  }
+});
+
+it("forgets a cancelled notice while preserving manual reopening for a later plan", async () => {
+  const lifetime = new AbortController();
+  await reconcileStorageMetadata(lifetime.signal);
+  useRestartPrompt.getState().close();
+  mocks.storageRestartPlan.mockResolvedValue(null);
+  await reconcileStorageMetadata(lifetime.signal);
+  expect(useRestartPrompt.getState().observed).toBe(null);
+  expect(useStorage.getState().restartPending).toBe(false);
+  mocks.storageRestartPlan.mockResolvedValue(inventory.pending);
+  await reconcileStorageMetadata(lifetime.signal);
+  expect(useRestartPrompt.getState().open).toBe(true);
 });
 
 it("replaces an invalidated first inventory even while its status is still null", async () => {
@@ -51,7 +94,7 @@ it("replaces an invalidated first inventory even while its status is still null"
 it("refreshes a requested inventory and closes a prompt after a missed cancellation", async () => {
   useStorage.setState({ status: inventory, restartPending: true });
   useRestartPrompt.getState().show();
-  mocks.storageRestartPending.mockResolvedValue(false);
+  mocks.storageRestartPlan.mockResolvedValue(null);
   mocks.storageStatus.mockResolvedValue({ ...inventory, pending: null });
   await reconcileStorageMetadata(new AbortController().signal);
   expect(mocks.storageStatus).toHaveBeenCalledOnce();
@@ -61,7 +104,7 @@ it("refreshes a requested inventory and closes a prompt after a missed cancellat
 });
 
 it("lets event recovery retry a failed authoritative metadata read", async () => {
-  mocks.storageRestartPending.mockRejectedValueOnce(new Error("temporarily unavailable"));
+  mocks.storageRestartPlan.mockRejectedValueOnce(new Error("temporarily unavailable"));
   const lifetime = new AbortController();
   await expect(reconcileStorageMetadata(lifetime.signal)).rejects.toThrow(
     "temporarily unavailable",
@@ -76,19 +119,19 @@ it("does not read or change a prompt after its bridge lifetime has ended", async
   const lifetime = new AbortController();
   lifetime.abort();
   await reconcileStorageMetadata(lifetime.signal);
-  expect(mocks.storageRestartPending).not.toHaveBeenCalled();
+  expect(mocks.storageRestartPlan).not.toHaveBeenCalled();
   expect(mocks.storageStatus).not.toHaveBeenCalled();
   expect(useRestartPrompt.getState().open).toBe(false);
 });
 
 it("discards a metadata reply arriving after disposal and skips the inventory", async () => {
-  const pending = deferred<boolean>();
+  const pending = deferred<StorageStatus["pending"]>();
   const lifetime = new AbortController();
   useStorage.setState({ status: { ...inventory, pending: null } });
-  mocks.storageRestartPending.mockReturnValueOnce(pending.promise);
+  mocks.storageRestartPlan.mockReturnValueOnce(pending.promise);
   const recovery = reconcileStorageMetadata(lifetime.signal);
   lifetime.abort();
-  pending.resolve(true);
+  pending.resolve(inventory.pending);
   await recovery;
   expect(useStorage.getState().restartPending).toBe(false);
   expect(useRestartPrompt.getState().open).toBe(false);

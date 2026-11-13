@@ -18,6 +18,7 @@ use crate::{
 };
 
 pub mod diagnostics;
+pub(crate) mod requests;
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default, deny_unknown_fields)]
@@ -204,6 +205,14 @@ pub(super) fn http_client_for_proxy(url: Option<&str>) -> AppResult<reqwest::Cli
         .timeout(Duration::from_secs(300))
         .redirect(reqwest::redirect::Policy::limited(5))
         .user_agent(concat!("Tunnelde/", env!("CARGO_PKG_VERSION")));
+    // Some Windows proxy routes close the Rustls handshake even when the same
+    // verified HTTPS request succeeds through Schannel. Use the native backend
+    // consistently for diagnostics and real traffic; never disable verification
+    // or change the selected proxy to compensate for a failed handshake.
+    #[cfg(windows)]
+    {
+        builder = builder.tls_backend_native();
+    }
     if let Some(url) = url {
         builder = builder.no_proxy();
         if !url.is_empty() {

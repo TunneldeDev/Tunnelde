@@ -1,6 +1,17 @@
 //! Desktop lifecycle: load existing recovery authority, never silently initialize it.
 mod admission;
-mod errors;
+pub(in crate::ssh::files::native_save) mod errors;
+mod initialization;
+mod mutation;
+mod retirement;
+mod saving;
+pub(crate) use super::journal::admission::Kind as MutationKind;
+pub(crate) use super::journal::admission::{TaskEndpoint, TransferOutcome, TransferTask};
+pub(crate) use mutation::{
+    terminal_mutation_status, ActiveMutation, Mutation, MutationReceipt, MutationReference,
+    Observation as MutationObservation,
+};
+pub(crate) use mutation::{MutationTarget, Transfer, TransferReference, TransferTerminal};
 mod projection;
 #[cfg(test)]
 mod tests;
@@ -23,6 +34,37 @@ pub(crate) struct Manager {
     observed: Arc<AtomicBool>,
 }
 impl Manager {
+    pub(crate) async fn setup(
+        &self,
+        app: tauri::AppHandle,
+        session: String,
+        path: String,
+    ) -> crate::error::AppResult<bool> {
+        super::setup::install(app, session, path).await
+    }
+    pub(in crate::ssh::files::native_save) fn directory(&self) -> &Path {
+        &self.directory
+    }
+    pub(in crate::ssh::files::native_save) async fn ready_setup(
+        &self,
+        plan: &journal::setup::Plan,
+    ) -> crate::error::AppResult<bool> {
+        let Some(service) = self.existing().await.map_err(errors::app_journal)? else {
+            return Ok(false);
+        };
+        let setups = service.setups().await.map_err(errors::app_journal)?;
+        let matching = setups.iter().find(|record| {
+            record.plan.destination.address == plan.destination.address
+                && record.plan.context == plan.context
+        });
+        match matching {
+            Some(record) if record.stage == journal::setup::Stage::Ready => Ok(true),
+            Some(_) => Err(crate::error::AppError::validation(
+                "editor.remoteOutcomeUnknown",
+            )),
+            None => Ok(false),
+        }
+    }
     pub fn new(database: &Path, application: &str) -> Self {
         Self {
             directory: database.join("native-file-saves"),
@@ -51,7 +93,7 @@ impl Manager {
                 .map_err(|_| journal::Error::Unavailable)?
                 .is_none()
             {
-                return if observed.load(Ordering::Acquire) {
+                return if observed.load(Ordering::Acquire) || initialization::marked(&directory)? {
                     Err(journal::Error::Changed)
                 } else {
                     Ok(None)
@@ -73,12 +115,35 @@ impl Manager {
         let result = async {
             match self.existing().await? {
                 None => Ok(Vec::new()),
-                Some(service) => Ok(service
-                    .records()
-                    .await?
-                    .iter()
-                    .map(projection::record)
-                    .collect()),
+                Some(service) => {
+                    let mut pending: Vec<_> = service
+                        .records()
+                        .await?
+                        .iter()
+                        .map(|record| {
+                            let mut view = projection::record(record);
+                            view.running =
+                                service.legacy_worker_running(&record.binding.operation_id);
+                            view
+                        })
+                        .collect();
+                    pending.extend(service.legacy_claims().await?.iter().map(|claim| {
+                        projection::legacy(claim, service.legacy_worker_running(&claim.id))
+                    }));
+                    pending.extend(
+                        service
+                            .setups()
+                            .await?
+                            .iter()
+                            .filter(|setup| setup.stage != super::journal::setup::Stage::Ready)
+                            .map(|setup| {
+                                let mut view = projection::setup(setup);
+                                view.running = service.legacy_worker_running(&setup.id);
+                                view
+                            }),
+                    );
+                    Ok(pending)
+                }
             }
         }
         .await;
@@ -109,6 +174,59 @@ impl Manager {
             if id == "native-store" {
                 service.records().await.map_err(errors::app_journal)?;
                 return Ok(());
+            }
+            if let Some(operation) = id.strip_prefix("native-setup-") {
+                let setup = service
+                    .setups()
+                    .await
+                    .map_err(errors::app_journal)?
+                    .into_iter()
+                    .find(|setup| setup.id == operation)
+                    .ok_or_else(|| AppError::validation("editor.cleanupMissing"))?;
+                // Unknown installation is diagnostic only. Neither reinitialize
+                // nor remove a remote path on a retry of this recovery entry.
+                return service
+                    .discard_setup(&setup)
+                    .await
+                    .map_err(errors::app_journal);
+            }
+            if let Some(operation) = id.strip_prefix("native-legacy-") {
+                let claim = service
+                    .legacy_claims()
+                    .await
+                    .map_err(errors::app_journal)?
+                    .into_iter()
+                    .find(|claim| claim.id == operation)
+                    .ok_or_else(|| AppError::validation("editor.cleanupMissing"))?;
+                if claim.phase == super::journal::admission::Phase::Terminal {
+                    let terminal = TransferTerminal::new(claim)?;
+                    let state = app.state::<AppState>();
+                    let _reservation = state.transfers.reserve_cleanup(&terminal.task().id)?;
+                    return self
+                        .project_transfer_terminal(&terminal, |terminal| {
+                            state.db.with(|conn| {
+                                super::super::transfer_ownership::terminal::project(conn, terminal)
+                            })
+                        })
+                        .await;
+                }
+                if claim.phase != super::journal::admission::Phase::Prepared {
+                    return Err(AppError::validation("editor.remoteOutcomeUnknown"));
+                }
+                if let Some(task) = claim.transfer_task.as_ref() {
+                    let state = app.state::<AppState>();
+                    let _reservation = state.transfers.reserve_cleanup(&task.id)?;
+                    return super::super::transfer_ownership::terminal::dispose_empty(
+                        app, &task.id,
+                    )
+                    .await;
+                }
+                // Only definitely unsent claims may be retired. A remote path
+                // probe or a newly installed helper cannot settle legacy SFTP.
+                return service
+                    .retire_unsent_legacy(&claim)
+                    .await
+                    .map_err(errors::app_journal);
             }
             let operation = id
                 .strip_prefix("native-")
@@ -156,9 +274,9 @@ impl Manager {
                 record.binding.platform(),
             )
             .map_err(errors::app_remote)?;
-            // Explicit user action queries the original authority. No initialize, submit,
-            // cancellation or backup release is performed by this task's retry action.
-            service
+            // Query the original authority without initializing, resubmitting or
+            // cancelling. A releasable result may then offer explicit backup cleanup.
+            let record = service
                 .recover(&record, &client, |_| {
                     state
                         .ssh
@@ -174,6 +292,7 @@ impl Manager {
                 })
                 .await
                 .map_err(errors::app_service)?;
+            retirement::release(&service, record, &client, app, &session.id, &destination).await?;
             Ok(())
         }
         .await;

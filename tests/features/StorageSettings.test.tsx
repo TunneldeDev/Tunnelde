@@ -42,6 +42,7 @@ const status = (): StorageStatus => ({
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  useRestartPrompt.setState({ open: false, observed: null });
   await i18n.changeLanguage("en-US");
   useStorage.setState({ status: null, loading: false, busy: false, error: null, draft: [] });
   api.storageStatus.mockResolvedValue(status());

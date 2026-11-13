@@ -145,12 +145,27 @@ async fn save_opened(
         path: target.clone(),
         token: uuid::Uuid::new_v4().to_string(),
         receipt: Some(recovery::Receipt::new()),
+        admission: None,
         removing_marker: false,
         updated_at: crate::models::now_ms(),
         error: None,
     };
     let reservation = Reservation::saving(&record.id, observation.visible)?;
-    journal.create(&record)?;
+    let claim = journal
+        .admission(sftp, &request.session_id, &record)
+        .await?;
+    record.admission = claim.as_ref().map(|claim| claim.reference());
+    if let Err(error) = journal.create(&record) {
+        if let Some(claim) = claim {
+            claim.retire().await?;
+        }
+        return Err(error);
+    }
+    let active = if let Some(claim) = claim {
+        Some(claim.dispatch(job).await?)
+    } else {
+        None
+    };
     let result = staged_save(
         sftp,
         &replacement,
@@ -171,16 +186,22 @@ async fn save_opened(
     .await;
     // Do not cancel safe cleanup when a caller disappears. A network timeout
     // still does not prove the server had no side effect: preserve unknown data.
-    let settled = match cleanup(sftp, &mut record, |r| journal.persist(r)).await {
-        Ok(()) => journal.forget(&record),
+    let cleaned = match cleanup(sftp, &mut record, |r| journal.persist(r)).await {
+        Ok(()) => {
+            journal.forget(&record)?;
+            true
+        }
         Err(error) => {
             tracing::warn!(%error, path = %record.directory, "Remote editor staging cleanup deferred");
             record.error = Some(error.to_string());
             record.updated_at = crate::models::now_ms();
-            journal.persist(&record)
+            journal.persist(&record)?;
+            false
         }
     };
     drop(reservation);
-    settled?;
+    // Safe cleanup and forgetting the original legacy receipt precede release.
+    // A process loss at either boundary retains the durable claim conservatively.
+    ownership::finish(active, &record, cleaned).await?;
     result
 }

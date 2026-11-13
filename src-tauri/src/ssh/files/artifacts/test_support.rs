@@ -22,7 +22,22 @@ struct Server {
     tree: Arc<Mutex<Tree>>,
     gate: Option<Arc<Gate>>,
     mkdir_gate: Option<Arc<Gate>>,
+    remove_gate: Option<Arc<Gate>>,
     listed: std::collections::HashSet<String>,
+}
+
+impl Server {
+    async fn wait_removal(&self, before: bool) {
+        if let Some(gate) = &self.remove_gate {
+            if gate.before_create == before {
+                gate.arrived.add_permits(1);
+                gate.release.acquire().await.unwrap().forget();
+            }
+            if !before {
+                gate.finished.add_permits(1);
+            }
+        }
+    }
 }
 
 fn status(id: u32) -> Status {
@@ -154,30 +169,48 @@ impl russh_sftp::server::Handler for Server {
         Ok(status(id))
     }
     async fn remove(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
+        self.wait_removal(true).await;
         self.tree
             .lock()
             .unwrap()
             .files
             .remove(&path)
             .ok_or(StatusCode::NoSuchFile)?;
+        self.wait_removal(false).await;
         Ok(status(id))
     }
     async fn rmdir(&mut self, id: u32, path: String) -> Result<Status, StatusCode> {
-        let mut tree = self.tree.lock().unwrap();
-        let prefix = path.clone() + "/";
-        if tree.files.keys().any(|p| p.starts_with(&prefix))
-            || tree.directories.iter().any(|p| p.starts_with(&prefix))
+        self.wait_removal(true).await;
         {
-            return Err(StatusCode::Failure);
+            let mut tree = self.tree.lock().unwrap();
+            let prefix = path.clone() + "/";
+            if tree.files.keys().any(|p| p.starts_with(&prefix))
+                || tree.directories.iter().any(|p| p.starts_with(&prefix))
+            {
+                return Err(StatusCode::Failure);
+            }
+            if !tree.directories.remove(&path) {
+                return Err(StatusCode::NoSuchFile);
+            }
         }
-        if !tree.directories.remove(&path) {
-            return Err(StatusCode::NoSuchFile);
-        }
+        self.wait_removal(false).await;
         Ok(status(id))
     }
 }
 
-pub(super) async fn client(tree: Arc<Mutex<Tree>>, gate: Option<Arc<Gate>>) -> SftpSession {
+pub(super) async fn client(tree: Arc<Mutex<Tree>>, gate: Option<Arc<Gate>>) -> Arc<SftpSession> {
+    metadata_client(tree, gate, None).await
+}
+
+pub(super) async fn cleanup_client(tree: Arc<Mutex<Tree>>, gate: Arc<Gate>) -> Arc<SftpSession> {
+    metadata_client(tree, None, Some(gate)).await
+}
+
+async fn metadata_client(
+    tree: Arc<Mutex<Tree>>,
+    gate: Option<Arc<Gate>>,
+    remove_gate: Option<Arc<Gate>>,
+) -> Arc<SftpSession> {
     let (client, server) = tokio::io::duplex(65536);
     russh_sftp::server::run(
         server,
@@ -185,11 +218,12 @@ pub(super) async fn client(tree: Arc<Mutex<Tree>>, gate: Option<Arc<Gate>>) -> S
             tree,
             gate,
             mkdir_gate: None,
+            remove_gate,
             listed: Default::default(),
         },
     )
     .await;
-    SftpSession::new(client).await.unwrap()
+    Arc::new(SftpSession::new(client).await.unwrap())
 }
 
 pub(super) async fn directory_client(
@@ -203,6 +237,7 @@ pub(super) async fn directory_client(
             tree,
             gate: None,
             mkdir_gate,
+            remove_gate: None,
             listed: Default::default(),
         },
     )

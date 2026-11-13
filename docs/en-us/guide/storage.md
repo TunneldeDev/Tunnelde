@@ -17,6 +17,13 @@ data is copied by default. Turning copying off starts the category empty; review
 shows an explicit warning. Fully quit the application, including its tray process,
 then reopen it. Closing and reopening a hidden window does not run migration.
 
+After scheduling changes, choose **Restart now** or **Restart later**. Deferring
+keeps a restart entry in the status bar, or in the lower corner when that bar is
+hidden. Refreshing the same plan or recreating the window from the tray preserves
+that choice. A different plan or a new recovery request prompts again; cancelling
+the plan removes the restart entry. Restart and Reload window are also available
+through the F1 command palette and warn before discarding unsaved editor changes.
+
 When returning to a default path, Tunnelde first copies and verifies the current
 data into staging. Any old data at the default is then archived under
 `storage-recovery/<category>/<migration-id>/original`. Database and cache reset only

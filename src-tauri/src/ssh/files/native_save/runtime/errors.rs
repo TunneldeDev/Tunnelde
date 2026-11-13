@@ -15,10 +15,10 @@ pub(super) fn journal(error: Error) -> &'static str {
         Error::Unavailable | Error::Unrecognized => "editor.nativeJournalUnavailable",
     }
 }
-pub(super) fn app_journal(error: Error) -> AppError {
+pub(in crate::ssh::files::native_save) fn app_journal(error: Error) -> AppError {
     AppError::validation(journal(error))
 }
-pub(super) fn app_remote(failure: Failure) -> AppError {
+pub(in crate::ssh::files::native_save) fn app_remote(failure: Failure) -> AppError {
     AppError::validation(match failure.reason {
         Reason::AuthorityChanged => "editor.nativeAuthorityChanged",
         Reason::MissingOperation => "editor.nativeMissingOperation",

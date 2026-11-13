@@ -68,6 +68,6 @@ plugin.api.busy。
 共用授权／取消错误及 plugin.api.busy。unavailable 不暴露文件系统或数据库细节；其他诊断可在
 应用本地日志查看。调用方仍应处理未知错误并发现实验能力。
 
-机器结构描述位于 src-tauri/src/plugins/api/domains/logging/schema.json，独立 TypeScript DTO
+共享机器结构描述位于 src-tauri/src/logs/read/schema.json，独立 TypeScript DTO
 位于 src/lib/extensions/contracts/logging/。SDK 同步检查两者，CI 读取真实 Rust 读取器输出进行
 互操作验证。原生输出面板 IPC 与冻结的稳定写入契约继续独立。参见[日志使用说明](../../guide/logging.md)。

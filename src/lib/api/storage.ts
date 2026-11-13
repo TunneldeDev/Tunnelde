@@ -37,6 +37,13 @@ export interface StorageStatus {
   lastError: string | null;
 }
 
+/** Lightweight internal metadata used to identify a restart notice. */
+export interface StorageRestartPlan {
+  id: string;
+  action: "apply" | "cancel";
+  restartRequested: boolean;
+}
+
 export function storageChild(parent: string, category: StorageCategory): string {
   const separator = parent.includes("\\") ? "\\" : "/";
   const folder = category === "pluginData" ? "plugin-data" : category;

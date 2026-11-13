@@ -155,6 +155,7 @@ impl ForwardRegistry {
             notify();
         }
     }
+    #[cfg(test)]
     pub(crate) fn snapshot(&self) -> AppResult<HashMap<String, (String, String)>> {
         Ok(self
             .active
@@ -163,6 +164,22 @@ impl ForwardRegistry {
             .iter()
             .map(|(id, item)| (id.clone(), (item.session.clone(), item.identity.clone())))
             .collect())
+    }
+    /// Read persistence and selected runtime identities under the same admission
+    /// lock used by edits and starts. Always acquire this lock before the DB.
+    pub(crate) fn inspect<T>(
+        &self,
+        read: impl FnOnce(&dyn Fn(&str) -> Option<(String, String)>) -> AppResult<T>,
+    ) -> AppResult<T> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| AppError::internal("forward.lock"))?;
+        read(&|id| {
+            active
+                .get(id)
+                .map(|item| (item.session.clone(), item.identity.clone()))
+        })
     }
     /// Serialize persistence with listener admission, then notify outside both locks.
     pub(crate) fn edit<T>(&self, id: &str, commit: impl FnOnce() -> AppResult<T>) -> AppResult<T> {

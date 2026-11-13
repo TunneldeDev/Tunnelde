@@ -1,0 +1,301 @@
+use super::*;
+use russh_sftp::protocol::Status;
+
+#[tokio::test]
+async fn adding_a_guard_cannot_replace_the_original_authority() {
+    let original = Observation::default();
+    let denied = original.guarded(|| Err(AppError::validation("pluginSecurity.changed")));
+    let wrapped = denied.guarded(|| Ok(()));
+    let polled = std::sync::atomic::AtomicBool::new(false);
+    assert!(wrapped
+        .opaque(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(original.settled());
+}
+
+#[tokio::test]
+async fn revoked_epoch_blocks_new_requests_but_keeps_original_completion() {
+    let allowed = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let current = allowed.clone();
+    let original = Observation::default();
+    let guarded = original.guarded(move || {
+        current
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| AppError::validation("pluginSecurity.changed"))
+    });
+    let handle = guarded.begin().unwrap();
+    allowed.store(false, Ordering::Release);
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let result = guarded
+        .request(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await;
+    assert!(result.is_err());
+    assert!(guarded
+        .opaque(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    let flag = polled.clone();
+    assert!(guarded
+        .retained(async move {
+            flag.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(
+        !original.settled(),
+        "revocation cannot erase an admitted handle"
+    );
+    guarded.request_completion(async { Ok(()) }).await.unwrap();
+    guarded.completion(async { Ok(()) }).await.unwrap();
+    handle.acknowledge();
+    assert!(
+        original.settled(),
+        "guard must preserve the actual registry epoch"
+    );
+    original.seal().unwrap();
+}
+
+#[tokio::test]
+async fn retained_worker_rechecks_authority_after_runtime_queue() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let checked = calls.clone();
+    let original = Observation::default();
+    let guarded = original.guarded(move || {
+        if checked.fetch_add(1, Ordering::AcqRel) == 0 {
+            Ok(())
+        } else {
+            Err(AppError::validation("pluginSecurity.changed"))
+        }
+    });
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let flag = polled.clone();
+    assert!(guarded
+        .retained(async move {
+            flag.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert_eq!(calls.load(Ordering::Acquire), 2);
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(
+        original.settled(),
+        "definitely unsent worker must not leave an unknown"
+    );
+}
+
+#[tokio::test]
+async fn sealed_epoch_rejects_new_work_without_polling_it() {
+    let observation = Observation::default();
+    let queued = observation.clone();
+    observation.seal().unwrap();
+    assert!(observation.settled());
+    let polled = std::sync::atomic::AtomicBool::new(false);
+    let result = queued
+        .request(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await;
+    assert!(result.is_err());
+    assert!(queued
+        .opaque(async {
+            polled.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    assert!(!polled.load(Ordering::Acquire));
+    assert!(queued.begin().is_none());
+    assert!(queued.seal().is_err(), "one epoch can be sealed only once");
+}
+
+#[test]
+fn pending_original_receipt_blocks_sealing_until_its_own_acknowledgement() {
+    let observation = Observation::default();
+    let receipt = observation.begin().unwrap();
+    assert!(observation.seal().is_err());
+    assert!(!observation.settled());
+    receipt.acknowledge();
+    observation.seal().unwrap();
+    assert!(observation.settled());
+}
+
+#[test]
+fn concurrent_seal_and_request_admission_have_one_winner() {
+    for _ in 0..64 {
+        let observation = Observation::default();
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let other = observation.clone();
+        let other_barrier = barrier.clone();
+        let worker = std::thread::spawn(move || {
+            other_barrier.wait();
+            other.begin()
+        });
+        barrier.wait();
+        let sealed = observation.seal();
+        let receipt = worker.join().unwrap();
+        assert_ne!(sealed.is_ok(), receipt.is_some());
+        if let Some(receipt) = receipt {
+            receipt.acknowledge();
+            observation.seal().unwrap();
+        }
+        assert!(observation.settled());
+        assert!(observation.begin().is_none());
+    }
+}
+
+fn status(code: StatusCode) -> Error {
+    Error::Status(Status {
+        id: 42,
+        status_code: code,
+        error_message: "same presentation for all causes".into(),
+        language_tag: String::new(),
+    })
+}
+
+#[tokio::test]
+async fn only_original_typed_terminal_replies_acknowledge_a_request() {
+    for code in [
+        StatusCode::NoSuchFile,
+        StatusCode::PermissionDenied,
+        StatusCode::Failure,
+        StatusCode::OpUnsupported,
+    ] {
+        let observation = Observation::default();
+        let result: Result<(), Error> = observation.request(async { Err(status(code)) }).await;
+        assert!(matches!(result, Err(Error::Status(_))));
+        assert!(observation.settled());
+    }
+    for cause in [
+        status(StatusCode::Ok),
+        status(StatusCode::Eof),
+        status(StatusCode::NoConnection),
+        status(StatusCode::ConnectionLost),
+        status(StatusCode::BadMessage),
+        Error::Timeout,
+        Error::UnexpectedPacket,
+        Error::IO("Failure: Failure".into()),
+    ] {
+        let observation = Observation::default();
+        let result: Result<(), Error> = observation.request(async { Err(cause) }).await;
+        assert!(result.is_err());
+        assert!(!observation.settled());
+        // An unrelated success cannot erase the unresolved request.
+        observation.request(async { Ok(()) }).await.unwrap();
+        assert!(!observation.settled());
+    }
+}
+
+#[tokio::test]
+async fn dropped_request_and_string_lookalikes_never_create_completion_evidence() {
+    let observation = Observation::default();
+    let mut pending = Box::pin(observation.request(std::future::pending::<Result<(), Error>>()));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(1), &mut pending)
+            .await
+            .is_err()
+    );
+    assert!(!observation.settled());
+    drop(pending);
+    let result: AppResult<()> = observation
+        .opaque(async {
+            Err(crate::error::AppError::Ssh(
+                "sftp.error: Failure: Failure".into(),
+            ))
+        })
+        .await;
+    assert!(result.is_err());
+    observation.opaque(async { Ok(()) }).await.unwrap();
+    assert!(!observation.settled());
+}
+
+#[tokio::test]
+async fn retained_original_reply_survives_a_dropped_caller_wait() {
+    let observation = Observation::default();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    {
+        let request = {
+            let started = started.clone();
+            let release = release.clone();
+            async move {
+                started.notify_one();
+                release.notified().await;
+                Ok(())
+            }
+        };
+        let wait = observation.retained(request);
+        tokio::pin!(wait);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::select! {
+                result = &mut wait => panic!("original response must wait: {result:?}"),
+                () = started.notified() => {}
+            }
+        })
+        .await
+        .unwrap();
+    }
+    assert!(observation.seal().is_err());
+    observation.request(async { Ok(()) }).await.unwrap();
+    assert!(!observation.settled());
+    release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    observation.seal().unwrap();
+}
+
+#[tokio::test]
+async fn sealed_retained_epoch_does_not_spawn_or_poll_queued_work() {
+    let observation = Observation::default();
+    observation.seal().unwrap();
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_flag = polled.clone();
+    assert!(observation
+        .retained(async move {
+            worker_flag.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    tokio::task::yield_now().await;
+    assert!(!polled.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn retained_workers_require_their_own_typed_terminal_results() {
+    for cause in [
+        status(StatusCode::NoSuchFile),
+        status(StatusCode::Failure),
+        Error::Timeout,
+        Error::UnexpectedPacket,
+        status(StatusCode::ConnectionLost),
+    ] {
+        let terminal = matches!(&cause, Error::Status(status) if super::terminal(status));
+        let observation = Observation::default();
+        let result: Result<(), Error> = observation.retained(async move { Err(cause) }).await;
+        assert!(result.is_err());
+        assert_eq!(observation.settled(), terminal);
+        observation.retained(async { Ok(()) }).await.unwrap();
+        assert_eq!(observation.settled(), terminal);
+    }
+}

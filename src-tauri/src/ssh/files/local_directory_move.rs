@@ -434,7 +434,11 @@ pub(super) async fn run(
     resuming: bool,
 ) -> Outcome {
     let store = AppStore { app, id };
-    let mut meter = Meter::new(app, id, name, 0);
+    let observation = match app.state::<AppState>().transfers.observation(id) {
+        Ok(observation) => observation,
+        Err(error) => return Outcome::Failed(0, error),
+    };
+    let mut meter = Meter::new(app, id, name, 0, observation, None);
     let result = async {
         check_cancelled(cancel)?;
         let mut row = Journal::get(app, id)?;

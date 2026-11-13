@@ -65,8 +65,12 @@ impl server::Handler for TestServer {
         port: &mut u32,
         session: &mut Session,
     ) -> Result<bool, Self::Error> {
-        let Ok(listener) = TcpListener::bind((address, *port as u16)).await else {
-            return Ok(false);
+        let listener = match TcpListener::bind((address, *port as u16)).await {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Fixture remote listener {address}:{port} was rejected: {error}");
+                return Ok(false);
+            }
         };
         let local = listener.local_addr().unwrap();
         let handle = session.handle();
@@ -524,8 +528,12 @@ async fn local_and_remote_roundtrip_and_stop_are_isolated() {
     let (local, local_routes, server1) = fixture().await;
     let (remote, remote_routes, server2) = fixture().await;
     let (target, echo) = echo().await;
-    let p1 = free_port().await;
-    let p2 = free_port().await;
+    // Retain both reservations through setup: two dropped port-zero probes may
+    // return the same port, or another fixture may claim the second candidate.
+    let first_endpoint = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let second_endpoint = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let p1 = first_endpoint.local_addr().unwrap().port();
+    let p2 = second_endpoint.local_addr().unwrap().port();
     let make = |id: &str, mode: &str, port| ForwardRule {
         id: id.into(),
         host_id: "h".into(),
@@ -536,6 +544,7 @@ async fn local_and_remote_roundtrip_and_stop_are_isolated() {
         target_host: "127.0.0.1".into(),
         target_port: target,
     };
+    drop(first_endpoint);
     let first = open_forward(
         local,
         local_routes,
@@ -545,6 +554,7 @@ async fn local_and_remote_roundtrip_and_stop_are_isolated() {
     )
     .await
     .unwrap();
+    drop(second_endpoint);
     let second = open_forward(
         remote,
         remote_routes,
@@ -579,11 +589,10 @@ async fn local_and_remote_roundtrip_and_stop_are_isolated() {
 async fn multiple_forwards_share_one_ssh_connection_and_stop_independently() {
     let (handle, routes, server) = fixture().await;
     let (target, echo_task) = echo().await;
-    let first_port = free_port().await;
-    let mut second_port = free_port().await;
-    while second_port == first_port {
-        second_port = free_port().await;
-    }
+    let first_endpoint = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let second_endpoint = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let first_port = first_endpoint.local_addr().unwrap().port();
+    let second_port = second_endpoint.local_addr().unwrap().port();
     let make = |id: &str, port| ForwardRule {
         id: id.into(),
         host_id: "h".into(),
@@ -594,6 +603,7 @@ async fn multiple_forwards_share_one_ssh_connection_and_stop_independently() {
         target_host: "127.0.0.1".into(),
         target_port: target,
     };
+    drop(first_endpoint);
     let first = open_forward(
         handle.clone(),
         routes.clone(),
@@ -603,6 +613,7 @@ async fn multiple_forwards_share_one_ssh_connection_and_stop_independently() {
     )
     .await
     .unwrap();
+    drop(second_endpoint);
     let second = open_forward(handle, routes, &make("second", second_port), "shared", None)
         .await
         .unwrap();

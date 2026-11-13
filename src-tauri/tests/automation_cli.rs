@@ -2,11 +2,15 @@
 use serde_json::{json, Value};
 use std::{
     io::{BufRead, BufReader, Write},
-    net::TcpListener,
-    process::{Command, Output},
+    net::{TcpListener, TcpStream},
+    process::{Command, Output, Stdio},
 };
 
 fn run(binary: &str, args: &[&str]) -> Output {
+    run_input(binary, args, None)
+}
+
+fn run_input(binary: &str, args: &[&str], input: Option<&str>) -> Output {
     let mut command = Command::new(binary);
     command.args(args);
     #[cfg(windows)]
@@ -14,7 +18,23 @@ fn run(binary: &str, args: &[&str]) -> Output {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    command.output().unwrap()
+    if let Some(input) = input {
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    } else {
+        command.output().unwrap()
+    }
 }
 
 #[test]
@@ -73,7 +93,19 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
     }
 }
 
-fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output, Value) {
+fn fixture_reply(binary: &str, prefix: &[&str], response: Value) -> (Output, Value) {
+    let result = fixture_call(binary, prefix, response, &["hosts", "list"], None);
+    assert_eq!(result.1["method"], "hosts.list");
+    result
+}
+
+fn fixture_call(
+    binary: &str,
+    prefix: &[&str],
+    mut response: Value,
+    command: &[&str],
+    input: Option<&str>,
+) -> (Output, Value) {
     let directory =
         std::env::temp_dir().join(format!("tunnelde-cli-consumer-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&directory).unwrap();
@@ -94,17 +126,23 @@ fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output,
     )
     .unwrap();
     let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
-            .unwrap();
-        let mut bytes = Vec::new();
-        BufReader::new(&mut stream)
-            .read_until(b'\n', &mut bytes)
-            .unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(accepted) => break accepted,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(error) => panic!("CLI did not connect to the fixture: {error}"),
+            }
+        };
+        let bytes = read_fixture_frame(&mut stream).unwrap();
         let request: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(request["version"], 1);
-        assert_eq!(request["method"], "hosts.list");
         assert_eq!(request["token"], "a".repeat(64));
         if response["id"] == "$request" {
             response["id"] = request["id"].clone();
@@ -115,14 +153,161 @@ fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output,
     let args: Vec<_> = prefix
         .iter()
         .copied()
-        .chain(["--endpoint", pointer.to_str().unwrap(), "hosts", "list"])
+        .chain(["--endpoint", pointer.to_str().unwrap()])
+        .chain(command.iter().copied())
         .collect();
-    let result = run(binary, &args);
+    let result = run_input(binary, &args, input);
     let request = server.join().unwrap();
     std::fs::remove_file(endpoint).unwrap();
     std::fs::remove_file(pointer).unwrap();
     std::fs::remove_dir(directory).unwrap();
     (result, request)
+}
+
+fn read_fixture_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+    // Accept may inherit the listener's mode; timed blocking reads require
+    // explicitly normalizing the connected socket before waiting for bytes.
+    stream.set_nonblocking(false)?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+    let mut bytes = Vec::new();
+    BufReader::new(stream).read_until(b'\n', &mut bytes)?;
+    Ok(bytes)
+}
+
+#[test]
+fn fixture_waits_for_a_delayed_request_on_an_initially_nonblocking_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut stream, _) = listener.accept().unwrap();
+    // Force the mode rather than depending on the OS's accept inheritance.
+    stream.set_nonblocking(true).unwrap();
+    let (entered, ready) = std::sync::mpsc::channel();
+    let (finished, result) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        entered.send(()).unwrap();
+        finished.send(read_fixture_frame(&mut stream)).unwrap();
+    });
+    ready
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+    let early = result.recv_timeout(std::time::Duration::from_millis(30));
+    assert!(
+        matches!(early, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+        "The fixture must wait for bytes instead of returning WouldBlock: {early:?}"
+    );
+    let frame = b"{\"version\":1}\n";
+    client.write_all(frame).unwrap();
+    assert_eq!(
+        result
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .unwrap()
+            .unwrap(),
+        frame
+    );
+    server.join().unwrap();
+}
+
+#[test]
+fn installed_and_console_forward_commands_preserve_parameters_pages_and_host_errors() {
+    for (binary, prefix) in [
+        (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
+        (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
+    ] {
+        for (command, params, input) in [
+            (vec!["forwards", "list"], json!({}), None),
+            (
+                vec!["forwards", "list", "--params", r#"{"after":"a","limit":2}"#],
+                json!({"after":"a","limit":2}),
+                None,
+            ),
+            (
+                vec!["forwards", "list", "--params", "-"],
+                json!({"after":"中文","limit":1}),
+                Some(r#"{"after":"中文","limit":1}"#),
+            ),
+        ] {
+            let page = json!({"entries":[],"nextAfter":null});
+            let (output, request) = fixture_call(
+                binary,
+                &prefix,
+                json!({"version":1,"id":"$request","result":page}),
+                &command,
+                input,
+            );
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stderr.is_empty());
+            assert_eq!(request["method"], "forwards.list");
+            assert_eq!(request["params"], params);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap()["result"],
+                page
+            );
+        }
+        let (output, request) = fixture_call(
+            binary,
+            &prefix,
+            json!({"version":1,"id":"$request","error":{"code":"operation_rejected","message":"Unavailable"}}),
+            &["forwards", "list"],
+            None,
+        );
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["id"], request["id"]);
+    }
+}
+
+#[test]
+fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
+    for (binary, prefix) in [
+        (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
+        (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
+    ] {
+        for (command, params, input) in [
+            (vec!["logs", "read"], json!({}), None),
+            (
+                vec![
+                    "logs",
+                    "read",
+                    "--params",
+                    r#"{"source":"operations","filter":{"domains":["plugin"]},"limit":1}"#,
+                ],
+                json!({"source":"operations","filter":{"domains":["plugin"]},"limit":1}),
+                None,
+            ),
+            (
+                vec!["logs", "read", "--params", "-"],
+                json!({"filter":{"text":"中文"},"limit":2}),
+                Some(r#"{"filter":{"text":"中文"},"limit":2}"#),
+            ),
+        ] {
+            let page = json!({"version":1,"source":"operations","entries":[],"cursor":"opaque",
+                "hasMore":false,"reset":false,"gap":false});
+            let (result, request) = fixture_call(
+                binary,
+                &prefix,
+                json!({"version":1,"id":"$request","result":page}),
+                &command,
+                input,
+            );
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(result.stderr.is_empty());
+            assert_eq!(request["method"], "logs.read");
+            assert_eq!(request["params"], params);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&result.stdout).unwrap()["result"],
+                page
+            );
+        }
+    }
 }
 
 #[test]

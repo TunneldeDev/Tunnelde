@@ -130,6 +130,7 @@ pub(in crate::ssh::files) fn detach_for_cleanup(
 pub(in crate::ssh::files) async fn cleanup(
     app: &AppHandle,
     task: &durable::DurableTransfer,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     let record = app
         .state::<AppState>()
@@ -158,9 +159,9 @@ pub(in crate::ssh::files) async fn cleanup(
                 Some(&record.address),
             )?
             .ok_or_else(invalid)?;
-            let sftp = admission::open(app, &session_id, &[&record.directory]).await?;
-            let result = cleanup_created(&sftp, &record.directory).await;
-            let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sftp.close()).await;
+            let sftp = Arc::new(admission::open(app, &session_id, &[&record.directory]).await?);
+            let result = cleanup_created(&sftp, &record.directory, observation).await;
+            metadata::close(sftp).await;
             result?;
         }
     }
@@ -171,7 +172,11 @@ pub(in crate::ssh::files) async fn cleanup(
     Ok(())
 }
 
-async fn cleanup_created(sftp: &SftpSession, path: &str) -> AppResult<()> {
+async fn cleanup_created(
+    sftp: &Arc<SftpSession>,
+    path: &str,
+    observation: &native_save::runtime::MutationObservation,
+) -> AppResult<()> {
     let cancel = AtomicBool::new(false);
     match sftp.symlink_metadata(path).await {
         Ok(metadata) => staging::validate_directory(sftp, path, metadata, &cancel, true).await?,
@@ -187,6 +192,7 @@ async fn cleanup_created(sftp: &SftpSession, path: &str) -> AppResult<()> {
             path: path.into(),
         },
         false,
+        observation,
     )
     .await
 }

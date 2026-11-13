@@ -3,6 +3,7 @@ pub mod cli;
 mod client;
 mod contract;
 mod domains;
+mod runtime;
 pub(crate) mod transport;
 
 #[cfg(test)]

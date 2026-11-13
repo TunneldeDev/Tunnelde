@@ -773,6 +773,18 @@ pub async fn sftp_read_text(
 }
 
 #[tauri::command]
+pub async fn sftp_setup_native_save(
+    app: AppHandle,
+    session_id: String,
+    path: String,
+) -> AppResult<bool> {
+    app.state::<AppState>()
+        .native_saves
+        .setup(app.clone(), session_id, path)
+        .await
+}
+
+#[tauri::command]
 pub async fn sftp_write_text(
     app: AppHandle,
     session_id: String,
