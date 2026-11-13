@@ -9,6 +9,7 @@ import { assertUpgrade, releaseAsset, repository } from "./assets.mjs";
 import { Desktop } from "./desktop.mjs";
 import { seed, verify } from "./data.mjs";
 import { verifyCli } from "./cli.mjs";
+import { cleanupUpdated, quitUpdated, updateInApplication } from "./ota.mjs";
 
 // Real installers alter per-user registration. Never run on a user's workstation
 // or a self-hosted runner, even when an alternate installation path is supplied.
@@ -26,9 +27,11 @@ const { chromium } = await import(
 const run = promisify(execFile);
 const tags = [process.env.UPGRADE_FROM, process.env.UPGRADE_TO];
 assertUpgrade(...tags);
+const inApplication = process.env.UPGRADE_IN_APP === "true";
 const report = {
-  scope:
-    "Actual public Windows x64 NSIS install/upgrade with shared isolated application data. Not in-app OTA, physical macOS/Linux, credentials or user-profile migration acceptance.",
+  scope: inApplication
+    ? "Actual public Windows x64 application-initiated signed update, automatic installer restart and shared isolated data retention. Not macOS/Linux OTA, saved credentials or every historical upgrade path."
+    : "Actual public Windows x64 NSIS install/upgrade with shared isolated application data. Not in-app OTA, physical macOS/Linux, credentials or user-profile migration acceptance.",
   tags,
   checks: [],
   assets: [],
@@ -36,6 +39,7 @@ const report = {
   exits: [],
 };
 const desktop = new Desktop(chromium, root, report);
+let installedBinary;
 
 async function install(tag) {
   const { stdout } = await run("gh", ["api", `repos/${repository}/releases/tags/${tag}`], {
@@ -88,15 +92,22 @@ async function install(tag) {
 
 try {
   const before = await install(tags[0]);
+  installedBinary = before;
   await desktop.start(before, tags[0].slice(1));
   const expected = await seed(desktop, root);
   await desktop.page.screenshot({ path: join(evidence, "before.png"), animations: "disabled" });
-  await desktop.quit();
-  report.checks.push(
-    "Old installed application persisted settings/profile/host/history/plugin approval/storage and exited normally",
-  );
-  const after = await install(tags[1]);
-  await desktop.start(after, tags[1].slice(1));
+  let after;
+  if (inApplication) {
+    await updateInApplication(desktop, before, tags[1], report);
+    after = before;
+  } else {
+    await desktop.quit();
+    report.checks.push(
+      "Old installed application persisted settings/profile/host/history/plugin approval/storage and exited normally",
+    );
+    after = await install(tags[1]);
+    await desktop.start(after, tags[1].slice(1));
+  }
   await verify(desktop, expected);
   if (process.env.UPGRADE_CHECK_CLI === "true") {
     await verifyCli(after, tags[1].slice(1), root, expected.host.id);
@@ -105,7 +116,8 @@ try {
     );
   }
   await desktop.page.screenshot({ path: join(evidence, "after.png"), animations: "disabled" });
-  await desktop.quit();
+  if (inApplication) await quitUpdated(desktop, after, report);
+  else await desktop.quit();
   assert.deepEqual(report.pageErrors, []);
   report.checks.push(
     "Upgraded installed application retained all seeded data and plugin fingerprint/approval/storage without recovery mode; zero page errors and normal exit",
@@ -116,6 +128,7 @@ try {
   process.exitCode = 1;
 } finally {
   await desktop.cleanup();
+  if (inApplication && installedBinary) await cleanupUpdated(installedBinary);
   try {
     await cp(join(root, "data", "logs"), join(evidence, "application-logs"), { recursive: true });
   } catch (error) {
