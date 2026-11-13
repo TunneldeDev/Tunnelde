@@ -153,6 +153,14 @@ request ids and validates mutation-reply shapes before delivery, so it can obser
 a late terminal reply even after the caller cancels. Raw SFTP requests dropped by
 their caller remain unknown because the library no longer delivers that response
 to the observer. Pseudo connection statuses are not terminal MKDIR rejections.
+Ordinary metadata-channel writable files and transfer-directory creation share
+the same observation as the range workers. Writable OPEN remains owned until
+its own successful CLOSE, including empty staging files and resumed writers.
+Buffered write/flush/close failures are retained conservatively because the
+high-level file adapter exposes IO errors rather than typed SFTP replies.
+Cancellation before directory creation creates no mutation receipt; cancellation
+after dispatch waits for the original MKDIR reply. Dropping that wait retains
+uncertainty even when a later metadata probe sees the resulting directory.
 This observation currently supplies diagnostics; it does not yet bind transfer
 pause/resume or cleanup to a durable claim, cover all metadata mutations, or make
 an application restart recover an unconfirmed transfer.

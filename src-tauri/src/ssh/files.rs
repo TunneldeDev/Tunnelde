@@ -37,6 +37,7 @@ mod range_io;
 mod remote_commit;
 pub mod remote_editor;
 mod remote_merge;
+mod remote_writer;
 mod rename;
 mod scan;
 mod scheduler;
@@ -1364,7 +1365,7 @@ impl Reader {
 
 enum Writer {
     Local(tokio::fs::File),
-    Remote(Box<russh_sftp::client::fs::File>),
+    Remote(Box<remote_writer::File>),
 }
 
 impl Writer {
@@ -1389,22 +1390,13 @@ impl Writer {
         match self {
             Writer::Local(mut file) => file.flush().await?,
             Writer::Remote(file) => {
-                tokio::time::timeout(std::time::Duration::from_secs(5), finish_remote_file(*file))
+                tokio::time::timeout(std::time::Duration::from_secs(5), file.finish())
                     .await
                     .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))??
             }
         }
         Ok(())
     }
-}
-
-async fn finish_remote_file(mut file: russh_sftp::client::fs::File) -> AppResult<()> {
-    let flushed = file.flush().await;
-    // Attempt CLOSE even after a write/flush error; Drop alone does not await it.
-    let closed = file.close().await;
-    flushed?;
-    closed?;
-    Ok(())
 }
 
 #[derive(Debug, PartialEq)]
@@ -1519,6 +1511,7 @@ async fn make_dir(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: Option<&AtomicBool>,
+    observation: native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
         return Err(AppError::Ssh(CANCELLED.into()));
@@ -1549,7 +1542,10 @@ async fn make_dir(
                 None => {
                     // Once sent, MKDIR must settle before cancellation is reported:
                     // a late acknowledgement must not race cleanup or resume.
-                    handle.create_dir(&endpoint.path).await.map_err(map_sftp)?;
+                    observation
+                        .request(handle.create_dir(&endpoint.path))
+                        .await
+                        .map_err(map_sftp)?;
                     if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
                         return Err(AppError::Ssh(CANCELLED.into()));
                     }
@@ -1585,31 +1581,33 @@ async fn open_writer(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
     overwrite: bool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<Writer> {
     reject_destination_link(endpoint, sftp).await?;
-    create_writer(endpoint, sftp, overwrite).await
+    create_writer(endpoint, sftp, overwrite, observation).await
 }
 
 async fn create_writer(
     endpoint: &Endpoint,
     sftp: Option<&SftpSession>,
     overwrite: bool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<Writer> {
     Ok(match sftp {
         Some(handle) => Writer::Remote(Box::new(
-            handle
-                .open_with_flags(
-                    &endpoint.path,
-                    OpenFlags::WRITE
-                        | OpenFlags::CREATE
-                        | if overwrite {
-                            OpenFlags::TRUNCATE
-                        } else {
-                            OpenFlags::EXCLUDE
-                        },
-                )
-                .await
-                .map_err(map_sftp)?,
+            remote_writer::File::open(
+                handle,
+                &endpoint.path,
+                OpenFlags::WRITE
+                    | OpenFlags::CREATE
+                    | if overwrite {
+                        OpenFlags::TRUNCATE
+                    } else {
+                        OpenFlags::EXCLUDE
+                    },
+                observation,
+            )
+            .await?,
         )),
         None => Writer::Local(
             tokio::fs::OpenOptions::new()
@@ -1642,7 +1640,7 @@ async fn copy_entry(
     let SourceMetadata::File(size, modified) =
         interruptible(Some(cancel), inspect_source(from, from_sftp)).await?
     else {
-        make_dir(to, to_sftp, Some(cancel)).await?;
+        make_dir(to, to_sftp, Some(cancel), meter.observation.clone()).await?;
         let paths = interruptible(Some(cancel), children(from, from_sftp)).await?;
         // Overwrites reserve one commit channel per task. Keep their proven
         // sequential publication path until that protocol supports multiplexing.
@@ -1693,7 +1691,10 @@ async fn copy_entry(
         .await;
     }
     if from_sftp.is_some() || to_sftp.is_some() {
-        open_writer(to, to_sftp, overwrite).await?.finish().await?;
+        open_writer(to, to_sftp, overwrite, &meter.observation)
+            .await?
+            .finish()
+            .await?;
         let channels = meter
             .data_sessions(from, to, from_sftp, to_sftp, cancel)
             .await?
@@ -1720,7 +1721,7 @@ async fn copy_entry(
     }
     let mut reader = open_reader(from, from_sftp).await?;
     let result = async {
-        let mut writer = open_writer(to, to_sftp, overwrite).await?;
+        let mut writer = open_writer(to, to_sftp, overwrite, &meter.observation).await?;
         let copied = async {
             let mut buffer = vec![0_u8; CHUNK];
             let throttle = meter.throttle();
@@ -2258,11 +2259,10 @@ async fn durable_copy_file(
     let mut writer = if partial.is_some() {
         match to_sftp {
             Some(s) => Writer::Remote(Box::new(
-                interruptible(Some(cancel), async {
-                    s.open_with_flags(&temp.path, OpenFlags::WRITE)
-                        .await
-                        .map_err(map_sftp)
-                })
+                interruptible(
+                    Some(cancel),
+                    remote_writer::File::open(s, &temp.path, OpenFlags::WRITE, &meter.observation),
+                )
                 .await?,
             )),
             None => Writer::Local(
@@ -2277,13 +2277,17 @@ async fn durable_copy_file(
         // existing files and links atomically. Repeating LSTAT here cannot
         // make that check safer and costs several RTTs per small file.
         tracing::debug!(id, "Creating isolated transfer staging file");
-        let writer = interruptible(Some(cancel), create_writer(&temp, to_sftp, false)).await?;
+        let writer = interruptible(
+            Some(cancel),
+            create_writer(&temp, to_sftp, false, &meter.observation),
+        )
+        .await?;
         artifacts::creation_pending(meter.app, id, to, false)?;
         writer
     } else {
         // Old journals do not own a removable parent that fences CREATE.
         interruptible(Some(cancel), reject_destination_link(&temp, to_sftp)).await?;
-        create_writer(&temp, to_sftp, false).await?
+        create_writer(&temp, to_sftp, false, &meter.observation).await?
     };
     #[cfg(windows)]
     artifacts::record_local_writer(
@@ -4475,6 +4479,8 @@ mod tests {
     }
 
     mod protocol_io {
+        mod directory_observation;
+        mod writer_observation;
         use super::*;
         use russh_sftp::protocol::{Attrs, Data, FileAttributes, Handle, Status};
         use std::collections::HashMap;
@@ -5199,7 +5205,9 @@ mod tests {
                 session: Some("test".into()),
                 path: "writer".into(),
             };
-            let mut writer = open_writer(&target, Some(&sftp), false).await.unwrap();
+            let mut writer = open_writer(&target, Some(&sftp), false, &Default::default())
+                .await
+                .unwrap();
             writer.write_all(b"confirmed write").await.unwrap();
             state.delay_close.store(true, Ordering::SeqCst);
             let finish = writer.finish();
@@ -5747,10 +5755,13 @@ mod tests {
             };
             let cancel = AtomicBool::new(false);
             let (result, ()) = tokio::time::timeout(std::time::Duration::from_millis(500), async {
-                tokio::join!(make_dir(&endpoint, Some(&sftp), Some(&cancel)), async {
-                    state.metadata_started.notified().await;
-                    cancel.store(true, Ordering::SeqCst);
-                })
+                tokio::join!(
+                    make_dir(&endpoint, Some(&sftp), Some(&cancel), Default::default()),
+                    async {
+                        state.metadata_started.notified().await;
+                        cancel.store(true, Ordering::SeqCst);
+                    }
+                )
             })
             .await
             .expect("pause waited for directory metadata reply");
@@ -5775,7 +5786,13 @@ mod tests {
                 session: Some("test".into()),
                 path: "never-created".into(),
             };
-            let result = make_dir(&endpoint, Some(&sftp), Some(&AtomicBool::new(true))).await;
+            let result = make_dir(
+                &endpoint,
+                Some(&sftp),
+                Some(&AtomicBool::new(true)),
+                Default::default(),
+            )
+            .await;
             assert_eq!(result.unwrap_err().to_string(), CANCELLED);
             assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
             assert_eq!(state.directories_created.load(Ordering::SeqCst), 0);
@@ -5795,7 +5812,7 @@ mod tests {
                 path: "acknowledged".into(),
             };
             let cancel = AtomicBool::new(false);
-            let operation = make_dir(&endpoint, Some(&sftp), Some(&cancel));
+            let operation = make_dir(&endpoint, Some(&sftp), Some(&cancel), Default::default());
             tokio::pin!(operation);
             tokio::select! {
                 result = &mut operation => panic!("MKDIR was not awaited: {result:?}"),
@@ -5838,6 +5855,7 @@ mod tests {
                     },
                     Some(&sftp),
                     None,
+                    Default::default(),
                 )
                 .await;
                 match path {
@@ -5859,6 +5877,7 @@ mod tests {
                 },
                 Some(&sftp),
                 None,
+                Default::default()
             )
             .await
             .is_err());
@@ -5895,8 +5914,14 @@ mod tests {
                 session: Some("test".into()),
                 path: "link".into(),
             };
-            assert!(make_dir(&endpoint, Some(&sftp), None).await.is_err());
-            assert!(open_writer(&endpoint, Some(&sftp), true).await.is_err());
+            assert!(make_dir(&endpoint, Some(&sftp), None, Default::default())
+                .await
+                .is_err());
+            assert!(
+                open_writer(&endpoint, Some(&sftp), true, &Default::default())
+                    .await
+                    .is_err()
+            );
             assert_eq!(
                 std::fs::read_to_string(outside.join("preserved.txt")).unwrap(),
                 "preserve"
@@ -5946,7 +5971,9 @@ mod tests {
                 session: Some("mock".into()),
                 path: "new.txt".into(),
             };
-            let mut writer = open_writer(&endpoint, Some(&sftp), false).await.unwrap();
+            let mut writer = open_writer(&endpoint, Some(&sftp), false, &Default::default())
+                .await
+                .unwrap();
             writer.write_all(b"transferred bytes").await.unwrap();
             assert!(writer.finish().await.is_err());
             assert_eq!(state.closes.load(Ordering::SeqCst), 1);
@@ -6068,10 +6095,15 @@ mod tests {
             path: display_path(&root.join("parent/child")),
         };
         assert_eq!(
-            make_dir(&endpoint, None, Some(&AtomicBool::new(true)))
-                .await
-                .unwrap_err()
-                .to_string(),
+            make_dir(
+                &endpoint,
+                None,
+                Some(&AtomicBool::new(true)),
+                Default::default()
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
             CANCELLED
         );
         assert!(!root.join("parent").exists());
@@ -6090,8 +6122,12 @@ mod tests {
             session: None,
             path: display_path(&link),
         };
-        assert!(make_dir(&endpoint, None, None).await.is_err());
-        assert!(open_writer(&endpoint, None, true).await.is_err());
+        assert!(make_dir(&endpoint, None, None, Default::default())
+            .await
+            .is_err());
+        assert!(open_writer(&endpoint, None, true, &Default::default())
+            .await
+            .is_err());
         assert!(scan::measure(&endpoint, None, 1).await.is_err());
         assert_eq!(
             std::fs::read_to_string(outside.join("existing.txt")).unwrap(),
@@ -6115,8 +6151,12 @@ mod tests {
             session: None,
             path: display_path(&link),
         };
-        assert!(make_dir(&endpoint, None, None).await.is_err());
-        assert!(open_writer(&endpoint, None, true).await.is_err());
+        assert!(make_dir(&endpoint, None, None, Default::default())
+            .await
+            .is_err());
+        assert!(open_writer(&endpoint, None, true, &Default::default())
+            .await
+            .is_err());
         #[cfg(windows)]
         std::fs::remove_dir(link).unwrap();
         #[cfg(unix)]
