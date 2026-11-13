@@ -1,6 +1,14 @@
 //! Compose the existing domain schemas; no second preference-field catalogue.
 use serde_json::{json, Value};
 
+pub(in super::super) fn describe() -> crate::services::settings::preferences::contracts::Schema {
+    let mut schema = crate::services::settings::preferences::describe();
+    // Stability belongs to this local adapter's frozen v1 projection. The
+    // separate plugin adapter and its additional methods remain experimental.
+    schema.stability = "stable";
+    schema
+}
+
 pub(in super::super) fn methods() -> Vec<Value> {
     let mut groups = crate::services::settings::preferences::describe().groups;
     for group in groups
@@ -26,13 +34,18 @@ pub(in super::super) fn methods() -> Vec<Value> {
     for group in changes["properties"].as_object_mut().unwrap().values_mut() {
         group.as_object_mut().unwrap().remove("required");
     }
-    vec![
+    let mut methods = vec![
         json!({"name":"preferences.schema","effect":"read","inputSchema":{"type":"object","additionalProperties":false},
             "resultSchema":{"type":"object","required":["version","stability","groups"],"additionalProperties":false,
-                "properties":{"version":{"const":1},"stability":{"const":"experimental"},"groups":{"const":crate::services::settings::preferences::describe().groups}}}}),
+                "properties":{"version":{"const":1},"stability":{"const":describe().stability},"groups":{"const":describe().groups}}}}),
         json!({"name":"preferences.snapshot","effect":"read","inputSchema":{"type":"object","additionalProperties":false},"resultSchema":snapshot}),
         json!({"name":"preferences.update","effect":"write","inputSchema":{"type":"object","required":["revision","changes"],"additionalProperties":false,
                 "properties":{"revision":revision,"changes":changes}},"resultSchema":snapshot,
             "errors":["stale_revision","invalid_preferences","operation_rejected","internal"]}),
-    ]
+    ];
+    for method in &mut methods {
+        method["stability"] = json!("stable");
+        method["since"] = json!("0.38.0-beta.1");
+    }
+    methods
 }

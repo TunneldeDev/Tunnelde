@@ -61,10 +61,16 @@ mod tests {
                 cols:80,rows:24,connected_at:1_700_000_000_000,terminal:true,purpose:None,
             }])}
         ]});
+        let mut preference_samples = crate::services::settings::preferences::local_api_samples();
+        preference_samples
+            .iter_mut()
+            .find(|sample| sample["method"] == "preferences.schema")
+            .expect("local schema sample")["result"] =
+            serde_json::to_value(preferences::describe()).unwrap();
         samples["samples"]
             .as_array_mut()
             .unwrap()
-            .extend(crate::services::settings::preferences::local_api_samples());
+            .extend(preference_samples);
         assert_eq!(samples["samples"].as_array().unwrap().len(), 7);
         samples["wireSamples"] = json!(crate::automation::transport::contract_samples().await);
         samples["errorSamples"] = contract::describe()["protocol"]["errors"]

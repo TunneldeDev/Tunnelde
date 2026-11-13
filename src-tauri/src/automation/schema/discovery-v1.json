@@ -20,7 +20,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["name", "effect", "inputSchema", "resultSchema"],
+        "required": ["name", "effect", "inputSchema", "resultSchema", "stability", "since"],
         "properties": {
           "name": {
             "type": "string",
@@ -29,6 +29,8 @@
             "maxLength": 128
           },
           "effect": { "enum": ["read", "write"] },
+          "stability": { "$ref": "#/definitions/stability" },
+          "since": { "type": ["string", "null"], "minLength": 1 },
           "inputSchema": { "$ref": "#/definitions/jsonSchema" },
           "resultSchema": { "$ref": "#/definitions/jsonSchema" },
           "errors": { "$ref": "#/definitions/errorNames" }
