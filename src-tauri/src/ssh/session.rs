@@ -24,6 +24,7 @@ pub const CLOSED_EVENT: &str = "ssh://closed";
 mod cleanup;
 mod identity;
 mod probe;
+pub(crate) mod review;
 mod route;
 pub(crate) use cleanup::SessionDisposal;
 pub(crate) use identity::{trust_bound, SessionIdentity};
@@ -740,15 +741,6 @@ pub(crate) async fn connect_bound(
     connect_for_auth(app, request, false, false, Some(destination)).await
 }
 
-/// Key setup must authenticate with the supplied password even for a host
-/// whose saved authentication method is already a key or agent.
-pub(crate) async fn connect_with_password(
-    app: AppHandle,
-    request: SshConnectRequest,
-) -> AppResult<SessionInfo> {
-    connect_for_auth(app, request, true, true, None).await
-}
-
 async fn connect_for_auth(
     app: AppHandle,
     request: SshConnectRequest,
@@ -756,15 +748,36 @@ async fn connect_for_auth(
     published: bool,
     destination: Option<&SessionIdentity>,
 ) -> AppResult<SessionInfo> {
-    let state = app.state::<AppState>();
-    let mut host = crate::services::hosts::resolve(&app, &request.host_id)?;
+    let host = crate::services::hosts::resolve(&app, &request.host_id)?;
     let snapshot = route::Snapshot::capture(&app, &host)?;
+    connect_captured(
+        app,
+        request,
+        password_auth,
+        published,
+        destination,
+        &snapshot,
+    )
+    .await
+}
+
+async fn connect_captured(
+    app: AppHandle,
+    request: SshConnectRequest,
+    password_auth: bool,
+    published: bool,
+    destination: Option<&SessionIdentity>,
+    snapshot: &route::Snapshot,
+) -> AppResult<SessionInfo> {
+    snapshot.verify(&app)?;
+    let state = app.state::<AppState>();
+    let mut host = snapshot.target().clone();
     if password_auth {
         host.auth_method = "password".into();
     }
     let (mut pending, observed, remote_forwards) = route::open(
         &app,
-        &snapshot,
+        snapshot,
         &request.jump_credentials,
         false,
         destination,
