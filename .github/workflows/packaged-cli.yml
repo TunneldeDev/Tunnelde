@@ -1,0 +1,66 @@
+name: Public packaged local CLI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Public release containing the local CLI
+        default: v0.38.0-beta.1
+        required: true
+        type: string
+  pull_request:
+    branches: [dev]
+    paths:
+      - .github/workflows/packaged-cli.yml
+      - scripts/qa/local-cli/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: packaged-cli-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  packaged:
+    name: Packaged CLI (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-22.04, macos-15-intel, macos-15]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Test package selection
+        run: node --test scripts/qa/local-cli/*.test.mjs
+      - name: Install Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libgtk-3-0 libwebkit2gtk-4.1-0 libayatana-appindicator3-1 libxdo3 xvfb xauth dbus-x11
+      - name: Run public Linux package with isolated display and data
+        if: runner.os == 'Linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_RELEASE: ${{ inputs.tag || 'v0.38.0-beta.1' }}
+        run: dbus-run-session -- xvfb-run -a node scripts/qa/local-cli/run.mjs
+      - name: Run public macOS package with isolated data
+        if: runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLI_RELEASE: ${{ inputs.tag || 'v0.38.0-beta.1' }}
+        run: node scripts/qa/local-cli/run.mjs
+      - name: Upload package evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: packaged-cli-${{ matrix.runner }}
+          path: ${{ runner.temp }}/tunnelde-local-cli/evidence
+          if-no-files-found: warn
+          retention-days: 14
