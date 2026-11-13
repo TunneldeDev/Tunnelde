@@ -16,6 +16,7 @@ export class Desktop {
   }
 
   async start(binary, version) {
+    this.binary = binary;
     const listener = createServer();
     await new Promise((resolve) => listener.listen(0, "127.0.0.1", resolve));
     const port = listener.address().port;
@@ -118,12 +119,23 @@ export class Desktop {
   }
 
   async cleanup() {
-    if (this.child) {
+    if (this.port) {
       const command =
-        "$ErrorActionPreference='Continue'; Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'tunnelde|msedgewebview2' } | Select-Object ProcessId,ParentProcessId,Name,CommandLine | ConvertTo-Json -Depth 3; Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -eq " +
-        this.port +
-        " } | ConvertTo-Json";
+        "$ErrorActionPreference='Continue'; " +
+        "$processes = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -match 'tunnelde|msedgewebview2|explorer' } | Select-Object ProcessId,ParentProcessId,SessionId,Name,ExecutablePath,CommandLine); " +
+        "$windows = @(Get-Process | Where-Object { $_.ProcessName -match 'tunnelde|explorer' } | Select-Object Id,SessionId,ProcessName,MainWindowTitle); " +
+        "$ports = @(Get-NetTCPConnection -State Listen | Where-Object { $_.LocalPort -eq [int]$env:QA_WEBVIEW_PORT } | Select-Object LocalAddress,LocalPort,OwningProcess); " +
+        "$installed = if (Test-Path -LiteralPath $env:QA_INSTALLED_BINARY) { (Get-Item -LiteralPath $env:QA_INSTALLED_BINARY).VersionInfo | Select-Object FileName,FileVersion,ProductVersion }; " +
+        "[PSCustomObject]@{ processes=$processes; windows=$windows; ports=$ports; installed=$installed } | ConvertTo-Json -Depth 4";
+      const env = {
+        ...process.env,
+        QA_WEBVIEW_PORT: String(this.port),
+        QA_INSTALLED_BINARY: this.binary,
+      };
+      delete env.GH_TOKEN;
+      delete env.GITHUB_TOKEN;
       const diagnostic = await promisify(execFile)("pwsh", ["-NoProfile", "-Command", command], {
+        env,
         timeout: 10000,
       }).catch((error) => ({ stdout: String(error) }));
       await writeFile(join(this.root, "evidence", "processes.txt"), diagnostic.stdout);
