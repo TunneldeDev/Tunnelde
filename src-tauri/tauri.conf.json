@@ -71,7 +71,7 @@
           "English",
           "SimpChinese"
         ],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": false
       }
     },
     "macOS": {
