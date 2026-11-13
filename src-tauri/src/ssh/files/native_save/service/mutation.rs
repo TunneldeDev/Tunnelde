@@ -99,4 +99,25 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.journal()?.park_transfer(permit))
             .await
     }
+
+    pub async fn complete_transfer(
+        &self,
+        permit: Dispatched,
+        outcome: journal::admission::TransferOutcome,
+    ) -> journal::Result<Claim> {
+        self.blocking(move |storage| storage.journal()?.complete_transfer(permit, outcome))
+            .await
+    }
+
+    pub async fn dispose_empty_transfer(&self, claim: &Claim) -> journal::Result<Claim> {
+        let claim = claim.clone();
+        self.blocking(move |storage| storage.journal()?.dispose_empty_transfer(&claim))
+            .await
+    }
+
+    pub async fn retire_transfer_terminal(&self, claim: &Claim) -> journal::Result<()> {
+        let claim = claim.clone();
+        self.blocking(move |storage| storage.journal()?.retire_transfer_terminal(&claim))
+            .await
+    }
 }

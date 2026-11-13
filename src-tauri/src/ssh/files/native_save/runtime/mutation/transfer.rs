@@ -2,9 +2,11 @@
 mod continuation;
 mod reference;
 mod task;
+mod terminal;
 use super::*;
 pub(crate) use continuation::Transfer;
 pub(crate) use reference::Reference;
+pub(crate) use terminal::Terminal;
 
 pub(crate) struct Target<'a> {
     pub destination: &'a SessionIdentity,

@@ -54,7 +54,10 @@ fn task_and_original_claim_commit_together_and_survive_reopening() {
     assert!(parked.transfer_task.as_ref() == Some(&original));
     let resumed = journal.dispatch_legacy(&parked).unwrap();
     assert!(resumed.claim().transfer_task.as_ref() == Some(&original));
-    journal.settle_legacy(resumed).unwrap();
+    let terminal = journal
+        .complete_transfer(resumed, super::super::TransferOutcome::Disposed)
+        .unwrap();
+    journal.retire_transfer_terminal(&terminal).unwrap();
 }
 
 #[test]

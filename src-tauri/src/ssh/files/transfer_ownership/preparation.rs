@@ -8,6 +8,13 @@ pub(in super::super) struct Endpoints {
 }
 
 impl Endpoints {
+    pub(super) fn for_cleanup(source: TaskEndpoint, destination: TaskEndpoint) -> Self {
+        Self {
+            source,
+            destination,
+        }
+    }
+
     pub(in super::super) fn capture(
         app: &AppHandle,
         from: &Endpoint,

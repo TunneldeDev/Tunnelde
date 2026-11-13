@@ -80,6 +80,10 @@ impl Mutation {
 }
 
 impl Transfer {
+    pub(crate) fn owns_worker(&self) -> bool {
+        self.active.is_some()
+    }
+
     pub(crate) fn observation(&self) -> Observation {
         self.observation.clone()
     }
@@ -118,7 +122,7 @@ impl Transfer {
         self.end_epoch()?.settle().await
     }
 
-    fn end_epoch(&mut self) -> AppResult<ActiveMutation> {
+    pub(super) fn end_epoch(&mut self) -> AppResult<ActiveMutation> {
         if self.active.is_none() {
             return Err(AppError::validation("editor.nativeChanged"));
         }

@@ -648,6 +648,8 @@
     "cancelTransfer": "Cancel transfer",
     "pluginTransferOwner": "Started by plugin: {{id}}",
     "pluginTransferNotResumable": "This transfer belongs to a plugin runtime. Start a new transfer from the plugin; it cannot be paused or resumed from the task list.",
+    "transferNotResumable": "This transfer has already finished or been cancelled. Start a new transfer instead.",
+    "terminalProjectionPending": "This transfer has finished. Its local task history still needs to be saved; retry to finish without repeating the transfer.",
     "pluginTransferInterrupted": "The plugin runtime ended. Its incomplete transfer will be cleaned up when the destination is available. Start a new transfer from the plugin if needed.",
     "done": "Done",
     "failed": "Failed",

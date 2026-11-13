@@ -2,7 +2,7 @@
 use super::mutation::{journal, setup};
 use super::*;
 use crate::ssh::files::native_save::{
-    journal::admission::{Phase, TaskEndpoint, TransferTask},
+    journal::admission::{Phase, TaskEndpoint, TransferOutcome, TransferTask},
     runtime::mutation::MutationTarget,
 };
 use crate::ssh::files::{
@@ -10,7 +10,7 @@ use crate::ssh::files::{
     TransferRegistry,
 };
 
-fn task(destination: &SessionIdentity) -> TransferTask {
+pub(super) fn task(destination: &SessionIdentity) -> TransferTask {
     TransferTask {
         id: uuid::Uuid::new_v4().to_string(),
         source: TaskEndpoint {
@@ -27,7 +27,7 @@ fn task(destination: &SessionIdentity) -> TransferTask {
     }
 }
 
-fn database() -> rusqlite::Connection {
+pub(super) fn database() -> rusqlite::Connection {
     let conn = rusqlite::Connection::open_in_memory().unwrap();
     conn.execute_batch("PRAGMA synchronous=NORMAL;CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at INTEGER NOT NULL);CREATE TRIGGER require_synced_link BEFORE INSERT ON settings WHEN (SELECT synchronous FROM pragma_synchronous)<2 BEGIN SELECT RAISE(ABORT,'link must be synced');END;").unwrap();
     conn
@@ -133,6 +133,15 @@ async fn actual_task_registry_retains_single_original_permit_through_late_reply_
         .await
         .unwrap();
     }
+    assert!(ownership
+        .lock()
+        .await
+        .as_mut()
+        .unwrap()
+        .complete(TransferOutcome::Disposed)
+        .await
+        .is_err());
+    assert!(journal(&fixture).legacy_claims().unwrap()[0].phase == Phase::Dispatched);
     assert!(registry.park_ownership(&task.id).await.is_err());
     registry.release(&task.id);
     assert!(registry

@@ -42,12 +42,18 @@ async fn original_task_reopens_without_the_application_projection_and_rejects_ch
         paths: &paths,
     }];
     let task = task(&destination);
+    assert!(manager
+        .transfer_task_intent(&task.id)
+        .await
+        .unwrap()
+        .is_none());
     let reserved = manager
         .reserve_transfer_task(&targets, task.clone(), &uuid::Uuid::new_v4().to_string())
         .await
         .unwrap()
         .unwrap();
     let reference = reserved.transfer_reference().unwrap();
+    assert!(manager.transfer_task_intent(&task.id).await.unwrap() == Some(task.clone()));
     assert!(manager.transfer_task_reference(&task).await.unwrap() == Some(reference.clone()));
     // Simulate losing delivery before linking any application row: the original
     // private claim still owns the intent and can be found after reopening.
@@ -94,11 +100,15 @@ async fn original_task_reopens_without_the_application_projection_and_rejects_ch
         .await
         .unwrap();
     let (job, _delivery) = cancellation();
-    resumed
+    let terminal = resumed
         .dispatch_transfer(&parked, &job)
         .await
         .unwrap()
-        .settle()
+        .complete(crate::ssh::files::native_save::journal::admission::TransferOutcome::Disposed)
+        .await
+        .unwrap();
+    manager
+        .project_transfer_terminal(&terminal, |_| Ok(()))
         .await
         .unwrap();
     assert!(manager

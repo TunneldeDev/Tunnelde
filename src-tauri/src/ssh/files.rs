@@ -3154,8 +3154,21 @@ async fn run(
         tracing::warn!(target: "files.transfer", transfer_id = id,
             "Original transfer data requests or writable handles remain unconfirmed");
     }
-    let parked = app.state::<AppState>().transfers.park_ownership(id).await;
-    Outcome::from_result(result.and(parked), meter.transferred, cancel)
+    let completed = if durable && result.is_ok() {
+        transfer_ownership::terminal::finish(
+            app,
+            id,
+            native_save::runtime::TransferOutcome::Completed {
+                transferred: meter.transferred,
+                total: meter.total,
+            },
+        )
+        .await
+        .map(|_| ())
+    } else {
+        app.state::<AppState>().transfers.park_ownership(id).await
+    };
+    Outcome::from_result(result.and(completed), meter.transferred, cancel)
 }
 
 const MAX_TEXT: u64 = 2 * 1024 * 1024;

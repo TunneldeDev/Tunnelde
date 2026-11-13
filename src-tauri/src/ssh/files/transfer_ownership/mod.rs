@@ -2,6 +2,7 @@
 pub(super) mod checkpoint;
 mod cleanup;
 mod preparation;
+pub(super) mod terminal;
 pub(super) use cleanup::prepare_cleanup;
 pub(super) use preparation::Endpoints;
 #[cfg(test)]
@@ -13,7 +14,9 @@ pub(super) type Shared = Arc<tokio::sync::Mutex<Option<Transfer>>>;
 
 impl TransferState {
     pub(super) fn retain_ownership(&mut self, id: &str, ownership: Shared) {
-        let retained = ownership.try_lock().map_or(true, |owner| owner.is_some());
+        let retained = ownership.try_lock().map_or(true, |owner| {
+            owner.as_ref().is_some_and(Transfer::owns_worker)
+        });
         if retained {
             self.retained_ownership.insert(id.into(), ownership);
         }

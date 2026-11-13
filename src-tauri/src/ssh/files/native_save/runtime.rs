@@ -3,12 +3,12 @@ mod admission;
 mod errors;
 mod mutation;
 pub(crate) use super::journal::admission::Kind as MutationKind;
-pub(crate) use super::journal::admission::{TaskEndpoint, TransferTask};
+pub(crate) use super::journal::admission::{TaskEndpoint, TransferOutcome, TransferTask};
 pub(crate) use mutation::{
     terminal_mutation_status, ActiveMutation, Mutation, MutationReceipt, MutationReference,
     Observation as MutationObservation,
 };
-pub(crate) use mutation::{MutationTarget, Transfer, TransferReference};
+pub(crate) use mutation::{MutationTarget, Transfer, TransferReference, TransferTerminal};
 mod projection;
 #[cfg(test)]
 mod tests;
@@ -132,8 +132,28 @@ impl Manager {
                     .into_iter()
                     .find(|claim| claim.id == operation)
                     .ok_or_else(|| AppError::validation("editor.cleanupMissing"))?;
+                if claim.phase == super::journal::admission::Phase::Terminal {
+                    let terminal = TransferTerminal::new(claim)?;
+                    let state = app.state::<AppState>();
+                    let _reservation = state.transfers.reserve_cleanup(&terminal.task().id)?;
+                    return self
+                        .project_transfer_terminal(&terminal, |terminal| {
+                            state.db.with(|conn| {
+                                super::super::transfer_ownership::terminal::project(conn, terminal)
+                            })
+                        })
+                        .await;
+                }
                 if claim.phase != super::journal::admission::Phase::Prepared {
                     return Err(AppError::validation("editor.remoteOutcomeUnknown"));
+                }
+                if let Some(task) = claim.transfer_task.as_ref() {
+                    let state = app.state::<AppState>();
+                    let _reservation = state.transfers.reserve_cleanup(&task.id)?;
+                    return super::super::transfer_ownership::terminal::dispose_empty(
+                        app, &task.id,
+                    )
+                    .await;
                 }
                 // Only definitely unsent claims may be retired. A remote path
                 // probe or a newly installed helper cannot settle legacy SFTP.

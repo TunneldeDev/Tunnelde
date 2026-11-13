@@ -72,14 +72,18 @@ pub(super) fn legacy(
             .map(|scope| scope.destination.address.clone())
             .unwrap_or_default(),
         source: "native",
-        action: Some(if claim.phase == Phase::Prepared {
+        action: Some(if claim.phase == Phase::Terminal {
+            "finish"
+        } else if claim.phase == Phase::Prepared {
             "discard"
         } else {
             "inspect"
         }),
         updated_at: 0,
         error: Some(
-            if claim.phase == Phase::Prepared {
+            if claim.phase == Phase::Terminal {
+                "sftp.terminalProjectionPending"
+            } else if claim.phase == Phase::Prepared {
                 "editor.nativeUnsent"
             } else {
                 "editor.remoteOutcomeUnknown"

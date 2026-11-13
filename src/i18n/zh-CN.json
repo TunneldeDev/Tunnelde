@@ -648,6 +648,8 @@
     "cancelTransfer": "取消传输",
     "pluginTransferOwner": "由插件发起：{{id}}",
     "pluginTransferNotResumable": "此传输属于插件运行实例，不能从任务列表暂停或恢复。请从插件重新发起传输。",
+    "transferNotResumable": "此传输已完成或已取消。如需再次传输，请创建新任务。",
+    "terminalProjectionPending": "此传输已结束，本地任务记录尚未保存完成。重试只会修复记录，不会再次传输。",
     "pluginTransferInterrupted": "插件运行实例已结束，目标可连接后将清理未完成传输。如需继续，请从插件重新发起传输。",
     "done": "完成",
     "failed": "失败",

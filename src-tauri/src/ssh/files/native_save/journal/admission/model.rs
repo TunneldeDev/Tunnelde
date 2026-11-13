@@ -92,6 +92,8 @@ pub(in super::super::super::super) enum Phase {
     Dispatched,
     /// Original worker observed all requests finish; only the same owner may resume.
     Recoverable,
+    /// Original worker sealed every request; awaiting synced application projection.
+    Terminal,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -111,6 +113,8 @@ pub(in super::super::super::super) struct Claim {
     /// from a resettable application row when this original binding is absent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transfer_task: Option<TransferTask>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal: Option<TransferOutcome>,
 }
 impl Claim {
     pub fn valid(&self) -> bool {
@@ -127,7 +131,15 @@ impl Claim {
                         && self.revision >= 3
                         && self.revision % 2 != 0
                 }
+                Phase::Terminal => {
+                    self.kind == Kind::Transfer
+                        && self.transfer_task.is_some()
+                        && self.revision >= 3
+                        && self.revision % 2 != 0
+                }
             }
+            && (self.phase == Phase::Terminal) == self.terminal.is_some()
+            && self.terminal.as_ref().is_none_or(TransferOutcome::valid)
             && !self.scopes.is_empty()
             && self.scopes.len() <= 4
             && self.scopes.iter().map(|s| s.paths.len()).sum::<usize>() <= 32

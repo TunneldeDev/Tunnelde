@@ -140,8 +140,9 @@ reservations in the same transaction, and advances the dispatch revision. It
 neither locks unrelated siblings nor grants permission to submit a request.
 Losing extension delivery leaves the older settlement permit stale and the
 expanded reservation intact. Each claim remains bounded to four scopes and 32
-stored paths; this is not an unbounded directory-transfer inventory. Actual
-transfer, pause/resume and artifact-cleanup integration is still incomplete.
+stored paths; this is not an unbounded directory-transfer inventory. Transfer and
+artifact-cleanup paths now use this reservation; complete mutation-boundary and
+desktop lifecycle coverage remain required.
 
 The private transfer continuation retains the journal/claim identity, task owner
 and generation, exact revision and immutable original roots. The private journal
@@ -159,9 +160,9 @@ durable dispatch revision and receives a fresh request epoch. Preparation or
 cancellation cannot release the parked claim; uncertain original requests keep
 it dispatched. A temporarily pending reply does not consume the original worker:
 it retains its permit and may park only after observing that reply. A sealed
-attempt cannot extend paths, park or settle a second time. This internal state
-machine is not yet wired to persisted task
-associations or the complete transfer/cleanup lifecycle.
+attempt cannot extend paths, park or settle a second time. Persisted task
+association now ties this state machine to transfer run and artifact cleanup;
+remaining lifecycle boundaries below still gate production enablement.
 
 Actual range channels now share one in-memory observation per transfer, including
 parallel directory workers, compressed channels, archive writes and detached
@@ -194,20 +195,19 @@ their original protocol workers after cancellation or expiration of the caller's
 wait. Transfer and cleanup teardown cannot close an owned metadata channel while
 that worker remains live. Its original typed terminal reply can settle the request;
 transport shutdown, malformed replies and protocol timeouts still remain unknown.
-This runtime protection is not durable task/claim association. Generated-path
-admission, final authorization and cross-store crash reconciliation remain
-required. Restarting the application does not establish completion of an
-unconfirmed transfer.
+Runtime retention complements the durable task/claim association; the private
+journal governs crash recovery independently of result caches. Final mutation
+authorization and complete lifecycle coverage remain required. Restarting the
+application does not establish completion of an unconfirmed transfer.
 
 The private transfer claim can now bind an immutable task ID and operation intent
 in its creation transaction: both endpoint paths, authenticated remote identities,
 copy/move and overwrite options, and plugin ownership. Generated-path extensions,
 parking and continuation preserve that original intent. A task lookup after
 reopening requires an exact match; historical unbound claims cannot adopt a task
-from application history, and a dispatched claim cannot be replayed. The actual
-transfer completion and cleanup integration is still incomplete. An absent claim is
-not a terminal receipt; terminal handoff and crash reconciliation with the
-resettable task projection remain required before production enablement.
+from application history, and a dispatched claim cannot be replayed. An absent
+claim is not a terminal receipt; only an original-worker terminal claim authorizes
+the local projection handoff described below.
 
 The transfer run and explicit artifact-cleanup paths now admit the original
 private task using the registry's own request epoch. A synced application-store
@@ -219,15 +219,34 @@ original epoch settles. Staging and backup paths enroll through that same permit
 nested copy destinations recheck admission after read-only preparation. Task
 projection checks reject a remote/local switch or a changed host/address, and
 plugin workers recheck their live authorization lease. This is partial lifecycle
-integration: successful runs still park their claim. Terminal receipts, durable
-projection acknowledgement, safe retirement, offline-source cleanup and complete
-mutation-boundary coverage remain required. No production enablement is implied.
+integration. Successful bound runs and confirmed artifact disposal now seal the
+original request epoch and persist a terminal claim before syncing the task
+projection. Its original scopes remain blocking until that projection and its
+reference commit together at FULL durability (or a stronger existing setting),
+then exact-revision retirement removes the claim. Projection failure retains the
+private terminal for local-only retry. Startup/list recovery can reconstruct a
+missing task row from the immutable private intent; a changed application path,
+host, options or plugin owner is rejected. Completed/cancelled tasks cannot resume,
+and a stale application reference cannot recreate a missing private claim.
+
+Known-unsent transfers can be disposed without remote writes only after checking
+that no artifact or progress metadata remains. Previously dispatched or parked
+tasks cannot use missing application artifact records as disposal evidence. The recovery entry also
+uses terminal projection rather than directly dropping bound transfer claims.
+Physical process-death tests cover private completion, uncommitted transitions,
+application projection and retirement across two actual SQLite files. These
+checks do not replace complete desktop lifecycle acceptance. Copy cleanup uses
+the immutable original source intent without requiring the source peer online;
+move cleanup still revalidates its mutated source. Complete mutation-boundary
+coverage remains required. No production
+enablement is implied.
 
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
-A crash between the two local stores' updates can still retain a conservative
-orphan reservation. Full recovery across those boundaries remains a production
-enablement blocker.
+An interrupted possible dispatch without an original terminal receipt still
+retains a conservative reservation. Terminal projection can recover locally;
+unknown remote outcomes remain unresolved, and complete desktop lifecycle
+acceptance remains a production enablement gate.
 
 Production initialization and full transfer/artifact enrollment are not enabled yet, so this
 does not establish complete bilateral coverage or enable native editor saves.
