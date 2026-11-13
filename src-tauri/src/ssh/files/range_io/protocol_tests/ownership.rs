@@ -49,8 +49,8 @@ async fn writable_open_is_owned_until_its_original_successful_close() {
 }
 
 #[tokio::test]
-async fn rejected_or_dropped_close_never_releases_a_writable_handle() {
-    for status in [0, 4] {
+async fn cancelled_close_delivery_keeps_original_worker_and_rejection_stays_unknown() {
+    for status in [0, 4, 7] {
         let gate = Arc::new(tokio::sync::Semaphore::new(0));
         let (channel, state, observation) = observed(CloseReply {
             status,
@@ -64,21 +64,21 @@ async fn rejected_or_dropped_close_never_releases_a_writable_handle() {
             wait_for(|| state.lock().unwrap().closes == 1).await;
             task.abort();
             assert!(task.await.unwrap_err().is_cancelled());
+            assert!(!observation.settled());
             gate.add_permits(1);
+            wait_for(|| observation.settled()).await;
         } else {
             assert!(channel.close(&handle).await.is_err());
+            assert!(!observation.settled());
         }
-        assert!(!observation.settled());
         drop(channel);
-        assert!(
-            !observation.settled(),
-            "dropping a channel is not a close reply"
-        );
+        assert_eq!(observation.settled(), status == 0);
+        assert_eq!(state.lock().unwrap().closes, 1);
     }
 }
 
 #[tokio::test]
-async fn dropped_raw_write_is_not_acknowledged_by_a_later_close_or_peer_reply() {
+async fn cancelled_raw_write_delivery_settles_only_when_its_original_reply_arrives() {
     let (channel, state, observation) = observed(CloseReply::default()).await;
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     state.lock().unwrap().write_gate = Some(gate.clone());
@@ -93,9 +93,10 @@ async fn dropped_raw_write_is_not_acknowledged_by_a_later_close_or_peer_reply() 
     assert!(!observation.settled());
     gate.add_permits(1);
     wait_for(|| state.lock().unwrap().pending == 0).await;
-    // Unlike the compressed worker, the raw library no longer delivers the
-    // dropped request's response to us. Do not infer it from a later CLOSE.
-    assert!(!observation.settled());
+    // The detached original worker, not the later CLOSE, observes this reply.
+    wait_for(|| observation.settled()).await;
+    assert_eq!(state.lock().unwrap().writes.len(), 1);
+    assert_eq!(state.lock().unwrap().closes, 1);
 }
 
 #[tokio::test]
@@ -133,7 +134,7 @@ async fn only_terminal_mkdir_statuses_acknowledge_the_original_request() {
 }
 
 #[tokio::test]
-async fn copy_data_lost_reply_keeps_ownership_after_later_successful_writes() {
+async fn cancelled_copy_data_waits_for_original_reply_despite_later_successful_writes() {
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     let (client, state) = stream_with_copy(
         None,
@@ -158,10 +159,11 @@ async fn copy_data_lost_reply_keeps_ownership_after_later_successful_writes() {
     wait_for(|| !state.lock().unwrap().copies.is_empty()).await;
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
-    gate.add_permits(1);
-    wait_for(|| state.lock().unwrap().pending == 0).await;
     channel.write("/target", 16, vec![4; 16]).await.unwrap();
     assert!(!observation.settled());
+    gate.add_permits(1);
+    wait_for(|| observation.settled()).await;
+    assert_eq!(state.lock().unwrap().copies.len(), 1);
 }
 
 #[tokio::test]
@@ -194,7 +196,7 @@ async fn copy_data_decodes_the_original_status_before_acknowledging_it() {
 }
 
 #[tokio::test]
-async fn dropped_raw_write_open_retains_ownership_after_its_handle_reply_is_lost() {
+async fn abandoned_raw_write_open_closes_only_after_its_original_handle_reply() {
     let (channel, state, observation) = observed(CloseReply::default()).await;
     let gate = Arc::new(tokio::sync::Semaphore::new(0));
     state.lock().unwrap().open_gate = Some(gate.clone());
@@ -203,9 +205,14 @@ async fn dropped_raw_write_open_retains_ownership_after_its_handle_reply_is_lost
     wait_for(|| state.lock().unwrap().opens == 1).await;
     task.abort();
     assert!(task.await.unwrap_err().is_cancelled());
+    assert!(!observation.settled());
+    assert_eq!(state.lock().unwrap().closes, 0);
     gate.add_permits(1);
     drop(channel);
-    assert!(!observation.settled());
+    wait_for(|| observation.settled()).await;
+    assert_eq!(state.lock().unwrap().closes, 1);
+    assert_eq!(state.lock().unwrap().opens, 1);
+    assert!(state.lock().unwrap().writes.is_empty());
 }
 
 #[tokio::test]
@@ -232,10 +239,42 @@ async fn reused_handle_is_not_released_by_an_older_delayed_close_reply() {
         assert!(!observation.settled(), "old CLOSE released a reused handle");
         gate.add_permits(2);
         channel.close(&second).await.unwrap();
-        assert_eq!(
-            observation.settled(),
-            !cancel_older,
-            "new handle completion erased an old unobserved CLOSE"
-        );
+        wait_for(|| observation.settled()).await;
+        assert_eq!(state.lock().unwrap().closes, 2);
     }
+}
+
+#[tokio::test]
+async fn writable_handle_cannot_be_closed_on_another_actual_channel() {
+    let (first, first_peer, original) = observed(CloseReply::default()).await;
+    let (other, other_peer, unrelated) = observed(CloseReply::default()).await;
+    let handle = first.open("/original", true).await.unwrap();
+    assert_eq!(
+        other.close(&handle).await.unwrap_err().to_string(),
+        "editor.nativeChanged"
+    );
+    assert!(!original.settled());
+    assert!(unrelated.settled());
+    assert_eq!(first_peer.lock().unwrap().closes, 0);
+    assert_eq!(other_peer.lock().unwrap().closes, 0);
+    first.close(&handle).await.unwrap();
+    assert!(original.settled());
+}
+
+#[tokio::test]
+async fn last_abandoned_handle_clone_closes_exactly_once_and_preserves_next_open() {
+    let (channel, peer, original) = observed(CloseReply::default()).await;
+    let first = channel.open("/first", true).await.unwrap();
+    let clone = first.clone();
+    drop(first);
+    assert!(!original.settled());
+    assert_eq!(peer.lock().unwrap().closes, 0);
+    drop(clone);
+    wait_for(|| original.settled()).await;
+    assert_eq!(peer.lock().unwrap().closes, 1);
+    let second = channel.open("/second", true).await.unwrap();
+    channel.close(&second).await.unwrap();
+    drop(second);
+    assert!(original.settled());
+    assert_eq!(peer.lock().unwrap().closes, 2);
 }

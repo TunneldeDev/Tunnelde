@@ -7,6 +7,7 @@ use std::sync::atomic::AtomicU64;
 mod local_io;
 mod observation;
 use super::native_save::runtime::{terminal_mutation_status, MutationObservation};
+use observation::Handle;
 
 #[cfg(test)]
 mod live_tests;
@@ -24,7 +25,7 @@ pub(super) struct DataSession {
 }
 
 enum Backend {
-    Sftp(RawSftpSession),
+    Sftp(Arc<RawSftpSession>),
     Compressed(super::compressed::Session),
 }
 
@@ -33,7 +34,7 @@ enum Backend {
 /// whose OPEN acknowledgement has not arrived yet. A failed sample is discarded.
 pub(super) struct SampleReader<'a> {
     session: &'a DataSession,
-    handle: Option<String>,
+    handle: Option<Handle>,
     finished: bool,
 }
 
@@ -79,7 +80,7 @@ impl<'a> SampleReader<'a> {
 
     pub(super) async fn finish(mut self) -> AppResult<()> {
         self.session
-            .close(self.handle.as_deref().expect("sampling handle"))
+            .close(self.handle.as_ref().expect("sampling handle"))
             .await?;
         self.finished = true;
         Ok(())
@@ -111,15 +112,20 @@ impl DataSession {
     ) -> AppResult<DirectoryCreation> {
         match &self.backend {
             Backend::Sftp(raw) => {
+                let raw = raw.clone();
+                let path = path.to_owned();
                 match self
                     .writes
-                    .request(raw.mkdir(
-                        path,
-                        russh_sftp::protocol::FileAttributes {
-                            permissions: Some(0o700),
-                            ..Default::default()
-                        },
-                    ))
+                    .request(async move {
+                        raw.mkdir(
+                            path,
+                            russh_sftp::protocol::FileAttributes {
+                                permissions: Some(0o700),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                    })
                     .await
                 {
                     Ok(_) => Ok(DirectoryCreation::Created),
@@ -182,7 +188,7 @@ impl DataSession {
             .max(1) as usize;
         raw.set_limits(limits);
         Ok(Self {
-            backend: Backend::Sftp(raw),
+            backend: Backend::Sftp(Arc::new(raw)),
             writes: observation::Writes::new(observation),
             read_size,
             write_size,
@@ -236,33 +242,26 @@ impl DataSession {
         .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
     }
 
-    async fn open(&self, path: &str, write: bool) -> AppResult<String> {
+    async fn open(&self, path: &str, write: bool) -> AppResult<Handle> {
         match &self.backend {
-            Backend::Compressed(worker) => worker.open(path, write).await,
-            Backend::Sftp(raw) if write => {
-                self.writes
-                    .open(raw.open(
-                        path,
-                        OpenFlags::WRITE,
-                        russh_sftp::protocol::FileAttributes::empty(),
-                    ))
-                    .await
-            }
-            Backend::Sftp(raw) => Ok(raw
-                .open(
+            Backend::Compressed(worker) => worker.open(path, write).await.map(Handle::unowned),
+            Backend::Sftp(raw) if write => self.writes.open(raw.clone(), path.to_owned()).await,
+            Backend::Sftp(raw) => Ok(Handle::unowned(
+                raw.open(
                     path,
                     OpenFlags::READ,
                     russh_sftp::protocol::FileAttributes::empty(),
                 )
                 .await
                 .map_err(map_sftp)?
-                .handle),
+                .handle,
+            )),
         }
     }
-    async fn close(&self, handle: &str) -> AppResult<()> {
+    async fn close(&self, handle: &Handle) -> AppResult<()> {
         match &self.backend {
             Backend::Compressed(worker) => worker.close(handle).await,
-            Backend::Sftp(raw) => self.writes.close(raw, handle).await,
+            Backend::Sftp(raw) => handle.close(raw.clone()).await,
         }
     }
 
@@ -291,8 +290,10 @@ impl DataSession {
         match &self.backend {
             Backend::Compressed(worker) => worker.write(handle, offset, data).await,
             Backend::Sftp(raw) => {
+                let raw = raw.clone();
+                let handle = handle.to_owned();
                 self.writes
-                    .request(raw.write(handle, offset, data))
+                    .request(async move { raw.write(handle, offset, data).await })
                     .await
                     .map_err(map_sftp)?;
                 Ok(())
@@ -322,8 +323,9 @@ impl DataSession {
         data.extend_from_slice(&(target.len() as u32).to_be_bytes());
         data.extend_from_slice(target.as_bytes());
         data.extend_from_slice(&offset.to_be_bytes());
+        let raw = raw.clone();
         self.writes
-            .request(async {
+            .request(async move {
                 match raw.extended("copy-data", data).await? {
                     Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
                     Packet::Status(status) => Err(russh_sftp::client::error::Error::Status(status)),
@@ -462,8 +464,8 @@ pub(super) struct Files<'a> {
     sessions: &'a Sessions,
     source: &'a Endpoint,
     target: &'a Endpoint,
-    source_handle: Option<String>,
-    target_handle: Option<String>,
+    source_handle: Option<Handle>,
+    target_handle: Option<Handle>,
     throttle: Option<bandwidth::Throttle>,
     unsettled_write: AtomicBool,
     observation: MutationObservation,
@@ -484,7 +486,7 @@ impl Drop for WriteAttempt<'_> {
     }
 }
 
-async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>) -> AppResult<()> {
+async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<Handle>) -> AppResult<()> {
     if let (Some(session), Some(handle)) = (session, handle) {
         tokio::time::timeout(std::time::Duration::from_secs(5), session.close(&handle))
             .await
