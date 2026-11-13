@@ -1,4 +1,4 @@
-import { Save, WandSparkles } from "lucide-react";
+import { Save, ShieldCheck, WandSparkles } from "lucide-react";
 import { shortcutCommands } from "@/lib/keyboard/registry";
 import { bindShortcutProvider, scopedShortcutCandidates } from "@/lib/keyboard/routing";
 import { useEffect, useRef, useState } from "react";
@@ -23,6 +23,9 @@ import { useWorkspace } from "@/store/workspace";
 import { useEditorLocation } from "@/store/editorLocation";
 import { useViewElementState, useBackgroundGuard } from "@/lib/session/viewState";
 import { EditorConflictDialog } from "./EditorConflictDialog";
+import { api } from "@/lib/api/ipc";
+import { translateError } from "@/lib/api/errors";
+import { toast } from "@/store/toasts";
 
 interface EditorPageProps {
   tabId: string;
@@ -44,13 +47,35 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
   );
   const [reconnecting, setReconnecting] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [settingUp, setSettingUp] = useState(false);
+  const [setupFailure, setSetupFailure] = useState<{ scope: string; message: string } | null>(null);
+  const [enabledScope, setEnabledScope] = useState<string | null>(null);
   const formatting = useFormatting((state) => state.busy.includes(tabId));
   const hasFormatter = usePlugins(
     (state) => !!entry && documentFormatters(entry.path, state.items).length > 0,
   );
   const textarea = useRef<HTMLTextAreaElement>(null);
   useViewElementState(`editor:${tabId}:selection`, textarea, !!entry && !entry.loading);
-  useBackgroundGuard(reconnecting || formatting || reviewing);
+  useBackgroundGuard(reconnecting || formatting || reviewing || settingUp);
+  const setup = async () => {
+    if (!entry?.sessionId || settingUp) return;
+    const session = entry.sessionId;
+    const path = entry.path;
+    setSetupFailure(null);
+    setSettingUp(true);
+    try {
+      if (await api.sftpSetupNativeSave(session, path)) {
+        setEnabledScope(`${session}:${path}`);
+        toast(t("editor.nativeSetupComplete"), "success");
+      }
+    } catch (error) {
+      const message = translateError(error);
+      setSetupFailure({ scope: `${session}:${path}`, message });
+      toast(message, "error");
+    } finally {
+      setSettingUp(false);
+    }
+  };
   const location = useEditorLocation((state) => state.target);
   useEffect(() => {
     if (
@@ -122,6 +147,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         event,
         commands.map((command) => command.id),
         (id) => {
+          if (id === "editor.save" && settingUp) return true;
           if (id === "editor.save")
             queue = queue.then(async () => {
               await save(tabId);
@@ -139,7 +165,7 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         },
       );
     });
-  }, [active, save, tabId, entry]);
+  }, [active, save, tabId, entry, settingUp]);
 
   useEffect(() => {
     const element = textarea.current;
@@ -172,6 +198,31 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
         <span className="editor-head__path" title={entry.path}>
           {entry.path}
         </span>
+        {entry.sessionId ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            leading={<ShieldCheck size={13} />}
+            title={t("editor.nativeSetupDescription")}
+            disabled={
+              settingUp ||
+              entry.loading ||
+              !!entry.error ||
+              entry.disconnected ||
+              entry.saving ||
+              enabledScope === `${entry.sessionId}:${entry.path}`
+            }
+            onClick={() => void setup()}
+          >
+            {t(
+              settingUp
+                ? "editor.nativeSettingUp"
+                : enabledScope === `${entry.sessionId}:${entry.path}`
+                  ? "editor.nativeSetupEnabled"
+                  : "editor.nativeEnableSetup",
+            )}
+          </Button>
+        ) : null}
         {hasFormatter || formatting ? (
           <Button
             variant="ghost"
@@ -191,13 +242,18 @@ export function EditorPage({ tabId, active }: EditorPageProps) {
           leading={<Save size={13} />}
           aria-label={t(entry.saving ? "editor.saving" : "editor.save")}
           title={t(entry.saving ? "editor.saving" : "editor.save")}
-          disabled={!dirty || entry.saving || entry.loading || entry.disconnected}
+          disabled={!dirty || entry.saving || entry.loading || entry.disconnected || settingUp}
           onClick={() => void save(tabId)}
         >
           {t(entry.saving ? "editor.saving" : "editor.save")}
         </Button>
       </header>
 
+      {setupFailure?.scope === `${entry.sessionId}:${entry.path}` ? (
+        <div className="editor-offline" role="alert">
+          <span>{setupFailure.message}</span>
+        </div>
+      ) : null}
       {entry.saveFailure ? (
         <div className="editor-offline" role="alert">
           <span>{entry.saveFailure}</span>
