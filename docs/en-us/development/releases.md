@@ -92,6 +92,29 @@ checks actual refs again before updating a generated branch, so old PR base snap
 hide new changes. It refuses to overwrite main changes outside generated release metadata;
 merge such hotfixes into dev through a reviewed PR before promoting again.
 
+## Explicit release targets
+
+A reviewed milestone can select a higher stable target, such as the first 1.0,
+by adding `.github/release-target.json` through a normal PR to `dev`:
+
+```json
+{ "schemaVersion": 1, "baseVersion": "0.38.0", "targetVersion": "1.0.0" }
+```
+
+The baseline must equal the currently promoted stable version. The target must
+be canonical stable SemVer, newer than the baseline and no lower than the
+automatic bump for the current changes. A changed baseline fails preparation
+until the declaration is reviewed again. Once the target or a higher stable
+version is promoted, the declaration has no effect; subsequent cycles return
+to automatic versioning. It may then be removed or replaced in a later PR.
+
+Beta preparation and stable PR generation share this target. The promotion
+policy checks it against the declaration at the pinned dev source, so editing
+generated version metadata cannot substitute a different milestone. It does
+not publish a build, bypass CI, or stabilize experimental APIs. Use the finite
+[core contract boundary](core-contracts.md) and final package/upgrade acceptance
+to decide readiness before merging the stable promotion.
+
 ## Credentials and protection
 
 Use the short-lived repository `GITHUB_TOKEN`. Enable **Settings → Actions → General → Workflow
