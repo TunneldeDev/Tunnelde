@@ -330,7 +330,14 @@ pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) ->
         )?,
         path: row.to_path.clone(),
     };
-    super::artifacts::cleanup(app, row, &to, &observation).await?;
+    super::transfer_ownership::prepare_cleanup(app, row, &to).await?;
+    let result = super::artifacts::cleanup(app, row, &to, &observation).await;
+    let parked = app
+        .state::<AppState>()
+        .transfers
+        .park_ownership(&row.id)
+        .await;
+    result.and(parked)?;
     Journal::clear_checkpoints(app, &row.id)?;
     let _ = app.emit(
         "plugin://domain-changed",

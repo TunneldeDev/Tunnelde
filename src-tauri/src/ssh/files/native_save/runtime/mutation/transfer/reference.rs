@@ -21,6 +21,20 @@ pub(crate) struct Reference {
 }
 
 impl Reference {
+    pub(crate) fn belongs_to_task(&self, id: &str) -> bool {
+        self.valid() && self.task.as_ref().is_some_and(|task| task.id == id)
+    }
+
+    pub(crate) fn same_task(&self, other: &Self) -> bool {
+        self.valid()
+            && other.valid()
+            && self.journal_id == other.journal_id
+            && self.claim_id == other.claim_id
+            && self.owner == other.owner
+            && self.roots == other.roots
+            && self.task == other.task
+    }
+
     pub(super) fn new(claim: &Claim) -> AppResult<Self> {
         if claim.kind != Kind::Transfer
             || !claim.valid()

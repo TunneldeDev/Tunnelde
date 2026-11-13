@@ -10,6 +10,54 @@ pub(crate) struct Transfer {
 }
 
 impl Mutation {
+    /// The actual transfer registry and durable permit share one request epoch.
+    /// Admission is rechecked after the SQLite dispatch checkpoint and canonical
+    /// resolution; none of that preparation may authorize a later changed peer.
+    pub(crate) async fn dispatch_transfer_epoch(
+        self,
+        reference: &Reference,
+        targets: &[MutationTarget<'_>],
+        observation: Observation,
+        authorize: impl Fn() -> AppResult<()>,
+    ) -> AppResult<Transfer> {
+        if !reference.current(&self.claim)
+            || observation.closed()
+            || !observation.settled()
+            || targets.len() != reference.roots().len()
+        {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        authorize()?;
+        let permit = self
+            .service
+            .dispatch_legacy(&self.claim)
+            .await
+            .map_err(errors::app_journal)?;
+        let mut transfer = Transfer {
+            active: Some(ActiveMutation {
+                _worker: self.service.observe_legacy_worker(&permit.claim().id),
+                service: self.service,
+                permit,
+            }),
+            reference: reference.clone(),
+            observation,
+        };
+        let validation = async {
+            for (root, target) in reference.roots().iter().zip(targets) {
+                if scope::resolve(target.destination, target.sftp, target.paths).await? != *root {
+                    return Err(AppError::validation("editor.nativeChanged"));
+                }
+            }
+            authorize()
+        }
+        .await;
+        if let Err(error) = validation {
+            transfer.park().await?;
+            return Err(error);
+        }
+        Ok(transfer)
+    }
+
     pub(crate) fn transfer_reference(&self) -> AppResult<Reference> {
         Reference::new(&self.claim)
     }
@@ -42,6 +90,9 @@ impl Transfer {
         sftp: &SftpSession,
         paths: &[String],
     ) -> AppResult<()> {
+        if self.observation.closed() {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
         self.active
             .as_mut()
             .ok_or_else(|| AppError::validation("editor.nativeChanged"))?
@@ -74,7 +125,9 @@ impl Transfer {
         // A pending original request must leave the original worker/permit
         // available to observe its late reply and retry the transition. Only a
         // successfully sealed epoch transfers ownership to the durable step.
-        self.observation.seal()?;
+        if !self.observation.closed() {
+            self.observation.seal()?;
+        }
         self.active
             .take()
             .ok_or_else(|| AppError::validation("editor.nativeChanged"))

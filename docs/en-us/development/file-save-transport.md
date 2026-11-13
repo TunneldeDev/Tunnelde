@@ -205,9 +205,23 @@ copy/move and overwrite options, and plugin ownership. Generated-path extensions
 parking and continuation preserve that original intent. A task lookup after
 reopening requires an exact match; historical unbound claims cannot adopt a task
 from application history, and a dispatched claim cannot be replayed. The actual
-transfer run/finish/cleanup integration is still incomplete. An absent claim is
+transfer completion and cleanup integration is still incomplete. An absent claim is
 not a terminal receipt; terminal handoff and crash reconciliation with the
 resettable task projection remain required before production enablement.
+
+The transfer run and explicit artifact-cleanup paths now admit the original
+private task using the registry's own request epoch. A synced application-store
+reference is written before dispatch; it cannot replace the private task or
+authorize a replay when that private record is missing. Registry release retains
+the actual original permit, including while a detached protocol request awaits
+its reply. A subsequent cleanup attempt can park that permit only after the
+original epoch settles. Staging and backup paths enroll through that same permit;
+nested copy destinations recheck admission after read-only preparation. Task
+projection checks reject a remote/local switch or a changed host/address, and
+plugin workers recheck their live authorization lease. This is partial lifecycle
+integration: successful runs still park their claim. Terminal receipts, durable
+projection acknowledgement, safe retirement, offline-source cleanup and complete
+mutation-boundary coverage remain required. No production enablement is implied.
 
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.

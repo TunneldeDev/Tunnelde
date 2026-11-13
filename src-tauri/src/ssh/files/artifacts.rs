@@ -158,7 +158,7 @@ pub(super) async fn finish_staging(
     let sftp = metadata.as_ref();
     let directory = staging_directory(to, id, staging)?;
     if let Some(session_id) = &to.session {
-        admission::writable(app, session_id, sftp, &[&directory.path]).await?;
+        transfer_ownership::writable(app, id, session_id, sftp, &[&directory.path]).await?;
     }
     interruptible(
         Some(cancel),
@@ -843,9 +843,9 @@ pub(super) async fn cleanup(
     let sftp = metadata.as_deref();
     let result = async {
         if let (Some(session_id), Some(sftp)) = (to.session.as_deref(), sftp) {
-            admission::writable(app, session_id, sftp, &[&to.path]).await?;
+            transfer_ownership::writable(app, &row.id, session_id, sftp, &[&to.path]).await?;
             for path in &targets {
-                admission::writable(app, session_id, sftp, &[path]).await?;
+                transfer_ownership::writable(app, &row.id, session_id, sftp, &[path]).await?;
             }
         }
         for path in &targets {

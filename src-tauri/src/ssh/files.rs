@@ -46,6 +46,7 @@ mod scheduler;
 pub mod search;
 mod segments;
 mod task_observation;
+mod transfer_ownership;
 mod verification;
 use verification::{fingerprint_file, verify_prefix};
 
@@ -124,6 +125,7 @@ impl Drop for CleanupReservation<'_> {
 struct TransferState {
     active: std::collections::HashMap<String, ActiveTransfer>,
     unconfirmed: std::collections::HashMap<String, native_save::runtime::MutationObservation>,
+    retained_ownership: std::collections::HashMap<String, transfer_ownership::Shared>,
     completed: std::collections::VecDeque<CompletedTransfer>,
     paused: std::collections::HashSet<String>,
 }
@@ -131,8 +133,10 @@ struct TransferState {
 struct ActiveTransfer {
     identity: String,
     observation: native_save::runtime::MutationObservation,
+    ownership: transfer_ownership::Shared,
     cancel: Arc<AtomicBool>,
     owner: Option<TransferOwner>,
+    lease: Option<crate::plugins::security::Lease>,
     event: TransferEvent,
 }
 
@@ -167,6 +171,7 @@ impl TransferRegistry {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(task) = state.active.remove(id) {
                 state.retain_observation(id, task.observation);
+                state.retain_ownership(id, task.ownership);
             }
             state.paused.remove(id);
             self.bandwidth.remove(id);
@@ -239,13 +244,16 @@ impl TransferRegistry {
         }
         let plugin_id = owner.as_ref().map(|owner| owner.plugin_id.clone());
         let observation = state.observation_for_registration(id)?;
+        let ownership = state.retained_ownership.remove(id).unwrap_or_default();
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
                 identity: uuid::Uuid::new_v4().to_string(),
                 observation,
+                ownership,
                 cancel: flag,
                 owner,
+                lease: None,
                 event: TransferEvent {
                     id: id.into(),
                     plugin_id,
@@ -277,6 +285,7 @@ impl TransferRegistry {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.remove(&event.id) {
                 state.retain_observation(&event.id, transfer.observation);
+                state.retain_ownership(&event.id, transfer.ownership);
                 event.plugin_id = transfer.event.plugin_id;
                 self.bandwidth.remove(&event.id);
                 if event.status == TransferStatus::Cancelled {
@@ -994,6 +1003,19 @@ fn spawn_transfer_inner(
     app.state::<AppState>()
         .transfers
         .register(&id, cancel.clone(), transfer_owner)?;
+    if let Some(lease) = &owner {
+        let state = app.state::<AppState>();
+        let mut registry = state
+            .transfers
+            .inner
+            .lock()
+            .map_err(|_| AppError::internal("sftp.transferRegistry"))?;
+        registry
+            .active
+            .get_mut(&id)
+            .ok_or_else(|| AppError::validation("sftp.transferBusy"))?
+            .lease = Some(lease.clone());
+    }
     let recorded = (|| -> AppResult<()> {
         let sessions = app.state::<AppState>().ssh.list();
         let host = |id: &Option<String>| {
@@ -1656,9 +1678,17 @@ async fn copy_entry(
         return Err(AppError::Ssh(CANCELLED.into()));
     }
 
-    let SourceMetadata::File(size, modified) =
-        interruptible(Some(cancel), inspect_source(from, from_sftp)).await?
-    else {
+    let metadata = interruptible(Some(cancel), inspect_source(from, from_sftp)).await?;
+    // Read-only preparation can await a slow peer. Revalidate each destination
+    // afterwards, including nested directories, before the next mutation.
+    transfer_ownership::authorize_task(meter.app, meter.id)?;
+    if let (Some(session_id), Some(sftp)) = (to.session.as_deref(), to_sftp) {
+        transfer_ownership::writable(meter.app, meter.id, session_id, sftp, &[&to.path]).await?;
+    }
+    if cancel.load(Ordering::SeqCst) {
+        return Err(AppError::Ssh(CANCELLED.into()));
+    }
+    let SourceMetadata::File(size, modified) = metadata else {
         make_dir(to, to_sftp, Some(cancel), meter.observation.clone()).await?;
         let paths = interruptible(Some(cancel), children(from, from_sftp)).await?;
         // Overwrites reserve one commit channel per task. Keep their proven
@@ -2037,6 +2067,7 @@ async fn remove_guarded_backup(
 }
 async fn cleanup_backup(
     app: &AppHandle,
+    id: &str,
     key: &str,
     backup: &Endpoint,
     destination: &Endpoint,
@@ -2047,7 +2078,7 @@ async fn cleanup_backup(
         return Ok(());
     };
     if let (Some(session_id), Some(sftp)) = (backup.session.as_deref(), sftp) {
-        admission::writable(app, session_id, sftp, &[&backup.path]).await?;
+        transfer_ownership::writable(app, id, session_id, sftp, &[&backup.path]).await?;
     }
     if interruptible(Some(cancel), file_length(backup, sftp))
         .await?
@@ -2117,7 +2148,7 @@ async fn durable_copy_file(
             }
             verify_prefix(&mut source, to, to_sftp, stamp.0, Some(cancel)).await?;
             source.finish_cancellable(cancel).await?;
-            cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+            cleanup_backup(meter.app, id, &backup_key, &backup, to, to_sftp, cancel).await?;
             artifacts::confirm_publication(meter.app, id, to)?;
             artifacts::finish_staging(
                 meter.app,
@@ -2209,7 +2240,7 @@ async fn durable_copy_file(
         let checked = verify_prefix(&mut completed, to, to_sftp, stamp.0, Some(cancel)).await;
         completed.finish_cancellable(cancel).await?;
         if checked.is_ok() {
-            cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+            cleanup_backup(meter.app, id, &backup_key, &backup, to, to_sftp, cancel).await?;
             save(true)?;
             if recovering_publication {
                 artifacts::confirm_publication(meter.app, id, to)?;
@@ -2525,7 +2556,7 @@ async fn durable_copy_file(
     }
     #[cfg(windows)]
     drop(local_staging);
-    cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
+    cleanup_backup(meter.app, id, &backup_key, &backup, to, to_sftp, cancel).await?;
     save(true)?;
     if to_sftp.is_some() {
         artifacts::confirm_publication(meter.app, id, to)?;
@@ -2824,6 +2855,10 @@ async fn run(
     }
 
     let config = segments::config(&settings);
+    let ownership_endpoints = match transfer_ownership::Endpoints::capture(app, from, to) {
+        Ok(endpoints) => endpoints,
+        Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+    };
     let scan_concurrency = config.max_concurrent_reads;
     let from_sftp = match &from.session {
         Some(session_id) => match interruptible(
@@ -2854,16 +2889,20 @@ async fn run(
         None => None,
     };
 
-    if let Err(error) = admission::transfer(
-        app,
-        from,
-        to,
-        from_sftp.as_ref(),
-        to_sftp.as_deref(),
-        remove_source,
-    )
-    .await
-    {
+    let legacy_admission = if durable {
+        Ok(())
+    } else {
+        admission::transfer(
+            app,
+            from,
+            to,
+            from_sftp.as_ref(),
+            to_sftp.as_deref(),
+            remove_source,
+        )
+        .await
+    };
+    if let Err(error) = legacy_admission {
         if let Some(sftp) = from_sftp {
             let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
         }
@@ -2963,6 +3002,30 @@ async fn run(
     };
     progress(app, id, name, 0, total);
 
+    if durable {
+        if let Err(error) = ownership_endpoints
+            .prepare(
+                app,
+                from,
+                to,
+                from_sftp.as_ref(),
+                to_sftp.as_deref(),
+                id,
+                remove_source,
+                overwrite,
+                cancel,
+            )
+            .await
+        {
+            if let Some(sftp) = from_sftp {
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+            }
+            if let Some(sftp) = to_sftp {
+                metadata::close(sftp).await;
+            }
+            return Outcome::from_result(Err(error), 0, cancel);
+        }
+    }
     let mut meter = Meter::new(app, id, name, total, observation, to_sftp.clone());
     meter.settings = settings;
     if let Ok(mut row) = durable::Journal::get(app, id) {
@@ -3091,7 +3154,8 @@ async fn run(
         tracing::warn!(target: "files.transfer", transfer_id = id,
             "Original transfer data requests or writable handles remain unconfirmed");
     }
-    Outcome::from_result(result, meter.transferred, cancel)
+    let parked = app.state::<AppState>().transfers.park_ownership(id).await;
+    Outcome::from_result(result.and(parked), meter.transferred, cancel)
 }
 
 const MAX_TEXT: u64 = 2 * 1024 * 1024;

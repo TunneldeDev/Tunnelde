@@ -3,10 +3,12 @@ mod admission;
 mod errors;
 mod mutation;
 pub(crate) use super::journal::admission::Kind as MutationKind;
+pub(crate) use super::journal::admission::{TaskEndpoint, TransferTask};
 pub(crate) use mutation::{
     terminal_mutation_status, ActiveMutation, Mutation, MutationReceipt, MutationReference,
     Observation as MutationObservation,
 };
+pub(crate) use mutation::{MutationTarget, Transfer, TransferReference};
 mod projection;
 #[cfg(test)]
 mod tests;
