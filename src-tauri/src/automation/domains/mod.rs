@@ -41,7 +41,7 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
 pub(super) fn additional_contracts() -> Vec<Value> {
     let mut methods = preferences::methods();
     methods.push(logging::method());
-    methods.push(forwarding::method());
+    methods.extend(forwarding::methods());
     methods
 }
 
@@ -90,7 +90,7 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .extend(forwarding::tests::samples(&db, &host.id));
-        assert_eq!(samples["samples"].as_array().unwrap().len(), 10);
+        assert_eq!(samples["samples"].as_array().unwrap().len(), 16);
         samples["wireSamples"] = json!(crate::automation::transport::contract_samples().await);
         samples["errorSamples"] = contract::describe()["protocol"]["errors"]
             .as_array().unwrap().iter().map(|entry| {

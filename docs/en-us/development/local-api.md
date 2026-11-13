@@ -131,6 +131,50 @@ actually exits. Invalid parameters return `invalid_request` (exit 2); unavailabl
 or malformed storage and exhausted readers return `operation_rejected` (exit 1).
 The seven stable methods and existing plugin forwarding contracts are unchanged.
 
+## Confirmed forwarding changes (experimental)
+
+`forwards.save`, `forwards.remove` and `forwards.stop` request a native confirmation
+on the running desktop. The prompt identifies this as a request from a local
+program, shows the complete proposed/current rule and warns about non-loopback
+bind addresses. Possessing the local capability does not identify a particular
+calling program. Only one local forwarding confirmation can remain open; another
+request fails rather than replacing it. Consent expires after 120 seconds.
+
+```sh
+tunnelde-cli forwards save --params '{"id":"dfe523d7-6893-4387-a609-b9f4ed1e0b23","hostId":"SAVED_HOST_ID","name":"Database","revision":null,"direction":"local","bind":{"host":"127.0.0.1","port":15432},"target":{"host":"127.0.0.1","port":5432}}'
+tunnelde-cli forwards stop --params '{"id":"RULE_ID","revision":"OBSERVED_REVISION"}'
+tunnelde-cli forwards remove --params '{"id":"RULE_ID","revision":"OBSERVED_REVISION"}'
+```
+
+For creation, generate a fresh canonical lowercase UUID and explicitly send
+`revision: null`. Creation atomically requires the ID to be absent; repeating
+the request cannot overwrite an existing rule. To edit, send the observed ID and
+revision from `forwards.list`, with all desired rule fields. Saving does not
+start a connection. An existing rule must be stopped before editing or removal;
+the final commit checks this and the exact revision again after consent.
+
+Stop captures the running instance before consent and checks it again with the
+persisted revision at commit. If someone stops and restarts the rule while the
+dialog is open, the old approval cannot stop the replacement. Network cleanup
+keeps its own task after the stop commits, even if the caller disappears.
+
+Results have `outcome` (`saved`, `removed`, `stopped`, or `dismissed`), `id`, and
+`revision`. Save returns the newly committed revision. Other outcomes echo the
+reviewed revision; a dismissed creation has a null revision. A stale rule or
+running instance returns `stale_revision` (exit 5). An active edit/removal, absent
+running instance, busy/expired dialog, or cleanup failure returns
+`operation_rejected` (exit 1). Errors do not imply that no side effect occurred.
+After a lost reply or timeout, read current state before deciding what to do;
+never automatically retry with a new ID or revision. A late dialog response
+cannot write after the awaiting operation expires. Closing a CLI connection
+alone does not revoke a still-pending desktop confirmation.
+
+These methods accept no credentials, SSH session IDs, runtime IDs, or trust
+override. Public connection startup is a separate planned flow that must retain
+normal host-key and credential interaction. The installed CLI can use
+`call forwards.save` and the other generic forms too. These three methods remain
+experimental; they do not expand the seven-method stable promise.
+
 ## Structured log reading (experimental)
 
 `logs.read` reuses the persisted diagnostic/operation service used by plugins.
@@ -190,13 +234,17 @@ on both sides. Do not publish or copy capability files to another machine.
 
 The wire protocol allows one newline-terminated JSON request per TCP connection.
 Requests contain `version`, `id`, `token`, `method` and `params`. There are at most
-eight concurrent connections, a 10-second server deadline, 32 KiB request limit
+eight concurrent connections, a default 10-second server deadline, 32 KiB request limit
 and 4 MiB response limit. Excess connections close without a response; the CLI
 reports unavailable. Unknown methods and extra parameters fail explicitly.
 The CLI allows up to three seconds to connect, then ten seconds in total for
 request/response I/O. Partial output does not reset that deadline; each write is
 also limited to three seconds. A timeout after sending a write does not prove
 that the host rejected or rolled it back. Re-read its snapshot before retrying.
+Only the exact `forwards.save/remove/stop` methods extend authenticated execution
+to 135 seconds and the CLI exchange to 150 seconds. Their framing and
+authentication must still finish within ten seconds. Other methods, unknown
+method names and unauthenticated connections receive no extension.
 Request envelopes reject unknown fields. Response envelopes, error objects and
 endpoint descriptors accept additional metadata while retaining required field
 types, version/request correlation and exactly one of `result` or `error`.

@@ -1,5 +1,6 @@
 //! Independent read-only local forwarding contract over the shared service.
 mod contract;
+mod mutations;
 mod schema;
 #[cfg(test)]
 pub(super) mod tests;
@@ -10,6 +11,11 @@ use crate::{
     state::AppState,
 };
 pub(super) use schema::method;
+pub(super) fn methods() -> Vec<Value> {
+    let mut methods = vec![method()];
+    methods.extend(mutations::methods());
+    methods
+}
 use serde_json::Value;
 use std::sync::{Arc, LazyLock};
 use tauri::{AppHandle, Manager};
@@ -17,10 +23,7 @@ use tokio::sync::Semaphore;
 
 pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result<Value, Failure> {
     if method != "forwards.list" {
-        return Err(Failure::new(
-            "unknown_method",
-            "Unknown local forwarding method",
-        ));
+        return mutations::call(app, method, params).await;
     }
     let request = contract::parse(params)?;
     static CAPACITY: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(4)));
