@@ -133,7 +133,8 @@ function SavedForwardingSection({ host, embedded = false }: { host: Host; embedd
           onClose={controller.closeConnection}
           connectSession={
             connectingRules.authority
-              ? (request) => connectForwardingProvider(connectingRules.authority!, request)
+              ? (request, review) =>
+                  connectForwardingProvider(connectingRules.authority!, request, review)
               : undefined
           }
           onConnected={(connected) => controller.connected(connectingRules, connected)}

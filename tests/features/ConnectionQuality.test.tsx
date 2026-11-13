@@ -48,6 +48,15 @@ it("requires trust, starts only when requested and shows setup metrics instead o
   expect(screen.getByText(/not a bandwidth or packet-loss test/)).toBeTruthy();
 });
 
+it("uses the prompt's reviewed measurement and does not invoke an unbound host test", async () => {
+  const test = vi.fn().mockResolvedValue(normal);
+  render(<ConnectionQuality {...props} testConnection={test} />);
+  fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+  await screen.findByText("Fast connection setup");
+  expect(test).toHaveBeenCalledExactlyOnceWith(expect.any(String), credentials);
+  expect(mock.sshTestConnection).not.toHaveBeenCalled();
+});
+
 it("deduplicates requests, allows cancellation and translates the cancellation inline", async () => {
   let reject!: (error: unknown) => void;
   mock.sshTestConnection.mockReturnValue(

@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { apiMock } = vi.hoisted(() => ({
+const { apiMock, invokeMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
   apiMock: {
     connectionRoute: vi.fn(),
     saveConnectionRoute: vi.fn(),
@@ -18,6 +19,7 @@ const { apiMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/api/ipc", () => ({ api: apiMock }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 import "@/i18n/i18n";
 import { ConnectDialog } from "@/features/connect/ConnectDialog";
@@ -73,7 +75,10 @@ it("uses pinned native key verification without probing, trusting or testing an 
   );
   expect(apiMock.sshProbe).not.toHaveBeenCalled();
   expect(apiMock.sshTrust).not.toHaveBeenCalled();
+  expect(invokeMock).not.toHaveBeenCalled();
   expect(screen.queryByText("Connection quality")).toBeNull();
+  expect(screen.queryByRole("switch", { name: /remember/i })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Set up key login" })).toBeNull();
 });
 
 it("uses an exclusive requester and reports acceptance errors without leaving the dialog busy", async () => {
@@ -102,6 +107,7 @@ it("uses an exclusive requester and reports acceptance errors without leaving th
   expect(close).not.toHaveBeenCalled();
   expect(request).toHaveBeenCalledWith(
     expect.objectContaining({ background: true, purpose: "forwarding" }),
+    expect.objectContaining({ hostId: host.id, revision: expect.any(String) }),
   );
   accepted.mockResolvedValueOnce(undefined);
   fireEvent.click(screen.getByRole("button", { name: /^Connect$/ }));
@@ -109,6 +115,47 @@ it("uses an exclusive requester and reports acceptance errors without leaving th
 });
 
 beforeEach(() => {
+  // Native wire fixtures retain the existing dialog scenarios while the real
+  // review adapter and its revision propagation execute unchanged.
+  invokeMock.mockReset().mockImplementation(async (command, args) => {
+    const { review, credentials } = args;
+    switch (command) {
+      case "connection_review_prepare": {
+        const route = await apiMock.connectionRoute(args.displayed.id);
+        return {
+          review: { hostId: args.displayed.id, revision: "native-review" },
+          jumpHosts: route.jumpHosts.map((id: string) =>
+            useHosts.getState().hosts.find((host) => host.id === id),
+          ),
+        };
+      }
+      case "connection_review_probe":
+        return apiMock.sshProbe(
+          review.hostId,
+          Object.keys(credentials).length ? credentials : undefined,
+        );
+      case "connection_review_trust":
+        return {
+          info: await apiMock.sshTrust(
+            review.hostId,
+            args.fingerprint,
+            credentials,
+            args.expectedHostId,
+          ),
+          review: { ...review, revision: review.revision + ":approved" },
+        };
+      case "connection_review_test":
+        return apiMock.sshTestConnection(args.id, review.hostId, credentials);
+      case "connection_review_install_key":
+        return apiMock.sshInstallKey(review.hostId, args.password, credentials);
+      case "connection_review_credential":
+        return args.password === null
+          ? apiMock.credentialForget(args.hostId)
+          : apiMock.credentialSave(args.hostId, args.password);
+      default:
+        throw new Error(`Unmocked command: ${command}`);
+    }
+  });
   connect.mockReset().mockResolvedValue(null);
   useSsh.setState({ connect });
   apiMock.sshTrust.mockReset().mockResolvedValue({
@@ -141,6 +188,28 @@ beforeEach(() => {
 });
 
 describe("ConnectDialog", () => {
+  it("invalidates trust and clears typed credentials after a reviewed target changes", async () => {
+    connect.mockImplementationOnce(async (_request, onError) => {
+      onError({ code: "ssh", message: "ssh.connectionChanged" });
+      return null;
+    });
+    render(<ConnectDialog host={host} onClose={() => undefined} />);
+    await screen.findByText("Trusted");
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "old-target-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+    await screen.findByText(/Close and reopen this dialog/);
+    expect((screen.getByLabelText("Password") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Password") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByText("Trusted")).toBeNull();
+    expect(screen.queryByText("SHA256:abc")).toBeNull();
+    expect(screen.queryByText(/Trust the key to continue/)).toBeNull();
+    expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(
+      invokeMock.mock.calls.filter(([name]) => name === "connection_review_prepare"),
+    ).toHaveLength(1);
+  });
   it("connects discovered hosts with user credentials and never offers implicit vault persistence", async () => {
     const discovered: Host = {
       ...host,
@@ -167,6 +236,7 @@ describe("ConnectDialog", () => {
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({ hostId: discovered.id, password: "user-entered-secret" }),
       expect.any(Function),
+      expect.objectContaining({ key: expect.any(String), connect: expect.any(Function) }),
     );
     expect(apiMock.credentialSave).not.toHaveBeenCalled();
     expect(apiMock.sshInstallKey).not.toHaveBeenCalled();
@@ -189,6 +259,7 @@ describe("ConnectDialog", () => {
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({ hostId: host.id, background: true }),
       expect.any(Function),
+      expect.objectContaining({ key: expect.any(String), connect: expect.any(Function) }),
     );
     expect(openTerminal).not.toHaveBeenCalled();
     expect(openSftp).not.toHaveBeenCalled();
@@ -209,6 +280,7 @@ describe("ConnectDialog", () => {
       true,
     );
     expect(connect).not.toHaveBeenCalled();
+    await waitFor(() => expect(apiMock.sshTestConnection).toHaveBeenCalledOnce());
     unmount();
     expect(apiMock.sshCancelTest).toHaveBeenCalledExactlyOnceWith(
       apiMock.sshTestConnection.mock.calls[0]![0],
@@ -248,7 +320,7 @@ describe("ConnectDialog", () => {
     expect(connect).not.toHaveBeenCalled();
     fireEvent.click(trust);
     await waitFor(() =>
-      expect(apiMock.sshTrust).toHaveBeenCalledExactlyOnceWith("host-1", "SHA256:abc"),
+      expect(apiMock.sshTrust).toHaveBeenCalledExactlyOnceWith("host-1", "SHA256:abc", {}, host.id),
     );
     await waitFor(() =>
       expect((screen.getByRole("button", { name: "Connect" }) as HTMLButtonElement).disabled).toBe(
@@ -279,7 +351,7 @@ describe("ConnectDialog", () => {
       true,
     );
     expect(connect).not.toHaveBeenCalled();
-    expect(apiMock.sshTrust).toHaveBeenCalledExactlyOnceWith("host-1", "SHA256:abc");
+    expect(apiMock.sshTrust).toHaveBeenCalledExactlyOnceWith("host-1", "SHA256:abc", {}, host.id);
   });
 
   it("waits for a password after approving a key when no credential is saved", async () => {
@@ -298,6 +370,7 @@ describe("ConnectDialog", () => {
       expect(connect).toHaveBeenCalledWith(
         expect.objectContaining({ password: "secret", hostId: "host-1" }),
         expect.any(Function),
+        expect.objectContaining({ key: expect.any(String), connect: expect.any(Function) }),
       ),
     );
   });
@@ -312,7 +385,7 @@ describe("ConnectDialog", () => {
     fireEvent.click(install);
 
     await waitFor(() => {
-      expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "secret");
+      expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "secret", {});
     });
     await waitFor(() => {
       expect(useHosts.getState().hosts[0]?.authMethod).toBe("key");
@@ -338,7 +411,7 @@ describe("ConnectDialog", () => {
     await waitFor(() => expect((install as HTMLButtonElement).disabled).toBe(false));
     fireEvent.click(install);
     await waitFor(() =>
-      expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "setup-secret"),
+      expect(apiMock.sshInstallKey).toHaveBeenCalledWith("host-1", "setup-secret", {}),
     );
     await waitFor(() => expect(close).toHaveBeenCalledOnce());
   });

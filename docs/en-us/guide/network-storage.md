@@ -68,6 +68,19 @@ reviewed fingerprint only for the endpoint that was actually probed.
 Connection-quality samples share one captured route; configuration changes stop
 the measurement instead of retrying against the edited destination.
 
+The standard host connection dialog also retains its reviewed route between
+separate probes, trust approvals and authentication retries. If connection settings
+change, typed credentials are cleared and Connect is disabled. Close and reopen
+the dialog to review the new destination. Missing jump credentials or a failed
+authentication do not silently reset this review. Remembering or forgetting a
+password and setting up key login use the same reviewed configuration.
+
+Key setup uses a private temporary SSH connection and preserves existing
+`authorized_keys` entries. It does not open a terminal or publish a reusable
+session. If saved connection settings change after the server accepted the key
+addition, setup reports the change instead of overwriting those new settings;
+the key already added to the original server may remain there.
+
 ## Transfer performance
 
 In **Settings → Files → Transfers**, total upload and download limits are set
