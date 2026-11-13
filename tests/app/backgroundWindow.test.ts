@@ -18,6 +18,7 @@ import { usePluginSecurity } from "@/store/pluginSecurity";
 import { useMarketplace } from "@/store/marketplace";
 import { useSettingsProfiles } from "@/store/settingsProfiles";
 import { useTransferPanel } from "@/store/transferPanel";
+import { useRestartPrompt } from "@/store/restartPrompt";
 import { DEFAULT_SETTINGS } from "@/lib/prefs/defaults";
 import { runBackgroundTask } from "@/lib/tasks/background";
 import {
@@ -69,6 +70,7 @@ it("defers WebView teardown for hidden JavaScript work and suspends once it sett
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useRestartPrompt.setState({ open: false, observed: null });
   useTransferPanel.setState({ open: false, pinned: false, bounds: null });
   mocks.snapshot.mockResolvedValue(null);
   mocks.prepare.mockResolvedValue({ one: { sequence: 7, data: "screen" } });
@@ -136,6 +138,23 @@ beforeEach(() => {
 });
 
 describe("background window checkpoint", () => {
+  it("preserves a deferred restart notice through WebView teardown and metadata reconciliation", async () => {
+    const plan = { id: "same-plan", action: "apply" as const, restartRequested: false };
+    useRestartPrompt.getState().observe(plan);
+    useRestartPrompt.getState().close();
+    const observed = useRestartPrompt.getState().observed;
+    await suspendBackgroundWindow(74);
+    const snapshot = mocks.suspend.mock.calls[0]![1] as string;
+    useRestartPrompt.setState({ open: false, observed: null });
+    mocks.snapshot.mockResolvedValue(snapshot);
+    await restoreBackgroundSnapshot();
+    expect(useRestartPrompt.getState().observed).toBe(observed);
+    useRestartPrompt.getState().observe(plan);
+    expect(useRestartPrompt.getState().open).toBe(false);
+    useRestartPrompt.getState().observe({ ...plan, id: "new-plan" });
+    expect(useRestartPrompt.getState().open).toBe(true);
+  });
+
   it("preserves undo and redo across WebView recreation without writing editor history to disk", async () => {
     restoreEditorHistory();
     const document = editorDocument("draft")!;

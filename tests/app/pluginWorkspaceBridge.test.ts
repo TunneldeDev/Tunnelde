@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => ({
   listen: vi.fn(),
   hostsSnapshot: vi.fn(),
   sshSessions: vi.fn(),
-  storageRestartPending: vi.fn(),
+  storageRestartPlan: vi.fn(),
   storageStatus: vi.fn(),
   toast: vi.fn(),
   handlers: new Map<string, (event: { payload: unknown }) => void>(),
@@ -66,7 +66,7 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(undefined);
   mocks.hostsSnapshot.mockReset().mockResolvedValue({ hosts: [host], groups: [] });
   mocks.sshSessions.mockReset().mockResolvedValue([session]);
-  mocks.storageRestartPending.mockReset().mockResolvedValue(false);
+  mocks.storageRestartPlan.mockReset().mockResolvedValue(null);
   mocks.storageStatus.mockReset();
   mocks.toast.mockReset();
   mocks.handlers.clear();
@@ -88,7 +88,7 @@ beforeEach(() => {
   useHosts.setState({ hosts: [], groups: [], loaded: false });
   useSsh.setState({ sessions: [] });
   useStorage.setState({ status: null, restartPending: false, loading: false, busy: false });
-  useRestartPrompt.getState().close();
+  useRestartPrompt.setState({ open: false, observed: null });
   useEditors.setState({ entries: {} });
   useDialogs.getState().close();
   usePlugins.setState({ items: [{ id: "example.tool", name: "Installed tool" } as PluginInfo] });
@@ -258,7 +258,11 @@ describe("plugin workspace bridge authorization and live state", () => {
   });
 
   it("recovers storage metadata and the restart prompt alongside the other domain snapshots", async () => {
-    mocks.storageRestartPending.mockResolvedValue(true);
+    mocks.storageRestartPlan.mockResolvedValue({
+      id: "plugin-plan",
+      action: "apply",
+      restartRequested: false,
+    });
     await reconcilePluginWorkspace(new AbortController().signal);
     expect(useStorage.getState().restartPending).toBe(true);
     expect(useRestartPrompt.getState().open).toBe(true);
@@ -267,11 +271,15 @@ describe("plugin workspace bridge authorization and live state", () => {
 
   it("handles live storage invalidations using the same metadata reconciliation", async () => {
     cleanup = await wirePluginWorkspaceBridge();
-    mocks.storageRestartPending.mockResolvedValue(true);
+    mocks.storageRestartPlan.mockResolvedValue({
+      id: "plugin-plan",
+      action: "apply",
+      restartRequested: false,
+    });
     emit("plugin://domain-changed", { domain: "storage" });
     await settle();
     expect(useRestartPrompt.getState().open).toBe(true);
-    mocks.storageRestartPending.mockResolvedValue(false);
+    mocks.storageRestartPlan.mockResolvedValue(null);
     emit("plugin://domain-changed", { domain: "storage" });
     await settle();
     expect(useStorage.getState().restartPending).toBe(false);

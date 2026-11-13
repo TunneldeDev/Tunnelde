@@ -6,6 +6,21 @@ use super::{
     transport::Output,
 };
 use serde_json::{json, Value};
+pub(in crate::ssh::files) fn admission_fixture(
+    directory: &std::path::Path,
+) -> crate::ssh::session::SessionIdentity {
+    let mut journal = super::journal::Journal::create(directory).unwrap();
+    journal.enable_admission().unwrap();
+    let authority = authority();
+    binding(&authority, &prepared(&authority)).destination
+}
+pub(in crate::ssh::files) fn admission_claim_count(directory: &std::path::Path) -> usize {
+    super::journal::Journal::open(directory)
+        .unwrap()
+        .legacy_claims()
+        .unwrap()
+        .len()
+}
 pub(super) fn authority() -> Authority {
     let identity = ObjectIdentity {
         platform: "linux".into(),
@@ -24,6 +39,24 @@ pub(super) fn authority() -> Authority {
         storage_root: ObjectIdentity {
             object: "4".into(),
             ..identity
+        },
+    }
+}
+pub(super) fn setup_plan() -> super::journal::setup::Plan {
+    let authority = authority();
+    super::journal::setup::Plan {
+        destination: binding(&authority, &prepared(&authority)).destination,
+        context: authority.context,
+        install_directory: "/home/user/.local/share/tunnelde/helpers/0.28.0".into(),
+        selection: super::journal::Selection {
+            executable: "/home/user/.local/share/tunnelde/helpers/0.28.0/agent".into(),
+            directory: "/workspace/.tunnelde/native-saves".into(),
+            protocol: super::contracts::PROTOCOL.into(),
+        },
+        package: super::journal::setup::Package {
+            version: "0.28.0".into(),
+            platform: "linux-x86_64".into(),
+            sha256: "a".repeat(64),
         },
     }
 }

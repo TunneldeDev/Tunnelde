@@ -5,6 +5,9 @@ use std::ops::Range;
 use std::sync::atomic::AtomicU64;
 
 mod local_io;
+mod observation;
+use super::native_save::runtime::{terminal_mutation_status, MutationObservation};
+use observation::Handle;
 
 #[cfg(test)]
 mod live_tests;
@@ -18,10 +21,11 @@ pub(super) struct DataSession {
     read_size: usize,
     write_size: usize,
     copy_data: bool,
+    writes: observation::Writes,
 }
 
 enum Backend {
-    Sftp(RawSftpSession),
+    Sftp(Arc<RawSftpSession>),
     Compressed(super::compressed::Session),
 }
 
@@ -30,7 +34,7 @@ enum Backend {
 /// whose OPEN acknowledgement has not arrived yet. A failed sample is discarded.
 pub(super) struct SampleReader<'a> {
     session: &'a DataSession,
-    handle: Option<String>,
+    handle: Option<Handle>,
     finished: bool,
 }
 
@@ -76,7 +80,7 @@ impl<'a> SampleReader<'a> {
 
     pub(super) async fn finish(mut self) -> AppResult<()> {
         self.session
-            .close(self.handle.as_deref().expect("sampling handle"))
+            .close(self.handle.as_ref().expect("sampling handle"))
             .await?;
         self.finished = true;
         Ok(())
@@ -108,29 +112,47 @@ impl DataSession {
     ) -> AppResult<DirectoryCreation> {
         match &self.backend {
             Backend::Sftp(raw) => {
-                match raw
-                    .mkdir(
-                        path,
-                        russh_sftp::protocol::FileAttributes {
-                            permissions: Some(0o700),
-                            ..Default::default()
-                        },
-                    )
+                let raw = raw.clone();
+                let path = path.to_owned();
+                self.writes
+                    .request(async move {
+                        match raw
+                            .mkdir(
+                                path,
+                                russh_sftp::protocol::FileAttributes {
+                                    permissions: Some(0o700),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                        {
+                            Ok(_) => Ok(DirectoryCreation::Created),
+                            Err(russh_sftp::client::error::Error::Status(status))
+                                if terminal_mutation_status(&status) =>
+                            {
+                                Ok(DirectoryCreation::Rejected(map_sftp(
+                                    russh_sftp::client::error::Error::Status(status),
+                                )))
+                            }
+                            Err(error) => Err(error),
+                        }
+                    })
                     .await
-                {
-                    Ok(_) => Ok(DirectoryCreation::Created),
-                    Err(error @ russh_sftp::client::error::Error::Status(_)) => {
-                        Ok(DirectoryCreation::Rejected(map_sftp(error)))
-                    }
-                    Err(error) => Err(map_sftp(error)),
-                }
             }
             Backend::Compressed(worker) => worker.create_private_directory(path).await,
         }
     }
 
+    #[cfg(test)]
     pub async fn new(
         stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    ) -> AppResult<Self> {
+        Self::new_observed(stream, MutationObservation::default()).await
+    }
+
+    async fn new_observed(
+        stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        observation: MutationObservation,
     ) -> AppResult<Self> {
         let mut raw = RawSftpSession::new_with_config(
             stream,
@@ -166,7 +188,8 @@ impl DataSession {
             .max(1) as usize;
         raw.set_limits(limits);
         Ok(Self {
-            backend: Backend::Sftp(raw),
+            backend: Backend::Sftp(Arc::new(raw)),
+            writes: observation::Writes::new(observation),
             read_size,
             write_size,
             copy_data: version
@@ -181,11 +204,12 @@ impl DataSession {
         session: &str,
         compress: bool,
         sftp: &SftpSession,
+        observation: MutationObservation,
     ) -> AppResult<Self> {
         if compress {
             if let Ok(Ok(worker)) = tokio::time::timeout(
                 std::time::Duration::from_secs(5),
-                super::compressed::Session::connect(app, session, sftp),
+                super::compressed::Session::connect(app, session, sftp, observation.clone()),
             )
             .await
             {
@@ -195,6 +219,7 @@ impl DataSession {
                     read_size: 256 * 1024,
                     write_size: 256 * 1024,
                     copy_data: false,
+                    writes: observation::Writes::new(observation),
                 });
             }
             tracing::debug!("Compression worker unavailable; using SFTP data channel");
@@ -211,37 +236,32 @@ impl DataSession {
                 .request_subsystem(true, "sftp")
                 .await
                 .map_err(|e| AppError::Ssh(format!("sftp.subsystem: {e}")))?;
-            Self::new(channel.into_stream()).await
+            Self::new_observed(channel.into_stream(), observation).await
         })
         .await
         .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
     }
 
-    async fn open(&self, path: &str, write: bool) -> AppResult<String> {
+    async fn open(&self, path: &str, write: bool) -> AppResult<Handle> {
         match &self.backend {
-            Backend::Compressed(worker) => worker.open(path, write).await,
-            Backend::Sftp(raw) => Ok(raw
-                .open(
+            Backend::Compressed(worker) => worker.open(path, write).await.map(Handle::unowned),
+            Backend::Sftp(raw) if write => self.writes.open(raw.clone(), path.to_owned()).await,
+            Backend::Sftp(raw) => Ok(Handle::unowned(
+                raw.open(
                     path,
-                    if write {
-                        OpenFlags::WRITE
-                    } else {
-                        OpenFlags::READ
-                    },
+                    OpenFlags::READ,
                     russh_sftp::protocol::FileAttributes::empty(),
                 )
                 .await
                 .map_err(map_sftp)?
-                .handle),
+                .handle,
+            )),
         }
     }
-    async fn close(&self, handle: &str) -> AppResult<()> {
+    async fn close(&self, handle: &Handle) -> AppResult<()> {
         match &self.backend {
             Backend::Compressed(worker) => worker.close(handle).await,
-            Backend::Sftp(raw) => {
-                raw.close(handle).await.map_err(map_sftp)?;
-                Ok(())
-            }
+            Backend::Sftp(raw) => handle.close(raw.clone()).await,
         }
     }
 
@@ -270,7 +290,11 @@ impl DataSession {
         match &self.backend {
             Backend::Compressed(worker) => worker.write(handle, offset, data).await,
             Backend::Sftp(raw) => {
-                raw.write(handle, offset, data).await.map_err(map_sftp)?;
+                let raw = raw.clone();
+                let handle = handle.to_owned();
+                self.writes
+                    .request(async move { raw.write(handle, offset, data).await })
+                    .await?;
                 Ok(())
             }
         }
@@ -298,13 +322,16 @@ impl DataSession {
         data.extend_from_slice(&(target.len() as u32).to_be_bytes());
         data.extend_from_slice(target.as_bytes());
         data.extend_from_slice(&offset.to_be_bytes());
-        match raw.extended("copy-data", data).await.map_err(map_sftp)? {
-            Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
-            Packet::Status(status) => {
-                Err(map_sftp(russh_sftp::client::error::Error::Status(status)))
-            }
-            _ => Err(map_sftp(russh_sftp::client::error::Error::UnexpectedPacket)),
-        }
+        let raw = raw.clone();
+        self.writes
+            .request(async move {
+                match raw.extended("copy-data", data).await? {
+                    Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
+                    Packet::Status(status) => Err(russh_sftp::client::error::Error::Status(status)),
+                    _ => Err(russh_sftp::client::error::Error::UnexpectedPacket),
+                }
+            })
+            .await
     }
 }
 
@@ -312,6 +339,12 @@ impl DataSession {
 pub(super) struct Sessions {
     pub source: Option<Arc<DataSession>>,
     pub target: Option<Arc<DataSession>>,
+}
+
+pub(super) struct Plan<'a> {
+    pub settings: &'a crate::settings::Settings,
+    pub total_size: u64,
+    pub observation: MutationObservation,
 }
 
 impl Sessions {
@@ -323,11 +356,15 @@ impl Sessions {
         app: &AppHandle,
         source: &Endpoint,
         target: &Endpoint,
-        settings: &crate::settings::Settings,
+        plan: Plan<'_>,
         source_sftp: Option<&SftpSession>,
         target_sftp: Option<&SftpSession>,
-        total_size: u64,
     ) -> AppResult<Self> {
+        let Plan {
+            settings,
+            total_size,
+            observation,
+        } = plan;
         // SFTP handles only belong to their channel. Share one negotiated data
         // channel for a same-session server copy; never infer identity by address.
         let mut candidate = if settings.transfer_optimization
@@ -340,6 +377,7 @@ impl Sessions {
                     source.session.as_deref().expect("remote source"),
                     false,
                     source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                    observation.clone(),
                 )
                 .await?,
             );
@@ -366,6 +404,7 @@ impl Sessions {
                     source.session.as_deref().expect("remote source"),
                     false,
                     source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                    observation.clone(),
                 )
                 .await?,
             ));
@@ -396,6 +435,7 @@ impl Sessions {
                     id,
                     compress,
                     source_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                    observation.clone(),
                 )
                 .await?,
             )),
@@ -408,6 +448,7 @@ impl Sessions {
                     id,
                     compress,
                     target_sftp.ok_or_else(|| AppError::internal("sftp.channel"))?,
+                    observation,
                 )
                 .await?,
             )),
@@ -421,10 +462,11 @@ pub(super) struct Files<'a> {
     sessions: &'a Sessions,
     source: &'a Endpoint,
     target: &'a Endpoint,
-    source_handle: Option<String>,
-    target_handle: Option<String>,
+    source_handle: Option<Handle>,
+    target_handle: Option<Handle>,
     throttle: Option<bandwidth::Throttle>,
     unsettled_write: AtomicBool,
+    observation: MutationObservation,
 }
 
 /// A dropped request may still run on the server. Drain its handle before
@@ -442,7 +484,7 @@ impl Drop for WriteAttempt<'_> {
     }
 }
 
-async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<String>) -> AppResult<()> {
+async fn close_handle(session: &Option<Arc<DataSession>>, handle: Option<Handle>) -> AppResult<()> {
     if let (Some(session), Some(handle)) = (session, handle) {
         tokio::time::timeout(std::time::Duration::from_secs(5), session.close(&handle))
             .await
@@ -455,9 +497,11 @@ async fn complete_packet(
     result: AppResult<(u64, Vec<u8>, usize)>,
     writer: &mut Option<local_io::Writer>,
     transferred: &AtomicU64,
+    observation: &MutationObservation,
 ) -> AppResult<()> {
     let (offset, bytes, length) = result?;
     if let Some(writer) = writer {
+        observation.authorize()?;
         writer.write(offset, &bytes).await?;
     }
     transferred.fetch_add(length as u64, Ordering::Relaxed);
@@ -522,6 +566,7 @@ impl<'a> Files<'a> {
             target_handle,
             throttle: None,
             unsettled_write: AtomicBool::new(false),
+            observation: MutationObservation::default(),
         })
     }
 
@@ -530,15 +575,21 @@ impl<'a> Files<'a> {
         self
     }
 
+    pub(super) fn with_observation(mut self, observation: MutationObservation) -> Self {
+        self.observation = observation;
+        self
+    }
+
     pub async fn finish_cancellable(self, interrupted: bool, cancel: &AtomicBool) -> AppResult<()> {
-        if self.unsettled_write.load(Ordering::SeqCst) {
-            // An interrupted WRITE may still mutate the target. Keep the
-            // existing bounded drain rather than trusting its partial length.
+        if self.target_handle.is_some() || self.unsettled_write.load(Ordering::SeqCst) {
+            // A writable OPEN remains owned until its original CLOSE replies,
+            // including when every WRITE acknowledged or cancellation happened
+            // between packets. Skipping CLOSE would make an orderly pause
+            // permanently unknown. Each handle drain has its own five-second
+            // bound; cancellation stops new data, not original completion.
             self.finish(interrupted).await
         } else {
-            // Every destination WRITE has acknowledged (or none was sent).
-            // A delayed CLOSE cannot introduce additional bytes. Do not abort
-            // a data channel shared by other files in this directory transfer.
+            // Read-only source completion does not hold remote write authority.
             interruptible(Some(cancel), self.finish(interrupted)).await
         }
     }
@@ -680,6 +731,7 @@ impl<'a> Files<'a> {
         stop: &AtomicBool,
         transferred: &AtomicU64,
     ) -> AppResult<()> {
+        self.observation.authorize()?;
         let mut reader = if self.sessions.source.is_none() {
             Some(local_io::reader(&self.source.path, &range).await?)
         } else {
@@ -734,7 +786,7 @@ impl<'a> Files<'a> {
                             break;
                         }
                         Some(result) = pending.next(), if !pending.is_empty() => {
-                            if let Err(failure) = complete_packet(result, &mut writer, transferred).await {
+                            if let Err(failure) = complete_packet(result, &mut writer, transferred, &self.observation).await {
                                 error.get_or_insert(failure);
                                 stop.store(true, Ordering::SeqCst);
                                 break;
@@ -743,7 +795,9 @@ impl<'a> Files<'a> {
                     }
                 }
             } else if let Some(result) = pending.next().await {
-                if let Err(failure) = complete_packet(result, &mut writer, transferred).await {
+                if let Err(failure) =
+                    complete_packet(result, &mut writer, transferred, &self.observation).await
+                {
                     error.get_or_insert(failure);
                     stop.store(true, Ordering::SeqCst);
                 }

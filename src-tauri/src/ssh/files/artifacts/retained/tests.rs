@@ -319,7 +319,13 @@ async fn late_protocol_success_cleans_only_its_old_empty_directory_after_rotatio
             serde_json::to_value(active(&conn, &to)).unwrap(),
             serde_json::to_value(next).unwrap()
         );
-        cleanup_created(&observer, &record.directory).await.unwrap();
+        cleanup_created(
+            &observer,
+            &record.directory,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         assert!(!tree.lock().unwrap().directories.contains(&path.path));
         assert!(tree.lock().unwrap().directories.contains(&fresh.path));
         journal::remove(
@@ -368,7 +374,13 @@ async fn acknowledged_cleanup_preserves_foreign_contents_types_and_permissions()
         }
         let observer = client(tree.clone(), None).await;
         assert_eq!(
-            cleanup_created(&observer, "/old").await.is_ok(),
+            cleanup_created(
+                &observer,
+                "/old",
+                &native_save::runtime::MutationObservation::default()
+            )
+            .await
+            .is_ok(),
             matches!(kind, "missing" | "empty"),
             "{kind}"
         );

@@ -551,6 +551,13 @@ fn symlink_data_is_rejected_without_reading_outside_the_category() {
 fn native_save_recovery_directory_moves_with_database_and_cannot_be_left_behind() {
     let (root, paths) = workspace();
     let directory = paths.dir(Category::Database).join("native-file-saves");
+    std::fs::write(
+        paths
+            .dir(Category::Database)
+            .join("native-file-saves.initialized"),
+        b"original initialization",
+    )
+    .unwrap();
     std::fs::create_dir(&directory).unwrap();
     let files = [
         "recovery.sqlite3",
@@ -571,6 +578,10 @@ fn native_save_recovery_directory_moves_with_database_and_cannot_be_left_behind(
     let mut config = config::Config::default();
     migration::schedule(&paths, &mut config, vec![change.clone()]).unwrap();
     migration::apply(&paths, &mut config).unwrap();
+    assert_eq!(
+        std::fs::read(change.target.join("native-file-saves.initialized")).unwrap(),
+        b"original initialization"
+    );
     for name in files {
         assert_eq!(
             std::fs::read(change.target.join("native-file-saves").join(name)).unwrap(),
@@ -613,5 +624,33 @@ fn native_save_recovery_directory_moves_with_database_and_cannot_be_left_behind(
             name.as_bytes()
         );
     }
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn missing_recovery_directory_cannot_hide_its_initialization_marker_via_blank_migration() {
+    let (root, paths) = workspace();
+    std::fs::write(
+        paths
+            .dir(Category::Database)
+            .join("native-file-saves.initialized"),
+        b"retained marker",
+    )
+    .unwrap();
+    let mut selected = change(&root, Category::Database);
+    selected.migrate = false;
+    assert!(migration::validate(&paths, &[selected.clone()])
+        .unwrap_err()
+        .to_string()
+        .contains("storage.nativeRecoveryRequiresMigration"));
+    selected.migrate = true;
+    let mut config = config::Config::default();
+    migration::schedule(&paths, &mut config, vec![selected.clone()]).unwrap();
+    migration::apply(&paths, &mut config).unwrap();
+    assert_eq!(
+        std::fs::read(selected.target.join("native-file-saves.initialized")).unwrap(),
+        b"retained marker"
+    );
+    assert!(!selected.target.join("native-file-saves").exists());
     std::fs::remove_dir_all(root).unwrap();
 }

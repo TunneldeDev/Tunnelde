@@ -3,6 +3,7 @@
 use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state::AppState};
 use tauri::{AppHandle, Emitter, Manager};
 pub mod contract;
+pub(crate) mod query;
 mod repository;
 mod runtime;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
@@ -35,25 +36,16 @@ impl Forwarding<'_> {
             .collect())
     }
     fn list_revisioned(&self) -> AppResult<Vec<RevisionedInfo>> {
-        let rules = self.rules()?;
-        let active = self.registry.snapshot()?;
-        Ok(rules
-            .into_iter()
-            .map(|entry| {
-                let rule = entry.rule;
-                let runtime = active.get(&rule.id);
-                let session_id = runtime.map(|(session, _)| session.clone());
-                RevisionedInfo {
-                    runtime_id: runtime.map(|(_, identity)| identity.clone()),
-                    info: ForwardInfo {
-                        active: session_id.is_some(),
-                        session_id,
-                        rule,
-                    },
-                    revision: entry.revision,
-                }
-            })
-            .collect())
+        self.registry.inspect(|runtime| {
+            Ok(self
+                .rules()?
+                .into_iter()
+                .map(|entry| {
+                    let active = runtime(&entry.rule.id);
+                    query::join(entry, active)
+                })
+                .collect())
+        })
     }
     fn save(&self, rule: ForwardRule) -> AppResult<ForwardRule> {
         Ok(self.save_checked(rule, None)?.rule)

@@ -3,6 +3,67 @@ use super::workers::*;
 use super::*;
 
 #[tokio::test]
+async fn cleanup_timeout_remains_unknown_even_after_directory_disappears() {
+    for after_effect in [false, true] {
+        let fixture = Arc::new(Fixture::new());
+        let sftp = Arc::new(fixture.client().await);
+        let mut record = fixture.record();
+        staged_save(
+            &sftp,
+            &fixture.replacement().await.unwrap(),
+            "/note.txt",
+            "/note.txt",
+            "saved",
+            "original",
+            &mut record,
+        )
+        .await
+        .unwrap();
+        sftp.set_timeout(1);
+        if after_effect {
+            fixture.probe.hold_rmdir_after.store(true, Ordering::SeqCst);
+        } else {
+            fixture.probe.hold_rmdir.store(true, Ordering::SeqCst);
+        }
+        let checkpoint = Arc::new(Mutex::new(None));
+        let worker = {
+            let sftp = sftp.clone();
+            let checkpoint = checkpoint.clone();
+            tokio::spawn(async move {
+                let result = cleanup(&sftp, &mut record, |r| {
+                    *checkpoint.lock().unwrap() = Some(r.clone());
+                    Ok(())
+                })
+                .await;
+                (record, result)
+            })
+        };
+        notified(&fixture.probe.rmdir_started).await;
+        let (mut record, result) = tokio::time::timeout(std::time::Duration::from_secs(4), worker)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(result.is_err());
+        assert!(recovery::require_settled(&record).is_err());
+        let restored = checkpoint.lock().unwrap().clone().unwrap();
+        assert!(recovery::require_settled(&restored).is_err());
+        fixture.probe.release_rmdir.notify_one();
+        until(|| !fixture.root.join(".tunnelde-save-test").exists()).await;
+        let other = fixture.client().await;
+        assert_eq!(
+            cleanup(&other, &mut record, |_| Ok(()))
+                .await
+                .unwrap_err()
+                .to_string(),
+            "editor.remoteOutcomeUnknown"
+        );
+        assert_eq!(fixture.disk(), "saved");
+        other.close().await.unwrap();
+        sftp.close().await.unwrap();
+    }
+}
+
+#[tokio::test]
 async fn unknown_mutations_survive_missing_paths_and_late_server_effects() {
     for (phase, after_effect) in [
         ("create", false),

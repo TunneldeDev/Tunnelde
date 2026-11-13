@@ -7,6 +7,9 @@ use super::{
     transport::{self, Exchange},
 };
 use std::sync::{Arc, Mutex};
+mod mutation;
+pub(super) use mutation::Worker as LegacyWorker;
+mod setup;
 mod storage;
 use storage::Storage;
 use tokio::sync::Semaphore;
@@ -30,6 +33,7 @@ pub(super) struct Service<S> {
     storage: Arc<Storage<S>>,
     requests: Semaphore,
     io: Arc<Semaphore>,
+    legacy_workers: Arc<Mutex<std::collections::HashSet<String>>>,
 }
 impl<S: Secrets + 'static> Service<S> {
     pub fn new(journal: Journal, secrets: S) -> Self {
@@ -37,6 +41,7 @@ impl<S: Secrets + 'static> Service<S> {
             storage: Arc::new(Storage::new(journal, secrets)),
             requests: Semaphore::new(4),
             io: Arc::new(Semaphore::new(4)),
+            legacy_workers: Arc::new(Mutex::new(std::collections::HashSet::new())),
         }
     }
     async fn blocking<T: Send + 'static>(
@@ -60,9 +65,15 @@ impl<S: Secrets + 'static> Service<S> {
     pub async fn records(&self) -> journal::Result<Vec<Record>> {
         self.blocking(|storage| storage.journal()?.records()).await
     }
-    // New production writes stay disabled until bilateral durable admission and
-    // installation consent are integrated. Recovery must not mint a new submit.
-    #[cfg(test)]
+    pub async fn setups(&self) -> journal::Result<Vec<journal::setup::Record>> {
+        self.blocking(|storage| storage.journal()?.setups()).await
+    }
+    pub async fn discard_setup(&self, expected: &journal::setup::Record) -> journal::Result<()> {
+        let expected = expected.clone();
+        self.blocking(move |storage| storage.journal()?.discard_setup(&expected))
+            .await
+    }
+    // Only a host-owned, explicitly initialized setup may call this in production.
     pub async fn reserve(&self, binding: Binding, prepared: &Prepared) -> journal::Result<Record> {
         if !binding.matches(&binding.authority, prepared) {
             return Err(journal::Error::Unrecognized);

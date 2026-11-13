@@ -53,13 +53,29 @@ fn discovery_has_bounded_versioned_domain_contracts() {
             && names.contains("hosts.list")
             && names.contains("sessions.list")
     );
-    for method in methods {
+    for method in methods
+        .iter()
+        .filter(|method| method["stability"] == "stable")
+    {
         assert_eq!(method["stability"], "stable");
         assert_eq!(method["since"], "0.38.0-beta.1");
         assert!(["read", "write"].contains(&method["effect"].as_str().unwrap()));
         assert_eq!(method["inputSchema"]["additionalProperties"], false);
         assert_eq!(method["resultSchema"]["type"], "object");
     }
+    assert_eq!(
+        methods
+            .iter()
+            .filter(|method| method["stability"] == "stable")
+            .count(),
+        7
+    );
+    let logs = methods
+        .iter()
+        .find(|method| method["name"] == "logs.read")
+        .unwrap();
+    assert_eq!(logs["stability"], "experimental");
+    assert_eq!(logs["since"], serde_json::Value::Null);
 }
 
 #[test]

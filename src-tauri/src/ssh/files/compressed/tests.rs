@@ -1,6 +1,7 @@
 use super::*;
 use std::time::Duration;
 use tokio::io::{duplex, DuplexStream};
+mod observation;
 
 #[cfg(unix)]
 #[test]

@@ -88,6 +88,222 @@ when new reservations can be admitted concurrently. The current checks do not
 fence arbitrary external filesystem writers or prove symlink identity survives a
 later mutation. They do not settle unknown legacy SFTP requests.
 
+The internal version-2 journal adds legacy mutation claims in the same SQLite
+authority. Format upgrade is explicit and transactional; reopening version 1
+does not upgrade it. Both namespaces share the 128-record and four-dispatched-worker
+limits. Native and legacy admission check each other under `BEGIN IMMEDIATE`,
+including original helper state and ancestor paths. Claims retain the captured
+destination, requested/canonical paths, owner generation, revision and dispatch
+checkpoint. Only the original worker receives a single-use settlement permit;
+ordinary retirement cannot delete a potentially dispatched claim. A lost result
+remains an attention task with logs, without offering an unsupported remote query
+or discard action.
+
+Remote create/mkdir/rename/delete and editor save/retained cleanup workers use
+this internal authority when an explicitly upgraded store exists. Frontend
+delivery timeout does not cancel an already admitted primitive mutation: its
+worker observes the original operation for up to five minutes. Primitive workers
+track each original mutation request separately. A recognized terminal SFTP
+rejection releases its claim while preserving the operation error; it does not
+prove that no partial filesystem changes occurred. Transport loss, timeouts,
+malformed responses and uninstrumented composite-operation failures retain the
+claim. A later successful request cannot settle an earlier unknown request.
+Read-only preparation failures do not invent a pending mutation. Editor claims
+are released only after confirmed staging cleanup and removal of the original
+recovery record; recording a deferred cleanup is not completion.
+
+When every original request has a recognized terminal reply, the original worker
+may park its exact editor claim for cleanup. The legacy receipt stores that
+claim's journal and operation identity. A continuation must match the original
+owner/generation, authenticated destination and lexical/canonical paths; a
+transactional revision check admits only one resumed worker. Cancellation keeps
+the original reservation. Every cleanup mutation persists its own possible-send
+checkpoint before submission. A lost cleanup reply remains unknown even when a
+later probe finds the directory absent; a new cleanup attempt cannot erase it.
+Only confirmed cleanup and removal of the original receipt release the claim.
+
+Plugin create, mkdir, rename and delete workers retain their original runtime and
+request authorization. After the durable possible-dispatch checkpoint, they
+re-resolve reserved lexical/canonical paths, check the authenticated destination,
+and admit cancellation and authorization before polling a mutation. Recursive
+delete and directory merge recheck authorization before each later mutation,
+after awaited read-only preparation. Revocation stops subsequent steps; it does
+not undo an already admitted request or partially completed operation. Closing an
+already admitted file handle still observes its original completion. Preparation
+or final admission failure releases a claim only when no mutation was polled.
+
+The internal transfer adapter can reserve all mutated remote endpoints in one
+transaction. A live transfer can extend its exact reservation with generated
+staging or backup paths before using them. Extension retains the original owner,
+authenticated endpoint and existing paths, checks all competing native and legacy
+reservations in the same transaction, and advances the dispatch revision. It
+neither locks unrelated siblings nor grants permission to submit a request.
+Losing extension delivery leaves the older settlement permit stale and the
+expanded reservation intact. Each claim remains bounded to four scopes and 32
+stored paths; this is not an unbounded directory-transfer inventory. Transfer and
+artifact-cleanup paths now use this reservation; complete mutation-boundary and
+desktop lifecycle coverage remain required.
+
+The private transfer continuation retains the journal/claim identity, task owner
+and generation, exact revision and immutable original roots. The private journal
+stores these roots independently of the caller's continuation reference.
+Generated paths may extend a claim but cannot become new task roots; a caller
+cannot shorten a multi-path task either. Older internal transfer records without
+recorded original roots remain reserved and cannot adopt roots from a new caller.
+Before parking or settlement, the original attempt atomically closes its request
+epoch, and can do so only
+after every observed request and writable handle is settled. Old queued raw,
+buffered and compressed writers are then rejected before submitting a mutation.
+A resumed attempt revalidates the original authenticated endpoints, roots and
+generated-path coverage under a bounded resolution timeout, wins the exact
+durable dispatch revision and receives a fresh request epoch. Preparation or
+cancellation cannot release the parked claim; uncertain original requests keep
+it dispatched. A temporarily pending reply does not consume the original worker:
+it retains its permit and may park only after observing that reply. A sealed
+attempt cannot extend paths, park or settle a second time. Persisted task
+association now ties this state machine to transfer run and artifact cleanup;
+remaining lifecycle boundaries below still gate production enablement.
+
+Actual range channels now share one in-memory observation per transfer, including
+parallel directory workers, compressed channels, archive writes and detached
+staging-directory creation. Each raw SFTP mutation is observed before its error
+is mapped for presentation. A writable OPEN retains a separate handle receipt
+until its original successful CLOSE; rejected CLOSE, channel shutdown or a later
+successful write cannot release it. The compressed protocol worker tracks original
+request ids and validates mutation-reply shapes before delivery, so it can observe
+a late terminal reply even after the caller cancels. Raw range-channel WRITE,
+COPY_DATA and MKDIR also retain their original worker and channel after delivery
+is cancelled. Writable OPEN returns an owned handle: abandoned delivery closes
+that exact handle once its original reply arrives, and a cancelled CLOSE wait
+does not discard its original response observer. Handle ownership binds the
+actual channel and individual OPEN, so reused handle bytes cannot settle a
+different OPEN. A transport failure or protocol timeout still retains uncertainty;
+only the original typed reply can settle its request. Pseudo connection statuses
+are not terminal MKDIR rejections.
+Ordinary metadata-channel writable files and transfer-directory creation share
+the same observation as the range workers. Writable OPEN remains owned until
+its own successful CLOSE, including empty staging files and resumed writers.
+Buffered write/flush/close failures are retained conservatively because the
+high-level file adapter exposes IO errors rather than typed SFTP replies.
+Cancellation before directory creation creates no mutation receipt; cancellation
+after dispatch waits for the original MKDIR reply. Dropping that wait retains
+uncertainty even when a later metadata probe sees the resulting directory.
+The runtime transfer registry now owns the request epoch used by metadata and
+data workers. Publication rename, atomic replacement, staging-file unlink and
+staging-directory removal observe typed original replies before mapping errors.
+An unexpected extension packet cannot acknowledge a replacement. Completion or
+result-cache eviction retains unconfirmed epochs independently; re-registering
+the same task cannot forget them. Cleanup atomically seals the previous settled
+epoch before obtaining a new one, excluding queued old adapters. A late original
+reply can permit that transition; an unrelated probe or later success cannot.
+Publication, recovery rename, atomic replacement and artifact cleanup now retain
+their original protocol workers after cancellation or expiration of the caller's
+wait. Transfer and cleanup teardown cannot close an owned metadata channel while
+that worker remains live. Its original typed terminal reply can settle the request;
+transport shutdown, malformed replies and protocol timeouts still remain unknown.
+Runtime retention complements the durable task/claim association; the private
+journal governs crash recovery independently of result caches. Final mutation
+authorization and complete lifecycle coverage remain required. Restarting the
+application does not establish completion of an unconfirmed transfer.
+
+The private transfer claim can now bind an immutable task ID and operation intent
+in its creation transaction: both endpoint paths, authenticated remote identities,
+copy/move and overwrite options, and plugin ownership. Generated-path extensions,
+parking and continuation preserve that original intent. A task lookup after
+reopening requires an exact match; historical unbound claims cannot adopt a task
+from application history, and a dispatched claim cannot be replayed. An absent
+claim is not a terminal receipt; only an original-worker terminal claim authorizes
+the local projection handoff described below.
+
+The transfer run and explicit artifact-cleanup paths now admit the original
+private task using the registry's own request epoch. A synced application-store
+reference is written before dispatch; it cannot replace the private task or
+authorize a replay when that private record is missing. Registry release retains
+the actual original permit, including while a detached protocol request awaits
+its reply. A subsequent cleanup attempt can park that permit only after the
+original epoch settles. Staging and backup paths enroll through that same permit;
+nested copy destinations recheck admission after read-only preparation. Task
+projection checks reject a remote/local switch or a changed host/address, and
+plugin workers recheck their live authorization lease. Request guards retain the
+same registry epoch and task instance while checking cancellation, plugin runtime
+generation and authenticated peers before new remote writes. The compressed wire
+writer rechecks after queueing; retained metadata workers recheck after spawning.
+Local range writes recheck after remote reads, and local publication rechecks
+inside its blocking worker. Original admitted responses and handle flush/CLOSE
+can still complete after revocation; denial cannot manufacture terminal evidence
+or erase an outstanding handle. This is partial lifecycle
+integration. Successful bound runs and confirmed artifact disposal now seal the
+original request epoch and persist a terminal claim before syncing the task
+projection. Its original scopes remain blocking until that projection and its
+reference commit together at FULL durability (or a stronger existing setting),
+then exact-revision retirement removes the claim. Projection failure retains the
+private terminal for local-only retry. Startup/list recovery can reconstruct a
+missing task row from the immutable private intent; a changed application path,
+host, options or plugin owner is rejected. Completed/cancelled tasks cannot resume,
+and a stale application reference cannot recreate a missing private claim.
+
+Known-unsent transfers can be disposed without remote writes only after checking
+that no artifact or progress metadata remains. Previously dispatched or parked
+tasks cannot use missing application artifact records as disposal evidence. The recovery entry also
+uses terminal projection rather than directly dropping bound transfer claims.
+Physical process-death tests cover private completion, uncommitted transitions,
+application projection and retirement across two actual SQLite files. These
+checks do not replace complete desktop lifecycle acceptance. Copy cleanup uses
+the immutable original source intent without requiring the source peer online;
+move cleanup still revalidates its mutated source. Complete mutation-boundary
+coverage remains required. No production
+enablement is implied.
+
+Host-owned disposal has a separate runtime phase after the original request
+epoch is sealed. It preserves the original task and plugin attribution, checks
+the current immutable application projection and destination identity, and does
+not create or reactivate a plugin lease. Ordinary transfer authorization rejects
+this phase. With a private transfer permit, disposal may validate only paths
+already covered by that permit, including canonical spellings; it cannot enroll
+new scopes from application artifact records. Component integration tests cover
+an offline copy source, an invalidated plugin runtime, an actual SFTP artifact
+unlink, terminal projection and claim retirement. They do not substitute for
+desktop cancellation, disconnect and restart acceptance.
+
+Pausing or cancelling data transfer stops new packets but still drains an
+already opened destination handle through its original CLOSE, even when no WRITE
+is outstanding. Each handle drain is bounded to five seconds. A read-only
+source may stop promptly; an unconfirmed destination CLOSE retains ownership
+rather than treating cancellation as completion.
+
+Transfer path extension validates the immutable original lexical/canonical roots
+before modifying the private claim. Re-resolving an original target must return
+its admitted canonical location; an already covered path cannot add an outside
+canonical location. New staging and backup paths must preserve the original
+parent route, including child paths inside a sibling staging directory. Remote
+Windows drive spellings and case are normalized using the remote platform, not
+the desktop platform. A changed authenticated destination is rejected. These
+checks bound reservation coverage; they do not make pathname operations atomic
+against external filesystem changes.
+
+A cancellation flag alone does not classify a failed operation as cancelled.
+Failed original CLOSE or ownership parking remains a failure with its progress
+and error details. A successful completion is not undone by a late cancellation.
+When an operation and its completion both fail, actionable operation details
+(such as backup recovery) are preserved and the completion error is logged;
+ordinary cancellation cannot hide the completion failure. An unknown original
+request continues to retain its ownership independently of the displayed error.
+Queued raw-data admission preserves typed local cancellation and permission
+errors. A denial before the request is polled releases only that definitely
+unsent request receipt; it is not presented as a server rejection or an unknown
+write. Already admitted protocol requests still require their original reply.
+
+The recoverable editor phase is part of the internal, explicitly initialized v2
+candidate format; it is not a public plugin API or an automatic storage upgrade.
+An interrupted possible dispatch without an original terminal receipt still
+retains a conservative reservation. Terminal projection can recover locally;
+unknown remote outcomes remain unresolved, and complete desktop lifecycle
+acceptance remains a production enablement gate.
+
+Production initialization and full transfer/artifact enrollment are not enabled yet, so this
+does not establish complete bilateral coverage or enable native editor saves.
+Unknown historical SFTP outcomes are never attested by a newly installed helper.
+
 After possible dispatch, only original-operation status is used for recovery.
 Missing remote state remains unresolved. Retained records reserve their target
 until confirmed release; at most 128 records and four potentially active workers

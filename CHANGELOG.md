@@ -6,6 +6,73 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.1.0](https://github.com/TunneldeDev/Tunnelde/compare/v1.0.0...v1.1.0) - 2026-11-13
+
+### 更新概览 | Highlights
+
+- **files:** arbitrate legacy and native claims in one durable journal
+- **files:** retain durable mutation ownership in actual remote workers
+- **files:** extend original transfer reservations atomically
+- **files:** observe original transfer channel writes and handles
+- **files:** observe transfer metadata writes and directory creation
+
+<details open>
+<summary>详细变更 | Details (36)</summary>
+
+### 新增 | New
+
+- **files:** arbitrate legacy and native claims in one durable journal ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [cbfa3f2](https://github.com/TunneldeDev/Tunnelde/commit/cbfa3f2bbbf1fa44c722291d25f6cb24892d6bf3)) @quyansiyuanwang
+- **files:** retain durable mutation ownership in actual remote workers ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [e2b760f](https://github.com/TunneldeDev/Tunnelde/commit/e2b760f7decf2a87d2516562235de49848587c0d)) @quyansiyuanwang
+- **files:** extend original transfer reservations atomically ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [af54663](https://github.com/TunneldeDev/Tunnelde/commit/af546637eb3e118e9c7a29c11cb72bd0ab2a63c2)) @quyansiyuanwang
+- **files:** observe original transfer channel writes and handles ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [aa5b09a](https://github.com/TunneldeDev/Tunnelde/commit/aa5b09aa4e1cfaec73f7895452b145509ef166b4)) @quyansiyuanwang
+- **files:** observe transfer metadata writes and directory creation ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [0fc1e65](https://github.com/TunneldeDev/Tunnelde/commit/0fc1e650a901983821283146d1ffc103be14a816)) @quyansiyuanwang
+- **files:** retain parked transfer ownership across continuation ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [a669b31](https://github.com/TunneldeDev/Tunnelde/commit/a669b311e710f1add51bfd35b42f5fc74709f037)) @quyansiyuanwang
+- **files:** retain task epochs through publication and cleanup ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [6fc7e4e](https://github.com/TunneldeDev/Tunnelde/commit/6fc7e4ef976ac68eddfa1970b32152a41b539373)) @quyansiyuanwang
+- **files:** bind immutable transfer intent to recovery claims ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [413646a](https://github.com/TunneldeDev/Tunnelde/commit/413646ad265721daf2806a3129432b2a2510c8c5)) @quyansiyuanwang
+- **files:** retain original transfer ownership through run and cleanup ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [87cc828](https://github.com/TunneldeDev/Tunnelde/commit/87cc82883a1f380f7df46e6898718b640759f1e5)) @quyansiyuanwang
+- **files:** persist terminal handoff before retiring transfer claims ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [073cdb4](https://github.com/TunneldeDev/Tunnelde/commit/073cdb44976552b06aa9603db2544647e239d063)) @quyansiyuanwang
+- **cli:** read structured logs through the shared domain service ([#329](https://github.com/TunneldeDev/Tunnelde/pull/329), [ce6bd59](https://github.com/TunneldeDev/Tunnelde/commit/ce6bd590f0cf7ff6b67f29bc55f9a183aef3ad21)) @quyansiyuanwang
+- **cli:** expose bounded live forwarding status ([#330](https://github.com/TunneldeDev/Tunnelde/pull/330), [e44b3a7](https://github.com/TunneldeDev/Tunnelde/commit/e44b3a7dfdf0346a3ea70622c78207412689c60d)) @quyansiyuanwang
+- **files:** retain native helper installation checkpoints ([#333](https://github.com/TunneldeDev/Tunnelde/pull/333), [e7ed03e](https://github.com/TunneldeDev/Tunnelde/commit/e7ed03ea927b84230b21d87bcc845db80ec59e39)) @quyansiyuanwang
+- **files:** expose uncertain installations in recovery ([#333](https://github.com/TunneldeDev/Tunnelde/pull/333), [3207995](https://github.com/TunneldeDev/Tunnelde/commit/3207995d15cab4c6f7663eb35b21bb595609a3fa)) @quyansiyuanwang
+- **files:** install and recover native remote editor saves ([#335](https://github.com/TunneldeDev/Tunnelde/pull/335), [46dd5a2](https://github.com/TunneldeDev/Tunnelde/commit/46dd5a2f506cd38e00f259e4af18261996cbaa49)) @quyansiyuanwang
+- **editor:** offer recoverable saves for remote folders ([#335](https://github.com/TunneldeDev/Tunnelde/pull/335)) @quyansiyuanwang
+
+### 改进 | Improved
+
+- **network:** simplify TLS error classification ([#335](https://github.com/TunneldeDev/Tunnelde/pull/335), [a9191d6](https://github.com/TunneldeDev/Tunnelde/commit/a9191d6c249ef7cd5d129a6a77afa4d747d733d5)) @quyansiyuanwang
+
+### 修复 | Fix
+
+- **files:** settle original replies without releasing deferred cleanup ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [fcdff0c](https://github.com/TunneldeDev/Tunnelde/commit/fcdff0ca04f902f07eabe88a7ed4fa1ce61ce8a1)) @quyansiyuanwang
+- **files:** resume exact owned editor cleanup ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [af56240](https://github.com/TunneldeDev/Tunnelde/commit/af5624042dc825a0546eb4497526dd30fcb2d56c)) @quyansiyuanwang
+- **files:** revalidate plugin authorization at remote mutation dispatch ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [76c548f](https://github.com/TunneldeDev/Tunnelde/commit/76c548f7eb13db30593436c0ed04e97317acf247)) @quyansiyuanwang
+- **files:** preserve original transfer roots and late reply ownership ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [a7e680b](https://github.com/TunneldeDev/Tunnelde/commit/a7e680b5f04934efd709ca805b5450454dcbd9b5)) @quyansiyuanwang
+- **files:** retain original metadata workers after cancellation ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [1c45694](https://github.com/TunneldeDev/Tunnelde/commit/1c456941dc5c0c05f0e3f0c7eb5a6ce35ce3aa3b)) @quyansiyuanwang
+- **files:** recheck live transfer authority before queued writes ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [1daa001](https://github.com/TunneldeDev/Tunnelde/commit/1daa00167a66b7e3d6653301190973b88eed6d3f)) @quyansiyuanwang
+- **files:** isolate host disposal from revoked plugin execution ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [7de3b30](https://github.com/TunneldeDev/Tunnelde/commit/7de3b300078915d5d4c1fb7a1d7f6d7ad610d903)) @quyansiyuanwang
+- **files:** drain original writable handles before pausing transfers ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [312ba2b](https://github.com/TunneldeDev/Tunnelde/commit/312ba2baa1dfe57e505f9056ecbc5dd5e8e11817)) @quyansiyuanwang
+- **files:** fence canonical scope expansion and preserve completion failures ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [3d392c9](https://github.com/TunneldeDev/Tunnelde/commit/3d392c9f2c5baf20c972f4243f6e98f4583d71ea)) @quyansiyuanwang
+- **files:** retain original SFTP data workers through cancellation ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309), [b0193b4](https://github.com/TunneldeDev/Tunnelde/commit/b0193b42abfa6b1d1bcfd446ffd9fd0a871ade98)) @quyansiyuanwang
+- **files:** preserve typed admission errors for queued requests ([#309](https://github.com/TunneldeDev/Tunnelde/pull/309)) @quyansiyuanwang
+- **storage:** preserve deferred restart notices across reconciliation ([#328](https://github.com/TunneldeDev/Tunnelde/pull/328)) @quyansiyuanwang
+- **files:** protect installation paths during transfer extension ([#333](https://github.com/TunneldeDev/Tunnelde/pull/333)) @quyansiyuanwang
+- **network:** use Windows TLS for proxy downloads ([#335](https://github.com/TunneldeDev/Tunnelde/pull/335), [601457e](https://github.com/TunneldeDev/Tunnelde/commit/601457e8ea6fa025125932ffc558c9f2cb4ce9d8)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **cli:** cover piped queries and platform log-reader lifetimes ([#329](https://github.com/TunneldeDev/Tunnelde/pull/329)) @quyansiyuanwang
+- **cli:** cover forwarding consumers and document pagination ([#330](https://github.com/TunneldeDev/Tunnelde/pull/330)) @quyansiyuanwang
+- **cli:** normalize accepted fixture socket mode ([#331](https://github.com/TunneldeDev/Tunnelde/pull/331)) @quyansiyuanwang
+- **ssh:** retain forwarding port reservations during setup ([#332](https://github.com/TunneldeDev/Tunnelde/pull/332)) @quyansiyuanwang
+- **network:** exercise Windows TLS transport in CI ([#335](https://github.com/TunneldeDev/Tunnelde/pull/335), [c6fb1bd](https://github.com/TunneldeDev/Tunnelde/commit/c6fb1bd5af150ae76f40fd7da3aa5267dbebaed8)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [1.0.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.38.0...v1.0.0) - 2026-11-13
 
 ### 更新概览 | Highlights

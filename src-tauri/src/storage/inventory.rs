@@ -20,6 +20,7 @@ pub fn roots(category: Category, directory: &Path) -> Vec<PathBuf> {
             "tunnelde.db-wal",
             "tunnelde.db-shm",
             "native-file-saves",
+            "native-file-saves.initialized",
         ]
         .into_iter()
         .map(|name| directory.join(name))

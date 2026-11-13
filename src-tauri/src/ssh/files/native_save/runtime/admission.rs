@@ -1,5 +1,5 @@
 //! Protect existing native recovery records from legacy mutation entry points.
-//! New native reservations remain test-only: this is not bilateral admission.
+//! Native setup and saves use the same durable bilateral admission authority.
 use super::*;
 use crate::{
     error::{AppError, AppResult},
@@ -20,11 +20,24 @@ impl Manager {
             return Ok(());
         };
         let records = service.records().await.map_err(errors::app_journal)?;
+        let claims = service.legacy_claims().await.map_err(errors::app_journal)?;
+        let setups: Vec<_> = service
+            .setups()
+            .await
+            .map_err(errors::app_journal)?
+            .into_iter()
+            .filter(|setup| setup.plan.same_host(destination))
+            .collect();
         let blocking: Vec<_> = records
             .iter()
             .filter(|record| record.blocks_target() && record.binding.same_host(destination))
             .collect();
-        if blocking.is_empty() {
+        let legacy: Vec<_> = claims
+            .iter()
+            .flat_map(|claim| &claim.scopes)
+            .filter(|scope| scope.same_host(destination))
+            .collect();
+        if blocking.is_empty() && legacy.is_empty() && setups.is_empty() {
             return Ok(());
         }
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -32,6 +45,8 @@ impl Manager {
             if blocking
                 .iter()
                 .any(|record| record.binding.overlaps_path(path))
+                || legacy.iter().any(|scope| overlaps(scope, path))
+                || setups.iter().any(|setup| setup.plan.protects(path))
             {
                 return Err(AppError::validation("editor.remoteOutcomeUnknown"));
             }
@@ -43,6 +58,8 @@ impl Manager {
             if blocking
                 .iter()
                 .any(|record| record.binding.overlaps_path(&resolved))
+                || legacy.iter().any(|scope| overlaps(scope, &resolved))
+                || setups.iter().any(|setup| setup.plan.protects(&resolved))
             {
                 return Err(AppError::validation("editor.remoteOutcomeUnknown"));
             }
@@ -51,7 +68,7 @@ impl Manager {
     }
 }
 
-async fn resolve(sftp: &SftpSession, path: &str) -> AppResult<String> {
+pub(super) async fn resolve(sftp: &SftpSession, path: &str) -> AppResult<String> {
     if path.len() > 8192 || path.chars().any(char::is_control) {
         return Err(AppError::validation("sftp.absolutePathRequired"));
     }
@@ -87,4 +104,17 @@ async fn resolve(sftp: &SftpSession, path: &str) -> AppResult<String> {
         }
     }
     Err(AppError::validation("editor.nativeChanged"))
+}
+
+fn overlaps(scope: &super::super::journal::admission::Scope, path: &str) -> bool {
+    use crate::services::files::admission::Path;
+    let Some(platform) = scope.platform() else {
+        return true;
+    };
+    scope.paths.iter().any(|reserved| {
+        match (Path::new(reserved, platform), Path::new(path, platform)) {
+            (Some(left), Some(right)) => left.overlaps(&right),
+            _ => true,
+        }
+    })
 }

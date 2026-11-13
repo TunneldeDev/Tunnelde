@@ -303,8 +303,9 @@ impl Journal {
 
 /// Caller keeps the transfer reserved until cleanup and journal changes finish.
 pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) -> AppResult<()> {
+    let observation = app.state::<AppState>().transfers.begin_cleanup(&row.id)?;
     if row.retained_creation {
-        return super::artifacts::retained::cleanup(app, row).await;
+        return super::artifacts::retained::cleanup(app, row, &observation).await;
     }
     super::artifacts::retained::detach_for_cleanup(app, row)?;
     let has_artifacts = app.state::<AppState>().db.with(|conn| {
@@ -318,7 +319,7 @@ pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) ->
         )?)
     })?;
     if !has_artifacts {
-        return Ok(());
+        return super::transfer_ownership::terminal::dispose_empty(app, &row.id).await;
     }
     let to = super::Endpoint {
         session: resolve_session(
@@ -329,8 +330,30 @@ pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) ->
         )?,
         path: row.to_path.clone(),
     };
-    super::artifacts::cleanup(app, row, &to).await?;
-    Journal::clear_checkpoints(app, &row.id)?;
+    let observation =
+        super::transfer_ownership::prepare_cleanup(app, row, &to, observation).await?;
+    let result = super::artifacts::cleanup(app, row, &to, &observation).await;
+    if result.is_err() {
+        let parked = app
+            .state::<AppState>()
+            .transfers
+            .park_ownership(&row.id)
+            .await;
+        return result.and(parked);
+    }
+    let bound = super::transfer_ownership::terminal::finish(
+        app,
+        &row.id,
+        super::native_save::runtime::TransferOutcome::Disposed,
+    )
+    .await?;
+    if !bound {
+        app.state::<AppState>()
+            .transfers
+            .park_ownership(&row.id)
+            .await?;
+        Journal::clear_checkpoints(app, &row.id)?;
+    }
     let _ = app.emit(
         "plugin://domain-changed",
         serde_json::json!({"domain":"files","sessionId":to.session}),
@@ -338,7 +361,10 @@ pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) ->
     Ok(())
 }
 #[tauri::command]
-pub fn durable_transfer_list(app: AppHandle) -> AppResult<Vec<DurableTransfer>> {
+pub async fn durable_transfer_list(app: AppHandle) -> AppResult<Vec<DurableTransfer>> {
+    if let Err(error) = super::transfer_ownership::terminal::reconcile(&app).await {
+        tracing::warn!(%error, "Transfer terminal projection remains pending");
+    }
     let mut rows = Journal::list(&app)?;
     for row in &mut rows {
         let active = app.state::<AppState>().transfers.is_active(&row.id);
@@ -814,12 +840,34 @@ pub async fn durable_transfer_clear(
     let state = app.state::<AppState>();
     let _reservation = state.transfers.reserve_cleanup(&id)?;
     async {
+        // Finish local terminal projection before deciding whether disposal
+        // requires remote work. Never infer it from a mutable status string.
+        for terminal in state.native_saves.transfer_terminals().await? {
+            if terminal.task().id == id {
+                state
+                    .native_saves
+                    .project_transfer_terminal(&terminal, |terminal| {
+                        state.db.with(|conn| {
+                            super::transfer_ownership::terminal::project(conn, terminal)
+                        })
+                    })
+                    .await?;
+            }
+        }
         let mut row = match Journal::get(&app, &id) {
             Ok(row) => row,
             Err(AppError::NotFound(_)) => return Ok(None),
             Err(error) => return Err(error),
         };
         if row.status == "done" {
+            if state
+                .native_saves
+                .transfer_task_intent(&id)
+                .await?
+                .is_some()
+            {
+                return Err(AppError::validation("editor.remoteOutcomeUnknown"));
+            }
             Journal::remove(&app, &id)?;
             return Ok(None);
         }
@@ -858,9 +906,13 @@ pub fn durable_transfer_pause(app: AppHandle, id: String) -> AppResult<()> {
     Ok(())
 }
 #[tauri::command]
-pub fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
+pub async fn durable_transfer_resume(app: AppHandle, id: String) -> AppResult<()> {
+    super::transfer_ownership::terminal::reconcile(&app).await?;
     let row = Journal::get(&app, &id)?;
     row.require_user_control()?;
+    if !matches!(row.status.as_str(), "paused" | "failed" | "running") {
+        return Err(AppError::validation("sftp.transferNotResumable"));
+    }
     if needs_review(row.error.as_deref()) {
         return Err(AppError::validation(row.error.unwrap_or_default()));
     }
@@ -925,6 +977,9 @@ fn select_session(
 /// Retry only explicit disposal requests, never restart a user's file transfer.
 /// Registry reservation serializes concurrent reconnects and manual retries.
 pub(crate) async fn on_reconnect(app: &AppHandle) {
+    if let Err(error) = super::transfer_ownership::terminal::reconcile(app).await {
+        tracing::warn!(%error, "Transfer terminal recovery remains pending");
+    }
     let Ok(rows) = Journal::list(app) else { return };
     for row in rows {
         let row = if row.plugin_id.is_some() {

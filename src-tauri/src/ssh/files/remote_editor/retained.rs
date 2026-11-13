@@ -15,19 +15,38 @@ where
     W: Future<Output = AppResult<SftpSession>> + Send + 'static,
 {
     budget
-        .asynchronous(move |_| async move {
+        .asynchronous(move |job| async move {
             let held = Reservation::acquire(&record.id, true)?;
             // A retry captured before waiting for admission must not recreate
             // a retired journal or replay an older recovery phase.
             record = journal.current(&record)?;
             journal.changed();
-            let result = async {
+            let result: AppResult<()> = async {
                 recovery::require_settled(&record)?;
                 let sftp = open().await?;
-                let result = cleanup(&sftp, &mut record, |r| journal.persist(r)).await;
-                let _ = sftp.close().await;
-                result?;
-                journal.forget(&record)
+                let result: AppResult<()> = async {
+                    let claim = journal.cleanup_admission(&sftp, &record).await?;
+                    if let Some(claim) = &claim {
+                        record.admission = Some(claim.reference());
+                        // Keep an existing prepared claim if persistence fails;
+                        // it may already be linked to the original receipt.
+                        journal.persist(&record)?;
+                    }
+                    let active = if let Some(claim) = claim {
+                        Some(claim.dispatch(&job).await?)
+                    } else {
+                        None
+                    };
+                    let cleaned = match cleanup(&sftp, &mut record, |r| journal.persist(r)).await {
+                        Ok(()) => journal.forget(&record),
+                        Err(error) => Err(error),
+                    };
+                    ownership::finish(active, &record, cleaned.is_ok()).await?;
+                    cleaned
+                }
+                .await;
+                let _ = tokio::time::timeout(std::time::Duration::from_secs(2), sftp.close()).await;
+                result
             }
             .await;
             let persisted = if let Err(error) = &result {

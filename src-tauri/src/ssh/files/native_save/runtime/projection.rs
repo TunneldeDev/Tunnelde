@@ -14,6 +14,12 @@ pub(super) fn record(record: &Record) -> PendingCleanup {
         "discard"
     } else if record.disposable() || record.released() {
         "finish"
+    } else if record
+        .observation
+        .as_ref()
+        .is_some_and(|receipt| receipt.releasable())
+    {
+        "release"
     } else {
         "query"
     };
@@ -52,5 +58,66 @@ pub(super) fn unavailable(error: &str) -> PendingCleanup {
         updated_at: 0,
         error: Some(error.into()),
         running: false,
+    }
+}
+
+pub(super) fn setup(setup: &super::super::journal::setup::Record) -> PendingCleanup {
+    let unsent = setup.stage == super::super::journal::setup::Stage::Reserved;
+    PendingCleanup {
+        id: format!("native-setup-{}", setup.id),
+        path: setup.plan.selection.executable.clone(),
+        directory: setup.plan.selection.directory.clone(),
+        address: setup.plan.destination.address.clone(),
+        source: "native",
+        action: Some(if unsent { "discard" } else { "inspect" }),
+        updated_at: 0,
+        error: Some(
+            if unsent {
+                "editor.nativeUnsent"
+            } else {
+                "editor.remoteOutcomeUnknown"
+            }
+            .into(),
+        ),
+        running: false,
+    }
+}
+
+pub(super) fn legacy(
+    claim: &super::super::journal::admission::Claim,
+    running: bool,
+) -> PendingCleanup {
+    use super::super::journal::admission::Phase;
+    let first = claim.scopes.first();
+    PendingCleanup {
+        id: format!("native-legacy-{}", claim.id),
+        path: first
+            .and_then(|scope| scope.paths.first())
+            .cloned()
+            .unwrap_or_default(),
+        directory: String::new(),
+        address: first
+            .map(|scope| scope.destination.address.clone())
+            .unwrap_or_default(),
+        source: "native",
+        action: Some(if claim.phase == Phase::Terminal {
+            "finish"
+        } else if claim.phase == Phase::Prepared {
+            "discard"
+        } else {
+            "inspect"
+        }),
+        updated_at: 0,
+        error: Some(
+            if claim.phase == Phase::Terminal {
+                "sftp.terminalProjectionPending"
+            } else if claim.phase == Phase::Prepared {
+                "editor.nativeUnsent"
+            } else {
+                "editor.remoteOutcomeUnknown"
+            }
+            .into(),
+        ),
+        running,
     }
 }

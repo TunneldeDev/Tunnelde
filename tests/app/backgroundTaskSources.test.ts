@@ -7,6 +7,34 @@ import { useBackgroundTasks } from "@/lib/tasks/background";
 import { useTransfers } from "@/store/transfers";
 
 let dispose: (() => void) | undefined;
+it("unknown legacy mutation offers diagnostics without inventing a query or discard action", async () => {
+  useEditorCleanup.setState({
+    items: [
+      {
+        id: "native-legacy-original",
+        source: "native",
+        action: "inspect",
+        address: "user@server",
+        path: "/scope/note.txt",
+        directory: "",
+        updatedAt: 0,
+        running: false,
+        error: "editor.remoteOutcomeUnknown",
+      },
+    ],
+  });
+  const log = vi.spyOn(api, "openLatestLog").mockResolvedValue(undefined);
+  const retry = vi.spyOn(api, "editorCleanupRetry").mockResolvedValue(undefined);
+  dispose = registerBackgroundTaskSources();
+  const task = useBackgroundTasks
+    .getState()
+    .items.find((item) => item.id === "native-legacy-original");
+  expect(task?.status).toBe("attention");
+  expect(task?.actions?.map((action) => action.id)).toEqual(["logs"]);
+  await task?.actions?.[0]?.run();
+  expect(log).toHaveBeenCalledOnce();
+  expect(retry).not.toHaveBeenCalled();
+});
 afterEach(() => {
   dispose?.();
   dispose = undefined;
@@ -18,6 +46,7 @@ it.each([
   ["discard", "editor.nativeDiscardUnsent"],
   ["query", "editor.nativeQueryOriginal"],
   ["finish", "editor.nativeFinishRecovery"],
+  ["release", "editor.nativeReleaseBackup"],
 ] as const)(
   "native recovery exposes the explicit %s action and a working log link",
   async (action, label) => {

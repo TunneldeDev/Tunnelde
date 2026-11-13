@@ -50,6 +50,7 @@ async fn configured_data_channel(
             read_size: 256 * 1024,
             write_size: 256 * 1024,
             copy_data: false,
+            writes: observation::Writes::new(MutationObservation::default()),
         });
     }
     channel.request_subsystem(true, "sftp").await.unwrap();
@@ -58,7 +59,13 @@ async fn configured_data_channel(
 
 async fn sequential(source: &Endpoint, target: &Endpoint, sftp: &SftpSession) -> AppResult<()> {
     let mut reader = open_reader(source, source.session.as_ref().map(|_| sftp)).await?;
-    let mut writer = open_writer(target, target.session.as_ref().map(|_| sftp), false).await?;
+    let mut writer = open_writer(
+        target,
+        target.session.as_ref().map(|_| sftp),
+        false,
+        &Default::default(),
+    )
+    .await?;
     let result = async {
         let mut buffer = vec![0; CHUNK];
         loop {
@@ -181,10 +188,15 @@ async fn parallel(
 ) -> AppResult<()> {
     let settings = crate::settings::Settings::default();
     let plan = super::super::segments::Plan::for_file(&settings, length, true);
-    open_writer(target, target.session.as_ref().map(|_| sftp), false)
-        .await?
-        .finish()
-        .await?;
+    open_writer(
+        target,
+        target.session.as_ref().map(|_| sftp),
+        false,
+        &Default::default(),
+    )
+    .await?
+    .finish()
+    .await?;
     let controller = Arc::new(bandwidth::Controller::default());
     controller.register("live");
     let limit = std::env::var("TUNNELDE_TEST_LIMIT_KIB")

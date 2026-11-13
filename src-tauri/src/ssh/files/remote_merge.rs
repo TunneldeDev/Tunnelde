@@ -128,10 +128,20 @@ impl Plan {
         Ok(plan)
     }
 
+    #[cfg(test)]
     pub async fn apply(
         self,
         sftp: &SftpSession,
         replacement: Option<&remote_commit::Replacement>,
+    ) -> AppResult<()> {
+        self.apply_guarded(sftp, replacement, None).await
+    }
+
+    pub(super) async fn apply_guarded(
+        self,
+        sftp: &SftpSession,
+        replacement: Option<&remote_commit::Replacement>,
+        dispatch: Option<&mutations::Dispatch>,
     ) -> AppResult<()> {
         // Negotiate before any move, including when a conflicting file occurs
         // late in a tree. An unsupported server must leave everything untouched.
@@ -156,20 +166,41 @@ impl Plan {
                         return Err(changed());
                     }
                     if replace {
-                        replacement.ok_or_else(changed)?.replace(&from, &to).await?;
+                        let replacement = replacement.ok_or_else(changed)?;
+                        if let Some(dispatch) = dispatch {
+                            dispatch.opaque(replacement.replace(&from, &to)).await?;
+                        } else {
+                            replacement.replace(&from, &to).await?;
+                        }
                     } else {
                         if target.is_some() {
                             return Err(AppError::validation("sftp.alreadyExists"));
                         }
-                        rename::entry(sftp, &from, &to).await?;
+                        if let Some(dispatch) = dispatch {
+                            dispatch
+                                .request_with(sftp.rename(&from, &to), |error| {
+                                    rename::failure(&from, &to, error)
+                                })
+                                .await?;
+                        } else {
+                            rename::entry(sftp, &from, &to).await?;
+                        }
                     }
                 }
                 Step::RemoveEmpty { from, to } => {
                     directory(sftp, &from).await?;
                     directory(sftp, &to).await?;
-                    sftp.remove_dir(&from)
-                        .await
-                        .map_err(|error| rename::failure(&from, &to, error))?;
+                    if let Some(dispatch) = dispatch {
+                        dispatch
+                            .request_with(sftp.remove_dir(&from), |error| {
+                                rename::failure(&from, &to, error)
+                            })
+                            .await?;
+                    } else {
+                        sftp.remove_dir(&from)
+                            .await
+                            .map_err(|error| rename::failure(&from, &to, error))?;
+                    }
                 }
             }
         }
