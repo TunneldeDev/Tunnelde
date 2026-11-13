@@ -5,6 +5,7 @@ use tauri_plugin_window_state::{StateFlags, WindowExt};
 
 use crate::error::AppResult;
 use crate::state::AppState;
+pub(crate) mod close;
 
 // Visibility belongs to startup/tray handling; decorations belong to settings.
 pub const SAVED_STATE_FLAGS: StateFlags = StateFlags::SIZE
@@ -207,12 +208,15 @@ pub fn install_close_handler(app: &AppHandle) {
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             let keep_alive = cfg!(target_os = "macos") || close_to_tray(&handle);
+            let needs_review = close::intercept(&handle, keep_alive);
             if keep_alive {
                 api.prevent_close();
                 if target.hide().is_ok() {
                     apply_background_dock_preference(&handle);
                     super::background::request(&handle);
                 }
+            } else if needs_review {
+                api.prevent_close();
             }
         }
     });
