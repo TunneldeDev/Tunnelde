@@ -3,11 +3,11 @@ pub(super) mod admission;
 mod database;
 mod finalization;
 mod record;
+pub(super) mod setup;
 mod sqlite;
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
 pub(super) use record::Selection;
 pub(super) use record::{Binding, Owner, Record, Stage};
 pub(super) struct Journal {
