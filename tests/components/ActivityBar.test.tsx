@@ -42,15 +42,16 @@ describe("activity sidebar navigation", () => {
     expect(useNavigation.getState().visitedSidebars).toEqual(["hosts", "knownHosts", "plugins"]);
   });
 
-  it("keeps the selected activity when collapsed and toggles only that view", () => {
+  it("clears the highlight when collapsed and restores it when reopened", () => {
     render(<ActivityBar />);
     const hosts = screen.getByRole("button", { name: "Hosts" });
     fireEvent.click(hosts);
     expect(useNavigation.getState().sidebarVisible).toBe(false);
-    expect(hosts.getAttribute("aria-pressed")).toBe("true");
+    expect(hosts.getAttribute("aria-pressed")).toBeNull();
     expect(hosts.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(hosts);
     expect(useNavigation.getState().sidebarVisible).toBe(true);
+    expect(hosts.getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(hosts);
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
     expect(useNavigation.getState().sidebarVisible).toBe(true);
