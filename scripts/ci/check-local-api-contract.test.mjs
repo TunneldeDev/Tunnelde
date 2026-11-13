@@ -29,6 +29,29 @@ const fixture = () => ({
 test("local API checker accepts a compatible client floor", () => {
   assert.deepEqual(checkLocalApiContract(fixture(), floor), { methods: 4, samples: 4 });
 });
+
+test("new local domains require experimental discovery and actual producer coverage", () => {
+  const current = fixture();
+  current.schema.methods.push({
+    name: "logs.read",
+    stability: "experimental",
+    since: null,
+    effect: "read",
+    inputSchema: { type: "object", additionalProperties: false },
+    resultSchema: {
+      type: "object",
+      required: ["entries"],
+      properties: { entries: { type: "array" } },
+    },
+  });
+  current.samples.push({ method: "logs.read", params: {}, result: { entries: [] } });
+  assert.deepEqual(checkLocalApiContract(current, floor), { methods: 5, samples: 5 });
+  current.schema.methods.at(-1).stability = "stable";
+  assert.throws(() => checkLocalApiContract(current, floor), /separate stability review/);
+  current.schema.methods.at(-1).stability = "experimental";
+  current.samples.pop();
+  assert.throws(() => checkLocalApiContract(current, floor), /actual producer sample/);
+});
 test("local API checker rejects removed fields and missing actual coverage", () => {
   const removed = fixture();
   delete removed.samples[1].result.apiVersion;

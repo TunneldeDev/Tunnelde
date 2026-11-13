@@ -5,10 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import Ajv from "ajv";
 
 const schema = JSON.parse(
-  await readFile(
-    new URL("../../src-tauri/src/plugins/api/domains/logging/schema.json", import.meta.url),
-    "utf8",
-  ),
+  await readFile(new URL("../../src-tauri/src/logs/read/schema.json", import.meta.url), "utf8"),
 );
 const ajv = new Ajv({ allErrors: true }),
   validate = ajv.compile(schema);

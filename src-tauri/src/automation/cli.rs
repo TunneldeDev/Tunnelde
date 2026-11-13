@@ -15,6 +15,7 @@ Usage: tunnelde-cli [--endpoint PATH] <command>\n\
   app info                  Read the running application's version\n\
   hosts list                List saved hosts without credentials\n\
   sessions list             List currently connected sessions\n\
+  logs read [--params JSON|-]  Read structured logs (experimental)\n\
   preferences schema        Describe public settings\n\
   preferences snapshot      Read public settings and their revision\n\
   preferences update --params JSON|-  Save settings with the original revision\n\
@@ -152,6 +153,8 @@ fn parse(mut args: Vec<OsString>) -> Result<Command, Failure> {
         ["app", "info"] => ("app.info", None),
         ["hosts", "list"] => ("hosts.list", None),
         ["sessions", "list"] => ("sessions.list", None),
+        ["logs", "read"] => ("logs.read", None),
+        ["logs", "read", "--params", params] => ("logs.read", Some(*params)),
         ["preferences", "schema"] => ("preferences.schema", None),
         ["preferences", "snapshot"] => ("preferences.snapshot", None),
         ["preferences", "update", "--params", params] => ("preferences.update", Some(*params)),

@@ -85,7 +85,7 @@ Public errors include `logs.read.invalidRequest`, `logs.read.invalidCursor`,
 Unavailable errors hide filesystem/DB details; inspect the application's local logs for
 broader diagnostics. Handle unknown errors and feature-detect experimental support.
 
-The machine schema is at `src-tauri/src/plugins/api/domains/logging/schema.json`; independent
+The shared machine schema is at `src-tauri/src/logs/read/schema.json`; independent
 TypeScript DTOs are under `src/lib/extensions/contracts/logging/`. SDK synchronization checks
 both and CI consumes a page emitted by the actual Rust reader. The native Output panel IPC
 and frozen stable writer contracts remain separate. See [user logging guide](../../guide/logging.md).
