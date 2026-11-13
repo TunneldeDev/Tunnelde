@@ -46,7 +46,14 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
         assert_eq!(discovery["version"], floor["version"]);
         assert_eq!(discovery["transport"], floor["transport"]);
         for method in floor["methods"].as_array().unwrap() {
-            assert!(discovery["methods"].as_array().unwrap().contains(method));
+            let mut expected = method.clone();
+            if method["name"] == "api.describe" {
+                expected["resultSchema"] = serde_json::from_str(include_str!(
+                    "../../tests/fixtures/local-api/discovery-v1.json"
+                ))
+                .unwrap();
+            }
+            assert!(discovery["methods"].as_array().unwrap().contains(&expected));
         }
         let args: Vec<_> = prefix
             .iter()
