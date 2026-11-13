@@ -18,6 +18,7 @@ interface Props {
   enabled: boolean;
   onTesting: (testing: boolean) => void;
   onKeyError: () => void;
+  testConnection?: (id: string, credentials: Props["credentials"]) => Promise<Quality>;
 }
 
 export function ConnectionQuality(props: Props) {
@@ -25,17 +26,20 @@ export function ConnectionQuality(props: Props) {
     hostId: props.hostId,
     credentials: props.credentials,
     enabled: props.enabled,
+    testConnection: props.testConnection,
     generation: 0,
   });
   if (
     scope.hostId !== props.hostId ||
     scope.credentials !== props.credentials ||
-    scope.enabled !== props.enabled
+    scope.enabled !== props.enabled ||
+    scope.testConnection !== props.testConnection
   ) {
     setScope({
       hostId: props.hostId,
       credentials: props.credentials,
       enabled: props.enabled,
+      testConnection: props.testConnection,
       generation: scope.generation + 1,
     });
   }
@@ -44,7 +48,14 @@ export function ConnectionQuality(props: Props) {
   return <QualityTest key={scope.generation} {...props} />;
 }
 
-function QualityTest({ hostId, credentials, enabled, onTesting, onKeyError }: Props) {
+function QualityTest({
+  hostId,
+  credentials,
+  enabled,
+  onTesting,
+  onKeyError,
+  testConnection,
+}: Props) {
   const { t, i18n } = useTranslation();
   const [result, setResult] = useState<Quality | null>(null);
   const [testing, setTesting] = useState(false);
@@ -76,14 +87,18 @@ function QualityTest({ hostId, credentials, enabled, onTesting, onKeyError }: Pr
     setResult(null);
     onTesting(true);
     try {
-      const result = await api.sshTestConnection(id, hostId, credentials);
+      const result = await (testConnection
+        ? testConnection(id, credentials)
+        : api.sshTestConnection(id, hostId, credentials));
       if (active.current && request.current === id) setResult(result);
     } catch (cause) {
       if (active.current && request.current === id) {
         setError(translateError(cause));
         if (
           isIpcError(cause) &&
-          ["ssh.hostKeyChanged", "ssh.hostKeyUntrusted"].includes(cause.message)
+          ["ssh.hostKeyChanged", "ssh.hostKeyUntrusted", "ssh.connectionChanged"].includes(
+            cause.message,
+          )
         ) {
           onKeyError();
         }

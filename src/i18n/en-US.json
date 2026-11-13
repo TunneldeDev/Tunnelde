@@ -576,7 +576,8 @@
       "slow": "Slow connection setup",
       "unstable": "Some attempts failed",
       "unreachable": "Could not establish a connection"
-    }
+    },
+    "reviewChanged": "The connection settings changed. Close and reopen this dialog to review the new destination before trying again."
   },
   "terminal": {
     "connect": "Connect",

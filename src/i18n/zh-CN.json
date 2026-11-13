@@ -576,7 +576,8 @@
       "slow": "连接建立较慢",
       "unstable": "部分连接失败",
       "unreachable": "无法建立连接"
-    }
+    },
+    "reviewChanged": "连接设置已变化。请关闭并重新打开此弹窗，核对新的连接目标后再试。"
   },
   "terminal": {
     "connect": "连接",
