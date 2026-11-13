@@ -20,7 +20,7 @@ pub(in crate::ssh::files) fn project(
             Some(previous) => serde_json::from_str::<durable::DurableTransfer>(&previous)?,
             None => restored(task),
         };
-        if !matches_task(&row, task) {
+        if !preparation::matches_row(&row, task) {
             return Err(AppError::validation("editor.nativeChanged"));
         }
         checkpoint::write_link(&tx, &task.id, &terminal.reference()?)?;
@@ -57,28 +57,6 @@ pub(in crate::ssh::files) fn project(
         tx.commit()?;
         Ok(())
     })
-}
-
-fn matches_task(row: &durable::DurableTransfer, task: &TransferTask) -> bool {
-    row.id == task.id
-        && !row.retained_creation
-        && row.from_path == task.source.path
-        && row.to_path == task.destination.path
-        && row.remove_source == task.remove_source
-        && row.overwrite == task.overwrite
-        && row.plugin_id == task.plugin_id
-        && preparation::projected_endpoint_matches(
-            &task.source,
-            row.from_host_id.as_deref(),
-            row.from_session.as_deref(),
-            row.from_address.as_deref(),
-        )
-        && preparation::projected_endpoint_matches(
-            &task.destination,
-            row.to_host_id.as_deref(),
-            row.to_session.as_deref(),
-            row.to_address.as_deref(),
-        )
 }
 
 fn host(endpoint: &TaskEndpoint) -> Option<String> {

@@ -1,11 +1,15 @@
 //! Cleanup continues the original task's ownership rather than borrowing an exemption.
 use super::*;
+mod authorization;
+pub(super) use authorization::authorize_mutation;
+pub(in crate::ssh::files) use authorization::Cleanup;
 
 pub(in super::super) async fn prepare_cleanup(
     app: &AppHandle,
     row: &durable::DurableTransfer,
     to: &Endpoint,
-) -> AppResult<()> {
+    observation: native_save::runtime::MutationObservation,
+) -> AppResult<native_save::runtime::MutationObservation> {
     let state = app.state::<AppState>();
     let Some(original) = state.native_saves.transfer_task_intent(&row.id).await? else {
         if state.db.with(|conn| checkpoint::exists(conn, &row.id))? {
@@ -13,8 +17,14 @@ pub(in super::super) async fn prepare_cleanup(
         }
         // Legacy/non-enabled tasks have no private owner. Destination cleanup
         // retains the generic fence and never requires an unrelated source peer.
-        return Ok(());
+        state
+            .transfers
+            .install_cleanup(row, destination(app, to)?)?;
+        return authorization::observe(app, &row.id, to, observation);
     };
+    if !preparation::matches_row(row, &original) {
+        return Err(AppError::validation("editor.nativeChanged"));
+    }
     let from = Endpoint {
         session: if row.remove_source {
             durable::resolve_session(
@@ -28,15 +38,9 @@ pub(in super::super) async fn prepare_cleanup(
         },
         path: row.from_path.clone(),
     };
-    let destination = native_save::runtime::TaskEndpoint {
-        path: to.path.clone(),
-        remote: to
-            .session
-            .as_deref()
-            .map(|id| state.ssh.identity(id))
-            .transpose()?,
-    };
-    let endpoints = Endpoints::for_cleanup(original.source, destination);
+    let destination = destination(app, to)?;
+    state.transfers.install_cleanup(row, destination.clone())?;
+    let endpoints = Endpoints::for_cleanup(original.source.clone(), destination);
     let source = if row.remove_source {
         match from.session.as_deref() {
             Some(id) => Some(session(app, id).await?),
@@ -76,5 +80,17 @@ pub(in super::super) async fn prepare_cleanup(
     if let Some(sftp) = destination {
         let _ = sftp.close().await;
     }
-    result
+    result?;
+    authorization::observe(app, &row.id, to, observation)
+}
+
+fn destination(app: &AppHandle, to: &Endpoint) -> AppResult<native_save::runtime::TaskEndpoint> {
+    Ok(native_save::runtime::TaskEndpoint {
+        path: to.path.clone(),
+        remote: to
+            .session
+            .as_deref()
+            .map(|id| app.state::<AppState>().ssh.identity(id))
+            .transpose()?,
+    })
 }

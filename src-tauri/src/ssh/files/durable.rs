@@ -330,7 +330,8 @@ pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) ->
         )?,
         path: row.to_path.clone(),
     };
-    super::transfer_ownership::prepare_cleanup(app, row, &to).await?;
+    let observation =
+        super::transfer_ownership::prepare_cleanup(app, row, &to, observation).await?;
     let result = super::artifacts::cleanup(app, row, &to, &observation).await;
     if result.is_err() {
         let parked = app

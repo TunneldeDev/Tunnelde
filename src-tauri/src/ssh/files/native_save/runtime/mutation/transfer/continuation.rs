@@ -104,6 +104,45 @@ impl Transfer {
             .await
     }
 
+    /// Disposal may use previously enrolled scopes, never enlarge them from
+    /// resettable application artifact records or a changed path resolution.
+    pub(crate) async fn validate_paths(
+        &self,
+        destination: &SessionIdentity,
+        sftp: &SftpSession,
+        paths: &[String],
+    ) -> AppResult<()> {
+        if self.observation.closed() {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        let active = self
+            .active
+            .as_ref()
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))?;
+        let resolved = scope::resolve(destination, sftp, paths).await?;
+        let covered = active.permit.claim().scopes.iter().any(|claimed| {
+            if claimed.destination != resolved.destination || claimed.platform != resolved.platform
+            {
+                return false;
+            }
+            let Some(platform) = claimed.platform() else {
+                return false;
+            };
+            resolved.paths.iter().all(|path| {
+                Path::new(path, platform).is_some_and(|path| {
+                    claimed.paths.iter().any(|reserved| {
+                        Path::new(reserved, platform)
+                            .is_some_and(|reserved| reserved.contains(&path))
+                    })
+                })
+            })
+        });
+        if !covered {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        Ok(())
+    }
+
     /// Only the original admitted worker can park, after draining its actual
     /// children. Sealing prevents delayed queued children from sending later.
     pub(crate) async fn park(&mut self) -> AppResult<Reference> {

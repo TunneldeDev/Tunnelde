@@ -156,7 +156,7 @@ impl Endpoints {
             if cancel.load(Ordering::SeqCst) {
                 return Err(AppError::Ssh(CANCELLED.into()));
             }
-            authorize_task(app, id)?;
+            cleanup::authorize_mutation(app, id)?;
             if let Some(id) = from.session.as_deref() {
                 if Some(state.ssh.identity(id)?) != self.source.remote {
                     return Err(AppError::validation("editor.nativeChanged"));
@@ -199,6 +199,28 @@ impl Endpoints {
 // Historical rows may omit the address, but never switch a remote endpoint to
 // local or attach a different host. The private task additionally binds the
 // authenticated server key, which the application projection cannot override.
+pub(super) fn matches_row(row: &durable::DurableTransfer, task: &TransferTask) -> bool {
+    row.id == task.id
+        && !row.retained_creation
+        && row.from_path == task.source.path
+        && row.to_path == task.destination.path
+        && row.remove_source == task.remove_source
+        && row.overwrite == task.overwrite
+        && row.plugin_id == task.plugin_id
+        && projected_endpoint_matches(
+            &task.source,
+            row.from_host_id.as_deref(),
+            row.from_session.as_deref(),
+            row.from_address.as_deref(),
+        )
+        && projected_endpoint_matches(
+            &task.destination,
+            row.to_host_id.as_deref(),
+            row.to_session.as_deref(),
+            row.to_address.as_deref(),
+        )
+}
+
 pub(super) fn projected_endpoint_matches(
     endpoint: &TaskEndpoint,
     host_id: Option<&str>,

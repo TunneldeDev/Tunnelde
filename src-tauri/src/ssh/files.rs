@@ -137,6 +137,8 @@ struct ActiveTransfer {
     cancel: Arc<AtomicBool>,
     owner: Option<TransferOwner>,
     lease: Option<crate::plugins::security::Lease>,
+    cleanup_started: bool,
+    cleanup: Option<transfer_ownership::Cleanup>,
     event: TransferEvent,
 }
 
@@ -254,6 +256,8 @@ impl TransferRegistry {
                 cancel: flag,
                 owner,
                 lease: None,
+                cleanup_started: false,
+                cleanup: None,
                 event: TransferEvent {
                     id: id.into(),
                     plugin_id,
