@@ -199,6 +199,23 @@ pub async fn test(
     .map_err(|_| AppError::Ssh("ssh.testCancelled".into()))?
 }
 
+pub(crate) async fn test_reviewed(
+    app: AppHandle,
+    id: String,
+    review: super::session::review::Review,
+    credentials: HashMap<String, HopCredential>,
+) -> AppResult<ConnectionQuality> {
+    let state = app.state::<AppState>();
+    let (_guard, cancellation) = register(&state.ssh, &id, &review.host_id)?;
+    let target = super::session::review::Target::capture(&app, &review)?;
+    Abortable::new(
+        measure(&review.host_id, || target.probe(&app, &credentials), BUDGET),
+        cancellation,
+    )
+    .await
+    .map_err(|_| AppError::Ssh("ssh.testCancelled".into()))?
+}
+
 pub fn cancel(ssh: &SshManager, id: &str) {
     if uuid::Uuid::parse_str(id).is_err() {
         return;

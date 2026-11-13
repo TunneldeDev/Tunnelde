@@ -2,6 +2,7 @@
 //! resolves a later hop from mutable storage after starting network I/O.
 use super::*;
 use crate::network::{ConnectionRoute, TcpRoute};
+mod review;
 
 pub(super) struct Node {
     pub host: Host,
@@ -68,8 +69,47 @@ impl Snapshot {
         Ok(snapshot)
     }
 
-    fn target(&self) -> &Host {
+    pub(in super::super) fn target(&self) -> &Host {
         &self.nodes.last().expect("route always has a target").host
+    }
+
+    pub(in super::super) fn jump_hosts(&self) -> Vec<Host> {
+        self.nodes[..self.nodes.len() - 1]
+            .iter()
+            .map(|node| node.host.clone())
+            .collect()
+    }
+
+    pub(in super::super) fn contains_host(&self, id: &str) -> bool {
+        self.nodes.iter().any(|node| node.host.id == id)
+    }
+
+    pub(in super::super) fn revision(&self) -> String {
+        review::revision(&self.nodes, &self.route, |digest| {
+            self.transport.update_review(digest);
+        })
+    }
+
+    /// Advance only the key the user approved, including saved aliases of the
+    /// same endpoint. Other edits cannot be folded into a new review revision.
+    pub(in super::super) fn approve_reviewed(
+        &mut self,
+        app: &AppHandle,
+        info: &HostKeyInfo,
+    ) -> AppResult<()> {
+        self.approve(app, info)?;
+        let observed = self
+            .nodes
+            .iter()
+            .find(|node| node.host.id == info.host_id)
+            .expect("approve checked observed host");
+        let endpoint = (observed.host.host.clone(), observed.host.port);
+        for node in &mut self.nodes {
+            if (&node.host.host, node.host.port) == (&endpoint.0, endpoint.1) {
+                node.key = Some(info.fingerprint.clone());
+            }
+        }
+        self.verify(app)
     }
 
     fn verify_saved(&self, conn: &rusqlite::Connection) -> AppResult<()> {
