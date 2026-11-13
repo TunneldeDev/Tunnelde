@@ -36,6 +36,25 @@ CHANGELOG 包含双语分类、亮点、可展开详情、PR/提交链接和贡�
 
 不要直接编辑 `release/dev-to-main`；修复和版本策略变更应通过 `dev`。自动化更新生成分支前重新检查实际引用，避免旧 PR 基础快照遗漏新变更。如果 `main` 在生成发布元数据之外有改动，自动化会拒绝覆盖；应先通过审查后的 PR 将热修复合并回 `dev`。
 
+## 显式发布目标
+
+首次 1.0 等需要主动确定版本的里程碑，可通过普通 PR 向 `dev` 添加
+`.github/release-target.json`：
+
+```json
+{ "schemaVersion": 1, "baseVersion": "0.38.0", "targetVersion": "1.0.0" }
+```
+
+基准必须等于当前已推进的正式版本；目标必须为规范的稳定 SemVer、高于基准，
+且不能低于当前变更所需的自动语义升级。基准变化时停止准备，需重新审查声明。
+推进到目标或更高正式版本后，该声明自动失效，后续周期恢复自动版本计算；
+之后可在普通 PR 中移除或替换它。
+
+Beta 准备和正式 PR 生成共用该目标。推进策略根据固定 dev 源码中的声明校验
+版本，不能只改生成的版本元数据来替换目标。声明本身不会发包、绕过 CI，也不会
+将实验 API 提升为稳定。合并正式推进前，应根据[有限核心契约范围](core-contracts.md)
+及最终安装包／升级验收判断是否可以发布。
+
 ## 凭据与保护
 
 使用短期仓库 `GITHUB_TOKEN`，并在 **Settings → Actions → General → Workflow permissions** 中启用 **Allow GitHub Actions to create and approve pull requests**。不需要 PAT、App 密钥、组织级访问或规则集绕过；各工作流分别声明所需权限。自动化可以创建 PR，但不会批准或合并 PR。

@@ -8,6 +8,8 @@ import {
   summarizeChanges,
 } from "../metadata/notes.mjs";
 import { bumpVersion } from "../version.mjs";
+import { compareReleaseTags } from "../metadata/channels.mjs";
+import { readReleaseTarget } from "./target.mjs";
 import { VERSION_PATHS, versionContents } from "../metadata/version-files.mjs";
 import { RELEASE_BRANCH, SOURCE_PATH, assertMainHasNoUnpromotedChanges } from "./validation.mjs";
 import { checkPullRequest } from "./policy.mjs";
@@ -54,7 +56,11 @@ export async function planDevelopment({
   if (!summarizeChanges(commits).length) return { main, dev };
   await assertMainHasNoUnpromotedChanges(github, repo, main, dev, marker);
   const previousVersion = JSON.parse(pkg).version;
-  const version = nextVersion(previousVersion, commits);
+  const automaticVersion = nextVersion(previousVersion, commits);
+  const target = await readReleaseTarget(github, repo, dev, previousVersion);
+  if (target && compareReleaseTags(`v${target}`, `v${automaticVersion}`) < 0)
+    throw new Error("Release target is below the required semantic version bump");
+  const version = target ?? automaticVersion;
   // dev keeps its source history after promotion, including old Unreleased notes.
   // Only newly edited summaries belong to this release cycle.
   const promotedNotes = await readText(github, repo, "CHANGELOG.md", marker.sourceSha);

@@ -44,12 +44,15 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
         ))
         .unwrap();
         assert_eq!(discovery["version"], floor["version"]);
+        assert_eq!(discovery["stability"], "stable");
         assert_eq!(discovery["transport"], floor["transport"]);
         for method in floor["methods"].as_array().unwrap() {
             let mut expected = method.clone();
+            expected["stability"] = json!("stable");
+            expected["since"] = json!("0.38.0-beta.1");
             if method["name"] == "api.describe" {
                 expected["resultSchema"] = serde_json::from_str(include_str!(
-                    "../../tests/fixtures/local-api/discovery-v1.json"
+                    "../../tests/fixtures/local-api/stable-v1/discovery.json"
                 ))
                 .unwrap();
             }

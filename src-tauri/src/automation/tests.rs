@@ -38,6 +38,8 @@ fn version_authentication_and_input_are_separate_contract_failures() {
 fn discovery_has_bounded_versioned_domain_contracts() {
     let schema = describe();
     assert_eq!(schema["version"], VERSION);
+    assert_eq!(schema["stability"], "stable");
+    assert_eq!(schema["protocol"]["stability"], "stable");
     assert_eq!(schema["transport"]["maximumRequestBytes"], MAX_REQUEST);
     assert_eq!(schema["transport"]["maximumResponseBytes"], MAX_RESPONSE);
     let methods = schema["methods"].as_array().unwrap();
@@ -52,6 +54,8 @@ fn discovery_has_bounded_versioned_domain_contracts() {
             && names.contains("sessions.list")
     );
     for method in methods {
+        assert_eq!(method["stability"], "stable");
+        assert_eq!(method["since"], "0.38.0-beta.1");
         assert!(["read", "write"].contains(&method["effect"].as_str().unwrap()));
         assert_eq!(method["inputSchema"]["additionalProperties"], false);
         assert_eq!(method["resultSchema"]["type"], "object");

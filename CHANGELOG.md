@@ -6,6 +6,42 @@ All notable changes to Tunnelde are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.0.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.38.0...v1.0.0) - 2026-11-13
+
+### 更新概览 | Highlights
+
+- **api:** freeze the seven local v1 contracts
+- **api:** define the finite local stability boundary
+- **release:** support reviewed milestone targets
+- **api:** verify stable contracts in public milestone packages
+- **release:** select the first stable milestone
+
+<details open>
+<summary>详细变更 | Details (5)</summary>
+
+### 新增 | New
+
+- **api:** freeze the seven local v1 contracts ([#323](https://github.com/TunneldeDev/Tunnelde/pull/323), [5a0b47f](https://github.com/TunneldeDev/Tunnelde/commit/5a0b47fa251487597a371f89ca36670924c7b0d1)) @quyansiyuanwang
+
+### 文档 | Docs
+
+- **api:** define the finite local stability boundary ([#323](https://github.com/TunneldeDev/Tunnelde/pull/323)) @quyansiyuanwang
+
+### 构建 | Build
+
+- **release:** support reviewed milestone targets ([#325](https://github.com/TunneldeDev/Tunnelde/pull/325), [26a3d98](https://github.com/TunneldeDev/Tunnelde/commit/26a3d989dfa7a7dfb143cf23e02da57944fbe145)) @quyansiyuanwang
+- **api:** verify stable contracts in public milestone packages ([#326](https://github.com/TunneldeDev/Tunnelde/pull/326)) @quyansiyuanwang
+
+### 其他 | Other
+
+- **release:** select the first stable milestone ([#325](https://github.com/TunneldeDev/Tunnelde/pull/325)) @quyansiyuanwang
+
+</details>
+
+### 贡献者 | Contributors
+
+@quyansiyuanwang
+
 ## [0.38.0](https://github.com/TunneldeDev/Tunnelde/compare/v0.37.0...v0.38.0) - 2026-11-13
 
 ### 更新概览 | Highlights
