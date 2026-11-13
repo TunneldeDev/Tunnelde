@@ -28,8 +28,9 @@ method to stable.
 
 ## Domain ownership and release gates
 
-The proposed first stable local surface is limited to these seven methods.
-This is the review scope, not an announcement of stability:
+The stable local protocol v1 surface is limited to these seven methods.
+The versioned declaration and immutable historical baselines are documented in
+the [compatibility policy](local-api-compatibility.md):
 
 | Surface                                                            | Contract boundary                                                                                                                                                                                  |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -49,11 +50,11 @@ or an interactive approval prompt.
 The existing 16 stable plugin methods retain their separate frozen contract.
 Additional local mutations, plugin UI extensions, runners and advanced transfer
 recovery can remain experimental after desktop 1.0. They are not required to
-reach the first stable local contract. Its remaining release gates are historical
+reach the first stable local contract. Release gates continue to include historical
 client compatibility, supported-platform binary checks, basic file safety, and
 actual installation/upgrade data preservation. A new API method is not a gate.
 
-This table is a closure checklist, not a claim that every candidate is stable.
+This table is a closure checklist, not a claim that every domain is stable.
 The [local API](local-api.md) is the first external-program adapter.
 
 | Domain               | Existing owner                                                          | Closure required before promising its public stability                                                                             |
@@ -77,7 +78,8 @@ upgrade preservation remain necessary even when advanced features are deferred.
 
 `scripts/ci/check-core-contract.mjs` checks the historical stable plugin floor.
 `scripts/ci/check-local-api-contract.mjs` validates actual local-domain producer
-outputs and the checked-in candidate floor. `src-tauri/tests/automation_cli.rs`
+outputs against the finite stable declaration, discovery schema and unchanged
+historical fixtures. `src-tauri/tests/automation_cli.rs`
 runs real console and desktop CLI subprocesses against a fixed v1 wire fixture.
 These checks do not replace actual desktop service integration or packaged
 cross-platform installation and upgrade tests.
