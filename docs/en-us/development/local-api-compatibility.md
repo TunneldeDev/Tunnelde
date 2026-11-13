@@ -1,8 +1,8 @@
 # Local API compatibility
 
-The first local stable candidate is limited to seven methods. It remains
-**experimental** until release acceptance and a reviewed stable declaration are
-complete. Existing stable plugin RPC promises are independent; desktop 1.0 does
+The local protocol v1 stable declaration is limited to the seven methods below.
+Discovery publishes `stability: stable` and each method's `since` value.
+Existing stable plugin RPC promises are independent; desktop 1.0 does
 not automatically stabilize other plugin, runner or UI extension APIs.
 
 | Method                 | Contract boundary                                                                                 |
@@ -14,6 +14,18 @@ not automatically stabilize other plugin, runner or UI extension APIs.
 | `preferences.schema`   | Versioned public preference groups and validation schemas                                         |
 | `preferences.snapshot` | Current values, defaults and opaque revision                                                      |
 | `preferences.update`   | Conditional update through the desktop's shared settings writer                                   |
+
+`since: 0.38.0-beta.1` records the first public introduction, not the date of
+stabilization. The declaration in `tests/fixtures/local-api/stable-v1/` freezes
+the original method/input/result/error contracts by their historical fixture
+digests, with reviewed stability metadata and a separate discovery schema.
+Historical fixtures are never rewritten to match a changed implementation.
+Additional methods must declare their own stability and introduction version;
+the stable protocol does not make an experimental method stable.
+
+The local preference adapter projects the shared preference schema with a stable
+v1 guarantee. Its plugin adapter remains experimental. Both use the same desktop
+writer; any shared schema change must satisfy the frozen local contract too.
 
 ## Data and lifetime
 

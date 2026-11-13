@@ -1,11 +1,14 @@
 # Local API and CLI
 
-See the [compatibility policy](local-api-compatibility.md) for the finite candidate
-scope, data lifetimes, evolution rules and stable declaration requirements.
+See the [compatibility policy](local-api-compatibility.md) for the finite stable
+scope, data lifetimes and evolution rules.
 
-The local automation API is an **experimental candidate for 1.0**. Its protocol
+The local automation protocol v1 and its seven declared methods are **stable**.
+Other application and plugin APIs keep their own stability status. The protocol
 version is independent of the desktop version and plugin RPC version. A protocol
-number alone is not a stability promise. The machine-readable source is
+number alone is not a stability promise. Each method declares `stability` and
+`since`; `since` records its introduction in 0.38.0-beta.1, not its stable
+declaration or a promise that the entire application is 1.0. The source is
 `src-tauri/src/automation/schema/v1.json`, composed with domain-owned preference
 schemas by `automation/domains/preferences/schema.rs`.
 Common request/response schemas, error codes and CLI exit codes are published in
@@ -143,8 +146,10 @@ owns arguments, output and exit codes. Business
 logic remains in the shared application services. UI state and native database
 structures are not public API contracts.
 
-Before this surface is marked stable: freeze input/output/error fixtures, validate
-real outputs against schemas, test an older console client against the new host,
-verify packaged binaries on supported platforms, and document deprecation rules.
+The stable baseline is `tests/fixtures/local-api/stable-v1/declaration.json`, with
+a separate discovery schema and digests of the unchanged historical fixtures.
+CI checks actual producer outputs against this baseline. Historical CLI behavior,
+packaged binaries and installation/upgrade retention remain release checks;
+schema equality alone is insufficient.
 New write methods must use existing validation, authorization, revisions and
 invalidation rather than introducing another persistence path.
