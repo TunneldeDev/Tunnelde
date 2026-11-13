@@ -9,6 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::error::{AppError, AppResult};
+use crate::network::requests::idempotent_get as request;
 use crate::state::AppState;
 
 type Jobs = Arc<Mutex<HashMap<String, Arc<AtomicBool>>>>;
@@ -31,34 +32,16 @@ fn network_error(error: reqwest::Error) -> AppError {
     );
     AppError::validation(if timeout {
         "market.timeout"
-    } else if detail.to_ascii_lowercase().contains("tls") {
+    } else if {
+        let detail = detail.to_ascii_lowercase();
+        detail.contains("tls") || detail.contains("handshake")
+    } {
         "market.tlsHandshake"
     } else if connect {
         "market.connectFailed"
     } else {
         "market.network"
     })
-}
-
-// Replay only an idempotent GET whose TLS handshake ended prematurely. Never
-// retry certificate/authentication failures or change the configured route.
-async fn request(
-    client: &reqwest::Client,
-    url: reqwest::Url,
-    timeout: Duration,
-) -> Result<reqwest::Response, reqwest::Error> {
-    for attempt in 0..3 {
-        let result = client.get(url.clone()).timeout(timeout).send().await;
-        if let Err(error) = &result {
-            let detail = format!("{error:?}").to_ascii_lowercase();
-            if attempt < 2 && error.is_connect() && detail.contains("tls handshake eof") {
-                tokio::time::sleep(Duration::from_millis(250 * (attempt + 1))).await;
-                continue;
-            }
-        }
-        return result;
-    }
-    unreachable!("bounded request retries always return")
 }
 
 pub fn validate_url(url: &str) -> AppResult<reqwest::Url> {
@@ -263,7 +246,17 @@ mod tests {
         assert!(!result.contains("example.org"));
     }
     #[tokio::test]
-    async fn premature_tls_eof_retries_the_selected_proxy_without_direct_fallback() {
+    async fn rustls_premature_tls_eof_retries_the_selected_proxy_without_direct_fallback() {
+        interrupted_handshake_retries(false).await;
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn native_premature_tls_eof_retries_the_selected_proxy_without_direct_fallback() {
+        interrupted_handshake_retries(true).await;
+    }
+
+    async fn interrupted_handshake_retries(native: bool) {
         use tokio::{
             io::{AsyncReadExt, AsyncWriteExt},
             net::TcpListener,
@@ -289,7 +282,21 @@ mod tests {
                 stream.shutdown().await.unwrap();
             }
         });
-        let client = crate::network::http_client_for_proxy(Some(&proxy)).unwrap();
+        // Exercise the precise Rustls EOF that the common GET retry recognizes.
+        // Windows production uses Schannel, whose errors need not share wording.
+        let builder = reqwest::Client::builder()
+            .no_proxy()
+            .proxy(reqwest::Proxy::all(&proxy).unwrap())
+            .tls_backend_rustls();
+        #[cfg(windows)]
+        let builder = if native {
+            builder.tls_backend_native()
+        } else {
+            builder
+        };
+        #[cfg(not(windows))]
+        assert!(!native);
+        let client = builder.build().unwrap();
         let error = tokio::time::timeout(
             Duration::from_secs(8),
             request(
