@@ -17,6 +17,47 @@ mod transfer_task;
 mod transfer_terminal;
 mod transfer_worker;
 
+#[tokio::test]
+async fn install_records_block_lexical_and_canonical_paths_without_remote_mutation() {
+    use crate::ssh::files::native_save::{journal::Owner, testing::setup_plan};
+    let fixture = Fixture::new();
+    let mut journal = fixture.journal();
+    journal.enable_setups().unwrap();
+    let plan = setup_plan();
+    journal
+        .reserve_setup(
+            Owner {
+                id: uuid::Uuid::new_v4().to_string(),
+                generation: uuid::Uuid::new_v4().to_string(),
+            },
+            plan.clone(),
+        )
+        .unwrap();
+    drop(journal);
+    let manager = fixture.manager();
+    let (sftp, probes) = server(
+        &[
+            ("/alias", Ok(&plan.selection.directory)),
+            ("/workspace/document", Ok("/workspace/document")),
+        ],
+        None,
+    )
+    .await;
+    assert!(manager
+        .writable(&plan.destination, &sftp, &[&plan.install_directory])
+        .await
+        .is_err());
+    assert_eq!(probes.load(Ordering::SeqCst), 0);
+    assert!(manager
+        .writable(&plan.destination, &sftp, &["/alias"])
+        .await
+        .is_err());
+    manager
+        .writable(&plan.destination, &sftp, &["/workspace/document"])
+        .await
+        .unwrap();
+}
+
 struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Self {
