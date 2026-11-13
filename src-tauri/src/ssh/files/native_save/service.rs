@@ -64,6 +64,14 @@ impl<S: Secrets + 'static> Service<S> {
     pub async fn records(&self) -> journal::Result<Vec<Record>> {
         self.blocking(|storage| storage.journal()?.records()).await
     }
+    pub async fn setups(&self) -> journal::Result<Vec<journal::setup::Record>> {
+        self.blocking(|storage| storage.journal()?.setups()).await
+    }
+    pub async fn discard_setup(&self, expected: &journal::setup::Record) -> journal::Result<()> {
+        let expected = expected.clone();
+        self.blocking(move |storage| storage.journal()?.discard_setup(&expected))
+            .await
+    }
     // New production writes stay disabled until bilateral durable admission and
     // installation consent are integrated. Recovery must not mint a new submit.
     #[cfg(test)]

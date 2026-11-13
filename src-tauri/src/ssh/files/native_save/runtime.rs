@@ -91,6 +91,14 @@ impl Manager {
                     pending.extend(service.legacy_claims().await?.iter().map(|claim| {
                         projection::legacy(claim, service.legacy_worker_running(&claim.id))
                     }));
+                    pending.extend(
+                        service
+                            .setups()
+                            .await?
+                            .iter()
+                            .filter(|setup| setup.stage != super::journal::setup::Stage::Ready)
+                            .map(projection::setup),
+                    );
                     Ok(pending)
                 }
             }
@@ -123,6 +131,21 @@ impl Manager {
             if id == "native-store" {
                 service.records().await.map_err(errors::app_journal)?;
                 return Ok(());
+            }
+            if let Some(operation) = id.strip_prefix("native-setup-") {
+                let setup = service
+                    .setups()
+                    .await
+                    .map_err(errors::app_journal)?
+                    .into_iter()
+                    .find(|setup| setup.id == operation)
+                    .ok_or_else(|| AppError::validation("editor.cleanupMissing"))?;
+                // Unknown installation is diagnostic only. Neither reinitialize
+                // nor remove a remote path on a retry of this recovery entry.
+                return service
+                    .discard_setup(&setup)
+                    .await
+                    .map_err(errors::app_journal);
             }
             if let Some(operation) = id.strip_prefix("native-legacy-") {
                 let claim = service

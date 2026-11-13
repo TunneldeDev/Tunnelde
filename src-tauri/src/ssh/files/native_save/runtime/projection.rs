@@ -55,6 +55,28 @@ pub(super) fn unavailable(error: &str) -> PendingCleanup {
     }
 }
 
+pub(super) fn setup(setup: &super::super::journal::setup::Record) -> PendingCleanup {
+    let unsent = setup.stage == super::super::journal::setup::Stage::Reserved;
+    PendingCleanup {
+        id: format!("native-setup-{}", setup.id),
+        path: setup.plan.selection.executable.clone(),
+        directory: setup.plan.selection.directory.clone(),
+        address: setup.plan.destination.address.clone(),
+        source: "native",
+        action: Some(if unsent { "discard" } else { "inspect" }),
+        updated_at: 0,
+        error: Some(
+            if unsent {
+                "editor.nativeUnsent"
+            } else {
+                "editor.remoteOutcomeUnknown"
+            }
+            .into(),
+        ),
+        running: false,
+    }
+}
+
 pub(super) fn legacy(
     claim: &super::super::journal::admission::Claim,
     running: bool,

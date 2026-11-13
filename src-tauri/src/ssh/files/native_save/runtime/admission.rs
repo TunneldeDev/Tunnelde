@@ -21,6 +21,13 @@ impl Manager {
         };
         let records = service.records().await.map_err(errors::app_journal)?;
         let claims = service.legacy_claims().await.map_err(errors::app_journal)?;
+        let setups: Vec<_> = service
+            .setups()
+            .await
+            .map_err(errors::app_journal)?
+            .into_iter()
+            .filter(|setup| setup.plan.same_host(destination))
+            .collect();
         let blocking: Vec<_> = records
             .iter()
             .filter(|record| record.blocks_target() && record.binding.same_host(destination))
@@ -30,7 +37,7 @@ impl Manager {
             .flat_map(|claim| &claim.scopes)
             .filter(|scope| scope.same_host(destination))
             .collect();
-        if blocking.is_empty() && legacy.is_empty() {
+        if blocking.is_empty() && legacy.is_empty() && setups.is_empty() {
             return Ok(());
         }
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -39,6 +46,7 @@ impl Manager {
                 .iter()
                 .any(|record| record.binding.overlaps_path(path))
                 || legacy.iter().any(|scope| overlaps(scope, path))
+                || setups.iter().any(|setup| setup.plan.protects(path))
             {
                 return Err(AppError::validation("editor.remoteOutcomeUnknown"));
             }
@@ -51,6 +59,7 @@ impl Manager {
                 .iter()
                 .any(|record| record.binding.overlaps_path(&resolved))
                 || legacy.iter().any(|scope| overlaps(scope, &resolved))
+                || setups.iter().any(|setup| setup.plan.protects(&resolved))
             {
                 return Err(AppError::validation("editor.remoteOutcomeUnknown"));
             }

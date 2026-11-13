@@ -6,6 +6,9 @@ Background work uses a shared task service with lifecycle-owned source adapters 
 visibility. See [Background task integration](background-tasks.md)
 ([简体中文](../../zh-cn/development/background-tasks.md)).
 
+Experimental [native file save installation and recovery](native-file-saves.md)
+uses private, explicitly initialized authority and shared file admission.
+
 ## Layers
 
 | Layer      | Location                                                                                                | Responsibility                                                                                                                         |
