@@ -49,6 +49,41 @@ async fn settled(observation: &MutationObservation) {
 }
 
 #[tokio::test]
+async fn sealed_transfer_epoch_rejects_queued_mutations_without_breaking_readonly_requests() {
+    let (session, mut peer, observation) = observed().await;
+    observation.seal().unwrap();
+    assert!(session.open("/must-not-be-created", true).await.is_err());
+    assert!(session.write("old-handle", 0, vec![7; 19]).await.is_err());
+    assert!(session
+        .create_private_directory("/must-not-be-created")
+        .await
+        .is_err());
+    let mut line = String::new();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(20), peer.read_line(&mut line))
+            .await
+            .is_err()
+    );
+    assert!(
+        line.is_empty(),
+        "sealed mutations must never reach the peer"
+    );
+    let captured = session.clone();
+    let reader = tokio::spawn(async move { captured.open("/readonly", false).await });
+    let request = receive(&mut peer).await;
+    assert_eq!(request["op"], "open");
+    assert_eq!(request["write"], false);
+    reply(
+        &mut peer,
+        &request["id"],
+        json!({"size":0,"handle":"read-only"}),
+    )
+    .await;
+    assert_eq!(reader.await.unwrap().unwrap(), "read-only");
+    assert!(observation.settled());
+}
+
+#[tokio::test]
 async fn original_worker_observes_late_mkdir_write_and_archive_replies_after_caller_loss() {
     for op in ["mkdir_private", "write", "archive_write"] {
         let (session, mut peer, observation) = observed().await;

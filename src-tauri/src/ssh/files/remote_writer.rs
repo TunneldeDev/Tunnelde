@@ -19,7 +19,9 @@ impl File {
     ) -> AppResult<Self> {
         // OPEN can create/truncate before its reply is received. Dropping this
         // future must retain uncertainty even if no File reached the caller.
-        let handle = observation.begin();
+        let handle = observation
+            .begin()
+            .ok_or_else(|| super::AppError::validation("editor.remoteOutcomeUnknown"))?;
         match sftp.open_with_flags(path, flags).await {
             Ok(inner) => Ok(Self {
                 inner,

@@ -18,6 +18,8 @@ pub(crate) use observation::Observation;
 pub(crate) use observation::{terminal as terminal_mutation_status, Receipt as MutationReceipt};
 use russh_sftp::client::SftpSession;
 use std::future::Future;
+#[cfg(test)]
+pub(crate) use transfer::Reference as TransferReference;
 pub(crate) use transfer::Target as MutationTarget;
 
 pub(crate) struct Mutation {

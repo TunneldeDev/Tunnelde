@@ -297,12 +297,19 @@ impl Session {
                     if bytes.len() > 16383 {
                         return Err(protocol_error());
                     }
+                    let observed = match observation.begin(&request.header) {
+                        Ok(observed) => observed,
+                        Err(error) => {
+                            let _ = request.reply.send(Err(error));
+                            continue;
+                        }
+                    };
                     pending.lock().unwrap().insert(
                         request.id,
                         PendingReply {
                             reply: request.reply,
                             _slot: request.slot,
-                            observation: observation.begin(&request.header),
+                            observation: observed,
                         },
                     );
                     output.write_all(&bytes).await?;

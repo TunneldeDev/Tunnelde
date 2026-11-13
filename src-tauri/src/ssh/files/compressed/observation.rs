@@ -29,7 +29,7 @@ impl Observer {
 
     /// Called after serialization and queue cancellation checks, immediately
     /// before the first possible write. Queued but unsent work owns no receipt.
-    pub(super) fn begin(&self, header: &Value) -> Pending {
+    pub(super) fn begin(&self, header: &Value) -> AppResult<Pending> {
         let kind = match header["op"].as_str() {
             Some("open") if header["write"] == true => Kind::Open,
             Some("write" | "archive_write" | "mkdir_private") => Kind::Mutation,
@@ -45,8 +45,16 @@ impl Observer {
             }
             _ => Kind::Read,
         };
-        let receipt = (!matches!(kind, Kind::Read)).then(|| self.requests.begin());
-        Pending { receipt, kind }
+        let receipt = if matches!(kind, Kind::Read) {
+            None
+        } else {
+            Some(
+                self.requests
+                    .begin()
+                    .ok_or_else(|| AppError::validation("editor.remoteOutcomeUnknown"))?,
+            )
+        };
+        Ok(Pending { receipt, kind })
     }
 
     pub(super) fn complete(&self, pending: Pending, reply: &Reply) -> AppResult<()> {

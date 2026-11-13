@@ -4,8 +4,16 @@ use rusqlite::{params, TransactionBehavior};
 
 impl Journal {
     pub fn park_editor_cleanup(&mut self, permit: Dispatched) -> Result<()> {
+        self.park_legacy(permit, Kind::Editor).map(|_| ())
+    }
+
+    pub fn park_transfer(&mut self, permit: Dispatched) -> Result<Claim> {
+        self.park_legacy(permit, Kind::Transfer)
+    }
+
+    fn park_legacy(&mut self, permit: Dispatched, kind: Kind) -> Result<Claim> {
         let expected = permit.claim;
-        if expected.kind != Kind::Editor || expected.phase != Phase::Dispatched {
+        if expected.kind != kind || expected.phase != Phase::Dispatched {
             return Err(Error::Changed);
         }
         self.verify()?;
@@ -28,6 +36,7 @@ impl Journal {
             return Err(Error::Changed);
         }
         tx.commit().map_err(|_| Error::Unavailable)?;
-        self.verify()
+        self.verify()?;
+        Ok(next)
     }
 }
