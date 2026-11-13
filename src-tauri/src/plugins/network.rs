@@ -30,12 +30,10 @@ fn network_error(error: reqwest::Error) -> AppError {
         detail,
         "plugin HTTPS request failed"
     );
+    let detail = detail.to_ascii_lowercase();
     AppError::validation(if timeout {
         "market.timeout"
-    } else if {
-        let detail = detail.to_ascii_lowercase();
-        detail.contains("tls") || detail.contains("handshake")
-    } {
+    } else if detail.contains("tls") || detail.contains("handshake") {
         "market.tlsHandshake"
     } else if connect {
         "market.connectFailed"
