@@ -170,7 +170,7 @@ is mapped for presentation. A writable OPEN retains a separate handle receipt
 until its original successful CLOSE; rejected CLOSE, channel shutdown or a later
 successful write cannot release it. The compressed protocol worker tracks original
 request ids and validates mutation-reply shapes before delivery, so it can observe
-a late terminal reply even after the caller cancels. Raw SFTP requests dropped by
+a late terminal reply even after the caller cancels. Unretained raw SFTP requests dropped by
 their caller remain unknown because the library no longer delivers that response
 to the observer. Pseudo connection statuses are not terminal MKDIR rejections.
 Ordinary metadata-channel writable files and transfer-directory creation share
@@ -189,10 +189,15 @@ result-cache eviction retains unconfirmed epochs independently; re-registering
 the same task cannot forget them. Cleanup atomically seals the previous settled
 epoch before obtaining a new one, excluding queued old adapters. A late original
 reply can permit that transition; an unrelated probe or later success cannot.
-This runtime protection is not durable task/claim association. Complete source
-mutation coverage, crash reconciliation, and original-worker retention across all
-publication cancellation paths remain required. Restarting the application does
-not establish completion of an unconfirmed transfer.
+Publication, recovery rename, atomic replacement and artifact cleanup now retain
+their original protocol workers after cancellation or expiration of the caller's
+wait. Transfer and cleanup teardown cannot close an owned metadata channel while
+that worker remains live. Its original typed terminal reply can settle the request;
+transport shutdown, malformed replies and protocol timeouts still remain unknown.
+This runtime protection is not durable task/claim association. Generated-path
+admission, final authorization and cross-store crash reconciliation remain
+required. Restarting the application does not establish completion of an
+unconfirmed transfer.
 
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.

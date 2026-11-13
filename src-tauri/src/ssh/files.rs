@@ -25,6 +25,7 @@ mod local_directory_move;
 pub mod local_editor;
 #[cfg(windows)]
 mod local_move;
+mod metadata;
 mod move_verification;
 pub(crate) mod mutations;
 #[allow(
@@ -1212,6 +1213,7 @@ struct Meter<'a> {
     batch_progress: Option<batch::Progress>,
     archives: Option<Arc<archive::Batcher>>,
     observation: native_save::runtime::MutationObservation,
+    metadata: Option<Arc<SftpSession>>,
 }
 
 impl<'a> Meter<'a> {
@@ -1258,6 +1260,7 @@ impl<'a> Meter<'a> {
         name: &'a str,
         total: u64,
         observation: native_save::runtime::MutationObservation,
+        metadata: Option<Arc<SftpSession>>,
     ) -> Self {
         Self {
             app,
@@ -1272,6 +1275,7 @@ impl<'a> Meter<'a> {
             batch_progress: None,
             archives: None,
             observation,
+            metadata,
         }
     }
 
@@ -1784,6 +1788,7 @@ async fn copy_directory_batch(
     // directory child here could follow a link before copy_entry rejects it.
     let channels = meter.data_channels.clone();
     let observation = meter.observation.clone();
+    let metadata = meter.metadata.clone();
     let archives = Arc::new(archive::Batcher::new(observation.clone()));
     let app = meter.app;
     let id = meter.id;
@@ -1818,7 +1823,8 @@ async fn copy_directory_batch(
         |path, progress, stop| {
             let source = from.child(path);
             let destination = to.child(to.join(&file_name_of(&source.path)));
-            let mut worker = Meter::new(app, id, name, total, observation.clone());
+            let mut worker =
+                Meter::new(app, id, name, total, observation.clone(), metadata.clone());
             worker.settings = settings.clone();
             worker.data_channels = channels.clone();
             worker.batch_progress = Some(progress);
@@ -2113,8 +2119,15 @@ async fn durable_copy_file(
             source.finish_cancellable(cancel).await?;
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             artifacts::confirm_publication(meter.app, id, to)?;
-            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation)
-                .await?;
+            artifacts::finish_staging(
+                meter.app,
+                id,
+                to,
+                meter.metadata.as_ref(),
+                cancel,
+                &meter.observation,
+            )
+            .await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2130,7 +2143,7 @@ async fn durable_copy_file(
         meter.app,
         id,
         to,
-        to_sftp,
+        meter.metadata.as_ref(),
         cancel,
         &meter.observation,
         |directory| async move {
@@ -2201,8 +2214,15 @@ async fn durable_copy_file(
             if recovering_publication {
                 artifacts::confirm_publication(meter.app, id, to)?;
             }
-            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation)
-                .await?;
+            artifacts::finish_staging(
+                meter.app,
+                id,
+                to,
+                meter.metadata.as_ref(),
+                cancel,
+                &meter.observation,
+            )
+            .await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2433,7 +2453,15 @@ async fn durable_copy_file(
         .await?;
         save(true)?;
         artifacts::confirm_publication(meter.app, id, to)?;
-        artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation).await?;
+        artifacts::finish_staging(
+            meter.app,
+            id,
+            to,
+            meter.metadata.as_ref(),
+            cancel,
+            &meter.observation,
+        )
+        .await?;
         return Ok(());
     }
     // Persist the old target fingerprint before moving it, so both rename
@@ -2463,10 +2491,26 @@ async fn durable_copy_file(
                     AppError::from(error)
                 }
             }),
-        None => publication::commit(&temp, to, to_sftp, cancel, &meter.observation).await,
+        None => {
+            publication::commit(
+                &temp,
+                to,
+                meter.metadata.as_ref(),
+                cancel,
+                &meter.observation,
+            )
+            .await
+        }
     };
     #[cfg(not(windows))]
-    let committed = publication::commit(&temp, to, to_sftp, cancel, &meter.observation).await;
+    let committed = publication::commit(
+        &temp,
+        to,
+        meter.metadata.as_ref(),
+        cancel,
+        &meter.observation,
+    )
+    .await;
     tracing::debug!(id, "Transfer publication returned");
     if let Err(e) = committed {
         if own_backup {
@@ -2486,7 +2530,15 @@ async fn durable_copy_file(
     if to_sftp.is_some() {
         artifacts::confirm_publication(meter.app, id, to)?;
     }
-    artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation).await?;
+    artifacts::finish_staging(
+        meter.app,
+        id,
+        to,
+        meter.metadata.as_ref(),
+        cancel,
+        &meter.observation,
+    )
+    .await?;
     Ok(())
 }
 
@@ -2582,12 +2634,11 @@ async fn remove_endpoint(
 /// delete a path that another client may have replaced with a directory.
 async fn remove_transfer_file(
     endpoint: &Endpoint,
-    sftp: Option<&SftpSession>,
+    sftp: Option<&Arc<SftpSession>>,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     match sftp {
-        Some(handle) => observation
-            .request(handle.remove_file(&endpoint.path))
+        Some(handle) => metadata::remove_file(handle, &endpoint.path, observation)
             .await
             .map_err(map_sftp),
         None => tokio::fs::remove_file(&endpoint.path)
@@ -2789,7 +2840,7 @@ async fn run(
     let to_sftp = match &to.session {
         Some(session_id) => {
             match interruptible(Some(cancel), session_with_config(app, session_id, config)).await {
-                Ok(value) => Some(value),
+                Ok(value) => Some(Arc::new(value)),
                 Err(error) => {
                     if let Some(sftp) = from_sftp {
                         let _ =
@@ -2808,7 +2859,7 @@ async fn run(
         from,
         to,
         from_sftp.as_ref(),
-        to_sftp.as_ref(),
+        to_sftp.as_deref(),
         remove_source,
     )
     .await
@@ -2912,7 +2963,7 @@ async fn run(
     };
     progress(app, id, name, 0, total);
 
-    let mut meter = Meter::new(app, id, name, total, observation);
+    let mut meter = Meter::new(app, id, name, total, observation, to_sftp.clone());
     meter.settings = settings;
     if let Ok(mut row) = durable::Journal::get(app, id) {
         row.total = total;
@@ -2933,7 +2984,7 @@ async fn run(
                 }
             }
         } else if !resuming && !overwrite {
-            let exists = match to_sftp.as_ref() {
+            let exists = match to_sftp.as_deref() {
                 Some(sftp) => interruptible(Some(cancel), remote_exists(sftp, &to.path)).await?,
                 None => Path::new(&to.path).try_exists()?,
             };
@@ -2954,7 +3005,7 @@ async fn run(
             from,
             to,
             from_sftp.as_ref(),
-            to_sftp.as_ref(),
+            to_sftp.as_deref(),
             &mut meter,
             cancel,
             overwrite,
@@ -2984,7 +3035,7 @@ async fn run(
                         from,
                         to,
                         from_sftp.as_ref(),
-                        to_sftp.as_ref(),
+                        to_sftp.as_deref(),
                         cancel,
                     )
                     .await?;
@@ -3031,8 +3082,9 @@ async fn run(
     if let Some(sftp) = from_sftp {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
     }
+    drop(meter.metadata.take());
     if let Some(sftp) = to_sftp {
-        let _ = tokio::time::timeout(std::time::Duration::from_secs(5), sftp.close()).await;
+        metadata::close(sftp).await;
     }
 
     if !meter.observation.settled() {
@@ -4692,6 +4744,9 @@ mod tests {
             hold_remove: AtomicBool,
             remove_started: Notify,
             release_remove: Notify,
+            hold_remove_reply: AtomicBool,
+            remove_applied: Notify,
+            release_remove_reply: Notify,
         }
 
         struct DiskServer {
@@ -4868,6 +4923,10 @@ mod tests {
                     std::fs::write(&path, b"independent replacement").map_err(io_status)?;
                 }
                 std::fs::remove_file(path).map_err(io_status)?;
+                self.state.remove_applied.notify_one();
+                if self.state.hold_remove_reply.load(Ordering::SeqCst) {
+                    self.state.release_remove_reply.notified().await;
+                }
                 Ok(status(id))
             }
 

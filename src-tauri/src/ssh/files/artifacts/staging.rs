@@ -37,7 +37,7 @@ pub(super) async fn prepare_remote_staging<F, Fut>(
     app: &AppHandle,
     id: &str,
     to: &Endpoint,
-    sftp: Option<&SftpSession>,
+    sftp: Option<&Arc<SftpSession>>,
     cancel: &AtomicBool,
     record: &mut Option<ArtifactRecord>,
     preparation: Preparation<'_, F>,
@@ -187,7 +187,7 @@ pub(super) async fn validate_directory(
 pub(super) async fn retire_remote_staging(
     id: &str,
     to: &Endpoint,
-    sftp: &SftpSession,
+    sftp: &Arc<SftpSession>,
     record: &ArtifactRecord,
     cancel: &AtomicBool,
     observation: &native_save::runtime::MutationObservation,
@@ -218,8 +218,7 @@ pub(super) async fn retire_remote_staging(
         }
         match sftp.symlink_metadata(&part.path).await {
             Ok(metadata) if metadata.is_regular() && metadata.size == Some(0) => {
-                observation
-                    .request(sftp.remove_file(&part.path))
+                metadata::remove_file(sftp, &part.path, observation)
                     .await
                     .map_err(map_sftp)?;
             }
@@ -233,7 +232,7 @@ pub(super) async fn retire_remote_staging(
         }
         // If a delayed OPEN races the unlink, RMDIR refuses a non-empty parent.
         // The unchanged journal makes the next attempt retry the same fence.
-        match observation.request(sftp.remove_dir(&directory.path)).await {
+        match metadata::remove_dir(sftp, &directory.path, observation).await {
             Ok(()) => Ok(()),
             Err(error) if missing(&error) => Ok(()),
             Err(error) => Err(map_sftp(error)),
@@ -248,7 +247,7 @@ mod tests;
 /// Remove only a staging directory whose creation has a terminal acknowledgement.
 /// A missing path cannot fence a MKDIR still queued on another connection.
 pub(super) async fn cleanup_directory(
-    sftp: &SftpSession,
+    sftp: &Arc<SftpSession>,
     directory: &Endpoint,
     creation_pending: bool,
     observation: &native_save::runtime::MutationObservation,
@@ -258,7 +257,7 @@ pub(super) async fn cleanup_directory(
             path: directory.path.clone(),
         });
     }
-    match observation.request(sftp.remove_dir(&directory.path)).await {
+    match metadata::remove_dir(sftp, &directory.path, observation).await {
         Ok(()) => Ok(()),
         Err(error) if missing(&error) => Ok(()),
         Err(error) => Err(map_sftp(error)),

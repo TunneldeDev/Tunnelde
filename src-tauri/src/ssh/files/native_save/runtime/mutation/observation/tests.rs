@@ -126,3 +126,79 @@ async fn dropped_request_and_string_lookalikes_never_create_completion_evidence(
     observation.opaque(async { Ok(()) }).await.unwrap();
     assert!(!observation.settled());
 }
+
+#[tokio::test]
+async fn retained_original_reply_survives_a_dropped_caller_wait() {
+    let observation = Observation::default();
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    {
+        let request = {
+            let started = started.clone();
+            let release = release.clone();
+            async move {
+                started.notify_one();
+                release.notified().await;
+                Ok(())
+            }
+        };
+        let wait = observation.retained(request);
+        tokio::pin!(wait);
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            tokio::select! {
+                result = &mut wait => panic!("original response must wait: {result:?}"),
+                () = started.notified() => {}
+            }
+        })
+        .await
+        .unwrap();
+    }
+    assert!(observation.seal().is_err());
+    observation.request(async { Ok(()) }).await.unwrap();
+    assert!(!observation.settled());
+    release.notify_one();
+    tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    observation.seal().unwrap();
+}
+
+#[tokio::test]
+async fn sealed_retained_epoch_does_not_spawn_or_poll_queued_work() {
+    let observation = Observation::default();
+    observation.seal().unwrap();
+    let polled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let worker_flag = polled.clone();
+    assert!(observation
+        .retained(async move {
+            worker_flag.store(true, Ordering::Release);
+            Ok(())
+        })
+        .await
+        .is_err());
+    tokio::task::yield_now().await;
+    assert!(!polled.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn retained_workers_require_their_own_typed_terminal_results() {
+    for cause in [
+        status(StatusCode::NoSuchFile),
+        status(StatusCode::Failure),
+        Error::Timeout,
+        Error::UnexpectedPacket,
+        status(StatusCode::ConnectionLost),
+    ] {
+        let terminal = matches!(&cause, Error::Status(status) if super::terminal(status));
+        let observation = Observation::default();
+        let result: Result<(), Error> = observation.retained(async move { Err(cause) }).await;
+        assert!(result.is_err());
+        assert_eq!(observation.settled(), terminal);
+        observation.retained(async { Ok(()) }).await.unwrap();
+        assert_eq!(observation.settled(), terminal);
+    }
+}

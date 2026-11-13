@@ -151,8 +151,8 @@ impl Fixture {
         .await;
         client
     }
-    async fn client(&self) -> SftpSession {
-        SftpSession::new(self.stream().await).await.unwrap()
+    async fn client(&self) -> Arc<SftpSession> {
+        Arc::new(SftpSession::new(self.stream().await).await.unwrap())
     }
     async fn replacement(&self) -> remote_commit::Replacement {
         remote_commit::Replacement::negotiate(russh_sftp::client::RawSftpSession::new(
@@ -252,10 +252,13 @@ async fn interrupted_publication(overwrite: bool, after_commit: bool) {
         .unwrap()
         .forget();
     assert_eq!(fixture.data("/target").unwrap(), b"newer target contents");
-    assert!(
-        !observation.settled(),
-        "an unrelated recovery or late peer execution is not the original reply"
-    );
+    tokio::time::timeout(Duration::from_secs(1), async {
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -482,4 +485,135 @@ async fn terminal_publication_rejections_settle_only_the_original_request() {
         assert_eq!(fixture.data("/stage").unwrap(), b"complete upload");
         assert!(fixture.data("/target").is_none());
     }
+}
+
+#[derive(Clone, Copy)]
+enum Operation {
+    Rename,
+    Replace,
+    Fence,
+}
+
+async fn cancelled_request_keeps_original_channel(operation: Operation, after_commit: bool) {
+    let destination = if matches!(operation, Operation::Fence) {
+        "/next"
+    } else {
+        "/target"
+    };
+    let fixture = Fixture::new(if after_commit { 2 } else { 1 }, destination);
+    let registry = TransferRegistry::default();
+    registry
+        .register("job", Arc::new(AtomicBool::new(false)), None)
+        .unwrap();
+    let observation = registry.observation("job").unwrap();
+    let client = fixture.client().await;
+    let channel = Arc::downgrade(&client);
+    let replacement = if matches!(operation, Operation::Replace) {
+        Some(fixture.replacement().await)
+    } else {
+        None
+    };
+    let from = endpoint("/stage");
+    let to = endpoint(destination);
+    let cancel = AtomicBool::new(false);
+    let request = async {
+        match operation {
+            Operation::Rename => commit(&from, &to, Some(&client), &cancel, &observation).await,
+            Operation::Replace => {
+                interruptible(
+                    Some(&cancel),
+                    replacement
+                        .unwrap()
+                        .commit_observed(&from.path, &to.path, &observation),
+                )
+                .await
+            }
+            Operation::Fence => fence(&from, &to, &client, &cancel, &observation)
+                .await
+                .map(|_| ()),
+        }
+    };
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(request, async {
+            fixture.probe.arrived.acquire().await.unwrap().forget();
+            cancel.store(true, Ordering::SeqCst);
+        })
+        .0
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    registry.release("job");
+    // Exercise the same transfer teardown used after run returns. It must not
+    // close the retained original request's channel or discard its response.
+    metadata::close(client).await;
+    if !matches!(operation, Operation::Replace) {
+        assert!(channel.upgrade().is_some());
+    }
+    assert!(!observation.settled());
+    assert!(registry.reserve_cleanup("job").is_err());
+    assert_eq!(fixture.data(destination).is_some(), after_commit);
+    fixture.probe.release.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(
+        channel.upgrade().is_none(),
+        "completed original worker must release its session"
+    );
+    let cleanup = registry.reserve_cleanup("job").unwrap();
+    assert!(observation.closed());
+    assert!(fixture.data("/stage").is_none());
+    assert_eq!(fixture.data(destination).unwrap(), b"complete upload");
+    drop(cleanup);
+}
+
+#[tokio::test]
+async fn cancelling_before_remote_publication_preserves_each_original_worker_and_channel() {
+    for operation in [Operation::Rename, Operation::Replace, Operation::Fence] {
+        cancelled_request_keeps_original_channel(operation, false).await;
+    }
+}
+
+#[tokio::test]
+async fn cancelling_after_remote_publication_still_observes_each_original_acknowledgement() {
+    for operation in [Operation::Rename, Operation::Replace, Operation::Fence] {
+        cancelled_request_keeps_original_channel(operation, true).await;
+    }
+}
+
+#[tokio::test]
+async fn actual_channel_shutdown_does_not_attest_an_unconfirmed_publication() {
+    let fixture = Fixture::new(1, "/target");
+    let client = fixture.client().await;
+    let observation = native_save::runtime::MutationObservation::default();
+    let cancel = AtomicBool::new(false);
+    let from = endpoint("/stage");
+    let to = endpoint("/target");
+    let result = tokio::time::timeout(Duration::from_secs(2), async {
+        tokio::join!(
+            commit(&from, &to, Some(&client), &cancel, &observation),
+            async {
+                fixture.probe.arrived.acquire().await.unwrap().forget();
+                client.close().await.unwrap();
+            }
+        )
+        .0
+    })
+    .await
+    .unwrap();
+    assert!(result.is_err());
+    assert!(!observation.settled());
+    assert!(observation.seal().is_err());
+    fixture.probe.release.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(2), fixture.probe.finished.acquire())
+        .await
+        .unwrap()
+        .unwrap()
+        .forget();
+    assert!(!observation.settled());
 }
