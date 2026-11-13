@@ -149,9 +149,43 @@ tunnelde-cli forwards remove --params '{"id":"规则ID","revision":"读取到的
 等待操作过期后迟到的弹窗回调不能写入。仅关闭 CLI 连接不会撤销仍待用户确认的
 桌面请求。
 
-接口不接受凭据、SSH 会话 ID、运行实例 ID 或跳过信任的参数。公开启动仍需后续
-单独接入正常的主机密钥和凭据交互。也可使用 `call forwards.save` 等通用 CLI
+接口不接受凭据、SSH 会话 ID、运行实例 ID 或跳过信任的参数。启动通过下述单独
+请求流程接入正常的主机密钥和凭据交互。也可使用 `call forwards.save` 等通用 CLI
 形式。这三个方法保持实验状态，不扩大七个稳定方法的兼容承诺。
+
+## 转发启动回执（实验）
+
+`forwards.start` 接受 `{id, revision, requestId}`，立即返回回执。`revision` 使用
+`forwards.list` 读取的规则修订；`requestId` 是调用方新生成的标准小写 UUID。
+CLI 成功退出表示请求已受理，只有 `running` 阶段表示监听已成功准入。
+
+```sh
+tunnelde-cli forwards start --params '{"id":"规则ID","revision":"读取到的修订","requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+tunnelde-cli forwards start-status --params '{"requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+tunnelde-cli forwards cancel-start --params '{"requestId":"ddc61387-4c72-4cc2-8a1a-5b153769e81b"}'
+```
+
+主程序先显示原生纯文本确认，列出捕获的主机、跳板、方向、端点和暴露风险；确认后
+打开主机密钥与密码弹窗。公开参数不接受凭据、会话 ID 或信任绕过。连接目标变化
+会使审核失效，重试不能悄悄改连别的地址。连接由主程序持有，独立于插件和用户
+终端会话。同一审核主机／路由的规则可以共享连接；最后一条规则停止且待启动
+操作释放引用后，连接自动清理。
+
+阶段依次为 `consent`、`credentials`、`connecting`、`preparing`，终态为 `running`、
+`dismissed`、`cancelled`、`expired` 或 `failed`。回执含原始输入、Unix 毫秒
+`expiresAt`（待启动请求的截止时间，并非回执保留期限）及固定诊断键 `error`（或 null）。
+`running` 只记录曾成功准入，当前
+健康状态看 `forwards.list`。`cancelStart` 仅撤销待启动请求，不能停止已运行实例；
+停止请使用另行确认的 `forwards.stop`。取消前已明确批准并保存的主机密钥不会回滚。
+
+同一时间仅允许一个待处理交互；请求总期限 300 秒，原生确认 120 秒，主窗口心跳
+15 秒。关闭弹窗、页面重载／丢失、过期或取消会阻止迟到的信任写入和监听准入，
+并清理未公开的资源。终态回执在内存中保留 15 分钟，最多 128 条；满额时拒绝新
+请求，不提前淘汰未过期回执。同一 UUID 和相同输入重放原回执，输入不同则拒绝。
+程序重启不保留回执；回执未知不代表没有副作用，先查询 `forwards.list`，再决定
+是否使用**新的** UUID 发起请求，禁止复用未知 UUID。凭据弹窗同时使用原生事件和
+待处理查询投递，避免丢事件。三个接口均为实验状态，保持普通本地 API 的 10 秒
+交换时限，不扩大稳定契约范围。
 
 ## 结构化日志读取（实验）
 

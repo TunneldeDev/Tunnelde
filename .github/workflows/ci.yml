@@ -432,6 +432,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file
@@ -490,6 +491,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::session
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::diagnostics
           cargo test --manifest-path src-tauri/Cargo.toml --lib ssh::forward
+          cargo test --manifest-path src-tauri/Cargo.toml --lib services::forwarding::start
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::files::read
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::files::content
           cargo test --manifest-path src-tauri/Cargo.toml --lib platform::regular_file

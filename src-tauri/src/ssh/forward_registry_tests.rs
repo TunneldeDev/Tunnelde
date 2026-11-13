@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 fn fixture_entry(owner: Option<&str>, generation: Option<u64>) -> ActiveForward {
     ActiveForward {
+        lifetime: None,
         admitted: Arc::new(AtomicBool::new(true)),
         identity: uuid::Uuid::new_v4().to_string(),
         session: "session".into(),

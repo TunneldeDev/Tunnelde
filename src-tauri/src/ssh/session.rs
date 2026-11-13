@@ -529,11 +529,7 @@ async fn authenticate(
         _ => {
             let password = match request.password.clone().filter(|value| !value.is_empty()) {
                 Some(password) => password,
-                None if host.id.starts_with(crate::plugins::host_sources::PREFIX) => {
-                    return Err(AppError::Ssh("ssh.passwordRequired".into()));
-                }
-                None => crate::vault::load(&host.id)?
-                    .ok_or_else(|| AppError::Ssh("ssh.passwordRequired".into()))?,
+                None => return Err(AppError::Ssh("ssh.passwordRequired".into())),
             };
             handle
                 .authenticate_password(host.username.clone(), password)
@@ -784,12 +780,13 @@ async fn connect_captured(
     )
     .await?;
 
+    let authentication = snapshot.authentication(&app, &host, &request)?;
     tokio::time::timeout(
         CONNECT_TIMEOUT,
         authenticate(
             pending.target.as_mut().expect("route target"),
             &host,
-            &request,
+            &authentication,
         ),
     )
     .await

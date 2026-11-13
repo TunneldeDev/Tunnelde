@@ -87,6 +87,7 @@ async fn release_remote((handle, routes, host, port): RemoteForward) -> AppResul
 }
 
 struct ActiveForward {
+    lifetime: Option<Arc<dyn Send + Sync>>,
     admitted: Arc<AtomicBool>,
     identity: String,
     session: String,
@@ -107,11 +108,14 @@ impl ActiveForward {
         if let Some(remote) = self.remote.take() {
             release_remote(remote).await?;
         }
+        // Explicit shutdown runs on its own worker, outside registry locks.
+        drop(self.lifetime.take());
         Ok(())
     }
 }
 impl Drop for ActiveForward {
     fn drop(&mut self) {
+        let lifetime = self.lifetime.take();
         let _ = self.cancel.send(true);
         if let Some(listener) = self.listener.take() {
             listener.abort();
@@ -125,6 +129,13 @@ impl Drop for ActiveForward {
                     tracing::warn!(%error, "Could not release remote forwarding listener");
                 }
                 drop(completion);
+                drop(lifetime);
+            });
+        } else if let Some(lifetime) = lifetime {
+            // Entries can be removed while the registry mutex is held. An
+            // owner's destructor may stop SSH/other rules; never call it here.
+            tauri::async_runtime::spawn(async move {
+                drop(lifetime);
             });
         }
     }
@@ -389,6 +400,12 @@ pub(crate) struct PendingForward {
     item: ActiveForward,
 }
 impl PendingForward {
+    /// Keep an exclusively acquired transport alive through listener disposal,
+    /// including cancellation of an uncommitted remote forwarding request.
+    #[cfg(test)]
+    pub(crate) fn retain(&mut self, lifetime: Arc<dyn Send + Sync>) {
+        self.item.lifetime = Some(lifetime);
+    }
     /// Callers can hold their authorization/scope locks before acquiring the registry.
     /// Reject cancelled or duplicate preparations before the final callback can
     /// publish private resources. No fallible admission step follows that callback.
@@ -435,6 +452,40 @@ pub(crate) async fn prepare(
     routes: Arc<RemoteRoutes>,
     owner: Option<(String, u64)>,
 ) -> AppResult<PendingForward> {
+    prepare_inner(registry, rule, session_id, handle, routes, owner, None).await
+}
+
+/// Main-owned acquisitions must attach their transport before the first setup
+/// await: cancellation may otherwise disconnect it before remote cleanup runs.
+pub(crate) async fn prepare_owned(
+    registry: &ForwardRegistry,
+    rule: &ForwardRule,
+    session_id: &str,
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
+    lifetime: Arc<dyn Send + Sync>,
+) -> AppResult<PendingForward> {
+    prepare_inner(
+        registry,
+        rule,
+        session_id,
+        handle,
+        routes,
+        None,
+        Some(lifetime),
+    )
+    .await
+}
+
+async fn prepare_inner(
+    registry: &ForwardRegistry,
+    rule: &ForwardRule,
+    session_id: &str,
+    handle: Arc<client::Handle<ClientHandler>>,
+    routes: Arc<RemoteRoutes>,
+    owner: Option<(String, u64)>,
+    lifetime: Option<Arc<dyn Send + Sync>>,
+) -> AppResult<PendingForward> {
     let id = &rule.id;
     let mut changed = registry.changed.subscribe();
     let ticket = registry.ticket(id, session_id)?;
@@ -446,7 +497,7 @@ pub(crate) async fn prepare(
     {
         return Err(AppError::validation("forward.alreadyActive"));
     }
-    let setup = open_uncommitted_forward(handle, routes, rule, session_id, owner, false);
+    let setup = open_uncommitted_forward(handle, routes, rule, session_id, owner, false, lifetime);
     tokio::pin!(setup);
     let item = loop {
         tokio::select! {
@@ -497,6 +548,7 @@ mod tests {
         reg.active.lock().unwrap().insert(
             "rule".into(),
             ActiveForward {
+                lifetime: None,
                 admitted: Arc::new(AtomicBool::new(true)),
                 identity: uuid::Uuid::new_v4().to_string(),
                 session: "session".into(),
@@ -522,7 +574,7 @@ async fn open_forward(
     session_id: &str,
     owner: Option<(String, u64)>,
 ) -> AppResult<ActiveForward> {
-    open_uncommitted_forward(handle, routes, rule, session_id, owner, true).await
+    open_uncommitted_forward(handle, routes, rule, session_id, owner, true, None).await
 }
 async fn open_uncommitted_forward(
     handle: Arc<client::Handle<ClientHandler>>,
@@ -531,6 +583,7 @@ async fn open_uncommitted_forward(
     session_id: &str,
     owner: Option<(String, u64)>,
     published: bool,
+    lifetime: Option<Arc<dyn Send + Sync>>,
 ) -> AppResult<ActiveForward> {
     let admitted = Arc::new(AtomicBool::new(published));
     let (owner, generation) = owner
@@ -607,6 +660,7 @@ async fn open_uncommitted_forward(
         // Own cleanup before awaiting the request. Dropping an in-flight setup
         // must revoke the route and cancel a listener the server may yet accept.
         let pending = ActiveForward {
+            lifetime,
             admitted,
             identity: uuid::Uuid::new_v4().to_string(),
             session: session_id.to_owned(),
@@ -632,6 +686,7 @@ async fn open_uncommitted_forward(
         return Ok(pending);
     };
     Ok(ActiveForward {
+        lifetime,
         admitted,
         identity: uuid::Uuid::new_v4().to_string(),
         session: session_id.to_owned(),

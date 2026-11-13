@@ -84,6 +84,30 @@ impl Snapshot {
         self.nodes.iter().any(|node| node.host.id == id)
     }
 
+    /// Read the host-ID vault fallback while the reviewed configuration is
+    /// still current under the DB guard. Authentication itself must never
+    /// resolve mutable storage after this point.
+    pub(in super::super) fn authentication(
+        &self,
+        app: &AppHandle,
+        host: &Host,
+        request: &SshConnectRequest,
+    ) -> AppResult<SshConnectRequest> {
+        self.with_current(app, |_| {
+            let mut request = request.clone();
+            if !matches!(host.auth_method.as_str(), "key" | "agent")
+                && request
+                    .password
+                    .as_ref()
+                    .is_none_or(|value| value.is_empty())
+                && !host.id.starts_with(crate::plugins::host_sources::PREFIX)
+            {
+                request.password = crate::vault::load(&host.id)?;
+            }
+            Ok(request)
+        })
+    }
+
     pub(in super::super) fn revision(&self) -> String {
         review::revision(&self.nodes, &self.route, |digest| {
             self.transport.update_review(digest);
@@ -97,7 +121,16 @@ impl Snapshot {
         app: &AppHandle,
         info: &HostKeyInfo,
     ) -> AppResult<()> {
-        self.approve(app, info)?;
+        self.approve_reviewed_checked(app, info, || Ok(()))
+    }
+
+    pub(in super::super) fn approve_reviewed_checked(
+        &mut self,
+        app: &AppHandle,
+        info: &HostKeyInfo,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()> {
+        self.approve_checked(app, info, check)?;
         let observed = self
             .nodes
             .iter()
@@ -154,6 +187,15 @@ impl Snapshot {
     }
 
     pub(in super::super) fn approve(&self, app: &AppHandle, info: &HostKeyInfo) -> AppResult<()> {
+        self.approve_checked(app, info, || Ok(()))
+    }
+
+    fn approve_checked(
+        &self,
+        app: &AppHandle,
+        info: &HostKeyInfo,
+        check: impl FnOnce() -> AppResult<()>,
+    ) -> AppResult<()> {
         // Never resolve an observed host ID to an edited address after probing.
         let node = self
             .nodes
@@ -163,6 +205,7 @@ impl Snapshot {
         self.verify(app)?;
         app.state::<AppState>().db.with(|conn| {
             self.verify_saved(conn)?;
+            check()?;
             db::known_hosts::upsert(
                 conn,
                 &node.host.host,

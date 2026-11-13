@@ -3,9 +3,11 @@
 use crate::{db::Database, error::AppResult, ssh::forward::ForwardRegistry, state::AppState};
 use tauri::{AppHandle, Emitter, Manager};
 pub mod contract;
+pub(crate) mod interaction;
 pub(crate) mod query;
 mod repository;
 mod runtime;
+pub(crate) mod start;
 use contract::{validate, ForwardInfo, ForwardRule, RevisionedInfo, RevisionedRule};
 pub(crate) use runtime::{prepare_checked, take_checked};
 pub use runtime::{start_checked, stop};

@@ -84,6 +84,7 @@ pub(super) async fn open(
             cols: 120,
             rows: 32,
         };
+        let request = snapshot.authentication(app, host, &request)?;
         tokio::time::timeout(
             CONNECT_TIMEOUT,
             authenticate(

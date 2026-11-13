@@ -194,9 +194,12 @@ async fn explicit_stop_waits_for_remote_release_before_immediate_restart() {
         target_host: "127.0.0.1".into(),
         target_port,
     };
-    let active = open_forward(handle.clone(), routes.clone(), &rule, "session", None)
+    let mut active = open_forward(handle.clone(), routes.clone(), &rule, "session", None)
         .await
         .unwrap();
+    let lifetime = Arc::new(());
+    let observed = Arc::downgrade(&lifetime);
+    active.lifetime = Some(lifetime);
     let registry = Arc::new(ForwardRegistry::default());
     registry
         .active
@@ -213,12 +216,20 @@ async fn explicit_stop_waits_for_remote_release_before_immediate_restart() {
         !stopping.is_finished(),
         "Stop completed before the server released the port"
     );
+    assert!(
+        observed.upgrade().is_some(),
+        "Transport owner dropped before remote cancellation completed"
+    );
     gate.release.notify_one();
     tokio::time::timeout(Duration::from_secs(3), stopping)
         .await
         .unwrap()
         .unwrap()
         .unwrap();
+    assert!(
+        observed.upgrade().is_none(),
+        "Idle transport owner survived completed remote cancellation"
+    );
     let restarted = open_forward(handle, routes, &rule, "session", None)
         .await
         .unwrap();
@@ -750,6 +761,8 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
     assert!(client.authenticate_none("test").await.unwrap().success());
     let port = free_port().await;
     let keep_routes = routes.clone();
+    let lifetime = Arc::new(());
+    let observed = Arc::downgrade(&lifetime);
     let setup = tokio::spawn(async move {
         let rule = ForwardRule {
             id: "pending".into(),
@@ -761,12 +774,14 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
             target_host: "127.0.0.1".into(),
             target_port: 80,
         };
-        open_forward(
-            Arc::new(client),
-            routes,
+        let registry = ForwardRegistry::default();
+        prepare_owned(
+            &registry,
             &rule,
             "pending",
-            Some(("plugin".into(), 1)),
+            Arc::new(client),
+            routes,
+            lifetime,
         )
         .await
     });
@@ -776,6 +791,10 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
     assert!(!keep_routes.entries.lock().unwrap().is_empty());
     setup.abort();
     assert!(matches!(setup.await, Err(error) if error.is_cancelled()));
+    assert!(
+        observed.upgrade().is_some(),
+        "Transport owner dropped while cancelled remote setup still awaited a server reply"
+    );
     assert!(*keep_routes
         .entries
         .lock()
@@ -790,6 +809,7 @@ async fn dropped_in_flight_remote_setup_revokes_route_and_cancels_late_listener(
         loop {
             if TcpStream::connect(("127.0.0.1", port)).await.is_err()
                 && keep_routes.entries.lock().unwrap().is_empty()
+                && observed.upgrade().is_none()
             {
                 break;
             };

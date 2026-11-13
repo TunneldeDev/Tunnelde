@@ -17,6 +17,7 @@ async fn pending(
     let admitted = Arc::new(AtomicBool::new(false));
     let (cancel, cancelled) = watch::channel(false);
     let item = ActiveForward {
+        lifetime: None,
         admitted: admitted.clone(),
         identity: uuid::Uuid::new_v4().to_string(),
         session: "session".into(),
@@ -127,4 +128,30 @@ async fn denied_final_authority_never_admits_or_retains_listener() {
     assert!(!admitted.load(Ordering::Acquire));
     released(address, cancelled).await;
     assert!(registry.snapshot().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn owned_connection_disposal_is_never_called_inside_the_registry_lock() {
+    struct Owner(
+        Arc<ForwardRegistry>,
+        Option<tokio::sync::oneshot::Sender<bool>>,
+    );
+    impl Drop for Owner {
+        fn drop(&mut self) {
+            let outside = self.0.active.try_lock().is_ok();
+            let _ = self.1.take().unwrap().send(outside);
+        }
+    }
+    let registry = Arc::new(ForwardRegistry::default());
+    let (mut pending, address, _, cancelled) = pending(&registry, "rule").await;
+    let (done, receiver) = tokio::sync::oneshot::channel();
+    pending.retain(Arc::new(Owner(registry.clone(), Some(done))));
+    pending.commit(&registry, || Ok(())).unwrap();
+    // stop_session deliberately removes/drops entries under its registry lock.
+    registry.stop_session("session");
+    assert!(tokio::time::timeout(Duration::from_secs(3), receiver)
+        .await
+        .unwrap()
+        .unwrap());
+    released(address, cancelled).await;
 }

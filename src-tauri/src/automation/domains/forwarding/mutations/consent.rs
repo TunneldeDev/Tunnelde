@@ -2,18 +2,14 @@
 //! stays with the dialog, preventing replacement or accumulation of stale UI.
 use super::{contract::Mutation, map_error};
 use crate::{automation::contract::Failure, state::AppState};
-use std::{
-    sync::{Arc, LazyLock},
-    time::Duration,
-};
+use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-use tokio::sync::{oneshot, OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{oneshot, OwnedSemaphorePermit};
 
 pub(super) const CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(120);
 pub(super) fn admit() -> Result<OwnedSemaphorePermit, Failure> {
-    static DIALOGS: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(1)));
-    DIALOGS.clone().try_acquire_owned().map_err(|_| {
+    crate::services::forwarding::interaction::admit().map_err(|_| {
         Failure::new(
             "operation_rejected",
             "Another local forwarding confirmation is still open",

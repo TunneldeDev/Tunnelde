@@ -32,6 +32,7 @@ pub(in super::super) fn samples(db: &Database, host: &str) -> Vec<Value> {
     let mut samples = vec![json!({"method":"forwards.list","params":{"limit":1},
         "result":read(db,&ForwardRegistry::default(),json!({"limit":1})).unwrap()})];
     samples.extend(mutations::tests::samples());
+    samples.extend(start::tests::samples());
     samples
 }
 
