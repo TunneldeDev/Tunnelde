@@ -181,9 +181,18 @@ high-level file adapter exposes IO errors rather than typed SFTP replies.
 Cancellation before directory creation creates no mutation receipt; cancellation
 after dispatch waits for the original MKDIR reply. Dropping that wait retains
 uncertainty even when a later metadata probe sees the resulting directory.
-This observation currently supplies diagnostics; it does not yet bind transfer
-pause/resume or cleanup to a durable claim, cover all metadata mutations, or make
-an application restart recover an unconfirmed transfer.
+The runtime transfer registry now owns the request epoch used by metadata and
+data workers. Publication rename, atomic replacement, staging-file unlink and
+staging-directory removal observe typed original replies before mapping errors.
+An unexpected extension packet cannot acknowledge a replacement. Completion or
+result-cache eviction retains unconfirmed epochs independently; re-registering
+the same task cannot forget them. Cleanup atomically seals the previous settled
+epoch before obtaining a new one, excluding queued old adapters. A late original
+reply can permit that transition; an unrelated probe or later success cannot.
+This runtime protection is not durable task/claim association. Complete source
+mutation coverage, crash reconciliation, and original-worker retention across all
+publication cancellation paths remain required. Restarting the application does
+not establish completion of an unconfirmed transfer.
 
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.

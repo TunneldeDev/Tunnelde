@@ -47,6 +47,7 @@ async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
         let data = directory_client(tree.clone(), Some(gate.clone())).await;
         let observer = client(tree.clone(), None).await;
         let cancel = AtomicBool::new(false);
+        let observation = native_save::runtime::MutationObservation::default();
         let done = Arc::new(tokio::sync::Semaphore::new(0));
         let operation = {
             let conn = conn.clone();
@@ -67,17 +68,27 @@ async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
             }
         };
         let result = tokio::time::timeout(Duration::from_secs(1), async {
-            tokio::join!(await_creation(&cancel, || Ok(operation)), async {
-                gate.arrived.acquire().await.unwrap().forget();
-                cancel.store(true, Ordering::SeqCst);
-            })
+            tokio::join!(
+                await_creation(&cancel, &observation, || Ok(operation)),
+                async {
+                    gate.arrived.acquire().await.unwrap().forget();
+                    cancel.store(true, Ordering::SeqCst);
+                }
+            )
             .0
         })
         .await
         .unwrap();
         assert!(matches!(result,Err(AppError::Ssh(ref error)) if error == CANCELLED));
+        assert!(!observation.settled());
         assert!(matches!(
-            cleanup_directory(&observer, &directory, true).await,
+            cleanup_directory(
+                &observer,
+                &directory,
+                true,
+                &native_save::runtime::MutationObservation::default()
+            )
+            .await,
             Err(AppError::TransferCreationUnconfirmed { .. })
         ));
         assert_eq!(
@@ -101,9 +112,14 @@ async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
             .unwrap();
         let settled: ArtifactRecord = serde_json::from_str(&raw).unwrap();
         require_creation_settled("job", &to, Some(&settled)).unwrap();
-        cleanup_directory(&observer, &directory, false)
-            .await
-            .unwrap();
+        cleanup_directory(
+            &observer,
+            &directory,
+            false,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         assert!(!tree.lock().unwrap().directories.contains(&directory.path));
         observer.close().await.unwrap();
     }
@@ -113,10 +129,14 @@ async fn paused_creation_keeps_polling_and_settles_before_cleanup() {
 async fn precancelled_creation_never_polls_or_spawns_the_mutation() {
     let polled = Arc::new(AtomicBool::new(false));
     let observed = polled.clone();
-    assert!(await_creation(&AtomicBool::new(true), || {
-        observed.store(true, Ordering::SeqCst);
-        Ok(async { Ok(()) })
-    })
+    assert!(await_creation(
+        &AtomicBool::new(true),
+        &native_save::runtime::MutationObservation::default(),
+        || {
+            observed.store(true, Ordering::SeqCst);
+            Ok(async { Ok(()) })
+        }
+    )
     .await
     .is_err());
     tokio::task::yield_now().await;
@@ -131,9 +151,11 @@ async fn transport_failure_never_settles_the_creation_journal() {
     };
     let (conn, saved, _) = acknowledgement_db(&to);
     let cancel = AtomicBool::new(false);
-    assert!(await_creation(&cancel, || Ok(async {
-        Err(AppError::Ssh("connection lost".into()))
-    }))
+    assert!(await_creation(
+        &cancel,
+        &native_save::runtime::MutationObservation::default(),
+        || Ok(async { Err(AppError::Ssh("connection lost".into())) })
+    )
     .await
     .is_err());
     let raw: String = conn
@@ -148,6 +170,104 @@ async fn transport_failure_never_settles_the_creation_journal() {
         require_creation_settled("job", &to, Some(&saved)),
         Err(AppError::TransferCreationUnconfirmed { .. })
     ));
+}
+
+#[tokio::test]
+async fn task_cannot_restart_between_directory_reply_and_original_checkpoint() {
+    let to = Endpoint {
+        session: Some("remote".into()),
+        path: "/target".into(),
+    };
+    let (conn, _, directory) = acknowledgement_db(&to);
+    let conn = Arc::new(Mutex::new(conn));
+    let registry = TransferRegistry::default();
+    registry
+        .register("job", Arc::new(AtomicBool::new(false)), None)
+        .unwrap();
+    let observation = registry.observation("job").unwrap();
+    let tree = Arc::new(Mutex::new(Tree::default()));
+    let data = directory_client(tree.clone(), None).await;
+    let received = Arc::new(tokio::sync::Semaphore::new(0));
+    let persist = Arc::new(tokio::sync::Semaphore::new(0));
+    let finished = Arc::new(tokio::sync::Semaphore::new(0));
+    let work = {
+        let to = to.clone();
+        let directory = directory.clone();
+        let conn = conn.clone();
+        let received = received.clone();
+        let persist = persist.clone();
+        let finished = finished.clone();
+        async move {
+            let reply = data.create_private_directory(&directory.path).await?;
+            received.add_permits(1);
+            persist.acquire().await.unwrap().forget();
+            assert!(settle_creation(
+                &conn.lock().unwrap(),
+                "job",
+                &to,
+                &directory,
+                true
+            )?);
+            finished.add_permits(1);
+            reply.into_result()
+        }
+    };
+    let cancel = AtomicBool::new(false);
+    let result = tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::join!(await_creation(&cancel, &observation, || Ok(work)), async {
+            received.acquire().await.unwrap().forget();
+            cancel.store(true, Ordering::SeqCst);
+        })
+        .0
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    // The wire reply has arrived, but the original journal worker remains live.
+    assert!(tree.lock().unwrap().directories.contains(&directory.path));
+    registry.release("job");
+    assert!(registry.reserve_cleanup("job").is_err());
+    assert!(!observation.settled());
+    persist.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        finished.acquire().await.unwrap().forget();
+        while !observation.settled() {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    let reservation = registry.reserve_cleanup("job").unwrap();
+    assert!(observation.closed());
+    let saved: String = conn
+        .lock()
+        .unwrap()
+        .query_row(
+            "SELECT value FROM settings WHERE key=?1",
+            [artifact_key("job", &to)],
+            |row| row.get(0),
+        )
+        .unwrap();
+    let record: ArtifactRecord = serde_json::from_str(&saved).unwrap();
+    require_creation_settled("job", &to, Some(&record)).unwrap();
+    drop(reservation);
+}
+
+#[tokio::test]
+async fn closed_creation_epoch_never_prepares_or_spawns_an_old_worker() {
+    let observation = native_save::runtime::MutationObservation::default();
+    observation.seal().unwrap();
+    let prepared = AtomicBool::new(false);
+    let result = await_creation(&AtomicBool::new(false), &observation, || {
+        prepared.store(true, Ordering::SeqCst);
+        Ok(async { Ok(()) })
+    })
+    .await;
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "editor.remoteOutcomeUnknown"
+    );
+    assert!(!prepared.load(Ordering::SeqCst));
 }
 
 #[test]
@@ -336,9 +456,14 @@ async fn lost_mkdir_reply_keeps_the_uncertain_creation_for_review() {
         require_creation_settled("job", &to, Some(&restored)),
         Err(AppError::TransferCreationUnconfirmed { ref path }) if path == &directory.path
     ));
-    assert!(cleanup_directory(&observer, &directory, true)
-        .await
-        .is_err());
+    assert!(cleanup_directory(
+        &observer,
+        &directory,
+        true,
+        &native_save::runtime::MutationObservation::default()
+    )
+    .await
+    .is_err());
     assert!(tree.lock().unwrap().directories.contains(&directory.path));
     gate.release.add_permits(1);
     tokio::time::timeout(Duration::from_secs(1), gate.finished.acquire())
@@ -472,7 +597,14 @@ async fn cancelled_create(before_create: bool) {
     assert!(matches!(result, Err(AppError::Ssh(error)) if error == CANCELLED));
     tokio::time::timeout(
         Duration::from_secs(1),
-        retire_remote_staging("job", &to, &observer, &restored, &AtomicBool::new(false)),
+        retire_remote_staging(
+            "job",
+            &to,
+            &observer,
+            &restored,
+            &AtomicBool::new(false),
+            &native_save::runtime::MutationObservation::default(),
+        ),
     )
     .await
     .unwrap()
@@ -501,9 +633,16 @@ async fn cancelled_create(before_create: bool) {
         b"resumed contents"
     );
     // Repeated cleanup after a lost RMDIR acknowledgement is idempotent.
-    retire_remote_staging("job", &to, &observer, &restored, &AtomicBool::new(false))
-        .await
-        .unwrap();
+    retire_remote_staging(
+        "job",
+        &to,
+        &observer,
+        &restored,
+        &AtomicBool::new(false),
+        &native_save::runtime::MutationObservation::default(),
+    )
+    .await
+    .unwrap();
     writer.close().await.unwrap();
     observer.close().await.unwrap();
 }
@@ -538,7 +677,15 @@ async fn uncertain_creation_cleanup_preserves_nonempty_or_foreign_files() {
         .insert(part.path.clone(), b"unexpected data".to_vec());
     let observer = client(tree.clone(), None).await;
     assert!(matches!(
-        retire_remote_staging("job", &to, &observer, &saved, &AtomicBool::new(false)).await,
+        retire_remote_staging(
+            "job",
+            &to,
+            &observer,
+            &saved,
+            &AtomicBool::new(false),
+            &native_save::runtime::MutationObservation::default()
+        )
+        .await,
         Err(AppError::TransferArtifactUnrecognized { .. })
     ));
     assert_eq!(
@@ -551,11 +698,16 @@ async fn uncertain_creation_cleanup_preserves_nonempty_or_foreign_files() {
         .unwrap()
         .files
         .insert(foreign.clone(), b"preserve".to_vec());
-    assert!(
-        retire_remote_staging("job", &to, &observer, &saved, &AtomicBool::new(false))
-            .await
-            .is_err()
-    );
+    assert!(retire_remote_staging(
+        "job",
+        &to,
+        &observer,
+        &saved,
+        &AtomicBool::new(false),
+        &native_save::runtime::MutationObservation::default()
+    )
+    .await
+    .is_err());
     assert_eq!(
         tree.lock().unwrap().files.get(&foreign).unwrap(),
         b"preserve"
@@ -621,14 +773,25 @@ async fn cleanup_cannot_forget_a_directory_created_after_its_missing_path_check(
         permit = gate.arrived.acquire() => permit.unwrap().forget(),
     }
     assert!(!tree.lock().unwrap().directories.contains(&directory.path));
-    let result = cleanup_directory(&observer, &directory, true).await;
+    let result = cleanup_directory(
+        &observer,
+        &directory,
+        true,
+        &native_save::runtime::MutationObservation::default(),
+    )
+    .await;
     // The server can still execute its queued MKDIR after our missing-path check.
     gate.release.add_permits(1);
     creation.await.unwrap().into_result().unwrap();
     assert!(tree.lock().unwrap().directories.contains(&directory.path));
-    cleanup_directory(&observer, &directory, false)
-        .await
-        .unwrap();
+    cleanup_directory(
+        &observer,
+        &directory,
+        false,
+        &native_save::runtime::MutationObservation::default(),
+    )
+    .await
+    .unwrap();
     assert!(!tree.lock().unwrap().directories.contains(&directory.path));
     observer.close().await.unwrap();
     assert!(
@@ -690,18 +853,33 @@ async fn acknowledged_directory_cleanup_is_retryable_and_keeps_foreign_contents(
         .unwrap()
         .files
         .insert(foreign.clone(), b"keep".to_vec());
-    assert!(cleanup_directory(&observer, &directory, false)
-        .await
-        .is_err());
+    assert!(cleanup_directory(
+        &observer,
+        &directory,
+        false,
+        &native_save::runtime::MutationObservation::default()
+    )
+    .await
+    .is_err());
     assert_eq!(tree.lock().unwrap().files[&foreign], b"keep");
     tree.lock().unwrap().files.remove(&foreign);
-    cleanup_directory(&observer, &directory, false)
-        .await
-        .unwrap();
+    cleanup_directory(
+        &observer,
+        &directory,
+        false,
+        &native_save::runtime::MutationObservation::default(),
+    )
+    .await
+    .unwrap();
     // A lost successful RMDIR reply may be retried without a journal leak.
-    cleanup_directory(&observer, &directory, false)
-        .await
-        .unwrap();
+    cleanup_directory(
+        &observer,
+        &directory,
+        false,
+        &native_save::runtime::MutationObservation::default(),
+    )
+    .await
+    .unwrap();
     assert!(!tree.lock().unwrap().directories.contains(&directory.path));
     observer.close().await.unwrap();
 }

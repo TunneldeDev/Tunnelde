@@ -31,7 +31,7 @@ pub(crate) async fn delete(
         native_save::runtime::MutationKind::Delete,
         policy,
         move |sftp, observed| async move {
-            remove_remote_entry_observed(&sftp, &path, Some(&observed)).await
+            removal::entry(&sftp, &path, removal::Observer::Authorized(&observed)).await
         },
     )
     .await
