@@ -4,6 +4,7 @@ mod cleanup;
 mod preparation;
 pub(super) mod terminal;
 pub(super) use cleanup::prepare_cleanup;
+pub(super) use cleanup::Cleanup;
 pub(super) use preparation::Endpoints;
 #[cfg(test)]
 mod tests;
@@ -58,17 +59,21 @@ pub(super) async fn writable(
     let ownership = state.transfers.ownership(id)?;
     let mut current = ownership.lock().await;
     let destination = state.ssh.identity(session_id)?;
-    authorize_task(app, id)?;
+    cleanup::authorize_mutation(app, id)?;
     if let Some(attempt) = current.as_mut() {
         let paths = paths
             .iter()
             .map(|path| (*path).to_owned())
             .collect::<Vec<_>>();
-        attempt.extend_paths(&destination, sftp, &paths).await?;
+        if state.transfers.cleanup_task(id)?.is_some() {
+            attempt.validate_paths(&destination, sftp, &paths).await?;
+        } else {
+            attempt.extend_paths(&destination, sftp, &paths).await?;
+        }
         if state.ssh.identity(session_id)? != destination {
             return Err(AppError::validation("editor.nativeChanged"));
         }
-        authorize_task(app, id)?;
+        cleanup::authorize_mutation(app, id)?;
         return Ok(());
     }
     state.native_saves.writable(&destination, sftp, paths).await
@@ -86,6 +91,9 @@ pub(super) fn authorize_task(app: &AppHandle, id: &str) -> AppResult<()> {
             .active
             .get(id)
             .ok_or_else(|| AppError::validation("sftp.transferBusy"))?;
+        if task.cleanup_started {
+            return Err(AppError::validation("sftp.transferNotResumable"));
+        }
         (
             task.owner
                 .as_ref()

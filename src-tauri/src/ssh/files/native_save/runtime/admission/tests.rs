@@ -12,6 +12,7 @@ mod editor;
 mod mutation;
 mod transfer;
 mod transfer_continuation;
+mod transfer_disposal;
 mod transfer_task;
 mod transfer_terminal;
 mod transfer_worker;

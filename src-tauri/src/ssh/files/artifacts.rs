@@ -817,6 +817,7 @@ async fn cleanup_partial(
         }
         // The verified object stays locked through deletion; a second path
         // lookup after checking its identity would reintroduce the race.
+        observation.authorize()?;
         guard.delete()?;
         return Ok(());
     }

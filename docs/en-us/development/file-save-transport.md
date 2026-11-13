@@ -248,6 +248,17 @@ move cleanup still revalidates its mutated source. Complete mutation-boundary
 coverage remains required. No production
 enablement is implied.
 
+Host-owned disposal has a separate runtime phase after the original request
+epoch is sealed. It preserves the original task and plugin attribution, checks
+the current immutable application projection and destination identity, and does
+not create or reactivate a plugin lease. Ordinary transfer authorization rejects
+this phase. With a private transfer permit, disposal may validate only paths
+already covered by that permit, including canonical spellings; it cannot enroll
+new scopes from application artifact records. Component integration tests cover
+an offline copy source, an invalidated plugin runtime, an actual SFTP artifact
+unlink, terminal projection and claim retirement. They do not substitute for
+desktop cancellation, disconnect and restart acceptance.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 An interrupted possible dispatch without an original terminal receipt still

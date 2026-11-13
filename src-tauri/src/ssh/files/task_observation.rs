@@ -63,6 +63,7 @@ impl TransferRegistry {
             .ok_or_else(|| AppError::validation("sftp.transferBusy"))?;
         close(&task.observation)?;
         task.observation = native_save::runtime::MutationObservation::default();
+        task.cleanup_started = true;
         Ok(task.observation.clone())
     }
 }
