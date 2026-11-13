@@ -2,7 +2,7 @@
 use serde_json::{json, Value};
 use std::{
     io::{BufRead, BufReader, Write},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
     process::{Command, Output, Stdio},
 };
 
@@ -140,13 +140,7 @@ fn fixture_call(
                 Err(error) => panic!("CLI did not connect to the fixture: {error}"),
             }
         };
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
-            .unwrap();
-        let mut bytes = Vec::new();
-        BufReader::new(&mut stream)
-            .read_until(b'\n', &mut bytes)
-            .unwrap();
+        let bytes = read_fixture_frame(&mut stream).unwrap();
         let request: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(request["version"], 1);
         assert_eq!(request["token"], "a".repeat(64));
@@ -168,6 +162,49 @@ fn fixture_call(
     std::fs::remove_file(pointer).unwrap();
     std::fs::remove_dir(directory).unwrap();
     (result, request)
+}
+
+fn read_fixture_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
+    // Accept may inherit the listener's mode; timed blocking reads require
+    // explicitly normalizing the connected socket before waiting for bytes.
+    stream.set_nonblocking(false)?;
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+    let mut bytes = Vec::new();
+    BufReader::new(stream).read_until(b'\n', &mut bytes)?;
+    Ok(bytes)
+}
+
+#[test]
+fn fixture_waits_for_a_delayed_request_on_an_initially_nonblocking_socket() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (mut stream, _) = listener.accept().unwrap();
+    // Force the mode rather than depending on the OS's accept inheritance.
+    stream.set_nonblocking(true).unwrap();
+    let (entered, ready) = std::sync::mpsc::channel();
+    let (finished, result) = std::sync::mpsc::channel();
+    let server = std::thread::spawn(move || {
+        entered.send(()).unwrap();
+        finished.send(read_fixture_frame(&mut stream)).unwrap();
+    });
+    ready
+        .recv_timeout(std::time::Duration::from_secs(3))
+        .unwrap();
+    let early = result.recv_timeout(std::time::Duration::from_millis(30));
+    assert!(
+        matches!(early, Err(std::sync::mpsc::RecvTimeoutError::Timeout)),
+        "The fixture must wait for bytes instead of returning WouldBlock: {early:?}"
+    );
+    let frame = b"{\"version\":1}\n";
+    client.write_all(frame).unwrap();
+    assert_eq!(
+        result
+            .recv_timeout(std::time::Duration::from_secs(3))
+            .unwrap()
+            .unwrap(),
+        frame
+    );
+    server.join().unwrap();
 }
 
 #[test]
