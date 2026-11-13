@@ -171,6 +171,60 @@ fn fixture_call(
 }
 
 #[test]
+fn installed_and_console_forward_commands_preserve_parameters_pages_and_host_errors() {
+    for (binary, prefix) in [
+        (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
+        (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
+    ] {
+        for (command, params, input) in [
+            (vec!["forwards", "list"], json!({}), None),
+            (
+                vec!["forwards", "list", "--params", r#"{"after":"a","limit":2}"#],
+                json!({"after":"a","limit":2}),
+                None,
+            ),
+            (
+                vec!["forwards", "list", "--params", "-"],
+                json!({"after":"中文","limit":1}),
+                Some(r#"{"after":"中文","limit":1}"#),
+            ),
+        ] {
+            let page = json!({"entries":[],"nextAfter":null});
+            let (output, request) = fixture_call(
+                binary,
+                &prefix,
+                json!({"version":1,"id":"$request","result":page}),
+                &command,
+                input,
+            );
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(output.stderr.is_empty());
+            assert_eq!(request["method"], "forwards.list");
+            assert_eq!(request["params"], params);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&output.stdout).unwrap()["result"],
+                page
+            );
+        }
+        let (output, request) = fixture_call(
+            binary,
+            &prefix,
+            json!({"version":1,"id":"$request","error":{"code":"operation_rejected","message":"Unavailable"}}),
+            &["forwards", "list"],
+            None,
+        );
+        assert_eq!(output.status.code(), Some(1));
+        assert!(output.stdout.is_empty());
+        let error: Value = serde_json::from_slice(&output.stderr).unwrap();
+        assert_eq!(error["id"], request["id"]);
+    }
+}
+
+#[test]
 fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
     for (binary, prefix) in [
         (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
