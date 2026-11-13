@@ -114,30 +114,30 @@ impl DataSession {
             Backend::Sftp(raw) => {
                 let raw = raw.clone();
                 let path = path.to_owned();
-                match self
-                    .writes
+                self.writes
                     .request(async move {
-                        raw.mkdir(
-                            path,
-                            russh_sftp::protocol::FileAttributes {
-                                permissions: Some(0o700),
-                                ..Default::default()
-                            },
-                        )
-                        .await
+                        match raw
+                            .mkdir(
+                                path,
+                                russh_sftp::protocol::FileAttributes {
+                                    permissions: Some(0o700),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                        {
+                            Ok(_) => Ok(DirectoryCreation::Created),
+                            Err(russh_sftp::client::error::Error::Status(status))
+                                if terminal_mutation_status(&status) =>
+                            {
+                                Ok(DirectoryCreation::Rejected(map_sftp(
+                                    russh_sftp::client::error::Error::Status(status),
+                                )))
+                            }
+                            Err(error) => Err(error),
+                        }
                     })
                     .await
-                {
-                    Ok(_) => Ok(DirectoryCreation::Created),
-                    Err(russh_sftp::client::error::Error::Status(status))
-                        if terminal_mutation_status(&status) =>
-                    {
-                        Ok(DirectoryCreation::Rejected(map_sftp(
-                            russh_sftp::client::error::Error::Status(status),
-                        )))
-                    }
-                    Err(error) => Err(map_sftp(error)),
-                }
             }
             Backend::Compressed(worker) => worker.create_private_directory(path).await,
         }
@@ -294,8 +294,7 @@ impl DataSession {
                 let handle = handle.to_owned();
                 self.writes
                     .request(async move { raw.write(handle, offset, data).await })
-                    .await
-                    .map_err(map_sftp)?;
+                    .await?;
                 Ok(())
             }
         }
@@ -333,7 +332,6 @@ impl DataSession {
                 }
             })
             .await
-            .map_err(map_sftp)
     }
 }
 
