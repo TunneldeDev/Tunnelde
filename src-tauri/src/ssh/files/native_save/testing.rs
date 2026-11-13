@@ -42,6 +42,24 @@ pub(super) fn authority() -> Authority {
         },
     }
 }
+pub(super) fn setup_plan() -> super::journal::setup::Plan {
+    let authority = authority();
+    super::journal::setup::Plan {
+        destination: binding(&authority, &prepared(&authority)).destination,
+        context: authority.context,
+        install_directory: "/home/user/.local/share/tunnelde/helpers/0.28.0".into(),
+        selection: super::journal::Selection {
+            executable: "/home/user/.local/share/tunnelde/helpers/0.28.0/agent".into(),
+            directory: "/workspace/.tunnelde/native-saves".into(),
+            protocol: super::contracts::PROTOCOL.into(),
+        },
+        package: super::journal::setup::Package {
+            version: "0.28.0".into(),
+            platform: "linux-x86_64".into(),
+            sha256: "a".repeat(64),
+        },
+    }
+}
 pub(super) fn prepared(authority: &Authority) -> Prepared {
     Prepared::new(
         authority,

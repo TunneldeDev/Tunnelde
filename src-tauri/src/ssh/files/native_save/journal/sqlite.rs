@@ -164,6 +164,9 @@ pub(super) fn encode(record: &Record) -> Result<(String, String)> {
 }
 // Called both for public reads and inside the actual write transaction.
 pub(super) fn read_records(conn: &Connection, journal_id: &str) -> Result<Vec<Record>> {
+    // Installation uncertainty is recovery authority too; corruption must not
+    // silently turn its original paths writable through a legacy entry point.
+    super::setup::read(conn, journal_id)?;
     // Corruption in either namespace invalidates admission and transitions.
     let legacy_count = super::admission::persistence::read_claims(conn, journal_id)?.len();
     let mut query = conn

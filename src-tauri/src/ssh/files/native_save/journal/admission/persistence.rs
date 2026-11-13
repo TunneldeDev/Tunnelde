@@ -11,7 +11,7 @@ impl Journal {
     pub fn admission_enabled(&self) -> Result<bool> {
         self.verify()?;
         read_claims(&self.conn, &self.id)?;
-        Ok(version(&self.conn)? == 2)
+        Ok(matches!(version(&self.conn)?, 2 | 3))
     }
     /// Explicit local format upgrade only. It is not permission to submit writes.
     /// Historical native records are verified and preserved in the same transaction.
@@ -24,13 +24,14 @@ impl Journal {
         sqlite::read_records(&tx, &self.id)?;
         match version(&tx)? {
             1 => tx.execute_batch(SCHEMA).map_err(|_| Error::Unavailable)?,
-            2 => {
+            2 | 3 => {
                 read_claims(&tx, &self.id)?;
             }
             _ => return Err(Error::Unrecognized),
         }
+        let version = version(&tx)?;
         tx.commit().map_err(|_| Error::Unavailable)?;
-        self.schema_version = 2;
+        self.schema_version = version;
         self.verify()
     }
     pub fn legacy_claims(&self) -> Result<Vec<Claim>> {
@@ -80,7 +81,7 @@ impl Journal {
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|_| Error::Unavailable)?;
-        if version(&tx)? != 2 {
+        if !matches!(version(&tx)?, 2 | 3) {
             return Err(Error::Unrecognized);
         }
         let native = sqlite::read_records(&tx, &self.id)?;
@@ -88,9 +89,12 @@ impl Journal {
         if native.len() + legacy.len() >= CAPACITY {
             return Err(Error::Capacity);
         }
-        if native
+        if super::super::setup::read(&tx, &self.id)?
             .iter()
-            .any(|record| record.blocks_target() && claim.overlaps_native(&record.binding))
+            .any(|setup| setup.plan.conflicts(&claim.scopes))
+            || native
+                .iter()
+                .any(|record| record.blocks_target() && claim.overlaps_native(&record.binding))
             || legacy.iter().any(|existing| {
                 existing.overlaps(&claim.scopes)
                     || existing
@@ -236,7 +240,7 @@ pub(in super::super) fn read_claims(conn: &Connection, journal_id: &str) -> Resu
             }
             return Ok(Vec::new());
         }
-        2 => {}
+        2 | 3 => {}
         _ => return Err(Error::Unrecognized),
     }
     let mut query = conn
@@ -284,7 +288,14 @@ pub(in super::super) fn admit_native(
     if native.len() + claims.len() >= CAPACITY {
         return Err(Error::Capacity);
     }
-    if claims.iter().any(|claim| claim.overlaps_native(binding)) {
+    if claims.iter().any(|claim| claim.overlaps_native(binding))
+        || super::super::setup::read(conn, journal_id)?
+            .iter()
+            .any(|setup| {
+                setup.plan.same_host(&binding.destination)
+                    && setup.plan.protects(&binding.target_path())
+            })
+    {
         return Err(Error::Occupied);
     }
     Ok(())

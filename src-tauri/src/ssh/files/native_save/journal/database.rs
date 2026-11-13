@@ -69,7 +69,7 @@ impl Journal {
         let version: i64 = conn
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .map_err(|_| Error::Unrecognized)?;
-        if check != "ok" || application != APPLICATION || !matches!(version, 1 | 2) {
+        if check != "ok" || application != APPLICATION || !matches!(version, 1..=3) {
             return Err(Error::Unrecognized);
         }
         let id: String = conn
