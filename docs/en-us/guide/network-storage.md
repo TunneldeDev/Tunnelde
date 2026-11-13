@@ -26,6 +26,11 @@ rules in system mode. PAC scripts are not evaluated. Explicit SOCKS5 routes reso
 destination hostnames through the proxy. An unavailable or rejected explicit proxy
 fails the request instead of silently making a direct connection.
 
+On Windows, the application's HTTP client uses the operating system TLS backend
+for both HTTPS diagnostics and downloads. Certificate and hostname checks remain
+enabled. A successful TCP proxy test alone does not prove HTTPS will succeed;
+review the separate HTTPS result and software log when a download fails.
+
 Local executable plugins and AI tasks receive explicit proxy routes through
 `HTTP_PROXY`, `HTTPS_PROXY` and `ALL_PROXY`, including their lowercase variants.
 Loopback traffic bypasses these proxies. System mode inherits the process environment;
