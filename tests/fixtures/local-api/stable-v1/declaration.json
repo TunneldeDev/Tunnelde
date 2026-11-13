@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "stability": "stable",
+  "introducedIn": "0.38.0-beta.1",
+  "methods": [
+    "api.describe",
+    "app.info",
+    "hosts.list",
+    "sessions.list",
+    "preferences.schema",
+    "preferences.snapshot",
+    "preferences.update"
+  ],
+  "baselines": {
+    "core": "f1a2ec55c56034a98217c961f7a15a3d925e36c879c19f8e304d805d64aa96a7",
+    "preferences": "486b9dedf747cd0e973d01139d238a21a752d9d473681f34929b9def30c4e7f9",
+    "protocol": "3c68d409fc7ce3bf08de0d560a59bd58a91bb848e99e4bf8e1a1b4307927f5fa",
+    "discovery": "1b22e4bbecfb7a18ad1c0414b66ece3240b6e947f84535b4ac036a5c86656aa8"
+  },
+  "discovery": "e42a48d8887902a7f07560fb3a2dc89a5faaf67beb262ad37dd13f3826c62dc9"
+}

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "stability": "experimental",
+  "stability": "stable",
   "compatibility": {
     "unknownInputFields": "reject",
     "unknownOutputFields": "ignore",
