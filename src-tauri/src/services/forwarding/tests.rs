@@ -254,3 +254,90 @@ fn concurrent_checked_writers_have_one_winner() {
         accepted.revision
     );
 }
+
+#[test]
+fn caller_chosen_creation_is_atomic_and_never_overwrites_after_a_lost_reply() {
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let mut proposed = rule(host(&db));
+    proposed.id = uuid::Uuid::new_v4().to_string();
+    let barrier = std::sync::Barrier::new(2);
+    let outcomes = std::thread::scope(|scope| {
+        let writers: Vec<_> = (0..2)
+            .map(|i| {
+                let service = &service;
+                let barrier = &barrier;
+                let mut proposed = proposed.clone();
+                proposed.name = format!("creator-{i}");
+                scope.spawn(move || {
+                    barrier.wait();
+                    service.create(proposed)
+                })
+            })
+            .collect();
+        writers
+            .into_iter()
+            .map(|writer| writer.join().unwrap())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(outcomes.iter().filter(|r| r.is_ok()).count(), 1);
+    assert_eq!(outcomes.iter().filter(|r| r.is_err()).count(), 1);
+    let accepted = outcomes.into_iter().find_map(Result::ok).unwrap();
+    assert_eq!(
+        service.find(&proposed.id).unwrap().unwrap().revision,
+        accepted.revision
+    );
+    assert_eq!(
+        service.create(proposed).unwrap_err().to_string(),
+        "forward.changed"
+    );
+    assert_eq!(
+        service.find(&accepted.rule.id).unwrap().unwrap().info.rule,
+        accepted.rule
+    );
+    service
+        .remove_inactive_checked(&accepted.rule.id, &accepted.revision)
+        .unwrap();
+    assert!(service.find(&accepted.rule.id).unwrap().is_none());
+    assert!(service
+        .remove_inactive_checked(&accepted.rule.id, &accepted.revision)
+        .is_err());
+}
+
+#[test]
+fn exact_reads_reject_oversized_or_misidentified_records_without_rewriting_them() {
+    let db = Database::in_memory().unwrap();
+    let registry = ForwardRegistry::default();
+    let service = Forwarding {
+        db: &db,
+        registry: &registry,
+    };
+    let saved = service.save_checked(rule(host(&db)), None).unwrap();
+    db.with(|conn| {
+        conn.execute(
+            "UPDATE settings SET value=?1 WHERE key=?2",
+            rusqlite::params!["x".repeat(8193), format!("forward:{}", saved.rule.id)],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    assert!(service.find(&saved.rule.id).is_err());
+    let mut wrong = saved.rule.clone();
+    wrong.id = "different-rule".into();
+    db.with(|conn| {
+        conn.execute(
+            "UPDATE settings SET value=?1 WHERE key=?2",
+            rusqlite::params![
+                serde_json::to_string(&wrong)?,
+                format!("forward:{}", saved.rule.id)
+            ],
+        )?;
+        Ok(())
+    })
+    .unwrap();
+    assert!(service.find(&saved.rule.id).is_err());
+}
