@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Experimental persisted log reading v1",
-  "description": "Structural contract. Host and SDK additionally enforce UTF-8 byte, encoded response, valid Unicode, safe integral number, field depth and record limits. Independent logs.read permission covers application and other plugins; text may contain sensitive data.",
+  "description": "Shared persisted log projection. Adapters enforce their own authorization; entries may contain sensitive application and plugin data. UTF-8 byte, encoded response, Unicode, safe number, field depth and record limits also apply.",
   "definitions": {
     "json": {
       "anyOf": [
@@ -69,6 +69,7 @@
           "type": "string",
           "minLength": 0,
           "maxLength": 256,
+          "x-maxBytes": 256,
           "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$(?![\\s\\S])"
         }
       },

@@ -7,10 +7,12 @@ The local automation protocol v1 and its seven declared methods are **stable**.
 Other application and plugin APIs keep their own stability status. The protocol
 version is independent of the desktop version and plugin RPC version. A protocol
 number alone is not a stability promise. Each method declares `stability` and
-`since`; `since` records its introduction in 0.38.0-beta.1, not its stable
-declaration or a promise that the entire application is 1.0. The source is
+`since`; the seven stable methods record their introduction in 0.38.0-beta.1,
+not their stable declaration. An experimental method may have `since: null`
+when no release introduction is declared; discover availability on the running
+host instead of inferring it from the application version. The source is
 `src-tauri/src/automation/schema/v1.json`, composed with domain-owned preference
-schemas by `automation/domains/preferences/schema.rs`.
+schemas and the domain adapters below `automation/domains/`.
 Common request/response schemas, error codes and CLI exit codes are published in
 the `protocol` section of discovery, sourced from `schema/protocol-v1.json`.
 Schemas use `x-maxBytes` for UTF-8 byte limits in addition to JSON Schema's
@@ -69,7 +71,8 @@ Host errors preserve the request ID. Failures before a valid host response use
 an empty ID. Unknown error codes use exit 1; malformed or mismatched responses
 use `invalid_response` and exit 2.
 `call METHOD --params JSON` accepts an object; use `--params -` to read it from
-stdin. Read methods require an empty object. To update preferences, first obtain
+stdin. Stable read methods require an empty object; experimental
+domain methods declare their own parameters. To update preferences, first obtain
 the revision from `preferences snapshot`, review the desired changes, and submit:
 
 ```sh
@@ -92,6 +95,48 @@ addresses and usernames, so keep snapshots private. This API does not request an
 application restart; changes with deferred effects follow ordinary desktop
 settings behavior. Storage relocation remains a separate domain and is not
 available through preferences.update.
+
+## Structured log reading (experimental)
+
+`logs.read` reuses the persisted diagnostic/operation service used by plugins.
+Its machine schema belongs to `src-tauri/src/logs/read/schema.json`; the local
+adapter composes it into discovery. It does not change the seven-method stable
+baseline or the separate plugin permission model.
+
+```sh
+tunnelde-cli logs read
+tunnelde cli logs read --params '{"filter":{"domains":["network"],"levels":["warn","error"]},"limit":50}'
+tunnelde-cli logs read --params '{"source":"operations","limit":20}'
+```
+
+The result is a structured page with `entries`, `cursor`, `hasMore`, `reset` and
+`gap`. Entries contain timestamp, level, domain, optional plugin ID, message,
+sanitized fields and a truncation flag, without JSONL text or caller-selected
+paths. `filter` supports exact domain/plugin/level lists and case-insensitive
+text. Filters are ANDed across fields and ORed within a list. Text is at most
+256 UTF-8 bytes; `limit` is 1–200 (default 100), and a page is at most 128 KiB.
+
+Send the returned cursor with the same source and filter to continue; the limit
+may change. `hasMore` means another bounded read is available, not a subscription.
+When false, retain the cursor and poll later for appended complete records.
+Cursors bind the local reader, application process, source and normalized filter;
+plugin cursors cannot be reused. Invalid or mismatched cursors return
+`invalid_request` (exit 2); omit the cursor to begin a new read after a restart.
+
+Diagnostics begin within the most recent 256 KiB of the current log. Operations
+cover at most the latest 1000 retained records. Rotation/truncation, discarded
+malformed records or retention gaps are reported through `reset`/`gap`; partial
+tails wait for an append. This is bounded diagnostics, not a reliable audit or
+all-history export. Four concurrent local blocking readers are allowed; a timed
+out caller stops subsequent scanning, while its worker keeps a slot until it
+actually exits. Busy readers and unavailable storage return `operation_rejected`
+(exit 1), without leaking internal paths or exception details.
+
+The same-account local capability grants access to application and plugin logs.
+Structured fields are sanitized by the shared service, but free text, host data
+and plugin messages may still contain private information. Treat output and
+saved pages as private. The method does not enable plugins, acquire their grants,
+change logging configuration or execute commands.
 
 The desktop binds an ephemeral IPv4 loopback port and publishes `automation.json`
 in its standard application data directory. This pointer contains a path only.

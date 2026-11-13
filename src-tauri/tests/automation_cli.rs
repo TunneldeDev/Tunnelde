@@ -73,7 +73,18 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
     }
 }
 
-fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output, Value) {
+fn fixture_reply(binary: &str, prefix: &[&str], response: Value) -> (Output, Value) {
+    let result = fixture_call(binary, prefix, response, &["hosts", "list"]);
+    assert_eq!(result.1["method"], "hosts.list");
+    result
+}
+
+fn fixture_call(
+    binary: &str,
+    prefix: &[&str],
+    mut response: Value,
+    command: &[&str],
+) -> (Output, Value) {
     let directory =
         std::env::temp_dir().join(format!("tunnelde-cli-consumer-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir(&directory).unwrap();
@@ -104,7 +115,6 @@ fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output,
             .unwrap();
         let request: Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(request["version"], 1);
-        assert_eq!(request["method"], "hosts.list");
         assert_eq!(request["token"], "a".repeat(64));
         if response["id"] == "$request" {
             response["id"] = request["id"].clone();
@@ -115,7 +125,8 @@ fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output,
     let args: Vec<_> = prefix
         .iter()
         .copied()
-        .chain(["--endpoint", pointer.to_str().unwrap(), "hosts", "list"])
+        .chain(["--endpoint", pointer.to_str().unwrap()])
+        .chain(command.iter().copied())
         .collect();
     let result = run(binary, &args);
     let request = server.join().unwrap();
@@ -123,6 +134,48 @@ fn fixture_reply(binary: &str, prefix: &[&str], mut response: Value) -> (Output,
     std::fs::remove_file(pointer).unwrap();
     std::fs::remove_dir(directory).unwrap();
     (result, request)
+}
+
+#[test]
+fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
+    for (binary, prefix) in [
+        (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
+        (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
+    ] {
+        for (command, params) in [
+            (vec!["logs", "read"], json!({})),
+            (
+                vec![
+                    "logs",
+                    "read",
+                    "--params",
+                    r#"{"source":"operations","filter":{"domains":["plugin"]},"limit":1}"#,
+                ],
+                json!({"source":"operations","filter":{"domains":["plugin"]},"limit":1}),
+            ),
+        ] {
+            let page = json!({"version":1,"source":"operations","entries":[],"cursor":"opaque",
+                "hasMore":false,"reset":false,"gap":false});
+            let (result, request) = fixture_call(
+                binary,
+                &prefix,
+                json!({"version":1,"id":"$request","result":page}),
+                &command,
+            );
+            assert!(
+                result.status.success(),
+                "{}",
+                String::from_utf8_lossy(&result.stderr)
+            );
+            assert!(result.stderr.is_empty());
+            assert_eq!(request["method"], "logs.read");
+            assert_eq!(request["params"], params);
+            assert_eq!(
+                serde_json::from_slice::<Value>(&result.stdout).unwrap()["result"],
+                page
+            );
+        }
+    }
 }
 
 #[test]

@@ -53,6 +53,15 @@ export function checkLocalApiContract(fixture, floor, discovery, historicalDisco
   assert.deepEqual(fixture.schema.errors, floor.errors, "Local protocol errors changed");
   const ajv = contractValidator();
   const covered = new Set();
+  const frozen = new Set(floor.methods.map((method) => method.name));
+  for (const method of methods.values()) {
+    if (!frozen.has(method.name))
+      assert.equal(
+        method.stability,
+        "experimental",
+        `New method requires separate stability review: ${method.name}`,
+      );
+  }
   for (const method of floor.methods) {
     const expected =
       method.name === "api.describe" && discovery ? { ...method, resultSchema: discovery } : method;

@@ -22,10 +22,11 @@ Schema 仍定义当前生产者允许输出的字段。端点另有回环地址�
 
 本地自动化协议 v1 和明确声明的七个方法为 **stable**，其他应用及插件接口保留
 各自的稳定状态。协议版本独立于桌面版本和插件 RPC 版本；协议编号不等于稳定
-承诺。各方法提供 `stability` 和 `since`；`since` 表示首次引入的 0.38.0-beta.1，
-不是稳定声明的版本，也不代表整个应用已进入 1.0。机器可读来源为
+承诺。各方法提供 `stability` 和 `since`；七个稳定方法的 `since` 记录首次引入的
+0.38.0-beta.1，而非稳定声明版本。实验方法未声明引入版本时可为 `since: null`；
+应查询运行中宿主的接口发现确认可用性，不依赖应用版本推测。机器可读来源为
 `src-tauri/src/automation/schema/v1.json`，并由
-`automation/domains/preferences/schema.rs` 组合公共设置领域已有的 Schema。
+`automation/domains/` 下的适配器组合各领域已有的 Schema。
 
 构建控制台程序：
 
@@ -72,7 +73,8 @@ tunnelde-cli call api.describe
 5（修订过期）。
 程序应根据错误码处理，不解析解释性消息。离线版本与接口说明直接返回 JSON 对象。
 `call METHOD --params JSON` 接收一个对象，`--params -` 从 stdin 读取。
-读取方法只接收空对象。更新设置前，先通过 `preferences snapshot` 取得修订号，
+七个稳定方法中的读取方法只接收空对象；实验领域方法分别声明参数。
+更新设置前，先通过 `preferences snapshot` 取得修订号，
 审查需要修改的字段后提交：
 
 ```sh
@@ -88,6 +90,39 @@ tunnelde-cli preferences update --params '{"revision":"REVISION_FROM_SNAPSHOT","
 公共设置不包含代理密码、凭据、内部元数据和提供者选择，但可以包含用户 CSS、
 代理地址和用户名，快照应妥善保管。本接口不会请求应用重启；延迟生效的设置沿用
 普通桌面设置行为。存储迁移属于独立领域，不能通过 preferences.update 执行。
+
+## 结构化日志读取（实验）
+
+`logs.read` 复用插件使用的持久诊断／操作日志服务。机器 Schema 归属
+`src-tauri/src/logs/read/schema.json`，由本地适配器组合进接口发现；不改变七个
+稳定方法的基线或插件独立权限模型。
+
+```sh
+tunnelde-cli logs read
+tunnelde cli logs read --params '{"filter":{"domains":["network"],"levels":["warn","error"]},"limit":50}'
+tunnelde-cli logs read --params '{"source":"operations","limit":20}'
+```
+
+结果为包含 `entries`、`cursor`、`hasMore`、`reset`、`gap` 的结构化分页。每条记录
+包含时间、级别、领域、可空插件 ID、消息、清理后的字段和截断标记，不返回 JSONL
+原文，也不接受调用方指定文件路径。`filter` 支持精确的领域／插件／级别列表和不区分
+大小写的文本匹配；不同字段取交集，同一列表内取并集。文本最多 256 个 UTF-8
+字节；`limit` 为 1–200，默认 100，每页最大 128 KiB。
+
+继续读取时提交返回的游标及相同来源、筛选器，可调整每页条数。`hasMore` 表示还有
+可继续读取的有界数据，不是订阅；为 false 时可保留游标，稍后读取新追加的完整记录。
+游标绑定本地读取者、应用进程、来源和规范化筛选器，不能复用插件游标。无效／不匹配
+游标返回 `invalid_request`（退出码 2）；应用重启后应省略游标重新读取。
+
+诊断日志从当前文件最近 256 KiB 内开始；操作日志最多覆盖最近保留的 1000 条。
+轮换、截断、无效记录及保留范围造成的缺口通过 `reset`／`gap` 标记，未写完的尾行
+等待追加；不承诺可靠审计或完整历史导出。本地最多四个并发阻塞读取者。请求超时后
+停止后续扫描，原工作实际退出前继续占用名额。繁忙或存储不可用返回
+`operation_rejected`（退出码 1），不暴露内部路径和异常详情。
+
+同账户本地凭据允许读取应用及插件日志。共享服务会清理结构化字段，但自由文本、
+主机信息和插件消息仍可能包含私人数据，输出与保存的分页应妥善保管。该方法不会
+启动插件、取得插件授权、修改日志配置或执行命令。
 
 桌面程序监听随机 IPv4 回环端口，在标准应用数据目录生成 `automation.json`。
 这个入口文件仅包含路径。随机凭据和地址存放在另一个私有目录中，Unix 使用

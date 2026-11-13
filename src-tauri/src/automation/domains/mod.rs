@@ -1,5 +1,6 @@
 //! Public projections use shared domain services, never internal tab/layout DTOs.
 mod hosts;
+mod logging;
 mod preferences;
 mod sessions;
 use super::contract::{self, Failure};
@@ -10,6 +11,9 @@ use tauri::{AppHandle, Manager};
 pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result<Value, Failure> {
     if method.starts_with("preferences.") {
         return preferences::call(app, method, params).await;
+    }
+    if method.starts_with("logs.") {
+        return logging::call(app, method, params).await;
     }
     if !params.as_object().is_some_and(|fields| fields.is_empty()) {
         return Err(Failure::new(
@@ -31,7 +35,9 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
 }
 
 pub(super) fn additional_contracts() -> Vec<Value> {
-    preferences::methods()
+    let mut methods = preferences::methods();
+    methods.push(logging::method());
+    methods
 }
 
 fn info(version: &str) -> Value {
@@ -71,7 +77,11 @@ mod tests {
             .as_array_mut()
             .unwrap()
             .extend(preference_samples);
-        assert_eq!(samples["samples"].as_array().unwrap().len(), 7);
+        samples["samples"]
+            .as_array_mut()
+            .unwrap()
+            .extend(logging::tests::samples(&db));
+        assert_eq!(samples["samples"].as_array().unwrap().len(), 9);
         samples["wireSamples"] = json!(crate::automation::transport::contract_samples().await);
         samples["errorSamples"] = contract::describe()["protocol"]["errors"]
             .as_array().unwrap().iter().map(|entry| {
