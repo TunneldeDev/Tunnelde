@@ -1,5 +1,6 @@
 import { ShieldAlert, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/form/Button";
@@ -36,10 +37,13 @@ interface ConnectDialogProps {
   initialError?: string;
   onClose: () => void;
   purpose?: "forwarding";
+  context?: ReactNode;
   /** Optional exclusive host acquisition, with its own native lifetime. */
   connectSession?: (request: SshConnectRequest, review?: ConnectionReview) => Promise<SshSession>;
   /** Native verification for acquisitions pinned to a previously captured target. */
   verification?: {
+    /** Request-owned route, captured before the originating native consent. */
+    jumpHosts?: Host[];
     probe: (credentials: SshConnectRequest["jumpCredentials"]) => Promise<HostKeyInfo>;
     trust: (
       fingerprint: string,
@@ -73,6 +77,7 @@ function HostConnectDialog({
   purpose,
   connectSession,
   verification,
+  context,
 }: ConnectDialogProps) {
   const { t } = useTranslation();
   const connect = useSsh((state) => state.connect);
@@ -177,11 +182,13 @@ function HostConnectDialog({
     let active = true;
     void (
       verification
-        ? api.connectionRoute(host.id).then((route) => ({
-            jumpHosts: route.jumpHosts
-              .map((id) => hosts.find((item) => item.id === id))
-              .filter((item): item is Host => !!item),
-          }))
+        ? verification.jumpHosts
+          ? Promise.resolve({ jumpHosts: verification.jumpHosts })
+          : api.connectionRoute(host.id).then((route) => ({
+              jumpHosts: route.jumpHosts
+                .map((id) => hosts.find((item) => item.id === id))
+                .filter((item): item is Host => !!item),
+            }))
         : reviewed.prepare()
     )
       .then(async (route) => {
@@ -450,6 +457,7 @@ function HostConnectDialog({
       }
     >
       <div className="connect">
+        {context}
         {host.source && <p className="connect__hint">{t("hostSources.connectionHint")}</p>}
         {setup ? (
           <p className="connect__hint">
