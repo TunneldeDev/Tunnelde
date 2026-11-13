@@ -3,6 +3,7 @@ use super::mutation::{cancellation, journal, setup};
 use super::*;
 use crate::ssh::files::native_save::journal::admission::Kind;
 use crate::ssh::files::native_save::{journal::Owner, runtime::mutation::MutationTarget};
+mod path_routes;
 
 #[tokio::test]
 async fn original_transfer_worker_extends_generated_paths_and_settles_the_current_revision() {
