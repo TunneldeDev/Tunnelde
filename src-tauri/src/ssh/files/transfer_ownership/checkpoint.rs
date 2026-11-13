@@ -19,7 +19,15 @@ pub(in crate::ssh::files) fn link(
     id: &str,
     reference: &TransferReference,
 ) -> AppResult<()> {
-    if !conn.is_autocommit() || !reference.belongs_to_task(id) {
+    synced(conn, || write_link(conn, id, reference))
+}
+
+pub(super) fn write_link(
+    conn: &rusqlite::Connection,
+    id: &str,
+    reference: &TransferReference,
+) -> AppResult<()> {
+    if !reference.belongs_to_task(id) {
         return Err(AppError::validation("editor.nativeChanged"));
     }
     let previous: Option<String> = conn
@@ -36,11 +44,22 @@ pub(in crate::ssh::files) fn link(
         }
     }
     let serialized = serde_json::to_string(reference)?;
-    let synchronous: i64 = conn.pragma_query_value(None, "synchronous", |row| row.get(0))?;
-    conn.pragma_update(None, "synchronous", "FULL")?;
-    let result = conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![key(id), serialized, crate::models::now_ms()]);
-    let restored = conn.pragma_update(None, "synchronous", synchronous);
-    result?;
-    restored?;
+    conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at", rusqlite::params![key(id), serialized, crate::models::now_ms()])?;
     Ok(())
+}
+
+pub(super) fn synced<T>(
+    conn: &rusqlite::Connection,
+    action: impl FnOnce() -> AppResult<T>,
+) -> AppResult<T> {
+    if !conn.is_autocommit() {
+        return Err(AppError::validation("editor.nativeChanged"));
+    }
+    let synchronous: i64 = conn.pragma_query_value(None, "synchronous", |row| row.get(0))?;
+    conn.pragma_update(None, "synchronous", synchronous.max(2))?;
+    let result = action();
+    let restored = conn.pragma_update(None, "synchronous", synchronous);
+    let value = result?;
+    restored?;
+    Ok(value)
 }

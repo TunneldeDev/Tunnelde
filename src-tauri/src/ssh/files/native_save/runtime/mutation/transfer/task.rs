@@ -3,6 +3,35 @@ use super::*;
 use crate::ssh::files::native_save::journal::admission::{Phase, TransferTask};
 
 impl Manager {
+    /// Read immutable intent for local cleanup planning, never dispatch authority.
+    pub(crate) async fn transfer_task_intent(&self, id: &str) -> AppResult<Option<TransferTask>> {
+        let Some(service) = self.existing().await.map_err(errors::app_journal)? else {
+            return Ok(None);
+        };
+        let mut matches = service
+            .legacy_claims()
+            .await
+            .map_err(errors::app_journal)?
+            .into_iter()
+            .filter(|claim| {
+                claim.owner.id == id
+                    || claim
+                        .transfer_task
+                        .as_ref()
+                        .is_some_and(|task| task.id == id)
+            });
+        let Some(claim) = matches.next() else {
+            return Ok(None);
+        };
+        if matches.next().is_some() || claim.kind != MutationKind::Transfer {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        claim
+            .transfer_task
+            .map(Some)
+            .ok_or_else(|| AppError::validation("editor.nativeChanged"))
+    }
+
     pub(crate) async fn reserve_transfer_task(
         &self,
         targets: &[MutationTarget<'_>],

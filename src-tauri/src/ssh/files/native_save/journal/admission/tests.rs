@@ -4,6 +4,8 @@ mod continuation;
 mod crash;
 mod extension;
 mod task;
+mod terminal;
+mod terminal_crash;
 
 struct Fixture {
     root: std::path::PathBuf,

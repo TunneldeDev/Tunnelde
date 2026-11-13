@@ -72,6 +72,7 @@ impl Journal {
             phase: Phase::Prepared,
             transfer_roots: (kind == Kind::Transfer).then(|| scopes.clone()),
             transfer_task: task,
+            terminal: None,
             scopes,
         };
         let (bytes, digest) = encode(&claim)?;
@@ -169,9 +170,14 @@ impl Journal {
     /// Only the original worker can supply its single-use dispatch permit.
     /// Neither restart recovery nor a status query can manufacture it.
     pub fn settle_legacy(&mut self, permit: Dispatched) -> Result<()> {
+        if permit.claim.transfer_task.is_some() {
+            // Bound task completion must first survive application projection;
+            // the generic metadata settlement path cannot bypass that handoff.
+            return Err(Error::Changed);
+        }
         self.remove_legacy(&permit.claim)
     }
-    fn remove_legacy(&mut self, expected: &Claim) -> Result<()> {
+    pub(super) fn remove_legacy(&mut self, expected: &Claim) -> Result<()> {
         self.verify()?;
         let (bytes, digest) = encode(expected)?;
         let tx = self

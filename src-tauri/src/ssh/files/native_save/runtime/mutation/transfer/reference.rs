@@ -42,6 +42,17 @@ impl Reference {
         {
             return Err(AppError::validation("editor.nativeChanged"));
         }
+        Self::from_claim(claim)
+    }
+
+    pub(super) fn terminal(claim: &Claim) -> AppResult<Self> {
+        if !claim.valid() || claim.phase != Phase::Terminal {
+            return Err(AppError::validation("editor.nativeChanged"));
+        }
+        Self::from_claim(claim)
+    }
+
+    fn from_claim(claim: &Claim) -> AppResult<Self> {
         Ok(Self {
             journal_id: claim.journal_id.clone(),
             claim_id: claim.id.clone(),
@@ -61,7 +72,7 @@ impl Reference {
             && contracts::uuid(&self.owner.id)
             && contracts::uuid(&self.owner.generation)
             && self.revision > 0
-            && self.revision < i64::MAX as u64
+            && self.revision <= i64::MAX as u64
             && self.revision % 2 != 0
             && !self.roots.is_empty()
             && self.roots.len() <= 4

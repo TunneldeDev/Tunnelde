@@ -20,6 +20,7 @@ use russh_sftp::client::SftpSession;
 use std::future::Future;
 pub(crate) use transfer::Reference as TransferReference;
 pub(crate) use transfer::Target as MutationTarget;
+pub(crate) use transfer::Terminal as TransferTerminal;
 pub(crate) use transfer::Transfer;
 
 pub(crate) struct Mutation {
