@@ -80,4 +80,9 @@ impl<S: Secrets + 'static> Service<S> {
         self.blocking(move |storage| storage.journal()?.park_editor_cleanup(permit))
             .await
     }
+
+    pub async fn park_transfer(&self, permit: Dispatched) -> journal::Result<Claim> {
+        self.blocking(move |storage| storage.journal()?.park_transfer(permit))
+            .await
+    }
 }

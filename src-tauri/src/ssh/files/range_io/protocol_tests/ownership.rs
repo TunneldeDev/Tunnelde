@@ -15,6 +15,19 @@ async fn observed(
 }
 
 #[tokio::test]
+async fn sealed_epoch_rejects_raw_mutation_before_open_or_write_reaches_the_peer() {
+    let (channel, state, observation) = observed(CloseReply::default()).await;
+    observation.seal().unwrap();
+    assert!(channel.open("/must-not-open", true).await.is_err());
+    assert!(channel.write("old-handle", 0, vec![7; 19]).await.is_err());
+    assert_eq!(state.lock().unwrap().opens, 0);
+    assert!(state.lock().unwrap().writes.is_empty());
+    let handle = channel.open("/readonly", false).await.unwrap();
+    channel.close(&handle).await.unwrap();
+    assert!(observation.settled());
+}
+
+#[tokio::test]
 async fn writable_open_is_owned_until_its_original_successful_close() {
     for rejected_write in [false, true] {
         let (channel, state, observation) = observed(CloseReply::default()).await;

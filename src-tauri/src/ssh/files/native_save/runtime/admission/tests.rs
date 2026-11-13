@@ -11,6 +11,7 @@ mod desktop;
 mod editor;
 mod mutation;
 mod transfer;
+mod transfer_continuation;
 
 struct Fixture(PathBuf);
 impl Fixture {

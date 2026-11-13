@@ -30,7 +30,10 @@ impl Writes {
         &self,
         work: impl Future<Output = Result<russh_sftp::protocol::Handle, Error>>,
     ) -> AppResult<String> {
-        let receipt = self.requests.begin();
+        let receipt = self
+            .requests
+            .begin()
+            .ok_or_else(|| AppError::validation("editor.remoteOutcomeUnknown"))?;
         match work.await {
             Ok(reply) => {
                 let mut handles = self.handles.lock().unwrap();

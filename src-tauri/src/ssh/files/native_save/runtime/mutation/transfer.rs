@@ -1,5 +1,8 @@
 //! One transfer owner arbitrates all mutated endpoints and generated paths.
+mod continuation;
+mod reference;
 use super::*;
+pub(crate) use reference::Reference;
 
 pub(crate) struct Target<'a> {
     pub destination: &'a SessionIdentity,

@@ -90,7 +90,7 @@ pub(crate) enum Kind {
 pub(in super::super::super::super) enum Phase {
     Prepared,
     Dispatched,
-    /// Original worker observed all requests finish; only owned cleanup may resume.
+    /// Original worker observed all requests finish; only the same owner may resume.
     Recoverable,
 }
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -115,7 +115,9 @@ impl Claim {
                 Phase::Prepared => self.revision == 1,
                 Phase::Dispatched => self.revision >= 2 && self.revision % 2 == 0,
                 Phase::Recoverable => {
-                    self.kind == Kind::Editor && self.revision >= 3 && self.revision % 2 != 0
+                    matches!(self.kind, Kind::Editor | Kind::Transfer)
+                        && self.revision >= 3
+                        && self.revision % 2 != 0
                 }
             }
             && !self.scopes.is_empty()
