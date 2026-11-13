@@ -137,9 +137,12 @@ impl Journal {
         let native = sqlite::read_records(&tx, &self.id)?;
         let legacy = read_claims(&tx, &self.id)?;
         current(&legacy, expected)?;
-        if native
+        if super::super::setup::read(&tx, &self.id)?
             .iter()
-            .any(|record| record.blocks_target() && expected.overlaps_native(&record.binding))
+            .any(|setup| setup.plan.conflicts(&expected.scopes))
+            || native
+                .iter()
+                .any(|record| record.blocks_target() && expected.overlaps_native(&record.binding))
             || legacy
                 .iter()
                 .any(|claim| claim.id != expected.id && claim.overlaps(&expected.scopes))
