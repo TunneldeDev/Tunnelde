@@ -23,9 +23,11 @@ pub const CLOSED_EVENT: &str = "ssh://closed";
 
 mod cleanup;
 mod identity;
+mod probe;
 mod route;
 pub(crate) use cleanup::SessionDisposal;
 pub(crate) use identity::{trust_bound, SessionIdentity};
+pub(super) use probe::ProbeTarget;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 const TERM: &str = "xterm-256color";
@@ -672,14 +674,6 @@ async fn pump_terminal(
     }
 }
 
-async fn probe_host(
-    app: &AppHandle,
-    host: &Host,
-    credentials: &HashMap<String, HopCredential>,
-) -> AppResult<HostKeyInfo> {
-    probe_host_bound(app, host, credentials, None).await
-}
-
 pub(crate) async fn probe_host_bound(
     app: &AppHandle,
     host: &Host,
@@ -695,8 +689,9 @@ pub async fn probe_route(
     host_id: &str,
     credentials: HashMap<String, HopCredential>,
 ) -> AppResult<HostKeyInfo> {
-    let host = crate::services::hosts::resolve(app, host_id)?;
-    probe_host(app, &host, &credentials).await
+    ProbeTarget::capture(app, host_id)?
+        .probe(app, &credentials)
+        .await
 }
 
 pub async fn trust_route(

@@ -65,6 +65,8 @@ rejects the pending connection. Review the settings and reconnect; the applicati
 does not automatically retry against a replacement destination. Cosmetic changes
 such as a host's display name do not cancel an attempt. Trusting a key records the
 reviewed fingerprint only for the endpoint that was actually probed.
+Connection-quality samples share one captured route; configuration changes stop
+the measurement instead of retrying against the edited destination.
 
 ## Transfer performance
 
