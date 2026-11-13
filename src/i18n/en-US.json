@@ -604,6 +604,7 @@
     "timeout": "Connection timed out",
     "hostKeyUntrusted": "Trust this host key first",
     "hostKeyChanged": "The host key changed",
+    "connectionChanged": "The host, jump route, proxy or trusted key changed while connecting. Review the connection and try again.",
     "keyLoad": "The private key could not be read",
     "sessionMissing": "Session is gone",
     "sessionBusy": "The session is busy",
