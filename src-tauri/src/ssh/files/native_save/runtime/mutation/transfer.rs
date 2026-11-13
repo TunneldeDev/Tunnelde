@@ -3,6 +3,7 @@ mod continuation;
 mod reference;
 mod task;
 use super::*;
+pub(crate) use continuation::Transfer;
 pub(crate) use reference::Reference;
 
 pub(crate) struct Target<'a> {

@@ -13,6 +13,7 @@ mod mutation;
 mod transfer;
 mod transfer_continuation;
 mod transfer_task;
+mod transfer_worker;
 
 struct Fixture(PathBuf);
 impl Fixture {

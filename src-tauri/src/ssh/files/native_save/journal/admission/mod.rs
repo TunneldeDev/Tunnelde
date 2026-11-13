@@ -10,7 +10,6 @@ mod tests;
 use super::{Error, Journal, Owner, Result};
 pub(crate) use model::Kind;
 pub(in super::super::super) use model::{Claim, Phase, Scope};
-#[cfg(test)]
 pub(crate) use task::Endpoint as TaskEndpoint;
 pub(crate) use task::Task as TransferTask;
 
