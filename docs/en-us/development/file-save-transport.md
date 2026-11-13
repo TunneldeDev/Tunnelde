@@ -259,6 +259,12 @@ an offline copy source, an invalidated plugin runtime, an actual SFTP artifact
 unlink, terminal projection and claim retirement. They do not substitute for
 desktop cancellation, disconnect and restart acceptance.
 
+Pausing or cancelling data transfer stops new packets but still drains an
+already opened destination handle through its original CLOSE, even when no WRITE
+is outstanding. Each handle drain is bounded to five seconds. A read-only
+source may stop promptly; an unconfirmed destination CLOSE retains ownership
+rather than treating cancellation as completion.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 An interrupted possible dispatch without an original terminal receipt still
