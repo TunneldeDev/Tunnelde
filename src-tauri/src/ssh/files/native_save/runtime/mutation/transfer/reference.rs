@@ -2,7 +2,7 @@
 use super::*;
 use crate::ssh::files::native_save::{
     contracts,
-    journal::admission::{Kind, Phase},
+    journal::admission::{Kind, Phase, TransferTask},
 };
 use serde::{Deserialize, Serialize};
 
@@ -16,6 +16,8 @@ pub(crate) struct Reference {
     // Immutable initial roots. Generated staging paths extend a claim, never
     // replace the roots or become an alternative source/destination on resume.
     roots: Vec<Scope>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    task: Option<TransferTask>,
 }
 
 impl Reference {
@@ -35,6 +37,7 @@ impl Reference {
                 .transfer_roots
                 .clone()
                 .ok_or_else(|| AppError::validation("editor.nativeChanged"))?,
+            task: claim.transfer_task.clone(),
         })
     }
 
@@ -55,6 +58,10 @@ impl Reference {
                 .sum::<usize>()
                 <= 32
             && self.roots.iter().all(Scope::valid)
+            && self
+                .task
+                .as_ref()
+                .is_none_or(|task| task.valid() && task.id == self.owner.id)
     }
 
     pub(super) fn identifies(&self, claim: &Claim) -> bool {
@@ -64,6 +71,7 @@ impl Reference {
             && self.journal_id == claim.journal_id
             && self.claim_id == claim.id
             && self.owner == claim.owner
+            && self.task == claim.transfer_task
             && claim.transfer_roots.as_ref() == Some(&self.roots)
             && self.roots.len() == claim.scopes.len()
             && self.roots.iter().zip(&claim.scopes).all(|(root, scope)| {

@@ -3,12 +3,16 @@ mod continuation;
 mod extension;
 mod model;
 pub(super) mod persistence;
+mod task;
 #[cfg(test)]
 mod tests;
 
 use super::{Error, Journal, Owner, Result};
 pub(crate) use model::Kind;
 pub(in super::super::super) use model::{Claim, Phase, Scope};
+#[cfg(test)]
+pub(crate) use task::Endpoint as TaskEndpoint;
+pub(crate) use task::Task as TransferTask;
 
 /// Only an actual successful dispatch transition can mint settlement authority.
 /// Reading a historical claim never recreates this non-cloneable permit.

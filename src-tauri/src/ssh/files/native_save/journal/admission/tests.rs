@@ -3,6 +3,7 @@ use crate::ssh::files::native_save::testing::*;
 mod continuation;
 mod crash;
 mod extension;
+mod task;
 
 struct Fixture {
     root: std::path::PathBuf,

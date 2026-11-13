@@ -15,6 +15,7 @@ impl Dispatched {
             || next.journal_id != original.journal_id
             || next.owner != original.owner
             || next.transfer_roots != original.transfer_roots
+            || next.transfer_task != original.transfer_task
             || !next.valid()
             || !(next.revision == original.revision
                 || original.revision.checked_add(2) == Some(next.revision))

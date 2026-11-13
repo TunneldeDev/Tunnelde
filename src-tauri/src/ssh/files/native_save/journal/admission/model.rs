@@ -107,6 +107,10 @@ pub(in super::super::super::super) struct Claim {
     /// staging/backup paths. Older internal records without them cannot resume.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transfer_roots: Option<Vec<Scope>>,
+    /// Absent only on historical/internal unbound claims. Never adopt a task
+    /// from a resettable application row when this original binding is absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_task: Option<TransferTask>,
 }
 impl Claim {
     pub fn valid(&self) -> bool {
@@ -128,6 +132,15 @@ impl Claim {
             && self.scopes.len() <= 4
             && self.scopes.iter().map(|s| s.paths.len()).sum::<usize>() <= 32
             && self.scopes.iter().all(Scope::valid)
+            && self.transfer_task.as_ref().is_none_or(|task| {
+                self.kind == Kind::Transfer
+                    && task.valid()
+                    && task.id == self.owner.id
+                    && self
+                        .transfer_roots
+                        .as_ref()
+                        .is_some_and(|roots| task.matches_roots(roots))
+            })
             && self.transfer_roots.as_ref().is_none_or(|roots| {
                 self.kind == Kind::Transfer
                     && roots.len() == self.scopes.len()
