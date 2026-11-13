@@ -33,6 +33,7 @@ pub(crate) mod mutations;
     reason = "Native save transport awaits explicit installation and recovery UI acceptance"
 )]
 pub(crate) mod native_save;
+mod outcome;
 mod publication;
 mod range_io;
 mod remote_commit;
@@ -48,6 +49,7 @@ mod segments;
 mod task_observation;
 mod transfer_ownership;
 mod verification;
+use outcome::Outcome;
 use verification::{fingerprint_file, verify_prefix};
 
 pub const TRANSFER_EVENT: &str = "sftp://transfer";
@@ -698,30 +700,6 @@ fn progress(app: &AppHandle, id: &str, name: &str, transferred: u64, total: u64)
             error: None,
         },
     );
-}
-
-enum Outcome {
-    Done(u64),
-    Cancelled(u64),
-    Failed(u64, AppError),
-}
-
-impl Outcome {
-    fn into_result(self) -> AppResult<()> {
-        match self {
-            Self::Done(_) => Ok(()),
-            Self::Cancelled(_) => Err(AppError::Ssh(CANCELLED.into())),
-            Self::Failed(_, error) => Err(error),
-        }
-    }
-
-    fn from_result(result: AppResult<()>, transferred: u64, cancel: &AtomicBool) -> Self {
-        match result {
-            Ok(()) => Self::Done(transferred),
-            Err(_) if cancel.load(Ordering::SeqCst) => Self::Cancelled(transferred),
-            Err(error) => Self::Failed(transferred, error),
-        }
-    }
 }
 
 async fn finish(app: &AppHandle, id: &str, name: &str, outcome: &Outcome) {
@@ -1773,7 +1751,7 @@ async fn copy_entry(
         }
         .await;
         let closed = files.finish(copied.is_err()).await;
-        return copied.and(closed);
+        return outcome::after_completion(copied, closed);
     }
     let mut reader = open_reader(from, from_sftp).await?;
     let result = async {
@@ -2471,7 +2449,7 @@ async fn durable_copy_file(
                 tracing::warn!(%error, "Cannot validate transfer partial length");
             }
         }
-        result.and(closed).and(read_closed)
+        outcome::after_completion(outcome::after_completion(result, closed), read_closed)
     };
     copied?;
     tracing::debug!(
@@ -2785,7 +2763,7 @@ async fn parallel_copy_file(
     if result.is_err() {
         meter.retain(previous_files + offset)?;
     }
-    result.and(closed)
+    outcome::after_completion(result, closed)
 }
 
 struct TransferOptions {
@@ -3188,7 +3166,11 @@ async fn run(
     } else {
         app.state::<AppState>().transfers.park_ownership(id).await
     };
-    Outcome::from_result(result.and(completed), meter.transferred, cancel)
+    Outcome::from_result(
+        outcome::after_completion(result, completed),
+        meter.transferred,
+        cancel,
+    )
 }
 
 const MAX_TEXT: u64 = 2 * 1024 * 1024;

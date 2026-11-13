@@ -1,5 +1,6 @@
 //! One transfer owner arbitrates all mutated endpoints and generated paths.
 mod continuation;
+mod paths;
 mod reference;
 mod task;
 mod terminal;
@@ -77,6 +78,7 @@ impl ActiveMutation {
         paths: &[String],
     ) -> AppResult<()> {
         let resolved = scope::resolve(destination, sftp, paths).await?;
+        paths::extension(self.permit.claim(), &resolved)?;
         self.service
             .extend_transfer(&mut self.permit, vec![resolved.clone()])
             .await

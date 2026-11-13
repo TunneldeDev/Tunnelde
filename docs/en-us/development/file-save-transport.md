@@ -265,6 +265,24 @@ is outstanding. Each handle drain is bounded to five seconds. A read-only
 source may stop promptly; an unconfirmed destination CLOSE retains ownership
 rather than treating cancellation as completion.
 
+Transfer path extension validates the immutable original lexical/canonical roots
+before modifying the private claim. Re-resolving an original target must return
+its admitted canonical location; an already covered path cannot add an outside
+canonical location. New staging and backup paths must preserve the original
+parent route, including child paths inside a sibling staging directory. Remote
+Windows drive spellings and case are normalized using the remote platform, not
+the desktop platform. A changed authenticated destination is rejected. These
+checks bound reservation coverage; they do not make pathname operations atomic
+against external filesystem changes.
+
+A cancellation flag alone does not classify a failed operation as cancelled.
+Failed original CLOSE or ownership parking remains a failure with its progress
+and error details. A successful completion is not undone by a late cancellation.
+When an operation and its completion both fail, actionable operation details
+(such as backup recovery) are preserved and the completion error is logged;
+ordinary cancellation cannot hide the completion failure. An unknown original
+request continues to retain its ownership independently of the displayed error.
+
 The recoverable editor phase is part of the internal, explicitly initialized v2
 candidate format; it is not a public plugin API or an automatic storage upgrade.
 An interrupted possible dispatch without an original terminal receipt still

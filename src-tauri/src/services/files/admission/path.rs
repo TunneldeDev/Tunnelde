@@ -71,6 +71,18 @@ impl Path {
     pub(crate) fn contains(&self, other: &Self) -> bool {
         self.root == other.root && other.components.starts_with(&self.components)
     }
+
+    pub(crate) fn parent(&self) -> Option<Self> {
+        let mut parent = self.clone();
+        parent.components.pop()?;
+        Some(parent)
+    }
+
+    pub(crate) fn relative_to(&self, parent: &Self) -> Option<&[String]> {
+        parent
+            .contains(self)
+            .then(|| &self.components[parent.components.len()..])
+    }
 }
 
 #[cfg(test)]
