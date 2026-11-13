@@ -1,3 +1,5 @@
+#[cfg(test)]
+mod commit_tests;
 mod lifecycle;
 use std::{
     collections::HashMap,
@@ -388,6 +390,8 @@ pub(crate) struct PendingForward {
 }
 impl PendingForward {
     /// Callers can hold their authorization/scope locks before acquiring the registry.
+    /// Reject cancelled or duplicate preparations before the final callback can
+    /// publish private resources. No fallible admission step follows that callback.
     pub(crate) fn commit(
         self,
         registry: &ForwardRegistry,
@@ -400,10 +404,10 @@ impl PendingForward {
         if !registry.valid_ticket(&self.ticket) {
             return Err(AppError::validation("forward.startCancelled"));
         }
-        current()?;
         if active.contains_key(&self.id) {
             return Err(AppError::validation("forward.alreadyActive"));
         }
+        current()?;
         self.item.admitted.store(true, Ordering::Release);
         active.insert(self.id, self.item);
         drop(active);
