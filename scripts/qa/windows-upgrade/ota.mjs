@@ -4,7 +4,6 @@ import { promisify } from "node:util";
 import { access, writeFile } from "node:fs/promises";
 import { setTimeout as pause } from "node:timers/promises";
 import { join } from "node:path";
-import { repository } from "./assets.mjs";
 
 const run = promisify(execFile);
 
@@ -31,8 +30,8 @@ export async function updateInApplication(desktop, binary, tag, report) {
   await desktop.invoke("settings_update", {
     patch: {
       updateChannel: tag.includes("-beta.") ? "beta" : "stable",
-      updateSource: "custom",
-      updateSourceUrl: `https://github.com/${repository}/releases/download/${tag}/latest.json`,
+      updateSource: "github",
+      updateSourceUrl: "",
     },
   });
   const selected = await desktop.invoke("update_check", { force: true });
