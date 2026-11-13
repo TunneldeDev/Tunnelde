@@ -17,6 +17,7 @@ impl File {
         flags: OpenFlags,
         observation: &runtime::MutationObservation,
     ) -> AppResult<Self> {
+        observation.authorize()?;
         // OPEN can create/truncate before its reply is received. Dropping this
         // future must retain uncertainty even if no File reached the caller.
         let handle = observation
@@ -59,7 +60,7 @@ impl File {
             handle,
         } = self;
         let flushed = observation
-            .opaque(async {
+            .completion(async {
                 inner.flush().await?;
                 Ok(())
             })
@@ -67,7 +68,7 @@ impl File {
         // Attempt CLOSE even when flushing failed. A successful CLOSE retires
         // this handle only; it cannot erase a prior unconfirmed write/flush.
         let closed = observation
-            .opaque(async {
+            .completion(async {
                 inner.close().await?;
                 Ok(())
             })

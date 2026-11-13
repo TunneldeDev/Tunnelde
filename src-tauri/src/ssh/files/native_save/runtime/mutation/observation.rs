@@ -1,7 +1,9 @@
 //! Original request completion evidence; never reconstructed from an AppError.
+mod authorization;
 #[cfg(test)]
 mod tests;
 use crate::error::{AppError, AppResult};
+use authorization::Authorization;
 use russh_sftp::{client::error::Error, protocol::StatusCode};
 use std::{
     future::Future,
@@ -12,7 +14,7 @@ use std::{
 };
 
 #[derive(Clone, Default)]
-pub(crate) struct Observation(Arc<AtomicUsize>);
+pub(crate) struct Observation(Arc<AtomicUsize>, Option<Authorization>);
 
 const SEALED: usize = 1 << (usize::BITS - 1);
 
@@ -41,6 +43,27 @@ impl Receipt {
 }
 
 impl Observation {
+    /// Preserve the original epoch while checking live authority at each send.
+    pub(crate) fn guarded(
+        &self,
+        validate: impl Fn() -> AppResult<()> + Send + Sync + 'static,
+    ) -> Self {
+        let previous = self.1.clone();
+        Self(
+            self.0.clone(),
+            Some(Authorization::new(move || {
+                if let Some(previous) = &previous {
+                    previous.check()?;
+                }
+                validate()
+            })),
+        )
+    }
+
+    pub(crate) fn authorize(&self) -> AppResult<()> {
+        self.1.as_ref().map_or(Ok(()), Authorization::check)
+    }
+
     pub(crate) fn begin(&self) -> Option<Receipt> {
         let mut pending = self.0.load(Ordering::Acquire);
         loop {
@@ -75,6 +98,16 @@ impl Observation {
         &self,
         request: impl Future<Output = Result<T, Error>>,
     ) -> Result<T, Error> {
+        self.authorize().map_err(authorization::protocol)?;
+        self.request_completion(request).await
+    }
+
+    /// Only completion of a previously admitted handle, such as CLOSE. Live
+    /// revocation must stop new writes without abandoning their original reply.
+    pub(crate) async fn request_completion<T>(
+        &self,
+        request: impl Future<Output = Result<T, Error>>,
+    ) -> Result<T, Error> {
         let receipt = self
             .begin()
             .ok_or_else(|| Error::IO("Mutation request admission is closed".into()))?;
@@ -88,10 +121,19 @@ impl Observation {
         &self,
         request: impl Future<Output = Result<T, Error>> + Send + 'static,
     ) -> Result<T, Error> {
+        self.authorize().map_err(authorization::protocol)?;
         let receipt = self
             .begin()
             .ok_or_else(|| Error::IO("Mutation request admission is closed".into()))?;
-        let worker = tauri::async_runtime::spawn(async move { receipt.finish(request.await) });
+        let observation = self.clone();
+        let worker = tauri::async_runtime::spawn(async move {
+            // The runtime queue may outlive the caller's original approval.
+            if let Err(error) = observation.authorize() {
+                receipt.acknowledge(); // Definitely unsent; no request polled.
+                return Err(authorization::protocol(error));
+            }
+            receipt.finish(request.await)
+        });
         worker
             .await
             .map_err(|error| Error::IO(format!("Mutation response worker: {error}")))?
@@ -100,6 +142,14 @@ impl Observation {
     /// Composite/exec adapters without typed per-request replies remain
     /// conservative on error. This must enclose the entire uninstrumented work.
     pub(crate) async fn opaque<T>(&self, work: impl Future<Output = AppResult<T>>) -> AppResult<T> {
+        self.authorize()?;
+        self.completion(work).await
+    }
+
+    pub(crate) async fn completion<T>(
+        &self,
+        work: impl Future<Output = AppResult<T>>,
+    ) -> AppResult<T> {
         let receipt = self
             .begin()
             .ok_or_else(|| AppError::validation("editor.remoteOutcomeUnknown"))?;

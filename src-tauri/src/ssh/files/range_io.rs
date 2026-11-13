@@ -466,6 +466,7 @@ pub(super) struct Files<'a> {
     target_handle: Option<String>,
     throttle: Option<bandwidth::Throttle>,
     unsettled_write: AtomicBool,
+    observation: MutationObservation,
 }
 
 /// A dropped request may still run on the server. Drain its handle before
@@ -496,9 +497,11 @@ async fn complete_packet(
     result: AppResult<(u64, Vec<u8>, usize)>,
     writer: &mut Option<local_io::Writer>,
     transferred: &AtomicU64,
+    observation: &MutationObservation,
 ) -> AppResult<()> {
     let (offset, bytes, length) = result?;
     if let Some(writer) = writer {
+        observation.authorize()?;
         writer.write(offset, &bytes).await?;
     }
     transferred.fetch_add(length as u64, Ordering::Relaxed);
@@ -563,11 +566,17 @@ impl<'a> Files<'a> {
             target_handle,
             throttle: None,
             unsettled_write: AtomicBool::new(false),
+            observation: MutationObservation::default(),
         })
     }
 
     pub fn with_throttle(mut self, throttle: bandwidth::Throttle) -> Self {
         self.throttle = Some(throttle);
+        self
+    }
+
+    pub(super) fn with_observation(mut self, observation: MutationObservation) -> Self {
+        self.observation = observation;
         self
     }
 
@@ -721,6 +730,7 @@ impl<'a> Files<'a> {
         stop: &AtomicBool,
         transferred: &AtomicU64,
     ) -> AppResult<()> {
+        self.observation.authorize()?;
         let mut reader = if self.sessions.source.is_none() {
             Some(local_io::reader(&self.source.path, &range).await?)
         } else {
@@ -775,7 +785,7 @@ impl<'a> Files<'a> {
                             break;
                         }
                         Some(result) = pending.next(), if !pending.is_empty() => {
-                            if let Err(failure) = complete_packet(result, &mut writer, transferred).await {
+                            if let Err(failure) = complete_packet(result, &mut writer, transferred, &self.observation).await {
                                 error.get_or_insert(failure);
                                 stop.store(true, Ordering::SeqCst);
                                 break;
@@ -784,7 +794,9 @@ impl<'a> Files<'a> {
                     }
                 }
             } else if let Some(result) = pending.next().await {
-                if let Err(failure) = complete_packet(result, &mut writer, transferred).await {
+                if let Err(failure) =
+                    complete_packet(result, &mut writer, transferred, &self.observation).await
+                {
                     error.get_or_insert(failure);
                     stop.store(true, Ordering::SeqCst);
                 }

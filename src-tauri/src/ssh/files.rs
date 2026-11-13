@@ -1596,6 +1596,7 @@ async fn make_dir(
         }
         None => {
             reject_local_destination_link(Path::new(&endpoint.path))?;
+            observation.authorize()?;
             tokio::fs::create_dir_all(&endpoint.path).await?;
             if cancel.is_some_and(|flag| flag.load(Ordering::SeqCst)) {
                 return Err(AppError::Ssh(CANCELLED.into()));
@@ -1634,6 +1635,7 @@ async fn create_writer(
     overwrite: bool,
     observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<Writer> {
+    observation.authorize()?;
     Ok(match sftp {
         Some(handle) => Writer::Remote(Box::new(
             remote_writer::File::open(
@@ -1750,6 +1752,7 @@ async fn copy_entry(
             .clone();
         let files = range_io::Files::open(&channels, from, to)
             .await?
+            .with_observation(meter.observation.clone())
             .with_throttle(meter.throttle());
         let plan = segments::Plan::for_file(&meter.settings, size, true);
         let copied = async {
@@ -1785,6 +1788,7 @@ async fn copy_entry(
                 if read == 0 {
                     break;
                 }
+                meter.observation.authorize()?;
                 writer.write_all(&buffer[..read]).await?;
                 meter.add(read as u64);
             }
@@ -1918,18 +1922,21 @@ async fn rename_endpoint(
         None => {
             let source = PathBuf::from(&from.path);
             let destination = PathBuf::from(&to.path);
-            tokio::task::spawn_blocking(move || {
-                crate::platform::file_ops::rename_noreplace(&source, &destination)
+            let observation = observation.clone();
+            tokio::task::spawn_blocking(move || -> AppResult<()> {
+                observation.authorize()?;
+                crate::platform::file_ops::rename_noreplace(&source, &destination).map_err(
+                    |error| {
+                        if error.kind() == std::io::ErrorKind::AlreadyExists {
+                            AppError::validation("sftp.alreadyExists")
+                        } else {
+                            AppError::from(error)
+                        }
+                    },
+                )
             })
             .await
-            .map_err(|e| AppError::internal(e.to_string()))?
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    AppError::validation("sftp.alreadyExists")
-                } else {
-                    AppError::from(error)
-                }
-            })?;
+            .map_err(|e| AppError::internal(e.to_string()))??;
             Ok(())
         }
     }
@@ -2335,6 +2342,7 @@ async fn durable_copy_file(
     {
         return Err(AppError::validation("sftp.alreadyExists"));
     }
+    meter.observation.authorize()?;
     let mut writer = if partial.is_some() {
         match to_sftp {
             Some(s) => Writer::Remote(Box::new(
@@ -2440,6 +2448,7 @@ async fn durable_copy_file(
                     break;
                 }
                 attempted = confirmed + n as u64;
+                meter.observation.authorize()?;
                 interruptible(Some(cancel), writer.write_all(&buf[..n])).await?;
                 confirmed += n as u64;
                 meter.add(n as u64);
@@ -2511,6 +2520,7 @@ async fn durable_copy_file(
         artifacts::begin_publication(meter.app, id, to, &temp)?;
     }
     tracing::debug!(id, "Publishing transfer staging file");
+    meter.observation.authorize()?;
     #[cfg(windows)]
     let committed = match local_staging.as_ref() {
         Some(guard) => guard
@@ -2731,6 +2741,7 @@ async fn parallel_copy_file(
     }
     let files = range_io::Files::open_cancellable(&channels, from, temp, cancel)
         .await?
+        .with_observation(meter.observation.clone())
         .with_throttle(meter.throttle());
     let result = async {
         while offset < stamp.0 {
@@ -2857,6 +2868,10 @@ async fn run(
     let config = segments::config(&settings);
     let ownership_endpoints = match transfer_ownership::Endpoints::capture(app, from, to) {
         Ok(endpoints) => endpoints,
+        Err(error) => return Outcome::from_result(Err(error), 0, cancel),
+    };
+    let observation = match ownership_endpoints.observe(app, id, from, to, observation) {
+        Ok(observation) => observation,
         Err(error) => return Outcome::from_result(Err(error), 0, cancel),
     };
     let scan_concurrency = config.max_concurrent_reads;
@@ -3128,6 +3143,7 @@ async fn run(
             if durable {
                 #[cfg(windows)]
                 if let Some(verified) = verified_local_move {
+                    meter.observation.authorize()?;
                     verified.delete(cancel)?;
                 } else {
                     return Err(AppError::validation("sftp.moveSourceRetained"));

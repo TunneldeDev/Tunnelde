@@ -30,6 +30,7 @@ impl Writes {
         &self,
         work: impl Future<Output = Result<russh_sftp::protocol::Handle, Error>>,
     ) -> AppResult<String> {
+        self.requests.authorize()?;
         let receipt = self
             .requests
             .begin()
@@ -59,7 +60,10 @@ impl Writes {
         // up by handle after await could accidentally retire the new writer.
         let writing = self.handles.lock().unwrap().remove(handle);
         if let Some(receipt) = writing {
-            self.request(raw.close(handle)).await.map_err(map_sftp)?;
+            self.requests
+                .request_completion(raw.close(handle))
+                .await
+                .map_err(map_sftp)?;
             receipt.acknowledge();
         } else {
             raw.close(handle).await.map_err(map_sftp)?;

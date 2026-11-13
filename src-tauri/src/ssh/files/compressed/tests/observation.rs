@@ -1,4 +1,5 @@
 use super::*;
+mod authorization;
 
 async fn observed() -> (Arc<Session>, BufReader<DuplexStream>, MutationObservation) {
     let (client, mut server) = duplex(1024 * 1024);

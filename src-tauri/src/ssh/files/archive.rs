@@ -383,6 +383,7 @@ impl Batcher {
                 targets.push(target);
             }
             for (mut target, data) in targets.into_iter().zip(files) {
+                self.observation.authorize()?;
                 target.write_all(&data).await?;
                 target.flush().await?;
             }
