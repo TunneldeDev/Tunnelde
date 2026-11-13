@@ -24,6 +24,13 @@ point-in-time observations and can become stale immediately. Separate calls do
 not share a transaction. List ordering is unspecified; consumers should sort.
 Plugin-supplied host sources are outside `hosts.list`.
 
+Discovery includes a finite JSON Schema for its own result: protocol and transport
+metadata, method input/result schemas, effects, errors and CLI exit metadata.
+Consumers require those fields and ignore additional metadata and methods. Schema
+values are JSON Schema objects or booleans; discovery does not recursively embed
+itself. The discovery baseline is versioned separately from historical method
+fixtures, which remain unchanged.
+
 Preference revisions are equality tokens, not sortable counters, timestamps or
 event cursors. Obtain a fresh snapshot before writing and handle `stale_revision`
 explicitly. A revision can change even when the fields a client displays appear
