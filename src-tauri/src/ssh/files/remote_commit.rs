@@ -91,9 +91,31 @@ impl Replacement {
             .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
     }
 
+    pub(super) async fn commit_observed(
+        self,
+        from: &str,
+        to: &str,
+        observation: &native_save::runtime::MutationObservation,
+    ) -> AppResult<()> {
+        let payload = Self::payload(from, to)?;
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            observation.request(self.request(payload)),
+        )
+        .await
+        .map_err(|_| AppError::Ssh("sftp.transferTimedOut".into()))?
+        .map_err(|error| rename::failure(from, to, error))
+    }
+
     // Editor staging owns the channel until its cleanup has been attempted.
     // A failed commit is never retried on this channel.
     pub(super) async fn replace(&self, from: &str, to: &str) -> AppResult<()> {
+        self.request(Self::payload(from, to)?)
+            .await
+            .map_err(|error| rename::failure(from, to, error))
+    }
+
+    fn payload(from: &str, to: &str) -> AppResult<Vec<u8>> {
         let mut payload = Vec::new();
         for path in [from, to] {
             let length = u32::try_from(path.len())
@@ -101,23 +123,20 @@ impl Replacement {
             payload.extend_from_slice(&length.to_be_bytes());
             payload.extend_from_slice(path.as_bytes());
         }
+        Ok(payload)
+    }
+
+    // Normalize the actual extension reply before marking the request settled.
+    // An arbitrary successfully decoded packet is not a rename acknowledgement.
+    async fn request(&self, payload: Vec<u8>) -> Result<(), russh_sftp::client::error::Error> {
         let reply = self
             .raw
             .extended("posix-rename@openssh.com", payload)
-            .await
-            .map_err(|error| rename::failure(from, to, error))?;
+            .await?;
         match reply {
             Packet::Status(status) if status.status_code == StatusCode::Ok => Ok(()),
-            Packet::Status(status) => Err(rename::failure(
-                from,
-                to,
-                russh_sftp::client::error::Error::Status(status),
-            )),
-            _ => Err(rename::failure(
-                from,
-                to,
-                russh_sftp::client::error::Error::UnexpectedPacket,
-            )),
+            Packet::Status(status) => Err(russh_sftp::client::error::Error::Status(status)),
+            _ => Err(russh_sftp::client::error::Error::UnexpectedPacket),
         }
     }
 }

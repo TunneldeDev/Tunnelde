@@ -28,6 +28,11 @@ pub(super) fn missing(error: &russh_sftp::client::error::Error) -> bool {
         if status.status_code == StatusCode::NoSuchFile)
 }
 
+pub(super) struct Preparation<'a, F> {
+    pub observation: &'a native_save::runtime::MutationObservation,
+    pub create_directory: F,
+}
+
 pub(super) async fn prepare_remote_staging<F, Fut>(
     app: &AppHandle,
     id: &str,
@@ -35,7 +40,7 @@ pub(super) async fn prepare_remote_staging<F, Fut>(
     sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
     record: &mut Option<ArtifactRecord>,
-    create_directory: F,
+    preparation: Preparation<'_, F>,
 ) -> AppResult<()>
 where
     F: FnOnce(Endpoint) -> Fut,
@@ -50,7 +55,15 @@ where
     if staging.opening {
         // Never reuse the parent of an OPEN whose reply was lost. An unlink of
         // the child alone would still allow a late CREATE to recreate it.
-        retire_remote_staging(id, to, sftp, record.as_ref().unwrap(), cancel).await?;
+        retire_remote_staging(
+            id,
+            to,
+            sftp,
+            record.as_ref().unwrap(),
+            cancel,
+            preparation.observation,
+        )
+        .await?;
         if let Some(ArtifactRecord::Current {
             staging: Some(staging),
             ..
@@ -81,7 +94,7 @@ where
         // The caller persists its creation intent only after channel setup and
         // immediately before submitting MKDIR. Do not mark connection failures
         // as uncertain mutations.
-        create_directory(directory).await?;
+        (preparation.create_directory)(directory).await?;
         set_creating(app, id, to, record, false)
     })
     .await?;
@@ -177,6 +190,7 @@ pub(super) async fn retire_remote_staging(
     sftp: &SftpSession,
     record: &ArtifactRecord,
     cancel: &AtomicBool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     let staging = remote_staging(Some(record)).unwrap();
     if !staging.prepared || !staging.opening {
@@ -204,7 +218,10 @@ pub(super) async fn retire_remote_staging(
         }
         match sftp.symlink_metadata(&part.path).await {
             Ok(metadata) if metadata.is_regular() && metadata.size == Some(0) => {
-                sftp.remove_file(&part.path).await.map_err(map_sftp)?;
+                observation
+                    .request(sftp.remove_file(&part.path))
+                    .await
+                    .map_err(map_sftp)?;
             }
             Ok(_) => {
                 return Err(AppError::TransferArtifactUnrecognized {
@@ -216,7 +233,7 @@ pub(super) async fn retire_remote_staging(
         }
         // If a delayed OPEN races the unlink, RMDIR refuses a non-empty parent.
         // The unchanged journal makes the next attempt retry the same fence.
-        match sftp.remove_dir(&directory.path).await {
+        match observation.request(sftp.remove_dir(&directory.path)).await {
             Ok(()) => Ok(()),
             Err(error) if missing(&error) => Ok(()),
             Err(error) => Err(map_sftp(error)),
@@ -234,13 +251,14 @@ pub(super) async fn cleanup_directory(
     sftp: &SftpSession,
     directory: &Endpoint,
     creation_pending: bool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     if creation_pending {
         return Err(AppError::TransferCreationUnconfirmed {
             path: directory.path.clone(),
         });
     }
-    match sftp.remove_dir(&directory.path).await {
+    match observation.request(sftp.remove_dir(&directory.path)).await {
         Ok(()) => Ok(()),
         Err(error) if missing(&error) => Ok(()),
         Err(error) => Err(map_sftp(error)),
@@ -270,6 +288,7 @@ pub(super) fn require_creation_settled(
 /// a JoinHandle detaches its task; it must never abort the operation or its journal.
 async fn await_creation<Fut>(
     cancel: &AtomicBool,
+    observation: &native_save::runtime::MutationObservation,
     prepare: impl FnOnce() -> AppResult<Fut>,
 ) -> AppResult<()>
 where
@@ -280,7 +299,25 @@ where
     }
     // Persist intent before spawning or observing cancellation again. Otherwise
     // Resume could see an unsent record while the old task is about to send.
-    let task = tauri::async_runtime::spawn(prepare()?);
+    // Retain the whole original worker, including its local acknowledgement
+    // checkpoint after the protocol reply. Sealing between those two operations
+    // would permit cleanup/re-registration while the old worker still mutates
+    // the journal. Wire requests retain their own independent receipts.
+    let worker = observation
+        .begin()
+        .ok_or_else(|| AppError::validation("editor.remoteOutcomeUnknown"))?;
+    let work = match prepare() {
+        Ok(work) => work,
+        Err(error) => {
+            worker.acknowledge();
+            return Err(error);
+        }
+    };
+    let task = tauri::async_runtime::spawn(async move {
+        let result = work.await;
+        worker.acknowledge();
+        result
+    });
     interruptible(Some(cancel), async {
         task.await
             .map_err(|error| AppError::internal(format!("Staging acknowledgement task: {error}")))?
@@ -351,12 +388,13 @@ pub(in crate::ssh::files) async fn create_directory(
     directory: Endpoint,
     target: Arc<range_io::DataSession>,
     cancel: &Arc<AtomicBool>,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     let app = app.clone();
     let id = id.to_owned();
     let to = to.clone();
     let cancelled = cancel.clone();
-    await_creation(cancel, || {
+    await_creation(cancel, observation, || {
         creation_started(&app, &id, &to)?;
         Ok(async move {
             let reply = target.create_private_directory(&directory.path).await.map_err(|error| {

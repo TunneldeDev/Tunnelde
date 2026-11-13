@@ -38,11 +38,13 @@ mod remote_commit;
 pub mod remote_editor;
 mod remote_merge;
 mod remote_writer;
+mod removal;
 mod rename;
 mod scan;
 mod scheduler;
 pub mod search;
 mod segments;
+mod task_observation;
 mod verification;
 use verification::{fingerprint_file, verify_prefix};
 
@@ -120,12 +122,14 @@ impl Drop for CleanupReservation<'_> {
 #[derive(Default)]
 struct TransferState {
     active: std::collections::HashMap<String, ActiveTransfer>,
+    unconfirmed: std::collections::HashMap<String, native_save::runtime::MutationObservation>,
     completed: std::collections::VecDeque<CompletedTransfer>,
     paused: std::collections::HashSet<String>,
 }
 
 struct ActiveTransfer {
     identity: String,
+    observation: native_save::runtime::MutationObservation,
     cancel: Arc<AtomicBool>,
     owner: Option<TransferOwner>,
     event: TransferEvent,
@@ -160,7 +164,9 @@ impl TransferRegistry {
 
     fn release(&self, id: &str) {
         if let Ok(mut state) = self.inner.lock() {
-            state.active.remove(id);
+            if let Some(task) = state.active.remove(id) {
+                state.retain_observation(id, task.observation);
+            }
             state.paused.remove(id);
             self.bandwidth.remove(id);
         }
@@ -231,10 +237,12 @@ impl TransferRegistry {
             return Err(AppError::validation("plugin.api.transferBusy"));
         }
         let plugin_id = owner.as_ref().map(|owner| owner.plugin_id.clone());
+        let observation = state.observation_for_registration(id)?;
         state.active.insert(
             id.to_string(),
             ActiveTransfer {
                 identity: uuid::Uuid::new_v4().to_string(),
+                observation,
                 cancel: flag,
                 owner,
                 event: TransferEvent {
@@ -267,6 +275,7 @@ impl TransferRegistry {
     fn complete(&self, mut event: TransferEvent) -> TransferEvent {
         if let Ok(mut state) = self.inner.lock() {
             if let Some(transfer) = state.active.remove(&event.id) {
+                state.retain_observation(&event.id, transfer.observation);
                 event.plugin_id = transfer.event.plugin_id;
                 self.bandwidth.remove(&event.id);
                 if event.status == TransferStatus::Cancelled {
@@ -1243,7 +1252,13 @@ impl<'a> Meter<'a> {
         }
     }
 
-    fn new(app: &'a AppHandle, id: &'a str, name: &'a str, total: u64) -> Self {
+    fn new(
+        app: &'a AppHandle,
+        id: &'a str,
+        name: &'a str,
+        total: u64,
+        observation: native_save::runtime::MutationObservation,
+    ) -> Self {
         Self {
             app,
             id,
@@ -1256,7 +1271,7 @@ impl<'a> Meter<'a> {
             data_channels: Arc::new(tokio::sync::OnceCell::new()),
             batch_progress: None,
             archives: None,
-            observation: native_save::runtime::MutationObservation::default(),
+            observation,
         }
     }
 
@@ -1803,12 +1818,11 @@ async fn copy_directory_batch(
         |path, progress, stop| {
             let source = from.child(path);
             let destination = to.child(to.join(&file_name_of(&source.path)));
-            let mut worker = Meter::new(app, id, name, total);
+            let mut worker = Meter::new(app, id, name, total, observation.clone());
             worker.settings = settings.clone();
             worker.data_channels = channels.clone();
             worker.batch_progress = Some(progress);
             worker.archives = Some(archives.clone());
-            worker.observation = observation.clone();
             async move {
                 Box::pin(copy_entry(
                     &source,
@@ -1858,9 +1872,13 @@ async fn rename_endpoint(
     from: &Endpoint,
     to: &Endpoint,
     sftp: Option<&SftpSession>,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     match sftp {
-        Some(s) => rename::entry(s, &from.path, &to.path).await,
+        Some(s) => observation
+            .request(s.rename(&from.path, &to.path))
+            .await
+            .map_err(|error| rename::failure(&from.path, &to.path, error)),
         None => {
             let source = PathBuf::from(&from.path);
             let destination = PathBuf::from(&to.path);
@@ -2095,7 +2113,8 @@ async fn durable_copy_file(
             source.finish_cancellable(cancel).await?;
             cleanup_backup(meter.app, &backup_key, &backup, to, to_sftp, cancel).await?;
             artifacts::confirm_publication(meter.app, id, to)?;
-            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation)
+                .await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2107,8 +2126,14 @@ async fn durable_copy_file(
     save(false)?;
     artifacts::record(meter.app, id, to, !resuming)?;
     let preparation_meter = &*meter;
-    let (temp, recovering_publication) =
-        artifacts::prepare_staging(meter.app, id, to, to_sftp, cancel, |directory| async move {
+    let (temp, recovering_publication) = artifacts::prepare_staging(
+        meter.app,
+        id,
+        to,
+        to_sftp,
+        cancel,
+        &meter.observation,
+        |directory| async move {
             let sessions = preparation_meter
                 .data_sessions(from, to, from_sftp, to_sftp, cancel)
                 .await?;
@@ -2126,10 +2151,12 @@ async fn durable_copy_file(
                 directory,
                 target.clone(),
                 cancel,
+                &preparation_meter.observation,
             )
             .await
-        })
-        .await?;
+        },
+    )
+    .await?;
     #[cfg(windows)]
     let mut local_staging = artifacts::pin_local_staging(meter.app, id, to)?;
     let mut replay = None;
@@ -2174,7 +2201,8 @@ async fn durable_copy_file(
             if recovering_publication {
                 artifacts::confirm_publication(meter.app, id, to)?;
             }
-            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+            artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation)
+                .await?;
             meter.add(stamp.0);
             return Ok(());
         }
@@ -2398,10 +2426,14 @@ async fn durable_copy_file(
         // verification on resume, rather than retrying a destructive fallback.
         artifacts::begin_publication(meter.app, id, to, &temp)?;
         tracing::debug!(id, "Publishing transfer staging file");
-        interruptible(Some(cancel), replacement.commit(&temp.path, &to.path)).await?;
+        interruptible(
+            Some(cancel),
+            replacement.commit_observed(&temp.path, &to.path, &meter.observation),
+        )
+        .await?;
         save(true)?;
         artifacts::confirm_publication(meter.app, id, to)?;
-        artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+        artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation).await?;
         return Ok(());
     }
     // Persist the old target fingerprint before moving it, so both rename
@@ -2413,7 +2445,7 @@ async fn durable_copy_file(
         }
         let expected = fingerprint_file(to, to_sftp, cancel).await?;
         meter.app.state::<AppState>().db.with(|conn|{conn.execute("INSERT INTO settings(key,value,updated_at) VALUES(?1,?2,?3) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",rusqlite::params![&backup_key,serde_json::to_string(&expected)?,crate::models::now_ms()])?;Ok(())})?;
-        rename_endpoint(to, &backup, to_sftp).await?;
+        rename_endpoint(to, &backup, to_sftp, &meter.observation).await?;
         own_backup = true;
     }
     if to_sftp.is_some() {
@@ -2431,10 +2463,10 @@ async fn durable_copy_file(
                     AppError::from(error)
                 }
             }),
-        None => publication::commit(&temp, to, to_sftp, cancel).await,
+        None => publication::commit(&temp, to, to_sftp, cancel, &meter.observation).await,
     };
     #[cfg(not(windows))]
-    let committed = publication::commit(&temp, to, to_sftp, cancel).await;
+    let committed = publication::commit(&temp, to, to_sftp, cancel, &meter.observation).await;
     tracing::debug!(id, "Transfer publication returned");
     if let Err(e) = committed {
         if own_backup {
@@ -2454,7 +2486,7 @@ async fn durable_copy_file(
     if to_sftp.is_some() {
         artifacts::confirm_publication(meter.app, id, to)?;
     }
-    artifacts::finish_staging(meter.app, id, to, to_sftp, cancel).await?;
+    artifacts::finish_staging(meter.app, id, to, to_sftp, cancel, &meter.observation).await?;
     Ok(())
 }
 
@@ -2528,18 +2560,36 @@ async fn interrupted_move_error(from: &Endpoint, sftp: Option<&SftpSession>) -> 
     }
 }
 
-async fn remove_endpoint(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+async fn remove_endpoint(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+    observation: &native_save::runtime::MutationObservation,
+) -> AppResult<()> {
     match sftp {
-        Some(handle) => remove_remote_entry(handle, &endpoint.path).await,
+        Some(handle) => {
+            removal::entry(
+                handle,
+                &endpoint.path,
+                removal::Observer::Transfer(observation),
+            )
+            .await
+        }
         None => remove_local_entry(&PathBuf::from(&endpoint.path)),
     }
 }
 
 /// Staging files and backups are always files. Do not inspect and recursively
 /// delete a path that another client may have replaced with a directory.
-async fn remove_transfer_file(endpoint: &Endpoint, sftp: Option<&SftpSession>) -> AppResult<()> {
+async fn remove_transfer_file(
+    endpoint: &Endpoint,
+    sftp: Option<&SftpSession>,
+    observation: &native_save::runtime::MutationObservation,
+) -> AppResult<()> {
     match sftp {
-        Some(handle) => handle.remove_file(&endpoint.path).await.map_err(map_sftp),
+        Some(handle) => observation
+            .request(handle.remove_file(&endpoint.path))
+            .await
+            .map_err(map_sftp),
         None => tokio::fs::remove_file(&endpoint.path)
             .await
             .map_err(Into::into),
@@ -2657,6 +2707,10 @@ async fn run(
     cancel: &Arc<AtomicBool>,
     options: TransferOptions,
 ) -> Outcome {
+    let observation = match app.state::<AppState>().transfers.observation(id) {
+        Ok(observation) => observation,
+        Err(error) => return Outcome::Failed(0, error),
+    };
     let scheduler = app.state::<AppState>().transfers.scheduler.clone();
     let settings = app.state::<AppState>().settings();
     let archive_channels = options.durable && !options.overwrite && settings.transfer_optimization;
@@ -2706,7 +2760,7 @@ async fn run(
                     }
                     admission::writable(app, from_session, &sftp, &[&from.path, &to.path]).await?;
                     check_remote_destination(&sftp, &from.path, &to.path, overwrite).await?;
-                    rename::entry(&sftp, &from.path, &to.path).await?;
+                    rename_endpoint(from, to, Some(&sftp), &observation).await?;
                     Ok::<(), AppError>(())
                 }
                 .await
@@ -2858,7 +2912,7 @@ async fn run(
     };
     progress(app, id, name, 0, total);
 
-    let mut meter = Meter::new(app, id, name, total);
+    let mut meter = Meter::new(app, id, name, total, observation);
     meter.settings = settings;
     if let Ok(mut row) = durable::Journal::get(app, id) {
         row.total = total;
@@ -2967,7 +3021,7 @@ async fn run(
                 #[cfg(not(windows))]
                 return Err(AppError::validation("sftp.moveSourceRetained"));
             } else {
-                remove_endpoint(from, from_sftp.as_ref()).await?;
+                remove_endpoint(from, from_sftp.as_ref(), &meter.observation).await?;
             }
         }
         Ok::<(), AppError>(())
@@ -3215,40 +3269,6 @@ fn remove_local_entry(path: &Path) -> AppResult<()> {
         std::fs::remove_dir_all(path)?;
     } else {
         std::fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
-async fn remove_remote_entry(sftp: &SftpSession, path: &str) -> AppResult<()> {
-    remove_remote_entry_observed(sftp, path, None).await
-}
-
-async fn remove_remote_entry_observed(
-    sftp: &SftpSession,
-    path: &str,
-    observed: Option<&mutations::Dispatch>,
-) -> AppResult<()> {
-    // Never follow a directory symlink while deleting: only unlink the link.
-    let metadata = sftp.symlink_metadata(path).await.map_err(map_sftp)?;
-    if metadata.is_dir() {
-        let children: Vec<String> = sftp
-            .read_dir(path)
-            .await
-            .map_err(map_sftp)?
-            .map(|entry| entry.path())
-            .collect();
-        for child in children {
-            Box::pin(remove_remote_entry_observed(sftp, &child, observed)).await?;
-        }
-        if let Some(observed) = observed {
-            observed.request(sftp.remove_dir(path)).await?;
-        } else {
-            sftp.remove_dir(path).await.map_err(map_sftp)?;
-        }
-    } else if let Some(observed) = observed {
-        observed.request(sftp.remove_file(path)).await?;
-    } else {
-        sftp.remove_file(path).await.map_err(map_sftp)?;
     }
     Ok(())
 }
@@ -3602,7 +3622,13 @@ mod tests {
         std::fs::create_dir(&artifact.path).unwrap();
         let independent = Path::new(&artifact.path).join("independent.txt");
         std::fs::write(&independent, b"preserve directory content").unwrap();
-        assert!(remove_transfer_file(&artifact, None).await.is_err());
+        assert!(remove_transfer_file(
+            &artifact,
+            None,
+            &native_save::runtime::MutationObservation::default()
+        )
+        .await
+        .is_err());
         assert_eq!(
             std::fs::read(&independent).unwrap(),
             b"preserve directory content"
@@ -3610,7 +3636,13 @@ mod tests {
         std::fs::remove_file(&independent).unwrap();
         std::fs::remove_dir(&artifact.path).unwrap();
         std::fs::write(&artifact.path, b"partial file").unwrap();
-        remove_transfer_file(&artifact, None).await.unwrap();
+        remove_transfer_file(
+            &artifact,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         assert!(!Path::new(&artifact.path).exists());
         std::fs::remove_dir(root).unwrap();
     }
@@ -3787,14 +3819,28 @@ mod tests {
         std::fs::write(&target.path, b"old target").unwrap();
         std::fs::write(&temp.path, b"new complete file").unwrap();
         let recorded = fingerprint_file(&target, None, &cancel).await.unwrap();
-        rename_endpoint(&target, &backup, None).await.unwrap();
+        rename_endpoint(
+            &target,
+            &backup,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         // App restarts in the first rename window: old target remains intact.
         assert_eq!(
             fingerprint_file(&backup, None, &cancel).await.unwrap(),
             recorded
         );
         assert!(!std::path::Path::new(&target.path).exists());
-        rename_endpoint(&temp, &target, None).await.unwrap();
+        rename_endpoint(
+            &temp,
+            &target,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         // App restarts in the second rename window: the verified committed
         // target and journal fingerprint allow removing only our old backup.
         remove_verified_backup(&backup, None, &recorded, &cancel)
@@ -4339,13 +4385,25 @@ mod tests {
         let backup = staging_endpoint(&target, "job", "backup");
         std::fs::write(&target.path, b"old destination").unwrap();
         std::fs::write(&temp.path, b"incoming").unwrap();
-        rename_endpoint(&target, &backup, None).await.unwrap();
+        rename_endpoint(
+            &target,
+            &backup,
+            None,
+            &native_save::runtime::MutationObservation::default(),
+        )
+        .await
+        .unwrap();
         std::fs::write(&target.path, b"independent destination").unwrap();
         assert_eq!(
-            rename_endpoint(&temp, &target, None)
-                .await
-                .unwrap_err()
-                .to_string(),
+            rename_endpoint(
+                &temp,
+                &target,
+                None,
+                &native_save::runtime::MutationObservation::default()
+            )
+            .await
+            .unwrap_err()
+            .to_string(),
             "sftp.alreadyExists"
         );
         assert_eq!(
@@ -4355,7 +4413,14 @@ mod tests {
         assert_eq!(std::fs::read(&backup.path).unwrap(), b"old destination");
         assert_eq!(std::fs::read(&temp.path).unwrap(), b"incoming");
         // A concurrently created backup must not be replaced either.
-        assert!(rename_endpoint(&target, &backup, None).await.is_err());
+        assert!(rename_endpoint(
+            &target,
+            &backup,
+            None,
+            &native_save::runtime::MutationObservation::default()
+        )
+        .await
+        .is_err());
         assert_eq!(
             std::fs::read(&target.path).unwrap(),
             b"independent destination"
@@ -4480,6 +4545,7 @@ mod tests {
 
     mod protocol_io {
         mod directory_observation;
+        mod removal_observation;
         mod writer_observation;
         use super::*;
         use russh_sftp::protocol::{Attrs, Data, FileAttributes, Handle, Status};
@@ -4623,6 +4689,9 @@ mod tests {
             mkdir_started: Notify,
             release_mkdir: Notify,
             removals: AtomicUsize,
+            hold_remove: AtomicBool,
+            remove_started: Notify,
+            release_remove: Notify,
         }
 
         struct DiskServer {
@@ -4789,6 +4858,10 @@ mod tests {
 
             async fn remove(&mut self, id: u32, filename: String) -> Result<Status, StatusCode> {
                 self.state.removals.fetch_add(1, Ordering::SeqCst);
+                self.state.remove_started.notify_one();
+                if self.state.hold_remove.load(Ordering::SeqCst) {
+                    self.state.release_remove.notified().await;
+                }
                 let path = self.root.join(filename);
                 if self.state.replace_before_remove.load(Ordering::SeqCst) {
                     std::fs::remove_file(&path).map_err(io_status)?;
@@ -5359,7 +5432,13 @@ mod tests {
             std::fs::create_dir(root.join(&artifact.path)).unwrap();
             let independent = root.join("artifact/independent.txt");
             std::fs::write(&independent, b"preserve directory content").unwrap();
-            assert!(remove_transfer_file(&artifact, Some(&sftp)).await.is_err());
+            assert!(remove_transfer_file(
+                &artifact,
+                Some(&sftp),
+                &native_save::runtime::MutationObservation::default()
+            )
+            .await
+            .is_err());
             assert_eq!(state.removals.load(Ordering::SeqCst), 1);
             assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
             assert_eq!(
@@ -5369,7 +5448,13 @@ mod tests {
             std::fs::remove_file(&independent).unwrap();
             std::fs::remove_dir(root.join(&artifact.path)).unwrap();
             std::fs::write(root.join(&artifact.path), b"partial file").unwrap();
-            remove_transfer_file(&artifact, Some(&sftp)).await.unwrap();
+            remove_transfer_file(
+                &artifact,
+                Some(&sftp),
+                &native_save::runtime::MutationObservation::default(),
+            )
+            .await
+            .unwrap();
             assert_eq!(state.removals.load(Ordering::SeqCst), 2);
             assert_eq!(state.metadata_reads.load(Ordering::SeqCst), 0);
             assert!(!root.join(&artifact.path).exists());

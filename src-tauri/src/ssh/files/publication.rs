@@ -8,11 +8,12 @@ pub(super) async fn commit(
     to: &Endpoint,
     sftp: Option<&SftpSession>,
     cancel: &AtomicBool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<()> {
     match sftp {
-        Some(_) => interruptible(Some(cancel), rename_endpoint(from, to, sftp)).await,
+        Some(_) => interruptible(Some(cancel), rename_endpoint(from, to, sftp, observation)).await,
         // A blocking local rename must settle before releasing its file guard.
-        None => rename_endpoint(from, to, None).await,
+        None => rename_endpoint(from, to, None, observation).await,
     }
 }
 
@@ -23,6 +24,7 @@ pub(super) async fn fence(
     successor: &Endpoint,
     sftp: &SftpSession,
     cancel: &AtomicBool,
+    observation: &native_save::runtime::MutationObservation,
 ) -> AppResult<bool> {
     if previous.path == successor.path {
         return Err(AppError::internal("Publication staging generation reused"));
@@ -42,7 +44,10 @@ pub(super) async fn fence(
         return Ok(true);
     }
     interruptible(Some(cancel), async {
-        match sftp.rename(&previous.path, &successor.path).await {
+        match observation
+            .request(sftp.rename(&previous.path, &successor.path))
+            .await
+        {
             Ok(()) => Ok(true),
             Err(russh_sftp::client::error::Error::Status(status))
                 if status.status_code == StatusCode::NoSuchFile =>

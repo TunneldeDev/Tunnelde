@@ -303,8 +303,9 @@ impl Journal {
 
 /// Caller keeps the transfer reserved until cleanup and journal changes finish.
 pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) -> AppResult<()> {
+    let observation = app.state::<AppState>().transfers.begin_cleanup(&row.id)?;
     if row.retained_creation {
-        return super::artifacts::retained::cleanup(app, row).await;
+        return super::artifacts::retained::cleanup(app, row, &observation).await;
     }
     super::artifacts::retained::detach_for_cleanup(app, row)?;
     let has_artifacts = app.state::<AppState>().db.with(|conn| {
@@ -329,7 +330,7 @@ pub(super) async fn cleanup_artifacts(app: &AppHandle, row: &DurableTransfer) ->
         )?,
         path: row.to_path.clone(),
     };
-    super::artifacts::cleanup(app, row, &to).await?;
+    super::artifacts::cleanup(app, row, &to, &observation).await?;
     Journal::clear_checkpoints(app, &row.id)?;
     let _ = app.emit(
         "plugin://domain-changed",

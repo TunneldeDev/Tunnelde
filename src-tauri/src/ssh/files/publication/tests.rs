@@ -98,6 +98,9 @@ impl russh_sftp::server::Handler for Server {
         if request != "posix-rename@openssh.com" {
             return Err(StatusCode::OpUnsupported);
         }
+        if self.probe.mode == 4 {
+            return Ok(Packet::ExtendedReply(ExtendedReply { id, data: vec![] }));
+        }
         let mut input = data.as_slice();
         let mut names = Vec::new();
         for _ in 0..2 {
@@ -189,11 +192,16 @@ async fn interrupted_publication(overwrite: bool, after_commit: bool) {
     let old = endpoint("/stage");
     let target = endpoint("/target");
     let next = endpoint("/next");
+    let observation = native_save::runtime::MutationObservation::default();
     let operation = async {
         if let Some(replacement) = replacement {
-            interruptible(Some(&cancel), replacement.commit(&old.path, &target.path)).await
+            interruptible(
+                Some(&cancel),
+                replacement.commit_observed(&old.path, &target.path, &observation),
+            )
+            .await
         } else {
-            commit(&old, &target, Some(&client), &cancel).await
+            commit(&old, &target, Some(&client), &cancel, &observation).await
         }
     };
     let (result, ()) = tokio::time::timeout(Duration::from_secs(1), async {
@@ -205,10 +213,22 @@ async fn interrupted_publication(overwrite: bool, after_commit: bool) {
     .await
     .expect("pause waited for publication acknowledgement");
     assert_eq!(result.unwrap_err().to_string(), CANCELLED);
+    assert!(
+        !observation.settled(),
+        "a dropped original publication cannot be acknowledged by recovery"
+    );
     let resumed = fixture.client().await;
     let cancel = AtomicBool::new(false);
     assert_eq!(
-        fence(&old, &next, &resumed, &cancel).await.unwrap(),
+        fence(
+            &old,
+            &next,
+            &resumed,
+            &cancel,
+            &native_save::runtime::MutationObservation::default()
+        )
+        .await
+        .unwrap(),
         !after_commit
     );
     if after_commit {
@@ -232,6 +252,10 @@ async fn interrupted_publication(overwrite: bool, after_commit: bool) {
         .unwrap()
         .forget();
     assert_eq!(fixture.data("/target").unwrap(), b"newer target contents");
+    assert!(
+        !observation.settled(),
+        "an unrelated recovery or late peer execution is not the original reply"
+    );
 }
 
 #[tokio::test]
@@ -258,9 +282,25 @@ async fn lost_fencing_acknowledgement_reuses_journalled_successor() {
     let old = endpoint("/stage");
     let next = endpoint("/next");
     let cancel = AtomicBool::new(false);
-    assert!(fence(&old, &next, &client, &cancel).await.is_err());
+    assert!(fence(
+        &old,
+        &next,
+        &client,
+        &cancel,
+        &native_save::runtime::MutationObservation::default()
+    )
+    .await
+    .is_err());
     let restarted = fixture.client().await;
-    assert!(fence(&old, &next, &restarted, &cancel).await.unwrap());
+    assert!(fence(
+        &old,
+        &next,
+        &restarted,
+        &cancel,
+        &native_save::runtime::MutationObservation::default()
+    )
+    .await
+    .unwrap());
     assert_eq!(fixture.data("/next").unwrap(), b"complete upload");
     assert!(fixture.data("/stage").is_none());
 }
@@ -275,16 +315,171 @@ async fn duplicate_staging_paths_are_preserved_for_review() {
         .insert("/next".into(), b"independent".to_vec());
     let client = fixture.client().await;
     let cancel = AtomicBool::new(false);
-    let result = fence(&endpoint("/stage"), &endpoint("/next"), &client, &cancel).await;
+    let result = fence(
+        &endpoint("/stage"),
+        &endpoint("/next"),
+        &client,
+        &cancel,
+        &native_save::runtime::MutationObservation::default(),
+    )
+    .await;
     assert!(matches!(
         result,
         Err(AppError::TransferArtifactUnrecognized { .. })
     ));
     assert_eq!(fixture.data("/stage").unwrap(), b"complete upload");
     assert_eq!(fixture.data("/next").unwrap(), b"independent");
-    assert!(
-        fence(&endpoint("/stage"), &endpoint("/stage"), &client, &cancel)
+    assert!(fence(
+        &endpoint("/stage"),
+        &endpoint("/stage"),
+        &client,
+        &cancel,
+        &native_save::runtime::MutationObservation::default()
+    )
+    .await
+    .is_err());
+}
+
+async fn original_publication_reply_releases_task(overwrite: bool, after_commit: bool) {
+    let fixture = Fixture::new(if after_commit { 2 } else { 1 }, "/target");
+    let registry = TransferRegistry::default();
+    registry
+        .register("job", Arc::new(AtomicBool::new(false)), None)
+        .unwrap();
+    let observation = registry.observation("job").unwrap();
+    let sftp = fixture.client().await;
+    let replacement = if overwrite {
+        Some(fixture.replacement().await)
+    } else {
+        None
+    };
+    let from = endpoint("/stage");
+    let to = endpoint("/target");
+    let cancel = AtomicBool::new(false);
+    let operation = async {
+        if let Some(replacement) = replacement {
+            replacement
+                .commit_observed(&from.path, &to.path, &observation)
+                .await
+        } else {
+            commit(&from, &to, Some(&sftp), &cancel, &observation).await
+        }
+    };
+    tokio::pin!(operation);
+    tokio::time::timeout(Duration::from_secs(1), async {
+        tokio::select! {
+            result = &mut operation => panic!("publication did not await its original reply: {result:?}"),
+            permit = fixture.probe.arrived.acquire() => permit.unwrap().forget(),
+        }
+    }).await.unwrap();
+    registry.release("job");
+    assert!(!observation.settled());
+    assert!(registry.reserve_cleanup("job").is_err());
+    assert!(registry
+        .register("job", Arc::new(AtomicBool::new(false)), None)
+        .is_err());
+    fixture.probe.release.add_permits(1);
+    tokio::time::timeout(Duration::from_secs(1), operation)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(observation.settled());
+    let cleanup = registry.reserve_cleanup("job").unwrap();
+    assert!(observation.closed());
+    assert!(observation.begin().is_none());
+    assert_eq!(fixture.data("/target").unwrap(), b"complete upload");
+    assert!(fixture.data("/stage").is_none());
+    drop(cleanup);
+}
+
+#[tokio::test]
+async fn actual_noreplace_reply_survives_task_completion_before_and_after_publication() {
+    original_publication_reply_releases_task(false, false).await;
+    original_publication_reply_releases_task(false, true).await;
+}
+
+#[tokio::test]
+async fn actual_replacement_reply_survives_task_completion_before_and_after_publication() {
+    original_publication_reply_releases_task(true, false).await;
+    original_publication_reply_releases_task(true, true).await;
+}
+
+#[tokio::test]
+async fn unexpected_extension_packet_never_counts_as_a_replacement_acknowledgement() {
+    let fixture = Fixture::new(4, "/target");
+    let observation = native_save::runtime::MutationObservation::default();
+    let replacement = fixture.replacement().await;
+    assert!(replacement
+        .commit_observed("/stage", "/target", &observation)
+        .await
+        .is_err());
+    assert!(!observation.settled());
+    assert!(observation.seal().is_err());
+    assert_eq!(fixture.data("/stage").unwrap(), b"complete upload");
+    assert!(fixture.data("/target").is_none());
+}
+
+#[tokio::test]
+async fn closed_publication_epoch_never_sends_rename_or_replacement() {
+    for overwrite in [false, true] {
+        let fixture = Fixture::new(0, "/target");
+        let observation = native_save::runtime::MutationObservation::default();
+        observation.seal().unwrap();
+        let result = if overwrite {
+            fixture
+                .replacement()
+                .await
+                .commit_observed("/stage", "/target", &observation)
+                .await
+        } else {
+            commit(
+                &endpoint("/stage"),
+                &endpoint("/target"),
+                Some(&fixture.client().await),
+                &AtomicBool::new(false),
+                &observation,
+            )
             .await
-            .is_err()
-    );
+        };
+        assert!(result.is_err());
+        assert!(!fixture.probe.once.load(Ordering::SeqCst));
+        assert!(observation.closed());
+        assert_eq!(fixture.data("/stage").unwrap(), b"complete upload");
+        assert!(fixture.data("/target").is_none());
+    }
+}
+
+#[tokio::test]
+async fn terminal_publication_rejections_settle_only_the_original_request() {
+    for overwrite in [false, true] {
+        let fixture = Fixture::new(0, "/target");
+        let observation = native_save::runtime::MutationObservation::default();
+        let result = if overwrite {
+            fixture
+                .replacement()
+                .await
+                .commit_observed("/missing", "/target", &observation)
+                .await
+        } else {
+            commit(
+                &endpoint("/missing"),
+                &endpoint("/target"),
+                Some(&fixture.client().await),
+                &AtomicBool::new(false),
+                &observation,
+            )
+            .await
+        };
+        assert!(matches!(
+            result,
+            Err(AppError::RemoteRename {
+                status_code: Some(2),
+                ..
+            })
+        ));
+        assert!(observation.settled());
+        observation.seal().unwrap();
+        assert_eq!(fixture.data("/stage").unwrap(), b"complete upload");
+        assert!(fixture.data("/target").is_none());
+    }
 }

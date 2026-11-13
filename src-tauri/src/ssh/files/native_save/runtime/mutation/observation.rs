@@ -94,6 +94,10 @@ impl Observation {
     pub(crate) fn settled(&self) -> bool {
         matches!(self.0.load(Ordering::Acquire), 0 | SEALED)
     }
+
+    pub(crate) fn closed(&self) -> bool {
+        self.0.load(Ordering::Acquire) == SEALED
+    }
 }
 
 pub(crate) fn terminal(status: &russh_sftp::protocol::Status) -> bool {
