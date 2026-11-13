@@ -27,13 +27,8 @@ pub(super) fn exchange(
 ) -> Result<Response, Failure> {
     let stream =
         TcpStream::connect_timeout(&endpoint.address, Duration::from_secs(3)).map_err(network)?;
-    exchange_stream(
-        stream,
-        endpoint.token,
-        method,
-        params,
-        Duration::from_secs(10),
-    )
+    let budget = exchange_budget(&method);
+    exchange_stream(stream, endpoint.token, method, params, budget)
 }
 
 fn exchange_stream(
