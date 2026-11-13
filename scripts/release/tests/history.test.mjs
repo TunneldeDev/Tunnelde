@@ -12,8 +12,9 @@ import {
   SOURCE_PATH,
 } from "../automation.mjs";
 import { VERSION_PATHS, versionContents } from "../version.mjs";
+import { TARGET_PATH } from "../planning/target.mjs";
 
-test("two real Git promotions preserve original dev SHAs and exclude already released work", async (t) => {
+async function checkPromotions(t, milestone) {
   const directory = mkdtempSync(join(tmpdir(), "tunnelde-release-history-"));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const git = (args, options = {}) =>
@@ -64,6 +65,19 @@ test("two real Git promotions preserve original dev SHAs and exclude already rel
   );
   git(["switch", "-qc", "dev"]);
   const originals = [
+    ...(milestone
+      ? [
+          commit(
+            TARGET_PATH,
+            JSON.stringify({
+              schemaVersion: 1,
+              baseVersion: "0.26.1",
+              targetVersion: "1.0.0",
+            }),
+            "chore(release): select the first stable milestone",
+          ),
+        ]
+      : []),
     commit("one.txt", "one\n", "fix: first change"),
     commit("two.txt", "two\n", "fix: second change"),
   ];
@@ -139,13 +153,17 @@ test("two real Git promotions preserve original dev SHAs and exclude already rel
         updateRef: async ({ ref: name, sha }) => git(["update-ref", `refs/${name}`, sha]),
       },
       repos: {
-        getContent: async ({ ref: sha, path }) => ({
-          data: {
-            type: "file",
-            encoding: "base64",
-            content: Buffer.from(git(["show", `${sha}:${path}`])).toString("base64"),
-          },
-        }),
+        getContent: async ({ ref: sha, path }) => {
+          if (!git(["ls-tree", "--name-only", sha, "--", path]))
+            throw Object.assign(new Error("Not found"), { status: 404 });
+          return {
+            data: {
+              type: "file",
+              encoding: "base64",
+              content: Buffer.from(git(["show", `${sha}:${path}`])).toString("base64"),
+            },
+          };
+        },
         compareCommitsWithBasehead: async ({ basehead }) => {
           const [base, head] = basehead.split("...");
           git(["merge-base", "--is-ancestor", base, head]);
@@ -192,10 +210,11 @@ test("two real Git promotions preserve original dev SHAs and exclude already rel
       actions: { createWorkflowDispatch: async () => {} },
     },
   };
-  for (const version of ["0.26.2", "0.26.3"]) {
+  const versions = milestone ? ["1.0.0", "1.0.1"] : ["0.26.2", "0.26.3"];
+  for (const version of versions) {
     const plan = await planDevelopment({ github, context });
     assert.equal(plan.version, version);
-    if (version === "0.26.3") {
+    if (version === versions[1]) {
       assert.equal(plan.release.count, 1);
       assert.match(plan.release.notes, /third change/);
       assert.doesNotMatch(plan.release.notes, /first change|second change/);
@@ -215,9 +234,13 @@ test("two real Git promotions preserve original dev SHAs and exclude already rel
     assert.equal(ref(`v${version}`), ref("main"));
     assert.equal((await planDevelopment({ github, context })).version, undefined);
     pull = undefined;
-    if (version === "0.26.2") {
+    if (version === versions[0]) {
       git(["switch", "-q", "dev"]);
       originals.push(commit("three.txt", "three\n", "fix: third change"));
     }
   }
-});
+}
+
+for (const milestone of [false, true])
+  test(`two real Git promotions preserve original SHAs with ${milestone ? "a reviewed milestone" : "automatic versioning"}`, (t) =>
+    checkPromotions(t, milestone));

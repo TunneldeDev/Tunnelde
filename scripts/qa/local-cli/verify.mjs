@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { verifyPackagedContract } from "./contract.mjs";
 
 const run = promisify(execFile);
 
@@ -24,11 +25,12 @@ export async function offlineCli(binary, version, env = applicationEnvironment()
   assert.equal((await call("--version")).version, version);
   const schema = await call("api", "describe");
   assert.equal(schema.version, 1);
-  return { call, schema };
+  const contract = verifyPackagedContract(schema, version);
+  return { call, schema, contract };
 }
 
 export async function verifyLocalCli(binary, version, pointer, options = {}) {
-  const { call, schema } = await offlineCli(binary, version, options.env);
+  const { call, schema, contract } = await offlineCli(binary, version, options.env);
   const args = ["--endpoint", pointer];
   const live = async (...command) => {
     const response = await call(...args, ...command);
@@ -81,6 +83,7 @@ export async function verifyLocalCli(binary, version, pointer, options = {}) {
   );
   assert.deepEqual(restored.values, before.values);
   return {
+    ...contract,
     methods: schema.methods.map((method) => method.name),
     staleWriteRejected: true,
     preferencesRestored: true,

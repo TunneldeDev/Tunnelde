@@ -112,7 +112,7 @@ Ordinary SSH and the normal remote CLI/assistant connection flow do not need it.
 - Plugin overview and compatibility: [English](docs/en-us/guide/plugins.md) · [简体中文](docs/zh-cn/guide/plugins.md)
 - Plugin development and security: [English](docs/en-us/development/plugins/README.md) · [简体中文](docs/zh-cn/development/plugins/README.md)
 - Architecture and data locations: [English](docs/en-us/development/architecture.md) · [简体中文](docs/zh-cn/development/architecture.md)
-- Local API and CLI (experimental development builds): [English](docs/en-us/development/local-api.md) · [简体中文](docs/zh-cn/development/local-api.md)
+- Local API and CLI (seven stable v1 methods): [English](docs/en-us/development/local-api.md) · [简体中文](docs/zh-cn/development/local-api.md)
 - Troubleshooting: [English](docs/en-us/guide/troubleshooting.md) · [简体中文](docs/zh-cn/guide/troubleshooting.md)
 - [Optional native helper](docs/en-us/development/native-helper.md)
 - [Changes by release](CHANGELOG.md)

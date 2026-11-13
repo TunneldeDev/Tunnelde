@@ -28,6 +28,12 @@ promotion PR. At the cap, preparation stops before creating a commit, tag or
 draft; it never promotes unfinished software automatically. Use `pnpm build:local`
 for intermediate testing. Same-source retries of beta.9 remain possible.
 
+An optional `.github/release-target.json` declares a reviewed milestone with
+`schemaVersion: 1`, `baseVersion` and `targetVersion`. It applies only while
+main's stable version equals that baseline, cannot lower the automatic bump,
+and expires after the target is promoted. Beta and stable planning use the same
+source-pinned declaration; promotion policy rejects a different generated target.
+
 Allocation reads immutable tags, including historical formats and tags whose
 release was retired, so numbers cannot silently be recycled. New publication
 and recovery reject beta.10+, multipart Beta suffixes and compact betaNN names.

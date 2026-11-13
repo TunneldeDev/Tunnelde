@@ -6,7 +6,7 @@ use crate::{
     services::settings::{preferences, writer},
     state::AppState,
 };
-pub(super) use schema::methods;
+pub(super) use schema::{describe, methods};
 
 pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result<Value, Failure> {
     let state = app.state::<AppState>();
@@ -19,7 +19,7 @@ pub(super) async fn call(app: &AppHandle, method: &str, params: Value) -> Result
                 ));
             }
             if method == "preferences.schema" {
-                Ok(serde_json::to_value(preferences::describe()))
+                Ok(serde_json::to_value(describe()))
             } else {
                 writer(app, &state)
                     .await
@@ -83,6 +83,13 @@ fn map_error(error: AppError) -> Failure {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_stability_does_not_promote_the_plugin_adapter() {
+        assert_eq!(describe().stability, "stable");
+        assert_eq!(preferences::describe().stability, "experimental");
+        assert_eq!(describe().groups, preferences::describe().groups);
+    }
+
     #[test]
     fn public_errors_do_not_leak_private_values_or_os_details() {
         assert_eq!(

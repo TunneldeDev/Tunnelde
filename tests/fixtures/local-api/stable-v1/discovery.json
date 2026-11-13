@@ -1,0 +1,202 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["version", "stability", "transport", "methods", "errors", "protocol"],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "stability": {
+      "$ref": "#/definitions/stability"
+    },
+    "transport": {
+      "type": "object",
+      "required": ["framing", "authentication", "maximumRequestBytes", "maximumResponseBytes"],
+      "properties": {
+        "framing": {
+          "const": "one-newline-delimited-json-request-per-connection"
+        },
+        "authentication": {
+          "const": "private-local-capability"
+        },
+        "maximumRequestBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "maximumResponseBytes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "methods": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["name", "effect", "inputSchema", "resultSchema", "stability", "since"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "not": {
+              "pattern": "[^A-Za-z0-9._]"
+            },
+            "maxLength": 128
+          },
+          "effect": {
+            "enum": ["read", "write"]
+          },
+          "stability": {
+            "$ref": "#/definitions/stability"
+          },
+          "since": {
+            "type": ["string", "null"],
+            "minLength": 1
+          },
+          "inputSchema": {
+            "$ref": "#/definitions/jsonSchema"
+          },
+          "resultSchema": {
+            "$ref": "#/definitions/jsonSchema"
+          },
+          "errors": {
+            "$ref": "#/definitions/errorNames"
+          }
+        }
+      }
+    },
+    "errors": {
+      "$ref": "#/definitions/errorNames"
+    },
+    "protocol": {
+      "type": "object",
+      "required": [
+        "version",
+        "stability",
+        "compatibility",
+        "requestSchema",
+        "responseSchema",
+        "cli",
+        "errors"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "stability": {
+          "$ref": "#/definitions/stability"
+        },
+        "compatibility": {
+          "type": "object",
+          "required": [
+            "unknownInputFields",
+            "unknownOutputFields",
+            "unknownErrorExitCode",
+            "stringLength",
+            "messages"
+          ],
+          "properties": {
+            "unknownInputFields": {
+              "const": "reject"
+            },
+            "unknownOutputFields": {
+              "const": "ignore"
+            },
+            "unknownErrorExitCode": {
+              "const": 1
+            },
+            "stringLength": {
+              "type": "string",
+              "minLength": 1
+            },
+            "messages": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "requestSchema": {
+          "$ref": "#/definitions/jsonSchema"
+        },
+        "responseSchema": {
+          "$ref": "#/definitions/jsonSchema"
+        },
+        "cli": {
+          "type": "object",
+          "required": [
+            "successStream",
+            "failureStream",
+            "liveOutput",
+            "offlineOutput",
+            "localFailureId",
+            "exitCodes"
+          ],
+          "properties": {
+            "successStream": {
+              "const": "stdout"
+            },
+            "failureStream": {
+              "const": "stderr"
+            },
+            "liveOutput": {
+              "const": "responseSchema"
+            },
+            "offlineOutput": {
+              "type": "string",
+              "minLength": 1
+            },
+            "localFailureId": {
+              "const": ""
+            },
+            "exitCodes": {
+              "type": "object",
+              "required": ["0", "1", "2", "3", "4", "5"],
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["code", "exitCode", "origin"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "exitCode": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 255
+              },
+              "origin": {
+                "enum": ["client", "host", "client-or-host"]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "stability": {
+      "enum": ["experimental", "stable", "deprecated"]
+    },
+    "jsonSchema": {
+      "type": ["object", "boolean"]
+    },
+    "errorNames": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

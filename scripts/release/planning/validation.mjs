@@ -1,5 +1,6 @@
 import { SHA, sourceTrees, readText } from "../github/sources.mjs";
 import { VERSION_PATHS } from "../metadata/version-files.mjs";
+import { readReleaseTarget } from "./target.mjs";
 
 export const RELEASE_BRANCH = "release/dev-to-main";
 export const POLICY_CONTEXT = "PR policy";
@@ -64,6 +65,12 @@ export async function checkPromotionCommit(github, repo, sha, marker) {
     if (!RELEASE_METADATA.has(path) && trees[0].get(path) !== trees[1].get(path))
       throw new Error(`Release preparation changes dev content outside metadata (${path})`);
   }
+  const previousVersion = JSON.parse(
+    await readText(github, repo, "package.json", marker.baseSha),
+  ).version;
+  const target = await readReleaseTarget(github, repo, marker.sourceSha, previousVersion);
+  if (target && marker.version !== target)
+    throw new Error("Release preparation does not match the reviewed target version");
   return commit;
 }
 
