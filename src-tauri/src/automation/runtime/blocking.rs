@@ -1,33 +1,32 @@
 //! The blocking worker retains capacity after its async caller times out.
-use super::Failure;
+use crate::automation::contract::Failure;
 use crate::error::{AppError, AppResult};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
-    Arc, LazyLock,
+    Arc,
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
-pub(super) struct Read(Ticket);
+pub(in crate::automation) struct Read(Ticket);
 #[derive(Clone)]
-pub(super) struct Ticket {
+pub(in crate::automation) struct Ticket {
     cancelled: Arc<AtomicBool>,
+    cancellation_code: &'static str,
     _capacity: Arc<OwnedSemaphorePermit>,
 }
 
 impl Read {
-    pub fn admit() -> Result<Self, Failure> {
-        static CAPACITY: LazyLock<Arc<Semaphore>> = LazyLock::new(|| Arc::new(Semaphore::new(4)));
-        Self::with_capacity(CAPACITY.clone())
-    }
-    fn with_capacity(capacity: Arc<Semaphore>) -> Result<Self, Failure> {
-        let permit = capacity.try_acquire_owned().map_err(|_| {
-            Failure::new(
-                "operation_rejected",
-                "Log readers are busy; retry after the current reads complete",
-            )
-        })?;
+    pub fn admit(
+        capacity: Arc<Semaphore>,
+        cancellation_code: &'static str,
+        busy_message: &'static str,
+    ) -> Result<Self, Failure> {
+        let permit = capacity
+            .try_acquire_owned()
+            .map_err(|_| Failure::new("operation_rejected", busy_message))?;
         Ok(Self(Ticket {
             cancelled: Arc::new(AtomicBool::new(false)),
+            cancellation_code,
             _capacity: Arc::new(permit),
         }))
     }
@@ -43,7 +42,7 @@ impl Drop for Read {
 impl Ticket {
     pub fn check(&self) -> AppResult<()> {
         if self.cancelled.load(Ordering::Acquire) {
-            Err(AppError::validation("automation.logs.cancelled"))
+            Err(AppError::validation(self.cancellation_code))
         } else {
             Ok(())
         }
@@ -53,21 +52,24 @@ impl Ticket {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn admit(capacity: Arc<Semaphore>) -> Result<Read, Failure> {
+        Read::admit(capacity, "automation.read.cancelled", "Readers are busy")
+    }
     #[test]
     fn caller_cancellation_does_not_release_a_running_readers_capacity() {
         let capacity = Arc::new(Semaphore::new(1));
-        let read = Read::with_capacity(capacity.clone()).unwrap();
+        let read = admit(capacity.clone()).unwrap();
         let ticket = read.ticket();
         ticket.check().unwrap();
-        assert!(Read::with_capacity(capacity.clone()).is_err());
+        assert!(admit(capacity.clone()).is_err());
         drop(read);
         assert_eq!(
             ticket.check().unwrap_err().to_string(),
-            "automation.logs.cancelled"
+            "automation.read.cancelled"
         );
-        assert!(Read::with_capacity(capacity.clone()).is_err());
+        assert!(admit(capacity.clone()).is_err());
         drop(ticket);
-        assert!(Read::with_capacity(capacity).is_ok());
+        assert!(admit(capacity).is_ok());
     }
 
     #[tokio::test]
@@ -78,7 +80,7 @@ mod tests {
         let (release, wait) = std::sync::mpsc::channel();
         let (finished, done) = tokio::sync::oneshot::channel();
         let caller = tokio::spawn(async move {
-            let operation = Read::with_capacity(admitted).unwrap();
+            let operation = admit(admitted).unwrap();
             let ticket = operation.ticket();
             tokio::task::spawn_blocking(move || {
                 started.send(()).unwrap();
@@ -93,9 +95,9 @@ mod tests {
         ready.await.unwrap();
         caller.abort();
         assert!(caller.await.unwrap_err().is_cancelled());
-        assert!(Read::with_capacity(capacity.clone()).is_err());
+        assert!(admit(capacity.clone()).is_err());
         release.send(()).unwrap();
         assert!(done.await.unwrap());
-        assert!(Read::with_capacity(capacity).is_ok());
+        assert!(admit(capacity).is_ok());
     }
 }

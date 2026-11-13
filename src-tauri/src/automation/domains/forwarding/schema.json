@@ -1,0 +1,128 @@
+{
+  "name": "forwards.list",
+  "effect": "read",
+  "stability": "experimental",
+  "since": null,
+  "inputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "after": {
+        "type": "string",
+        "minLength": 0,
+        "maxLength": 128,
+        "x-maxBytes": 128,
+        "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]*$"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 128,
+        "default": 50
+      }
+    }
+  },
+  "resultSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["entries", "nextAfter"],
+    "properties": {
+      "entries": {
+        "type": "array",
+        "maxItems": 128,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "hostId", "name", "revision", "direction", "bind", "target", "state"],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-maxBytes": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+            },
+            "hostId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-maxBytes": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120,
+              "x-maxBytes": 120
+            },
+            "revision": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "x-maxBytes": 128,
+              "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+            },
+            "direction": {
+              "enum": ["local", "remote"]
+            },
+            "bind": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["host", "port"],
+              "properties": {
+                "host": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "x-maxBytes": 253
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            },
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["host", "port"],
+              "properties": {
+                "host": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "x-maxBytes": 253
+                },
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                }
+              }
+            },
+            "state": {
+              "enum": ["running", "stopped"]
+            }
+          }
+        }
+      },
+      "nextAfter": {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "x-maxBytes": 128,
+            "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  },
+  "errors": ["invalid_request", "operation_rejected", "internal"],
+  "description": "Read saved forwarding rules and host-registered runtime state through the shared service. Ascending binary rule-ID keyset pagination; after is the last returned ID, not a snapshot or capability. Each live page is at most 128 entries and 64KiB. Edits/deletions/new earlier IDs may change later reads; restart enumeration to rescan. Running does not prove destination reachability. Local capability includes all saved rules; keep addresses private. No SSH session or runtime identity is exposed."
+}

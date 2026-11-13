@@ -71,6 +71,49 @@ pub(super) fn list(db: &Database) -> AppResult<Vec<RevisionedRule>> {
     })
 }
 
+pub(super) fn page(
+    db: &Database,
+    after: &str,
+    limit: usize,
+    check: &impl Fn() -> AppResult<()>,
+) -> AppResult<Vec<RevisionedRule>> {
+    db.with(|conn| {
+        check()?;
+        // SQL bounds individual blobs before allocating them in Rust. The
+        // continuation uses the stored key, never timestamps or mutable names.
+        let mut stmt = conn.prepare(
+            "SELECT CASE WHEN length(CAST(r.key AS BLOB))<=136 THEN r.key END,
+             CASE WHEN length(CAST(r.value AS BLOB))<=8192 THEN r.value END,
+             CASE WHEN length(CAST(v.value AS BLOB))<=1024 THEN v.value END, v.key IS NOT NULL
+             FROM settings r LEFT JOIN settings v ON v.key='forward-version:' || substr(r.key,9)
+             WHERE r.key LIKE 'forward:%' AND r.key>?1 ORDER BY r.key COLLATE BINARY LIMIT ?2",
+        )?;
+        let mut rows = stmt.query(rusqlite::params![key(after), limit as u32])?;
+        let mut result = Vec::new();
+        while let Some(row) = rows.next()? {
+            check()?;
+            let stored_key: Option<String> = row.get(0)?;
+            let raw: Option<String> = row.get(1)?;
+            let token: Option<String> = row.get(2)?;
+            let has_token: bool = row.get(3)?;
+            if has_token && token.is_none() {
+                return Err(AppError::validation("forward.invalid"));
+            }
+            let raw = raw.ok_or_else(|| AppError::validation("forward.invalid"))?;
+            let rule: ForwardRule = serde_json::from_str(&raw)?;
+            super::contract::validate(&rule)?;
+            if stored_key.as_deref() != Some(key(&rule.id).as_str()) {
+                return Err(AppError::validation("forward.invalid"));
+            }
+            result.push(RevisionedRule {
+                rule,
+                revision: revision(&raw, token)?,
+            });
+        }
+        Ok(result)
+    })
+}
+
 pub(super) fn save(
     db: &Database,
     rule: &ForwardRule,
