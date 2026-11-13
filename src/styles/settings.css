@@ -268,6 +268,35 @@
 .settings-preference-group__body > .settings-row:last-child {
   border-bottom: 0;
 }
+.settings-preference-group--collapsible > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  cursor: pointer;
+  list-style: none;
+}
+.settings-preference-group--collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-preference-group--collapsible > summary > h3 {
+  margin: 0;
+}
+.settings-preference-group--collapsible > summary > svg {
+  flex-shrink: 0;
+  color: var(--td-muted);
+  transition: transform 120ms;
+}
+.settings-preference-group--collapsible[open] > summary > svg {
+  transform: rotate(90deg);
+}
+.settings-preference-group--collapsible > summary:focus-visible {
+  outline: 1px solid var(--td-accent);
+  outline-offset: 2px;
+}
+.settings-preference-group--collapsible[open] > summary {
+  margin-bottom: 8px;
+}
 .settings__body {
   scroll-padding-block: 12px;
 }

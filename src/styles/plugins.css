@@ -672,8 +672,7 @@
   min-width: 0;
 }
 .plugin-security__approvals {
-  margin-top: 20px;
-  border-block: 1px solid var(--td-border);
+  margin-top: 12px;
 }
 .plugin-security__approvals summary {
   display: flex;
@@ -757,10 +756,28 @@
 .plugin-permissions span {
   color: var(--td-muted);
 }
-.plugin-settings .settings-subsection + .settings-subsection {
-  margin-top: 28px;
-  padding-top: 24px;
+.plugin-settings > .settings-subsection {
+  margin-top: 20px;
+  padding-top: 20px;
   border-top: 1px solid var(--td-border);
+}
+.plugin-settings > .settings-subsection:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.plugin-settings .settings-subtitle {
+  color: var(--td-text);
+  letter-spacing: normal;
+  text-transform: none;
+  line-height: 1.5;
+}
+.plugin-settings .settings-section__head {
+  min-height: 32px;
+  margin-bottom: 8px;
+}
+.plugin-settings .runner-recovery > details > summary {
+  min-height: 32px;
 }
 .settings-subtitle {
   font-size: 13px;
