@@ -59,8 +59,29 @@ pub(crate) struct Schema {
 }
 
 #[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "serde_json::Map<String, Value>")]
 pub(crate) struct Update {
     pub revision: String,
     pub changes: Value,
+}
+
+impl TryFrom<serde_json::Map<String, Value>> for Update {
+    type Error = &'static str;
+    fn try_from(mut fields: serde_json::Map<String, Value>) -> Result<Self, Self::Error> {
+        let revision = fields
+            .remove("revision")
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .filter(|value| {
+                !value.is_empty() && value.len() <= 128 && !value.chars().any(char::is_control)
+            })
+            .ok_or("invalid preference revision")?;
+        let changes = fields
+            .remove("changes")
+            .filter(Value::is_object)
+            .ok_or("expected preference changes object")?;
+        if !fields.is_empty() {
+            return Err("unknown preference update field");
+        }
+        Ok(Self { revision, changes })
+    }
 }

@@ -785,12 +785,15 @@
 .sftp-columns th[data-column-drop="after"] {
   box-shadow: inset -2px 0 var(--td-accent);
 }
-.sftp-columns th[draggable] button {
+.sftp-columns th[data-column-key] button {
   cursor: grab;
   padding-right: 8px;
+  touch-action: none;
+  user-select: none;
 }
-.sftp-columns th[draggable]:active button {
+.sftp-columns th[data-dragging] button {
   cursor: grabbing;
+  color: var(--td-accent);
 }
 .sftp-columns__size button {
   padding-right: 8px;

@@ -23,6 +23,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 
 import { EmptyState, StatusDot } from "@/components/ui/display/Misc";
 import { FileTypeIcon } from "@/components/ui/display/FileTypeIcon";
+import { useColumnReorder } from "@/components/ui/display/useColumnReorder";
 import { useFileIconResolver } from "@/lib/files/icons";
 import { Button, IconButton } from "@/components/ui/form/Button";
 import { Input } from "@/components/ui/form/Field";
@@ -365,6 +366,7 @@ export function SftpPage({
   const mutations = useRef(new Set<PaneId>());
   const typeSelectState = useRef<Partial<Record<PaneId, TypeSelectState>>>({});
   const beginColumnResize = usePointerDrag();
+  const columnReorder = useColumnReorder();
 
   const rememberColumnScroll = (id: PaneId, path: string, top: number) => {
     const key = `${id}:${sourceKey(panesRef.current[id].source)}:${path}`;
@@ -2476,54 +2478,10 @@ export function SftpPage({
                                   ? "sftp.sortSize"
                                   : "sftp.sortModified",
                           )}
-                          draggable
+                          data-column-key={sort}
                           style={{
                             gridColumn:
                               sort === "name" ? `${columnIndex(sort)} / span 2` : columnIndex(sort),
-                          }}
-                          onDragStart={(event) => {
-                            event.stopPropagation();
-                            event.dataTransfer.setData("application/x-tunnelde-file-column", sort);
-                            event.dataTransfer.effectAllowed = "move";
-                            event.currentTarget.dataset.dragging = "true";
-                          }}
-                          onDragOver={(event) => {
-                            if (
-                              !event.dataTransfer.types.includes(
-                                "application/x-tunnelde-file-column",
-                              )
-                            )
-                              return;
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const bounds = event.currentTarget.getBoundingClientRect();
-                            event.currentTarget.dataset.columnDrop =
-                              event.clientX < bounds.left + bounds.width / 2 ? "before" : "after";
-                          }}
-                          onDragLeave={(event) => {
-                            if (!event.currentTarget.contains(event.relatedTarget as Node | null))
-                              delete event.currentTarget.dataset.columnDrop;
-                          }}
-                          onDragEnd={(event) => {
-                            delete event.currentTarget.dataset.dragging;
-                            for (const header of event.currentTarget
-                              .closest("tr")
-                              ?.querySelectorAll<HTMLElement>("[data-column-drop]") ?? [])
-                              delete header.dataset.columnDrop;
-                          }}
-                          onDrop={(event) => {
-                            const dragged = event.dataTransfer.getData(
-                              "application/x-tunnelde-file-column",
-                            ) as FileColumn;
-                            const bounds = event.currentTarget.getBoundingClientRect();
-                            const after = event.clientX >= bounds.left + bounds.width / 2;
-                            delete event.currentTarget.dataset.columnDrop;
-                            if (!columns.includes(dragged) || dragged === sort) return;
-                            event.preventDefault();
-                            event.stopPropagation();
-                            const next = columns.filter((item) => item !== dragged);
-                            next.splice(next.indexOf(sort) + Number(after), 0, dragged);
-                            updateView(id, { filesColumns: next });
                           }}
                           aria-sort={
                             view.filesSortBy === sort
@@ -2535,15 +2493,39 @@ export function SftpPage({
                         >
                           <button
                             type="button"
-                            onClick={() =>
+                            onPointerDown={(event) => {
+                              columnReorder.start(
+                                event,
+                                (target, after) => {
+                                  const current = panesRef.current[id];
+                                  if (!sameSource(current.source, source)) return;
+                                  const visible = current.view.filesColumns ?? [...FILE_COLUMNS];
+                                  if (
+                                    !visible.includes(sort) ||
+                                    !visible.includes(target as FileColumn)
+                                  )
+                                    return;
+                                  const next = visible.filter((item) => item !== sort);
+                                  next.splice(
+                                    next.indexOf(target as FileColumn) + Number(after),
+                                    0,
+                                    sort,
+                                  );
+                                  updateView(id, { filesColumns: next });
+                                },
+                                event.currentTarget.closest<HTMLElement>(".sftp-pane__scroll"),
+                              );
+                            }}
+                            onClick={(event) => {
+                              if (columnReorder.suppressClick(event)) return;
                               updateView(id, {
                                 filesSortBy: sort,
                                 filesSortDirection:
                                   view.filesSortBy === sort && view.filesSortDirection === "asc"
                                     ? "desc"
                                     : "asc",
-                              })
-                            }
+                              });
+                            }}
                           >
                             <span>
                               {t(

@@ -94,3 +94,5 @@ fn invalid(path: &str) -> AppError {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::local_api_samples;

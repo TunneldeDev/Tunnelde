@@ -4,6 +4,8 @@
 
 - [Plugin development and security](plugins/README.md)
 - [Architecture](architecture.md)
+- [Local API and CLI](local-api.md)
+- [Core contracts for 1.0](core-contracts.md)
 - [Background tasks](background-tasks.md)
 - [Optional native helper](native-helper.md)
 - [Shared panel layouts](panel-layout.md)

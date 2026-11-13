@@ -3,6 +3,55 @@ use crate::settings::Settings;
 use serde_json::{json, Value};
 
 #[test]
+fn updates_reject_unbounded_or_malformed_revisions_before_domain_work() {
+    for revision in [
+        json!(null),
+        json!(42),
+        json!(""),
+        json!("x".repeat(129)),
+        json!("😀".repeat(33)),
+        json!("a\nb"),
+    ] {
+        assert!(serde_json::from_value::<contracts::Update>(
+            json!({"revision":revision,"changes":{}})
+        )
+        .is_err());
+    }
+    assert!(
+        serde_json::from_value::<contracts::Update>(json!({"revision":"r","changes":[]})).is_err()
+    );
+    assert!(serde_json::from_value::<contracts::Update>(
+        json!({"revision":"r","changes":{},"extra":1})
+    )
+    .is_err());
+    assert!(serde_json::from_value::<contracts::Update>(
+        json!({"revision":"😀".repeat(32),"changes":{}})
+    )
+    .is_ok());
+}
+
+pub(crate) fn local_api_samples() -> Vec<Value> {
+    let db = crate::db::Database::in_memory().unwrap();
+    let mut before = Settings::default();
+    before.sanitize();
+    let revision = db
+        .with(|conn| super::super::repository::revision(conn, &before))
+        .unwrap();
+    let input = json!({"revision":revision,"changes":{"appearance":{"theme":"dark"},"editor":{"tabSize":8}}});
+    let request: contracts::Update = serde_json::from_value(input.clone()).unwrap();
+    let after = update::apply(&before, request.changes).unwrap();
+    let next_revision = db
+        .with(|conn| super::super::repository::save(conn, &after))
+        .unwrap();
+    assert_ne!(revision, next_revision);
+    vec![
+        json!({"method":"preferences.schema","params":{},"result":describe()}),
+        json!({"method":"preferences.snapshot","params":{},"result":projection::snapshot(&before,revision).unwrap()}),
+        json!({"method":"preferences.update","params":input,"result":projection::snapshot(&after,next_revision).unwrap()}),
+    ]
+}
+
+#[test]
 fn independent_schema_covers_exactly_the_public_projection() {
     let mut defaults = Settings::default();
     defaults.sanitize();

@@ -1,4 +1,8 @@
-.host-table {
+.hosts-sidebar {
+  container: hosts / inline-size;
+}
+.sidebar__body.host-table {
+  min-width: 0;
   overflow: auto;
   padding: 0 8px 8px;
 }
@@ -7,7 +11,7 @@
   display: grid;
   grid-template-columns: var(--host-columns);
   gap: 0;
-  min-width: var(--host-table-width);
+  min-width: max(100%, var(--host-table-width));
   width: max-content;
 }
 .host-table__header {
@@ -72,4 +76,37 @@
 }
 .host-table__cell .host-row__actions {
   margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* A pinned name consumes most of a narrow sidebar and covers the other cells
+   even after scrolling. Let the entire table scroll in compact placements. */
+@container hosts (max-width: 480px) {
+  .host-table__cell--name,
+  .host-table__header > :first-child {
+    position: static;
+  }
+}
+
+.host-row__meta.host-row__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  padding-top: 2px;
+  overflow: visible;
+  white-space: normal;
+  line-height: 1.5;
+}
+.host-row__field {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.host-row__field-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
