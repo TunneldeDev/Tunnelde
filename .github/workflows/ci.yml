@@ -435,6 +435,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor
@@ -486,6 +487,7 @@ jobs:
           cargo test --manifest-path src-tauri/Cargo.toml --lib preview::
           cargo test --manifest-path src-tauri/Cargo.toml --lib plugins::api::domains::files::text
           cargo test --manifest-path src-tauri/Cargo.toml --lib logs::read
+          cargo test --manifest-path src-tauri/Cargo.toml --lib automation::domains::logging
           cargo test --manifest-path src-tauri/Cargo.toml --lib services::settings
           cargo test --manifest-path src-tauri/Cargo.toml --lib settings_profiles
           cargo test --manifest-path src-tauri/Cargo.toml --lib local_editor

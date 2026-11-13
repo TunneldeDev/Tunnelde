@@ -3,10 +3,14 @@ use serde_json::{json, Value};
 use std::{
     io::{BufRead, BufReader, Write},
     net::TcpListener,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
 };
 
 fn run(binary: &str, args: &[&str]) -> Output {
+    run_input(binary, args, None)
+}
+
+fn run_input(binary: &str, args: &[&str], input: Option<&str>) -> Output {
     let mut command = Command::new(binary);
     command.args(args);
     #[cfg(windows)]
@@ -14,7 +18,23 @@ fn run(binary: &str, args: &[&str]) -> Output {
         use std::os::windows::process::CommandExt;
         command.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    command.output().unwrap()
+    if let Some(input) = input {
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(input.as_bytes())
+            .unwrap();
+        child.wait_with_output().unwrap()
+    } else {
+        command.output().unwrap()
+    }
 }
 
 #[test]
@@ -74,7 +94,7 @@ fn installed_binary_cli_and_console_cli_support_offline_and_error_exit_contracts
 }
 
 fn fixture_reply(binary: &str, prefix: &[&str], response: Value) -> (Output, Value) {
-    let result = fixture_call(binary, prefix, response, &["hosts", "list"]);
+    let result = fixture_call(binary, prefix, response, &["hosts", "list"], None);
     assert_eq!(result.1["method"], "hosts.list");
     result
 }
@@ -84,6 +104,7 @@ fn fixture_call(
     prefix: &[&str],
     mut response: Value,
     command: &[&str],
+    input: Option<&str>,
 ) -> (Output, Value) {
     let directory =
         std::env::temp_dir().join(format!("tunnelde-cli-consumer-{}", uuid::Uuid::new_v4()));
@@ -105,7 +126,20 @@ fn fixture_call(
     )
     .unwrap();
     let server = std::thread::spawn(move || {
-        let (mut stream, _) = listener.accept().unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        let (mut stream, _) = loop {
+            match listener.accept() {
+                Ok(accepted) => break accepted,
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::WouldBlock
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(error) => panic!("CLI did not connect to the fixture: {error}"),
+            }
+        };
         stream
             .set_read_timeout(Some(std::time::Duration::from_secs(10)))
             .unwrap();
@@ -128,7 +162,7 @@ fn fixture_call(
         .chain(["--endpoint", pointer.to_str().unwrap()])
         .chain(command.iter().copied())
         .collect();
-    let result = run(binary, &args);
+    let result = run_input(binary, &args, input);
     let request = server.join().unwrap();
     std::fs::remove_file(endpoint).unwrap();
     std::fs::remove_file(pointer).unwrap();
@@ -142,8 +176,8 @@ fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
         (env!("CARGO_BIN_EXE_tunnelde-cli"), vec![]),
         (env!("CARGO_BIN_EXE_tunnelde"), vec!["cli"]),
     ] {
-        for (command, params) in [
-            (vec!["logs", "read"], json!({})),
+        for (command, params, input) in [
+            (vec!["logs", "read"], json!({}), None),
             (
                 vec![
                     "logs",
@@ -152,6 +186,12 @@ fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
                     r#"{"source":"operations","filter":{"domains":["plugin"]},"limit":1}"#,
                 ],
                 json!({"source":"operations","filter":{"domains":["plugin"]},"limit":1}),
+                None,
+            ),
+            (
+                vec!["logs", "read", "--params", "-"],
+                json!({"filter":{"text":"中文"},"limit":2}),
+                Some(r#"{"filter":{"text":"中文"},"limit":2}"#),
             ),
         ] {
             let page = json!({"version":1,"source":"operations","entries":[],"cursor":"opaque",
@@ -161,6 +201,7 @@ fn installed_and_console_log_commands_preserve_structured_params_and_pages() {
                 &prefix,
                 json!({"version":1,"id":"$request","result":page}),
                 &command,
+                input,
             );
             assert!(
                 result.status.success(),
