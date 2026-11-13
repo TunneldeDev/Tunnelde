@@ -18,7 +18,7 @@ import { HostSearch } from "@/components/layout/HostSearch";
 import { buildHostTree, type HostGroupNode } from "@/lib/hosts/tree";
 import { Menu } from "@/components/ui/overlay/Menu";
 import { EmptyState } from "@/components/ui/display/Misc";
-import { cn, hostSubtitle } from "@/lib/text/format";
+import { cn } from "@/lib/text/format";
 import { copyText } from "@/lib/session/clipboard";
 import { connectHostDirectly } from "@/lib/session/connectHost";
 import { useDialogs } from "@/store/dialogs";
@@ -40,6 +40,7 @@ import {
 } from "@/lib/hosts/columns";
 import { matchesHostQuery, parseHostQuery } from "@/lib/hosts/query";
 import { HostListViewMenu, HostTableHeader } from "./HostTable";
+import { HostRowFields } from "./HostRowFields";
 import { savedHostInput } from "@/lib/hosts/sources";
 import { hostMenuCommands, runHostMenuCommand } from "@/lib/plugins/hostMenu";
 import type { PluginContextCommand } from "@/lib/plugins/contextCommand";
@@ -80,6 +81,7 @@ interface HostRowProps {
   canReorder: boolean;
   pluginCommands: readonly PluginContextCommand[];
   columns?: readonly DisplayHostColumn[];
+  details: readonly DisplayHostColumn[];
 }
 
 function HostRow({
@@ -91,6 +93,7 @@ function HostRow({
   canReorder,
   pluginCommands,
   columns,
+  details,
 }: HostRowProps) {
   const { t } = useTranslation();
   const openHost = useWorkspace((state) => state.openHost);
@@ -373,9 +376,7 @@ function HostRow({
               <HostDecorationBadges items={decorations} />
               {sourceBadge}
             </span>
-            <span className="host-row__meta">
-              {hostSubtitle(host.username, host.host, host.port)}
-            </span>
+            <HostRowFields hostId={host.id} columns={details} />
             <HostDecorationDescription items={decorations} />
           </span>
           {connecting ? (
@@ -540,9 +541,12 @@ export function HostTree() {
     () => Array.from(new Set(hosts.flatMap((host) => host.tags))).sort(),
     [hosts],
   );
-  const tree = useMemo(() => buildHostTree(groups, hosts, query.trim()), [groups, hosts, query]);
+  const tree = useMemo(
+    () => buildHostTree(groups, sortHostRows(hosts, allColumns, preferences.sort), query.trim()),
+    [groups, hosts, query, allColumns, preferences.sort],
+  );
   const searching = query.trim().length > 0;
-  const canReorder = !searching && !table;
+  const canReorder = !searching && !table && !preferences.sort;
   const tableHosts = useMemo(() => {
     const parsed = parseHostQuery(query);
     return sortHostRows(
@@ -651,6 +655,7 @@ export function HostTree() {
   };
 
   const rowProps = (host: Host) => ({
+    details: columns,
     focused: focusId === host.id,
     canReorder: canReorder && !host.source,
     pluginCommands,
@@ -712,7 +717,7 @@ export function HostTree() {
   };
 
   return (
-    <div className="sidebar">
+    <div className="sidebar hosts-sidebar">
       <div className="sidebar__head" role="toolbar" aria-label={t("sidebar.hosts")}>
         <SidebarTitle view="hosts">{t("sidebar.hosts")}</SidebarTitle>
         <IconButton size="sm" label={t("sidebar.newHost")} onClick={() => openHostDialog()}>
